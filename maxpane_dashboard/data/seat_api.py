@@ -1,14 +1,13 @@
 """Keyless reads of ``api.imd.fun`` for the PEPEPANE dashboard -- the fallback of spec §6.
 
-Five routes, nothing else: ``/seats/<id>/standing`` (never with ``?queue=0``),
+Public routes: ``/seats/<id>/standing`` (never with ``?queue=0``),
 ``/seats/<id>?work=N&reviews=0``, ``/jobs/<uuid>/submissions``, ``/services`` and
-``/health``.  Every read is a keyless ``GET`` with ``Accept-Encoding: gzip`` and a
+``/health``, ``/jobs/<uuid>`` and ``/oracle/requests/<id>?members=<hash>``. Every read is a keyless ``GET`` with ``Accept-Encoding: gzip`` and a
 20 s timeout over the two-host pool of :mod:`surf_swarm_client`; a 5xx, a timeout
 or a transport error is retried **once** (on the other pool host); a 4xx is an
 answer about the request and is not retried.  A failed read is ``ApiResult(ok=False)``
 with a ``reason`` -- never ``0``, never an empty list.  The body is parsed
-tolerantly (control characters stripped, ``strict=False``), every ``summary`` key is
-dropped before anything else sees it, and every remaining string passes the
+tolerantly (control characters stripped, ``strict=False``), standing/work ``summary`` keys are dropped; only this seat's submission replies are explicitly projected. Every retained string passes the
 redactor before it leaves this module.  The client remembers the newest good
 result per route so a caller can keep rendering ``as of HH:MM`` through a 500.
 """
@@ -28,7 +27,8 @@ from urllib.parse import urlencode
 import httpx
 
 from maxpane_dashboard.analytics.seat_redact import strip_controls
-from maxpane_dashboard.analytics.seat_text import sanitize_tree as redact_tree
+from maxpane_dashboard.analytics.seat_text import sanitize_tree as redact_tree, sanitize_text
+from maxpane_dashboard.data.surf_swarm import oracle_point, enrich_panel_rows
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient
 from maxpane_dashboard.data.surf_swarm_client import SWARM_API_HOSTS, parse_job_id
 
@@ -74,6 +74,7 @@ STANDING_KEYS = (
 SUBMISSION_KEYS = (
     "submissionHash", "hash12", "seatTokenId", "seatAgentId", "deviceKey8", "nodeKey", "role", "attempt",
     "outcome", "accepted", "failureReason", "failureClass", "usage", "createdAt",
+    "reply", "structuralCheck", "oracleResult", "findingsCount", "artifactsCount", "terminal",
 )
 USAGE_INT_KEYS = ("turns", "inputTokens", "outputTokens", "cachedInputTokens", "wallClockMs")
 PLANE_KEYS = ("version", "verifierUp", "verifierLastSeenUtc", "verifierClaims", "awaitingVerdict",
@@ -91,7 +92,7 @@ _PG_TS_RE = re.compile(
 @dataclass(frozen=True)
 class ApiResult:
     ok: bool
-    data: Json | None            # parsed, summary-free, control-stripped, redacted
+    data: Json | None            # parsed, projected, control-stripped, sanitized
     status: int | None           # last HTTP status seen (None when no response arrived)
     as_of_utc: str | None        # ISO Z (seconds) of the read; set only when ok
     reason: str | None           # "500 ×2 (retrying)", "timeout ×2 (retrying)", "404", "bad json", "bad seat", ...
@@ -339,12 +340,12 @@ def normalise_standing(body: Mapping) -> dict:
     }
 
 
-def normalise_submission(item: Mapping) -> dict:
+def normalise_submission(item: Mapping, *, keep_reply: bool = False) -> dict:
     """One ``/jobs/<id>/submissions.submissions[]`` item reduced to :data:`SUBMISSION_KEYS`.
 
     Runs **before** redaction: the 64-hex ``hash`` is renamed ``submissionHash`` (a redactor-allowed
     field, so the ledger's hash join survives) and ``hash12`` is its 12-char prefix; ``deviceKey`` is
-    cut to 8 chars here so no 64-hex device key ever leaves this module; ``summary`` is already gone.
+    cut to 8 chars here. Only an explicitly seat-filtered call keeps sanitized reply text.
     """
     src = _mapping(item)
     digest = src.get("hash")
@@ -374,17 +375,92 @@ def normalise_submission(item: Mapping) -> dict:
         "failureClass": failure_class_word(src.get("failureClass")),
         "usage": usage,
         "createdAt": _str_or_none(src.get("createdAt")),
+        "reply": _text(src.get("summary")) if keep_reply else None,
+        "structuralCheck": _check(src.get("verdict")),
+        "oracleResult": {k: _text(_mapping(src.get("oracleResult")).get(k), 512 if k == "detail" else 160)
+                         for k in ("requestId", "status", "detail", "createdAt")}
+                        if isinstance(src.get("oracleResult"), Mapping) else None,
+        "findingsCount": len(src["findings"]) if isinstance(src.get("findings"), list) else None,
+        "artifactsCount": len(src["artifacts"]) if isinstance(src.get("artifacts"), list) else None,
+        "terminal": src.get("outcome") in ("completed", "failed", "rejected", "accepted", "cancelled"),
     }
 
 
-def _prepare_submissions(body: Json) -> Json:
+def _text(value: object, cap: int = 4096) -> str | None:
+    return sanitize_text(value, cap=cap) if isinstance(value, str) else None
+
+
+def _check(raw: object) -> dict | None:
+    if not isinstance(raw, Mapping):
+        return None
+    return {"status": _text(raw.get("status"), 160), "evaluation": _text(raw.get("evaluation"), 160),
+            "detail": _text(raw.get("detail"), 512)}
+
+
+def normalise_job_detail(body: Json) -> dict | None:
+    """Bare public job, explicitly projected before any nested object is retained."""
+    if not isinstance(body, Mapping) or parse_job_id(body.get("id")) is None:
+        return None
+    launch, workflow, delivery = (_mapping(body.get(k)) for k in ("launch", "workflow", "delivery"))
+    paid = None if "paidBy" not in body else (False if body["paidBy"] is None else
+           True if isinstance(body["paidBy"], str) else None)
+    workflow_id = _text(workflow.get("id"), 160)
+    return {
+        "jobId": body["id"], "state": _text(body.get("state"), 160),
+        "terminal": body.get("state") in ("completed", "failed", "cancelled", "rejected"),
+        "objective": _text(body.get("objective")), "template": _text(body.get("template"), 160),
+        "paidBy": _text(body.get("paidBy"), 160), "paid": paid,
+        "launch": {"kind": _text(launch.get("kind"), 160), "requested": _bool_or_none(launch.get("requested")),
+                   "workflowId": workflow_id},
+        "launchLinked": launch.get("requested") is True or bool(workflow),
+        "workflowId": workflow_id, "oracleRequestId": _text(body.get("oracleRequestId"), 160),
+        "parentJobId": _text(body.get("parentJobId"), 160),
+        "delivery": {"url": _text(delivery.get("pullRequestUrl") or delivery.get("repoUrl"), 512),
+                     "atUtc": _text(delivery.get("deliveredAt"), 160)} if delivery else None,
+        "nodes": [{"key": _text(n.get("key"), 160), "state": _text(n.get("state"), 160),
+                   "role": _text(n.get("role"), 160), "failureReason": reason_word(n.get("failureReason")),
+                   "seatTokenId": identity_int(_mapping(n.get("seat")).get("tokenId")),
+                   "structuralCheck": _check(n.get("verdict"))}
+                  for n in body.get("nodes", []) if isinstance(n, Mapping)],
+    }
+
+
+def normalise_oracle(body: Json, job: str, digest: str, *, now: float) -> dict | None:
+    # Only panel semantics use Surf's fold. Literal selected text never takes its markup policy.
+    point = oracle_point(body, job, digest, now_ts=now)
+    if point is None:
+        return None
+    folded = enrich_panel_rows([{"job_id": job, "submission_hash": digest, "node_key": "oracle_assess"}],
+                               {job: {digest: point}}, ("oracle_assess",))[0]
+    member = next((m for m in (body.get("members") or []) if m.get("submissionHash") == digest), {})
+    answer = _mapping(member.get("answer"))
+    value = answer.get("answer")
+    if isinstance(value, list):
+        value = point["seat_answer"]  # typed lists share Surf's bounded, validated representation
+    elif isinstance(value, bool):
+        value = "true" if value else "false"
+    elif type(value) in (int, float):
+        value = str(value)
+    return {"terminal": point["terminal"], "question": _text(body.get("question")),
+            "answer": _text(value), "notes": _text(answer.get("notes")),
+            "panel": {"state": folded["panel_state"], "agreed": folded["panel_agreed"],
+                      "quorum": folded["panel_quorum"], "size": folded["panel_size"],
+                      "figure": folded["panel_figure"], "answerType": folded["panel_answer_type"],
+                      "answerBool": folded["panel_answer_bool"], "memberOk": point["member_ok"],
+                      "memberReason": _text(member.get("reason"), 160), "chainId": point["chain_id"],
+                      "requestId": point["request_id"]}}
+
+
+def _prepare_submissions(body: Json, seat: int | None = None) -> Json:
     """The ``prepare`` hook of the submissions route: keep ``jobId``/``count``, normalise every item, drop the rest."""
     src = _mapping(body)
     items = src.get("submissions")
     return {
         "jobId": _str_or_none(src.get("jobId")),
         "count": _int_or_none(src.get("count")),
-        "submissions": [normalise_submission(s) for s in items if isinstance(s, Mapping)] if isinstance(items, list) else [],
+        "submissions": [normalise_submission(s, keep_reply=seat is not None) for s in items
+                        if isinstance(s, Mapping) and (seat is None or normalise_submission(s)["seatTokenId"] == seat)]
+                       if isinstance(items, list) else [],
     }
 
 
@@ -453,7 +529,7 @@ def _seat_segment(seat: object) -> str | None:
 
 
 class SeatApiClient(OwnedHttpClient):
-    """Spec §6 API fallback: four route families, gzip, 20 s, retry once, redacted, last-good remembered."""
+    """Public API reads with route-class busy floors and sanitized last-good results."""
 
     def __init__(
         self,
@@ -508,13 +584,15 @@ class SeatApiClient(OwnedHttpClient):
         *,
         params: Mapping[str, str] | None = None,
         prepare: Callable[[Json], Json] | None = None,
+        keep_summaries: bool = False,
     ) -> ApiResult:
         """One GET: pool order, retry ONCE on 5xx / timeout / transport error, gzip, tolerant JSON.
 
         Attempt 1 goes to the first pool host, the retry to the next (the same host again on a
         one-host pool).  A 4xx, a non-JSON 200 or an oversize body is an answer about the
-        *request* and is returned at once.  ``prepare`` runs after :func:`drop_summaries` and before
-        :func:`redact_tree` (the submissions route renames its hash there).  Bodies are never logged.
+        *request* and is returned at once.  ``prepare`` runs before sanitization; the seat-filtered submissions route alone
+        retains summaries for its explicit projection. All other routes drop them before
+        :func:`redact_tree`. Bodies are never logged.
         """
         route = path + (f"?{urlencode(dict(params))}" if params else "")
         route_class = self.route_class(path)
@@ -565,9 +643,12 @@ class SeatApiClient(OwnedHttpClient):
                 data = parse_json_tolerant(content)
             except ValueError:
                 return ApiResult(False, None, last_status, None, "bad json", elapsed, route)
-            data = drop_summaries(data)
+            if not keep_summaries:
+                data = drop_summaries(data)
             if prepare is not None:
                 data = prepare(data)
+                if data is None:
+                    return ApiResult(False, None, last_status, None, "bad detail", elapsed, route)
             data = redact_tree(data)
             result = ApiResult(True, data, last_status, _iso_z(self._now(), millis=False), None, elapsed, route)
             self._busy_delays.pop(route_class, None)
@@ -598,15 +679,34 @@ class SeatApiClient(OwnedHttpClient):
         """The one-time history read: ``seat_work(seat, work=SEAT_WORK_BACKFILL_ROWS, reviews=0)``."""
         return await self.seat_work(seat, work=SEAT_WORK_BACKFILL_ROWS, reviews=0)
 
-    async def job_submissions(self, job_id: str) -> ApiResult:
-        """``GET /jobs/<uuid>/submissions`` with summaries dropped and items normalised (:data:`SUBMISSION_KEYS`).
+    async def job_submissions(self, job_id: str, *, seat: int | None = None) -> ApiResult:
+        """``GET /jobs/<uuid>/submissions``; only the requested seat keeps its sanitized reply.
 
         Anything but a canonical lowercase UUID is refused before any request and never echoed.
         """
         job = parse_job_id(job_id)
         if job is None:
             return self._refused("/jobs/?/submissions", "bad job id")
-        return await self._get(f"/jobs/{job}/submissions", prepare=_prepare_submissions)
+        if seat is not None and identity_int(seat) is None:
+            return self._refused("/jobs/?/submissions", "bad seat")
+        return await self._get(f"/jobs/{job}/submissions",
+                               prepare=lambda body: _prepare_submissions(body, identity_int(seat)),
+                               keep_summaries=seat is not None)
+
+    async def job_detail(self, job_id: str) -> ApiResult:
+        job = parse_job_id(job_id)
+        if job is None:
+            return self._refused("/jobs/?", "bad job id")
+        return await self._get(f"/jobs/{job}", prepare=lambda body: normalise_job_detail(body)
+                               if _mapping(body).get("id") == job else None)
+
+    async def oracle_request(self, request_id: str, *, job_id: str, submission_hash: str) -> ApiResult:
+        request, job = parse_job_id(request_id), parse_job_id(job_id)
+        if request is None or job is None or not isinstance(submission_hash, str) or not _HEX64_RE.fullmatch(submission_hash):
+            return self._refused("/oracle/requests/?", "bad oracle id")
+        return await self._get(f"/oracle/requests/{request}", params={"members": submission_hash},
+                               prepare=lambda body: normalise_oracle(body, job, submission_hash, now=self._now())
+                               if _mapping(body).get("id") == request else None)
 
     async def services(self) -> ApiResult:
         return await self._get("/services")

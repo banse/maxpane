@@ -628,7 +628,7 @@ def test_round9_nested_api_objects_are_shaped_field_by_field():
     shaped = sm.shape_dashboard_document(doc)
     assert sm.validate_status_document(shaped) is None
     assert shaped["jobs"][0]["usage"]["tokens"]["output"] == 10250
-    assert shaped["jobs"][0]["structuralCheck"] == {"status": "passed", "detail": "paths verified"}
+    assert shaped["jobs"][0]["structuralCheck"] == {"status": "passed", "evaluation": None, "detail": "paths verified"}
     assert shaped["records"]["rows"][0]["model"] is None
     assert "must disappear" not in json.dumps(shaped)
     flat = sm.fold_status_document(doc)

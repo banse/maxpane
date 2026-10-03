@@ -66,7 +66,7 @@ class TestSchema:
         assert {"tasks", "sessions", "days", "meta"} <= names
         task_cols = [r[1] for r in ledger._conn.execute("PRAGMA table_info(tasks)")]
         assert task_cols[:8] == ["key", "seat", "node8", "node_id", "job_id", "role", "kind", "accepted_utc"]
-        assert task_cols[-1] == "updated_utc" and len(task_cols) == 54
+        assert task_cols[53] == "updated_utc" and task_cols[54:] == ["job_state", "launch_json", "submission_hash", "work_status", "text_expired"]
         assert [r[1] for r in ledger._conn.execute("PRAGMA table_info(days)")][:3] == ["day_utc", "tasks", "stored"]
         indexes = {r[0] for r in ledger._conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
         assert {"tasks_accepted", "tasks_hash12", "tasks_job"} <= indexes
@@ -425,7 +425,7 @@ class TestApiJoins:
         ledger = _ledger(tmp_path, now=1790230000.0)
         ledger.ingest(_lines("double_accept.txt"))
         joined = ledger.attach_work(WORK_ROWS, as_of_utc="2026-09-26T03:40:09Z")
-        assert joined == 2
+        assert joined == 3  # two local joins plus the newly retained plane-only attempt
         accepted = [r for r in _by_node(ledger, "4cf722c7") if r["hash12"] == "f7ef8612dee7"][0]
         assert accepted["outcome"] == "accepted" and accepted["outcomeAsOfUtc"] == "2026-09-26T03:40:09Z"
         assert accepted["jobId"] == "6c296b69-8c22-435c-a2c2-56ab1660bb4e" and accepted["nodeKey"] == "oracle_assess"
@@ -691,7 +691,7 @@ class TestRollups:
         today = ledger.today("2026-09-24")
         assert set(today) == {"dayUtc", "tasks", "stored", "notStored", "p50S", "longestS", "accepted", "rejected", "failed",
                               "pending", "verdictLagP50S", "verdictsAsOfUtc"}
-        assert (today["tasks"], today["failed"], today["verdictsAsOfUtc"]) == (1, 1, "2026-09-26T03:40:09Z")
+        assert (today["tasks"], today["failed"], today["verdictsAsOfUtc"]) == (2, 1, "2026-09-26T03:40:09Z")
         assert all(today[k] is None or type(today[k]) is int for k in ("p50S", "longestS", "verdictLagP50S"))  # spec §7 whole seconds
         assert ledger.today("2026-09-30")["tasks"] == 0 and ledger.today("2026-09-30")["p50S"] is None
         ledger.close()

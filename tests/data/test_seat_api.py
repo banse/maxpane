@@ -553,10 +553,8 @@ async def test_job_submissions_refuses_a_non_uuid_job_id():
             assert result.route == "/jobs/?/submissions"
 
 
-async def test_summaries_are_dropped_before_any_string_is_kept():
-    """Spec §6 traps + §13: recentFailures[].summary and submissions[].summary are raw runtime error text
-    (a masked provider key sat in one on 09-25); they are dropped before redaction, persistence or render --
-    the sentinel appears nowhere in either result, and neither does the key."""
+async def test_only_own_submission_reply_survives_while_standing_summaries_are_dropped():
+    """Standing/work summaries stay absent; only the selected seat's sanitized reply is retained."""
     sentinel = "SUMMARY-SENTINEL-4f2a"
     standing = _fixture("workers_standing_q0.json")        # the form that carries summary in the wild
     for entry in standing["standing"]["recentFailures"]:
@@ -570,11 +568,12 @@ async def test_summaries_are_dropped_before_any_string_is_kept():
 
     async with _client(handler) as client:
         r1 = await client.standing(7)
-        r2 = await client.job_submissions(JOB)
-    for result in (r1, r2):
-        assert result.ok
-        dumped = json.dumps(result.data)
-        assert sentinel not in dumped and '"summary"' not in dumped and "sk-svcac" not in dumped
+        r2 = await client.job_submissions(JOB, seat=7)
+    assert r1.ok and r2.ok
+    assert sentinel not in json.dumps(r1.data)
+    assert r2.data["submissions"] and all(s["seatTokenId"] == 7 for s in r2.data["submissions"])
+    assert all(sentinel in s["reply"] for s in r2.data["submissions"])
+    assert all('"summary"' not in json.dumps(r.data) and "sk-svcac" not in json.dumps(r.data) for r in (r1, r2))
     assert all("summary" not in f for f in seat_api.normalise_standing(r1.data)["recentFailures"])
 
 

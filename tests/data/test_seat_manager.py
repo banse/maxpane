@@ -124,13 +124,13 @@ def _manager(tmp_path, **over):
 
 def test_tier_constants_are_the_contract_values():
     # contract §B data/seat_manager.py; spec §4.3 cadences
-    assert sm_mod.TIERS == ("unit", "broker_status", "workstat", "sessions", "standing", "seatwork", "reasons", "plane")
+    assert sm_mod.TIERS == ("unit", "broker_status", "workstat", "sessions", "standing", "seatwork", "details", "plane")
     assert sm_mod.TIER_TTL_S == {"unit": 30, "broker_status": 600, "workstat": 300, "sessions": 120, "standing": 60,
-                                 "seatwork": 120, "reasons": 300, "plane": 300}
-    assert sm_mod.OFFLINE_REMOVES == ("standing", "seatwork", "reasons", "plane")
+                                 "seatwork": 120, "details": 0, "plane": 300}
+    assert sm_mod.OFFLINE_REMOVES == ("standing", "seatwork", "details", "plane")
     assert (sm_mod.TIER_UNIT_S, sm_mod.TIER_BROKER_STATUS_S, sm_mod.TIER_WORKSTAT_S, sm_mod.TIER_SESSIONS_S) == (30, 600, 300, 120)
     assert (sm_mod.TIER_STANDING_S, sm_mod.TIER_STANDING_PLAN_OPEN_S, sm_mod.TIER_SEATWORK_S, sm_mod.TIER_SEATWORK_SETTLED_S) == (60, 15, 120, 300)
-    assert (sm_mod.TIER_REASONS_S, sm_mod.TIER_PLANE_S) == (300, 300)
+    assert (sm_mod.TIER_DETAILS_S, sm_mod.TIER_PLANE_S) == (0, 300)
     assert (sm_mod.EVENT_BUMP_SESSIONS_S, sm_mod.EVENT_BUMP_STANDING_S, sm_mod.EVENT_BUMP_SEATWORK_S, sm_mod.EVENT_BUMP_WORKSTAT_S) == (20, 30, 60, 5)
     assert (sm_mod.DOCKER_TIMEOUT_S, sm_mod.DOCKER_BREAKER_S, sm_mod.LEDGER_ROWS_ON_SCREEN, sm_mod.COST_WINDOW_DAYS, sm_mod.SERIES_DAYS) == (25, 300, 60, 7, 14)
     assert (sm_mod.FIXTURE_HOST, sm_mod.SYSTEMD_HOST, sm_mod.DOCKER_HOST) == ("fixture", "systemd", "docker")
@@ -862,8 +862,9 @@ async def test_api_tiers_feed_standing_seatwork_and_plane(tmp_path):
     m.feed_lines(STARTUP + LIFECYCLE + HEARTBEATS)
     flat = await _two_cycles(m)
     doc = m.document()
-    for name in ("standing", "seatWork", "reasons", "plane"):
+    for name in ("standing", "seatWork", "plane"):
         assert doc["sources"][name]["ok"] is True and doc["sources"][name]["asOfUtc"] == "2026-09-26T03:40:12Z", name
+    assert doc["sources"]["reasons"]["ok"] is False and set(doc["sources"]["reasons"]["reason"].split("; ")) == {"404"}  # old fixture lacks job detail
     assert api.paths("/seats/7/standing") == ["/seats/7/standing"], "no query string, ever (spec §6)"
     assert api.paths("/seats/7?") == ["/seats/7?work=60&reviews=0"]
     st = doc["standing"]
@@ -886,9 +887,17 @@ async def test_api_tiers_feed_standing_seatwork_and_plane(tmp_path):
 async def test_seatwork_backs_off_to_300s_once_every_open_row_has_a_verdict(tmp_path):
     # spec §4.3: TIER_SEATWORK 120 s; 300 s once all open rows have verdicts
     clock = Clock()
-    api = FixtureApi()
+    base_api = FixtureApi()
+    def api(request):
+        result = base_api(request)
+        if request.url.path == "/seats/7":
+            data = result.json()
+            for row in data["work"]:
+                row["status"] = "accepted"
+            return httpx.Response(200, json=data)
+        return result
     m = _manager(tmp_path, now=clock, api=_api_nosleep(api))
-    await _two_cycles(m)                                    # no rows at all -> nothing open -> settled
+    await _two_cycles(m)  # every retained plane attempt has a terminal verdict
     assert m.due("seatwork", clock.now + 120) is False and m.due("seatwork", clock.now + 300) is True
     # one stored row whose hash is not in the fixture (seat7_work20.json row 0 IS c4d9714ffb95…, status accepted -- WP5 ANCHOR_HASH)
     m.feed_lines([line.replace("c4d9714ffb95", "0123456789ab") for line in STARTUP + LIFECYCLE])
@@ -971,42 +980,41 @@ def _failed_history(hour, node8, hash12):
     ]
 
 
-async def test_reasons_tier_fetches_at_most_two_jobs_per_cycle(tmp_path):
-    # spec §6: /jobs/<jobId>/submissions only for failed rows older than the 24 h standing window, <= 2 jobs per cycle, each job once
+async def test_failure_reasons_share_two_read_budget_with_job_details(tmp_path):
     clock = Clock()
     jobs = [f"aaaaaaa{i}-0000-4000-8000-000000000000" for i in (1, 2, 3)]
-    nodes = ["11111111", "22222222", "33333333"]
-    hashes = ["a" * 12, "b" * 12, "c" * 12]
-
+    hashes = ["a" * 64, "b" * 64, "c" * 64]
+    requests = []
+    capture = json.loads((API_FIX / "r9/submissions_hunt.json").read_text())
+    job_capture = json.loads((API_FIX / "r9/api-2026-10-03-job-4003eaef-research-paid.json").read_text())
     def handler(request):
-        path = request.url.path
-        if path == "/seats/7":
-            api_fix.requests.append(request)
-            work = [{"jobId": jobs[i], "objective": f"job {i}", "jobState": "completed", "nodeKey": "oracle_assess", "role": "implement",
-                     "status": "failed", "submissionHash": hashes[i] + "0" * 52, "submittedAt": f"2026-09-24T0{i + 1}:00:30.100Z",
-                     "acceptedAt": None, "launch": None} for i in range(3)]
-            return httpx.Response(200, json={"tokenId": 7, "agentId": 51075, "attempts": 3, "accepted": 0, "rejected": 0, "failed": 3, "pending": 0,
-                                             "work": work, "online": True, "devices": 1, "daemonVersion": "0.1.0+5bfa8261", "runtimes": []})
-        return api_fix(request)
-
-    api_fix = FixtureApi()
+        requests.append(request.url.path)
+        job = request.url.path.split("/")[2]
+        if request.url.path.endswith("/submissions"):
+            raw = copy.deepcopy(capture)
+            raw["jobId"] = job
+            item = raw["submissions"][0]
+            item.update(hash=hashes[jobs.index(job)], seat={"tokenId":"7"}, failureReason="runtime_error", summary="own reply")
+            raw["submissions"] = [item]
+            return httpx.Response(200, json=raw)
+        return httpx.Response(200, json=dict(job_capture, id=job))
     m = _manager(tmp_path, now=clock, api=_api_nosleep(handler))
-    for i in range(3):
-        m.feed_lines(_failed_history(i + 1, nodes[i], hashes[i]))
-    # httpx.MockTransport answers without yielding to the event loop (httpx 0.28.1), so the seatwork tier -- spawned before reasons --
-    # has attached the three failed rows when the reasons tier's first step runs: two jobs already in the first cycle
-    await _two_cycles(m)
-    assert [r["outcome"] for r in m.document()["tasks"]["rows"]] == ["failed", "failed", "failed"]
-    assert len(api_fix.paths("/jobs/")) == 2, "at most two jobs per cycle"
-    reasons = [r["failureReason"] for r in m.document()["tasks"]["rows"]]
-    assert reasons.count("runtime_error") == 2 and reasons.count(None) == 1
-    assert m.document()["sources"]["reasons"]["ok"] is True
-    clock.advance(300)
-    await _two_cycles(m)
-    assert len(api_fix.paths("/jobs/")) == 3, "the third job on the next cycle; each job fetched once"
-    assert [r["failureReason"] for r in m.document()["tasks"]["rows"]] == ["runtime_error"] * 3
-    assert [r["source"]["reason"] for r in m.document()["tasks"]["rows"]] == ["submissions"] * 3
-    assert '"summary"' not in json.dumps(m.document()), "summaries never persist or render (spec §6)"
+    for tier in m._due_at:
+        if tier != "details": m._due_at[tier] = float("inf")
+    for i, job in enumerate(jobs):
+        m.feed_lines(_failed_history(i + 1, f"{i+1:08d}", hashes[i][:12]))
+        m._ledger.attach_work([{"jobId":job,"status":"failed","submissionHash":hashes[i],
+                               "submittedAt":f"2026-09-24T0{i+1}:00:30.100Z"}], as_of_utc="2026-09-26T03:40:12Z")
+    await m.fetch_and_compute(); await m.settle()
+    assert len(requests) == 2 and requests[1].endswith("/submissions")
+    assert [r["failureReason"] for r in m._ledger.rows()].count("runtime_error") == 1
+    await m.fetch_and_compute(); await m.settle()
+    assert len(requests) == 4 and all(r["failureReason"] == "runtime_error" for r in m._ledger.rows())
+    await m.fetch_and_compute(); await m.settle()
+    assert len(requests) == 4, "terminal submissions also satisfy reasons forever"
+    assert m.document()["jobs"][0]["reply"] == "own reply"
+    assert '"summary"' not in json.dumps(m.document()), "only sanitized own reply leaves the API projection"
+    assert all(r["source"]["reason"] == "submissions" for r in m._ledger.rows())
     await m.close()
 
 
@@ -1321,7 +1329,8 @@ async def test_fixture_host_healthy_case_is_green_and_fully_populated():
     assert flat["seat_control_broker_reachable"] is True and flat["seat_control_gate"]["safe"] is True
     assert flat["seat_cost_tasks"] is not None and flat["seat_quota"]["provider"] == "codex"
     assert flat["seat_machine_work_dirs"] == 288 and flat["seat_skills_offered"] == 31
-    assert all(src["ok"] is True for src in doc["sources"].values()), {k: v for k, v in doc["sources"].items() if v["ok"] is not True}
+    assert all(src["ok"] is True for k, src in doc["sources"].items() if k != "reasons")
+    assert set(doc["sources"]["reasons"]["reason"].split("; ")) == {"404"}, "legacy fixture has no job-detail capture"
     assert flat["seat_log_footer"].startswith("tail: fixture replay") and flat["seat_ledger_footer"].startswith("fixture log")
     await m.close()
 
@@ -1343,7 +1352,7 @@ async def test_fixture_host_api_down_case_keeps_local_panels():
     for name in ("standing", "seatWork", "plane"):
         assert doc["sources"][name]["ok"] is False and "500" in doc["sources"][name]["reason"], name
         assert doc["sources"][name]["unavailable"] is True, "no last-good ever: unavailable at once"
-    assert doc["sources"]["reasons"]["ok"] is True, "no row ever became `failed` (seatwork never landed), so nothing was fetched"
+    assert doc["sources"]["reasons"]["ok"] is False and "500" in doc["sources"]["reasons"]["reason"], "known local job ids now trigger detail reads too"
     assert flat["seat_hero_state"] == "green" and flat["seat_daemon_state"] == "alive" and flat["seat_daemon_fleet_online"] is None
     assert flat["seat_standing_working"] is None and flat["seat_queue"] is None and flat["seat_tasks_rows"][0]["outcome"] == "unknown"
     assert flat["seat_offline"] is False, "api down is not --offline"

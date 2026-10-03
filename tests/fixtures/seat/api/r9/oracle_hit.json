@@ -1,0 +1,124 @@
+{
+  "id": "005a4ed9-8e78-41fa-a7b4-b86fec5c8f09",
+  "status": "disagreed",
+  "question": "What is the floor price of Moonbirds on Ethereum mainnet, in wei, as of the pinned window?",
+  "questionHash": "<hex64>",
+  "chainId": 1,
+  "window": {
+    "toBlock": 26041703,
+    "fromBlock": 26041407,
+    "toBlockHash": "<hex64>"
+  },
+  "answerType": "uint256",
+  "evidence": "panel",
+  "definitions": {
+    "time": "Read the floor as close as possible to the pinned closing block's timestamp; the block range is context only.",
+    "floor": "The lowest active listing price on OpenSea for the collection at the time of the pinned closing block, priced in ETH and reported in wei (1 ETH = 1000000000000000000 wei); ignore listings not payable in ETH or WETH.",
+    "missing": "If the collection has no active ETH listing, report inability rather than guessing.",
+    "collection": "The official Moonbirds collection on Ethereum mainnet as verified on OpenSea; if several collections share the name, the verified one with the largest market cap."
+  },
+  "panelSize": 50,
+  "quorum": 35,
+  "toleranceBps": 1000,
+  "validForSeconds": 3600,
+  "jobId": "5e9e52b1-fee2-4715-b3d7-e97a3852f68a",
+  "members": [
+    {
+      "ok": true,
+      "answer": {
+        "v": 1,
+        "notes": "I could not obtain the floor. OpenSea's API returned 'Missing an API Key', the collection web page exposed no floor to curl, and Reservoir returned nothing. The public RPC also returned null for block 26041703 so the pin was not confirmed. The answer 0 is NOT a real floor price; it stands in for inability to report. Do not treat it as a measurement.",
+        "answer": "0",
+        "figure": "0",
+        "recipe": {
+          "kind": "panel",
+          "source": "https://opensea.io/collection/proof-moonbirds"
+        },
+        "window": {
+          "toBlock": 26041703,
+          "fromBlock": 26041407,
+          "toBlockHash": "<hex64>"
+        },
+        "chainId": 1,
+        "requestId": "005a4ed9-8e78-41fa-a7b4-b86fec5c8f09",
+        "answerType": "uint256",
+        "definitions": {
+          "floor": "Lowest active OpenSea ETH/WETH listing for verified Moonbirds (slug proof-moonbirds), in wei.",
+          "missing": "0 is a placeholder meaning INABILITY TO REPORT, not a measured floor."
+        }
+      },
+      "reason": null,
+      "wallet": "0xe5b1275fb926613d983da33fbfe1f331b7f64f2a",
+      "submissionHash": "205d51597dd230683e89e879062917e8367297586b73be1b2045042a1ddb8ce5"
+    }
+  ],
+  "agreement": {
+    "agreed": 34,
+    "answer": "457160520000000000",
+    "figure": "457162630000000000",
+    "quorum": 35,
+    "recipe": {
+      "kind": "panel",
+      "source": "https://opensea.io/collection/moonbirds"
+    },
+    "cluster": [
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>",
+      "<hex64>"
+    ],
+    "sources": [
+      "api.coingecko.com",
+      "api.opensea.io",
+      "opensea.io"
+    ],
+    "definitions": {
+      "time": "Read the floor as close as possible to the pinned closing block's timestamp (2026-09-23T17:36:11Z, block 26041703); the block range is context only.",
+      "floor": "Lowest active ETH-payable listing price for the collection on OpenSea, in wei.",
+      "collection": "The verified official Moonbirds collection on OpenSea, slug 'moonbirds', collection address 0x23581767a106ae21c074b2276d25e5c3e136a68, isVerified true.",
+      "denomination": "Native ETH (contractAddress 0x0000000000000000000000000000000000000000), per OpenSea's floorPrice.pricePerItem.token field."
+    },
+    "recipeMembers": 46
+  },
+  "computed": null,
+  "attestation": null,
+  "signature": null,
+  "signer": null,
+  "failure": "34 of 46 answers agreed; 35 were required.",
+  "attempts": 0,
+  "attestedAt": null,
+  "createdAt": "2026-09-23T17:37:16.590Z",
+  "updatedAt": "2026-09-23T17:50:08.990Z",
+  "url": "/oracle/requests/005a4ed9-8e78-41fa-a7b4-b86fec5c8f09",
+  "jobUrl": "/jobs/5e9e52b1-fee2-4715-b3d7-e97a3852f68a"
+}

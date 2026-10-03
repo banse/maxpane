@@ -6,7 +6,7 @@
         2. inline reads: systemd/fixture unit + host (docker: the `unit` tier, 30 s)
         3. detached tiers (asyncio.ensure_future, one in flight per tier, last-good behind its own asOfUtc):
            broker_status 600 s · workstat 300 s (+ gate/ping/audit-tail) · sessions 120 s · standing 60 s ·
-           seatwork 120/300 s · reasons 300 s (<= 2 jobs) · plane 300 s   [--offline removes the last four]
+           seatwork 120/300 s · details (<= 2 reads/refresh, persisted deadlines) · plane 300 s   [--offline removes the last four]
         4. build the v2 document -> redact -> validate -> fold -> the flat SEAT_KEYS dict
 
 ``fetch_and_compute()`` never raises and never starts the tail.  ``BrokerProtocol.read`` is a blocking
@@ -32,7 +32,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import httpx
 
-from maxpane_dashboard.analytics import seat_auth, seat_cost, seat_signals as sig, seat_tiers
+from maxpane_dashboard.analytics import seat_auth, seat_cost, seat_signals as sig, seat_tiers, seat_records
 from maxpane_dashboard.analytics.seat_text import (sanitize_text as redact,
     sanitize_sentence as redact_agent_sentence, sanitize_tree as redact_tree)
 from maxpane_dashboard.data import seat_api, seat_models as models
@@ -62,7 +62,9 @@ TIER_STANDING_S = 60            #: +EVENT_BUMP_STANDING_S after each `submitted`
 TIER_STANDING_PLAN_OPEN_S = 15
 TIER_SEATWORK_S = 120           #: +EVENT_BUMP_SEATWORK_S after each `stored`
 TIER_SEATWORK_SETTLED_S = 300   #: once every open row has a verdict
-TIER_REASONS_S = 300            #: <= MAX_REASONS_PER_CYCLE jobs per cycle
+TIER_DETAILS_S = 0              #: offer once per refresh; persisted per-result deadlines do the scheduling.
+DETAIL_READS_PER_CYCLE = 2       #: round 9 §8.1: job + submissions + oracle share one budget.
+DETAIL_STORED_DELAY_S = 60       #: allow a stored submission/oracle result about a minute to become visible.
 TIER_PLANE_S = 300              #: /services + /health
 EVENT_BUMP_SESSIONS_S = 20
 EVENT_BUMP_STANDING_S = 30
@@ -82,10 +84,10 @@ SYSTEMD_HOST = "systemd"
 DOCKER_HOST = "docker"
 HOST_KINDS = (SYSTEMD_HOST, DOCKER_HOST, FIXTURE_HOST)
 
-TIERS = ("unit", "broker_status", "workstat", "sessions", "standing", "seatwork", "reasons", "plane")
+TIERS = ("unit", "broker_status", "workstat", "sessions", "standing", "seatwork", "details", "plane")
 TIER_TTL_S = {"unit": 30, "broker_status": 600, "workstat": 300, "sessions": 120, "standing": 60,
-              "seatwork": 120, "reasons": 300, "plane": 300}
-OFFLINE_REMOVES = ("standing", "seatwork", "reasons", "plane")
+              "seatwork": 120, "details": 0, "plane": 300}
+OFFLINE_REMOVES = ("standing", "seatwork", "details", "plane")
 #: tier -> the ``sources`` entries it feeds (each entry keeps its own ok/asOf/failures).
 TIER_SOURCES: dict[str, tuple[str, ...]] = {
     "unit": ("unit",),
@@ -94,7 +96,7 @@ TIER_SOURCES: dict[str, tuple[str, ...]] = {
     "sessions": ("sessions",),
     "standing": ("standing",),
     "seatwork": ("seatWork",),
-    "reasons": ("reasons",),
+    "details": ("reasons",),
     "plane": ("plane",),
 }
 #: The Mac's CLI-fed sources are container-reported text (spec §4.2).
@@ -323,6 +325,9 @@ class SeatManager:
         self._seatwork_settled = False
         self._error_count = 0
         self.plan_open = False
+        self._selected_dashboard = "SEAT"
+        self._record_limit = 40
+        self._records_open_only = True
         self._restart_required = self._ledger.meta_get("restart_required") is True
         self._journal_due_at = 0.0
         self._journal_facts: dict = {"journal": None, "reason": "journal not read"}
@@ -367,7 +372,7 @@ class SeatManager:
         return self._queue.qsize()
 
     def due(self, tier: str, now: float) -> bool:
-        route_class = {"standing": "seat", "seatwork": "seat", "reasons": "submissions"}.get(tier)
+        route_class = {"standing": "seat", "seatwork": "seat"}.get(tier)
         pause = self._api.pause_until(route_class) if route_class and self._api is not None else 0.0
         return float(now) >= max(self._due_at[tier], pause)
 
@@ -474,10 +479,10 @@ class SeatManager:
         self._spawn("workstat", self._tier_workstat, now)
         self._spawn("sessions", self._tier_sessions, now)
         if self._offline or self._api is None or self._seat is None:
-            return                                   # --offline removes STANDING, SEATWORK, REASONS, PLANE (spec §4.3)
+            return                                   # --offline removes STANDING, SEATWORK, DETAILS, PLANE (spec §4.3)
         self._spawn("standing", self._tier_standing, now)
         self._spawn("seatwork", self._tier_seatwork, now)
-        self._spawn("reasons", self._tier_reasons, now)
+        self._spawn("details", self._tier_details, now)
         self._spawn("plane", self._tier_plane, now)
 
 
@@ -612,6 +617,7 @@ class SeatManager:
         doc["queue"] = self._queue_block()
         doc["plane"] = self._plane_block(now)
         doc["daemon"].update(self._fleet_counts(now))
+        self._dashboard_blocks(doc, now)
         changed = self._config_changed(doc["unit"])
         doc["seat"]["configChangedSinceStart"] = changed
         doc["control"]["restartRequired"] = True if (changed is True or self._restart_required) else (False if changed is False else None)
@@ -831,7 +837,9 @@ class SeatManager:
         today.setdefault("dayUtc", day)
         seatwork = self._payload("seatWork")
         plane_today = seatwork.get("planeRowsSubmittedToday") if isinstance(seatwork, Mapping) else None
-        today["divergence"] = sig.divergence(local_stored_today=today.get("stored"), plane_rows_submitted_today=plane_today)
+        local_stored = sum(1 for row in self._ledger.record_rows()
+                           if row["source"]["row"] == "local" and (row.get("storedUtc") or "").startswith(day))
+        today["divergence"] = sig.divergence(local_stored_today=local_stored, plane_rows_submitted_today=plane_today)
         return today
 
 
@@ -1298,36 +1306,174 @@ class SeatManager:
         self._seatwork_settled = not open_rows
         self._rollup_series()                        # verdicts moved: the days table's accepted/failed counts follow (Task 7.9)
 
-    async def _tier_reasons(self) -> None:
-        assert self._api is not None and self._seat is not None
-        now = float(self._clock())
-        cutoff = sig.iso_z(now - 24 * 3600)
-        rows = self._ledger.failed_rows_needing_reason(older_than_utc=cutoff, limit=seat_api.MAX_REASONS_PER_CYCLE)
-        fetched: list[str] = []
-        problems: list[str] = []
-        for row in rows[: seat_api.MAX_REASONS_PER_CYCLE]:
+    def select_dashboard(self, name: str) -> None:
+        """Screen-owned selection supplies only a read-interest hint to the manager."""
+        if name in ("SEAT", "LIVE", "CONFIG & SKILLS", "RECORDS", "NODES", "CONTROL"):
+            self._selected_dashboard = name
+
+    def set_record_window(self, limit: int = 40, *, open_only: bool = True) -> None:
+        self._record_limit = max(40, min(400, int(limit)))
+        self._records_open_only = bool(open_only)
+
+    def cached_task_detail(self, key: str) -> dict | None:
+        """Cached full text by ledger identity; no I/O request is started by a popup."""
+        row = self._ledger.task_detail(key)
+        if row is not None:
+            row.pop("submissionHash", None)
+        return row
+
+    def _current_jobs(self, now: float) -> list[dict]:
+        rows = self._ledger.record_rows()
+        local = [r for r in rows if r["source"]["row"] == "local" and r.get("submittedUtc") is None
+                 and not r.get("cancelled") and not r.get("interruptedByRestart")
+                 and "failed" not in (r.get("phases") or [])]
+        running = []
+        for row in local:
+            running.append({"jobId": row.get("jobId"), "nodeId8": row.get("nodeId8"), "role": row.get("role"),
+                            "kind": row.get("kind"), "startedUtc": row.get("acceptedUtc"), "model": row.get("model"),
+                            "phase": (row.get("phases") or [None])[-1], "objective": row.get("objective"),
+                            "lastMessage": row.get("lastMessage"), "nodeKey": row.get("nodeKey")})
+        standing = self._payload("standing") or {}
+        if not self._source_entry("standing", now).get("unavailable") and not self._offline:
+            for plane in standing.get("running") or []:
+                match = next((r for r in running if r.get("jobId") == plane.get("jobId") and
+                              (not r.get("nodeKey") or r.get("nodeKey") == plane.get("nodeKey"))), None)
+                if match is None:
+                    match = {};running.append(match)
+                for name, field in (("jobId", "jobId"), ("nodeKey", "nodeKey"), ("role", "role"),
+                                    ("objective", "objective"), ("startedUtc", "since")):
+                    match[name] = match.get(name) or plane.get(field)
+                match["planeSince"] = plane.get("since")
+        for row in running:
+            started = sig.parse_iso(row.get("startedUtc"))
+            row["elapsedS"] = int(max(0, now - started)) if started is not None else None
+        return sorted(running, key=lambda r: r.get("startedUtc") or "", reverse=True)
+
+    def _job_rows(self, now: float) -> tuple[list[dict], list[dict]]:
+        current = self._current_jobs(now)
+        rows = self._ledger.record_rows()
+        chosen = []
+        for live in current:
+            match = next((r for r in rows if r.get("jobId") == live.get("jobId") and
+                          (r.get("nodeId8") == live.get("nodeId8") if live.get("nodeId8") else
+                           not live.get("nodeKey") or r.get("nodeKey") == live.get("nodeKey"))), None)
+            chosen.append({**(match or {}), **{k: v for k, v in live.items() if v is not None}})
+        current_keys = {r.get("key") for r in chosen if r.get("key")}
+        last = next((r for r in rows if r["key"] not in current_keys and r.get("submittedUtc")), None)
+        if last:
+            chosen.append(last)
+        return current, chosen
+
+    def _detail_candidates(self, now: float) -> list[tuple[str, str, dict]]:
+        _, jobs = self._job_rows(now)
+        candidates = []
+        def add(row: dict, *, only_job: bool = False) -> None:
             job = row.get("jobId")
-            if not isinstance(job, str) or not job:
+            if not job:
+                return
+            candidates.append(("job", job, row))
+            stored = sig.parse_iso(row.get("storedUtc"))
+            if only_job or row.get("textExpired") or stored is None or now < stored + DETAIL_STORED_DELAY_S:
+                return
+            candidates.append(("submissions", job, row))
+            detail = self._ledger.job_detail(job)
+            digest = row.get("submissionHash")
+            if detail.get("oracleRequestId") and digest:
+                candidates.append(("oracle", job + "/" + digest, row))
+        for row in jobs:
+            add(row)
+        if self._selected_dashboard == "RECORDS":
+            for row in seat_records.record_window(self._ledger.record_rows(limit=400), self._record_limit, self._records_open_only):
+                add(row)
+        elif self._selected_dashboard == "NODES":
+            for row in self._ledger.record_rows(limit=400):
+                add(row, only_job=True)
+        # The former reasons tier shares these exact stored submissions and this cycle's budget.
+        for row in self._ledger.failed_rows_needing_reason(older_than_utc=sig.iso_z(now - 86400), limit=400):
+            if not self._ledger.task_detail(row["key"]).get("textExpired"):
+                candidates.append(("submissions", row["jobId"], row))
+        return candidates
+
+    async def _tier_details(self) -> None:
+        assert self._api is not None and self._seat is not None
+        attempted = set()
+        problems = []
+        fetched = []
+        while len(attempted) < DETAIL_READS_PER_CYCLE:
+            now = float(self._clock())
+            candidate = next(((kind, key, row) for kind, key, row in self._detail_candidates(now)
+                              if (kind, key) not in attempted and self._api.pause_until(kind) <= now
+                              and self._ledger.detail_due(kind, key, now)), None)
+            if candidate is None:
+                break
+            kind, key, row = candidate
+            attempted.add((kind, key))
+            job = row["jobId"]
+            if kind == "job":
+                result = await self._api.job_detail(job)
+                self._ledger.store_job_detail(job, result)
+            elif kind == "submissions":
+                result = await self._api.job_submissions(job, seat=self._seat)
+                self._ledger.store_submissions(job, result)
+            else:
+                result = await self._api.oracle_request(self._ledger.job_detail(job)["oracleRequestId"],
+                                                        job_id=job, submission_hash=row["submissionHash"])
+                self._ledger.store_oracle(job, row["submissionHash"], result)
+            if not result.ok and result.reason == "busy" and result.status is None:
+                attempted.remove((kind, key))
                 continue
-            result = await self._api.job_submissions(job)
-            fetched.append(job)
+            fetched.append(kind)
             if not result.ok:
-                problems.append(f"{job[:8]}: {result.reason}")
-                continue
-            data = result.data if isinstance(result.data, Mapping) else {}
-            mine = seat_api.submissions_for_seat(data, self._seat)
-            match = next((s for s in mine if s.get("hash12") == row.get("hash12")), None)
-            if match is None:
-                failed = [s for s in mine if s.get("outcome") == "failed"]
-                match = max(failed, key=lambda s: sig.parse_iso(s.get("createdAt")) or 0.0) if failed else None
-            if match is None:
-                continue
-            reason = seat_api.reason_word(match.get("failureReason")) or "other"
-            self._ledger.attach_reason(job, reason=reason, failure_class=match.get("failureClass"), source="submissions",
-                                       at=match.get("createdAt"))
-        if problems and len(problems) == len(fetched):
-            raise _TierFailure("; ".join(problems))
-        self._land("reasons", {"fetched": fetched, "problems": problems}, float(self._clock()))
+                problems.append(result.reason or "detail unavailable")
+        if problems:
+            self._fail("reasons", "; ".join(problems), float(self._clock()))
+        elif fetched or "reasons" not in self._attempted:
+            self._land("reasons", {"fetched": fetched, "problems": []}, float(self._clock()))
+
+    def _dashboard_blocks(self, doc: dict, now: float) -> None:
+        current, selected = self._job_rows(now)
+        doc["currentJobs"] = current
+        jobs = []
+        for row in selected:
+            detail = self._ledger.task_detail(row["key"]) if row.get("key") else None
+            if detail is None:
+                job = row.get("jobId")
+                cache = self._ledger.job_detail(job)
+                state = self._ledger.detail_read("job", job)
+                detail = {**row, "objective": cache.get("objective") or row.get("objective"),
+                          "questionState": state["state"], "questionReason": state["reason"],
+                          "questionAsOfUtc": state["as_of_utc"], "replyState": "not read"}
+            if row.get("planeSince") and row.get("objective") and not self._ledger.job_detail(row.get("jobId")).get("objective"):
+                detail["objective"] = row["objective"]
+                if detail.get("questionState") == "not read":
+                    detail["questionState"] = "read"
+                    detail["questionAsOfUtc"] = self._source_entry("standing", now).get("asOfUtc")
+            detail.update({k: row.get(k) for k in ("phase", "elapsedS", "lastMessage") if row.get(k) is not None})
+            if self._offline:
+                for prefix in ("question", "reply"):
+                    if detail.get(prefix + "State") != "read":
+                        detail[prefix + "Reason"] = "offline"
+            jobs.append(detail)
+        doc["jobs"] = jobs
+        records = []
+        rows = self._ledger.record_rows()
+        detailed = [self._ledger.task_detail(r["key"]) for r in rows]
+        for row in detailed[:400]:
+            usage = row.get("usage") or {}
+            records.append({**row, "answerPreview": seat_records.answer_preview(row),
+                            "answerState": row.get("replyState"), "answerReason": row.get("replyReason"),
+                            "answerAsOfUtc": row.get("replyAsOfUtc"), "model": usage.get("model"),
+                            "tokens": usage.get("tokens"), "durationS": row.get("durationS") if row.get("durationS") is not None
+                            else (usage.get("wallMs") / 1000 if usage.get("wallMs") is not None else None)})
+        as_of = max((r.get("outcomeAsOfUtc") for r in rows if r.get("outcomeAsOfUtc")), default=None)
+        doc["records"] = {"rows": records, "window": {"rows": len(rows), "asOfUtc": as_of,
+                          "fromUtc": rows[-1]["acceptedUtc"] if rows else None,
+                          "toUtc": rows[0]["acceptedUtc"] if rows else None, "reason": "offline" if self._offline else None}}
+        week = [r for r in detailed if (sig.parse_iso(r.get("acceptedUtc")) or 0) >= now - 7 * 86400]
+        doc["nodes"] = {"allRows": seat_records.node_rows(detailed), "weekRows": seat_records.node_rows(week),
+                        "coverage": {"attempts": len(rows), "covered": sum(bool(r.get("nodeKey")) for r in rows),
+                                     "detailsRead": sum(bool(r.get("detailRead")) for r in detailed),
+                                     "asOfUtc": as_of, "reason": "offline" if self._offline else None}}
 
     async def _tier_plane(self) -> None:
         assert self._api is not None
@@ -1500,7 +1646,7 @@ __all__ = [
     "BACKFILL_MAX_S", "BACKFILL_QUIET_S", "CONTAINER_TRUST_SOURCES", "COST_WINDOW_DAYS", "DOCKER_BREAKER_S", "DOCKER_HOST",
     "DOCKER_TIMEOUT_S", "EVENT_BUMP_SEATWORK_S", "EVENT_BUMP_SESSIONS_S", "EVENT_BUMP_STANDING_S", "EVENT_BUMP_WORKSTAT_S",
     "FLEET_CLAUSE_STALE_S", "FIXTURE_HOST", "HOST_KINDS", "LEDGER_ROWS_ON_SCREEN", "LOG_RING", "OFFLINE_REMOVES", "SERIES_DAYS", "SYSTEMD_HOST",
-    "SeatManager", "TIERS", "TIER_BROKER_STATUS_S", "TIER_PLANE_S", "TIER_REASONS_S", "TIER_RETRY_S", "TIER_SEATWORK_S",
+    "SeatManager", "TIERS", "TIER_BROKER_STATUS_S", "TIER_PLANE_S", "TIER_DETAILS_S", "TIER_RETRY_S", "TIER_SEATWORK_S",
     "TIER_SEATWORK_SETTLED_S", "TIER_SESSIONS_S", "TIER_SOURCES", "TIER_STANDING_PLAN_OPEN_S", "TIER_STANDING_S", "TIER_TTL_S",
     "TIER_UNIT_S", "TIER_WORKSTAT_S",
 ]

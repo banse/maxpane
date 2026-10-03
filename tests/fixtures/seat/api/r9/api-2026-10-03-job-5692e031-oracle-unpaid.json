@@ -1,0 +1,75 @@
+{
+  "workflow": null,
+  "planning": null,
+  "id": "5692e031-4efa-46f3-b2d6-b7e4433fb583",
+  "state": "completed",
+  "template": "skill:oracle-assess",
+  "objective": "Answer this question about chain 1 over blocks 26112859 to 26113157 (closing hash <hex64>), exactly as .imd/reads/oracle.json pins it:\n\nDoes WETH9 (0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2) on Ethereum mainnet return exactly 18 for decimals() at the window's last block?\n\nAnswer type: bool. Evidence: chain.\n\nPublic endpoints for chain 1, verified; use one:\n- https://rpc.flashbots.net/fast\n- https://rpc.mevblocker.io/fast\n- https://one.valve.city/rpc/vk_demo/evm/1\n- https://ethereum-rpc.publicnode.com\n- https://rpc.mevblocker.io\n- https://rpc.flashbots.net\n\nThree steps: (1) compute it with node .imd/reads/skills/oracle-assess/scripts/scan.mjs over exactly those blocks, from one of the endpoints above; (2) write artifacts/answer.json with the recipe that reproduces it; (3) run node .imd/reads/skills/oracle-assess/scripts/check-answer.mjs and fix what it prints. Scan again only when the total is zero or the checker objects. Nothing else needs reading first: the brief above is in .imd/reads/oracle.json with the recipe parameters, and .imd/reads/skills/oracle-assess/REFERENCE.md explains a field if the checker asks for one.",
+  "blockedReason": null,
+  "createdAt": "2026-10-03T16:59:35.942Z",
+  "updatedAt": "2026-10-03T17:01:34.170Z",
+  "paidBy": null,
+  "parentJobId": null,
+  "project": {
+    "id": "5692e031-4efa-46f3-b2d6-b7e4433fb583",
+    "head": "5692e031-4efa-46f3-b2d6-b7e4433fb583",
+    "running": null,
+    "versions": [
+      {
+        "jobId": "5692e031-4efa-46f3-b2d6-b7e4433fb583",
+        "workflowId": null,
+        "objective": "Answer this question about chain 1 over blocks 26112859 to 26113157 (closing hash <hex64>), exactly as .imd/reads/oracle.json pins it:\n\nDoes WETH9 (0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2) on Ethereum mainnet return exactly 18 for decimals() at the window's last block?\n\nAnswer type: bool. Evidence: chain.\n\nPublic endpoints for chain 1, verified; use one:\n- https://rpc.flashbots.net/fast\n- https://rpc.mevblocker.io/fast\n- https://one.valve.city/rpc/vk_demo/evm/1\n- https://ethereum-rpc.publicnode.com\n- https://rpc.mevblocker.io\n- https://rpc.flashbots.net\n\nThree steps: (1) compute it with node .imd/reads/skills/oracle-assess/scripts/scan.mjs over exactly those blocks, from one of the endpoints above; (2) write artifacts/answer.json with the recipe that reproduces it; (3) run node .imd/reads/skills/oracle-assess/scripts/check-answer.mjs and fix what it prints. Scan again only when the total is zero or the checker objects. Nothing else needs reading first: the brief above is in .imd/reads/oracle.json with the recipe parameters, and .imd/reads/skills/oracle-assess/REFERENCE.md explains a field if the checker asks for one.",
+        "baseCommit": "0243d7da4a4337ae8b16bcdf15bb4ead736fd68f",
+        "state": "completed",
+        "createdAt": "2026-10-03T16:59:35.942Z"
+      }
+    ]
+  },
+  "deliver": false,
+  "host": false,
+  "site": null,
+  "launch": {
+    "requested": false,
+    "kind": null,
+    "id": null,
+    "status": null,
+    "chainId": null
+  },
+  "oracleRequestId": "903f97e1-58a0-4118-86b5-38f570d8b983",
+  "delivery": null,
+  "nodes": [
+    {
+      "key": "oracle_assess",
+      "role": "implement",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 0,
+      "judgeRevisions": 0,
+      "dependsOn": [],
+      "allowedPaths": [
+        "artifacts/answer.json"
+      ],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T17:01:34.170Z",
+      "verdict": {
+        "status": "accepted",
+        "profile": "none",
+        "evaluation": "structural",
+        "rejectionCode": null,
+        "detail": "paths and tree verified; no suite was run for this kind of work",
+        "verifierVersion": "0.1.0+ef84cc5f",
+        "verifiedTreeHash": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "at": "2026-10-03T17:01:34.170Z",
+        "failedChecks": []
+      },
+      "seat": {
+        "tokenId": "398",
+        "agentId": "51725"
+      },
+      "live": null
+    }
+  ],
+  "reviews": []
+}

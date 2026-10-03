@@ -405,7 +405,7 @@ SEAT_ROW_KEYS.update({
         "phase", "elapsedS", "lastMessage", "objective", "reply", "oracleQuestion", "oracleAnswer", "oracleNotes",
         "questionState", "questionReason", "questionAsOfUtc", "replyState", "replyReason", "replyAsOfUtc",
         "textExpired", "template", "paid", "launch", "workflowId", "oracleRequestId", "parentJobId",
-        "delivery", "structuralCheck", "panel", "usage", "outcome", "outcomeSource", "verdictLagS", "failureClass",
+        "delivery", "structuralCheck", "panel", "usage", "outcome", "outcomeSource", "verdictLagS", "failureClass", "failureReason",
     ),
     "seat_records_rows": (
         "key", "jobId", "nodeId8", "nodeKey", "role", "kind", "acceptedUtc", "submittedUtc", "storedUtc",
@@ -629,7 +629,7 @@ _NESTED_KEYS = {
     "usage": ("model", "turns", "tokens", "wallMs", "wallS"),
     "delivery": ("url", "atUtc"),
     "launch": ("kind", "requested", "workflowId"),
-    "structuralCheck": ("status", "detail"),
+    "structuralCheck": ("status", "evaluation", "detail"),
     "panel": ("state", "agreed", "quorum", "size", "figure", "answerType", "answerBool",
               "memberOk", "memberReason", "chainId", "requestId"),
 }

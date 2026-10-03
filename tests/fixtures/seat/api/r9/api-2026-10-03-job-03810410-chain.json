@@ -1,0 +1,127 @@
+{
+  "workflow": null,
+  "planning": null,
+  "id": "03810410-036c-459d-a2ab-cfaa2916abcc",
+  "state": "completed",
+  "template": "shape:chain",
+  "objective": "IDENTITY UNITS IU_0001: one agent creates the Unit image, a second agent reviews it",
+  "blockedReason": null,
+  "createdAt": "2026-10-03T15:15:06.456Z",
+  "updatedAt": "2026-10-03T15:21:30.430Z",
+  "paidBy": "0xc75d950306de231f81e3f4966d4e908a51f1a0e8",
+  "parentJobId": null,
+  "project": {
+    "id": "03810410-036c-459d-a2ab-cfaa2916abcc",
+    "head": "03810410-036c-459d-a2ab-cfaa2916abcc",
+    "running": null,
+    "versions": [
+      {
+        "jobId": "03810410-036c-459d-a2ab-cfaa2916abcc",
+        "workflowId": null,
+        "objective": "IDENTITY UNITS IU_0001: one agent creates the Unit image, a second agent reviews it",
+        "baseCommit": "0243d7da4a4337ae8b16bcdf15bb4ead736fd68f",
+        "state": "completed",
+        "createdAt": "2026-10-03T15:15:06.456Z"
+      }
+    ]
+  },
+  "deliver": false,
+  "host": false,
+  "site": null,
+  "launch": {
+    "requested": false,
+    "kind": null,
+    "id": null,
+    "status": null,
+    "chainId": null
+  },
+  "oracleRequestId": null,
+  "delivery": null,
+  "nodes": [
+    {
+      "key": "create_image",
+      "role": "implement",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 0,
+      "judgeRevisions": 0,
+      "dependsOn": [],
+      "allowedPaths": [],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T15:20:36.069Z",
+      "verdict": {
+        "status": "accepted",
+        "profile": "none",
+        "evaluation": "structural",
+        "rejectionCode": null,
+        "detail": "paths and tree verified; no suite was run for this kind of work",
+        "verifierVersion": "0.1.0+ef84cc5f",
+        "verifiedTreeHash": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "at": "2026-10-03T15:20:36.069Z",
+        "failedChecks": []
+      },
+      "seat": {
+        "tokenId": "721",
+        "agentId": "51190"
+      },
+      "live": null
+    },
+    {
+      "key": "research_report",
+      "role": "implement",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 0,
+      "judgeRevisions": 0,
+      "dependsOn": [
+        "create_image"
+      ],
+      "allowedPaths": [],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T15:21:30.430Z",
+      "verdict": {
+        "status": "accepted",
+        "profile": "none",
+        "evaluation": "structural",
+        "rejectionCode": null,
+        "detail": "paths and tree verified; no suite was run for this kind of work",
+        "verifierVersion": "0.1.0+ef84cc5f",
+        "verifiedTreeHash": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "at": "2026-10-03T15:21:30.430Z",
+        "failedChecks": []
+      },
+      "seat": {
+        "tokenId": "1345",
+        "agentId": "51096"
+      },
+      "live": null
+    }
+  ],
+  "reviews": [
+    {
+      "status": "queued",
+      "chainId": 1,
+      "txHash": null,
+      "blockNumber": null,
+      "sentAt": null,
+      "entries": [
+        {
+          "nodeKey": "create_image",
+          "agentId": "51190",
+          "value": 1,
+          "role": "verification:structural"
+        },
+        {
+          "nodeKey": "research_report",
+          "agentId": "51096",
+          "value": 1,
+          "role": "verification:structural"
+        }
+      ]
+    }
+  ]
+}

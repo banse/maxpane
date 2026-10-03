@@ -1,0 +1,110 @@
+{
+  "workflow": null,
+  "planning": null,
+  "id": "4003eaef-7083-421d-b60c-f2ddc584b84a",
+  "state": "completed",
+  "template": "skill:research-report",
+  "objective": "Republish the case study under its declared file names. The last version declared artifacts/report.md and artifacts/data.csv but published report-v2.md and data-v2.csv. 1 Publish exactly artifacts/report.md, artifacts/data.csv and artifacts/metrics.json, with no -v2 or other suffix. 2 Update every relative link in report.md to those names and keep the text, numbers and data identical to the last version otherwise.",
+  "blockedReason": null,
+  "createdAt": "2026-10-02T23:44:55.734Z",
+  "updatedAt": "2026-10-02T23:45:53.119Z",
+  "parentJobId": "620602d8-686a-42a3-a1f0-fefabe43f593",
+  "project": {
+    "id": "652f770a-1417-43d9-8051-cdd8def8f5a3",
+    "head": "4003eaef-7083-421d-b60c-f2ddc584b84a",
+    "running": null,
+    "versions": [
+      {
+        "jobId": "652f770a-1417-43d9-8051-cdd8def8f5a3",
+        "workflowId": null,
+        "objective": "Write a case study of the largest single paid batch on the IMD swarm so far: 100 non-oracle tasks admitted on 2026-09-27 (workflows with a token and site, Uniswap v4 hooks, contract-only jobs). Read each job's public record from GET https://api.imd.fun/jobs/<id> and https://explorer.imd.fun/jobs/<id> and report outcomes (completed, blocked, failed, superseded), time to completion, which skills and steps failed and why, what was delivered (repos, sites, launches), and the cost (0.5 IMD each). Numbers and patterns only; how-to advice belongs elsewhere. Deliver report.md and data.csv (one row per job). Job ids: 48fdb771-69d6-4f52-9dd9-e066a8ef5cf2,86fbf4fe-9b73-486a-a912-b0304ee0bac8,c1c65cf5-837e-4072-9cce-e65c7172bfcf,a7d2ee93-3d7b-48fb-b373-c973c53c4919,f1b1986e-2543-488f-94d6-874fd59744da,4b9a0c1b-0889-4820-9f84-423d8d1247b9,936427dc-9f5a-41d0-b6e9-215b2f020a7c,7eab23b3-1605-4c8f-976d-d3b4a3bd8080,03221260-9270-4f41-823b-cfe6dd75e149,aa8136c4-dfae-48f0-8841-4e8c355b1b22,65c00710-7454-4f9e-85e2-196c8d8a0737,b2ccea73-43dc-40d6-8ce2-cae12f2c44f1,f13ad9dd-caa9-4863-9f63-bd989443b6c2,554d74e4-7e9d-4dfc-83e0-327e8dd34dc6,48bd5eae-e1d2-4701-85a8-4864c9a00956,c392de49-71f5-4ccf-972e-f02ab224f12a,9edf1e35-ba0a-4edc-b0d0-0f47f95c67df,5afb7004-881c-4f89-a399-62db9889b9e3,a68401c2-4d9f-4c2a-b2e3-1c0a8b6a3807,08c7d14c-1df7-435b-bab8-8c483081527e,ef3b5214-8f30-4d64-bbbe-299f49efcdf9,65a0f8d0-51e2-48ef-b24a-a664b48fbffa,31f2f77b-d79c-4c00-a620-8522f07b4ef8,97093d77-dc80-4235-a6bb-76c7a738feb2,1620d140-4522-4804-9301-8940f8abff85,45754734-fb8b-406f-b64a-32664cedba92,02f34926-72de-4714-8390-faa3b7e67f77,5ab709b6-ebd5-4a45-9b0e-858d99b17ed4,90e96d68-c1ac-4762-be06-b4fcd15b1fd0,261869d7-b36c-4622-9a10-898fe9a181ed,27b63d51-cc7e-48ba-8e3e-c6b591fbe18e,d3f2d76e-a3f8-461d-9644-b40bc06fd73f,77f615fd-329c-46a3-957d-5d201143a7c7,98366714-aed7-4de1-bd5b-25f418f3bc13,97804d2b-86b7-47a6-a558-34ca31c469d9,73eb676e-0ef3-4d1d-997c-f54295b5dfe7,449903bc-eb66-4727-915e-c9028c9cacfe,a65b0f0b-09db-4003-8ec9-ef8b2f46933f,2f683f32-5955-4928-b940-12bc2f461c43,583c2a7b-1bfd-4039-93a7-2aec4aba3c44,b9595ded-630c-428f-870d-27124aea7511,c73e5b37-2b09-42a7-a67e-f0b1de97f709,0223095b-3aa6-43c2-9908-7b2cae51cb2f,bfd970f8-84c5-49af-ba89-c5aad40e6104,1dc1e52f-8e39-4b45-bb59-97f409fe6a46,24abaec5-6b0e-45f1-8b0f-ff62bc6090a9,49c37b81-ae2b-49af-a9ba-d98f188ae617,86631d44-b983-493a-aff3-9366b1571c84,fd1a71c5-b44b-4ec7-9d89-35d37147517f,77fe0357-33ad-4bcd-9e13-2c20d18db5ac,51c02cc0-b08e-4f3c-ab69-03ad39344ffb,8d1e022a-5931-466e-a785-7bf4635d4b5d,ecdbb805-d7db-44f1-abfe-9b21ff5f2ef6,dde0195a-0884-431f-b201-75210971f42b,706cf499-c2e3-4064-afe5-8493f708d020,ff0bed76-499e-406b-80ed-71192f633a7c,cc04bf07-d66b-4ce0-a16f-00992efa8a59,d6e78282-7fc6-4cc4-a714-49b20793c62f,4d7aebb3-6f1d-4dd5-b752-f3a474d2d657,2fdf837b-92ea-42f6-8c9d-a1cafdcac854,9e42e963-8317-45a8-8031-c85cebd8a95a,1df54a3e-5ce9-45db-9bc4-4f68f071c1a1,ddefecff-3e15-4f75-ab00-d5a2c9501720,932bd2ef-d1ef-423b-b313-e80cd8b46759,c9f9f747-c69d-4f72-935f-6223b43b107a,24a7dfa9-61f6-4365-a700-befa84a8c691,5c40ba17-2b86-48b2-a0de-03be880a19d6,b0704305-adf6-48ab-b3ef-d6cb43cfbd6b,cbbc08ff-633f-4cd4-986f-73b3c857d90b,d478eaff-9c39-44b0-aacf-db6d5c80eb88,f670ee8a-e382-44e9-a6a3-62c42329a852,8032cc13-2cfa-4bc0-8766-5f7639be3497,69850bbd-f05e-40ac-af9b-e20a117fa877,035dfaac-976b-4e98-894a-71e3f4b2fe1a,1b664b1c-084b-4c46-a0eb-c45576c5d770,d6ed6e00-845f-4fdf-b00f-b8c6035f4916,332cc797-d991-48f0-93c3-c497fb1e5e8d,5a3073aa-4306-4641-af4d-7a01f38df4e1,6ea78e03-89e0-424f-a664-902c790a57be,67327fbc-a30a-4bf6-847a-efa8f4af168c,da906690-9215-4c1b-a22f-a2649a576461,b9c55e76-34b6-446b-bf90-0c95cacbf862,233f9826-b3d9-4fcd-98a2-114616a19ad2,5d52899d-d94b-48ed-987c-3b5fb74aa2fc,3b005b28-1aa5-483f-8290-df85bf1aaebe,e3eb4d78-836e-4916-be3d-ea571be5bdc4,02a20f51-ad24-47c4-8cb9-2dc8920c4c2d,1532898b-4f69-4c18-aadf-7c05b8fddcf1,622e93bf-f0ff-4f34-aed7-9ae2166c148c,5916a46a-dbd2-4fb0-a94b-05e7149d6ca4,04c6d76d-3c60-4f08-ae24-ca32bea8b9b2,58942a36-2c61-4439-8c3f-ffb6367ca32c,38036434-82ac-49e6-92ca-859ee4c6038a,4436d4f7-fd34-4cea-977b-16a51cf87592,c2ba5413-a0fe-4e9a-9915-0e521c5bea2c,f1df2937-a200-4224-9e8f-068d48ad3bee,864bc7bb-c766-422d-a63d-cb8938e8f937,c796f3fb-2e0e-4864-bdb3-6409bbb5cc64,bacfa675-c77b-4b76-8422-bd19f6951889,2cde48a3-ff2a-43de-b029-7668f8d55aa3. Label it everywhere it is presented (README top, CLI --help, site banner) as experimental: \"Experimental, commissioned as a test of the IMD swarm. It may not work as described. Read the code, start with small amounts, no warranty.\"",
+        "baseCommit": "0243d7da4a4337ae8b16bcdf15bb4ead736fd68f",
+        "state": "completed",
+        "createdAt": "2026-10-02T18:19:17.868Z"
+      },
+      {
+        "jobId": "620602d8-686a-42a3-a1f0-fefabe43f593",
+        "workflowId": null,
+        "objective": "Republish the 100-task case study with no dead links. The published job folder holds only report.md and data.csv,  but report.md links evidence/, ../scripts/analyze.py and metrics.json (around lines 19, 38, 48 and 89), none of which were published. 1 Publish the computed statistics as artifacts/metrics.json (every figure the report quotes, with how it was computed) and point the metrics.json links at it. 2 Remove the links to evidence/ and ../scripts/analyze.py; describe the method inline instead, in at most a short paragraph. 3 Keep data.csv unchanged and keep every number in the report unless re-computing from data.csv shows it was wrong (then say so). 4 Every relative link in report.md must resolve to a declared output. Read the live API with GETs only where you need to re-check a figure.",
+        "baseCommit": "0243d7da4a4337ae8b16bcdf15bb4ead736fd68f",
+        "state": "completed",
+        "createdAt": "2026-10-02T21:52:18.683Z"
+      },
+      {
+        "jobId": "4003eaef-7083-421d-b60c-f2ddc584b84a",
+        "workflowId": null,
+        "objective": "Republish the case study under its declared file names. The last version declared artifacts/report.md and artifacts/data.csv but published report-v2.md and data-v2.csv. 1 Publish exactly artifacts/report.md, artifacts/data.csv and artifacts/metrics.json, with no -v2 or other suffix. 2 Update every relative link in report.md to those names and keep the text, numbers and data identical to the last version otherwise.",
+        "baseCommit": "0243d7da4a4337ae8b16bcdf15bb4ead736fd68f",
+        "state": "completed",
+        "createdAt": "2026-10-02T23:44:55.734Z"
+      }
+    ]
+  },
+  "deliver": true,
+  "host": false,
+  "site": null,
+  "launch": {
+    "requested": false,
+    "kind": null,
+    "id": null,
+    "status": null,
+    "chainId": null
+  },
+  "oracleRequestId": null,
+  "delivery": {
+    "repoUrl": "https://github.com/Identity-md/research/blob/main/jobs/4003eaef-7083-421d-b60c-f2ddc584b84a/_identitymd/README.md",
+    "pullRequestUrl": null,
+    "commit": "150d36039d23c65e2afc6340704609530317c1f3",
+    "deliveredAt": "2026-10-02T23:46:21.167Z",
+    "media": null
+  },
+  "nodes": [
+    {
+      "key": "research_report",
+      "role": "implement",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 0,
+      "judgeRevisions": 0,
+      "dependsOn": [],
+      "allowedPaths": [],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-02T23:45:53.119Z",
+      "verdict": {
+        "status": "accepted",
+        "profile": "none",
+        "evaluation": "structural",
+        "rejectionCode": null,
+        "detail": "paths and tree verified; no suite was run for this kind of work",
+        "verifierVersion": "0.1.0+b537d296",
+        "verifiedTreeHash": "c4177a95d0614c9396cbeaa784608ce084f4f0af",
+        "at": "2026-10-02T23:45:53.125Z",
+        "failedChecks": []
+      },
+      "seat": {
+        "tokenId": "3",
+        "agentId": "52082"
+      },
+      "live": null
+    }
+  ],
+  "reviews": [
+    {
+      "status": "queued",
+      "chainId": 1,
+      "txHash": null,
+      "blockNumber": null,
+      "sentAt": null,
+      "entries": [
+        {
+          "nodeKey": "research_report",
+          "agentId": "52082",
+          "value": 1,
+          "role": "verification:structural"
+        }
+      ]
+    }
+  ]
+}

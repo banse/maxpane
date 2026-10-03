@@ -1109,3 +1109,47 @@ D1 accepts integer or digit-string seat and agent identities, including submissi
 ### 2026-10-03 — PEPEPANE round 9: bounded journal reads and idle tail health
 
 D4 reads journal usage, the oldest worker entry and the journal cap with the three measured argv lists and bounded timeouts. Work runs outside the refresh path and has a separate 300-second minimum interval even when its hosting tier is bumped. An unavailable read keeps journal null with a reason; the six-body MACHINE rendering consumes that reason. D10 treats a successful empty backfill after a valid watermark as healthy. Probe p09 adds each source's reason beside its status without changing the probe title or order.
+
+### 2026-10-03 — PEPEPANE round 9: JOB contract completion
+
+WP3 adds `failureReason` to each JOB row and `evaluation` to the structural-check object. JOB needs the failure enum beside a failed outcome and must identify a structural check separately from the ledger verdict. These are additive corrections to the WP1 contract, with matching field-selection tests and schema documentation; they do not admit arbitrary API sub-objects.
+
+### 2026-10-03 — PEPEPANE round 9: job and oracle detail routes
+
+Redesign section 8.1 extends base section 6's route set with job detail and filtered oracle-request reads. Each route projects only the fields PEPEPANE needs. Oracle membership uses the complete submission identity, and agreement membership is calculated before redaction; an agreement test binds the derived panel wording to SURFBOARD's existing fold.
+
+### 2026-10-03 — PEPEPANE round 9: seat-specific submission replies
+
+The submissions restriction in base section 6 is replaced by the approved JOB and RECORDS use case. Only this seat's rows retain reply text, through the common sanitiser. Standing and seat-work bodies continue to discard summaries.
+
+### 2026-10-03 — PEPEPANE round 9: failure enums and reply text
+
+Redesign section 14 preserves base section 6 rule 5 for failure-reason cells: they still show an enum word. The newly permitted reply appears separately in JOB and the detail popup and never supplies the attempt's verdict. A structural verifier's result likewise remains distinct from the ledger outcome.
+
+### 2026-10-03 — PEPEPANE round 9: bounded API text storage
+
+Redesign section 8.2 amends the text-persistence restrictions in base section 13 and decision 16.13. The ledger stores sanitised API objective, reply and oracle text with 4,096-character caps and a 512-character check-detail cap. Only the newest 400 records retain text; older records keep structured facts and an explicit expired-text state. Full objectives have their own storage rather than the existing short task sentence. Nullable columns and new tables preserve schema version 1 and baseline rollback readability.
+
+### 2026-10-03 — PEPEPANE round 9: one detail-read budget
+
+Redesign section 8.1 replaces the submissions-only cadence in base decision 16.6 with at most two detail reads per refresh across job, submission and oracle routes together. The former failure-reason schedule shares that budget and stored result. Running and last jobs remain eligible; extra RECORDS and NODES reads follow the screen's active-dashboard hint and the specified window. Terminal results are reused, expired text does not independently trigger a read, and offline mode serves cached values.
+
+### 2026-10-03 — PEPEPANE round 9: owner decision R4
+
+Question and result text are read from the public API and cached in the seat ledger. This permission applies to the explicit API projections and their sanitised, bounded text. Local transcript content and workspace files remain outside the display's text sources; runtime summarisers continue to emit metadata only.
+
+### 2026-10-03 — PEPEPANE round 9: owner decision R5
+
+Paid coverage uses the job detail's payer field: an address means the job has a payer, null means it has none, and an absent field remains unknown. The payer address is stored but not displayed. Node totals count only covered rows and distinguish no detail read from a measured zero. Launch linkage follows the requested-launch flag, workflow association or a launch kind in the work row. No chain read is added.
+
+### 2026-10-03 — PEPEPANE round 9: owner decision R8
+
+The owner authorises the redesign's job, submission and filtered oracle-request reads within the shared per-cycle budget, active-dashboard triggers and route-class backoff. Existing offline mode remains an absolute prohibition on those reads. This entry records the expanded API scope; it grants no control-plane write or new broker verb.
+
+### 2026-10-03 — PEPEPANE round 9: plane rows and local accounting
+
+Seat-work reads retain unmatched plane rows and the full submission identity, job state and launch facts. When local lifecycle evidence later acquires that identity, it joins the existing attempt instead of creating a duplicate. Plane-only rows contribute to the record and node history but do not increase the local stored count used by the journal-versus-plane divergence check. Cache state is tied to the attempt so a new attempt of the same job cannot inherit a previous reply.
+
+### 2026-10-03 — PEPEPANE round 9: seat-shaped record folds
+
+The pure `analytics/seat_records.py` functions operate on the seat contract's camelCase records and local-versus-plane provenance. SURFBOARD's record helpers consume a different snake_case row shape; changing their inputs or semantics would alter SURFBOARD. The seat-specific functions therefore stay separate as permitted by the hoist rule. Shared presentation helpers remain candidates for the required unchanged-code hoists when their widget consumers arrive.

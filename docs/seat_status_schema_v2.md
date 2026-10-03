@@ -90,7 +90,7 @@ Existing source gating remains in force for earlier keys. The manager's live mer
 `storedUtc`, `hash12`, `phase`, `elapsedS`, `lastMessage`, `objective`, `reply`, `oracleQuestion`, `oracleAnswer`,
 `oracleNotes`, `questionState`, `questionReason`, `questionAsOfUtc`, `replyState`, `replyReason`, `replyAsOfUtc`,
 `textExpired`, `template`, `paid`, `launch`, `workflowId`, `oracleRequestId`, `parentJobId`, `delivery`,
-`structuralCheck`, `panel`, `usage`, `outcome`, `outcomeSource`, `verdictLagS`, `failureClass`.
+`structuralCheck`, `panel`, `usage`, `outcome`, `outcomeSource`, `verdictLagS`, `failureClass`, `failureReason`.
 
 `objective`, `reply`, `oracleQuestion`, `oracleAnswer` and `oracleNotes` keep line breaks and brackets and are capped
 at 4,096 characters including a final ellipsis when cut. `structuralCheck.detail` and `delivery.url` are capped at
@@ -119,7 +119,7 @@ Unread detail counts `paid` and `launch` are null, never zero.
 | `usage` | `model`, `turns`, `tokens`, `wallMs`, `wallS` |
 | `delivery` | `url`, `atUtc` |
 | `launch` | `kind`, `requested`, `workflowId` |
-| `structuralCheck` | `status`, `detail` |
+| `structuralCheck` | `status`, `evaluation`, `detail` |
 | `panel` | `state`, `agreed`, `quorum`, `size`, `figure`, `answerType`, `answerBool`, `memberOk`, `memberReason`, `chainId`, `requestId` |
 
 **Widget signatures.** `SEAT_WIDGET_SIGNATURES` is the exact ordered `update_data` keyword contract. It retains

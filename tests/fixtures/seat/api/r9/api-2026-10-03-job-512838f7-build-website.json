@@ -1,0 +1,95 @@
+{
+  "workflow": null,
+  "planning": null,
+  "id": "512838f7-db72-4720-8a31-2f60c6f116fe",
+  "state": "completed",
+  "template": "skill:build-website",
+  "objective": "THE DROWNED LEDGER: a short low-poly 3D browser game (40 to 60 minutes). Tone: DREDGE meets Lovecraft. Quiet, damp, wrong. This job builds the base game; two later jobs add seven puzzles through the hooks below.\n\nSTORY\nYears ago the player's boat sank in Marrow Bay, taking their Ledger hardware wallet, which held everything. They come back to get it. The village on the dock is run by Pepe the Frog workers: an explicit Pepe look (green frog faces, big heavy-lidded eyes, wide red-brown lips), in yellow oilskins and IMD work aprons. They \"process\" whatever the sea gives up and keep telling the player the bay \"keeps what it takes\". Its seed card's twelve words are scattered: five swallowed by strange fish, seven caught up in village games and chores.\n\nTECH\nVite + React + TypeScript + @react-three/fiber + @react-three/drei, viem for the chain. No asset files: geometry, textures, shaders and sound (WebAudio) are all made in code. Sounds: waves, hull creak, wind, dock bell, a night drone, splash, reel click. Desktop first: WASD to steer, mouse to look and click, E to interact, Space to fish, J journal, B word bank, Q quest log. Basic touch controls (stick plus buttons). Progress saves in localStorage. Muted green and grey palette, heavy fog, sickly yellow lanterns.\n\nWORLD\nOne fog-bound bay, a village dock and square, a small boat, fishing spots marked by ripples. Day and night cycle of about 8 minutes per day. At night a dread meter rises while away from the dock: fog thickens, dark shapes follow the boat, false lanterns appear on the bay. At maximum dread the player loses their catch and wakes at the dock. Docking lowers dread.\n\nFISHING\nA timing minigame: a needle sweeps a bar, press in the green zone, three hits land the catch. Strange fish have narrower zones. 6 ordinary fish: Mackerel, Herring, Grey Cod, Flounder, Pollock, Mullet. They fill the journal.\n\nTHE 5 STRANGE FISH\n- fish-1: Choir Cod. Hums a low chord through closed gills; three in a bucket hum in harmony.\n- fish-2: Glasseye Eel. Clear as wet glass, and its eyes keep following you after it stops moving.\n- fish-3: Ledger Loach. Rows of tiny numbers run down its flank and change when you blink.\n- fish-4: Stitchback Haddock. A neat seam of black thread closes its belly. No one admits to sewing it.\n- fish-5: Gumtooth Hagfish. No eyes, rows of human molars, and it breathes when you look away.\nEach bites only at its own spot; fish-2 and fish-5 bite only at night.\n\nTHE 5 FISHING PEPES\n- Brannock, dock master: counts every boat that leaves and every one that does not come back. Wants fish-3.\n- Mother Gulla, mender: hums lullabies to the nets and says they hum back. Wants fish-1.\n- Wexley, the gutter: cheerful, too cheerful, never says what the processing shed is for. Wants fish-4.\n- Tadwick, the boy: collects teeth from the shingle and is sure some of them are his. Wants fish-5.\n- Old Morrow, the drowned priest: was pulled out of the bay twice and speaks for it now. Wants fish-2.\nEach gives one quest by dialogue and reacts to the hand-in. Catching a strange fish calls foundWord with its id. The quest log tracks the 5 quests and the 7 puzzle sites.\n\nWORD SOURCES\n12 source ids: fish-1 to fish-5 and the puzzles deliveries, poker, minesweeper, key-lockbox, scale, fortune, jigsaw. One generic module, src/hunt/words.ts, exports foundWord(sourceId), isFound(sourceId) and useHunt(). foundWord looks up sources[sourceId] in hunt.json, adds that word to the unordered word bank, writes a journal entry with the word highlighted, shows a \"You found a word\" toast and saves. It is idempotent and ignores unknown ids. Nothing else adds words.\n\nPUZZLE HOOKS\nsrc/puzzles/registry.ts lists the 7 puzzle ids, each with a title, a site in the world, a nightOnly flag and a React component that receives { onSolved }, where onSolved calls foundWord(id). Each gets a placeholder site with a marker and a prompt: deliveries at the drying line behind the processing shed; poker at a card table in the tavern back room; minesweeper at a ring of rusted marker posts out on the bay; key-lockbox at the notice board in the square; scale at the weigh-house; fortune at a striped tent on the pier; jigsaw at a table of soggy ledger pages in the customs hut. For now each component is a \"Coming soon\" panel with one line of flavour text. Later jobs add src/puzzles/<id>/ and swap the component in the registry, the one place a puzzle is wired in. Also export usePuzzleState(id, initial), a per-puzzle localStorage save helper.\n\nTHE HUNT DATA\nEvery hunt value lives only in public/hunt.json, never hard-coded elsewhere. Load it at runtime with fetch(import.meta.env.BASE_URL + \"hunt.json\"); never import or inline it. Schema:\n{ \"words\": [\"WORD-01\", ..., \"WORD-12\"], \"sources\": {\"<sourceId>\": <slot>, ...}, \"riddle\": [\"<line>\", ...], \"order\": [\"<sourceId>\", ...], \"chest\": \"0x0000000000000000000000000000000000000000\", \"answerHash\": \"<hex64>\", \"chainId\": 1 }\nsources maps each of the 12 source ids to a word slot; ship them in the listed order (fish-1 is 0, jigsaw is 11). riddle has exactly 12 lines; line k hints at the source order[k] through its fish or its puzzle, never by name. Write them in the village's voice, in any order. Ship words as exactly WORD-01, WORD-02, WORD-03, WORD-04, WORD-05, WORD-06, WORD-07, WORD-08, WORD-09, WORD-10, WORD-11, WORD-12 in that order. We replace all values later; the game must work for any 12 lowercase words and any valid sources and order.\n\nTHE SHRINE\nA drowned stone shrine on the far side of the bay. It appears only when all 12 words are found and it is night. Approaching it shows the riddle and an \"Open the chest\" panel:\n1. A phrase field, filled by arranging the bank words (drag or arrow buttons) or by typing.\n2. Local check: keccak256(utf8(normalize(phrase))) === answerHash (normalize: trim, lowercase, single spaces), else show \"the bay does not answer\". Later steps use the normalized phrase.\n3. Connect wallet (injected EIP-1193 provider via viem), then switch to chainId.\n4. Commit: keccak256(abi.encode(phrase, account, salt)) as (string, address, bytes32), with a random 32-byte salt saved in localStorage before sending.\n5. Wait until at least 1 block after the commit is mined (reveal within 256 blocks).\n6. reveal(phrase, salt).\nA zero chest address means \"the chest is not open yet\". Show transaction links and every error in plain words (each chest error below, user rejected, wrong network).\n\nAFTER THE LAUNCH\nOnce claimed() is true ($DL launched), the shrine and a \"Ledger\" panel (reachable from the word bank) show the winner, the DL address from dl(), the Uniswap V2 pool from pair() with its reserves, and how holder claims work (50,000 DL per identity NFT id 0 to 1999, once per id, paid to its owner, anyone may trigger). A \"Claim holder shares\" button connects, reads ownerOf for ids 0 to 1999 on the identity collection 0x0000ec93127baa929e58e97dd0095a2bfb38ec1d (batched multicall), keeps ids the wallet owns whose holderClaimed is false, and calls claimHolderShare(ids) in batches of at most 100. Ids typed by hand also work.\n\nChest ABI: token(), dl(), pair(), winner() view returns (address); answerHash() view returns (bytes32); claimed() view returns (bool); commitments(address) view returns (bytes32, uint256); holderClaimed(uint256) view returns (bool); commit(bytes32); reveal(string, bytes32); claimHolderShare(uint256[]); errors AlreadyClaimed, NoCommitment, TooEarly, TooLate, WrongCommitment, WrongPhrase, EmptyChest, NotLaunched, BadTokenId (no arguments). Pair and identity use the standard Uniswap V2 pair and ERC-721 ABIs. Players without a wallet can play everything else.\n\nDELIVERY\nNormal build-website delivery: the source repo plus a static export (relative paths, works from any subpath) with its entry at artifacts/site/index.html, and artifacts/README.md covering the build, the hunt.json schema, swapping in real values and how a puzzle plugs in.",
+  "blockedReason": null,
+  "createdAt": "2026-10-03T09:53:13.943Z",
+  "updatedAt": "2026-10-03T10:46:28.020Z",
+  "paidBy": "0xb1a9752d702b9e50db15e3b641d7098591752805",
+  "parentJobId": null,
+  "project": {
+    "id": "512838f7-db72-4720-8a31-2f60c6f116fe",
+    "head": "512838f7-db72-4720-8a31-2f60c6f116fe",
+    "running": null,
+    "versions": [
+      {
+        "jobId": "512838f7-db72-4720-8a31-2f60c6f116fe",
+        "workflowId": null,
+        "objective": "THE DROWNED LEDGER: a short low-poly 3D browser game (40 to 60 minutes). Tone: DREDGE meets Lovecraft. Quiet, damp, wrong. This job builds the base game; two later jobs add seven puzzles through the hooks below.\n\nSTORY\nYears ago the player's boat sank in Marrow Bay, taking their Ledger hardware wallet, which held everything. They come back to get it. The village on the dock is run by Pepe the Frog workers: an explicit Pepe look (green frog faces, big heavy-lidded eyes, wide red-brown lips), in yellow oilskins and IMD work aprons. They \"process\" whatever the sea gives up and keep telling the player the bay \"keeps what it takes\". Its seed card's twelve words are scattered: five swallowed by strange fish, seven caught up in village games and chores.\n\nTECH\nVite + React + TypeScript + @react-three/fiber + @react-three/drei, viem for the chain. No asset files: geometry, textures, shaders and sound (WebAudio) are all made in code. Sounds: waves, hull creak, wind, dock bell, a night drone, splash, reel click. Desktop first: WASD to steer, mouse to look and click, E to interact, Space to fish, J journal, B word bank, Q quest log. Basic touch controls (stick plus buttons). Progress saves in localStorage. Muted green and grey palette, heavy fog, sickly yellow lanterns.\n\nWORLD\nOne fog-bound bay, a village dock and square, a small boat, fishing spots marked by ripples. Day and night cycle of about 8 minutes per day. At night a dread meter rises while away from the dock: fog thickens, dark shapes follow the boat, false lanterns appear on the bay. At maximum dread the player loses their catch and wakes at the dock. Docking lowers dread.\n\nFISHING\nA timing minigame: a needle sweeps a bar, press in the green zone, three hits land the catch. Strange fish have narrower zones. 6 ordinary fish: Mackerel, Herring, Grey Cod, Flounder, Pollock, Mullet. They fill the journal.\n\nTHE 5 STRANGE FISH\n- fish-1: Choir Cod. Hums a low chord through closed gills; three in a bucket hum in harmony.\n- fish-2: Glasseye Eel. Clear as wet glass, and its eyes keep following you after it stops moving.\n- fish-3: Ledger Loach. Rows of tiny numbers run down its flank and change when you blink.\n- fish-4: Stitchback Haddock. A neat seam of black thread closes its belly. No one admits to sewing it.\n- fish-5: Gumtooth Hagfish. No eyes, rows of human molars, and it breathes when you look away.\nEach bites only at its own spot; fish-2 and fish-5 bite only at night.\n\nTHE 5 FISHING PEPES\n- Brannock, dock master: counts every boat that leaves and every one that does not come back. Wants fish-3.\n- Mother Gulla, mender: hums lullabies to the nets and says they hum back. Wants fish-1.\n- Wexley, the gutter: cheerful, too cheerful, never says what the processing shed is for. Wants fish-4.\n- Tadwick, the boy: collects teeth from the shingle and is sure some of them are his. Wants fish-5.\n- Old Morrow, the drowned priest: was pulled out of the bay twice and speaks for it now. Wants fish-2.\nEach gives one quest by dialogue and reacts to the hand-in. Catching a strange fish calls foundWord with its id. The quest log tracks the 5 quests and the 7 puzzle sites.\n\nWORD SOURCES\n12 source ids: fish-1 to fish-5 and the puzzles deliveries, poker, minesweeper, key-lockbox, scale, fortune, jigsaw. One generic module, src/hunt/words.ts, exports foundWord(sourceId), isFound(sourceId) and useHunt(). foundWord looks up sources[sourceId] in hunt.json, adds that word to the unordered word bank, writes a journal entry with the word highlighted, shows a \"You found a word\" toast and saves. It is idempotent and ignores unknown ids. Nothing else adds words.\n\nPUZZLE HOOKS\nsrc/puzzles/registry.ts lists the 7 puzzle ids, each with a title, a site in the world, a nightOnly flag and a React component that receives { onSolved }, where onSolved calls foundWord(id). Each gets a placeholder site with a marker and a prompt: deliveries at the drying line behind the processing shed; poker at a card table in the tavern back room; minesweeper at a ring of rusted marker posts out on the bay; key-lockbox at the notice board in the square; scale at the weigh-house; fortune at a striped tent on the pier; jigsaw at a table of soggy ledger pages in the customs hut. For now each component is a \"Coming soon\" panel with one line of flavour text. Later jobs add src/puzzles/<id>/ and swap the component in the registry, the one place a puzzle is wired in. Also export usePuzzleState(id, initial), a per-puzzle localStorage save helper.\n\nTHE HUNT DATA\nEvery hunt value lives only in public/hunt.json, never hard-coded elsewhere. Load it at runtime with fetch(import.meta.env.BASE_URL + \"hunt.json\"); never import or inline it. Schema:\n{ \"words\": [\"WORD-01\", ..., \"WORD-12\"], \"sources\": {\"<sourceId>\": <slot>, ...}, \"riddle\": [\"<line>\", ...], \"order\": [\"<sourceId>\", ...], \"chest\": \"0x0000000000000000000000000000000000000000\", \"answerHash\": \"<hex64>\", \"chainId\": 1 }\nsources maps each of the 12 source ids to a word slot; ship them in the listed order (fish-1 is 0, jigsaw is 11). riddle has exactly 12 lines; line k hints at the source order[k] through its fish or its puzzle, never by name. Write them in the village's voice, in any order. Ship words as exactly WORD-01, WORD-02, WORD-03, WORD-04, WORD-05, WORD-06, WORD-07, WORD-08, WORD-09, WORD-10, WORD-11, WORD-12 in that order. We replace all values later; the game must work for any 12 lowercase words and any valid sources and order.\n\nTHE SHRINE\nA drowned stone shrine on the far side of the bay. It appears only when all 12 words are found and it is night. Approaching it shows the riddle and an \"Open the chest\" panel:\n1. A phrase field, filled by arranging the bank words (drag or arrow buttons) or by typing.\n2. Local check: keccak256(utf8(normalize(phrase))) === answerHash (normalize: trim, lowercase, single spaces), else show \"the bay does not answer\". Later steps use the normalized phrase.\n3. Connect wallet (injected EIP-1193 provider via viem), then switch to chainId.\n4. Commit: keccak256(abi.encode(phrase, account, salt)) as (string, address, bytes32), with a random 32-byte salt saved in localStorage before sending.\n5. Wait until at least 1 block after the commit is mined (reveal within 256 blocks).\n6. reveal(phrase, salt).\nA zero chest address means \"the chest is not open yet\". Show transaction links and every error in plain words (each chest error below, user rejected, wrong network).\n\nAFTER THE LAUNCH\nOnce claimed() is true ($DL launched), the shrine and a \"Ledger\" panel (reachable from the word bank) show the winner, the DL address from dl(), the Uniswap V2 pool from pair() with its reserves, and how holder claims work (50,000 DL per identity NFT id 0 to 1999, once per id, paid to its owner, anyone may trigger). A \"Claim holder shares\" button connects, reads ownerOf for ids 0 to 1999 on the identity collection 0x0000ec93127baa929e58e97dd0095a2bfb38ec1d (batched multicall), keeps ids the wallet owns whose holderClaimed is false, and calls claimHolderShare(ids) in batches of at most 100. Ids typed by hand also work.\n\nChest ABI: token(), dl(), pair(), winner() view returns (address); answerHash() view returns (bytes32); claimed() view returns (bool); commitments(address) view returns (bytes32, uint256); holderClaimed(uint256) view returns (bool); commit(bytes32); reveal(string, bytes32); claimHolderShare(uint256[]); errors AlreadyClaimed, NoCommitment, TooEarly, TooLate, WrongCommitment, WrongPhrase, EmptyChest, NotLaunched, BadTokenId (no arguments). Pair and identity use the standard Uniswap V2 pair and ERC-721 ABIs. Players without a wallet can play everything else.\n\nDELIVERY\nNormal build-website delivery: the source repo plus a static export (relative paths, works from any subpath) with its entry at artifacts/site/index.html, and artifacts/README.md covering the build, the hunt.json schema, swapping in real values and how a puzzle plugs in.",
+        "baseCommit": "0243d7da4a4337ae8b16bcdf15bb4ead736fd68f",
+        "state": "completed",
+        "createdAt": "2026-10-03T09:53:13.943Z"
+      }
+    ]
+  },
+  "deliver": true,
+  "host": false,
+  "site": null,
+  "launch": {
+    "requested": false,
+    "kind": null,
+    "id": null,
+    "status": null,
+    "chainId": null
+  },
+  "oracleRequestId": null,
+  "delivery": {
+    "repoUrl": "https://github.com/identity-md-launches/launch-669-drowned-ledger-short-low-poly",
+    "pullRequestUrl": "https://github.com/identity-md-launches/launch-669-drowned-ledger-short-low-poly/pull/1",
+    "commit": "09c831766e7592d78e5316429e0e4c3990cfaa8a",
+    "deliveredAt": "2026-10-03T10:46:56.382Z",
+    "media": null
+  },
+  "nodes": [
+    {
+      "key": "build_website",
+      "role": "implement",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 0,
+      "judgeRevisions": 0,
+      "dependsOn": [],
+      "allowedPaths": [],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T10:46:28.020Z",
+      "verdict": {
+        "status": "accepted",
+        "profile": "none",
+        "evaluation": "structural",
+        "rejectionCode": null,
+        "detail": "paths and tree verified; no suite was run for this kind of work",
+        "verifierVersion": "0.1.0+ef84cc5f",
+        "verifiedTreeHash": "b48d8cc0b33217f4e791eb844d2cf57c39e17237",
+        "at": "2026-10-03T10:46:28.020Z",
+        "failedChecks": []
+      },
+      "seat": {
+        "tokenId": "1120",
+        "agentId": "50957"
+      },
+      "live": null
+    }
+  ],
+  "reviews": [
+    {
+      "status": "queued",
+      "chainId": 1,
+      "txHash": null,
+      "blockNumber": null,
+      "sentAt": null,
+      "entries": [
+        {
+          "nodeKey": "build_website",
+          "agentId": "50957",
+          "value": 1,
+          "role": "verification:structural"
+        }
+      ]
+    }
+  ]
+}

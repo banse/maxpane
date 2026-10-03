@@ -1335,6 +1335,126 @@
       "daemon_version": null,
       "allow": [],
       "notes": "Synthetic empty journal cursor attach exiting nonzero; pins legitimate gap fallback, not evidence of lost lines."
+    },
+    "api/r9/api-2026-10-03-job-03810410-chain.json": {
+      "origin": "GET https://api.imd.fun/jobs/03810410-…",
+      "captured_at": "2026-10-03T17:54:10Z",
+      "sha256": "919e0437af7bee3fe61b73c08f12bac70aad0a5b747c0a41cd43bd3c73162c95",
+      "bytes": 3448,
+      "redactions": [
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": "shape:chain, two nodes, paid, no workflow, launch not requested Non-allowlisted 64-hex prose/values replaced, including objective/project versions/workflow digest or bundle/question/block/cluster hashes; original shapes retained."
+    },
+    "api/r9/api-2026-10-03-job-4003eaef-research-paid.json": {
+      "origin": "GET https://api.imd.fun/jobs/4003eaef-7083-421d-b60c-f2ddc584b84a",
+      "captured_at": "2026-10-03T17:32:23Z",
+      "sha256": "8589a5a48c059234f36b9dfb3124a49aa6db41aba74c15ab80bd48974ec728a6",
+      "bytes": 9282,
+      "redactions": [
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": "seat #3's own last job (skill:research-report): paidBy is an address, one node with seat tokenId \"3\" as a string and an accepted verdict, delivery, parentJobId, project Non-allowlisted 64-hex prose/values replaced, including objective/project versions/workflow digest or bundle/question/block/cluster hashes; original shapes retained."
+    },
+    "api/r9/api-2026-10-03-job-86c76df1-dag-workflow-launch.json": {
+      "origin": "GET https://api.imd.fun/jobs/86c76df1-…",
+      "captured_at": "2026-10-03T17:54:11Z",
+      "sha256": "4b6da56a3855f0dfe3cb07b65f24591aebc887ac01d1e58f1890a38d585a7f00",
+      "bytes": 23058,
+      "redactions": [
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": "shape:dag with a workflow and launch.requested true (evm_project, parked, chainId 11155111); eight nodes; seat \"2\" holds three of them (the verdict-fallback ambiguity case) and seat \"420\" holds audit_judge Non-allowlisted 64-hex prose/values replaced, including objective/project versions/workflow digest or bundle/question/block/cluster hashes; original shapes retained."
+    },
+    "api/r9/api-2026-10-03-job-5692e031-oracle-unpaid.json": {
+      "origin": "GET https://api.imd.fun/jobs/5692e031-4efa-46f3-b2d6-b7e4433fb583",
+      "captured_at": "2026-10-03T17:54:12Z",
+      "sha256": "bd8d265e86793de0f4204f2d2226ad3120990f2c84d017d39f9fed5e2047a6ef",
+      "bytes": 4255,
+      "redactions": [
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": "an unpaid oracle job: paidBy is null (the key is present), oracleRequestId is set Non-allowlisted 64-hex prose/values replaced, including objective/project versions/workflow digest or bundle/question/block/cluster hashes; original shapes retained."
+    },
+    "api/r9/api-2026-10-03-busy-503.json": {
+      "origin": "GET https://api.imd.fun/seats/3/standing (HTTP 503)",
+      "captured_at": "2026-10-03T17:32:14Z",
+      "sha256": "c037e957a3331c3e615cc5e0ec6da9c484e07a47560ec7386b318f8671ef5a9f",
+      "bytes": 114,
+      "redactions": [
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": "the 104-byte body of every shed record read that day; identical for /seats/<id>?work=N and /jobs/<id>/submissions Non-allowlisted 64-hex prose/values replaced, including objective/project versions/workflow digest or bundle/question/block/cluster hashes; original shapes retained."
+    },
+    "api/r9/api-2026-10-03-job-512838f7-build-website.json": {
+      "origin": "GET https://api.imd.fun/jobs/512838f7-…",
+      "captured_at": "2026-10-03T17:54:11Z",
+      "sha256": "832d0065ef421ef9eb6eb7cf82c240712aadb27904af76ed98e62113c6eb286d",
+      "bytes": 18633,
+      "redactions": [
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": "skill:build-website, one node, paid Non-allowlisted 64-hex prose/values replaced, including objective/project versions/workflow digest or bundle/question/block/cluster hashes; original shapes retained."
+    },
+    "api/r9/submissions_oracle.json": {
+      "origin": "tests/fixtures/surf/swarm/v4/submissions_73d7dcd7.json (committed public capture)",
+      "captured_at": "2026-09-21T00:00:00Z",
+      "sha256": "4c425330922fd425b371f5c5ea48e5947187ffd04f9588610be7ec69aede60ca",
+      "bytes": 113644,
+      "redactions": [
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": "Date from body, time unavailable: midnight placeholder explicitly approximate. Non-allowlisted 64-hex prose/values replaced, including objective/project versions/workflow digest or bundle/question/block/cluster hashes; original shapes retained."
+    },
+    "api/r9/submissions_hunt.json": {
+      "origin": "tests/fixtures/surf/swarm/submissions/hunt_submissions.json (committed public capture)",
+      "captured_at": "2026-09-24T00:00:00Z",
+      "sha256": "977b6bb90a879753f05b586e2ad22ee51e4b62d5c6d9460404dca0f3873fad3c",
+      "bytes": 13361,
+      "redactions": [
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": "Date from body, time unavailable: midnight placeholder explicitly approximate. Non-allowlisted 64-hex prose/values replaced, including objective/project versions/workflow digest or bundle/question/block/cluster hashes; original shapes retained."
+    },
+    "api/r9/oracle_hit.json": {
+      "origin": "tests/fixtures/surf/swarm/oracle/filtered/hit.json (committed public capture)",
+      "captured_at": "2026-09-23T00:00:00Z",
+      "sha256": "8c86b5a0974a89e13b1a2ca03e9ae25da980f608cfe854c14c8cf95898f805f9",
+      "bytes": 4441,
+      "redactions": [
+        "hex64>=32"
+      ],
+      "synthetic": false,
+      "daemon_version": null,
+      "notes": "Date from body, time unavailable: midnight placeholder explicitly approximate. Non-allowlisted 64-hex prose/values replaced, including objective/project versions/workflow digest or bundle/question/block/cluster hashes; original shapes retained."
+    },
+    "api/r9/job_missing_payer_synthetic.json": {
+      "origin": "Synthetic derivative of research paid capture",
+      "captured_at": "2026-10-03T17:32:23Z",
+      "sha256": "8e16ba3148b1d9da12f0a2cdc6bc93b8705727850229fbf1a1d51b162303250a",
+      "bytes": 9224,
+      "redactions": [
+        "hex64>=32"
+      ],
+      "synthetic": true,
+      "daemon_version": null,
+      "notes": "Missing paidBy has not been observed live. Non-allowlisted 64-hex prose/values replaced, including objective/project versions/workflow digest or bundle/question/block/cluster hashes; original shapes retained."
     }
   }
 }

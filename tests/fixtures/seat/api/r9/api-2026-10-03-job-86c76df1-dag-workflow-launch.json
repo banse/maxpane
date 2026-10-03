@@ -1,0 +1,368 @@
+{
+  "workflow": {
+    "id": "2e22d2cd-84e0-4346-b40e-692ab8b81e52",
+    "objective": "The launch token is the fixed-supply LaunchToken already in src. Its name is \"COMP Launch\", its symbol is \"CPL\", it has 18 decimals, and it is paired against Sepolia ETH. No other token is deployed or modified, and it is separate from the elastic CompToken the vault creates and mints.\n\nEighth increment on the COMP compute-backed stablecoin, continuing our own repository at the commit in the draft. The protocol's thesis is that COMP is backed by verified compute, and the channel that is supposed to deliver that - mintFromWork - currently mints COMP with no collateral, no debt entry, no position and NO CEILING. totalWorkMinted is unbounded. It is the largest unbounded risk in the protocol and the only thing limiting it today is how many rights an oracle chooses to grant.\n\nBound it to backing that exists. Two pieces.\n\nONE: the Treasury becomes real and learns what it is worth. Today FEE_RECIPIENT is an ordinary account, so src/Treasury.sol is written but nothing deploys it and nothing routes to it - an independent audit called that out. The vault must CREATE a Treasury in its own constructor and send both its protocol cut and its minted stability fees there instead of to an account, and workCeiling must read that same Treasury. Then add a per-asset reserve register - a price source and a haircut in basis points for each accepted asset - and reserveValueUsd(), the sum over assets of balance times price times haircut. A haircut is what stops a volatile asset authorising supply it cannot support, so a stablecoin's is near zero and a volatile token's is not. COMP itself can NEVER be a reserve asset: the Treasury receives stability fees in COMP, and backing a liability with the same liability is not backing. Refuse it explicitly rather than by omission. Prices come from a new UsdPriceFeed, described in the step objective.\n\nTWO: the vault gains a ceiling on work minting. workCeiling() is reserveValueUsd() plus totalDebt times workRatioBps over 10000, and mintFromWork must refuse any amount that would carry totalWorkMinted past it. The sum is deliberate, not a maximum: the reserve term is backed one-for-one by assets the protocol owns, and the ratio term by the surplus collateral every borrower posts above their own debt. Section 3 of the design derives the bound - backing exceeds one for EVERY reserve size exactly when the ratio is below minCR - 1, so the cliff is 5000 bps at full health. workRatioBps ships at 2500 and must be hard-bounded at 2500 in the parameters contract: half the cliff, 120 percent worst-case backing with an empty reserve.\n\nAn independent security review is wanted, weighted on the ceiling arithmetic and on whether any path lets work minting exceed what backs it.\n\nYES, this request includes a user-facing website: the project's existing Sepolia interface is rebuilt as a single-screen terminal in its current palette, covering every mechanism the protocol now has. The step objective has the layout, the palette and the panes.\n\nNo new owner, admin, pause or upgrade path. Anyone may call mintFromWork, sync and reserveValueUsd; only APPROVED_OPERATOR may propose a parameter or reserve-register change and only it may withdraw from the Treasury, while applying a matured proposal stays callable by anyone.",
+    "status": "blocked",
+    "brief": "# Approved workflow\n\nThe launch token is the fixed-supply LaunchToken already in src. Its name is \"COMP Launch\", its symbol is \"CPL\", it has 18 decimals, and it is paired against Sepolia ETH. No other token is deployed or modified, and it is separate from the elastic CompToken the vault creates and mints.\n\nEighth increment on the COMP compute-backed stablecoin, continuing our own repository at the commit in the draft. The protocol's thesis is that COMP is backed by verified compute, and the channel that is supposed to deliver that - mintFromWork - currently mints COMP with no collateral, no debt entry, no position and NO CEILING. totalWorkMinted is unbounded. It is the largest unbounded risk in the protocol and the only thing limiting it today is how many rights an oracle chooses to grant.\n\nBound it to backing that exists. Two pieces.\n\nONE: the Treasury becomes real and learns what it is worth. Today FEE_RECIPIENT is an ordinary account, so src/Treasury.sol is written but nothing deploys it and nothing routes to it - an independent audit called that out. The vault must CREATE a Treasury in its own constructor and send both its protocol cut and its minted stability fees there instead of to an account, and workCeiling must read that same Treasury. Then add a per-asset reserve register - a price source and a haircut in basis points for each accepted asset - and reserveValueUsd(), the sum over assets of balance times price times haircut. A haircut is what stops a volatile asset authorising supply it cannot support, so a stablecoin's is near zero and a volatile token's is not. COMP itself can NEVER be a reserve asset: the Treasury receives stability fees in COMP, and backing a liability with the same liability is not backing. Refuse it explicitly rather than by omission. Prices come from a new UsdPriceFeed, described in the step objective.\n\nTWO: the vault gains a ceiling on work minting. workCeiling() is reserveValueUsd() plus totalDebt times workRatioBps over 10000, and mintFromWork must refuse any amount that would carry totalWorkMinted past it. The sum is deliberate, not a maximum: the reserve term is backed one-for-one by assets the protocol owns, and the ratio term by the surplus collateral every borrower posts above their own debt. Section 3 of the design derives the bound - backing exceeds one for EVERY reserve size exactly when the ratio is below minCR - 1, so the cliff is 5000 bps at full health. workRatioBps ships at 2500 and must be hard-bounded at 2500 in the parameters contract: half the cliff, 120 percent worst-case backing with an empty reserve.\n\nAn independent security review is wanted, weighted on the ceiling arithmetic and on whether any path lets work minting exceed what backs it.\n\nYES, this request includes a user-facing website: the project's existing Sepolia interface is rebuilt as a single-screen terminal in its current palette, covering every mechanism the protocol now has. The step objective has the layout, the palette and the panes.\n\nNo new owner, admin, pause or upgrade path. Anyone may call mintFromWork, sync and reserveValueUsd; only APPROVED_OPERATOR may propose a parameter or reserve-register change and only it may withdraw from the Treasury, while applying a matured proposal stays callable by anyone.\n\nContinues our own repository at the commit in the draft. 275 tests pass on a plain `forge test`; test/InHouse.t.sol and one gated audit proof skip themselves. docs/COMPUTE-BACKING-DESIGN.md is the design this implements and is the reference for every number here; this increment is items 1 and 2 of its build order.\n\nA launch manifest names at most FOUR contracts and makes no post-deploy calls. The four are PriceFeed, NhiFeed, SpotFeed and ParameterizedVault, and they are full. So UsdPriceFeed must NOT be a manifest artifact: the vault creates it in its own constructor, exactly as it already creates CompToken, MockWorkOracle and Parameters when passed a zero address. That is the established idiom in this tree and the only way another contract can be added at all.\n\nTreasury is written in src but has NEVER been deployed, and FEE_RECIPIENT is an ordinary account (0x5167D014..., the same address as APPROVED_OPERATOR), so the protocol's cut and its minted fees go to a wallet and the Treasury receives nothing. That is why the vault must create one: a pre-deployed Treasury would need its address pinned as a constant before the vault compiles, and a manifest cannot deploy it as a fifth artifact. A vault-created Treasury needs no pre-deployment and no new constant, and gives this increment something real to value.\n\nMockIMD 0xe44ab81ce23d34e29383dd158a1dffeb1c10d439 is reused and must NOT be deployed again - its faucet authority is a source constant. ATTESTATION_RELAYER names a SwarmRelay deployed before keeper bundling existed; replacing it is a separate increment and nothing here depends on it, so pass it through unchanged.\n\nAuthority is never a constructor argument here. The feeds take only (maxAge_, maxDeviationBps_); attester, relayer, reporters, quorum, answerType and payload chainId are constants in src/DeploymentConfig.sol, because a launch manifest once substituted its own and both feeds were permanently inert. Do not reintroduce them. The reserve register follows the same rule: adding or repricing an asset is governed through the existing Parameters delay, never by an owner.\n\nThe feeds verify WHICH question an attestation answers, by rebuilding the plane's canonical question document and splicing in the signed window. Do not touch SwarmFeed.questionPolicy, _requireQuestion, expectedQuestionHash or any QUESTION_PREFIX: those constants are generated by oracle/question-prefix.mjs and one changed character makes a feed refuse every attestation.\n\nOut of scope, and each is its own later increment: the SwarmWorkOracle that will replace the grantRights faucet, redemption in either direction, changing what denominates a position's collateral ratio, and any change to the five existing parameter values, their bounds, the 48-hour delay or the governor.\n\nforge build compiles script/ as well as src/ and test/, so a constructor change must be matched in script/DeployComp.s.sol and script/DeployGoverned.s.sol in the same step.\n\nSepolia only (11155111).\n\nBound compute-backed minting to backing that exists: a Treasury that can value its reserve, and a work-minting ceiling the reserve and the collateral pool jointly set.\n",
+    "briefDigest": "<hex64>"
+  },
+  "planning": null,
+  "id": "86c76df1-724d-4c85-8e59-7379fe6ff012",
+  "state": "completed",
+  "template": "shape:dag",
+  "objective": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch.json. Each assignment contributes only within its own role and write scope. Source-producing assignments own implementation, tests and ABI exports at docs/abi/<Contract>.json where their scope permits. The generated manifest assignment writes only launch.json. Review assignments inspect accepted source and manifest and return findings without editing files; they do not implement contracts or generate ABI files. Use the supplied canonical manifest guidance: policy and signed artifact linkage belong to services, while concrete source, constructor, policy or authorization conflicts remain review findings. Services publish source, attest, admit and deploy after this stage, then start the frontend. Read .imd/reads/workflow.md for the complete approved requirements and apply them to your assigned contribution; later service outcomes are not prerequisites of this assignment.",
+  "blockedReason": null,
+  "createdAt": "2026-10-03T08:16:55.724Z",
+  "updatedAt": "2026-10-03T11:00:25.684Z",
+  "paidBy": "0x5167d014a056e43883e1bbea5530c3c0dc993281",
+  "parentJobId": null,
+  "project": {
+    "id": "86c76df1-724d-4c85-8e59-7379fe6ff012",
+    "head": "86c76df1-724d-4c85-8e59-7379fe6ff012",
+    "running": null,
+    "versions": [
+      {
+        "jobId": "86c76df1-724d-4c85-8e59-7379fe6ff012",
+        "workflowId": "2e22d2cd-84e0-4346-b40e-692ab8b81e52",
+        "objective": "The launch token is the fixed-supply LaunchToken already in src. Its name is \"COMP Launch\", its symbol is \"CPL\", it has 18 decimals, and it is paired against Sepolia ETH. No other token is deployed or modified, and it is separate from the elastic CompToken the vault creates and mints.\n\nEighth increment on the COMP compute-backed stablecoin, continuing our own repository at the commit in the draft. The protocol's thesis is that COMP is backed by verified compute, and the channel that is supposed to deliver that - mintFromWork - currently mints COMP with no collateral, no debt entry, no position and NO CEILING. totalWorkMinted is unbounded. It is the largest unbounded risk in the protocol and the only thing limiting it today is how many rights an oracle chooses to grant.\n\nBound it to backing that exists. Two pieces.\n\nONE: the Treasury becomes real and learns what it is worth. Today FEE_RECIPIENT is an ordinary account, so src/Treasury.sol is written but nothing deploys it and nothing routes to it - an independent audit called that out. The vault must CREATE a Treasury in its own constructor and send both its protocol cut and its minted stability fees there instead of to an account, and workCeiling must read that same Treasury. Then add a per-asset reserve register - a price source and a haircut in basis points for each accepted asset - and reserveValueUsd(), the sum over assets of balance times price times haircut. A haircut is what stops a volatile asset authorising supply it cannot support, so a stablecoin's is near zero and a volatile token's is not. COMP itself can NEVER be a reserve asset: the Treasury receives stability fees in COMP, and backing a liability with the same liability is not backing. Refuse it explicitly rather than by omission. Prices come from a new UsdPriceFeed, described in the step objective.\n\nTWO: the vault gains a ceiling on work minting. workCeiling() is reserveValueUsd() plus totalDebt times workRatioBps over 10000, and mintFromWork must refuse any amount that would carry totalWorkMinted past it. The sum is deliberate, not a maximum: the reserve term is backed one-for-one by assets the protocol owns, and the ratio term by the surplus collateral every borrower posts above their own debt. Section 3 of the design derives the bound - backing exceeds one for EVERY reserve size exactly when the ratio is below minCR - 1, so the cliff is 5000 bps at full health. workRatioBps ships at 2500 and must be hard-bounded at 2500 in the parameters contract: half the cliff, 120 percent worst-case backing with an empty reserve.\n\nAn independent security review is wanted, weighted on the ceiling arithmetic and on whether any path lets work minting exceed what backs it.\n\nYES, this request includes a user-facing website: the project's existing Sepolia interface is rebuilt as a single-screen terminal in its current palette, covering every mechanism the protocol now has. The step objective has the layout, the palette and the panes.\n\nNo new owner, admin, pause or upgrade path. Anyone may call mintFromWork, sync and reserveValueUsd; only APPROVED_OPERATOR may propose a parameter or reserve-register change and only it may withdraw from the Treasury, while applying a matured proposal stays callable by anyone.",
+        "baseCommit": "00dd5e2f9ac73c5942eb35332e73a0c33413c78e",
+        "state": "completed",
+        "createdAt": "2026-10-03T08:16:55.724Z"
+      }
+    ]
+  },
+  "deliver": true,
+  "host": false,
+  "site": null,
+  "launch": {
+    "requested": true,
+    "kind": "evm_project",
+    "id": "9d608165-c235-4ea6-a560-7d0b392159b3",
+    "status": "parked",
+    "chainId": 11155111
+  },
+  "oracleRequestId": null,
+  "delivery": {
+    "repoUrl": "https://github.com/identity-md-launches/launch-668-pricefeed-nhifeed-spotfeed-parameterized",
+    "pullRequestUrl": "https://github.com/identity-md-launches/launch-668-pricefeed-nhifeed-spotfeed-parameterized/pull/1",
+    "commit": "b84d97a50730413f290ab46614f0dab2e8af8449",
+    "deliveredAt": "2026-10-03T11:00:57.127Z",
+    "media": null
+  },
+  "nodes": [
+    {
+      "key": "audit_economics",
+      "role": "review",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 0,
+      "judgeRevisions": 0,
+      "dependsOn": [
+        "contracts",
+        "tests",
+        "manifest"
+      ],
+      "allowedPaths": [],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T09:43:07.691Z",
+      "verdict": null,
+      "seat": {
+        "tokenId": "6",
+        "agentId": "51018"
+      },
+      "live": null
+    },
+    {
+      "key": "audit_flow",
+      "role": "review",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 0,
+      "judgeRevisions": 0,
+      "dependsOn": [
+        "contracts",
+        "tests",
+        "manifest"
+      ],
+      "allowedPaths": [],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T09:44:18.711Z",
+      "verdict": null,
+      "seat": {
+        "tokenId": "1731",
+        "agentId": "50955"
+      },
+      "live": null
+    },
+    {
+      "key": "audit_judge",
+      "role": "review",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 1,
+      "judgeRevisions": 1,
+      "dependsOn": [
+        "contracts",
+        "tests",
+        "manifest",
+        "audit_math",
+        "audit_permissions",
+        "audit_economics",
+        "audit_flow"
+      ],
+      "allowedPaths": [],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T11:00:25.684Z",
+      "verdict": null,
+      "seat": {
+        "tokenId": "420",
+        "agentId": "50939"
+      },
+      "live": null
+    },
+    {
+      "key": "audit_math",
+      "role": "review",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 0,
+      "judgeRevisions": 0,
+      "dependsOn": [
+        "contracts",
+        "tests",
+        "manifest"
+      ],
+      "allowedPaths": [],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T09:47:11.114Z",
+      "verdict": null,
+      "seat": {
+        "tokenId": "2",
+        "agentId": "50959"
+      },
+      "live": null
+    },
+    {
+      "key": "audit_permissions",
+      "role": "review",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 0,
+      "judgeRevisions": 0,
+      "dependsOn": [
+        "contracts",
+        "tests",
+        "manifest"
+      ],
+      "allowedPaths": [],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T09:46:12.312Z",
+      "verdict": null,
+      "seat": {
+        "tokenId": "1299",
+        "agentId": "50974"
+      },
+      "live": null
+    },
+    {
+      "key": "contracts",
+      "role": "implement",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 2,
+      "judgeRevisions": 1,
+      "dependsOn": [],
+      "allowedPaths": [
+        "src",
+        "src/**",
+        "docs",
+        "docs/**",
+        "script",
+        "script/**"
+      ],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T10:25:50.864Z",
+      "verdict": {
+        "status": "accepted",
+        "profile": "foundry",
+        "evaluation": "checks",
+        "rejectionCode": null,
+        "detail": "all checks passed",
+        "verifierVersion": "0.1.0+ef84cc5f",
+        "verifiedTreeHash": "22db4cfea9ac4dc15ee01bafe89cf3ed03f853ea",
+        "at": "2026-10-03T10:25:50.864Z",
+        "failedChecks": []
+      },
+      "seat": {
+        "tokenId": "2",
+        "agentId": "50959"
+      },
+      "live": null
+    },
+    {
+      "key": "manifest",
+      "role": "integrate",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 1,
+      "judgeRevisions": 1,
+      "dependsOn": [
+        "contracts",
+        "tests"
+      ],
+      "allowedPaths": [
+        "launch.json"
+      ],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T10:57:31.425Z",
+      "verdict": {
+        "status": "accepted",
+        "profile": "foundry",
+        "evaluation": "checks",
+        "rejectionCode": null,
+        "detail": "all checks passed",
+        "verifierVersion": "0.1.0+ef84cc5f",
+        "verifiedTreeHash": "8eef33ddfc3a765df4b0297829fff4baf4b23b70",
+        "at": "2026-10-03T10:57:31.427Z",
+        "failedChecks": []
+      },
+      "seat": {
+        "tokenId": "1120",
+        "agentId": "50957"
+      },
+      "live": null
+    },
+    {
+      "key": "tests",
+      "role": "tests",
+      "state": "accepted",
+      "attempt": 1,
+      "revisions": 2,
+      "judgeRevisions": 1,
+      "dependsOn": [
+        "contracts"
+      ],
+      "allowedPaths": [
+        "test",
+        "test/**"
+      ],
+      "failureReason": null,
+      "dispatchNote": null,
+      "dispatchNoteAt": null,
+      "updatedAt": "2026-10-03T10:51:58.680Z",
+      "verdict": {
+        "status": "accepted",
+        "profile": "foundry",
+        "evaluation": "checks",
+        "rejectionCode": null,
+        "detail": "all checks passed",
+        "verifierVersion": "0.1.0+ef84cc5f",
+        "verifiedTreeHash": "dd15a1241aa81b4a8787dcf55d3393bc505772c8",
+        "at": "2026-10-03T10:51:58.680Z",
+        "failedChecks": []
+      },
+      "seat": {
+        "tokenId": "2",
+        "agentId": "50959"
+      },
+      "live": null
+    }
+  ],
+  "reviews": [
+    {
+      "status": "queued",
+      "chainId": 1,
+      "txHash": null,
+      "blockNumber": null,
+      "sentAt": null,
+      "entries": [
+        {
+          "nodeKey": "audit_economics",
+          "agentId": "51018",
+          "value": 1,
+          "role": "review:submission"
+        },
+        {
+          "nodeKey": "audit_flow",
+          "agentId": "50955",
+          "value": 1,
+          "role": "review:submission"
+        },
+        {
+          "nodeKey": "audit_judge",
+          "agentId": "50939",
+          "value": 1,
+          "role": "review:submission"
+        },
+        {
+          "nodeKey": "audit_math",
+          "agentId": "50959",
+          "value": 1,
+          "role": "review:submission"
+        },
+        {
+          "nodeKey": "audit_permissions",
+          "agentId": "50974",
+          "value": 1,
+          "role": "review:submission"
+        },
+        {
+          "nodeKey": "contracts",
+          "agentId": "50957",
+          "value": 1,
+          "role": "verification:checks"
+        },
+        {
+          "nodeKey": "contracts",
+          "agentId": "50959",
+          "value": 1,
+          "role": "verification:checks"
+        },
+        {
+          "nodeKey": "contracts",
+          "agentId": "50974",
+          "value": 1,
+          "role": "verification:checks"
+        },
+        {
+          "nodeKey": "manifest",
+          "agentId": "50957",
+          "value": 1,
+          "role": "verification:checks"
+        },
+        {
+          "nodeKey": "tests",
+          "agentId": "50957",
+          "value": 1,
+          "role": "verification:checks"
+        },
+        {
+          "nodeKey": "tests",
+          "agentId": "50971",
+          "value": 1,
+          "role": "verification:checks"
+        },
+        {
+          "nodeKey": "tests",
+          "agentId": "50959",
+          "value": 1,
+          "role": "verification:checks"
+        }
+      ]
+    }
+  ]
+}
