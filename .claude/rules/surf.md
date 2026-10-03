@@ -169,8 +169,9 @@ run. `GET /jobs` (one shot, no pagination, no ETag) is re-fetched only when one 
 counters (`connectedDaemons`/`activeEnrollments`/`workingNow`/`acceptedLastDay`, every `pending*`)
 has moved since the manager last saw them, or when `SWARM_LIST_CEILING_S` has elapsed regardless.
 `GET /jobs/{id}` follows for every **executing** job (plan §1.5; a 404 drops the detail, never the
-row or the read; an all-host `503 busy` stops the fan-out at that id, stores nothing, backs the
-tier off and puts the list gate back, F-S3 -- in both tiers, `SurfManager._swarm_details`). The slow tier (`TIER_SWARM_SCORES`) sweeps the newest `SWARM_SWEEP_CAP` details
+row or the read; an all-host `503 busy` stops the fan-out at that id, stores nothing and backs the
+tier off in both tiers -- `SurfManager._swarm_details`, F-S3 -- and the live tier also puts its
+list gate back). The slow tier (`TIER_SWARM_SCORES`) sweeps the newest `SWARM_SWEEP_CAP` details
 plus `/skills`, `/launches` and `/sites` on its own clock and feeds CAPABILITY, LAUNCHES, SITES and
 the internal seat-selection fold; `swarm_throughput` is folded off the **live** slot because its widget shows
 the live marker (two clocks never meet behind one `as of`). A third slot, `SLOT_SWARM_JOBS_SEEN`,
@@ -415,7 +416,8 @@ sentence boundaries before flattening; widgets still sanitize third-party text.
 
 The answer cell distinguishes read, dim `loading…`, `unavailable`, `not served` and `no reply`.
 Loading promises a scheduled read: only rows inside RECORD's selected window with a canonical
-job UUID and lowercase 64-hex submission hash qualify. An ineligible `not_read` row keeps
+job UUID and 64-hex submission hash in either case qualify (`_oracle_answer.valid_identity` is
+analytics `record_readable`, bound to the data layer's read rule; F-S1). An ineligible `not_read` row keeps
 `not read`; malformed identities enriched by the manager are `unavailable`.
 Model/took/tok render only for successful matching reads (`read`/`no_reply`); missing values and
 other read states use `—` for those metadata cells. Failed/queued rows cannot retain stale

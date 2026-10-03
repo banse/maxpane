@@ -845,6 +845,9 @@ async def test_busy_record_without_last_good_has_yellow_footer_and_no_stale_rows
     ({'submission_hash': 'bad-hash'}, ('not read', 'not read')),
     ({'node_key': 'build_contract_project', 'panel_state': 'not_oracle'}, ('–', 'loading…')),
     ({'node_key': 'build_contract_project'}, ('not read', 'loading…')),
+    # F-S1: the seat cycle reads a mixed-case hash (``_hex64``), so the
+    # word promises that read rather than saying ``not read``.
+    ({'submission_hash': NEWEST['submission_hash'].upper()}, ('loading…', 'loading…')),
 ])
 async def test_pending_answer_and_panel_loading_only_for_eligible_rows(changes, words):
     from textual.filter import dim_color

@@ -98,7 +98,8 @@ the WP2 dependent set). Fixed: the gate reads only the selected token's own entr
 covers seat isolation (a mutation that serves any entry turns it red).
 
 Filed, not fixed:
-- **F-S1: the loading word is stricter than the manager** (review M1). The widget's
+- **F-S1: the loading word is stricter than the manager** (review M1). DONE 2026-10-03:
+  `valid_identity` now is analytics `record_readable`, already bound to `parse_job_id`/`_hex64`. The widget's
   `valid_identity` accepts only lowercase `[0-9a-f]{64}`; the manager's `_hex64` also accepts
   uppercase. A row with an uppercase hash will be read but shows `not read` instead of `loading…`.
   This errs on the safe side: it never promises a read that does not come.

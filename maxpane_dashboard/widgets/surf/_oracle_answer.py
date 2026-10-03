@@ -4,8 +4,8 @@ import re
 from rich.style import Style
 from rich.text import Text
 
+from maxpane_dashboard.analytics.surf_record_filter import record_readable
 from maxpane_dashboard.widgets import rowfit
-from maxpane_dashboard.widgets.address import is_job_id
 from maxpane_dashboard.widgets.explorer import for_chain_id
 from maxpane_dashboard.widgets.markup_safety import sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_compact
@@ -14,7 +14,6 @@ from maxpane_dashboard.widgets.surf._icons import mark_addresses, keep_units, li
 # Bound to the data contract by the widget eligibility agreement test.
 ORACLE_NODE_KEYS = ("oracle_assess",)
 
-_HASH = re.compile(r'[0-9a-f]{64}')
 _BYTES32 = re.compile(r'0x[0-9a-fA-F]{64}')
 
 
@@ -60,8 +59,11 @@ def failed_answer(row):
 
 
 def valid_identity(job, submission_hash):
-    return (is_job_id(job)
-            and isinstance(submission_hash, str) and _HASH.fullmatch(submission_hash) is not None)
+    """The seat cycle's own read rule -- ``record_readable``, bound to the
+    data layer's ``parse_job_id`` / ``_hex64`` -- so ``loading…`` is promised
+    exactly where a read is scheduled (F-S1: a lowercase-only copy here said
+    ``not read`` for a mixed-case hash the manager does read)."""
+    return record_readable({"job_id": job, "submission_hash": submission_hash})
 
 
 def joined(row):
