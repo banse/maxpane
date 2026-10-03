@@ -27,7 +27,7 @@ v2 consumer refuses v1 outright.
   chain feedback rows (not in v2 at all — SURFBOARD and The Lineup render them), and standing/doctor failed runs
   (`standing.recentFailures`, `tasks.rows[].failureReason` as enum words only). `pending` is never "running".
 - **Identifiers**: `seat.deviceKeyPublic` and `seat.wallet` are 8 characters; job/node ids are full (they are join keys);
-  submission hashes are `hash12`. Free-text failure summaries from the API are never persisted or emitted.
+  submission hashes are `hash12`. Reason cells carry enum words; round 9 separately allows sanitised, bounded API question and reply text in JOB and the ledger detail.
 - No currency anywhere in v1: no `$` figure in any panel, document field or code path — `cost-state.totalCostUSD` and `imd doctor`'s list-price line are never read or shown (spec §10). v2 has no currency field; `cost` is tokens.
 
 ## v2 top-level blocks
@@ -44,6 +44,10 @@ v2 consumer refuses v1 outright.
 | `auth` | D over L+S+H | the runtime-auth-degraded composite (spec §10): `degraded`, `reasons`, `sinceUtc`, `credentialFileMtimeUtc` (stat only) |
 | `unit` | U | `activeState`, `subState`, `mainPid`, `sinceUtc`, `restarts`, `bootEnabled`, `restartPolicy`, `killMode`, `stopTimeoutS`, `gracefulStopPossible`, `memoryCurrentB`, `memoryPeakB`, `memoryMaxB`, `cpuQuota`, `tasksCurrent` (docker: the same names from `docker inspect`/`stats`) |
 | `current` | L (+A) | the task in flight or `null`: `nodeId8`, `jobId`, `role`, `kind`, `phase`, `startedUtc`, `elapsedS`, `maxTurns`, `model`, `tierDerived`, `lastMessage` (≤160, control-stripped, redacted), `lastMessageUtc`, `planeSince`, `objective`, `nodeKey` |
+| `currentJobs` | L/A | all running job identities in newest acceptance order; each has the `current` shape. `current` remains for older consumers. |
+| `jobs` | D/A | full bounded display text for the running attempts and one newest finished attempt, with ledger keys; see round-9 contract below. |
+| `records` | D/A | `rows[]` (at most 400, preview-only) and `window`; cached ledger facts survive API outages. |
+| `nodes` | D/A | `allRows[]`, `weekRows[]` and `coverage`; aggregated ledger facts, with nullable paid/launch counts when detail is unread. |
 | `queue` | A | `/seats/<id>/standing.queue` only: `ready`, `eligible`, `fleetOnline`, `blocked[]`, `asOfUtc` — never from `?queue=0` (which returns `null`) |
 | `tasks` | L/H/S/A | `window{fromUtc,toUtc,source,rows,gapNote,ledgerSinceUtc}` and `rows[]` keyed `seat/node8/acceptedUtc` with local lifecycle facts, session facts and the API verdict joined by `hash12` (spec §7 lists every field) |
 | `today` | D | per-UTC-day counts, `p50S`, `longestS`, verdict counts, `verdictLagP50S`, `divergence{localStored, planeRowsSubmittedToday, ok}` |
@@ -53,6 +57,82 @@ v2 consumer refuses v1 outright.
 | `plane` | A | `/health` + `/services`: `version`, `verifierUp`, `verifierLastSeenUtc`, `awaitingVerdict` (undocumented), `connectedDaemons` |
 | `machine` | U/H/L | `load1`, `memAvailMiB`, `diskFreeGiB`, `workDirs`, `workBytes`, `abnormalLeaseDirs`, `outboxFiles`, `journal{firstUtc,lastUtc,capNote}` or the docker log facts, `transcriptRetention`, `orphans[]` |
 | `control` | broker | `brokerReachable`, `gate{…}` (plan-time preview; apply re-reads everything), `drain`, `inFlight`, `restartRequired`, `lastAudit[]` |
+
+## Round 9: additive six-dashboard contract
+
+The schema version stays 2. Earlier v2 documents without these fields still fold; new list fields default to an
+empty list and new optional blocks to null. Existing keys and widget names are retained. `SeatCostSpark` is replaced
+by `SeatOutputTokens` when the widget implementation lands; it was never a frozen widget signature.
+
+`data/seat_models.shape_dashboard_document(doc)` is the pure writer boundary for the additive blocks. The manager
+calls it before `validate_status_document`. It copies the new fields one by one, including nested objects. An object
+or array in a scalar slot becomes null. It preserves earlier v2 blocks and does not replace the shared text sanitiser:
+the manager passes sanitised ledger facts (redact, remaining canary removal, currency strip, then cut). The validator's
+secret and 2 MiB rules are unchanged.
+
+| Document path | Flat key | Shape / source |
+|---|---|---|
+| `currentJobs` | `seat_current_jobs` | list with the existing `seat_current` shape; sorted by `startedUtc` descending (acceptance time). The manager joins local lifecycle and standing facts and owns live availability. |
+| `jobs` | `seat_jobs` | bounded JOB rows below; at most one row per running attempt plus one newest finished attempt, supplied newest first. |
+| `records.rows` | `seat_records_rows` | at most 400 RECORDS rows, listed below; full text remains in the ledger. |
+| `records.window` | `seat_records_window` | `rows`, `asOfUtc`, `fromUtc`, `toUtc`, `reason` |
+| `nodes.allRows`, `nodes.weekRows` | `seat_nodes_all_rows`, `seat_nodes_week_rows` | all-history / seven-day aggregates, node row shape below |
+| `nodes.coverage` | `seat_nodes_coverage` | `attempts`, `covered`, `detailsRead`, `asOfUtc`, `reason` |
+| `seat.autoUpdate`, `seat.runtimeWrapper` | `seat_auto_update`, `seat_runtime_wrapper` | nullable flag from unit facts / wrapper note from status |
+| `cost.outputTokens` | `seat_output_tokens` | `today`, `sevenDays`, `averagePerDay`, `days`, `reason`; the existing `cost.series.outputTokensPerDay` carries 14-day points |
+| `control.plan` | `seat_control_plan` | `planId`, `verb`, `command`, `confirm`, `warning`, `expiresAtUtc`, `forced`, `localOnly` |
+| `control.status`, `control.mode` | `seat_control_status`, `seat_control_mode` | nullable plain status text and flow state; the screen owns transient plan state |
+
+Cached JOB, RECORDS, NODES and output-token facts are not blanked by an API source gate; each carries its stored time.
+Existing source gating remains in force for earlier keys. The manager's live merge decides `currentJobs` availability.
+
+**JOB row (`SEAT_ROW_KEYS["seat_jobs"]`).** `key`, `jobId`, `nodeId8`, `nodeKey`, `role`, `kind`, `acceptedUtc`,
+`storedUtc`, `hash12`, `phase`, `elapsedS`, `lastMessage`, `objective`, `reply`, `oracleQuestion`, `oracleAnswer`,
+`oracleNotes`, `questionState`, `questionReason`, `questionAsOfUtc`, `replyState`, `replyReason`, `replyAsOfUtc`,
+`textExpired`, `template`, `paid`, `launch`, `workflowId`, `oracleRequestId`, `parentJobId`, `delivery`,
+`structuralCheck`, `panel`, `usage`, `outcome`, `outcomeSource`, `verdictLagS`, `failureClass`.
+
+`objective`, `reply`, `oracleQuestion`, `oracleAnswer` and `oracleNotes` keep line breaks and brackets and are capped
+at 4,096 characters including a final ellipsis when cut. `structuralCheck.detail` and `delivery.url` are capped at
+512 characters. Other new string fields are capped at 160. Question/reply states are `read`, `not_read`, `busy`,
+`unavailable` or `expired`, with separate reasons and read timestamps; `textExpired` marks removed ledger text.
+The manager chooses the full objective over the running objective and the oracle question over the objective, and
+fills `usage` from the local ledger first, then submission usage. `paid` is a nullable derived flag; no payer address
+or full submission hash is emitted.
+
+**RECORDS row (`SEAT_ROW_KEYS["seat_records_rows"]`).** `key`, `jobId`, `nodeId8`, `nodeKey`, `role`, `kind`,
+`acceptedUtc`, `submittedUtc`, `storedUtc`, `hash12`, `outcome`, `outcomeSource`, `jobState`, `workStatus`, `model`,
+`durationS`, `tokens`, `answerPreview`, `answerState`, `answerReason`, `answerAsOfUtc`, `panel`, `launch`, `paid`,
+`detailRead`. `answerPreview` is the first line, capped at 160 characters; the manager selects the first reply sentence
+or oracle answer before shaping. Full reply, question and notes are excluded. `key` opens full text from the ledger.
+
+**Node row** (both `seat_nodes_all_rows` and `seat_nodes_week_rows`). `nodeKey`, `role`, `attempts`, `accepted`,
+`rejected`, `failed`, `pending`, `acceptedPercent`, `durationP50S`, `outputTokensP50`, `paid`, `launch`, `detailsRead`,
+`lastSubmittedUtc`. Rows are supplied in descending attempts order. A missing node is grouped as `(plane unread)`.
+Unread detail counts `paid` and `launch` are null, never zero.
+
+**Nested allowlists.** Missing leaves are null; unlisted API keys are discarded recursively.
+
+| Object | Fields |
+|---|---|
+| `tokens` | `input`, `output`, `cached`, `cacheWrite` |
+| `usage` | `model`, `turns`, `tokens`, `wallMs`, `wallS` |
+| `delivery` | `url`, `atUtc` |
+| `launch` | `kind`, `requested`, `workflowId` |
+| `structuralCheck` | `status`, `detail` |
+| `panel` | `state`, `agreed`, `quorum`, `size`, `figure`, `answerType`, `answerBool`, `memberOk`, `memberReason`, `chainId`, `requestId` |
+
+**Widget signatures.** `SEAT_WIDGET_SIGNATURES` is the exact ordered `update_data` keyword contract. It retains
+`SeatHero`, `SeatNow`, `SeatLog`, `SeatMachine`, `SeatCost`, `SeatLedgerTable`, `SeatConfig` and adds `SeatJob`,
+`SeatOutputTokens`, `SeatSkills`, `SeatRecords`, `SeatNodes`, `SeatControl`, `SeatGate`, `SeatAudit`. Every widget
+accepts nullable arguments plus the usual extra-keyword sink. Hero gains nodes/coverage and config/restart flags;
+CONFIG gains identity, boot, auto-update, wrapper and restart facts; LEDGER gains today's median, longest duration and
+divergence. The other new widgets consume their matching row/block keys and source/offline facts as listed in the
+module. Signature agreement checks stage with widget implementation; the data contract lands first.
+
+The size regression is `tests/data/test_seat_models.py::test_round9_worst_document_under_2mib_mutation13`: three
+running jobs plus last, 400 local rows and preview-only records, 400 node types, 50 skills and 20 audit entries, with
+maximum-length four-byte Unicode JOB texts. It serialises the actual shaped document and requires less than 2 MiB.
 
 ## Mapping: aidude writer v1 (`tools/surf/_worker_page.py`, `schemaVersion: 1`) → v2
 

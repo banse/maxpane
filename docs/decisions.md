@@ -1075,3 +1075,9 @@ The 9,753,432-byte archive contains exactly 24 tracked deployment files plus the
 ### 2026-10-03 — PEPEPANE round 9: approved brief is the plan
 
 The owner-approved round-9 brief at `/Library/Vibes/aidude/docs/superpowers/plans/2026-10-03-pepepane-round-9-redesign-brief.md` is the implementation plan for this Tier 2 change. Together with the verbatim, body-hashed spec copy in `docs/pepepane_redesign_PRD.md`, it satisfies the project's spec-and-plan requirement. No separate plan document or new design phase is needed. Work proceeds through WP0–WP7 on the existing pepepane branch, which remains in place after verification. The original PRD and plan bodies remain historical records.
+
+### 2026-10-03 — PEPEPANE round 9: additive dashboard contract
+
+Redesign section 8.3 adds running-job, JOB, RECORDS, NODES, output-token and shared-control fields to the v2 document and its flat widget contract before their producers and widgets are implemented. Existing keys and legacy folds remain supported. New nested facts are selected field by field. The document carries full text only for running jobs and one most recent finished job, with one-line previews for up to 400 records; popup text remains in the ledger. The schema and validator size limit are unchanged. Cached record and node facts have their own timestamps and are not gated by the availability of a live API source.
+
+Widget signatures grow with the approved widget set. The existing signature/export pins will move with those implementations in WP4–WP6; they are not weakened or skipped during the contract-first step. The document shaping boundary is pure and additive and will follow the common third-party-text sanitiser at the manager's writer boundary.

@@ -84,7 +84,7 @@ def test_empty_document_has_every_block_and_no_zero_leaf():
     doc = sm.empty_document(started_at_utc="2026-09-26T03:40:07Z", host=HOST)
     assert set(doc) == {
         "schemaVersion", "producer", "startedAtUtc", "completedAtUtc", "host", "sources", "seat", "daemon", "auth",
-        "unit", "current", "queue", "tasks", "today", "cost", "quota", "standing", "plane", "machine", "control",
+        "unit", "current", "currentJobs", "jobs", "records", "nodes", "queue", "tasks", "today", "cost", "quota", "standing", "plane", "machine", "control",
     }
     assert doc["schemaVersion"] == 2 and doc["producer"] == "pepepane 0.1.0"
     assert doc["startedAtUtc"] == "2026-09-26T03:40:07Z" and doc["completedAtUtc"] is None
@@ -238,6 +238,7 @@ def test_every_widget_signature_key_is_a_seat_key():
     # contract C.4: every name in every signature is in SEAT_KEYS (the PANELS adapters are keys(*signature))
     assert set(sm.SEAT_WIDGET_SIGNATURES) == {
         "SeatHero", "SeatNow", "SeatLedgerTable", "SeatLog", "SeatConfig", "SeatCost", "SeatMachine",
+        "SeatJob", "SeatOutputTokens", "SeatSkills", "SeatRecords", "SeatNodes", "SeatGate", "SeatAudit", "SeatControl",
     }
     keys = set(sm.SEAT_KEYS)
     for widget, signature in sm.SEAT_WIDGET_SIGNATURES.items():
@@ -568,3 +569,167 @@ def test_every_status_v2_fixture_validates_and_folds(name):
     flat = sm.fold_status_document(doc)
     assert tuple(flat) == sm.SEAT_KEYS
     assert "$" not in json.dumps(flat), "no currency anywhere (spec §10)"
+
+# Round 9 contract. Breaks caught: loss of parallel jobs, full RECORDS replies,
+# nested API object copying, missing new widget inputs, and oversize output.
+def _round9_document():
+    doc = _load("status_v2_healthy.json")
+    doc["currentJobs"] = [
+        {"jobId": "job-old", "startedUtc": "2026-10-03T17:00:00Z", "objective": "short old"},
+        {"jobId": "job-new", "startedUtc": "2026-10-03T17:02:00Z", "objective": "short new"},
+        {"jobId": "job-mid", "startedUtc": "2026-10-03T17:01:00Z", "objective": "short mid"},
+    ]
+    doc["jobs"] = [
+        {"key": "7/node-new/time", "jobId": "job-new", "objective": "full [question]\nsecond line",
+         "reply": "full [reply]\nsecond line", "questionState": "read", "replyState": "read",
+         "usage": {"model": "claude", "turns": 6, "tokens": {"output": 10250}},
+         "delivery": {"url": "repo/path", "atUtc": "2026-10-03T17:03:00Z"}},
+        {"key": "7/node-last/time", "jobId": "job-last", "reply": "last reply"},
+    ]
+    doc["records"] = {"rows": [{"key": "7/node-new/time", "jobId": "job-new", "nodeKey": "implement",
+        "answerPreview": "one sentence.\nsecret second sentence", "reply": "FULL REPLY MUST STAY IN LEDGER",
+        "jobState": "completed", "launch": {"requested": True, "kind": "repo"}}],
+        "window": {"rows": 400, "asOfUtc": "2026-10-03T17:03:00Z"}}
+    doc["nodes"] = {"allRows": [{"nodeKey": "implement", "attempts": 10, "accepted": 8,
+                                  "paid": None, "launch": None}], "weekRows": [],
+                    "coverage": {"attempts": 12, "covered": 10, "detailsRead": 0,
+                                 "asOfUtc": "2026-10-03T17:03:00Z"}}
+    doc["seat"].update(autoUpdate=True, runtimeWrapper="wrapper note")
+    return doc
+
+
+def test_round9_fold_keeps_three_running_jobs_newest_first_and_separate_full_text():
+    flat = sm.fold_status_document(_round9_document())
+    assert [r["jobId"] for r in flat["seat_current_jobs"]] == ["job-new", "job-mid", "job-old"]
+    assert flat["seat_jobs"][0]["objective"] == "full [question]\nsecond line"
+    assert flat["seat_jobs"][0]["reply"] == "full [reply]\nsecond line"
+    assert flat["seat_records_rows"][0]["answerPreview"] == "one sentence."
+    assert "reply" not in flat["seat_records_rows"][0]
+    assert flat["seat_nodes_all_rows"][0]["accepted"] == 8
+    assert flat["seat_nodes_coverage"]["covered"] == 10
+    assert flat["seat_auto_update"] is True and flat["seat_runtime_wrapper"] == "wrapper note"
+
+
+def test_round9_nested_api_objects_are_shaped_field_by_field():
+    doc = _round9_document()
+    job = doc["jobs"][0]
+    job["secret"] = "must disappear"
+    job["usage"]["secret"] = "must disappear"
+    job["usage"]["tokens"]["privateKey"] = "must disappear"
+    job["delivery"]["auth.json"] = "must disappear"
+    job["structuralCheck"] = {"status": "passed", "detail": "paths verified", "secret": "must disappear"}
+    job["panel"] = {"state": "agreed", "agreed": 3, "secret": "must disappear"}
+    doc["records"]["rows"][0]["launch"]["secret"] = "must disappear"
+    # A malicious object in a normally scalar slot must not slip through either.
+    doc["records"]["rows"][0]["model"] = {"secret": "must disappear"}
+    shaped = sm.shape_dashboard_document(doc)
+    assert sm.validate_status_document(shaped) is None
+    assert shaped["jobs"][0]["usage"]["tokens"]["output"] == 10250
+    assert shaped["jobs"][0]["structuralCheck"] == {"status": "passed", "detail": "paths verified"}
+    assert shaped["records"]["rows"][0]["model"] is None
+    assert "must disappear" not in json.dumps(shaped)
+    flat = sm.fold_status_document(doc)
+    assert "must disappear" not in json.dumps({k: flat[k] for k in (
+        "seat_jobs", "seat_records_rows", "seat_nodes_all_rows", "seat_nodes_coverage")} )
+
+
+def test_round9_written_document_is_valid_and_text_caps_do_not_expand_records():
+    doc = _round9_document()
+    doc["jobs"][0].update(objective="Q" * 100000, reply="R" * 100000,
+                            structuralCheck={"status": "passed", "detail": "Z" * 100000})
+    doc["records"]["rows"][0]["answerPreview"] = "Z" * 100000
+    shaped = sm.shape_dashboard_document(doc)
+    assert sm.validate_status_document(shaped) is None
+    assert len(shaped["jobs"][0]["objective"]) == 4096
+    assert shaped["jobs"][0]["objective"].endswith("…")
+    assert len(shaped["jobs"][0]["structuralCheck"]["detail"]) == 512
+    assert len(shaped["records"]["rows"][0]["answerPreview"]) == 160
+    assert "reply" not in shaped["records"]["rows"][0]
+
+
+def test_round9_old_document_still_folds_without_new_blocks():
+    flat = sm.fold_status_document(_load("status_v2_healthy.json"))
+    assert flat["seat_current_jobs"] == [] and flat["seat_jobs"] == []
+    assert flat["seat_records_rows"] == [] and flat["seat_nodes_all_rows"] == []
+    assert flat["seat_records_window"] is None and flat["seat_nodes_coverage"] is None
+    assert flat["seat_token_id"] == 7 and flat["seat_tasks_rows"][0]["outcome"] == "accepted"
+
+
+def test_round9_all_six_bodies_have_frozen_signatures():
+    needs = {
+        "SeatHero": {"seat_nodes_all_rows", "seat_nodes_coverage", "seat_control_restart_required", "seat_config_changed_since_start"},
+        "SeatJob": {"seat_current_jobs", "seat_jobs", "seat_sources", "seat_offline"},
+        "SeatOutputTokens": {"seat_cost_series", "seat_cost_tokens", "seat_sources"},
+        "SeatSkills": {"seat_skills_rows", "seat_skills_needs_network", "seat_control_restart_required"},
+        "SeatRecords": {"seat_records_rows", "seat_records_window", "seat_offline"},
+        "SeatNodes": {"seat_nodes_all_rows", "seat_nodes_week_rows", "seat_nodes_coverage"},
+        "SeatGate": {"seat_control_gate", "seat_control_drain", "seat_sources"},
+        "SeatAudit": {"seat_control_last_audit", "seat_control_in_flight"},
+        "SeatControl": {"seat_control_gate", "seat_control_in_flight", "seat_unit_boot_enabled", "seat_control_plan", "seat_control_status"},
+        "SeatConfig": {"seat_token_id", "seat_wallet", "seat_device_key_public", "seat_auto_update", "seat_runtime_wrapper"},
+    }
+    for widget, keys in needs.items():
+        assert keys <= set(sm.SEAT_WIDGET_SIGNATURES.get(widget, ())), widget
+
+
+def test_round9_worst_document_under_2mib_mutation13():
+    doc = _round9_document()
+    # Literal worst supported round-9 fixture: three running jobs plus last,
+    # 400 local tasks / record previews / node types, 50 skills, 20 audit rows.
+    text = "😀" * 4096
+    base_job = doc["jobs"][0]
+    doc["jobs"] = [dict(base_job, jobId=job_id, objective=text, reply=text,
+                        oracleQuestion=text, oracleAnswer=text, oracleNotes=text,
+                        structuralCheck={"status": "passed", "detail": text})
+                   for job_id in ("job-new", "job-mid", "job-old", "job-last")]
+    doc["records"]["rows"] = [dict(doc["records"]["rows"][0], key=f"7/node/{i}", answerPreview=text,
+                                  reply=text, oracleQuestion=text, oracleNotes=text) for i in range(400)]
+    doc["tasks"]["rows"] = [dict(doc["tasks"]["rows"][0], key=f"7/node/{i}") for i in range(400)]
+    doc["seat"]["skills"]["rows"] = [{"id": f"skill-{i}", "on": True, "needs": "network"} for i in range(50)]
+    doc["nodes"]["allRows"] = [dict(doc["nodes"]["allRows"][0], nodeKey=f"node-{i}") for i in range(400)]
+    doc["control"]["lastAudit"] = [{"seq": i, "verb": "restart", "phase": "verify"} for i in range(20)]
+    shaped = sm.shape_dashboard_document(doc)
+    raw_bytes = len(json.dumps(shaped, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+    assert raw_bytes < 2 * 1024 * 1024
+    emitted_bytes = len(json.dumps(shaped, ensure_ascii=False, indent=2).encode("utf-8"))
+    assert emitted_bytes < 2 * 1024 * 1024
+    assert sm.validate_status_document(shaped, raw_bytes=emitted_bytes) is None
+    assert sm.validate_status_document(shaped) is None
+    assert len(shaped["records"]["rows"]) == 400
+    assert len(shaped["jobs"]) == 4
+    assert len(shaped["jobs"][0]["reply"]) == 4096
+
+
+def test_round9_job_text_is_limited_to_running_attempts_and_one_last_job():
+    doc = _round9_document()
+    doc["jobs"] = [dict(doc["jobs"][0], key=f"attempt-{i}") for i in range(400)] + doc["jobs"][1:]
+    shaped = sm.shape_dashboard_document(doc)
+    assert len(shaped["jobs"]) <= 4
+    assert shaped["jobs"][-1]["jobId"] == "job-last"
+
+
+def test_round9_additive_config_cost_control_fields_reject_nested_hostile_values():
+    doc = _round9_document()
+    doc["seat"]["runtimeWrapper"] = {"secret": "must disappear"}
+    doc["cost"]["outputTokens"] = {"today": 12, "secret": "must disappear"}
+    doc["control"].update(plan={"planId": "abc123", "command": "imd restart", "secret": "must disappear"},
+                          status="verifying", mode="verifying")
+    shaped = sm.shape_dashboard_document(doc)
+    assert sm.validate_status_document(shaped) is None
+    assert shaped["seat"]["runtimeWrapper"] is None
+    flat = sm.fold_status_document(shaped)
+    assert flat["seat_output_tokens"]["today"] == 12
+    assert flat["seat_control_plan"]["planId"] == "abc123"
+    assert flat["seat_control_status"] == "verifying"
+
+
+def test_round9_node_launch_counts_remain_numbers_while_job_record_launch_stays_object():
+    doc = _round9_document()
+    doc["nodes"]["allRows"] = [{"nodeKey": "implement", "launch": 2}, {"nodeKey": "unread", "launch": None}]
+    doc["nodes"]["weekRows"] = [{"nodeKey": "implement", "launch": 1}, {"nodeKey": "unread", "launch": None}]
+    doc["jobs"][0]["launch"] = {"kind": "repo", "requested": True, "workflowId": "workflow-1"}
+    flat = sm.fold_status_document(doc)
+    assert [row["launch"] for row in flat["seat_nodes_all_rows"]] == [2, None]
+    assert [row["launch"] for row in flat["seat_nodes_week_rows"]] == [1, None]
+    assert flat["seat_jobs"][0]["launch"] == {"kind": "repo", "requested": True, "workflowId": "workflow-1"}
+    assert flat["seat_records_rows"][0]["launch"] == {"kind": "repo", "requested": True, "workflowId": None}

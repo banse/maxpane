@@ -58,6 +58,7 @@ __all__ = [
     "empty_source",
     "fold_status_document",
     "parse_iso",
+    "shape_dashboard_document",
     "truncate_id",
     "validate_status_document",
 ]
@@ -123,7 +124,7 @@ def empty_document(*, producer: str = PRODUCER, started_at_utc: str, host: dict)
             "runtime": {"id": None, "version": None}, "releaseAvailable": None, "buildMismatch": None,
             "skills": {"offered": None, "on": None, "optOut": [], "needsNetwork": None, "rows": []},
             "tools": [], "inference": None, "premiumAdvertised": None, "hints": None,
-            "configChangedSinceStart": None,
+            "configChangedSinceStart": None, "autoUpdate": None, "runtimeWrapper": None,
         },
         "daemon": {
             "state": None, "uptime": None, "work": None, "running": None, "submittedSinceStart": None,
@@ -139,6 +140,10 @@ def empty_document(*, producer: str = PRODUCER, started_at_utc: str, host: dict)
             "cpuQuota": None, "tasksCurrent": None,
         },
         "current": None,
+        "currentJobs": [],
+        "jobs": [],
+        "records": {"rows": [], "window": None},
+        "nodes": {"allRows": [], "weekRows": [], "coverage": None},
         "queue": None,
         "tasks": {
             "window": {"fromUtc": None, "toUtc": None, "source": None, "rows": None, "gapNote": None,
@@ -154,6 +159,7 @@ def empty_document(*, producer: str = PRODUCER, started_at_utc: str, host: dict)
             "windowDays": None, "tasks": None, "excluded": {"doctor": None, "manual": None}, "turns": None,
             "tokens": dict(tokens), "buckets": [], "sideModel": None,
             "series": {"outputTokensPerDay": [], "tasksPerDay": [], "acceptedPerDay": []},
+            "outputTokens": None,
             "depth": {"ledgerFromUtc": None, "sessionsFromUtc": None, "expiredRows": None,
                       "skipped": {"oversize": None}},
         },
@@ -173,7 +179,7 @@ def empty_document(*, producer: str = PRODUCER, started_at_utc: str, host: dict)
             "orphans": [],
         },
         "control": {"brokerReachable": None, "gate": None, "drain": None, "inFlight": None,
-                    "restartRequired": None, "lastAudit": []},
+                    "restartRequired": None, "lastAudit": [], "plan": None, "status": None, "mode": None},
     }
 
 
@@ -347,6 +353,11 @@ SEAT_KEYS: tuple[str, ...] = (
     "seat_log_seq",              # int — the newest seq in seat_log_lines (widget stores it)
     "seat_log_footer",           # str — e.g. "tail: journalctl -f · cursor age 4 s · grammar 5bfa8261 \u2713"
     "seat_ledger_footer",        # str — window + divergence sentence (§8 LEDGER)
+    # ---- round 9: six bodies (additive) ------------------------------------
+    "seat_current_jobs", "seat_jobs", "seat_records_rows", "seat_records_window",
+    "seat_nodes_all_rows", "seat_nodes_week_rows", "seat_nodes_coverage",
+    "seat_auto_update", "seat_runtime_wrapper", "seat_output_tokens",
+    "seat_control_plan", "seat_control_status", "seat_control_mode",
     # ---- status bar (read by DashboardScreen._do_refresh) ------------------
     "last_updated_seconds_ago", "error_count", "poll_interval",
 )
@@ -384,6 +395,34 @@ SEAT_BLOCK_KEYS: dict[str, tuple[str, ...]] = {
     "seat_control_in_flight": ("verb", "planId", "sinceUtc"),
     "seat_quota": ("provider", "window", "usedPercent", "resetsAtUtc", "sampledAtUtc", "planType", "reason"),
 }
+
+# Round-9 rows expose display facts and ledger keys, never full submission hashes.
+SEAT_ROW_KEYS.update({
+    "seat_current_jobs": SEAT_BLOCK_KEYS["seat_current"],
+    "seat_jobs": (
+        "key", "jobId", "nodeId8", "nodeKey", "role", "kind", "acceptedUtc", "storedUtc", "hash12",
+        "phase", "elapsedS", "lastMessage", "objective", "reply", "oracleQuestion", "oracleAnswer", "oracleNotes",
+        "questionState", "questionReason", "questionAsOfUtc", "replyState", "replyReason", "replyAsOfUtc",
+        "textExpired", "template", "paid", "launch", "workflowId", "oracleRequestId", "parentJobId",
+        "delivery", "structuralCheck", "panel", "usage", "outcome", "outcomeSource", "verdictLagS", "failureClass",
+    ),
+    "seat_records_rows": (
+        "key", "jobId", "nodeId8", "nodeKey", "role", "kind", "acceptedUtc", "submittedUtc", "storedUtc",
+        "hash12", "outcome", "outcomeSource", "jobState", "workStatus", "model", "durationS", "tokens",
+        "answerPreview", "answerState", "answerReason", "answerAsOfUtc", "panel", "launch", "paid", "detailRead",
+    ),
+    "seat_nodes_all_rows": (
+        "nodeKey", "role", "attempts", "accepted", "rejected", "failed", "pending", "acceptedPercent",
+        "durationP50S", "outputTokensP50", "paid", "launch", "detailsRead", "lastSubmittedUtc",
+    ),
+})
+SEAT_ROW_KEYS["seat_nodes_week_rows"] = SEAT_ROW_KEYS["seat_nodes_all_rows"]
+SEAT_BLOCK_KEYS.update({
+    "seat_records_window": ("rows", "asOfUtc", "fromUtc", "toUtc", "reason"),
+    "seat_nodes_coverage": ("attempts", "covered", "detailsRead", "asOfUtc", "reason"),
+    "seat_output_tokens": ("today", "sevenDays", "averagePerDay", "days", "reason"),
+    "seat_control_plan": ("planId", "verb", "command", "confirm", "warning", "expiresAtUtc", "forced", "localOnly"),
+})
 
 #: Every ``seat_*`` key -> the ``SOURCE_NAMES`` entry whose ``ok`` gates it, or
 #: ``None`` for meta/derived keys that are never gated (spec §7 "sources is
@@ -464,6 +503,15 @@ SEAT_FIELD_SOURCES: dict[str, str | None] = {
     "last_updated_seconds_ago": None, "error_count": None, "poll_interval": None,
 }
 
+# Cached round-9 facts remain available behind their stored timestamps. The
+# manager owns live currentJobs availability, including its local/API merge.
+SEAT_FIELD_SOURCES.update({
+    "seat_current_jobs": None, "seat_jobs": None, "seat_records_rows": None, "seat_records_window": None,
+    "seat_nodes_all_rows": None, "seat_nodes_week_rows": None, "seat_nodes_coverage": None,
+    "seat_auto_update": "unit", "seat_runtime_wrapper": "status", "seat_output_tokens": None,
+    "seat_control_plan": None, "seat_control_status": None, "seat_control_mode": None,
+})
+
 #: (invented) row-level gating inside a list-valued key: a row field whose
 #: source is not ok folds to ``None`` -- except ``outcome``, whose spec §7
 #: word for "API unavailable / offline" is ``"unknown"``.
@@ -526,6 +574,31 @@ SEAT_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 }
 
 
+# Existing signatures grow additively; implementation follows in the widget package.
+SEAT_WIDGET_SIGNATURES["SeatHero"] += (
+    "seat_nodes_all_rows", "seat_nodes_coverage", "seat_control_restart_required", "seat_config_changed_since_start",
+)
+SEAT_WIDGET_SIGNATURES["SeatConfig"] += (
+    "seat_token_id", "seat_agent_id", "seat_wallet", "seat_device_key_public", "seat_unit_boot_enabled",
+    "seat_unit_restart_policy", "seat_auto_update", "seat_runtime_wrapper", "seat_control_restart_required",
+)
+SEAT_WIDGET_SIGNATURES["SeatLedgerTable"] += ("seat_today_p50_s", "seat_today_longest_s", "seat_today_divergence")
+SEAT_WIDGET_SIGNATURES.update({
+    "SeatJob": ("seat_current_jobs", "seat_jobs", "seat_sources", "seat_as_of_hhmm", "seat_offline"),
+    "SeatOutputTokens": ("seat_cost_series", "seat_cost_tokens", "seat_output_tokens", "seat_sources", "seat_as_of_hhmm"),
+    "SeatSkills": ("seat_skills_rows", "seat_skills_offered", "seat_skills_on", "seat_skills_needs_network",
+                   "seat_tools", "seat_control_restart_required", "seat_sources", "seat_as_of_hhmm", "seat_host_kind"),
+    "SeatRecords": ("seat_records_rows", "seat_records_window", "seat_sources", "seat_as_of_hhmm", "seat_offline"),
+    "SeatNodes": ("seat_nodes_all_rows", "seat_nodes_week_rows", "seat_nodes_coverage", "seat_sources", "seat_offline"),
+    "SeatGate": ("seat_control_gate", "seat_control_drain", "seat_sources", "seat_as_of_hhmm"),
+    "SeatAudit": ("seat_control_last_audit", "seat_control_in_flight", "seat_sources", "seat_as_of_hhmm"),
+    "SeatControl": ("seat_control_gate", "seat_control_drain", "seat_control_in_flight", "seat_control_broker_reachable",
+                    "seat_unit_boot_enabled", "seat_unit_graceful_stop_possible", "seat_unit_active_state",
+                    "seat_host_kind", "seat_machine_orphans", "seat_daemon_version", "seat_release_available",
+                    "seat_control_plan", "seat_control_status", "seat_control_mode", "seat_sources"),
+})
+
+
 # ---------------------------------------------------------------------------
 # fold_status_document
 # ---------------------------------------------------------------------------
@@ -547,6 +620,101 @@ def _clean(value: object, field: str | None = None) -> object:
     if isinstance(value, (dict, list, tuple)):
         return redact_tree(value, field=field)
     return redact(value, field)
+
+
+_DASHBOARD_ROWS = frozenset({"seat_current_jobs", "seat_jobs", "seat_records_rows", "seat_nodes_all_rows", "seat_nodes_week_rows"})
+_TOKEN_KEYS = ("input", "output", "cached", "cacheWrite")
+_NESTED_KEYS = {
+    "tokens": _TOKEN_KEYS,
+    "usage": ("model", "turns", "tokens", "wallMs", "wallS"),
+    "delivery": ("url", "atUtc"),
+    "launch": ("kind", "requested", "workflowId"),
+    "structuralCheck": ("status", "detail"),
+    "panel": ("state", "agreed", "quorum", "size", "figure", "answerType", "answerBool",
+              "memberOk", "memberReason", "chainId", "requestId"),
+}
+_JOB_TEXT_FIELDS = frozenset({"objective", "reply", "oracleQuestion", "oracleAnswer", "oracleNotes"})
+
+
+def _dashboard_value(name: str, value: object, *, full_text: bool = False) -> object:
+    """Allowlisted objects only; an object in a scalar field becomes unavailable."""
+    if name in _NESTED_KEYS:
+        if not isinstance(value, dict):
+            return None
+        return {k: _dashboard_value(k, value.get(k)) for k in _NESTED_KEYS[name]}
+    if isinstance(value, str):
+        text = redact(value, name)
+        if name == "answerPreview":
+            text = text.splitlines()[0] if text.splitlines() else ""
+        cap = 4096 if full_text else (512 if name in {"detail", "url"} else 160)
+        return text if len(text) <= cap else text[:cap - 1] + "…"
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return None
+
+
+def _dashboard_row(key: str, raw: Mapping[str, Any]) -> dict:
+    out = {}
+    for name in SEAT_ROW_KEYS[key]:
+        value = raw.get(name)
+        if name == "launch" and key in {"seat_nodes_all_rows", "seat_nodes_week_rows"}:
+            out[name] = value if type(value) is int and value >= 0 else None
+        else:
+            out[name] = _dashboard_value(name, value, full_text=key == "seat_jobs" and name in _JOB_TEXT_FIELDS)
+    return out
+
+
+def _dashboard_rows(key: str, raw: object) -> list[dict]:
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [_dashboard_row(key, item) for item in raw if isinstance(item, dict)]
+
+
+def _dashboard_block(key: str, raw: object) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    return {name: _dashboard_value(name, raw.get(name)) for name in SEAT_BLOCK_KEYS[key]}
+
+
+def shape_dashboard_document(doc: Mapping[str, Any]) -> dict:
+    """Shape the additive round-9 blocks before the manager validates its output.
+
+    The manager supplies sanitised ledger facts. This boundary selects each API
+    field explicitly and enforces document caps; it does not replace the shared
+    third-party-text sanitiser or relax the validator. Existing v2 blocks survive.
+    """
+    out = dict(doc)
+    running = _dashboard_rows("seat_current_jobs", doc.get("currentJobs"))
+    running.sort(key=lambda row: parse_iso(row.get("startedUtc")) or 0.0, reverse=True)
+    out["currentJobs"] = running
+    # Only the running jobs and the newest finished job belong here, never the
+    # 400 full replies retained by the ledger. Preserve the supplied job order.
+    job_ids = {r["jobId"] for r in running if r.get("jobId") is not None}
+    jobs = _dashboard_rows("seat_jobs", doc.get("jobs"))
+    last = next((r for r in jobs if r.get("jobId") not in job_ids), None)
+    out["jobs"] = [r for r in jobs if r.get("jobId") in job_ids][:len(running)]
+    if last is not None:
+        out["jobs"].append(last)
+    records = _dict(doc.get("records"))
+    out["records"] = {"rows": _dashboard_rows("seat_records_rows", records.get("rows"))[:400],
+                      "window": _dashboard_block("seat_records_window", records.get("window"))}
+    nodes = _dict(doc.get("nodes"))
+    out["nodes"] = {"allRows": _dashboard_rows("seat_nodes_all_rows", nodes.get("allRows")),
+                    "weekRows": _dashboard_rows("seat_nodes_week_rows", nodes.get("weekRows")),
+                    "coverage": _dashboard_block("seat_nodes_coverage", nodes.get("coverage"))}
+    seat = dict(_dict(doc.get("seat")))
+    for name in ("autoUpdate", "runtimeWrapper"):
+        seat[name] = _dashboard_value(name, seat.get(name))
+    out["seat"] = seat
+    cost = dict(_dict(doc.get("cost")))
+    cost["outputTokens"] = _dashboard_block("seat_output_tokens", cost.get("outputTokens"))
+    out["cost"] = cost
+    control = dict(_dict(doc.get("control")))
+    control["plan"] = _dashboard_block("seat_control_plan", control.get("plan"))
+    for name in ("status", "mode"):
+        control[name] = _dashboard_value(name, control.get(name))
+    out["control"] = control
+    return out
 
 
 class _Fold:
@@ -591,6 +759,8 @@ class _Fold:
         return [self.row(key, item) for item in raw if isinstance(item, dict)]
 
     def row(self, key: str, raw: Mapping[str, Any]) -> dict:
+        if key in _DASHBOARD_ROWS:
+            return _dashboard_row(key, raw)
         gates = SEAT_ROW_FIELD_SOURCES.get(key, {})
         out: dict = {}
         for name in SEAT_ROW_KEYS[key]:
@@ -618,7 +788,7 @@ def fold_status_document(
     ``seat_daemon_offline``, ``seat_log_footer``, ``seat_ledger_footer`` --
     are derived by ``analytics/seat_signals``.
     """
-    d = _dict(doc)
+    d = shape_dashboard_document(_dict(doc))
     sources = _dict(d.get("sources"))
     f = _Fold(sources)
     host = _dict(d.get("host"))
@@ -872,6 +1042,20 @@ def fold_status_document(
         "seat_log_seq": newest_seq,
         "seat_log_footer": log_foot,
         "seat_ledger_footer": ledger_foot,
+        # round 9
+        "seat_current_jobs": f.rows("seat_current_jobs", d.get("currentJobs")),
+        "seat_jobs": f.rows("seat_jobs", d.get("jobs")),
+        "seat_records_rows": f.rows("seat_records_rows", _dict(d.get("records")).get("rows")),
+        "seat_records_window": f.block("seat_records_window", _dict(d.get("records")).get("window")),
+        "seat_nodes_all_rows": f.rows("seat_nodes_all_rows", _dict(d.get("nodes")).get("allRows")),
+        "seat_nodes_week_rows": f.rows("seat_nodes_week_rows", _dict(d.get("nodes")).get("weekRows")),
+        "seat_nodes_coverage": f.block("seat_nodes_coverage", _dict(d.get("nodes")).get("coverage")),
+        "seat_auto_update": f.value("seat_auto_update", seat.get("autoUpdate")),
+        "seat_runtime_wrapper": f.value("seat_runtime_wrapper", seat.get("runtimeWrapper")),
+        "seat_output_tokens": f.block("seat_output_tokens", cost.get("outputTokens")),
+        "seat_control_plan": f.block("seat_control_plan", control.get("plan")),
+        "seat_control_status": f.value("seat_control_status", control.get("status")),
+        "seat_control_mode": f.value("seat_control_mode", control.get("mode")),
         # status bar
         "last_updated_seconds_ago": last_updated,
         "error_count": sum(1 for s in sources.values() if isinstance(s, dict) and s.get("ok") is False),
