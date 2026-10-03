@@ -166,7 +166,7 @@ configuration, never secrets (MaxPane rule).
 recorded once by the probe. Broker 128M (idles ≈ 20 MiB); each transient child 512M (`imd doctor` ≈ 120 MB). Caps are
 ceilings, not reservations. The VPS worker measured 116–189 MB on a 3,828 MB box whose worker cap is 3 G.
 The actual lean Mac cold peak measured on 2026-09-27 was 58.8 MiB (Python 3.11.15, Textual 8.2.8, libproc fallback);
-this is separate from the historical full-app 142 MiB result. VPS lean memory remains unmeasured until the owner probe.
+this is separate from the historical full-app 142 MiB result. The owner measured the live VPS TUI slice peak at 114634752 bytes on 2026-10-03, under its 268435456-byte limit; see `docs/seat_install_probe.md` section 20.
 
 ## Updating the fork on the VPS
 
