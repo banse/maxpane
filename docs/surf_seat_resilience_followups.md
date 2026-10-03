@@ -103,7 +103,9 @@ Filed, not fixed:
   `valid_identity` accepts only lowercase `[0-9a-f]{64}`; the manager's `_hex64` also accepts
   uppercase. A row with an uppercase hash will be read but shows `not read` instead of `loading…`.
   This errs on the safe side: it never promises a read that does not come.
-- **F-S2: the cap evicts by the last change, not the last read** (review M2). An unchanged finished
+- **F-S2: the cap evicts by the last change, not the last read** (review M2). DONE 2026-10-03:
+  an unchanged read of a seat not already first stamps an optional `seen_ts`, which orders the
+  cap; `read_ts` (the `as of`) is untouched and polling one seat still writes nothing. An unchanged finished
   read keeps its old `read_ts`, so the slot is not re-stored. As a result the 6-seat cap orders
   seats by when their data last changed, not by when they were last read. The plan said "most
   recently read". Low impact, because only a seventh seat evicts anything.

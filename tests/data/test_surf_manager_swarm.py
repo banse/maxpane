@@ -1815,6 +1815,31 @@ async def test_seat_slot_keeps_six_newest_of_seven_finished_reads(tmp_path):
     await manager.close()
 
 
+async def test_seat_slot_evicts_the_least_recently_read_not_the_least_recently_changed(tmp_path):
+    """F-S2: an unchanged re-read keeps its ``read_ts`` -- the seat's own
+    ``as of`` -- but counts as a read for the cap, so a seventh seat evicts
+    the seat read longest ago. Re-reading the seat that is already the most
+    recently read writes nothing, so polling one seat stays free."""
+    clock = FakeClock(NOW)
+    manager = _manager(tmp_path, _FakeSwarm(), clock=clock)
+    for token in range(2000, 2006):
+        await manager._pool_swarm_seat(token, clock())
+        clock.advance(60)
+    read_ts = manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["seats"]["2000"]["read_ts"]
+    await manager._pool_swarm_seat(2000, clock())
+    entry = manager.cache.get_last_good(SLOT_SWARM_SEAT)
+    assert list(entry.payload["seats"])[0] == "2000"
+    assert entry.payload["seats"]["2000"]["read_ts"] == read_ts, "the as-of marker stays"
+    clock.advance(60)
+    await manager._pool_swarm_seat(2000, clock())
+    assert manager.cache.get_last_good(SLOT_SWARM_SEAT).ts == entry.ts
+    clock.advance(60)
+    await manager._pool_swarm_seat(2006, clock())
+    seats = manager.cache.get_last_good(SLOT_SWARM_SEAT).payload["seats"]
+    assert list(seats) == ["2006", "2000", "2005", "2004", "2003", "2002"]
+    await manager.close()
+
+
 async def test_unchanged_seat_is_not_restored_or_retimestamped(tmp_path, monkeypatch):
     clock = FakeClock(NOW)
     manager, first = await _seated(tmp_path, _FakeSwarm(), seat=420, clock=clock)

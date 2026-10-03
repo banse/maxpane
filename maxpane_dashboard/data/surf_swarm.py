@@ -1002,7 +1002,13 @@ _SLOT_STATES = ("ok", "unknown_seat")
 
 
 def coerce_seat_slot(payload: object, *, now: float) -> dict[str, Any] | None:
-    """Validate finished reads independently, retaining the six newest seats."""
+    """Validate finished reads independently, retaining the six most recently read.
+
+    ``read_ts`` is when the record last changed -- the seat's ``as of``.
+    The optional ``seen_ts`` is a later unchanged read (F-S2); the cap
+    orders by it, else by ``read_ts``, then by numeric token. A stored
+    ``seen_ts`` is validated like ``read_ts`` and may not precede it.
+    """
     if not isinstance(payload, Mapping) or not isinstance(payload.get("seats"), Mapping):
         return None
     seats = {}
@@ -1021,8 +1027,16 @@ def coerce_seat_slot(payload: object, *, now: float) -> dict[str, Any] | None:
         if (not _nonnegative_finite(read_ts)
                 or read_ts > now + CLOCK_SKEW_TOLERANCE_SECONDS):
             continue
-        seats[key] = {"state": state, "seat": seat, "read_ts": float(read_ts)}
-    newest = sorted(seats, key=lambda key: (-seats[key]["read_ts"], int(key)))[:SEAT_SLOT_CAP]
+        entry = {"state": state, "seat": seat, "read_ts": float(read_ts)}
+        if "seen_ts" in point:
+            seen_ts = point["seen_ts"]
+            if (not _nonnegative_finite(seen_ts) or seen_ts < read_ts
+                    or seen_ts > now + CLOCK_SKEW_TOLERANCE_SECONDS):
+                continue
+            entry["seen_ts"] = float(seen_ts)
+        seats[key] = entry
+    newest = sorted(seats, key=lambda key: (
+        -seats[key].get("seen_ts", seats[key]["read_ts"]), int(key)))[:SEAT_SLOT_CAP]
     return {"seats": {key: seats[key] for key in newest}}
 
 

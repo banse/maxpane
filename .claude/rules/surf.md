@@ -185,8 +185,12 @@ job-data roster. ROSTER and FEEDBACK are retired, along with Enter-on-roster sel
 `select_seat` and the cursor path. The roster remains an internal fold, not an emitted contract key.
 `GET /seats/{tokenId}` runs on `TIER_SWARM_SEAT`, one seat per cycle. `set_seat` only marks that
 tier due, with no network await in a handler. `SLOT_SWARM_SEAT` stores
-`{"seats": {"<token>": {"state": "ok"|"unknown_seat", "seat": dict|None, "read_ts": float}}}`.
-Keep six entries, newest `read_ts` first, ties by numeric token ascending. Keys are canonical
+`{"seats": {"<token>": {"state": "ok"|"unknown_seat", "seat": dict|None, "read_ts": float}}}`,
+plus an optional `seen_ts` (F-S2). Keep the six most recently read: newest `seen_ts`, else
+`read_ts`, first, ties by numeric token ascending. `read_ts` is when the record last changed
+(the seat's `as of`); an unchanged read of a seat that is not already first stamps `seen_ts`
+instead, so polling one seat writes nothing. A stored `seen_ts` is validated like `read_ts` and
+may not precede it. Keys are canonical
 decimal strings. Validate
 entries independently, retaining valid siblings; timestamps use the cache's clock-skew tolerance.
 Legacy `{token, state, seat}` slots migrate using their stored slot timestamp, without a schema

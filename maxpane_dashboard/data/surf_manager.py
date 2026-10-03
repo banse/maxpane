@@ -5895,7 +5895,10 @@ class SurfManager:
         """Update the selected token's last-good; busy and failures back off.
 
         An identical finished read keeps its own timestamp and is not stored
-        again. A changed record advances only that seat's marker.
+        again. A changed record advances only that seat's marker. An
+        identical read of a seat that is not already the most recently read
+        stamps its ``seen_ts`` instead (F-S2), so the cap evicts the seat
+        read longest ago; polling one seat still writes nothing.
         """
         result = await self._guard(
             lambda: self.swarm_client.fetch_seat(token), "swarm fetch_seat"
@@ -5913,7 +5916,9 @@ class SurfManager:
         previous = seats.get(str(token))
         if previous is None or any(previous[key] != value for key, value in point.items()):
             seats[str(token)] = dict(point, read_ts=now)
-            slot = sw.coerce_seat_slot(slot, now=now)
+        elif next(iter(seats)) != str(token):     # coerce_seat_slot: most recently read first
+            seats[str(token)] = dict(previous, seen_ts=now)
+        slot = sw.coerce_seat_slot(slot, now=now)
         if prior is None or prior.payload != slot:
             self.cache.store_last_good(SLOT_SWARM_SEAT, slot, ts=now)
         self.cache.mark_fetched(TIER_SWARM_SEAT, now)

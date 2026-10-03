@@ -429,6 +429,11 @@ def test_coerce_seat_slot_accepts_finished_entries_and_strips_extra_fields(seat4
     ("420", {"read_ts": float("inf")}), ("420", {"read_ts": 401}),
     pytest.param("420", {"read_ts": 10**1000}, id="oversized-timestamp"),
     pytest.param("4" * 4301, {}, id="oversized-token"),
+    # F-S2: ``seen_ts`` is optional, but a stored one is validated like ``read_ts``
+    # and may not precede it.
+    ("420", {"seen_ts": None}), ("420", {"seen_ts": True}), ("420", {"seen_ts": "100"}),
+    ("420", {"seen_ts": -1}), ("420", {"seen_ts": float("nan")}),
+    ("420", {"seen_ts": float("inf")}), ("420", {"seen_ts": 401}), ("420", {"seen_ts": 99.0}),
 ])
 def test_coerce_seat_slot_drops_bad_entry_and_keeps_sibling(seat420, token, edit):
     sibling = {"state": "unknown_seat", "seat": None, "read_ts": 0.0}
@@ -442,6 +447,20 @@ def test_coerce_seat_slot_caps_and_breaks_timestamp_ties_by_numeric_token():
     point = {"state": "unknown_seat", "seat": None, "read_ts": 400.0}
     payload = {"seats": {str(token): point for token in (20, 10, 9, 8, 7, 6, 5)}}
     assert list(fold.coerce_seat_slot(payload, now=100)["seats"]) == ["5", "6", "7", "8", "9", "10"]
+
+
+def test_coerce_seat_slot_caps_by_the_last_read_and_keeps_an_entry_without_one():
+    """F-S2: ``seen_ts`` -- an unchanged re-read -- orders the cap; an entry
+    without one (every slot written before F-S2) is ordered by its
+    ``read_ts``. Both keep their fields exactly as stored."""
+    def point(ts):
+        return {"state": "unknown_seat", "seat": None, "read_ts": float(ts)}
+    payload = {"seats": {str(token): point(100 + token) for token in range(2, 8)}}
+    payload["seats"]["1"] = dict(point(101), seen_ts=150.0)
+    slot = fold.coerce_seat_slot(payload, now=200)
+    assert list(slot["seats"]) == ["1", "7", "6", "5", "4", "3"]
+    assert slot["seats"]["1"] == dict(point(101), seen_ts=150.0)
+    assert slot["seats"]["7"] == point(107)
 
 
 @pytest.mark.parametrize("payload", [None, [], [420, "ok", {}], "slot", 420, {}, {"seats": []}])
