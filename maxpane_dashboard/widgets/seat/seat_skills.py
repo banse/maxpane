@@ -38,7 +38,9 @@ class SeatSkills(SeatTable):
         room = max(self.size.width - self.TITLE_PADDING_COLS, 0)
         if len(full) > room:
             full = self.TITLE
-        cut = len(full) > room
+        cut = len(full) > room or self._widen or self._clipped
+        if cut:
+            full = rowfit.clip(full, max(0, room - len(rowfit.WIDEN_HINT) - 2))
         self.write('.panel-title', Text(rowfit.clip(rowfit.title_with_hint(full, cut, room), room)))
 
     def _repaint(self):

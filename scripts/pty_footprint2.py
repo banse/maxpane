@@ -7,9 +7,10 @@ Adapted from the research driver that measured MaxPane at 142 MiB (fill7 §4 run
 ``pty.fork`` + ``TIOCSWINSZ`` shape, the same ``footprint -p`` sampling (dirty + compressed;
 ``ps rss`` is not a footprint under memory pressure), a Linux fallback on ``/proc/<pid>/smaps_rollup``
 ``Pss``. The key script is the seat's: no splash and no menu to dismiss, so it waits, then presses
-``c`` (CONTROL), ``escape``, ``l`` (tall log), ``h`` (heartbeats), and ``q``. Prints one sample per
+``1`` through ``6`` (all six bodies), ``2``/``h`` (LIVE heartbeats), and ``q``. Prints one sample per
 10 s and ``[LABEL] peak phys_footprint=<n> MiB``; exits 1 when ``--max-mib`` is set and the peak is
-above it, or no positive sample exists -- the CI assertion (``tests/test_seat_footprint.py``).
+above it, no positive sample exists, or a body was not observed -- the CI assertion
+(``tests/test_seat_footprint.py``). Each body is observed only in fresh output after its key.
 """
 
 from __future__ import annotations
@@ -29,6 +30,27 @@ import time
 
 #: Spec §12.1: the CI ceiling for the lean entrypoint's cold peak (the 256M slice is 1.6× this).
 FOOTPRINT_CI_MAX_MIB = 160
+
+# Two or more body-specific words per visit: the always-visible hero cannot satisfy these.
+SEAT_VISITS = (
+    ('1', 'SEAT', ('MACHINE', 'transcripts')),
+    ('2', 'LIVE', ('NOW', 'JOB')),
+    ('3', 'CONFIG & SKILLS', ('setting', 'change')),
+    ('4', 'RECORDS', ('when', 'answer')),
+    ('5', 'NODES', ('acc %', 'paid')),
+    ('6', 'CONTROL', ('[r]', 'GATE', 'AUDIT')),
+)
+_ANSI = re.compile(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b\[[0-?]*[ -/]*[@-~]')
+
+
+def body_observed(output: str, markers: tuple[str, ...]) -> bool:
+    text = _ANSI.sub('', output)
+    return all(marker in text for marker in markers)
+
+
+def measurement_succeeded(peak: float, maximum: float | None, visits: dict[str, bool]) -> bool:
+    return (peak > 0 and (maximum is None or peak <= maximum)
+            and all(visits.get(name) is True for _, name, _ in SEAT_VISITS))
 
 _UNITS = {"KB": 1 / 1024, "MB": 1.0, "GB": 1024.0}
 
@@ -198,14 +220,18 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"[{args.label}] pty {args.cols}x{args.rows} cmd={' '.join(args.cmd)}", flush=True)
     drain(8)
+    startup_seen = b'PEPEPANE' in screen
     sample("start")
-    send("c", "CONTROL modal")
+    visits = {}
+    for key, name, markers in SEAT_VISITS:
+        screen = b''
+        send(key, name)
+        drain(3)
+        visits[name] = body_observed(screen.decode('utf-8', 'replace'), markers)
+        print(f"[{args.label}] body {name!r}: {'seen' if visits[name] else 'NOT SEEN'} ({', '.join(markers)})", flush=True)
+        sample(name)
+    send('2', 'LIVE')
     drain(3)
-    sample("control")
-    send("\x1b", "close the modal")
-    drain(2)
-    send("l", "tall log")
-    drain(2)
     send("h", "hide heartbeats")
     for i in range(max(1, args.seconds // 10)):
         drain(10)
@@ -229,14 +255,15 @@ def main(argv: list[str] | None = None) -> int:
         except ChildProcessError:
             pass
     print(f"[{args.label}] peak phys_footprint={peak:.1f} MiB", flush=True)
-    text = screen.decode("utf-8", "replace")
-    for marker in ("PEPEPANE", "IDMD #", "as of", "CONTROL", "LEDGER"):
-        print(f"[{args.label}] marker {marker!r}: {'seen' if marker in text else 'not seen'}", flush=True)
+    print(f"[{args.label}] marker 'PEPEPANE': {'seen' if startup_seen else 'not seen'}", flush=True)
     if peak <= 0:
         print(f"[{args.label}] FAIL no positive footprint sample", flush=True)
         return 1
     if args.max_mib is not None and peak > args.max_mib:
         print(f"[{args.label}] FAIL peak {peak:.1f} MiB > {args.max_mib:.0f} MiB", flush=True)
+        return 1
+    if not measurement_succeeded(peak, args.max_mib, visits):
+        print(f"[{args.label}] FAIL not all six bodies were observed", flush=True)
         return 1
     return 0
 

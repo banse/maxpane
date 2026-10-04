@@ -22,32 +22,54 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 
 logger = logging.getLogger(__name__)
 
-#: WP4 foundation pins measured 2026-10-03 on textual 8.2.8. Each body was
-#: swept downward at every width 134..100 / height 50..16, then certified by
-#: boundary_set (100/150 columns, 16/60 rows, pin ±1 and table tier onsets).
-#: Healthy, 50-skill/400-record worst and unattributed payloads agree. At 131
-#: the shared hero clips; all six widths clear at 132. Full body content and
-#: healthy/worst certification after WP5 remain WP6 work; these describe the
-#: mounted foundation, not the final redesign. Raw LOG scrollback is unbounded
-#: and keeps its own horizontal scrollbar. No bounded table hides columns at
-#: a body's pin. LEDGER full clears at 126, so
-#: the former 210-column LEDGER_NEVER_CLEARS_BELOW exception is removed.
+#: WP6 final bodies measured 2026-10-04, textual 8.2.8. Independent downward
+#: sweeps: columns 134..100; rows 50..16 at the observed clearing width.
+#: Healthy, complete stress and unattributed payloads each clear at 131;
+#: the shared hero still cuts at 130. Stress includes 50 skills, 400 long
+#: record previews, 20 ledger rows, 3 running jobs, sanitized 4096-character
+#: question/reply, 20 audit rows, 40 long log rows and 3 orphans.
+#: Tests certify boundary_set (100..150 columns, 16..60 rows, pin ±1 and
+#: measured tier onsets), exact two-axis corners, and tighter/looser inverses.
+#: Full table tiers measured independently over 160..60 terminal columns:
+#: LEDGER 126 (compact 107), RECORDS 108, NODES 119, SKILLS table 98.
+#: None exceeds its body pin, so there is no wider-tier layout exception;
+#: LEDGER_NEVER_CLEARS_BELOW remains removed. Below full tiers LEDGER omits
+#: role/lag, RECORDS model/took/tok, NODES output/last, with honest markers.
+#: COST clears at panel 54 (terminal 110), marking at 53 (terminal 109).
+#: Arbitrary unknown node names still mark if their shortest honest form cuts.
+#: Long JOB prose scrolls vertically inside JOB; LOG retains horizontal
+#: scrollback. Table history scrolls within its table, with identity retained.
 SEAT_BODY_PINS = {
-    #: SEAT: top needs 20 rows, LEDGER 10, fixed title/hero/status 10 => 40.
-    #: At 39 a registered container scrolls and the title advertises ‹ taller.
-    "SEAT": (132, 40),
-    #: LIVE: NOW/JOB and LOG need 20 body rows; whole at 30, scrolling at 29.
-    "LIVE": (132, 30),
-    #: CONFIG & SKILLS: two independently scrolling tables, body floor 12;
-    #: whole at 22, body scrolling at 21. Values fit without a clipped form.
-    "CONFIG & SKILLS": (132, 22),
-    #: RECORDS: table body floor 10; whole at 20, body scrolling at 19.
-    "RECORDS": (132, 20),
-    #: NODES: table body floor 10; independently measured whole at 20, not 19.
-    "NODES": (132, 20),
-    #: WP5 measured complete CONTROL + always-visible confirm strip: worst/unattributed
-    #: clear at132×29; at132×28 its left body scrolls and advertises ‹ taller.
-    "CONTROL": (132, 29),
+    #: SEAT measured whole at 131×40 for all three payloads. At 130 the hero
+    #: cuts; at 131×39 a registered container scrolls and advertises ‹ taller.
+    #: MACHINE, COST, OUTPUT TOKENS and full LEDGER have no clipped bounded
+    #: line, hidden table column or direct-child overflow at the exact corner.
+    "SEAT": (131, 40),
+    #: LIVE independently measured whole at 131×30 for all three payloads.
+    #: At 130 the hero cuts; at 131×29 the body scrolls and advertises taller.
+    #: NOW and JOB keep their floors; long question/reply remain accessible
+    #: through JOB's vertical scroll, and raw LOG through its own scrollbars.
+    "LIVE": (131, 30),
+    #: CONFIG & SKILLS measured whole at 131×22, including 50 skill rows and
+    #: restart guidance. At 130 the hero cuts; 131×21 scrolls with taller.
+    #: Both tables retain their own scrolling, all three skill columns and
+    #: fitted CONFIG setting/value/change forms; no wider-tier exception.
+    "CONFIG & SKILLS": (131, 22),
+    #: RECORDS independently measured whole at 131×20 for all three payloads.
+    #: At 130 the hero cuts; at 131×19 the body scrolls with taller. Its full
+    #: tier already clears at 108; when/job/node/state/panel/answer remain
+    #: present in the compact tier. Full reply is available through detail.
+    "RECORDS": (131, 20),
+    #: NODES independently measured whole at 131×20, not 131×19. At 130 the
+    #: hero cuts. The full count/median/coverage table clears at 119, so
+    #: output/last are optional omissions only below that measured onset;
+    #: the three-line definitions footer is whole at this exact corner.
+    "NODES": (131, 20),
+    #: CONTROL measured healthy 131×28, complete stress/unattributed 131×29.
+    #: This worst-case pin is whole at 131×29; 131×28 scrolls with taller
+    #: for stress/unattributed. At 130 the hero cuts. CONTROL/GATE/AUDIT and
+    #: the shared empty confirm strip retain all bounded content at the pin.
+    "CONTROL": (131, 29),
 }
 SEAT_FULL_LAYOUT_COLUMNS = max(width for width, _ in SEAT_BODY_PINS.values())
 SEAT_FULL_LAYOUT_ROWS = max(height for _, height in SEAT_BODY_PINS.values())
@@ -145,7 +167,8 @@ class SeatScreen(DashboardScreen):
     SeatScreen #seat-live-left { width: 2fr; height: 100%; }
     SeatScreen SeatNow { height: 7; }
     SeatScreen SeatJob { height: 1fr; min-height: 10; }
-    SeatScreen #seat-job-content { height: 1fr; overflow-y: auto; scrollbar-gutter: stable; }
+    SeatScreen #seat-job-scroll { height: 1fr; overflow-y: auto; scrollbar-gutter: stable; }
+    SeatScreen #seat-job-content { height: auto; }
     SeatScreen SeatLog { width: 3fr; height: 100%; min-height: 10; }
     SeatScreen #seat-config-row { height: 100%; min-height: 12; }
     SeatScreen SeatConfig, SeatScreen SeatSkills { width: 1fr; height: 100%; }

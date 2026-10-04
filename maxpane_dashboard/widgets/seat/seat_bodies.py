@@ -1,6 +1,7 @@
 """JOB, token history and control facts for the six-dashboard screen."""
 from rich.text import Text
 from textual.app import ComposeResult
+from textual.containers import VerticalScroll
 from textual.widgets import Static, RichLog
 from maxpane_dashboard.widgets.panels import PanelBase, SparklinePanel
 from maxpane_dashboard.widgets.seat.hero import _word
@@ -19,7 +20,8 @@ class SeatJob(PanelBase):
         self._selected_key = None
 
     def compose_body(self) -> ComposeResult:
-        yield Static(Text('no jobs yet'), id='seat-job-content')
+        with VerticalScroll(id='seat-job-scroll'):
+            yield Static(Text('no jobs yet'), id='seat-job-content')
 
     def update_data(self, seat_current_jobs=None, seat_jobs=None, seat_sources=None, seat_as_of_hhmm=None,
                     seat_offline=None, **_kwargs):

@@ -24,7 +24,7 @@ it. This file is the method; the constants are the record.
 | surf `b` board (LEADERBOARD beside FLEET; FLEET's five contributor lines 2026-09-22) | 141 cols · 33 rows | `screens/surf.SURF_BOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
-| seat (pepepane fork; WP5 bodies measured 2026-10-04 on textual 8.2.8, healthy/worst/unattributed; expanded WP6 certification pending) | 132 cols · 40 rows; body rows SEAT 40, LIVE 30, CONFIG & SKILLS 22, RECORDS 20, NODES 20, CONTROL 29; LEDGER full clears at 126 within the pin | `screens/seat.SEAT_FULL_LAYOUT_{COLUMNS,ROWS}`, `SEAT_BODY_PINS` |
+| seat (pepepane fork; round 9 measured 2026-10-04 on textual 8.2.8, healthy/expanded worst/unattributed) | 131 cols · 40 rows; body rows SEAT 40, LIVE 30, CONFIG & SKILLS 22, RECORDS 20, NODES 20, CONTROL 29; full tiers LEDGER 126, RECORDS 108, NODES 119 all within the pin | `screens/seat.SEAT_FULL_LAYOUT_{COLUMNS,ROWS}`, `SEAT_BODY_PINS` |
 
 CAPABILITY's original seven columns remain whole at the SWARM body pin. Its optional `inf`
 and `acc/att` columns appear from `screens/surf.CAPABILITY_OPTIONAL_FULL_COLUMNS`;

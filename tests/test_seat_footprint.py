@@ -43,6 +43,21 @@ def test_the_budget_and_the_parsers():
     assert mod.parse_pss_kib("Rss: 1000 kB\nPss: 2048 kB\n") == 2048
 
 
+def test_driver_visits_six_bodies_and_rejects_hero_only_observations():
+    mod = _module()
+    assert [(key, name) for key, name, markers in mod.SEAT_VISITS] == [
+        ('1', 'SEAT'), ('2', 'LIVE'), ('3', 'CONFIG & SKILLS'),
+        ('4', 'RECORDS'), ('5', 'NODES'), ('6', 'CONTROL')]
+    hero = 'PEPEPANE IDMD #3 as of SEAT LIVE CONFIG & SKILLS RECORDS NODES CONTROL'
+    for key, name, markers in mod.SEAT_VISITS:
+        assert not mod.body_observed(hero, markers), name
+        assert not mod.body_observed(markers[0], markers), name
+        assert mod.body_observed('\x1b[32m' + ' '.join(markers) + '\x1b[0m', markers), name
+    assert not mod.measurement_succeeded(80, 160, {'SEAT': True})
+    assert not mod.measurement_succeeded(80, 160, {name: False for _, name, _ in mod.SEAT_VISITS})
+    assert mod.measurement_succeeded(80, 160, {name: True for _, name, _ in mod.SEAT_VISITS})
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="needs macOS physical-footprint sampling (run in CI on the Mac)")
 @pytest.mark.skipif(not HEALTHY.is_dir(), reason="WP7's healthy fixture case is not committed yet")
 def test_cold_footprint_of_the_lean_entrypoint_is_under_the_ci_budget(tmp_path):
@@ -58,6 +73,8 @@ def test_cold_footprint_of_the_lean_entrypoint_is_under_the_ci_budget(tmp_path):
     assert match, proc.stdout
     assert 0 < float(match.group(1)) <= 160.0, proc.stdout
     assert "marker 'PEPEPANE': seen" in proc.stdout, "the screen rendered"
+    for _, name, _ in _module().SEAT_VISITS:
+        assert f"body {name!r}: seen" in proc.stdout, proc.stdout
     print(proc.stdout)
 
 
@@ -97,7 +114,8 @@ def test_libproc_reads_positive_peak_from_the_v4_struct(monkeypatch):
     assert mod.libproc_footprint_mib(123) == 64
 
 
-def test_driver_fails_without_a_positive_sample(monkeypatch, capsys):
+@pytest.mark.parametrize('sample,reason', [(None, 'no positive footprint sample'), (80.0, 'not all six bodies were observed')])
+def test_driver_fails_without_a_positive_sample_or_complete_visits(monkeypatch, capsys, sample, reason):
     import itertools
     mod = _module()
     monkeypatch.setattr(mod.pty, "fork", lambda: (123, 4))
@@ -106,7 +124,7 @@ def test_driver_fails_without_a_positive_sample(monkeypatch, capsys):
     monkeypatch.setattr(mod.time, "time", lambda: next(clock))
     monkeypatch.setattr(mod.os, "write", lambda fd, data: len(data))
     monkeypatch.setattr(mod.os, "waitpid", lambda *args: (123, 0))
-    monkeypatch.setattr(mod, "footprint_mib", lambda pid: None)
+    monkeypatch.setattr(mod, "footprint_mib", lambda pid: sample)
     clock = itertools.count(0, 10)
     assert mod.main(["180", "50", "fake", "--seconds", "1", "--max-mib", "160", "--", "fixture"]) == 1
-    assert "no positive footprint sample" in capsys.readouterr().out
+    assert reason in capsys.readouterr().out

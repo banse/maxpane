@@ -467,3 +467,31 @@ async def test_records_hero_reports_standing_busy_without_hiding_cached_facts():
     assert 'acc 9' in boxes['records'][0]
     assert 'life 244 of 288' in boxes['records'][1]
     assert 'standing' in boxes['records'][2] and 'busy' in boxes['records'][2]
+@pytest.mark.parametrize('width', [131, 132, 134])
+async def test_complete_stress_hero_keeps_all_counts_and_known_node_at_ceiling(width):
+    from tests.screens.test_seat_layout import worst_payload, _seat_app, _region_text
+    async with _seat_app(worst_payload()).run_test(size=(width, 50)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        screen = pilot.app.screen
+        records = _region_text(pilot.app, screen.query_one('#seat-hero-records'))
+        nodes = _region_text(pilot.app, screen.query_one('#seat-hero-nodes'))
+        assert '888a 77r 66f 55p' in records
+        assert 'BUILD · 25 %' in nodes
+        assert 'paid400 launch400' in nodes
+        assert '…' not in records + nodes and '‹ widen' not in records + nodes
+
+
+async def test_unknown_node_names_keep_their_original_text_and_honest_widen():
+    from tests.screens.test_seat_layout import worst_payload, _seat_app, _region_text
+    flat = worst_payload()
+    flat['seat_nodes_all_rows'][0]['nodeKey'] = 'unmapped_node_identifier'
+    for width in (131, 400):
+        async with _seat_app(flat).run_test(size=(width, 50)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.pause()
+            nodes = _region_text(pilot.app, pilot.app.screen.query_one('#seat-hero-nodes'))
+            if width == 131:
+                assert 'unmapped_node' in nodes and '‹ widen' in nodes
+            else:
+                assert 'unmapped_node_identifier · 25 %' in nodes and '‹ widen' not in nodes

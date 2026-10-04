@@ -1,13 +1,15 @@
-"""Six-body foundation geometry, measured in WP4; full content certification is WP6.
+"""Final six-body geometry against healthy, complete stress and unattributed payloads.
 
 All assertions inspect composited strips. Tables/logs scroll internally; no ledger
 width exception survives the move to its full-width SEAT body. Boundary sets and
-one-cell tightness guard the measured foundation pins, bounded by 134 × 50.
+one-cell tightness guard the measured body pins, bounded by 134 × 50.
 """
 from __future__ import annotations
 import asyncio
 import copy
+import json
 import sys
+from pathlib import Path
 import pytest
 from rich.text import Text
 from textual.widgets import DataTable, RichLog
@@ -27,9 +29,9 @@ from tests.screens._sweeps import boundary_set
 from tests.screens.test_surf_screen import _css_clipped_lines, _region_text, _screen_text, _status_bar_whole
 
 #: Independent restatement of measure()'s healthy/worst/unattributed results.
-MEASURED_BODY_PINS = {'SEAT': (132,40), 'LIVE': (132,30), 'CONFIG & SKILLS': (132,22),
-                      'RECORDS': (132,20), 'NODES': (132,20), 'CONTROL': (132,29)}
-MEASURED_SEAT_COLUMNS = 132
+MEASURED_BODY_PINS = {'SEAT': (131,40), 'LIVE': (131,30), 'CONFIG & SKILLS': (131,22),
+                      'RECORDS': (131,20), 'NODES': (131,20), 'CONTROL': (131,29)}
+MEASURED_SEAT_COLUMNS = 131
 MEASURED_SEAT_ROWS = 40
 MEASURED_LEDGER_CLEARS = 126
 _BODY_WIDGETS = {
@@ -39,11 +41,49 @@ _BODY_WIDGETS = {
 }
 _COLUMN_SWEEP_HEIGHT = 60
 _ROW_SWEEP_WIDTH = 150
-_THRESHOLDS = (MEASURED_LEDGER_CLEARS, 107, 132)
+_THRESHOLDS = (107, 108, 110, 119, MEASURED_LEDGER_CLEARS, 131)
 _ROW_THRESHOLDS = (20, 22, 29, 30, 40)
 
+STRESS_ADDRESS = '0x1234567890123456789012345678901234567890'
+STRESS_RAW_TEXT = ('[red]literal[/] ' + STRESS_ADDRESS + '\n'
+                   'base64,eyJ' + 'QWxwaGE' * 20 + '\n' + 'long answer with words. ' * 220)
+
+
+def stress_document():
+    """Public text crosses the real sanitizer before entering the status document.
+
+    Full cached replies are 4096 characters; RECORDS carries the approved 160
+    character previews, never 400 full replies in the bounded status document.
+    """
+    from maxpane_dashboard.analytics.seat_records import node_rows
+    from maxpane_dashboard.analytics.seat_text import sanitize_text
+    from maxpane_dashboard.data.seat_models import shape_dashboard_document
+    doc = json.loads((Path(__file__).parents[1] / 'fixtures/seat/status/status_v2_healthy.json').read_text())
+    text = sanitize_text(STRESS_RAW_TEXT)
+    rows = [dict(key=f'record-{i}', jobId=f'{i:08x}-0000-4000-8000-000000000000',
+                 nodeKey=('build_contract_project', 'research_report', 'oracle_assess')[i % 3],
+                 role='implement', acceptedUtc='2026-10-03T12:00:00Z', submittedUtc='2026-10-03T12:01:00Z',
+                 workStatus=('accepted','rejected','failed','pending')[i % 4],
+                 jobState='completed', outcome=('accepted','rejected','failed','pending')[i % 4],
+                 objective=text, reply=text, questionState='read', replyState='read',
+                 questionAsOfUtc='2026-10-03T12:02:00Z', replyAsOfUtc='2026-10-03T12:02:00Z',
+                 answerPreview=sanitize_text(text, cap=160, flatten=True), answerState='read',
+                 model='claude-fable-5-1', durationS=3599, tokens={'output':999999},
+                 paid=True, launchLinked=True, detailRead=True, source={'row':'local'},
+                 panel={'state':'agreed','agreed':7,'quorum':5,'size':9}) for i in range(400)]
+    jobs = [dict(rows[i], startedUtc=f'2026-10-03T12:0{i}:00Z', nodeId8=f'{i:08x}',
+                 phase='repairing', elapsedS=3599, lastMessage='last runtime sentence',
+                 usage={'model':'claude-fable-5-1','turns':120,'tokens':{'output':999999},'wallS':3599},
+                 structuralCheck={'status':'accepted','evaluation':'structural','detail':'paths and tree verified'},
+                 launch={'kind':'evm_project','requested':True,'workflowId':'workflow-' + 'w'*40},
+                 delivery={'url':'https://example.invalid/project','atUtc':'2026-10-03T12:02:00Z'}) for i in range(3)]
+    doc.update(currentJobs=jobs, jobs=jobs, records={'rows':rows,'window':{'rows':400,'asOfUtc':'2026-10-03T12:02:00Z'}},
+               nodes={'allRows':node_rows(rows),'weekRows':node_rows(rows),
+                      'coverage':{'covered':400,'attempts':99999,'detailsRead':400,'asOfUtc':'2026-10-03T12:02:00Z'}})
+    return shape_dashboard_document(doc)
+
 def worst_payload() -> dict:
-    """WP4 foundation worst: long NOW/log, 50 skills, 400 records, node/JOB/audit data."""
+    """Complete round-9 stress: bounded API text plus maximal populated bodies."""
     flat = _seat_payload()
     base = flat["seat_tasks_rows"][0]
     flat["seat_tasks_rows"] = [dict(copy.deepcopy(base), key=f"7/{i:08x}/2026-09-26T03:{i % 60:02d}:00.000Z", nodeId8=f"{i:08x}",
@@ -55,8 +95,8 @@ def worst_payload() -> dict:
     flat["seat_current"] = {"nodeId8": "0c1f9727", "jobId": base["jobId"], "role": "integrate", "kind": "code", "phase": "repairing", "startedUtc": "2026-09-26T03:39:30Z",
                             "elapsedS": 3599, "maxTurns": 120, "model": "gpt-6-astra", "tierDerived": "premium", "lastMessage": "x" * 400,
                             "lastMessageUtc": "2026-09-26T03:40:10Z", "planeSince": "2026-09-26T03:39:27Z", "objective": "o" * 200, "nodeKey": "build_contract_project"}
-    flat["seat_daemon_running"] = 1
-    flat["seat_daemon_work"] = "1 task running"
+    flat["seat_daemon_running"] = 3
+    flat["seat_daemon_work"] = "3 tasks running"
     flat["seat_skills_rows"] = [{"id": f"skill-with-a-long-name-{i:02d}", "on": i % 3 != 0, "needs": "network" if i % 4 == 0 else ("tool:forge" if i % 5 == 0 else None)} for i in range(50)]
     flat["seat_skills_offered"] = 50
     flat["seat_skills_on"] = 33
@@ -73,12 +113,18 @@ def worst_payload() -> dict:
     flat["seat_log_lines"] = [{"seq": i, "ts": f"2026-09-26T03:{i % 60:02d}:00.000Z", "kind": "phase", "invocation": None, "cursor": None,
                                "text": f"2026-09-26T03:{i % 60:02d}:00.000Z   working: " + "w" * 160} for i in range(1, 41)]
     flat["seat_log_seq"] = 40
-    flat["seat_jobs"] = [dict(key='current-job', jobId=base['jobId'], nodeId8='0c1f9727', nodeKey='question', role='oracle')]
-    flat["seat_current_jobs"] = flat["seat_jobs"]
-    flat["seat_records_rows"] = [dict(key=f'record-{i}', jobId=base['jobId'], nodeKey='question',
-                                     workStatus='pending', submittedUtc=base.get('submittedUtc')) for i in range(400)]
-    flat["seat_nodes_all_rows"] = [dict(nodeKey=f'question-{i}', role='oracle', attempts=999) for i in range(30)]
-    flat["seat_nodes_week_rows"] = flat["seat_nodes_all_rows"]
+    from maxpane_dashboard.data.seat_models import fold_status_document
+    full = fold_status_document(stress_document())
+    for key in ('seat_jobs', 'seat_current_jobs', 'seat_records_rows', 'seat_records_window',
+                'seat_nodes_all_rows', 'seat_nodes_week_rows', 'seat_nodes_coverage'):
+        flat[key] = full[key]
+    flat.update(seat_unit_boot_enabled=False, seat_runtime_id='claude',
+                seat_runtime_version='2.1.286 (Claude Code)', seat_capacity=3,
+                seat_config_changed_since_start=True, seat_control_restart_required=True,
+                seat_skills_needs_network=13, seat_today_accepted=888,
+                seat_today_rejected=77, seat_today_failed=66, seat_today_pending=55,
+                seat_today_verdict_lag_p50_s=86399,
+                seat_hero_reasons=['runtime auth degraded since 23:38'])
     flat["seat_control_last_audit"] = [dict(ts='2026-10-03T17:00:00Z', verb='restart', phase='verify', outcome='verified') for i in range(20)]
     return flat
 
@@ -90,6 +136,104 @@ def unattributed_payload() -> dict:
 
 
 PAYLOADS = {"healthy": _seat_payload, "worst": worst_payload, "unattributed": unattributed_payload}
+
+
+def test_worst_payload_has_the_complete_round9_stress_shapes():
+    flat = worst_payload()
+    assert len(flat['seat_skills_rows']) == 50
+    assert len(flat['seat_tasks_rows']) == 20
+    assert len(flat['seat_current_jobs']) == len(flat['seat_jobs']) == 3
+    assert flat['seat_daemon_running'] == 3
+    assert len(flat['seat_records_rows']) == 400
+    assert all(len(row['answerPreview']) == 160 for row in flat['seat_records_rows'])
+    assert len(flat['seat_control_last_audit']) == 20
+    assert len(flat['seat_log_lines']) == 40
+    assert all(len(row['text']) > 160 for row in flat['seat_log_lines'])
+    assert len(flat['seat_machine_orphans']) == 3
+    for job in flat['seat_jobs']:
+        for field in ('objective', 'reply'):
+            assert len(job[field]) == 4096
+            assert '[red]literal[/]' in job[field] and '\n' in job[field]
+            assert STRESS_ADDRESS in job[field]
+            assert 'eyJ' not in job[field] and '[redacted]' in job[field]
+    from maxpane_dashboard.data.seat_models import validate_status_document
+    assert validate_status_document(stress_document()) is None
+
+
+@pytest.mark.parametrize('reason', ['busy', 'unavailable'])
+async def test_cached_ledger_records_and_node_counts_survive_failed_sources_composited(tmp_path, reason):
+    from maxpane_dashboard.data.seat_manager import SeatManager
+    from maxpane_dashboard.data.seat_models import fold_status_document
+    from tests.data.test_seat_round9_cache import ledger, work, cache_job, cache_subs, client, NOW
+    cached = ledger(tmp_path)
+    cached.attach_work([work()], as_of_utc='2026-10-03T12:01:00Z')
+    await cache_job(cached)
+    await cache_subs(cached)
+    def forbidden(request):
+        raise AssertionError('cached compositor test must make no request')
+    api = client(forbidden)
+    manager = SeatManager(api=api, ledger=cached, seat=3, maxpane_dir=tmp_path, now=lambda: NOW)
+    for tier in manager._due_at:
+        manager._due_at[tier] = float('inf')
+    try:
+        await manager.fetch_and_compute()
+        doc = manager.document()
+        for source in ('seatWork', 'standing', 'reasons'):
+            doc['sources'][source].update(ok=False, unavailable=True, reason=reason)
+        flat = fold_status_document(doc, now=NOW)
+        assert flat['seat_tasks_rows'][0]['outcome'] == 'accepted'
+        async with _seat_app(flat).run_test(size=(180, 50)) as pilot:
+            await pilot.app.screen._do_refresh()
+            for dashboard, cls, words in (
+                ('SEAT', SeatLedgerTable, ('accepted',)),
+                ('RECORDS', SeatRecords, ('completed', '[literal]')),
+                ('NODES', SeatNodes, ('research_report', 'covers 1 of 1 attempts', 'job details read 1 of 1')),
+            ):
+                pilot.app.screen.select_dashboard(dashboard)
+                await pilot.pause()
+                panel = pilot.app.screen.query_one(cls)
+                painted = _region_text(pilot.app, panel)
+                assert all(word in painted for word in words), (dashboard, painted)
+                if cls is SeatNodes:
+                    table = panel.query_one(DataTable)
+                    row = _screen_text(pilot.app).splitlines()[table.region.y + table.header_height]
+                    # Actual displayed attempt, accepted and paid counts from the same cached attempt.
+                    for key in ('n', 'accepted', 'paid'):
+                        x = table.region.x + 1
+                        for column, _, width in panel._installed:
+                            if column == key:
+                                assert row[x:x+width].strip() == '1', (key, row)
+                                break
+                            x += width + 2
+    finally:
+        await manager.close()
+        await api.close()
+        cached.close()
+
+
+async def test_full_job_text_scrolls_literal_markup_and_copy_icons_at_live_pin():
+    from tests.widgets.address_probe import icon_targets, link_targets
+    flat = worst_payload()
+    flat['seat_current_jobs'] = []  # Finished JOB exposes its full reply as well as its question.
+    async with _seat_app(flat).run_test(size=SEAT_BODY_PINS['LIVE']) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.pause()
+        panel = pilot.app.screen.query_one(SeatJob)
+        content = panel.query_one('#seat-job-scroll')
+        assert content.max_scroll_y > 0 and content.max_scroll_x == 0
+        pages, icons, links = [], [], []
+        for offset in range(0, int(content.max_scroll_y) + content.region.height, max(1, content.region.height - 1)):
+            content.scroll_to(y=offset, animate=False, immediate=True)
+            await pilot.pause()
+            pages.append(_region_text(pilot.app, panel))
+            icons.extend(icon_targets(pilot.app))
+            links.extend(link_targets(pilot.app))
+        text = '\n'.join(pages)
+        assert 'QUESTION (api' in text and 'RESULT' in text
+        assert text.count('[red]literal[/]') >= 2 and text.count('[redacted]') >= 2
+        assert any(address == STRESS_ADDRESS for _, _, address in icons)
+        assert not any(value == STRESS_ADDRESS for _, _, _, _, value, _ in links)
+        assert 'eyJ' not in text
 
 
 def _inspect(app, dashboard):
@@ -151,8 +295,8 @@ async def test_the_body_is_whole_from_its_pinned_width(dashboard, payload_name):
             assert not r['overflow'], (dashboard, width, r)
             if width >= SEAT_BODY_PINS[dashboard][0]:
                 _assert_whole(r, (dashboard, payload_name, width))
-            else:
-                assert _width_loss(r), (dashboard, payload_name, width, 'unadvertised width loss')
+            # A healthy payload may fit below a worst-case pin. The independent
+            # worst-payload tightness test, not an invented healthy loss, binds it.
 
 @pytest.mark.parametrize('dashboard', DASHBOARDS)
 async def test_the_column_pin_is_not_loose(dashboard):
@@ -188,6 +332,83 @@ async def test_the_row_pin_is_not_loose(dashboard):
     below = await _render(worst_payload(), (width,height-1), dashboard)
     assert below['scroll'] and below['taller'], (dashboard, 'whole one row below its pin')
 
+
+@pytest.mark.parametrize('dashboard', DASHBOARDS)
+@pytest.mark.parametrize('payload_name', PAYLOADS)
+async def test_each_body_is_whole_at_its_exact_two_axis_corner(dashboard, payload_name):
+    r = await _render(PAYLOADS[payload_name](), SEAT_BODY_PINS[dashboard], dashboard)
+    _assert_whole(r, (dashboard, payload_name, 'exact corner'))
+    assert not r['scroll'] and not r['taller'] and not r['child_overflow'], r
+    if dashboard == 'RECORDS':
+        async with _seat_app(PAYLOADS[payload_name]()).run_test(size=SEAT_BODY_PINS[dashboard]) as pilot:
+            pilot.app.screen.select_dashboard(dashboard)
+            await pilot.pause()
+            panel = pilot.app.screen.query_one(SeatRecords)
+            assert {'when', 'job', 'node', 'state', 'panel', 'answer'} <= set(panel._keys)
+
+
+@pytest.mark.parametrize('width', [97, 98, 131])
+async def test_skills_marks_hidden_columns_below_its_measured_table_clearance(width):
+    async with _seat_app(worst_payload()).run_test(size=(width, 40)) as pilot:
+        pilot.app.screen.select_dashboard('CONFIG & SKILLS')
+        await pilot.pause()
+        # Settle the shown table's layout and the resulting title repaint.
+        await pilot.pause()
+        await pilot.pause()
+        panel = pilot.app.screen.query_one(SeatSkills)
+        hidden = panel.query_one(DataTable).max_scroll_x > 0
+        title = _region_text(pilot.app, panel.query_one('.panel-title'))
+        assert hidden == (width < 98)
+        if hidden:
+            assert '‹' in title, title
+        if width == 131:
+            assert '50 offered' in title and '33 on' in title and '13 need network' in title
+            assert '‹' not in title
+
+
+@pytest.mark.parametrize('dashboard,cls,onset,omitted', [
+    ('SEAT', SeatLedgerTable, 126, {'role', 'lag'}),
+    ('RECORDS', SeatRecords, 108, {'model', 'took', 'tok'}),
+    ('NODES', SeatNodes, 119, {'output', 'last'}),
+])
+async def test_full_table_tiers_clear_at_independently_measured_onsets(dashboard, cls, onset, omitted):
+    async with _seat_app(worst_payload()).run_test(size=(160, 60)) as pilot:
+        pilot.app.screen.select_dashboard(dashboard)
+        await pilot.pause()
+        panel = pilot.app.screen.query_one(cls)
+        full_keys = set(panel._keys)
+        for width in boundary_set(onset, 100, 160, 107, 108, 119, 126, 131):
+            await pilot.resize_terminal(width, 60)
+            await pilot.pause()
+            if width >= onset:
+                assert panel._tier == 'full'
+                assert set(panel._keys) == full_keys
+                assert panel.query_one(DataTable).max_scroll_x == 0
+                assert '‹' not in _region_text(pilot.app, panel.query_one('.panel-title'))
+            elif width == onset - 1:
+                assert panel._tier == 'compact'
+                assert full_keys - set(panel._keys) == omitted
+                assert '‹' in _region_text(pilot.app, panel.query_one('.panel-title'))
+
+
+@pytest.mark.parametrize('width,tier', [(106, 'tight'), (107, 'compact'), (108, 'compact')])
+async def test_ledger_compact_onset_keeps_an_honest_omission_marker(width, tier):
+    r = await _render(worst_payload(), (width, 60), 'SEAT')
+    assert r['ledger_tier'] == tier
+    assert not r['hidden']['SeatLedgerTable']
+    assert 'SeatLedgerTable' in r['marked']
+
+
+@pytest.mark.parametrize('terminal,panel_width,marked', [(109, 53, True), (110, 54, False), (111, 54, False)])
+async def test_cost_clears_at_measured_panel54_in_its_actual_body(terminal, panel_width, marked):
+    async with _seat_app(worst_payload()).run_test(size=(terminal, 50)) as pilot:
+        pilot.app.screen.select_dashboard('SEAT')
+        await pilot.pause()
+        await pilot.pause()
+        panel = pilot.app.screen.query_one(SeatCost)
+        assert panel.size.width == panel_width
+        assert ('‹' in _region_text(pilot.app, panel)) is marked
+
 def test_the_pins_are_the_measured_numbers():
     assert SEAT_FULL_LAYOUT_COLUMNS == MEASURED_SEAT_COLUMNS <= 134
     assert SEAT_FULL_LAYOUT_ROWS == MEASURED_SEAT_ROWS <= 50
@@ -220,7 +441,7 @@ async def measure():
                     width_onset = width
                 height_onset = None
                 for height in range(50,15,-1):
-                    await pilot.resize_terminal(134,height)
+                    await pilot.resize_terminal(width_onset or 134,height)
                     await pilot.pause()
                     r = _inspect(pilot.app,dashboard)
                     if r['scroll'] or r['taller'] or r['child_overflow']:

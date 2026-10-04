@@ -19,7 +19,7 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, fmt_int
 from maxpane_dashboard.widgets.markup_safety import strip_tags
 from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
-from maxpane_dashboard.widgets.seat_words import seat_token
+from maxpane_dashboard.widgets.seat_words import NODE_TITLES, seat_token
 
 __all__ = ["BOX_IDS", "SEVERITY", "SeatHero", "SeatHeroBox", "fit_forms", "worst"]
 
@@ -508,10 +508,11 @@ class SeatHero(HeroRow):
                   (f"fail {n(fail)}", colour(fail, "red")), (" · ", "dim"), (f"pend {n(pend)}", colour(pend, "yellow")))
         short = ((f"{n(acc)}a", colour(acc, "green")), (" · ", "dim"), (f"{n(rej)}r", colour(rej, "red")), (" · ", "dim"),
                  (f"{n(fail)}f", colour(fail, "red")), (" · ", "dim"), (f"{n(pend)}p", colour(pend, "yellow")))
+        tight = tuple((" " if word == " · " else word, style) for word, style in short)
         if all(value is None for value in (acc, rej, fail, pend)):
             line1 = fit_forms((_t(("today unavailable", "dim")),), room)
         else:
-            line1 = fit_forms((_t(("today ", "dim"), *counts), _t(*counts), _t(*short)), room)
+            line1 = fit_forms((_t(("today ", "dim"), *counts), _t(*counts), _t(*short), _t(*tight)), room)
         if f.get("seat_standing_counters_inconsistent") is True:
             # spec §6 seats row / §14 proof 36: never the sum, never the API's total
             line2 = fit_forms((_t(("counters inconsistent (api)", "yellow")), _t(("inconsistent (api)", "yellow"))), room)
@@ -607,7 +608,12 @@ class SeatHero(HeroRow):
         top_rate = as_float(top.get("acceptedPercent"))
         paid = [r.get("paid") for r in rows if _count(r.get("paid")) is not None]
         launch = [r.get("launch") for r in rows if _count(r.get("launch")) is not None]
+        node = _word(top.get('nodeKey'))
+        rate_suffix = f" · {top_rate:.0f} %" if top_rate is not None else ""
+        node_forms = (Text(node + rate_suffix), Text(NODE_TITLES.get(node, node) + rate_suffix))
+        paid_count, launch_count = sum(paid) if paid else '·', sum(launch) if launch else '·'
         return _lines(
             fit_forms((Text(f"{len(rows)} node types · {rate} accepted"), Text(f"{len(rows)} types · {rate}")), room),
-            fit_forms((Text(f"{_word(top.get('nodeKey'))} · {top_rate:.0f} %" if top_rate is not None else _word(top.get('nodeKey'))),), room),
-            fit_forms((Text(f"paid {sum(paid) if paid else '·'} · launch {sum(launch) if launch else '·'}", style="dim"),), room))
+            fit_forms(node_forms, room),
+            fit_forms((Text(f"paid {paid_count} · launch {launch_count}", style="dim"),
+                       Text(f"paid{paid_count} launch{launch_count}", style="dim")), room))

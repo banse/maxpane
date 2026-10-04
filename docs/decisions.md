@@ -1293,3 +1293,47 @@ The sweep case contract gains an explicit declaration for copy-only addresses in
 ### 2026-10-04 — PEPEPANE round 9: completed CONTROL body pin
 
 The WP5 in-situ measurement moves CONTROL from its foundation height to 132 columns by 29 rows. The always-visible confirmation strip and completed verb content bind the height: healthy clears at 28 rows, while worst and unattributed payloads require 29. At 132 by 28 those two payloads scroll and advertise the taller marker; at 131 by 29 the hero clips. The 132 by 29 corner clears all three payloads without hidden columns, clipping or overflow. The other five body pins remain unchanged, so the aggregate is still 132 by 40 and LEDGER still clears its full tier at 126 columns. The terminal-layout seat row tracks this measurement; WP6 certifies the expanded worst payload next.
+
+### 2026-10-04 — PEPEPANE round 9: measured hero short forms
+
+The expanded stress payload exposed three clipped hero lines at 134 columns: four verdict counts, the longest known node name, and the paid/launch counts. Under section 5's longest-first honest-form rule, a final verdict form removes separators while retaining every count and its colour; NODES can use the existing shared node-title alias; and its last count form removes label spacing. Longer forms remain first. Unknown node keys keep their fitted original text and advertise widening when necessary. No label severity or selection border changes. Composited regressions fail before these corrections and pass afterward.
+
+### 2026-10-04 — PEPEPANE round 9: final SEAT body pin
+
+The expanded in-situ sweep measures SEAT at 131 columns by 40 rows, replacing its provisional 132-column width. Healthy, worst and unattributed payloads clear the exact corner; 130 columns cuts the hero and one row below the height pin scrolls with the taller marker. The stress payload includes twenty ledger rows, three orphans and the complete machine/cost facts.
+
+### 2026-10-04 — PEPEPANE round 9: final LIVE body pin
+
+LIVE independently measures 131 columns by 30 rows across the three payloads. The expanded payload carries three running jobs, capped multiline question and reply text with an address and literal markup, and forty long log lines. JOB and LOG retain their own scrollable content; the body corner and one-cell boundaries remain explicit checks.
+
+### 2026-10-04 — PEPEPANE round 9: final CONFIG and SKILLS body pin
+
+CONFIG & SKILLS independently measures 131 columns by 22 rows across the three payloads, including fifty skills. Its width moves from the provisional 132 only after the actual corner clears; the body height is unchanged. The table cursor and viewport contracts remain in force through the final sizing work.
+
+### 2026-10-04 — PEPEPANE round 9: final RECORDS body pin
+
+RECORDS independently measures 131 columns by 20 rows with the expanded four-hundred-row payload and long answer previews. The full table tier clears at 108 terminal columns, below the body pin; its compact tier omits model, took and tokens while retaining the required identifying, state, panel and answer columns. No above-pin exception is needed.
+
+### 2026-10-04 — PEPEPANE round 9: final NODES body pin
+
+NODES independently measures 131 columns by 20 rows. Its full table tier clears at 119 terminal columns, below the body pin; the compact tier omits output and last. Cached verdict and coverage facts stay visible under busy or unavailable API sources. No above-pin exception is needed.
+
+### 2026-10-04 — PEPEPANE round 9: final CONTROL body pin
+
+CONTROL independently measures 131 columns by 29 rows after the hero correction. Healthy content clears at 28 rows, while the expanded worst and unattributed payloads, including twenty audit rows, require 29. The exact worst-case corner clears and one row below scrolls with the taller marker. The completed confirmation strip and all three panels remain in the certificate.
+
+### 2026-10-04 — PEPEPANE round 9: final aggregate pin and table onsets
+
+The final screen pin is 131 columns by 40 rows, the maxima of the six independent body measurements. Full-width LEDGER clears at 126 terminal columns and its compact tier at 107; the retired 210-column exception remains unnecessary. COST clears at a panel width of 54, measured at terminal width 110, and marks at panel width 53 or terminal width 109. All full table tiers fit below the screen pin, so this round needs no named wider-tier exception. The terminal-layout table and current install/Mac pin citations move with the measured constants.
+
+### 2026-10-04 — PEPEPANE round 9: footprint visits every body
+
+The lean-entrypoint driver selects all six dashboards and requires fresh body-specific output after each selection. The persistent hero labels cannot satisfy those observations, and a missing body fails the measurement. The fixture/offline cold run still enforces a positive physical-footprint sample within 160 MiB. Obsolete modal and tall-log shortcuts leave the driver; the LIVE heartbeat toggle remains exercised.
+
+### 2026-10-04 — PEPEPANE round 9: narrow SKILLS title marker
+
+The expanded below-pin sweep found hidden table width at a 97-column terminal while SKILLS' custom title fitter dropped its widening marker. The title now reserves the marker's cells before fitting its descriptive text with the existing row-fit helper. The 97, 98 and 131-column compositor checks preserve the narrow-width warning and full-pin presentation; table geometry, cursor identity and viewport restoration are unchanged.
+
+### 2026-10-04 — PEPEPANE round 9: JOB text has a real scroll container
+
+The capped long-text proof found that a fixed-height Static held the question and reply without making their later lines reachable. JOB now wraps the existing content widget in a VerticalScroll with a stable gutter, while the content itself has automatic height. This implements section 6.2's internal scrolling requirement without shortening API text or changing its writer, literal rendering, addresses or job selection. The regression scrolls to the text tail and RESULT in composited output; LIVE's exact corner and hidden-update behavior remain part of the final certificate.
