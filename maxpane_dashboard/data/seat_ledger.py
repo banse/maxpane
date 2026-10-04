@@ -273,7 +273,11 @@ class SeatLedger:
         with self._conn:
             cur = self._conn.cursor()
             for line in lines:
-                line = replace(line, text=redact(line.text), fields=redact_tree(dict(line.fields)),
+                # Lifecycle evidence keeps the journal's full message; API-cache
+                # caps do not apply to this in-memory line or its grammar fields.
+                fields = {key: redact(value, key, cap=len(value)) if isinstance(value, str) else value
+                          for key, value in line.fields.items()}
+                line = replace(line, text=redact(line.text, cap=len(line.text)), fields=fields,
                                invocation=redact(line.invocation) if line.invocation else None,
                                cursor=redact(line.cursor) if line.cursor else None)
                 n += 1

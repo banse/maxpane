@@ -1,6 +1,6 @@
 # PEPEPANE round 9 verification
 
-Package evidence is recorded below. Final whole-branch review, repository suites and the deployment archive are pending; host installation and probing are owner-only actions.
+Package evidence is recorded below. The final whole-branch review and its single finding-only re-review are approved. Repository suites and the deployment archive are pending; host installation and probing are owner-only actions.
 
 ## Committed work
 
@@ -16,6 +16,9 @@ Package evidence is recorded below. Final whole-branch review, repository suites
 | WP5 bodies/flow/detail | fe3521d | Owned618passed plus corrected stale one-day assertion/whole cost9passed; final affected163passed; two review findings fixed and scoped8-case re-review approved; parent final six separate files27/9/46/170/69/6passed |
 | WP6 | 52fa9f2 | Expanded layout/render gate 186 passed; contract/lean/models/docs gate 198 passed; cold peak 62.3 MiB; six compatibility files 27/9/46/170/69/6 passed; task review approved; test-only paint correction passed the full 95-case layout/cursor gate |
 
+| WP7 identity/docs | cf69e45 | Identity regression RED at 0.1.4; 474 scoped checks passed, one pinned operator paragraph corrected and seven focused checks then passed; review approved; broker compile and manifest guards passed |
+| Final review corrections | 5f5b996 | One fix wave for three findings; 412 affected checks passed, periodic-timer isolation followed by 32 navigation/regression checks passed; 13 finding-only review checks passed, all three findings addressed |
+
 ## Defect evidence
 
 The nine success criteria map to these tests and measurements:
@@ -26,9 +29,9 @@ The nine success criteria map to these tests and measurements:
 4. CONFIG change paths, complete skills listing and original skill/boot safety flow: tests/widgets/test_seat_config_machine.py, tests/widgets/test_seat_round9_bodies.py, tests/screens/test_seat_round9_flow.py, tests/screens/test_seat_control.py.
 5. RECORDS columns/filter/colours/window/cursor/Enter: tests/widgets/test_seat_round9_bodies.py, tests/widgets/test_seat_round9_tables.py, tests/screens/test_seat_round9_navigation.py and final layout certificate.
 6. NODES aggregate and coverage facts: tests/data/test_seat_round9_cache.py, tests/data/test_seat_models.py, tests/widgets/test_seat_round9_bodies.py.
-7. CONTROL keeps existing gate/confirm/audit safety: all37 mapped predecessors in tests/screens/test_seat_control.py plus actual Input/detail/late-plan cases in tests/screens/test_seat_round9_flow.py and fast phase compositor in tests/data/test_seat_round9_control.py. Old modal deleted.
-8. Seat3 metadata behavior: synthetic worker-home D2, persisted-fact D3, bounded-journal D4 and end-to-end recovered-error D5 tests, with MACHINE/output-token/hero compositor tests. Owner host verification remains explicitly pending deployment.
-9. Broker/protected-path scope: final cumulative diff audit and compileall pending; current diff excludes all protected paths and retains identical redactor copies.
+7. CONTROL keeps existing gate/confirm/audit safety: all 37 mapped predecessors in tests/screens/test_seat_control.py plus actual Input/detail/late-plan cases in tests/screens/test_seat_round9_flow.py and fast phase compositor in tests/data/test_seat_round9_control.py. Old modal deleted.
+8. Seat 3 metadata behavior: synthetic worker-home D2, persisted-fact D3, bounded-journal D4 and end-to-end recovered-error D5 tests, with MACHINE/output-token/hero compositor tests. Owner host verification remains explicitly pending deployment.
+9. Broker/protected-path scope: cumulative diff audit and Python 3.11 compileall passed at 5f5b996; all protected paths and both redactor copies are unchanged.
 
 | Defect | Commit/package | Named failing-before test |
 |---|---|---|
@@ -92,9 +95,9 @@ Full tiers clear at terminal widths LEDGER 126, RECORDS 108 and NODES 119. LEDGE
 
 The expanded worst payload has 50 skills, 400 records with bounded long-answer previews, 20 ledger rows, three running jobs, 4096-character questions and replies, 20 audit lines, 40 long log lines and three orphans. Text carries a 0x address, a canary-shaped base64 value, literal Rich tags and newlines through the actual sanitizer and document fold. The real JOB scroll proof reaches QUESTION and RESULT tails without shortening text.
 
-The final-source fixture/offline cold test measured **62.3 MiB** lifetime physical peak using the existing libproc v4 fallback, below the 160 MiB limit. All six fresh body observations passed. The driver visits keys 1–6, then LIVE/heartbeats, and fails a missing visit even with a positive memory sample; persistent hero labels cannot satisfy it. Final cold test: 1 passed in 71.07 s.
+The WP6 fixture/offline cold test measured **62.3 MiB** lifetime physical peak using the existing libproc v4 fallback, below the 160 MiB limit. All six fresh body observations passed. The driver visits keys 1–6, then LIVE/heartbeats, and fails a missing visit even with a positive memory sample; persistent hero labels cannot satisfy it. Final cold test: 1 passed in 71.07 s.
 
-Final seat suite, split full suites, compileall and whole-branch review: pending.
+Final seat suite and split full suites: pending. Python 3.11 compileall passed; final whole-branch review corrections are approved.
 
 ## Follow-ups and interpretation
 
@@ -102,9 +105,9 @@ Follow-up57 preserves the open-ended gap after an unsuccessful empty cursor atta
 
 Launch/workflow association follows the explicit cache fields of spec8.2 and the captured changelog's use of link for the structured objects. Existing job explorer remains separately labelled; no launch/workflow URL was invented. Follow-ups 58 and 59 reserve the two unchanged shared redactor overmatches for round 10: all 64-hex prose and sk- inside ordinary words. Earlier unresolved follow-ups remain.
 
-## Owner deployment steps pending archive
+## Owner deployment steps
 
-Use the same final archive for seat7 (imd-vps, Python3.14, agent51075) and seat3 (imd-vps3, Python3.12, agent52082). On each: check ping for no armed drain and nothing in flight; stop active broker; run installer for that seat; confirm imd-dashd0.1.5; rerun probe. Seat3 worker drop-in and probe20 remain owner-controlled independent work. No live systems were contacted during implementation.
+Use the same final archive for seat 7 (imd-vps, Python 3.14, agent 51075) and seat 3 (imd-vps3, Python 3.12, agent 52082). On each: check ping for no armed drain and nothing in flight; stop active broker; run installer for that seat; confirm imd-dashd 0.1.5; rerun probe. Seat 3 worker drop-in and probe20 remain owner-controlled independent work. No live systems were contacted during implementation.
 
 
 ## Complete CONTROL predecessor/successor inventory
@@ -159,15 +162,21 @@ Every original scenario now runs against the dashboard. Four test names changed;
 | tests/screens/test_seat_screen.py::test_c_opens_the_control_modal_over_the_manager_s_broker | tests/screens/test_seat_screen.py::test_c_selects_control_and_escape_returns_to_live |
 | tests/screens/test_seat_screen.py::test_the_control_modal_paints_its_cycles_onto_the_suspended_screen | tests/screens/test_seat_round9_navigation.py::test_hidden_log_emitted_line_is_visible_once_after_live and test_hidden_updated_then_shown_matches_visible_updated_strips[5] |
 
-All37 original named scenarios remain in the dashboard-backed test file. Cursor-selected skill ids replace typed ids with a separate invalid-row regex case. Ordinary PANELS refresh replaces modal payload forwarding. Held broker tests dispatch actual Escape Key events and wait for the rendered LIVE selection while the reply remains held. Parametrized scenarios (transport/root/mac/partial/refusal) remain intact. The final WP5 affected gate passed 163 checks and its finding-only review passed eight. The six compatibility files separately passed 27/9/46/170/69/6 checks.
+All 37 original named scenarios remain in the dashboard-backed test file. Cursor-selected skill ids replace typed ids with a separate invalid-row regex case. Ordinary PANELS refresh replaces modal payload forwarding. Held broker tests dispatch actual Escape Key events and wait for the rendered LIVE selection while the reply remains held. Parametrized scenarios (transport/root/mac/partial/refusal) remain intact. The final WP5 affected gate passed 163 checks and its finding-only review passed eight. The six compatibility files separately passed 27/9/46/170/69/6 checks.
 
 
 ## Final whole-branch review and fix wave
 
-The required whole-branch review found one Critical and two Important issues after 84 focused checks: JOB collapsed running nodes sharing a job id; auto-update was never populated; CONTROL lacked audit input for its doctor timestamp. Permanent regressions first produced 7 failures and 2 passing unknown-state controls. The single fix wave addresses all three, plus the Minor schema-state spelling correction. The affected gate passed 412 checks; its one key-count test observed an unrelated periodic refresh. Isolating that test timer kept the exact five manual refreshes and no-plan assertions, then the full navigation file plus all 12 new finding cases passed 32 checks. The revised key test also failed under the original wrong-verb mutation (zero refreshes instead of five), then source bytes were restored. Finding-only re-review and final suites are pending.
+The required whole-branch review found one Critical and two Important issues after 84 focused checks: JOB collapsed running nodes sharing a job id; auto-update was never populated; CONTROL lacked audit input for its doctor timestamp. Permanent regressions first produced 7 failures and 2 passing unknown-state controls. The single fix wave addresses all three, plus the Minor schema-state spelling correction. The affected gate passed 412 checks; its one key-count test observed an unrelated periodic refresh. Isolating that test timer kept the exact five manual refreshes and no-plan assertions, then the full navigation file plus all 12 new finding cases passed 32 checks. The revised key test also failed under the original wrong-verb mutation (zero refreshes instead of five), then source bytes were restored. Finding-only re-review is approved; final suites are pending.
 
 - `tests/widgets/test_seat_round9_bodies.py::test_same_job_attempts_keep_identity_text_and_detail_while_stepping` covers separate attempt text and detail keys, standing-only node keys, partial cache, stepping and refresh selection.
 - `tests/data/test_seat_round9_defects.py::test_execstart_auto_update_reaches_document_fold_and_config` covers true, false, nonmatching flags and missing/empty ExecStart through the real document fold and CONFIG compositor.
 - `tests/widgets/test_seat_round9_bodies.py::test_control_doctor_last_run_arrives_through_panels_audit_contract` binds the latest doctor timestamp to ordinary panel dispatch.
 
 The final finding-only re-review approved all three corrections: 13 targeted checks passed. Restoring the job-only cache match made the attempt regression fail; byte-identical restoration passed again. No review finding remains open.
+
+## Final verification compatibility correction
+
+The first exact serial seat run at 5f5b996 completed with 1,814 passed, two skipped, one deselected and two failures in 1,232.18 seconds. Both failures were the original round-4 long-journal-message cases. The generic sanitizer's default API cap had also cut their in-memory lifecycle fields. The targeted correction preserves that older journal boundary while retaining the common canary cleanup and all API cache/storage limits. The original tests remain unchanged; `test_journal_lifecycle_preserves_long_text_after_canary_cleanup` also failed before the correction. This verification-discovered compatibility fix is separate from the completed review's single fix wave; no second broad review was opened.
+
+The affected journal, ledger, cache, manager and detail checks passed: 219 tests in 12.86 seconds.

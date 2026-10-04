@@ -23,6 +23,22 @@ NODE = '12345678-1234-1234-1234-123456789abc'
 BLOB = 'tokenURI data:application/json;base64,eyJuYW1lIjoiYWJjZGVmZ2hpaiJ9 end'
 
 
+def test_journal_lifecycle_preserves_long_text_after_canary_cleanup(tmp_path):
+    from maxpane_dashboard.data.seat_ledger import SeatLedger
+    from maxpane_dashboard.data.seat_log_grammar import classify
+
+    message = BLOB + ' ' + 'z' * 4100 + ' journal tail'
+    ledger = SeatLedger(tmp_path / 'ledger.sqlite', seat=3, now=lambda: T0)
+    try:
+        ledger.ingest([classify('2026-10-03T00:00:00.000Z task failed: ' + message)])
+        line = ledger.state.last_lifecycle
+        assert line.fields['msg'].endswith('z' * 4100 + ' journal tail')
+        assert line.text.endswith('z' * 4100 + ' journal tail')
+        assert find_secret({'text': line.text, 'fields': dict(line.fields)}) is None
+    finally:
+        ledger.close()
+
+
 def manager(tmp_path, **kwargs):
     return SeatManager(maxpane_dir=tmp_path, now=lambda: T0, broker=FakeBroker(reachable=False),
                        offline=True, seat=3, runtime='claude', **kwargs)
