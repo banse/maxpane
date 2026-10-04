@@ -1395,3 +1395,23 @@ The first task review reproduced two errors in the initial gap reconciliation: a
 A nullable internal `api_merged` column records which local rows received a grouped API merge. Their subsequent seat-work reads retain the same precedence, including after reopening the ledger or receiving the actual storage event. A later recognized API verdict still replaces fallback facts. Ordinary rows keep their existing seat-work behavior. The ledger schema version remains 1 and this internal field is not added to the status document or widget contract.
 
 Changed round-9 assertion: `tests/data/test_seat_ledger.py::TestSchema::test_tables_and_columns_match_the_contract` appends `api_merged` to its exact list of additive task columns. The original first fifty-four columns and schema-version-1 assertion stay unchanged. This pins the durable merge marker required by review C2 rather than accepting arbitrary extra columns.
+
+### 2026-10-04 — PEPEPANE round 9 fix: one-to-one running attempt identity
+
+The approved asymmetric window is inclusive from two seconds before the plane's `since` to eight seconds after it. Known job/node identities narrow candidates, and contradictory known start times rule out a pair. Matching is one-to-one: two claims on either side leave both unpaired. A local row with unknown job id can qualify by time; the single-pair fallback never overrides known timing evidence. An unmatched plane row contributes no extra running entry while an unresolved local candidate for that job remains. Otherwise it carries plane facts alone.
+
+The manager and JOB widget share the pure `analytics/seat_attempts.py` predicates and matching rules. Its addition to the widget analytics allowlist is bound by the existing recursive purity check. This replaces inconsistent joins at those two consumers without importing a data module into a widget.
+
+### 2026-10-04 — PEPEPANE round 9 fix: closed attempts and JOB selection
+
+A live row can join only an open local attempt: no submission, cancellation, restart interruption or failed phase. A closed row with the same job/node and a start inside the matching window proves stale standing and suppresses that phantom running entry. A closed row outside the window remains a distinct finished attempt; its outcome, usage and structural check cannot decorate a new plane-only retry. JOB selection keeps running and finished identities separate across refreshes.
+
+The manager carries an internal ledger key between its current-attempt and JOB projections so a second join cannot substitute an older completed row. The existing document shaper removes that internal key from currentJobs. JOB uses its existing working context after shaping, because the display contract does not carry local lifecycle fields; no model keys are added for these fixes.
+
+Changed round-9 guard: `tests/widgets/test_seat_widget_contract.py::_PURE_SEAT_ANALYTICS_ALLOWED` gains `maxpane_dashboard.analytics.seat_attempts`. `test_seat_widgets_import_only_allowed_pure_analytics[seat_bodies]` permits this shared predicate, and `test_the_allowed_seat_analytics_are_themselves_pure` scans it recursively. Their assertions and forbidden-import rules remain unchanged. No other existing assertion changes in fixes 3, 4, 7 or 8.
+
+### 2026-10-04 — PEPEPANE round 9 fix: unknown verdict and starting unit labels
+
+A finished JOB whose ledger outcome is empty paints a dim question mark in the verdict position. A working JOB has no verdict line; structural verification remains a separate dim part. The SEAT card treats activating and reloading as alive, matching the existing signal rule. Boot disabled still makes an alive seat amber, while inactive, failed and deactivating remain red. Composited tests include the actual document fold, preventing raw test-only lifecycle fields from supplying the result.
+
+The unchanged boundary sweeps keep SEAT at 131 columns by 40 rows and LIVE at 131 columns by 30 rows. No layout pin, table tier or existing behavior assertion moves for this package.

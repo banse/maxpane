@@ -32,7 +32,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import httpx
 
-from maxpane_dashboard.analytics import seat_auth, seat_cost, seat_signals as sig, seat_tiers, seat_records
+from maxpane_dashboard.analytics import seat_auth, seat_cost, seat_signals as sig, seat_tiers, seat_records, seat_attempts
 from maxpane_dashboard.analytics.seat_text import (sanitize_text as redact,
     sanitize_sentence as redact_agent_sentence, sanitize_tree as redact_tree)
 from maxpane_dashboard.data import seat_api, seat_models as models
@@ -1352,24 +1352,29 @@ class SeatManager:
             row.pop("submissionHash", None)
         return row
 
-    def _current_jobs(self, now: float) -> list[dict]:
-        rows = self._ledger.record_rows()
-        local = [r for r in rows if r["source"]["row"] == "local" and r.get("submittedUtc") is None
-                 and not r.get("cancelled") and not r.get("interruptedByRestart")
-                 and "failed" not in (r.get("phases") or [])]
+    def _current_jobs(self, now: float, rows: list[dict] | None = None) -> list[dict]:
+        rows = self._ledger.record_rows() if rows is None else rows
+        local = [r for r in rows if r["source"]["row"] == "local" and seat_attempts.is_open(r)]
         running = []
         for row in local:
-            running.append({"jobId": row.get("jobId"), "nodeId8": row.get("nodeId8"), "role": row.get("role"),
+            running.append({"key": row.get("key"), "jobId": row.get("jobId"), "nodeId8": row.get("nodeId8"), "role": row.get("role"),
                             "kind": row.get("kind"), "startedUtc": row.get("acceptedUtc"), "model": row.get("model"),
                             "phase": (row.get("phases") or [None])[-1], "objective": row.get("objective"),
                             "lastMessage": row.get("lastMessage"), "nodeKey": row.get("nodeKey")})
         standing = self._payload("standing") or {}
         if not self._source_entry("standing", now).get("unavailable") and not self._offline:
-            for plane in standing.get("running") or []:
-                match = next((r for r in running if r.get("jobId") == plane.get("jobId") and
-                              (not r.get("nodeKey") or r.get("nodeKey") == plane.get("nodeKey"))), None)
-                if match is None:
-                    match = {};running.append(match)
+            planes = [p for p in standing.get("running") or [] if not seat_attempts.stale_plane(p, rows)]
+            pairs = seat_attempts.unique_pairs(planes, local)
+            unpaired = [r for j, r in enumerate(local) if j not in pairs.values()]
+            for i, plane in enumerate(planes):
+                if i in pairs:
+                    match = running[pairs[i]]
+                elif any(r.get("jobId") == plane.get("jobId") or
+                         (not r.get("jobId") and seat_attempts.in_start_window(plane, r)) for r in unpaired):
+                    continue
+                else:
+                    match = {}
+                    running.append(match)
                 for name, field in (("jobId", "jobId"), ("nodeKey", "nodeKey"), ("role", "role"),
                                     ("objective", "objective"), ("startedUtc", "since")):
                     match[name] = match.get(name) or plane.get(field)
@@ -1379,14 +1384,13 @@ class SeatManager:
             row["elapsedS"] = int(max(0, now - started)) if started is not None else None
         return sorted(running, key=lambda r: r.get("startedUtc") or "", reverse=True)
 
-    def _job_rows(self, now: float) -> tuple[list[dict], list[dict]]:
-        current = self._current_jobs(now)
-        rows = self._ledger.record_rows()
+    def _job_rows(self, now: float, rows: list[dict] | None = None) -> tuple[list[dict], list[dict]]:
+        rows = self._ledger.record_rows() if rows is None else rows
+        current = self._current_jobs(now, rows)
+        open_rows = {r["key"]: r for r in rows if seat_attempts.is_open(r)}
         chosen = []
         for live in current:
-            match = next((r for r in rows if r.get("jobId") == live.get("jobId") and
-                          (r.get("nodeId8") == live.get("nodeId8") if live.get("nodeId8") else
-                           not live.get("nodeKey") or r.get("nodeKey") == live.get("nodeKey"))), None)
+            match = open_rows.get(live.get("key"))
             chosen.append({**(match or {}), **{k: v for k, v in live.items() if v is not None}})
         current_keys = {r.get("key") for r in chosen if r.get("key")}
         last = next((r for r in rows if r["key"] not in current_keys and r.get("submittedUtc")), None)

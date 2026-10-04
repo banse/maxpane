@@ -1,4 +1,5 @@
 """JOB, token history and control facts for the six-dashboard screen."""
+from maxpane_dashboard.analytics.seat_attempts import is_open, unique_pairs, same_attempt, start
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import VerticalScroll
@@ -31,8 +32,11 @@ class SeatJob(PanelBase):
         selected = self.selected_row()
         self._running = {job.get('jobId') for job in current}
         self._jobs = []
-        for job in current:
-            cached = next((row for row in seat_jobs or [] if self._same_attempt(job, row)), {})
+        open_rows = [row for row in seat_jobs or [] if is_open(row) and not row.get('storedUtc')
+                     and row.get('outcome') not in ('accepted', 'rejected', 'failed')]
+        pairs = unique_pairs(current, open_rows)
+        for i, job in enumerate(current):
+            cached = open_rows[pairs[i]] if i in pairs else {}
             self._jobs.append(dict(job, **{key:value for key,value in cached.items() if value is not None}))
         if not current:
             self._jobs = (seat_jobs or [])[:1]
@@ -48,17 +52,11 @@ class SeatJob(PanelBase):
 
     @staticmethod
     def _same_attempt(left, right):
-        if left.get('jobId') != right.get('jobId'):
-            return False
-        # Standing can name only the node key; a cached local row also has its id.
-        for name in ('key', 'nodeId8', 'nodeKey'):
-            if left.get(name) and right.get(name):
-                return left[name] == right[name]
-        return not any(left.get(name) or right.get(name) for name in ('nodeId8', 'nodeKey'))
+        return same_attempt(left, right)
 
     @staticmethod
     def _identity(job):
-        return job.get('key') or SeatJob._attempt(job)
+        return job.get('key') or (*SeatJob._attempt(job), start(job))
 
     def selected_row(self):
         return next((j for j in self._jobs if self._identity(j) == self._selected_key), None)
@@ -92,7 +90,7 @@ class SeatJob(PanelBase):
         text.append(' · Enter detail', style='dim')
         for heading, content in api_sections(row, working=working, offline=self._offline, width=max(12, self.content_region.width-2)):
             text.append('\n\n' + heading + '\n', style='bold').append_text(content)
-        text.append('\n').append_text(outcome_usage(row)).append('\n').append_text(facts(row))
+        text.append('\n').append_text(outcome_usage(row, working=working)).append('\n').append_text(facts(row))
         self.write('#seat-job-content', text)
 
 

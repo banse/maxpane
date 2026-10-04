@@ -44,6 +44,7 @@ _PURE_SEAT_ANALYTICS_ALLOWED = frozenset({
     "maxpane_dashboard.analytics.seat_cost",
     "maxpane_dashboard.analytics.seat_auth",
     "maxpane_dashboard.analytics.seat_records",
+    "maxpane_dashboard.analytics.seat_attempts",
 })
 
 #: Contract §E (3): the only two seat modules allowed a subprocess or a socket.

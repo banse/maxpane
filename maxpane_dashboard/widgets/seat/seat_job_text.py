@@ -103,7 +103,7 @@ def facts(row):
     return text
 
 
-def outcome_usage(row):
+def outcome_usage(row, *, working=None):
     text = Text()
     outcome = plain(row.get('outcome'))
     if outcome:
@@ -113,6 +113,8 @@ def outcome_usage(row):
         elif outcome == 'failed' and row.get('failureReason'):
             verdict += ' ' + plain(row['failureReason'])
         text.append(verdict, style={'accepted':'green', 'rejected':'red', 'failed':'red', 'pending':'yellow'}.get(outcome, 'dim'))
+    elif row.get('submittedUtc') or working is False:
+        text.append('?', style='dim')
     check = row.get('structuralCheck') or {}
     if check:
         text.append('\ncheck: ' + (plain(check.get('evaluation')) or plain(check.get('status')) or DASH), style='dim')

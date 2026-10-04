@@ -238,7 +238,7 @@ class SeatHero(HeroRow):
     def _label_state(self, name: str) -> str | None:
         f = self._facts or {}
         if name == "seat":
-            if f.get("seat_unit_active_state") not in (None, "active", "running"):
+            if f.get("seat_unit_active_state") not in (None, "active", "running", "activating", "reloading"):
                 return "red"
             return "amber" if f.get("seat_unit_boot_enabled") is False else None
         if name == "live":
