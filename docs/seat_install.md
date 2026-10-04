@@ -127,12 +127,43 @@ Stop verification can take up to 110 seconds while the unit is deactivating or a
 ## Daily path
 
 ~~~sh
-ssh -t imd-dash@imd-vps pepepane                    # the TUI; q quits, c opens CONTROL
+ssh -t imd-dash@imd-vps pepepane                    # the TUI; q quits, c selects CONTROL
 ssh imd-dash@imd-vps pepepane --once --offline      # the v2 status document as JSON, no TUI, no api.imd.fun -- usable at 3 a.m. over plain ssh
 ssh imd-dash@imd-vps pepepane --once | head -c 600  # same, with the API tiers
 ~~~
 
 The root login stays for installs only; `runuser … imd status` from root is no longer the way to look at the seat.
+
+### Six dashboards and keys
+
+LIVE is selected at startup. Click a hero card or use `1`–`6` to select SEAT, LIVE,
+CONFIG & SKILLS, RECORDS, NODES or CONTROL. The green border marks selection; the label and
+title alert report health independently. Selection focuses the body's main table or LOG.
+
+| Where | Keys | Action |
+|---|---|---|
+| Every dashboard | `c`, `esc` | Select CONTROL; return to LIVE when no prompt is open |
+| Outside CONTROL | `r` | Refresh |
+| SEAT, LIVE, RECORDS | `enter` | Open the selected ledger row, shown JOB or selected record |
+| LIVE | `h`, `n` | Toggle heartbeat lines; step through running jobs |
+| CONFIG & SKILLS | `tab`, `space` / `enter` | Switch tables; plan the selected skill or systemd boot toggle |
+| RECORDS | `f`, `m` | All / not completed; add 20 rows, up to 400 |
+| NODES | `w` | All history / seven days |
+| CONTROL | `r`, `d`, `s`, `S` | Restart, drained restart, stop, start |
+| CONTROL | `b`, `o`, `D`, `x` | Boot toggle, kill orphans, doctor, cancel drain |
+| Every dashboard | `q`, `t` | Quit, cycle theme |
+
+Capacity and tier rows show their change paths but remain read-only this round. Container boot
+shows the restart policy and is read-only. The old skill-id prompt and tall-LOG shortcut are gone.
+While a confirmation is open, ordinary keys belong to its input and Enter submits; Escape cancels.
+Clicking another card drops an unconfirmed plan. An action already applying or verifying continues,
+including while the cached detail popup is open. The strip shows the verb, exact target command and warning.
+
+JOB and detail show only sanitized API question/result text from the ledger cache, plus local metadata.
+Literal brackets and line breaks survive. RECORDS shows bounded previews; full text remains available
+for the newest 400 records. Older text says `text expired`. Busy replies back off from 60 to 600 seconds;
+cached ledger facts stay visible. Offline mode makes no API reads and serves the cache.
+
 
 ## Runtime configuration
 
@@ -160,7 +191,7 @@ configuration, never secrets (MaxPane rule).
   (`seat_ledger.sqlite`, `seat_tail.json`, `config.toml`, `maxpane.log`). Never opens `config.json`, `auth.json`,
   `tools.env` or `.credentials.json`.
 - **Broker** (`imd-dashd.service`, socket-activated): root, `/usr/bin/python3 -I`, stdlib only, `MemoryMax=128M`,
-  `CPUQuota=50%`, `TasksMax=64`; exits after 600 s idle unless a drain is armed. `ping` answers `imd-dashd 0.1.4` as
+  `CPUQuota=50%`, `TasksMax=64`; exits after 600 s idle unless a drain is armed. `ping` answers `imd-dashd 0.1.5` as
   `version`. Audit at `/var/log/imd-dash/audit.jsonl`. The system service has no `User=` or `Group=`:
   it defaults to root. On measured systemd 259.5, explicit `User=root` with `NoNewPrivileges=yes` and seccomp
   hardening removes `CAP_SETUID`; implicit root keeps privilege dropping working with the same bounding set and
@@ -189,22 +220,25 @@ configuration, never secrets (MaxPane rule).
 recorded once by the probe. Broker 128M (idles ≈ 20 MiB); each transient child 512M (`imd doctor` ≈ 120 MB). Caps are
 ceilings, not reservations. The VPS worker measured 116–189 MB on a 3,828 MB box whose worker cap is 3 G.
 The actual lean Mac cold peak measured on 2026-09-27 was 58.8 MiB (Python 3.11.15, Textual 8.2.8, libproc fallback);
-this is separate from the historical full-app 142 MiB result. The owner measured the live VPS TUI slice peak at 114634752 bytes on 2026-10-03, under its 268435456-byte limit; see `docs/seat_install_probe.md` section 20.
+this is separate from the historical full-app 142 MiB result. The final round-9 fixture/offline run on 2026-10-04 measured 62.3 MiB with all six dashboards visited, using the same libproc physical-peak fallback. The owner measured the live VPS TUI slice peak at 114634752 bytes on 2026-10-03, under its 268435456-byte limit; see `docs/seat_install_probe.md` section 20.
 
 ## Updating the fork on the VPS
 
 Rebuild at the new commit on the Mac (`scripts/build_wheels.sh --out deploy/vps`, guard green), stage the new tarball
 under a new `/opt/imd-dash/src` name, and quit every pepepane session before re-running `install.sh`.
+Before installation, check that `ping` shows `drain_armed: false` and `in_flight: null`.
+Wait for any action to finish and complete or cancel an armed drain first: stopping the broker drops an armed drain.
+Then run `systemctl stop imd-dashd.service` if active, leaving its socket in place, and run the installer.
 Step 3 performs a forced fork reinstall, even at the same package version, then resolves the full lock and runs a
 post-install check against the staged wheel's RECORD hashes by hashing installed file bytes. Require both the pip
 reinstall success and the post-install check's matched-file count and short wheel identity in the output.
 A live TUI retains old modules and may import new ones lazily; during reinstall the package is briefly absent.
 The installer warns about matching live sessions but never kills them. Steps 4–5 copy the broker and units.
-Before stopping an active broker, check that `ping` shows `drain_armed: false` and
-`in_flight: null`; wait for any action to finish and complete or cancel an armed drain first. Stopping the broker
-drops an armed drain. Then `systemctl stop imd-dashd.service` (the socket stays; the next connect spawns
-the new broker code), confirm `ping` reports `imd-dashd 0.1.4`, and start a fresh `pepepane`.
+After installation, confirm `ping` reports `imd-dashd 0.1.5`, then start a fresh `pepepane`.
 Re-run the probe, especially p09–p15. No worker restart is needed unless the drop-in changed.
+Use `--seat 7 --agent 51075` on imd-vps (Python 3.14) and `--seat 3 --agent 52082` on imd-vps3
+(Python 3.12); the archive contains both ABIs. Seat #3's worker drop-in and probe section 20 remain
+separate owner-controlled work; do not add `--worker-dropin` to that install.
 
 ## Rollback / uninstall
 

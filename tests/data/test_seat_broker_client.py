@@ -72,7 +72,7 @@ def test_unix_socket_broker_round_trips_plan_apply_verify(tmp_path):
     broker, runner, journal, clock, _audit = make_broker(tmp_path)
     unix = UnixSocketBroker("/run/imd-dash/broker.sock", offline=False, connect=_served(broker))
     assert unix.kind == "unix" and unix.trust() == "host" and unix.reachable() is True
-    assert unix.read("ping")["version"] == "imd-dashd 0.1.4"
+    assert unix.read("ping")["version"] == "imd-dashd 0.1.5"
     plan = unix.plan("restart")
     assert isinstance(plan, Plan) and plan.argv == ["systemctl", "restart", "--no-block", "imd-worker.service"]
     assert plan.preconditions["plane"]["mode"] == "plane+local"                      # offline=False travelled in args

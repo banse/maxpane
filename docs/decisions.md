@@ -1337,3 +1337,12 @@ The expanded below-pin sweep found hidden table width at a 97-column terminal wh
 ### 2026-10-04 — PEPEPANE round 9: JOB text has a real scroll container
 
 The capped long-text proof found that a fixed-height Static held the question and reply without making their later lines reachable. JOB now wraps the existing content widget in a VerticalScroll with a stable gutter, while the content itself has automatic height. This implements section 6.2's internal scrolling requirement without shortening API text or changing its writer, literal rendering, addresses or job selection. The regression scrolls to the text tail and RESULT in composited output; LIVE's exact corner and hidden-update behavior remain part of the final certificate.
+
+
+### 2026-10-04 — PEPEPANE round 9: owner decision R9 and broker identity
+
+The approved summariser changes ship with root broker identity `imd-dashd 0.1.5`; the package version and gate request User-Agent agree. Other root broker implementation files, verbs, safety gates, unit files and installer remain unchanged. `LOCAL_BROKER_VERSION` remains `pepepane local-docker broker 0.1.0`: this round does not change that broker's implementation. The fixture ping and its manifest move with the identity, and the VPS manifest is regenerated in the same commit as the three version strings.
+
+### 2026-10-04 — PEPEPANE round 9: verification evidence and finishing
+
+The approved brief remains the sole implementation plan. `docs/pepepane_round9_verification.md` records package and defect evidence, the twenty inverse proofs, independent body measurements and every original control-test successor. It is a verification report, not a replacement design or plan. The final split suite, package archive and owner deployment checks are recorded separately as they complete. The branch stays pepepane without merging, pushing or tagging. The two shared redactor overmatches remain explicit next-round follow-ups; their copies stay byte-identical.

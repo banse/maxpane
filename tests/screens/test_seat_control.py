@@ -58,7 +58,7 @@ AUDIT = {"ok": True, "data": {"lines": [
     {"ts": "2026-09-25T11:45:41Z", "seq": 1280, "peer_uid": 1001, "verb": "restart", "phase": "plan", "plan_id": "1111aaaa2222bbbb", "outcome": "planned"},
     {"ts": "2026-09-25T11:45:43Z", "seq": 1281, "peer_uid": 1001, "verb": "restart", "phase": "apply", "plan_id": "1111aaaa2222bbbb", "outcome": "applied"},
 ]}}
-PING = {"ok": True, "data": {"pid": 1, "drop_ok": True, "version": "imd-dashd 0.1.4", "uptime_s": 3.0, "drain_armed": False, "in_flight": None, "posture_ok": True}}
+PING = {"ok": True, "data": {"pid": 1, "drop_ok": True, "version": "imd-dashd 0.1.5", "uptime_s": 3.0, "drain_armed": False, "in_flight": None, "posture_ok": True}}
 
 
 def _verify_sequence(*results):

@@ -51,7 +51,17 @@ def test_main_resolves_worker_uid_by_name_or_explicit_override(tmp_path, monkeyp
     assert [p["uid"] for p in mod.select_orphans(rows, worker_uid=captured["worker_uid"])] == [expected]
 
 
-def test_broker_version_identifies_fix8():
+def test_broker_version_identifies_round9(monkeypatch):
     import imd_dashd
-    assert mod.VERSION == "imd-dashd 0.1.4"
-    assert imd_dashd.__version__ == "0.1.4"
+    assert mod.VERSION == "imd-dashd 0.1.5"
+    assert imd_dashd.__version__ == "0.1.5"
+
+    from io import BytesIO
+    from imd_dashd import gate
+    headers = []
+    def opened(request, *, timeout):
+        headers.append(request.get_header("User-agent"))
+        return BytesIO(b'{"standing":{"running":[]}}')
+    monkeypatch.setattr(gate, "_urlopen", opened)
+    assert gate.fetch_standing_running("https://example.invalid/standing")["running_count"] == 0
+    assert headers == ["imd-dashd/0.1.5"]

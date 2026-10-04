@@ -62,7 +62,7 @@ v2 consumer refuses v1 outright.
 
 The schema version stays 2. Earlier v2 documents without these fields still fold; new list fields default to an
 empty list and new optional blocks to null. Existing keys and widget names are retained. `SeatCostSpark` is replaced
-by `SeatOutputTokens` when the widget implementation lands; it was never a frozen widget signature.
+by `SeatOutputTokens`; it was never a frozen widget signature.
 
 `data/seat_models.shape_dashboard_document(doc)` is the pure writer boundary for the additive blocks. The manager
 calls it before `validate_status_document`. It copies the new fields one by one, including nested objects. An object
@@ -129,7 +129,7 @@ Unread detail counts `paid` and `launch` are null, never zero.
 accepts nullable arguments plus the usual extra-keyword sink. Hero gains nodes/coverage and config/restart flags;
 CONFIG gains identity, boot, auto-update, wrapper and restart facts; LEDGER gains today's median, longest duration and
 divergence. The other new widgets consume their matching row/block keys and source/offline facts as listed in the
-module. Signature agreement checks stage with widget implementation; the data contract lands first.
+module. Signature, export and panel-dispatch agreement tests bind the complete widget set.
 
 The size regression is `tests/data/test_seat_models.py::test_round9_worst_document_under_2mib_mutation13`: three
 running jobs plus last, 400 local rows and preview-only records, 400 node types, 50 skills and 20 audit entries, with
@@ -186,7 +186,7 @@ field for it on purpose, with the reason.
 | `tasks[].seconds` | `tasks.rows[].durationS` | |
 | `tasks[].phase` | dropped from rows | phases seen live in the detail modal; the row carries `repair`, `resent`, `cancelled`, `leaseClosed`, `preAgentFailure`, `agentRan` instead |
 | `tasks[].submissionId` | `tasks.rows[].hash12` | the 12-hex prefix of `work[].submissionHash`; the API verdict joins on it |
-| `tasks[].answer` (free text) | dropped | model output is never persisted or emitted (spec §13; safety §5.4) |
+| `tasks[].answer` (free text) | dropped | local transcript output stays excluded; round 9 stores separately sourced, sanitized API text in the bounded JOB/cache contract |
 | — | `tasks.rows[].runtime`, `model`, `effort`, `tierDerived`, `turns`, `turnsDefinition`, `tokens`, `sideModelTokens`, `ttftMs`, `wallMs`, `turn1Context`, `maxTurnsReached`, `apiErrors`, `sessionFiles`, `outcome`, `outcomeAsOfUtc`, `acceptedAtApi`, `verdictLagS`, `failureReason`, `failureClass`, `nodeKey`, `objective`, `source` | new |
 | `reputation` (`accepted`, `rejected`, `tags`, `scannedFromBlock`, `scannedToBlock`, `rows[]{block,outcome,tag1,tag2,client,tx}`) | dropped | chain rows are the third outcome axis and out of scope (spec §17); uncapped in v1 (~296 B/row, fill4 §2); SURFBOARD/The Lineup render them |
 | `cost.runs` | `cost.tasks` (+ `cost.excluded{doctor,manual}`) | v1 counted every transcript on the machine incl. doctor/probe sessions (fill3 §5) |
@@ -219,3 +219,27 @@ with `asOfUtc`; `completedAtUtc`; a local systemd mode; `schemaVersion: 2` with 
 is and PEPEPANE does not consume it (spec §7 last paragraph).
 
 The transient CONTROL projection keeps plain `status` capped at4096 characters. Plan command, warning and preconditions are capped at1024 each, inverse at160 and verification at512. All pass the common text sanitizer; no Rich objects or arbitrary fields enter the document.
+
+
+## Round 9 cache and dashboard operation
+
+One SeatScreen composes all six bodies and updates all 15 PANELS entries every refresh, including hidden ones.
+LIVE starts selected; hero cards and keys 1–6 select bodies. Selection changes no document schema. The manager
+receives the selection only to schedule RECORDS and NODES reads. The measured screen minimum is 131×40;
+body row minima are SEAT40, LIVE30, CONFIG & SKILLS22, RECORDS20, NODES20 and CONTROL29.
+See `docs/seat_install.md` for the complete key table and confirmation behavior.
+
+The SQLite ledger remains schema version 1. Additive nullable columns and detail tables preserve old rows and
+allow rollback to f4de533. Full question/reply text is separate from the 160-character task objective. Text is
+retained for the newest 400 records by accepted time; expired text is not fetched merely because it was pruned.
+Structured facts remain. Detail reads share a two-request budget per refresh cycle over job, submissions and
+oracle routes; a terminal result is not fetched again. JSON is decoded with strict=False, then strings pass the
+shared seat sanitizer before storage. Oracle membership is derived from full hashes before redaction; neither
+those hashes nor payer addresses enter display fields.
+
+Busy answers make one request and impose a route-class floor of 60 seconds, doubling to 600 and resetting on
+success. Event bumps and open-plan polling cannot shorten it. Standing-fed live facts retain their unavailable
+rule; cached outcomes, RECORDS and NODES retain their stored timestamps and remain visible. Offline runs make
+no detail reads. `apiErrors[].outputFollowed` preserves recovery ordering through session attachment; a recovered
+401, 403 or 429 does not raise auth degradation. Startup facts and recent session metadata survive fresh processes.
+The broker identity is imd-dashd 0.1.5; status schema 2, producer and local Docker broker identity are unchanged.

@@ -178,3 +178,14 @@ that `git merge main` from upstream never conflicts here (spec §1 #7; `docs/dec
 - **Docs**: `docs/pepepane_PRD.md` (the spec), `docs/pepepane_plan.md`, `docs/seat_status_schema_v2.md`,
   `docs/seat_install.md`, `docs/seat_install_probe.md` (placeholder until the owner runs the probe), `docs/seat_followups.md`;
   `docs/seat_PRD.md` and `docs/seat_implementation_plan.md` carry an overridden banner.
+
+
+## PEPEPANE round 9 — 2026-10-04
+
+- Six selectable hero cards open SEAT, LIVE, CONFIG & SKILLS, RECORDS, NODES and CONTROL; LIVE opens first. Each body stays composed and refreshes while hidden. Selection borders and health labels are independent.
+- JOB shows cached API question and result text with literal formatting, copy icons and multi-job stepping. RECORDS adds filtering, row windows and cached detail; NODES shows verdict and paid/launch coverage. OUTPUT TOKENS has its own panel.
+- CONFIG and SKILLS use stable row cursors. Existing skill and systemd boot actions share CONTROL's plan, typed-confirm, apply and independently polled verify flow. Detail popups cannot pause verification; leaving an unconfirmed plan drops it.
+- Fixes D1–D12 cover string ids, Claude home slugs and recovered errors, startup/session persistence, journal facts, runtime labels, duplicated retention wording, CONTROL guidance, busy backoff, idle tail health, canary-safe API text and cursor preservation.
+- New job/submission/oracle reads share a two-request cycle budget and a rollback-compatible schema-1 ledger cache. Text is bounded and retained for 400 records; offline mode and API outages preserve cached facts.
+- Independently measured body pins yield a 131×40 screen minimum. Full table tiers fit within it. Final fixture/offline cold physical peak: 62.3 MiB while visiting every body.
+- Root broker identity is imd-dashd 0.1.5. Control verbs, gates, units and installer are unchanged. Follow-ups and the full verification inventory are in `docs/seat_followups.md` and `docs/pepepane_round9_verification.md`.

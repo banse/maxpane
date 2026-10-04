@@ -166,3 +166,10 @@ The following remain follow-ups, not fixes in this round. Synthetic local reprod
 ## 2026-10-03 — Round 9 tail observation
 
 57. **Open-ended gap after an unsuccessful cursor attach.** The synthetic `round9/empty_cursor_attach.json` fixture reproduces an empty journal cursor attach with exit code 1. `TailThread.run_once` invokes the existing cursor fallback and clears the unusable cursor; `detect_gap` has no first available timestamp and consequently records an open-ended gap. This differs from D10's successful empty read after a valid watermark, which is healthy. The fixture cannot distinguish retained-history loss from an attach failure, so round 9 preserves the gap evidence. A later diagnostic improvement should retain a scrubbed attach failure reason and distinguish these cases when the available evidence permits it, without treating every unsuccessful empty attach as ordinary idleness.
+
+
+## 2026-10-04 — Round 10 redactor work retained
+
+58. **64-hex text overmatch.** Both shared redactor copies replace every 64-hex value in prose, including a public digest inside an objective or reply. Round 9 retains this conservative behavior and never widens the document canary. Round 10 must change both copies together with regressions distinguishing public prose from credentials and preserving the status boundary.
+
+59. **The sk- pattern matches inside ordinary words.** For example, `risk-adjusted` becomes `risk-[redacted]`. This is the same open class as item 28; round 10 owns any narrower boundary, with tests for real key forms and embedded tokens in both copies. All other unresolved items above, including concurrency item 56 and the unsuccessful cursor-attach evidence in item 57, remain open. Capacity/tier verbs, payer-chain reads and seat #3's worker-drop-in work remain outside round 9.

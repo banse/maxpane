@@ -39,7 +39,7 @@ from imd_dashd.process_snapshot import snapshot as process_snapshot
 
 Clock = Callable[[], float]
 
-VERSION = "imd-dashd 0.1.4"
+VERSION = "imd-dashd 0.1.5"
 PLAN_TTL_S = 60
 VERIFY_WITHIN_S = 30           #: `shutting down` -> `runtimes:` within 30 s = verified (fill1 §1: +0.3 s on 8/8)
 VERIFY_WATCH_S = 120           #: the post-apply journal watch is kept this long
