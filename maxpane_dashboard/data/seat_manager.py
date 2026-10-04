@@ -647,7 +647,8 @@ class SeatManager:
         doc["daemon"] = self._daemon_block(now)
         doc["current"] = self._current_block(now)
         doc["tasks"] = self._tasks_block(now)
-        doc["today"] = self._today_block(now, doc["tasks"]["rows"])
+        records = self._ledger.record_rows()
+        doc["today"] = self._today_block(now, doc["tasks"]["rows"], records)
         doc["auth"] = self._auth_block(now, doc["tasks"]["rows"])
         doc["unit"] = self._unit_block()
         doc["cost"] = self._cost_block(now)
@@ -658,7 +659,7 @@ class SeatManager:
         doc["queue"] = self._queue_block()
         doc["plane"] = self._plane_block(now)
         doc["daemon"].update(self._fleet_counts(now))
-        self._dashboard_blocks(doc, now)
+        self._dashboard_blocks(doc, now, records)
         changed = self._config_changed(doc["unit"])
         doc["seat"]["configChangedSinceStart"] = changed
         doc["control"]["restartRequired"] = True if (changed is True or self._restart_required) else (False if changed is False else None)
@@ -870,7 +871,7 @@ class SeatManager:
             "rows": rows,
         }
 
-    def _today_block(self, now: float, rows: Sequence[Mapping]) -> dict:
+    def _today_block(self, now: float, rows: Sequence[Mapping], records: Sequence[Mapping] | None = None) -> dict:
         day = sig.day_utc(now)
         try:
             today = dict(self._ledger.today(day))
@@ -880,7 +881,8 @@ class SeatManager:
         today.setdefault("dayUtc", day)
         seatwork = self._payload("seatWork")
         plane_today = seatwork.get("planeRowsSubmittedToday") if isinstance(seatwork, Mapping) else None
-        local_stored = sum(1 for row in self._ledger.record_rows()
+        records = self._ledger.record_rows() if records is None else records
+        local_stored = sum(1 for row in records
                            if row["source"]["row"] == "local" and (row.get("storedUtc") or "").startswith(day))
         today["divergence"] = sig.divergence(local_stored_today=local_stored, plane_rows_submitted_today=plane_today)
         return today
@@ -1473,7 +1475,8 @@ class SeatManager:
         return current, chosen
 
     def _detail_candidates(self, now: float) -> list[tuple[str, str, dict]]:
-        _, jobs = self._job_rows(now)
+        rows = self._ledger.record_rows()
+        _, jobs = self._job_rows(now, rows)
         candidates = []
         def add(row: dict, *, only_job: bool = False) -> None:
             job = row.get("jobId")
@@ -1491,14 +1494,14 @@ class SeatManager:
         for row in jobs:
             add(row)
         if self._selected_dashboard == "RECORDS":
-            for row in seat_records.record_window(self._ledger.record_rows(limit=400), self._record_limit, self._records_open_only):
+            for row in seat_records.record_window(rows[:400], self._record_limit, self._records_open_only):
                 add(row)
         elif self._selected_dashboard == "NODES":
-            for row in self._ledger.record_rows(limit=400):
+            for row in rows[:400]:
                 add(row, only_job=True)
         # The former reasons tier shares these exact stored submissions and this cycle's budget.
         for row in self._ledger.failed_rows_needing_reason(older_than_utc=sig.iso_z(now - 86400), limit=400):
-            if not self._ledger.task_detail(row["key"]).get("textExpired"):
+            if not row.get("textExpired"):
                 candidates.append(("submissions", row["jobId"], row))
         return candidates
 
@@ -1507,9 +1510,10 @@ class SeatManager:
         attempted = set()
         problems = []
         fetched = []
+        candidates = self._detail_candidates(float(self._clock()))
         while len(attempted) < DETAIL_READS_PER_CYCLE:
             now = float(self._clock())
-            candidate = next(((kind, key, row) for kind, key, row in self._detail_candidates(now)
+            candidate = next(((kind, key, row) for kind, key, row in candidates
                               if (kind, key) not in attempted and self._api.pause_until(kind) <= now
                               and self._ledger.detail_due(kind, key, now)), None)
             if candidate is None:
@@ -1538,8 +1542,9 @@ class SeatManager:
         elif fetched or "reasons" not in self._attempted:
             self._land("reasons", {"fetched": fetched, "problems": []}, float(self._clock()))
 
-    def _dashboard_blocks(self, doc: dict, now: float) -> None:
-        current, selected = self._job_rows(now)
+    def _dashboard_blocks(self, doc: dict, now: float, rows: list[dict] | None = None) -> None:
+        rows = self._ledger.record_rows() if rows is None else rows
+        current, selected = self._job_rows(now, rows)
         doc["currentJobs"] = current
         jobs = []
         for row in selected:
@@ -1564,24 +1569,23 @@ class SeatManager:
             jobs.append(detail)
         doc["jobs"] = jobs
         records = []
-        rows = self._ledger.record_rows()
-        detailed = [self._ledger.task_detail(r["key"]) for r in rows]
-        for row in detailed[:400]:
+        for record in rows[:400]:
+            row = self._ledger.task_detail(record["key"])
             usage = row.get("usage") or {}
             records.append({**row, "answerPreview": seat_records.answer_preview(row),
                             "answerState": row.get("replyState"), "answerReason": row.get("replyReason"),
                             "answerAsOfUtc": row.get("replyAsOfUtc"), "model": usage.get("model"),
                             "tokens": usage.get("tokens"), "durationS": row.get("durationS") if row.get("durationS") is not None
                             else (usage.get("wallMs") / 1000 if usage.get("wallMs") is not None else None)})
-        as_of = max((r.get("outcomeAsOfUtc") for r in rows if r.get("outcomeAsOfUtc")), default=None)
-        doc["records"] = {"rows": records, "window": {"rows": len(rows), "asOfUtc": as_of,
-                          "fromUtc": rows[-1]["acceptedUtc"] if rows else None,
-                          "toUtc": rows[0]["acceptedUtc"] if rows else None, "reason": "offline" if self._offline else None}}
-        week = [r for r in detailed if (sig.parse_iso(r.get("acceptedUtc")) or 0) >= now - 7 * 86400]
-        doc["nodes"] = {"allRows": seat_records.node_rows(detailed), "weekRows": seat_records.node_rows(week),
-                        "coverage": {"attempts": len(rows), "covered": sum(bool(r.get("nodeKey")) for r in rows),
-                                     "detailsRead": sum(bool(r.get("detailRead")) for r in detailed),
-                                     "asOfUtc": as_of, "reason": "offline" if self._offline else None}}
+        facts = self._ledger.record_window_facts()
+        reason = "offline" if self._offline else None
+        doc["records"] = {"rows": records, "window": {k: facts[k] for k in ("rows", "asOfUtc", "fromUtc", "toUtc")}}
+        doc["records"]["window"]["reason"] = reason
+        week = [r for r in rows if (sig.parse_iso(r.get("acceptedUtc")) or 0) >= now - 7 * 86400]
+        doc["nodes"] = {"allRows": seat_records.node_rows(rows), "weekRows": seat_records.node_rows(week),
+                        "coverage": {"attempts": facts["rows"], "covered": facts["covered"],
+                                     "detailsRead": facts["detailsRead"],
+                                     "asOfUtc": facts["asOfUtc"], "reason": reason}}
 
     async def _tier_plane(self) -> None:
         assert self._api is not None

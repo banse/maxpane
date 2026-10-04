@@ -189,3 +189,13 @@ that `git merge main` from upstream never conflicts here (spec §1 #7; `docs/dec
 - New job/submission/oracle reads share a two-request cycle budget and a rollback-compatible schema-1 ledger cache. Text is bounded and retained for 400 records; offline mode and API outages preserve cached facts.
 - Independently measured body pins yield a 131×40 screen minimum. Full table tiers fit within it. Final fixture/offline cold physical peak: 62.3 MiB while visiting every body.
 - Root broker identity is imd-dashd 0.1.5. Control verbs, gates, units and installer are unchanged. Follow-ups and the full verification inventory are in `docs/seat_followups.md` and `docs/pepepane_round9_verification.md`.
+
+
+## PEPEPANE round 9 fixes — 2026-10-04
+
+- Gate previews use their own clock and successful-read timestamp: 60 seconds normally, 15 seconds on CONTROL, and each poll during a write flow. Lifecycle and phase changes still refresh promptly. Busy pauses skip the preview's standing read without changing fresh plan/apply checks. Extra UI refreshes share the API interval budget.
+- Running attempts join by identity and a bounded start-time window. Ambiguous or unidentified attempts remain separate, and stale standing cannot attach a finished attempt's verdict or usage to a new retry.
+- Fallback verdicts require current seat ownership and retain valid terminal outcomes after reassignment. Accepted fallback records carry the job state. API/local merges preserve grouped facts, reconcile uniquely identified missed storage events and avoid duplicate attempts.
+- JOB shows an unknown finished verdict explicitly. Starting and reloading units keep the correct SEAT label. CONFIG leaves ambiguous auto-update command forms unavailable.
+- Root broker files and identity remain imd-dashd 0.1.5. The existing 131×40 screen minimum is retained. Deferred byte-budget, cached-redaction and busy-class concerns are recorded in the follow-ups document.
+- Ledger refreshes share their row snapshot and hydrate full text only for bounded JOB/RECORDS output. NODES retains all-history counts and coverage through structured queries; detached detail reads keep a stable candidate list per run.

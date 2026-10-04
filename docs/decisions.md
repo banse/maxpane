@@ -1454,3 +1454,11 @@ These existing tests keep their result assertions while changing the clock or fl
 `test_fast_control_phase_facts_reach_gate_audit_and_hero_in_one_panel_refresh` remains byte-for-byte unchanged. The gate block is emitted in the frozen key order, preserving the existing key-order assertion.
 
 The same fake-clock measurement over twelve refreshes at seconds zero through fifty-five changed gate reads from twelve in every scenario to one on LIVE, four on CONTROL, twelve during a verifying flow, and one during a busy pause. That busy read permits no standing fetch, and the broker object remains online. CONTROL boundary sweeps retain 131 columns by 29 rows.
+
+### 2026-10-04 — PEPEPANE round 9 fix: bounded detail hydration
+
+The document build shares one ledger row snapshot across current attempts, JOB, today's facts and dashboard projections. RECORDS and JOB hydrate full details only for the rows the document carries, bounded by 400 records plus JOB rows. NODES still aggregates every attempt: a joined structured-row query supplies detail coverage, paid and launch facts, and aggregate queries supply window totals and timestamps. Existing top-level duration and token semantics are preserved, including mixed local/API rows.
+
+Each detached detail run reads a fresh candidate snapshot once and tracks attempts within that run. Cache writes during the run cannot replace the remaining queue by forcing repeated full-ledger scans. Route pauses, eligibility deadlines and the two-read budget remain in force. A later run sees subsequent ledger changes.
+
+The final median of five measurements on the unchanged prepared ledgers is 0.062948 seconds for dashboard construction and 0.029653 seconds for the candidate pass at 1,000 rows, versus 0.194898 and 0.083321 before. At 3,000 rows it is 0.144255 and 0.091316 seconds, versus 0.552628 and 0.218364 before. Both sizes preserve exact NODES all-history/week rows, coverage, record-window facts and candidate counts. A real 3,000-row document build uses 401 detail calls for 400 distinct carried records plus one overlapping JOB row, one shared record-row read, one structured join and one aggregate query. Empty timestamps and null or malformed cached detail JSON keep their previous unknown/unread meaning. No existing round-9 assertion changes for fix 10.

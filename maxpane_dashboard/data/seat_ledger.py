@@ -876,7 +876,7 @@ class SeatLedger:
             "AND stored_utc IS NOT NULL AND stored_utc < ? ORDER BY stored_utc DESC LIMIT ?",
             (older_than_utc, limit),
         ).fetchall()
-        return [self._to_row_dict(r) for r in rows]
+        return [{**self._to_row_dict(r), "textExpired": bool(r["text_expired"])} for r in rows]
 
     def seed_api_rows(self, work: list[dict], *, seat: int) -> int:
         """History rows from ``/seats/<id>?work=1000``: ``source_row='api'``; never overwrites a local row."""
@@ -943,14 +943,33 @@ class SeatLedger:
         return check
 
     def record_rows(self, *, limit: int | None = None) -> list[dict]:
-        sql = "SELECT * FROM tasks WHERE seat IS ? ORDER BY accepted_utc DESC, key DESC"
+        # NODES needs all historical structured facts, without hydrating each record's text.
+        sql = ("SELECT t.*, j.data_json AS detail_json FROM tasks t LEFT JOIN job_details j ON j.job_id=t.job_id "
+               "WHERE t.seat IS ? ORDER BY t.accepted_utc DESC, t.key DESC")
         params: tuple = (self._seat,)
         if limit is not None:
             sql += " LIMIT ?"
             params += (limit,)
-        return [{**self._to_row_dict(r), "jobState": r["job_state"], "launch": _loads(r["launch_json"]),
-                 "submissionHash": r["submission_hash"], "workStatus": r["work_status"],
-                 "textExpired": bool(r["text_expired"])} for r in self._conn.execute(sql, params)]
+        rows = []
+        for raw in self._conn.execute(sql, params):
+            detail = _loads(raw["detail_json"]) or {}
+            launch = _loads(raw["launch_json"])
+            rows.append({**self._to_row_dict(raw), "jobState": raw["job_state"], "launch": launch,
+                         "submissionHash": raw["submission_hash"], "workStatus": raw["work_status"],
+                         "textExpired": bool(raw["text_expired"]), "detailRead": bool(detail),
+                         "paid": detail.get("paid"), "launchLinked": detail.get("launchLinked") or bool((launch or {}).get("kind"))})
+        return rows
+
+    def record_window_facts(self) -> dict:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS rows, MIN(t.accepted_utc) AS fromUtc, MAX(t.accepted_utc) AS toUtc, "
+            "MAX(NULLIF(t.outcome_as_of_utc,'')) AS asOfUtc, "
+            "COALESCE(SUM(CASE WHEN t.node_key IS NOT NULL AND t.node_key!='' THEN 1 ELSE 0 END),0) AS covered, "
+            "COALESCE(SUM(CASE WHEN json_valid(j.data_json) THEN "
+            "json_type(j.data_json)='object' AND json(j.data_json)!='{}' ELSE 0 END),0) AS detailsRead "
+            "FROM tasks t LEFT JOIN job_details j ON j.job_id=t.job_id WHERE t.seat IS ?", (self._seat,)
+        ).fetchone()
+        return dict(row)
 
     def detail_read(self, kind: str, key: str) -> dict:
         row = self._conn.execute("SELECT * FROM detail_reads WHERE kind=? AND cache_key=?", (kind, key)).fetchone()
