@@ -126,3 +126,32 @@ def test_missing_stamps_do_not_override_multiple_local_attempts():
     unnamed['acceptedUtc'] = None
     current = manager([unnamed, named], [plane(None)])._current_jobs(NOW)
     assert len(current) == 2 and next(r for r in current if r['nodeId8'] == 'aaaa1111')['nodeKey'] is None
+
+
+@pytest.mark.parametrize('known_job', [False, True], ids=['unknown-job', 'known-job'])
+@pytest.mark.parametrize('field,value', [
+    ('acceptedUtc', None), ('acceptedUtc', 'not-a-timestamp'), ('acceptedUtc', 'missing'),
+    ('since', None), ('since', 'not-a-timestamp'), ('since', 'missing'),
+])
+@pytest.mark.parametrize('named_node', [False, True], ids=['unlabelled', 'named'])
+def test_unknown_job_requires_usable_start_evidence_even_for_singleton(known_job, field, value, named_node):
+    row = local('aaaa1111', '2026-10-03T10:00:03Z')
+    row['jobId'] = JOB if known_job else None
+    row['nodeKey'] = 'tests' if named_node else None
+    live = plane('2026-10-03T10:00:01Z')
+    target = row if field == 'acceptedUtc' else live
+    if value == 'missing':
+        target.pop(field)
+    else:
+        target[field] = value
+    current, chosen = manager([row], [live])._job_rows(NOW)
+    assert len(current) == (1 if known_job else 2)
+    local_current = next(r for r in current if r.get('nodeId8') == 'aaaa1111')
+    assert local_current['jobId'] == (JOB if known_job else None)
+    assert local_current['nodeKey'] == ('tests' if known_job or named_node else None)
+    assert local_current.get('planeSince') == (live.get('since') if known_job else None)
+    assert next(r for r in chosen if r.get('key') == row['key'])['jobId'] == (JOB if known_job else None)
+    if not known_job:
+        plane_only = next(r for r in current if not r.get('nodeId8'))
+        assert plane_only['jobId'] == JOB and plane_only['nodeKey'] == 'tests'
+        assert local_current['objective'] is None

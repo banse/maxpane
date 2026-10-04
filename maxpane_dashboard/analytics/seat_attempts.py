@@ -50,7 +50,7 @@ def unique_pairs(planes, locals):
             named = any(plane.get(name) and row.get(name) for name in ('key', 'nodeId8', 'nodeKey'))
             single = (sum(p.get('jobId') == plane.get('jobId') for p in planes) == 1
                       and sum(not r.get('jobId') or r.get('jobId') == plane.get('jobId') for r in locals) == 1)
-            matches_time = in_start_window(plane, row) if known else named or single
+            matches_time = in_start_window(plane, row) if known else bool(row.get('jobId')) and (named or single)
             if matches_time:
                 matches.append(j)
         named_matches = [j for j in matches if any(plane.get(name) and locals[j].get(name)

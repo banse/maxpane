@@ -1415,3 +1415,7 @@ Changed round-9 guard: `tests/widgets/test_seat_widget_contract.py::_PURE_SEAT_A
 A finished JOB whose ledger outcome is empty paints a dim question mark in the verdict position. A working JOB has no verdict line; structural verification remains a separate dim part. The SEAT card treats activating and reloading as alive, matching the existing signal rule. Boot disabled still makes an alive seat amber, while inactive, failed and deactivating remain red. Composited tests include the actual document fold, preventing raw test-only lifecycle fields from supplying the result.
 
 The unchanged boundary sweeps keep SEAT at 131 columns by 40 rows and LIVE at 131 columns by 30 rows. No layout pin, table tier or existing behavior assertion moves for this package.
+
+### 2026-10-04 — PEPEPANE round 9 fix review: unknown-job time evidence
+
+Task review I1 found that the single-row fallback could label a local row even when both its job id and usable accepted time were absent. Unknown-job rows require a valid start within the approved window; neither a singleton nor a known node name substitutes for that time evidence. The fallback without timestamps remains available for an otherwise unambiguous known-job pair. A focused regression pins the distinction.
