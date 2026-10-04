@@ -199,3 +199,4 @@ that `git merge main` from upstream never conflicts here (spec §1 #7; `docs/dec
 - JOB shows an unknown finished verdict explicitly. Starting and reloading units keep the correct SEAT label. CONFIG leaves ambiguous auto-update command forms unavailable.
 - Root broker files and identity remain imd-dashd 0.1.5. The existing 131×40 screen minimum is retained. Deferred byte-budget, cached-redaction and busy-class concerns are recorded in the follow-ups document.
 - Ledger refreshes share their row snapshot and hydrate full text only for bounded JOB/RECORDS output. NODES retains all-history counts and coverage through structured queries; detached detail reads keep a stable candidate list per run.
+- CONTROL audit tests now exercise the real manager read path. The detail-popup timer proof detects suspended verification, and an open confirmation block is checked at the 131×40 screen size.

@@ -67,23 +67,41 @@ async def test_confirm_owns_digits_verbs_tab_q_t_focus_and_real_enter():
 
 
 async def test_actual_detail_popup_does_not_pause_timer_driven_verdict():
-    broker=_broker(verify=_verify_sequence((None,None,None),(True,'pending',None)))
-    manager=_Manager(copy.deepcopy(DOC),broker)
+    popup_open = threading.Event()
+    verdict_returned = asyncio.Event()
+    loop = asyncio.get_running_loop()
+
+    def verify(_args):
+        verified = True if popup_open.is_set() else None
+        if verified:
+            loop.call_soon_threadsafe(verdict_returned.set)
+        return {'ok': True, 'data': {'verified': verified, 'connected': 'pending',
+                                    'elapsed_s': 1, 'verify_lines': []}}
+
+    broker = _broker(verify=verify)
+    doc = copy.deepcopy(DOC)
+    doc['jobs'] = [dict(key='cached-attempt', jobId='b1fb1439-7d2e-4a0f-8c3b-9e5d1f2a6b70',
+                        nodeKey='tests', submittedUtc='2026-09-26T03:40:00Z', reply='cached detail')]
+    manager = _Manager(doc, broker)
     async with _A(manager).run_test(size=(170,55)) as pilot:
         await _painted(pilot); await pilot.press('r'); await _painted(pilot)
         screen=pilot.app.screen
-        screen.flow._timer.pause()
         await _type(pilot,PLAN_ID[:4])
         assert screen.flow.mode=='verifying'
-        await pilot.app.push_screen(SeatTaskDetail(dict(jobId='b1fb1439-7d2e-4a0f-8c3b-9e5d1f2a6b70',reply='cached detail')))
+        await pilot.press('2', 'enter')
+        await _painted(pilot)
         assert isinstance(pilot.app.screen,SeatTaskDetail)
-        screen.flow._timer.resume()
-        for _ in range(40):
-            await _painted(pilot)
-            if screen.flow.mode=='done': break
+        assert 'cached detail' in _screen_text(pilot)
+        calls_before_popup = len(_calls(broker, 'verify'))
+        assert not verdict_returned.is_set() and screen.flow.mode == 'verifying'
+        popup_open.set()
+        await asyncio.wait_for(verdict_returned.wait(), 3)
+        await _painted(pilot)
+        assert isinstance(pilot.app.screen, SeatTaskDetail)
         assert screen.flow.mode=='done' and len(_calls(broker,'verify'))>=2
+        assert len(_calls(broker, 'verify')) > calls_before_popup
         assert not manager.plan_open
-        await pilot.press('escape'); await _painted(pilot)
+        await pilot.press('escape', '6'); await _painted(pilot)
         assert 'verified ✓' in _screen_text(pilot)
 
 

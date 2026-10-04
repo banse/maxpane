@@ -1466,3 +1466,17 @@ The final median of five measurements on the unchanged prepared ledgers is 0.062
 ### 2026-10-04 — PEPEPANE round 9 fix review: expiry during a detail run
 
 Task review C1 reproduced an old failed record becoming text-expired when the first detail result was stored, followed by a submissions request from the remaining snapshot. The snapshot remains fixed for the run, but dispatch must recheck the candidate's current eligibility with a narrow lookup. Newly expired text alone cannot authorize another read. A still-eligible recent record of the same job must retain its read opportunity; this check must not restore full-ledger rescanning or text hydration.
+
+### 2026-10-05 — PEPEPANE round 9 fix: CONTROL proof ownership
+
+The CONTROL test harness delegates audit collection to the real manager control path through a fake broker. It no longer fabricates production audit behavior in its own refresh method. The two affected tests must fail when that real audit read is removed. Proof 19 opens the detail popup through LIVE and Enter, observes timer-driven verification while the popup remains open, and does not pause or resume the timer itself. Its inverse check pauses the timer during screen suspension and must fail.
+
+An open CONTROL plan at the existing 131-by-40 screen size shows the shared confirmation strip's three logical plan lines and its status line in composited output. Assertions are limited to the strip region so duplicated command text in the body cannot hide clipping. The body can scroll while the strip is open, with its existing taller marker. This check requires no production layout change or pin adjustment. These are test-strength corrections: the original tests at 4ad6947 survived the corresponding broken-production mutations, while their strengthened versions reject them.
+
+Changed round-9 assertions for this proof repair:
+
+- `tests/screens/test_seat_control.py::test_control_dashboard_shows_dynamic_verbs_config_pointer_and_audit` requires the fresh audit sequence 1281, replacing the alternative that accepted an unrelated apply word. Its broker-read checks now exercise the real manager through the shared harness.
+- `tests/screens/test_seat_control.py::test_restart_plans_confirms_applies_and_polls_verify_until_a_verdict` additionally requires that fresh sequence in composited output after the verdict. Existing confirmation, apply, verify/audit-count and no-replan assertions remain.
+- `tests/screens/test_seat_round9_flow.py::test_actual_detail_popup_does_not_pause_timer_driven_verdict` replaces test-owned timer pause/resume and repaint polling with the actual popup action and an observable verdict event. It requires a new verify call and a completed flow while the popup is still present; CONTROL is selected after closing the LIVE popup to check the final displayed verdict.
+
+The shared `_Manager.fetch_and_compute` harness obtains audit facts from the real control tier and closes its temporary manager and ledger after each refresh. Other fixture facts and their original aliasing are preserved. All 37 original CONTROL test functions remain; the new `test_control_plan_and_confirmation_status_are_visible_at_screen_pin` adds the cropped strip proof. No other existing assertion or test name changes for fix 5.

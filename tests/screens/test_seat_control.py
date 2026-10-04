@@ -17,6 +17,7 @@ import copy
 import asyncio
 import threading
 import json
+from tempfile import TemporaryDirectory
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,7 @@ from textual.widgets import Input
 from maxpane_dashboard.analytics.seat_signals import as_of_hhmm
 from maxpane_dashboard.data.seat_broker_client import BrokerError, FakeBroker
 from maxpane_dashboard.data.seat_models import fold_status_document
+from maxpane_dashboard.data.seat_manager import SeatManager
 from maxpane_dashboard.widgets.seat.seat_control import (
     AUDIT_LINES,
     CONFIRM_CHARS,
@@ -105,12 +107,19 @@ class _Manager:
         return copy.deepcopy(self._doc)
 
     async def fetch_and_compute(self) -> dict:
-        # Fixture fast-read seam: the real manager cadence is tested separately.
-        try:
-            audit = await asyncio.to_thread(self.broker.read, 'audit-tail', {'n':20})
-            self._doc['control']['lastAudit'] = audit.get('lines') or []
-        except Exception:
-            pass
+        # Keep the safety cases' gate fixtures; exercise the real control read/fold for AUDIT.
+        class NoNetworkApi:
+            def pause_until(self, _route):
+                return 0
+
+        with TemporaryDirectory(prefix='seat-control-test-') as cache_dir:
+            control = SeatManager(broker=self.broker, api=NoNetworkApi(),
+                                  maxpane_dir=Path(cache_dir), now=lambda: 1_790_000_000.0)
+            try:
+                await control._tier_control()
+                self._doc['control']['lastAudit'] = control._control_block()['lastAudit']
+            finally:
+                await control.close()
         return fold_status_document(self.document())
 
     async def close(self) -> None:
@@ -203,7 +212,7 @@ async def test_control_dashboard_shows_dynamic_verbs_config_pointer_and_audit():
         assert "skills, boot, capacity, tiers → CONFIG & SKILLS (3)" in text
         assert "capacity: 1 by decision" not in text
         assert "update: 0.1.0+5bfa8261 → none — runbook §2.1 (drained restart)" in text
-        assert "1281" in text or "apply" in text, "the audit footer shows the last lines"
+        assert "1281" in text, "the audit footer shows the fresh broker line"
         assert _calls(broker, "audit-tail") and all(args == {"n": AUDIT_LINES} for args in _calls(broker,"audit-tail"))
 
 
@@ -237,7 +246,27 @@ async def test_restart_plans_confirms_applies_and_polls_verify_until_a_verdict()
         text = _screen_text(pilot)
         assert "verified ✓" in text and "connected: pending (reconnecting since 03:40:31)" in text or "connected: yes" in text
         assert len(_calls(broker, "verify")) >= 2 and len(_calls(broker, "audit-tail")) >= 2
+        assert "1281" in text, "the real manager audit read reaches the compositor after the flow"
         assert _calls(broker, "restart") == [{"offline": False}], "one plan, ever"
+
+
+async def test_control_plan_and_confirmation_status_are_visible_at_screen_pin():
+    async with _A(_Manager(DOC, _broker())).run_test(size=(131, 40)) as pilot:
+        await _painted(pilot)
+        await pilot.press('r')
+        await _painted(pilot)
+        assert pilot.app.screen.flow.mode == 'planned'
+        rows = [''.join(seg.text for seg in strip)
+                for strip in pilot.app.screen._compositor.render_strips()]
+        region = pilot.app.screen.query_one('#seat-confirm-strip').region
+        assert 0 <= region.y < region.bottom <= 40
+        rows = rows[region.y:region.bottom]
+        assert any(f'plan {PLAN_ID[:4]} · restart' in row for row in rows)
+        assert any('argv: systemctl restart imd-worker.service' in row for row in rows)
+        assert any("warning: a task assigned in the ~1–5 s" in row for row in rows)
+        assert PLAN['plan']['warning'] in ' '.join(' '.join(rows).split())
+        assert any(f'plan {PLAN_ID[:4]} · type {PLAN_ID[:4]} then enter to apply (60 s)' in row
+                   for row in rows)
 
 
 async def test_control_dashboard_never_replans_on_its_own():
