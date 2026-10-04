@@ -182,3 +182,44 @@ async def test_detached_details_snapshot_once_then_refresh_next_run(tmp_path, mo
     assert builds == [NOW, NOW]
     await client.close()
     ledger.close()
+
+
+@pytest.mark.parametrize('shared_recent', [False, True])
+async def test_failed_candidate_expired_by_first_cache_store_does_not_spend_budget(tmp_path, monkeypatch, shared_recent):
+    old = work(0, days=3, status='failed')
+    recent = dict(work(401, status='failed'), jobId=old['jobId'], submittedAt='2026-10-03T10:00:00Z')
+    count = 399 if shared_recent else 400
+    rows = [old] + [work(i) for i in range(1, count + 1)]
+    if shared_recent:
+        rows.append(recent)
+    m, ledger = manager(tmp_path, rows)
+    ledger._conn.execute('UPDATE tasks SET stored_utc=NULL WHERE job_id!=?', (old['jobId'],))
+    if shared_recent:
+        # The old candidate sorts first, but the recent attempt still has retained text.
+        ledger._conn.execute('UPDATE tasks SET stored_utc=? WHERE submission_hash=?', ('2026-10-03T11:00:00Z', old['submissionHash']))
+    ledger._conn.commit()
+    requests, builds, detail_reads = [], [], []
+    def handler(request):
+        requests.append(request.url.path)
+        job = request.url.path.split('/')[2]
+        return httpx.Response(200, json={'id': job, 'state': 'completed', 'nodes': [], 'submissions': []})
+    client = SeatApiClient(http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), now=lambda: NOW)
+    m._api = client
+    m._offline = False
+    original_candidates, original_detail = m._detail_candidates, ledger.task_detail
+    monkeypatch.setattr(m, '_detail_candidates', lambda now: (builds.append(now), original_candidates(now))[1])
+    monkeypatch.setattr(ledger, 'task_detail', lambda key: (detail_reads.append(key), original_detail(key))[1])
+    try:
+        await m._tier_details()
+        state = {r['submissionHash']: r for r in ledger.record_rows()}
+        assert state[old['submissionHash']]['textExpired'] is True
+        expected = [f"/jobs/{work(count)['jobId']}"]
+        if shared_recent:
+            assert state[recent['submissionHash']]['textExpired'] is False
+            expected.append(f"/jobs/{old['jobId']}/submissions")
+        assert requests == expected
+        assert builds == [NOW]
+        assert detail_reads == []
+    finally:
+        await client.close()
+        ledger.close()

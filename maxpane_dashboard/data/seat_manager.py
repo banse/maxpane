@@ -1515,6 +1515,7 @@ class SeatManager:
             now = float(self._clock())
             candidate = next(((kind, key, row) for kind, key, row in candidates
                               if (kind, key) not in attempted and self._api.pause_until(kind) <= now
+                              and (kind == "job" or self._ledger.detail_text_retained(row["key"]))
                               and self._ledger.detail_due(kind, key, now)), None)
             if candidate is None:
                 break

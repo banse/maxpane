@@ -976,6 +976,11 @@ class SeatLedger:
         return dict(row) if row else {"state": "not read", "reason": None, "as_of_utc": None, "terminal": False,
                                       "failures": 0, "next_ts": 0.0}
 
+    def detail_text_retained(self, key: str) -> bool:
+        """A cache store can prune a snapshotted attempt before its text read runs."""
+        return self._conn.execute("SELECT 1 FROM tasks WHERE key=? AND seat IS ? "
+                                  "AND COALESCE(text_expired,0)=0", (key, self._seat)).fetchone() is not None
+
     def detail_due(self, kind: str, key: str, now: float) -> bool:
         state = self.detail_read(kind, key)
         if state["terminal"] and kind == "submissions":
