@@ -2587,7 +2587,11 @@ SurfScreen #surf-swarm-bottom {
 /* 4fr : 5fr -- measured, not split on paper: at the 138 pin the 137-cell
  * row gives IN FLIGHT 60 and LAUNCHES 77 (fr rounding takes the rest).
  * LAUNCHES' 75 content cells hold its `tight` table
- * (`swarm_launches.TIGHT_WIDTH` 75) whole from 138 up -- the SWARM pin's
+ * (`swarm_launches.TIGHT_WIDTH` 73, final review I1 2026-10-04 -- see that
+ * constant's comment; was 75 through 2026-10-03, two cells over the
+ * table's own gutter-reserved budget whenever its real vertical scrollbar
+ * also showed, which only the row pin's own height exercises) whole from
+ * 138 up at every height from the row pin through 80 -- the SWARM pin's
  * binder since 2026-10-03; IN FLIGHT reaches `compact` from 177 and `full`
  * from 222, LAUNCHES clears its `‹` at 205, and the layout test names the
  * two as this body's exceptions (measured in situ, `screens/surf.py`). */

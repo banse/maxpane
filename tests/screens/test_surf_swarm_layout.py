@@ -127,6 +127,9 @@ _S_THRESHOLDS = (
     93,           # THROUGHPUT's widest fixed line, then its 46-cell plateau
     109, 119,     # WORKFLOWS compact / full in situ (2026-10-03)
     134,          # the whole status bar and the hero's SERVICES box
+    135,          # LAUNCHES hides no column at _COLUMN_SWEEP_HEIGHT, where
+                  # its own vertical scrollbar never shows (final review I1,
+                  # 2026-10-04); the row-pin-height edge is 138, below
     138,          # LAUNCHES hides no column: the column pin
     177, 222,        # IN FLIGHT compact/full (notes may still clip)
     180, 205,        # LAUNCHES compact/full
@@ -195,6 +198,23 @@ _REGISTERED_SCROLLERS = {
 }
 
 _COLUMN_SWEEP_HEIGHT = 80
+#: SWARM's own column-width sweep runs here, not at ``_COLUMN_SWEEP_HEIGHT``
+#: (final review I1, 2026-10-04). LAUNCHES' ``DataTable`` reserves its
+#: vertical scrollbar's gutter from the *budget* a tier is chosen against
+#: (``SwarmTableBase.GUTTER_COLS``) but only pays it in the table's actual
+#: content width while that scrollbar is really painted -- which needs the
+#: real row count to outrun the panel's visible rows, something a height of
+#: 80 never triggers (the 12-row capture always fits). At 80 the no-hidden-
+#: column edge for the capture and every worst-case SWARM payload measures
+#: three columns looser (135, not 138) than at the row pin, where the real
+#: scrollbar is live and the edge matches the documented pin exactly --
+#: this was the gap the ``tight`` tier's own ``TIGHT_WIDTH`` was not
+#: re-checked against (``swarm_launches._TIGHT_REPO_COLS``). SITES',
+#: WORKFLOWS' and the status bar's onsets measure identically at both
+#: heights (probed 2026-10-04), so only the LAUNCHES-bound checks move here;
+#: AGENT's own binder (OWNER's seat-card row) is unaffected at either height
+#: and keeps ``_COLUMN_SWEEP_HEIGHT``.
+_S_COLUMN_SWEEP_HEIGHT = SURF_SWARM_FULL_LAYOUT_ROWS
 _ROW_SWEEP_WIDTH = 150
 
 # ---------------------------------------------------------------------------
@@ -662,8 +682,14 @@ async def test_the_body_is_whole_from_its_pinned_width(key, payload_name, width,
     exceptions too. Below the pin something must advertise the loss: a mark
     or a clipped line outside the exceptions, or a column hidden behind a
     table's own horizontal scrollbar -- the one loss an exception cannot
-    excuse by its ever-lit marker (LAUNCHES binds SWARM since 2026-10-03)."""
-    r = await _render(PAYLOADS[payload_name](), (width, _COLUMN_SWEEP_HEIGHT), key, expanded=expanded)
+    excuse by its ever-lit marker (LAUNCHES binds SWARM since 2026-10-03).
+    SWARM runs at ``_S_COLUMN_SWEEP_HEIGHT`` (the row pin), not
+    ``_COLUMN_SWEEP_HEIGHT``: see that constant's comment -- the row pin is
+    where LAUNCHES' own vertical scrollbar is actually live, so it is the
+    height whose "below the pin, something marks" claim is true for every
+    width this sweep bands (final review I1, 2026-10-04)."""
+    height = _S_COLUMN_SWEEP_HEIGHT if key == "s" else _COLUMN_SWEEP_HEIGHT
+    r = await _render(PAYLOADS[payload_name](), (width, height), key, expanded=expanded)
     where = f"{key}/{payload_name}{' expanded' if expanded else ''} at {width}"
     assert not r["overflow"], f"{where}: a panel's region extends past its container's: {r['overflow']}"
     if width >= _COLUMN_PIN[key]:
@@ -684,7 +710,8 @@ _PIN_CASES = (
 
 @pytest.mark.parametrize("key,payload_name,expanded", _PIN_CASES)
 async def test_the_column_pin_is_whole_for_every_payload(key, payload_name, expanded) -> None:
-    r = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], _COLUMN_SWEEP_HEIGHT), key, expanded=expanded)
+    height = _S_COLUMN_SWEEP_HEIGHT if key == "s" else _COLUMN_SWEEP_HEIGHT
+    r = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], height), key, expanded=expanded)
     assert not r["overflow"], (key, payload_name, r["overflow"])
     _assert_whole(r, f"{key}/{payload_name} at the pin")
     if key == "s":
@@ -703,10 +730,15 @@ async def test_the_column_pin_is_not_loose(key) -> None:
     """One column under the pin the binding panel the block names -- and
     only it, besides the exceptions -- shows the loss, on the capture and on
     the worst case alike (the two agreed at every width swept, so the pin is
-    the panel's, not a payload's)."""
+    the panel's, not a payload's). SWARM checks this at ``_S_COLUMN_SWEEP_HEIGHT``
+    (the row pin): at ``_COLUMN_SWEEP_HEIGHT`` LAUNCHES' own vertical
+    scrollbar never shows for either payload, so one column under the pin
+    no longer hides anything there (final review I1, 2026-10-04) -- the row
+    pin is where "not loose" is actually true."""
     pin = _COLUMN_PIN[key]
+    height = _S_COLUMN_SWEEP_HEIGHT if key == "s" else _COLUMN_SWEEP_HEIGHT
     for payload_name in ("capture", _WORST[key]):
-        under = await _render(PAYLOADS[payload_name](), (pin - 1, _COLUMN_SWEEP_HEIGHT), key)
+        under = await _render(PAYLOADS[payload_name](), (pin - 1, height), key)
         if _BINDING_PANEL[key] == "StatusBar":
             assert not under["status_whole"], "status bar fits below its full-layout pin"
             assert not under["overflow"]
@@ -755,14 +787,33 @@ async def test_the_exceptions_are_marked_at_the_pin_and_clear_where_the_blocks_s
 
 async def test_launches_hides_no_column_from_the_measured_width() -> None:
     """The ``4fr : 5fr`` seam's one job: no hidden LAUNCHES column at the
-    pin or at the app-wide pin, with the edge one column under 138."""
-    below = await _render(_capture_payload(), (LAUNCHES_HIDES_NO_COLUMN_FROM - 1, _COLUMN_SWEEP_HEIGHT), "s")
-    at = await _render(_capture_payload(), (LAUNCHES_HIDES_NO_COLUMN_FROM, _COLUMN_SWEEP_HEIGHT), "s")
+    pin or at the app-wide pin, with the edge one column under 138 --
+    measured at ``_S_COLUMN_SWEEP_HEIGHT`` (the row pin), where LAUNCHES'
+    own vertical scrollbar is actually live (final review I1, 2026-10-04;
+    see that constant's comment). At ``_COLUMN_SWEEP_HEIGHT`` the real
+    scrollbar never shows for these payloads and the edge measures three
+    columns looser (135): both heights clear from 138, which is what the
+    second loop below still certifies."""
+    below = await _render(_capture_payload(), (LAUNCHES_HIDES_NO_COLUMN_FROM - 1, _S_COLUMN_SWEEP_HEIGHT), "s")
+    at = await _render(_capture_payload(), (LAUNCHES_HIDES_NO_COLUMN_FROM, _S_COLUMN_SWEEP_HEIGHT), "s")
     assert below["hidden"]["SurfSwarmLaunches"] > 0, below["hidden"]
     assert at["hidden"]["SurfSwarmLaunches"] == 0, at["hidden"]
     for width in (SURF_SWARM_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS):
-        r = await _render(_worst_swarm_payload(), (width, _COLUMN_SWEEP_HEIGHT), "s")
-        assert r["hidden"]["SurfSwarmLaunches"] == 0, (width, r["hidden"])
+        for height in (_S_COLUMN_SWEEP_HEIGHT, _COLUMN_SWEEP_HEIGHT):
+            r = await _render(_worst_swarm_payload(), (width, height), "s")
+            assert r["hidden"]["SurfSwarmLaunches"] == 0, (width, height, r["hidden"])
+
+
+async def test_launches_hides_no_column_from_a_looser_width_when_its_vscroll_never_shows() -> None:
+    """The other half of that same fact, named rather than left as a gap a
+    mutant could widen unnoticed: at ``_COLUMN_SWEEP_HEIGHT`` LAUNCHES never
+    needs its own vertical scrollbar for these payloads, so its no-hidden-
+    column edge sits three columns under the documented pin, at 135 --
+    ``_S_THRESHOLDS`` names it so the boundary sets straddle it too."""
+    below = await _render(_capture_payload(), (134, _COLUMN_SWEEP_HEIGHT), "s")
+    at = await _render(_capture_payload(), (135, _COLUMN_SWEEP_HEIGHT), "s")
+    assert below["hidden"]["SurfSwarmLaunches"] > 0, below["hidden"]
+    assert at["hidden"]["SurfSwarmLaunches"] == 0, at["hidden"]
 
 
 @pytest.mark.parametrize("width,tier,hidden", [
@@ -831,12 +882,20 @@ async def test_the_body_is_whole_from_its_pinned_height(key, payload_name, rows)
 @pytest.mark.parametrize("key", sorted(_ROW_PIN))
 async def test_the_row_pin_holds_at_the_column_pin_too(key) -> None:
     """Re-confirmed at the body's own column pin, so the row threshold is not
-    an artefact of the 150-column sweep width."""
+    an artefact of the 150-column sweep width. At that exact point no table
+    may hide a column behind its own horizontal scrollbar either (final
+    review I1, 2026-10-04): this is the one size where LAUNCHES' real
+    vertical scrollbar is live *and* the column pin is in force at once, so
+    it is the size the original defect shipped under. Measured clean for
+    both SWARM and AGENT (``probe4``/``probe9``, 2026-10-04), so both assert
+    rather than one being weakened to report-only."""
     pin = _ROW_PIN[key]
     under = await _render(_capture_payload(), (_COLUMN_PIN[key], pin - 1), key)
     at = await _render(_capture_payload(), (_COLUMN_PIN[key], pin), key)
     assert under["taller"] and under["scroll"][_BODY_ID[key]], under["scroll"]
     assert not at["taller"] and not any(at["scroll"].values()), at["scroll"]
+    assert not any(at["hidden"].values()), at["hidden"]
+    assert not any(at["hscroll"].values()), at["hscroll"]
 
 
 #: Where ``‹ taller`` goes dark with THROUGHPUT **expanded** (``x``), per

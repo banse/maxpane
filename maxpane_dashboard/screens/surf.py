@@ -1587,13 +1587,41 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: the pin) -- the ``4fr : 5fr`` seam's edge, unchanged since v2 and
 #: carried by a panel whose scrollbar says so. At 137 it is the **only** loss
 #: on the body: nothing else marks, clips or hides a column, so the pin is
-#: not loose. Everything else is whole earlier: the status bar and the
+#: not loose. **This edge is measured at the row pin's own height (35-56),
+#: where LAUNCHES' table also needs its own real vertical scrollbar** (final
+#: review I1, 2026-10-04): ``SwarmTableBase.GUTTER_COLS`` reserves two cells
+#: from the *budget* a tier is chosen against, but the chosen tier's own
+#: fixed column widths were not re-checked against that budget -- ``tight``
+#: is the ladder's last step and installs regardless of whether its own
+#: ``TIGHT_WIDTH`` actually fits, so a budget narrower than ``TIGHT_WIDTH``
+#: showed as a hidden last column behind LAUNCHES' own horizontal scrollbar
+#: whenever the real vertical one was also painted, which is exactly 35-56
+#: rows on every SWARM payload and was invisible to every sweep run at the
+#: generous height the column pin used to be measured at (80: a 12-row
+#: payload never needs LAUNCHES' own vertical scroll there). Fixed by
+#: shortening ``repo`` by two cells at ``tight`` only
+#: (``swarm_launches._TIGHT_REPO_COLS``, final review I1, 2026-10-04): it is
+#: the column already documented to clip with a visible ``…`` at every
+#: tier, so losing two of its 28 cells still shows ``owner/launch-NN`` before
+#: the clip, and ``TIGHT_WIDTH`` now equals the reserved budget exactly, with
+#: no slack either way. **138 is whole at every height from the row pin up**
+#: (35 through the clearing height and every height swept to 80, all four
+#: payloads, both THROUGHPUT fold states) -- at heights where the real
+#: vertical scrollbar never shows (57 and up, including the old 80-row sweep
+#: height), LAUNCHES' own no-hidden-column edge is looser still, measured at
+#: 135, but the pin itself does not move for it: a looser edge below the pin
+#: is not a defect, a tighter requirement above it would be, and 138 clears
+#: both regimes (``test_launches_hides_no_column_from_the_measured_width``
+#: and its height-80 sibling in the layout test). Everything else is whole
+#: earlier: the status bar and the
 #: hero's SERVICES box (``health unavailab…``) from 134
 #: (``STATUS_BAR_WHOLE_FROM``), WORKFLOWS ``full`` from 119 (``compact``
 #: 109-118 with ``‹`` lit and ``frontend`` shed, ``tight`` under 109 --
 #: its ladder's 67 / 57 / 44 table cells plus gutter 2 and padding 2), SITES
 #: ``full`` from 100 (``compact`` 92-99, ``tight`` at or under 91 with hidden
-#: columns under 72; F67, 2026-09-23). WORKFLOWS has no ``max-width``: its
+#: columns under 72; F67, 2026-09-23) -- all four measured identically at
+#: the row pin's height and at 80 (final review I1, 2026-10-04). WORKFLOWS
+#: has no ``max-width``: its
 #: ``objective / failure`` column takes every spare cell, and a text cut
 #: with ``…`` is its content, not a shed column -- it does not mark.
 #:
@@ -1689,11 +1717,23 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 138
 #:
 #: LAUNCHES AT THE PIN'S OWN HEIGHT. At 138 columns and 35-56 rows LAUNCHES'
 #: table scrolls its rows inside its ``1fr`` share, and its vertical
-#: scrollbar costs the table two cells: ``max_scroll_x`` reads 2 and a
-#: horizontal scrollbar shows (it read 1 at the old 141 x 42). The two cells
-#: are the last column's trailing padding -- every glyph of the 138 x 35
-#: render matches the 138 x 80 one on the worst case -- so no content is
-#: lost, and at 150 columns nothing hides at any height.
+#: scrollbar costs the table two cells of content width. **Through
+#: 2026-10-03 this was a real loss, not padding**: ``max_scroll_x`` read 2
+#: and a horizontal scrollbar showed, hiding the ``parked reason`` column's
+#: last two cells behind it -- a width requirement that held at 138 only
+#: above 56 rows, exactly the "becomes a function of its height" the
+#: terminal-layout skill forbids, and invisible to every sweep because the
+#: column pin was measured at 80 rows, where LAUNCHES never needs this
+#: scrollbar on any committed payload. Fixed 2026-10-04 (final review I1,
+#: ``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s block above has the full account):
+#: ``repo`` gives up two of its own 28 cells at the ``tight`` tier only
+#: (``swarm_launches._TIGHT_REPO_COLS``), so ``TIGHT_WIDTH`` now equals the
+#: budget ``SwarmTableBase.GUTTER_COLS`` already reserved for this
+#: scrollbar. ``max_scroll_x`` now reads 0 and no horizontal scrollbar shows
+#: at 138 columns, at every height from 35 through 80, on every SWARM
+#: payload in both THROUGHPUT fold states -- every glyph of the 138 x 35
+#: render now matches the 138 x 80 one, so no content is lost, and at 150
+#: columns nothing hides at any height either.
 SURF_SWARM_FULL_LAYOUT_ROWS = 35
 
 #: AGENT full-layout width, re-swept 2026-09-24: 139 (unchanged).

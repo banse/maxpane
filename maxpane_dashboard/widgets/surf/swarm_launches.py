@@ -111,6 +111,23 @@ _TIGHT_ARTIFACTS_COLS = TIGHT_ADDR_COLS + ICON_COLS + _PLUS_COLS  # 17
 #: above the fixed columns, and a reason it still clips lights the title hint
 #: (module docstring).
 PARKED_MIN_COLS = len("parked reason")                                    # 13
+#: ``repo`` at ``tight`` only (final review I1, 2026-10-04): the SWARM pin's
+#: own sweep found LAUNCHES' ``tight`` tier two cells over its 138-column
+#: budget (``_swarm_table.SwarmTableBase.GUTTER_COLS`` reserves the table's
+#: vertical scrollbar from the *budget* used to pick a tier, but a tier's
+#: own column widths are not re-checked against that budget once chosen --
+#: ``tight`` is the ladder's last step and installs regardless -- so a
+#: budget narrower than :data:`TIGHT_WIDTH` showed as a hidden last column
+#: behind LAUNCHES' own horizontal scrollbar whenever its table also needed
+#: its vertical one, which happens only below a payload-dependent height
+#: and was invisible to every sweep run at the generous 80-row sweep
+#: height). ``repo`` is the column already documented to clip with a
+#: visible ``…`` at every tier -- it never shows a repo whole -- so it is
+#: the one asking: two cells off 28 still shows ``Identity-md/launch-NN``
+#: (owner and launch number, the corpus's longest-lived launches) before the
+#: clip, the same guarantee :data:`_REPO_COLS`'s own comment names. Full and
+#: compact keep 28; only ``tight`` loses the two cells.
+_TIGHT_REPO_COLS = _REPO_COLS - 2                                          # 26
 
 _SPECS = (
     ("number", "#", _NUMBER_COLS),
@@ -129,14 +146,16 @@ _TIGHT = tuple(key for key in _COMPACT if key != "parked")
 FULL_WIDTH = table_cols(w for k, _l, w in _SPECS)                      # 110
 #: ``compact``: ``kind`` shed (two values, both implied by the artifacts) -- 96.
 COMPACT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _COMPACT)  # 96
-#: ``tight``: the reason shed too and the address at :data:`TIGHT_ADDR_COLS`
-#: -- 75. Never the reverse (reason kept, address narrowed): the reason is
-#: free text with a visible clip, the address window is the anti-poisoning
-#: form and is spent last.
+#: ``tight``: the reason shed too, the address at :data:`TIGHT_ADDR_COLS` and
+#: ``repo`` at :data:`_TIGHT_REPO_COLS` (final review I1, 2026-10-04;
+#: see that constant's comment) -- 73. Never the reverse for the address
+#: (reason kept, address narrowed): the reason is free text with a visible
+#: clip, the address window is the anti-poisoning form and is spent last.
 TIGHT_WIDTH = table_cols(
-    (_TIGHT_ARTIFACTS_COLS if k == "artifacts" else w)
+    (_TIGHT_ARTIFACTS_COLS if k == "artifacts" else
+     _TIGHT_REPO_COLS if k == "repo" else w)
     for k, _l, w in _SPECS if k in _TIGHT
-)                                                                      # 75
+)                                                                      # 73
 
 #: Colour looked up on the **raw** status word; the text beside it is escaped.
 _STATUS_COLOURS = {"live": "green", "parked": "yellow", "abandoned": "dim"}
@@ -146,11 +165,11 @@ _STATUS_COLOURS = {"live": "green", "parked": "yellow", "abandoned": "dim"}
 _GITHUB = "https://github.com/"
 
 
-def _repo_label(url) -> str:
+def _repo_label(url, cols: int = _REPO_COLS) -> str:
     if not isinstance(url, str) or not url:
         return DASH
     shown = url[len(_GITHUB):] if url.startswith(_GITHUB) else url
-    return sanitize_cell(shown, _REPO_COLS) or DASH
+    return sanitize_cell(shown, cols) or DASH
 
 
 def _artifacts_cell(item: dict, addr_cols: int) -> Text | str:
@@ -205,18 +224,26 @@ class SurfSwarmLaunches(SwarmTableBase):
         self.store(swarm_launch_rows, swarm_scores_as_of_hhmm, swarm_launch_summary)
 
     def column_plan(self, tier: str, budget: int) -> tuple[tuple[str, str, int], ...]:
-        """The reason column takes every spare cell; the address narrows at ``tight``."""
+        """The reason column takes every spare cell; the address and ``repo``
+        narrow at ``tight`` (the latter since final review I1, 2026-10-04:
+        :data:`_TIGHT_REPO_COLS`'s comment)."""
         plan = []
         keep = self.TIER_COLUMNS[tier]
         fixed = [w for k, _l, w in _SPECS if k in keep and k != "parked"]
         if tier == "tight":
-            fixed = [_TIGHT_ARTIFACTS_COLS if w == _ARTIFACTS_COLS else w for w in fixed]
+            fixed = [
+                _TIGHT_ARTIFACTS_COLS if w == _ARTIFACTS_COLS else
+                _TIGHT_REPO_COLS if w == _REPO_COLS else w
+                for w in fixed
+            ]
         spare = budget - table_cols(fixed) - CELL_PADDING
         for key, label, width in _SPECS:
             if key not in keep:
                 continue
             if key == "artifacts" and tier == "tight":
                 width = _TIGHT_ARTIFACTS_COLS
+            elif key == "repo" and tier == "tight":
+                width = _TIGHT_REPO_COLS
             elif key == "parked":
                 width = max(PARKED_MIN_COLS, spare)
             plan.append((key, label, width))
@@ -233,6 +260,7 @@ class SurfSwarmLaunches(SwarmTableBase):
             status = f"[{colour}]{status}[/]"
 
         addr_cols = TIGHT_ADDR_COLS if self._tier == "tight" else ADDR_COLS
+        repo_cols = _TIGHT_REPO_COLS if self._tier == "tight" else _REPO_COLS
 
         parked_cols = self._parked_cols()
         reason = strip_tags(item.get("parked_reason"))
@@ -243,7 +271,7 @@ class SurfSwarmLaunches(SwarmTableBase):
             "kind": sanitize_cell(item.get("kind"), _KIND_COLS) or DASH,
             "status": status,
             "chain": sanitize_cell(chain_word(item.get("chain_id")), CHAIN_COLS),
-            "repo": _repo_label(item.get("repo_url")),
+            "repo": _repo_label(item.get("repo_url"), repo_cols),
             "artifacts": _artifacts_cell(item, addr_cols),
             "parked": sanitize_cell(reason, parked_cols),
         }
