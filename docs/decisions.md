@@ -1480,3 +1480,24 @@ Changed round-9 assertions for this proof repair:
 - `tests/screens/test_seat_round9_flow.py::test_actual_detail_popup_does_not_pause_timer_driven_verdict` replaces test-owned timer pause/resume and repaint polling with the actual popup action and an observable verdict event. It requires a new verify call and a completed flow while the popup is still present; CONTROL is selected after closing the LIVE popup to check the final displayed verdict.
 
 The shared `_Manager.fetch_and_compute` harness obtains audit facts from the real control tier and closes its temporary manager and ledger after each refresh. Other fixture facts and their original aliasing are preserved. All 37 original CONTROL test functions remain; the new `test_control_plan_and_confirmation_status_are_visible_at_screen_pin` adds the cropped strip proof. No other existing assertion or test name changes for fix 5.
+
+### 2026-10-05 — PEPEPANE round 9 fix: final verification and branch retention
+
+All five implementation packages passed task review, including the scoped corrections for durable merges, unknown-job time evidence and text expiry during a detached detail run. The final whole-branch review of `4ad6947..16b936d` approved the changes with no findings. Its 64 named regressions passed. Both additional integration probes passed, failed under targeted production mutations, and passed again after exact restoration: previous-ledger reopening through merged NODES counts, and busy gate scheduling alongside popup verification. No temporary review edit remains.
+
+The controller ran the required final suites once on `16b936d`, using isolated HOME, unset NO_COLOR and one pytest process at a time:
+
+| Final run | Result |
+|---|---|
+| Seat suite, original brief's complete command | 1,964 passed, 2 skipped, 1 deselected in 530.46 seconds |
+| `tests/screens/test_dashboard_screen.py` | 27 passed in 3.02 seconds |
+| `tests/test_address_sweep_registry.py` | 9 passed in 0.50 seconds |
+| `tests/screens/test_address_icons_everywhere.py` | 46 passed in 47.08 seconds |
+| `tests/widgets/test_panels.py` | 170 passed in 5.55 seconds |
+| `tests/widgets/test_title_blank_row.py` | 69 passed in 6.19 seconds |
+| `tests/screens/test_refresh_guard.py` | 6 passed in 0.63 seconds |
+| Full MaxPane, four workers with loadfile and not-host selection | 12,787 passed, 2 skipped in 914.44 seconds |
+| Full sybilkit, four workers with loadfile and its source PYTHONPATH | 444 passed, 1 expected failure in 9.75 seconds |
+| `.venv-pepepane/bin/python -m compileall -q imd_dashd` | Exit zero; broker sources unchanged |
+
+The seat and MaxPane runs each report the existing pytest-asyncio fixture-loop-scope deprecation warning. No behavior or assertion was changed to suppress it. The original protected-path diff remains empty, and the root broker retains its exact bytes and identity 0.1.5. The screen remains 131 columns by 40 rows, with no pin or wider-tier exception change. The approved finishing choice keeps pepepane in this checkout; no push, merge, tag or deployment is performed. Packaging uses the committed dependency seed and both supported interpreter ABIs; only the generated lock and manifest may change after this record.
