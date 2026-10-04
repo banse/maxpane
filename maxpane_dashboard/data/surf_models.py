@@ -1524,7 +1524,9 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_queue_total", "swarm_breaker", "swarm_services_up", "swarm_health_status"),
     "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
     "SurfSwarmThroughput": ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale"),
-    "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),
+    # WORKFLOWS took CAPABILITY's place on SWARM (2026-10-03, docs/surf_swarm_workflows_spec.md
+    # §2); CAPABILITY's frozen signature moved to SWARM_PARKED_WIDGET_SIGNATURES below.
+    "SurfSwarmWorkflows": ("swarm_workflow_rows", "swarm_scores_as_of_hhmm"),
     "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network"),
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
@@ -1650,7 +1652,8 @@ SWARM_WORKFLOW_LIMIT = 12
 #: Widgets whose module, class and test stay but which no body mounts: CAPABILITY was
 #: parked on 2026-10-03 when WORKFLOWS took its place on SWARM (spec §2), for a future
 #: SKILLS board. Every "is every widget mounted / every key consumed" test takes its
-#: exemption from this export, never from a hand-typed copy (wired in that spec's WP5).
+#: exemption from this export, never from a hand-typed copy (wired in that spec's WP5:
+#: the surf screen, swarm-models, widget-contract and registration tests read it).
 SWARM_PARKED_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),
 }

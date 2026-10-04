@@ -13,6 +13,16 @@ on 2026-09-22 for the seat-details handover. Nothing in this file compares again
 or the v1 exceptions (``FIELD_NEVER_CLEARS_BELOW``,
 ``SHIPPED_NEVER_CLEARS_BELOW``); ``docs/decisions.md`` keeps them.
 
+**SWARM re-swept again on 2026-10-03** (``docs/surf_swarm_workflows_spec.md``
+WP5): WORKFLOWS took CAPABILITY's place beside THROUGHPUT (CAPABILITY is
+parked, its optional-tier sweep retired with it), and THROUGHPUT opens
+**collapsed** behind ``x``. Both SWARM pins are certified on every SWARM
+payload -- the capture, the worst case, the v3 executing notes and F47's
+extra-states payload -- the column pin (141 -> 138, LAUNCHES binds) in both
+fold states, the row pin (42 -> 35) collapsed, as the body opens: the
+expanded panel needs more rows, and the silent-loss sweep holds it to
+lighting the marker wherever it does, in both fold states.
+
 The geometry invariants are the pool4-market file's: at and above a column
 pin **whole** means no panel marked besides the named exceptions, no
 CSS-clipped line, no hidden ``DataTable`` column and no widget region
@@ -51,7 +61,6 @@ from maxpane_dashboard.screens.surf import (
     SURF_AGENT_FULL_LAYOUT_COLUMNS,
     SURF_AGENT_FULL_LAYOUT_ROWS,
     RECORD_NEVER_CLEARS_BELOW,
-    CAPABILITY_OPTIONAL_FULL_COLUMNS,
     SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
     SURF_POOL4_USER_FULL_LAYOUT_COLUMNS,
     SURF_SWARM_FULL_LAYOUT_COLUMNS,
@@ -64,7 +73,6 @@ from maxpane_dashboard.screens.surf import (
 )
 from maxpane_dashboard.widgets.surf import (
     SurfSwarmAgentHero,
-    SurfSwarmCapability,
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
@@ -72,6 +80,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmSeatRecord,
     SurfSwarmSites,
     SurfSwarmThroughput,
+    SurfSwarmWorkflows,
 )
 from tests.screens._sweeps import boundary_set
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES
@@ -84,6 +93,7 @@ from tests.screens.test_surf_screen import (
 )
 from tests.surf_swarm_fixtures import (
     swarm_capture_v2,
+    swarm_capture_v6,
     swarm_details_v2,
     swarm_manifest_v2,
     swarm_seat_capture,
@@ -95,8 +105,8 @@ from tests.surf_swarm_fixtures import (
 
 #: What the sweeps found, restated by hand so the pins cannot drift on their
 #: own: a pin that moves without a re-sweep reddens the agreement test.
-MEASURED_SWARM_COLUMNS = 141
-MEASURED_SWARM_ROWS = 42
+MEASURED_SWARM_COLUMNS = 138
+MEASURED_SWARM_ROWS = 35
 MEASURED_AGENT_COLUMNS = 139
 MEASURED_AGENT_ROWS = 25
 
@@ -107,14 +117,17 @@ MEASURED_AGENT_ROWS = 25
 INFLIGHT_NEVER_CLEARS_BELOW = 222
 LAUNCHES_NEVER_CLEARS_BELOW = 205
 #: LAUNCHES hides a column behind its horizontal scrollbar under this width
-#: and none from it -- the ``4fr : 5fr`` seam's one job at the pin.
+#: and none from it -- the ``4fr : 5fr`` seam's one job at the pin, and since
+#: CAPABILITY was parked (2026-10-03) the SWARM column pin itself.
 LAUNCHES_HIDES_NO_COLUMN_FROM = 138
 
 #: Measured tier edges the width sweeps straddle (+-1 each).
 _S_THRESHOLDS = (
     72, 92, 100,  # SITES hidden columns / compact / full (F67, 2026-09-23)
-    93,           # THROUGHPUT fixed lines
-    132, 138, 141,    # CAPABILITY compact/full; LAUNCHES selected columns
+    93,           # THROUGHPUT's widest fixed line, then its 46-cell plateau
+    109, 119,     # WORKFLOWS compact / full in situ (2026-10-03)
+    134,          # the whole status bar and the hero's SERVICES box
+    138,          # LAUNCHES hides no column: the column pin
     177, 222,        # IN FLIGHT compact/full (notes may still clip)
     180, 205,        # LAUNCHES compact/full
 )
@@ -133,10 +146,17 @@ _EXCLUDED_FROM_WHOLE = {
     "b": set(),
 }
 #: AGENT's binder is its seat-card row (OWNER), whose cards ellipsise rather
-#: than mark: one column under the pin it is the one clipped widget.
-_BINDING_PANEL = {"s": "SurfSwarmCapability", "a": "SurfSwarmSeatCards"}
+#: than mark: one column under the pin it is the one clipped widget. SWARM's
+#: is LAUNCHES since CAPABILITY was parked (2026-10-03): one column under the
+#: pin it hides its last column behind its own horizontal scrollbar.
+_BINDING_PANEL = {"s": "SurfSwarmLaunches", "a": "SurfSwarmSeatCards"}
 #: Binders built from hero-style boxes: they clip with ``…`` and never mark.
 _ELLIPSIS_BINDERS = {"SurfSwarmAgentHero", "SurfSwarmSeatCards"}
+#: Binders whose loss under the pin is a ``DataTable`` column behind the
+#: table's own horizontal scrollbar. LAUNCHES is also a named exception (its
+#: ``‹`` is lit far past the pin), so its marker cannot be the evidence: the
+#: hidden column and the visible scrollbar are.
+_HIDDEN_COLUMN_BINDERS = {"SurfSwarmLaunches"}
 _COLUMN_PIN = {"s": SURF_SWARM_FULL_LAYOUT_COLUMNS, "a": SURF_AGENT_FULL_LAYOUT_COLUMNS}
 _ROW_PIN = {"s": SURF_SWARM_FULL_LAYOUT_ROWS, "a": SURF_AGENT_FULL_LAYOUT_ROWS}
 _BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
@@ -156,7 +176,7 @@ _FLOOR_PANEL = {"s": "SurfSwarmThroughput"}
 _CONTAINER_OF = {
     "b": {SurfSwarmLeaderboard: BOARD_BODY_ID, SurfSwarmFleet: BOARD_BODY_ID},
     "s": {
-        SurfSwarmCapability: SWARM_TOP_ID,
+        SurfSwarmWorkflows: SWARM_TOP_ID,
         SurfSwarmThroughput: SWARM_TOP_ID,
         SurfSwarmInFlight: SWARM_BOTTOM_ID,
         SurfSwarmLaunches: SWARM_BOTTOM_ID,
@@ -237,6 +257,9 @@ def _corpus_keys() -> dict:
         "swarm_launch_rows": launch_rows,
         "swarm_launch_summary": launch_summary(launch_rows),
         "swarm_site_rows": sw.site_rows(sites),
+        # WORKFLOWS (2026-10-03): the committed ``limit=12`` page, the
+        # widget's own row cap -- 8 blocked, 4 completed.
+        "swarm_workflow_rows": sw.workflow_rows(swarm_capture_v6("workflows_limit12")["workflows"]),
         "swarm_seat_selected": selected,
         **_seat_keys(seat),
         **swarm_agent_sources(token),
@@ -266,7 +289,8 @@ def _capture420_payload(name="seat_420") -> dict:
 
 def _worst_swarm_payload() -> dict:
     """The plan's `s` worst case: 30 launches carrying 55 artifacts, 30
-    skills, 10 sites, 25 in-flight rows with 200-character objectives."""
+    skills (still served; CAPABILITY is parked), 10 sites, 25 in-flight rows
+    with 200-character objectives, and WORKFLOWS' stress table."""
     k = _corpus_keys()
     launches = _cycle(k["swarm_launch_rows"], 30)
     artifacts = 0
@@ -300,8 +324,46 @@ def _worst_swarm_payload() -> dict:
         "swarm_skill_rows": skills, "swarm_skill_summary": skill_summary(skills),
         "swarm_site_rows": _cycle(k["swarm_site_rows"], 10),
         "swarm_inflight_rows": inflight,
+        "swarm_workflow_rows": _worst_workflow_rows(),
     })
     return _frozen_payload(**k)
+
+
+def _worst_workflow_rows() -> list[dict]:
+    """WORKFLOWS' stress table: the row cap (12) of the 100-row capture's
+    failing rows -- the served failure naming ``0x…c0de`` first -- with an
+    unknown 20-character status word, a hostile ``[/x]`` tag, a frontend job
+    on every row and 6 KB objectives behind them."""
+    rows = [r for r in sw.workflow_rows(swarm_capture_v6("workflows_100")["workflows"])
+            if r["failure"]]
+    rows.sort(key=lambda r: "0x000000000000000000000000000000000000c0de" not in r["failure"])
+    rows = _cycle(rows, 12)
+    for i, row in enumerate(rows):
+        row["objective"] = ("Deploy the ERC-4626 vault and wire every path. " * 128)[:6000]
+        row["frontend_job_id"] = row["frontend_job_id"] or row["contracts_job_id"]
+        if i == 1:
+            row["status"] = "waiting_for_hosting_"
+        if i == 2:
+            row["failure"] = "[/x] " + row["failure"]
+    return rows
+
+
+def _extra_states_swarm_payload() -> dict:
+    """F47's canned regression (2026-09-22 live render at 142x42: one more
+    ``states`` row than the capture cost THROUGHPUT a line it did not have):
+    six states and three cancel reasons -- four more lines than the capture's
+    two states and ``none``. Collapsed, none of them is painted."""
+    payload = _capture_payload()
+    payload["swarm_throughput"] = dict(
+        payload["swarm_throughput"],
+        states=[{"state": "completed", "count": 80}, {"state": "executing", "count": 9},
+                {"state": "cancelled", "count": 6}, {"state": "blocked", "count": 3},
+                {"state": "assigned", "count": 1}, {"state": "failed", "count": 1}],
+        cancel_reasons=[{"reason": "owner cancelled the launch before dispatch", "count": 4},
+                        {"reason": "verifier timed out", "count": 1},
+                        {"reason": "duplicate", "count": 1}],
+    )
+    return payload
 
 
 def _worst_agent_payload() -> dict:
@@ -443,19 +505,14 @@ def _polish_agent_payload():
     return payload
 
 
-def _polish_swarm_payload():
-    payload = _capture_payload()
-    payload["swarm_skill_rows"] = sw.skill_rows(swarm_capture_v4("skills")["skills"])
-    payload["swarm_skill_summary"] = skill_summary(payload["swarm_skill_rows"])
-    return payload
-
-
 PAYLOADS = {
     "capture": _capture_payload,
     "capture420": _capture420_payload,
     "duplicates420": lambda: _capture420_payload("seat_420_duplicated_reviews"),
     "worst-s": _worst_swarm_payload,
     "worst-a": _worst_agent_payload,
+    "v3-s": _v3_swarm_payload,
+    "extra-states-s": _extra_states_swarm_payload,
 }
 _WORST = {"s": "worst-s", "a": "worst-a"}
 
@@ -500,23 +557,37 @@ def _overflow(screen, key: str, widgets: dict) -> list[tuple[str, int]]:
     return out
 
 
-async def _render(payload: dict | None, size: tuple[int, int], key: str) -> dict:
-    """Open body *key* at *size* and hand back everything measured from it."""
+async def _render(payload: dict | None, size: tuple[int, int], key: str, *,
+                  expanded: bool = False) -> dict:
+    """Open body *key* at *size* and hand back everything measured from it.
+
+    *expanded* presses ``x`` once the body is up: THROUGHPUT's fold, which
+    the screen opens collapsed (``docs/surf_swarm_workflows_spec.md`` §1).
+    The flag is read back off the widget, so a press that did nothing fails
+    here rather than measuring the wrong state."""
     app = _surf_app(payload)
     async with app.run_test(size=size) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
         await pilot.press(key)
         await pilot.pause()
+        if expanded:
+            await pilot.press("x")
+            await pilot.pause()
         await pilot.pause()
         screen = pilot.app.screen
+        if key == "s":
+            fold = screen.query_one(SurfSwarmThroughput)._expanded
+            assert fold is expanded, ("THROUGHPUT's fold is not the state asked for", fold, expanded)
         widgets = _widgets(screen, key)
         marked = {name for name, w in widgets.items() if "‹" in _region_text(pilot.app, w)}
         hidden = {}
+        hscroll = {}
         for name, w in widgets.items():
             tables = list(w.query(DataTable))
             if tables:
                 hidden[name] = tables[0].max_scroll_x
+                hscroll[name] = tables[0].show_horizontal_scrollbar
         clipped = [
             (name, line)
             for name, w in widgets.items()
@@ -534,26 +605,15 @@ async def _render(payload: dict | None, size: tuple[int, int], key: str) -> dict
         right = bar.query_one("#status-right")
         line = _screen_text(pilot.app).split("\n")[bar.region.y]
         status_whole = KEY_HINT_PHRASE in line and _status_bar_whole(pilot.app)
-        # Only the explicitly optional two CAPABILITY columns may be shed
-        # at baseline. Every original column, no clipping and no hidden scroll
-        # remain prerequisites; this is not a whole-panel exception.
-        optional_only = set()
-        if key == "s":
-            capability = widgets["SurfSwarmCapability"]
-            columns = tuple(str(c.label) for c in capability.query_one(DataTable).columns.values())
-            if (capability._tier == "baseline" and columns ==
-                    ("skill", "v", "role", "tier", "judge", "checks", "requires")
-                    and not capability._clipped and not hidden["SurfSwarmCapability"]
-                    and not any(name == "SurfSwarmCapability" for name, _ in clipped)):
-                optional_only.add("SurfSwarmCapability")
         return {
             "status_whole": status_whole,
             "marked": marked,
-            "marked_besides_exceptions": marked - _EXCLUDED_FROM_WHOLE[key] - optional_only,
+            "marked_besides_exceptions": marked - _EXCLUDED_FROM_WHOLE[key],
             "tiers": {name: getattr(w, "_tier", None) for name, w in widgets.items()},
             "widths": {name: w.size.width for name, w in widgets.items()},
             "heights": {name: w.region.height for name, w in widgets.items()},
             "hidden": hidden,
+            "hscroll": hscroll,
             "columns": {name: tuple(str(c.label) for c in w.query_one(DataTable).columns.values()) for name,w in widgets.items() if list(w.query(DataTable))},
             "clipped": clipped,
             "overflow": _overflow(screen, key, widgets),
@@ -578,44 +638,61 @@ def _assert_whole(r: dict, where: str) -> None:
 # The column pins
 # ---------------------------------------------------------------------------
 
+#: The SWARM payloads, each swept in both of THROUGHPUT's fold states.
+_S_PAYLOADS = ("capture", "worst-s", "v3-s", "extra-states-s")
+_FOLDS = (False, True)
+
 _WIDTH_SWEEP = (
-    [("s", "capture", w) for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 60, 159, *_S_THRESHOLDS)]
-    + [("s", "worst-s", w) for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 126, 156, *_S_THRESHOLDS)]
-    + [("a", "capture", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
-    + [("a", name, w) for name in ("capture420", "duplicates420")
+    [("s", "capture", w, x) for x in _FOLDS
+     for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 60, 159, *_S_THRESHOLDS)]
+    + [("s", name, w, x) for name in _S_PAYLOADS[1:] for x in _FOLDS
+       for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 126, 156, *_S_THRESHOLDS)]
+    + [("a", "capture", w, False) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
+    + [("a", name, w, False) for name in ("capture420", "duplicates420")
        for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
-    + [("a", "worst-a", w) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
+    + [("a", "worst-a", w, False) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
 )
 
 
-@pytest.mark.parametrize("key,payload_name,width", _WIDTH_SWEEP)
-async def test_the_body_is_whole_from_its_pinned_width(key, payload_name, width) -> None:
-    """The sweep, both bodies. Whole means every panel but the named
-    exceptions, no CSS-clipped line, no hidden column and no region past
-    its container -- the region check applies to the exceptions too. Below
-    the pin something other than an exception must advertise the loss."""
-    r = await _render(PAYLOADS[payload_name](), (width, _COLUMN_SWEEP_HEIGHT), key)
-    where = f"{key}/{payload_name} at {width}"
+@pytest.mark.parametrize("key,payload_name,width,expanded", _WIDTH_SWEEP)
+async def test_the_body_is_whole_from_its_pinned_width(key, payload_name, width, expanded) -> None:
+    """The sweep, both bodies (SWARM in both fold states). Whole means every
+    panel but the named exceptions, no CSS-clipped line, no hidden column and
+    no region past its container -- the region check applies to the
+    exceptions too. Below the pin something must advertise the loss: a mark
+    or a clipped line outside the exceptions, or a column hidden behind a
+    table's own horizontal scrollbar -- the one loss an exception cannot
+    excuse by its ever-lit marker (LAUNCHES binds SWARM since 2026-10-03)."""
+    r = await _render(PAYLOADS[payload_name](), (width, _COLUMN_SWEEP_HEIGHT), key, expanded=expanded)
+    where = f"{key}/{payload_name}{' expanded' if expanded else ''} at {width}"
     assert not r["overflow"], f"{where}: a panel's region extends past its container's: {r['overflow']}"
     if width >= _COLUMN_PIN[key]:
         _assert_whole(r, where)
     else:
         assert r["marked_besides_exceptions"] or r["clipped"] or any(
-            value for name, value in r["hidden"].items() if name not in _EXCLUDED_FROM_WHOLE[key]
+            value and r["hscroll"][name] for name, value in r["hidden"].items()
         ), (
-            f"{where}: nothing besides the named exceptions advertises the loss"
+            f"{where}: nothing advertises the loss"
         )
 
 
-@pytest.mark.parametrize("key", sorted(_COLUMN_PIN))
-@pytest.mark.parametrize("payload_name", sorted(PAYLOADS))
-async def test_the_column_pin_is_whole_for_every_payload(key, payload_name) -> None:
-    r = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], _COLUMN_SWEEP_HEIGHT), key)
+_PIN_CASES = (
+    [(key, name, False) for key in sorted(_COLUMN_PIN) for name in sorted(PAYLOADS)]
+    + [("s", name, True) for name in _S_PAYLOADS]
+)
+
+
+@pytest.mark.parametrize("key,payload_name,expanded", _PIN_CASES)
+async def test_the_column_pin_is_whole_for_every_payload(key, payload_name, expanded) -> None:
+    r = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], _COLUMN_SWEEP_HEIGHT), key, expanded=expanded)
     assert not r["overflow"], (key, payload_name, r["overflow"])
     _assert_whole(r, f"{key}/{payload_name} at the pin")
-    if _BINDING_PANEL[key] == "SurfSwarmCapability":
-        assert r["tiers"]["SurfSwarmCapability"] == "baseline", r["tiers"]
-        assert r["columns"]["SurfSwarmCapability"] == ("skill","v","role","tier","judge","checks","requires")
+    if key == "s":
+        # Every panel at its widest tier but the two named exceptions, which
+        # mark at the pin by design (``test_the_exceptions_...`` below).
+        tiers = {name: tier for name, tier in r["tiers"].items()
+                 if tier is not None and name not in _EXCLUDED_FROM_WHOLE[key]}
+        assert set(tiers.values()) == {"full"}, r["tiers"]
     elif _BINDING_PANEL[key] != "StatusBar" and _BINDING_PANEL[key] not in _ELLIPSIS_BINDERS:
         assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
     assert r["status_whole"]
@@ -624,9 +701,9 @@ async def test_the_column_pin_is_whole_for_every_payload(key, payload_name) -> N
 @pytest.mark.parametrize("key", sorted(_COLUMN_PIN))
 async def test_the_column_pin_is_not_loose(key) -> None:
     """One column under the pin the binding panel the block names -- and
-    only it, besides the exceptions -- is marked and short of ``full``, on
-    the capture and on the worst case alike (the two agreed at every width
-    swept, so the pin is the panel's, not a payload's)."""
+    only it, besides the exceptions -- shows the loss, on the capture and on
+    the worst case alike (the two agreed at every width swept, so the pin is
+    the panel's, not a payload's)."""
     pin = _COLUMN_PIN[key]
     for payload_name in ("capture", _WORST[key]):
         under = await _render(PAYLOADS[payload_name](), (pin - 1, _COLUMN_SWEEP_HEIGHT), key)
@@ -639,6 +716,16 @@ async def test_the_column_pin_is_not_loose(key) -> None:
                 payload_name, under["clipped"],
             )
             assert not under["marked_besides_exceptions"], under["marked_besides_exceptions"]
+            assert under["status_whole"] and not under["overflow"]
+            continue
+        if _BINDING_PANEL[key] in _HIDDEN_COLUMN_BINDERS:
+            binder = _BINDING_PANEL[key]
+            assert {name for name, value in under["hidden"].items() if value} == {binder}, (
+                payload_name, under["hidden"],
+            )
+            assert under["hscroll"][binder], "a hidden column with no scrollbar to say so"
+            assert not under["marked_besides_exceptions"], under["marked_besides_exceptions"]
+            assert not under["clipped"], under["clipped"]
             assert under["status_whole"] and not under["overflow"]
             continue
         assert under["marked_besides_exceptions"] == {_BINDING_PANEL[key]}, (
@@ -693,9 +780,10 @@ async def test_sites_tiers_are_the_measured_onsets(width, tier, hidden) -> None:
 
 def test_the_pins_are_the_measured_numbers_and_fit_the_app() -> None:
     """The agreement between the constants and the sweep results, and the
-    relations the blocks state. The swarm body is now the widest body on
-    the screen -- wider than LAUNCHPAD's 138 and POOL4 MARKET's 119, which
-    the v1 file ordered the other way -- and still under the app-wide 143."""
+    relations the blocks state. SWARM was the widest surf body while
+    CAPABILITY bound it (141); since it was parked (2026-10-03) LAUNCHES'
+    no-hidden-column edge *is* the pin, so SWARM sits at LAUNCHPAD's width,
+    one column under AGENT's OWNER row, and still under the app-wide 143."""
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS == MEASURED_SWARM_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_ROWS == MEASURED_SWARM_ROWS
     assert SURF_AGENT_FULL_LAYOUT_COLUMNS == MEASURED_AGENT_COLUMNS
@@ -704,8 +792,8 @@ def test_the_pins_are_the_measured_numbers_and_fit_the_app() -> None:
     assert SURF_AGENT_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS >= SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS > SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
-    assert SURF_AGENT_FULL_LAYOUT_COLUMNS <= SURF_SWARM_FULL_LAYOUT_COLUMNS
-    assert LAUNCHES_HIDES_NO_COLUMN_FROM <= SURF_SWARM_FULL_LAYOUT_COLUMNS
+    assert LAUNCHES_HIDES_NO_COLUMN_FROM == SURF_SWARM_FULL_LAYOUT_COLUMNS
+    assert STATUS_BAR_WHOLE_FROM <= SURF_SWARM_FULL_LAYOUT_COLUMNS
     assert SURF_AGENT_FULL_LAYOUT_ROWS < SURF_SWARM_FULL_LAYOUT_ROWS
 
 
@@ -715,7 +803,8 @@ def test_the_pins_are_the_measured_numbers_and_fit_the_app() -> None:
 
 _HEIGHT_SWEEP = (
     [("s", "capture", r) for r in boundary_set(SURF_SWARM_FULL_LAYOUT_ROWS, 20, 61, 28, 31, 35, 58)]
-    + [("s", "worst-s", r) for r in boundary_set(SURF_SWARM_FULL_LAYOUT_ROWS, 30, 50, 31, 35)]
+    + [("s", name, r) for name in _S_PAYLOADS[1:]
+       for r in boundary_set(SURF_SWARM_FULL_LAYOUT_ROWS, 30, 50, 31, 35)]
     + [("a", "capture", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
     + [("a", name, r) for name in ("capture420", "duplicates420")
        for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
@@ -728,7 +817,10 @@ async def test_the_body_is_whole_from_its_pinned_height(key, payload_name, rows)
     """150 columns is past both width pins, so nothing here measures a
     width. At and above the pin ``‹ taller`` is dark; below it, lit. The
     band crosses the owner's 31 and 35 rows, the v1 row pin (28) and the
-    58 the `s` top row needed before its floor."""
+    58 the `s` top row needed before its floor. SWARM is measured as it
+    opens, THROUGHPUT collapsed -- on F47's extra-states payload too, whose
+    extra ``states`` rows no longer cost the pin anything (F23, met by
+    construction: the fold, not the vocabulary, decides the height)."""
     r = await _render(PAYLOADS[payload_name](), (_ROW_SWEEP_WIDTH, rows), key)
     if rows >= _ROW_PIN[key]:
         assert not r["taller"], (key, payload_name, rows)
@@ -747,37 +839,72 @@ async def test_the_row_pin_holds_at_the_column_pin_too(key) -> None:
     assert not at["taller"] and not any(at["scroll"].values()), at["scroll"]
 
 
+#: Where ``‹ taller`` goes dark with THROUGHPUT **expanded** (``x``), per
+#: SWARM payload -- the ``SURF_SWARM_FULL_LAYOUT_ROWS`` block's EXPANDED
+#: paragraph. Not a pin: the body opens collapsed, and expanded is the
+#: reader's choice. 15 lines clear at 55, F47's 21 at 73.
+EXPANDED_THROUGHPUT_CLEARS_AT = {"capture": 55, "worst-s": 55, "v3-s": 55, "extra-states-s": 73}
+
+
+@pytest.mark.parametrize("payload_name,onset", sorted(EXPANDED_THROUGHPUT_CLEARS_AT.items()))
+async def test_expanded_throughput_clears_taller_where_the_row_block_says(payload_name, onset) -> None:
+    """One row under the onset the top row scrolls inside itself and the
+    marker is lit; at it nothing scrolls and the marker is dark -- so the
+    expanded cost the block quotes is measured, and never a silent loss."""
+    under = await _render(PAYLOADS[payload_name](), (_ROW_SWEEP_WIDTH, onset - 1), "s", expanded=True)
+    at = await _render(PAYLOADS[payload_name](), (_ROW_SWEEP_WIDTH, onset), "s", expanded=True)
+    assert under["taller"] and under["scroll"][SWARM_TOP_ID], (payload_name, onset - 1, under["scroll"])
+    assert not at["taller"] and not any(at["scroll"].values()), (payload_name, onset, at["scroll"])
+    assert at["heights"]["SurfSwarmThroughput"] == at["top_height"], at["heights"]
+
+
 @pytest.mark.parametrize("key", sorted(_FLOOR_PANEL))
 async def test_the_top_row_floor_is_its_auto_height_panels_own_lines(key) -> None:
-    """The one number in the swarm CSS that is not a tier width: each top
+    """The one number in the swarm CSS that is not a tier width: the top
     row's ``min-height`` is the fixed line count of its ``height: auto``
-    panel (THROUGHPUT sixteen, SEAT thirteen). Bound here so the floor
-    cannot drift from the content it equals: at the pin the panel, the row
-    and the floor are one height, and the row never scrolls inside itself
-    -- not even at 20 rows, on the worst case."""
-    at = await _render(_capture_payload(), (_COLUMN_PIN[key], _ROW_PIN[key]), key)
-    floor = at["top_floor"]
-    assert at["heights"][_FLOOR_PANEL[key]] == floor == at["top_height"], (
-        at["heights"][_FLOOR_PANEL[key]], floor, at["top_height"],
-    )
+    panel -- THROUGHPUT **collapsed**, nine lines since 2026-10-03 (title,
+    blank, window, gap, three durations, gap, completed 24h). Bound here so
+    the floor cannot drift from the content it equals: at the pin the panel,
+    the row and the floor are one height on every SWARM payload -- F47's
+    extra states included, since collapsed paints none of them -- and the
+    row never scrolls inside itself, not even at 20 rows on the worst case."""
+    for payload_name in _S_PAYLOADS:
+        at = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], _ROW_PIN[key]), key)
+        floor = at["top_floor"]
+        assert at["heights"][_FLOOR_PANEL[key]] == floor == at["top_height"], (
+            payload_name, at["heights"][_FLOOR_PANEL[key]], floor, at["top_height"],
+        )
     short = await _render(PAYLOADS[_WORST[key]](), (_COLUMN_PIN[key], 20), key)
     assert short["heights"][_FLOOR_PANEL[key]] == floor, short["heights"]
     assert not short["scroll"][_TOP_ID[key]], "the floored top row is scrolling inside itself"
 
 
-async def test_no_height_loses_a_row_of_either_body_in_silence() -> None:
+_SILENT_LOSS_CASES = (
+    [("s", name, x) for name in ("worst-s", "extra-states-s") for x in _FOLDS]
+    + [("a", "worst-a", False)]
+)
+
+
+@pytest.mark.parametrize("key,payload_name,expanded", _SILENT_LOSS_CASES)
+async def test_no_height_loses_a_row_of_either_body_in_silence(key, payload_name, expanded) -> None:
     """Wherever a registered container scrolls the marker is lit, and where
     none does it is dark -- neither a silent loss nor a marker crying wolf,
     swept six rows under each pin to twelve over it on the worst case, at
-    the body's own column pin."""
-    for key in sorted(_ROW_PIN):
-        for rows in range(_ROW_PIN[key] - 6, _ROW_PIN[key] + 13):
-            r = await _render(PAYLOADS[_WORST[key]](), (_COLUMN_PIN[key], rows), key)
-            scrolling = any(r["scroll"][cid] for cid in _REGISTERED_SCROLLERS[key])
-            assert r["taller"] == scrolling, (
-                key, rows, r["scroll"],
-                "body scrolling with the marker dark" if scrolling else "marker lit with nothing scrolling",
-            )
+    the body's own column pin. SWARM is swept in both fold states and on
+    F47's canned regression (one more ``states`` row than the capture cost
+    THROUGHPUT a line in silence on 2026-09-22): expanded, the panel can
+    outgrow the collapsed row pin, and then the top row scrolls with the
+    marker lit rather than dropping a line."""
+    for rows in range(_ROW_PIN[key] - 6, _ROW_PIN[key] + 13):
+        r = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], rows), key, expanded=expanded)
+        scrolling = any(r["scroll"][cid] for cid in _REGISTERED_SCROLLERS[key])
+        assert r["taller"] == scrolling, (
+            key, payload_name, expanded, rows, r["scroll"],
+            "body scrolling with the marker dark" if scrolling else "marker lit with nothing scrolling",
+        )
+        if key == "s" and not scrolling:
+            # Nothing scrolls, so THROUGHPUT must be painting every line it has.
+            assert r["heights"]["SurfSwarmThroughput"] <= r["top_height"], (rows, r["heights"])
 
 
 # ---------------------------------------------------------------------------
@@ -788,7 +915,8 @@ KEY_HINT_PHRASE = "l launchpad · 4 pl4 · s swm · a agt · b brd"
 
 #: Whole status bar measured after §11 abbreviations: cropped through 133,
 #: whole from 134, including poll/errors and full right version/theme/game text.
-#: Body binders are now LAUNCHPAD 138, SWARM 141, AGENT 139 and BOARD 141.
+#: Body binders are now LAUNCHPAD 138, SWARM 138 (LAUNCHES since 2026-10-03;
+#: CAPABILITY bound 141 before it was parked), AGENT 139 and BOARD 141.
 #: Pool4 protocol 99 and market 119 retain their body-only status exceptions.
 STATUS_BAR_WHOLE_FROM = 134
 
@@ -976,32 +1104,6 @@ async def test_polish_agent_retains_existing_pin_with_enriched_record():
         assert r["taller"]==taller
         assert not r["clipped"] and not r["overflow"] and not any(r["hidden"].values())
         assert r["columns"]["SurfSwarmSeatRecord"]==("when","job","node","state","model","took","tok","panel","answer")
-
-
-async def test_polish_capability_optional_tier_preserves_baseline_and_clears_at_measured_onset():
-    name="SurfSwarmCapability"
-    original=("skill","v","role","tier","judge","checks","requires")
-    for width in (141,CAPABILITY_OPTIONAL_FULL_COLUMNS-1,CAPABILITY_OPTIONAL_FULL_COLUMNS):
-        r=await _render(_polish_swarm_payload(),(width,42),"s")
-        full=width>=CAPABILITY_OPTIONAL_FULL_COLUMNS
-        assert r["columns"][name]==original+(("inf","acc/att") if full else ())
-        assert (name in r["marked"])== (not full)
-        assert name not in r["marked_besides_exceptions"]
-        assert r["tiers"][name]==("full" if full else "baseline")
-        assert not r["hidden"][name] and not r["clipped"] and not r["overflow"] and not r["taller"]
-    below=await _render(_polish_swarm_payload(),(140,42),"s")
-    assert "checks" not in below["columns"][name]
-    assert name in below["marked_besides_exceptions"]
-    short=await _render(_polish_swarm_payload(),(141,41),"s")
-    assert short["taller"]
-
-
-def test_polish_capability_full_tier_cap_agrees_in_both_stylesheets():
-    import re
-    from tests.test_surf_registration import _surf_block
-    for css in (SurfScreen.DEFAULT_CSS,_surf_block()):
-        rule=re.search(r'SurfSwarmCapability\s*\{([^}]+)\}',css).group(1)
-        assert re.search(r'max-width:\s*118;',rule),rule
 
 
 @pytest.mark.sweep

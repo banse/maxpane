@@ -2,7 +2,8 @@
 
 Swarm v2 (WP7, 2026-09-21): the 2026-09-16 body (THE FIELD, QUEUE, JUST
 SHIPPED, the score-table THROUGHPUT) is gone; ``s`` shows the hero over
-CAPABILITY | THROUGHPUT, IN FLIGHT | LAUNCHES and SITES, and the new ``a``
+WORKFLOWS | THROUGHPUT (WORKFLOWS in CAPABILITY's place since 2026-10-03,
+THROUGHPUT folded by ``x``), IN FLIGHT | LAUNCHES and SITES, and the new ``a``
 shows the seat hero over ROSTER | SEAT RECORD, RECORD and FEEDBACK. Geometry is
 ``test_surf_swarm_layout.py``'s; this file is composition and behaviour.
 
@@ -29,10 +30,10 @@ from maxpane_dashboard.screens.surf import (
 )
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import ONLINE_LINE, WORKING_GLYPH
 from maxpane_dashboard.widgets.surf import (
-    SurfSwarmAgentHero, SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet, SurfSwarmCapability, SurfSwarmHero, SurfSwarmInFlight,
+    SurfSwarmAgentHero, SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet, SurfSwarmHero, SurfSwarmInFlight,
     SurfSwarmLaunches,
     SurfSwarmSeatRecord, SurfSwarmSeatCards, SurfSwarmSites,
-    SurfSwarmThroughput,
+    SurfSwarmThroughput, SurfSwarmWorkflows,
 )
 from maxpane_dashboard.data import surf_swarm as sw
 from tests.data.test_surf_manager_swarm import _FakeSwarm, _seated, _settle
@@ -43,7 +44,7 @@ from tests.screens.test_surf_screen import (
 from tests.surf_swarm_fixtures import swarm_seat_capture
 
 _SIZE = (150, 45)
-_S_PANELS = (SurfSwarmCapability, SurfSwarmThroughput, SurfSwarmInFlight,
+_S_PANELS = (SurfSwarmWorkflows, SurfSwarmThroughput, SurfSwarmInFlight,
              SurfSwarmLaunches, SurfSwarmSites)
 _A_PANELS = (SurfSwarmSeatCards, SurfSwarmSeatRecord)
 _BODIES = {"s": (SWARM_BODY_ID, _S_PANELS, SurfSwarmHero),
@@ -220,9 +221,189 @@ async def test_the_key_hint_names_the_swarm_and_the_agent():
 
 
 async def test_the_bindings_include_board_agent_and_seat_selection():
-    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "f", "escape"}
+    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "f", "x", "escape"}
     assert hasattr(SurfScreen, "action_toggle_swarm")
     assert hasattr(SurfScreen, "action_toggle_agent")
+
+
+# -- THROUGHPUT's fold, ``x`` (docs/surf_swarm_workflows_spec.md §1) ------------------
+
+
+def _throughput_lines(pilot, screen) -> list[str]:
+    """THROUGHPUT's composited rows, stripped, blank rows dropped."""
+    panel = screen.query_one(f"#{SWARM_BODY_ID}").query_one(SurfSwarmThroughput)
+    return [row.strip() for row in _region_text(pilot.app, panel).split("\n") if row.strip()]
+
+
+def _folded(lines: list[str]) -> bool | None:
+    """``True`` collapsed, ``False`` expanded, read off pixels only: the
+    title's hint and whether the states block's own header is painted."""
+    title, states = lines[0], any(line.startswith("states") for line in lines)
+    if title.endswith("x more") and not states:
+        return True
+    if title.endswith("x less") and states:
+        return False
+    return None
+
+
+async def test_swarm_opens_with_throughput_collapsed_and_x_toggles_it():
+    """The default is collapsed (spec §1): the title says ``x more`` and the
+    states and cancel-reason blocks are not painted; ``x`` unfolds them and
+    the title says ``x less``; ``x`` again folds them. Composited."""
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open(pilot, "s")
+        collapsed = _throughput_lines(pilot, screen)
+        assert _folded(collapsed) is True, collapsed
+        await pilot.press("x")
+        await pilot.pause()
+        expanded = _throughput_lines(pilot, screen)
+        assert _folded(expanded) is False, expanded
+        assert len(expanded) > len(collapsed)
+        await pilot.press("x")
+        await pilot.pause()
+        assert _throughput_lines(pilot, screen) == collapsed
+
+
+@pytest.mark.parametrize("key", [None, "l", "e", "4", "a", "b"])
+async def test_x_is_a_no_op_off_swarm_and_keeps_the_state_for_swarm(key):
+    """Off SWARM ``x`` neither moves the state nor the mode; the next ``s``
+    still opens collapsed."""
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = pilot.app.screen
+        await screen._do_refresh()
+        await pilot.pause()
+        if key:
+            await pilot.press(key)
+            await pilot.pause()
+        mode = screen._mode
+        await pilot.press("x")
+        await pilot.pause()
+        assert screen._mode == mode and screen._throughput_expanded is False
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.pause()
+        assert _folded(_throughput_lines(pilot, screen)) is True
+
+
+async def test_the_fold_survives_a_refresh_and_a_body_switch():
+    """In memory on the screen: a refresh repaints THROUGHPUT and keeps the
+    fold, and ``s`` -> ``a`` -> ``s`` comes back to it."""
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open(pilot, "s")
+        await pilot.press("x")
+        await pilot.pause()
+        assert _folded(_throughput_lines(pilot, screen)) is False
+        before = pilot.app.screen._data_manager.calls
+        await screen._do_refresh()
+        await pilot.pause()
+        assert pilot.app.screen._data_manager.calls > before
+        assert _folded(_throughput_lines(pilot, screen)) is False
+        await pilot.press("a")
+        await pilot.pause()
+        await pilot.press("s")
+        await pilot.pause()
+        await pilot.pause()
+        assert _folded(_throughput_lines(pilot, screen)) is False
+
+
+async def test_x_folds_with_focus_on_the_workflows_table_and_after_a_click_on_throughput():
+    """``DataTable`` binds no ``x`` (read, not assumed), so a focused
+    WORKFLOWS table lets the key reach the screen; THROUGHPUT has nothing
+    focusable, and a click on it leaves the key with the screen too."""
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open(pilot, "s")
+        table = screen.query_one(SurfSwarmWorkflows).query_one(DataTable)
+        table.focus()
+        await pilot.pause()
+        assert pilot.app.focused is table
+        await pilot.press("x")
+        await pilot.pause()
+        assert _folded(_throughput_lines(pilot, screen)) is False
+        await pilot.click(SurfSwarmThroughput)
+        await pilot.pause()
+        await pilot.press("x")
+        await pilot.pause()
+        assert _folded(_throughput_lines(pilot, screen)) is True
+
+
+async def test_throughputs_worst_title_is_whole_at_the_swarm_pin_in_both_folds():
+    """The ``SURF_SWARM_FULL_LAYOUT_COLUMNS`` block's claim, composited: the
+    longest title THROUGHPUT writes -- an ``as of`` marker, ``stale`` and the
+    fold hint -- is whole at the SWARM pin collapsed and expanded, so the
+    hint that says ``x`` does something is never the part that is cut."""
+    from maxpane_dashboard.screens.surf import (
+        SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS,
+    )
+    payload = dict(_frozen_payload(), swarm_as_of_hhmm="17:45", swarm_stale=True)
+    size = (SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS)
+    async with _surf_app(payload).run_test(size=size) as pilot:
+        screen = await _open(pilot, "s")
+        assert _throughput_lines(pilot, screen)[0] == "THROUGHPUT · as of 17:45 · stale · x more"
+        await pilot.press("x")
+        await pilot.pause()
+        assert _throughput_lines(pilot, screen)[0] == "THROUGHPUT · as of 17:45 · stale · x less"
+
+
+async def test_a_typed_x_reaches_a_focused_record_filter_field(monkeypatch):
+    """AGENT's filter editor has text fields, and a typed ``x`` must reach a
+    focused one. TOOK's fields take numbers, so the field receives the ``x``
+    and refuses it (``restricted``). This pins the requirement, not the
+    binding's ``priority`` flag: Textual 8.1.1 drops every binding for a key
+    a focused ``Input`` claims (``Screen._binding_chain`` asks
+    ``check_consume_key``), priority or not -- measured: a ``priority=True``
+    mutant left this test green. The flag is the next test's."""
+    from textual.widgets import Input
+    from tests.screens.test_oracle_answer import settled
+    from maxpane_dashboard.widgets.filter_editor import field_id
+    async with _surf_app(_filter_payload()).run_test(size=(139, 35)) as pilot:
+        screen, _specs, _ = await _filter_screen(pilot, monkeypatch)
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        field = screen.query_one(f'#{field_id("took_min")}', Input)
+        field.focus()
+        await pilot.pause()
+        assert pilot.app.focused is field
+        refused = []
+        monkeypatch.setattr(field, "restricted", lambda: refused.append(True))
+        await pilot.press("x")
+        await pilot.pause()
+        assert refused == [True], "the focused field never saw the typed x"
+        assert pilot.app.focused is field and screen._mode == MODE_AGENT
+        assert screen._throughput_expanded is False
+
+
+async def test_x_is_not_priority_so_a_focused_widgets_own_x_binding_wins():
+    """``x`` is a **non-priority** binding: the focused widget and its
+    ancestors get the key before the screen does. A focused widget with an
+    ``x`` binding of its own (and no ``check_consume_key`` claim) is the
+    case that tells the flag apart -- with ``priority=True`` the screen
+    would fold THROUGHPUT and that widget would never see the key."""
+    from textual.binding import Binding
+    from textual.widget import Widget
+
+    class _OwnX(Widget, can_focus=True):
+        DEFAULT_CSS = "_OwnX { height: 1; }"
+        BINDINGS = [Binding("x", "own_x", "own")]
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.pressed = 0
+
+        def action_own_x(self) -> None:
+            self.pressed += 1
+
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+        screen = await _open(pilot, "s")
+        probe = _OwnX()
+        await screen.query_one(f"#{SWARM_BODY_ID}").mount(probe)
+        probe.focus()
+        await pilot.pause()
+        assert pilot.app.focused is probe
+        await pilot.press("x")
+        await pilot.pause()
+        assert probe.pressed == 1, "the focused widget never saw its own x"
+        assert screen._throughput_expanded is False
+        assert _folded(_throughput_lines(pilot, screen)) is True
 
 
 async def test_retired_roster_selection_is_gone():

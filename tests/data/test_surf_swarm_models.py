@@ -123,13 +123,15 @@ AGENT_WIDGETS = (
     "SurfSwarmSeatRecord",
 )
 
-#: The thirteen SWARM, AGENT and BOARD target widgets, by class name.
+#: The twelve mounted SWARM, AGENT and BOARD target widgets, by class name.
+#: WORKFLOWS took CAPABILITY's place on 2026-10-03; CAPABILITY is parked
+#: (``SWARM_PARKED_WIDGET_SIGNATURES``, read from the export below).
 SWARM_TARGET_WIDGETS = {
     "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
     "SurfSwarmHero",
     "SurfSwarmInFlight",
     "SurfSwarmThroughput",
-    "SurfSwarmCapability",
+    "SurfSwarmWorkflows",
     "SurfSwarmLaunches",
     "SurfSwarmSites",
     "SurfSwarmAgentHero",
@@ -221,12 +223,21 @@ def test_every_signature_kwarg_is_unique_within_its_widget():
 
 
 #: Swarm keys frozen ahead of their widget, by name. Filled by WP2 of
-#: ``docs/surf_swarm_workflows_spec.md`` (2026-10-03) with the /workflows rows,
-#: whose consumer ``SurfSwarmWorkflows`` WP4 builds; **emptied by that spec's
-#: WP5**, which names the key in ``SWARM_WIDGET_SIGNATURES`` -- at which point
-#: the equality below reddens until this line is emptied too. Mirrors
-#: ``tests/screens/test_surf_screen.py::_KEYS_PENDING_CONSUMERS``.
-_KEYS_PENDING_CONSUMERS = frozenset({"swarm_workflow_rows"})
+#: ``docs/surf_swarm_workflows_spec.md`` (2026-10-03) with the /workflows rows
+#: and **emptied by that spec's WP5** (the same day), which names the key in
+#: ``SWARM_WIDGET_SIGNATURES``. Empty again: a key frozen ahead of its widget
+#: fills it, and the equality below reddens until the wiring consumes it.
+#: Mirrors ``tests/screens/test_surf_screen.py::_KEYS_PENDING_CONSUMERS``.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
+
+
+def _consumed_keys() -> set[str]:
+    """Every key a mounted *or parked* widget's signature names. A parked
+    widget (``SWARM_PARKED_WIDGET_SIGNATURES``, read from the export -- never a
+    hand-typed copy) keeps its keys consumed: ``swarm_skill_rows`` and
+    ``swarm_skill_summary`` are still read and wait for a SKILLS board."""
+    return {k for sig in (*SWARM_WIDGET_SIGNATURES.values(),
+                          *models.SWARM_PARKED_WIDGET_SIGNATURES.values()) for k in sig}
 
 
 def test_every_v2_key_but_the_marker_reaches_at_least_one_signature():
@@ -238,7 +249,7 @@ def test_every_v2_key_but_the_marker_reaches_at_least_one_signature():
     entry, not only the v2 tail: what no signature names must be exactly the
     named pending set -- equality, so the carve-out can neither hide a second
     orphan nor outlive the wiring that consumes it."""
-    named = {k for sig in SWARM_WIDGET_SIGNATURES.values() for k in sig}
+    named = _consumed_keys()
     unreached = set(SWARM_V2_KEYS) - named
     assert unreached == set(), sorted(unreached)
     assert set(SWARM_KEYS) - named == _KEYS_PENDING_CONSUMERS, sorted(set(SWARM_KEYS) - named)
@@ -247,6 +258,20 @@ def test_every_v2_key_but_the_marker_reaches_at_least_one_signature():
 def test_the_signature_names_exactly_the_twelve_target_widgets():
     assert set(SWARM_WIDGET_SIGNATURES) == SWARM_TARGET_WIDGETS
     assert len(SWARM_WIDGET_SIGNATURES) == 12
+
+
+def test_a_parked_widget_is_not_also_a_mounted_target():
+    """Parked means no body mounts it: a name in both maps would be
+    dispatched by the screen *and* exempted from "mounted" by every test."""
+    assert not set(models.SWARM_PARKED_WIDGET_SIGNATURES) & set(SWARM_WIDGET_SIGNATURES)
+
+
+def test_workflows_reads_the_rows_and_the_scores_clock():
+    """Spec §2 "Wiring": WORKFLOWS takes CAPABILITY's place with exactly
+    the rows and LAUNCHES' clock."""
+    assert SWARM_WIDGET_SIGNATURES["SurfSwarmWorkflows"] == (
+        "swarm_workflow_rows", "swarm_scores_as_of_hhmm",
+    )
 
 
 def test_no_retired_key_is_named_by_a_target_signature():
@@ -448,7 +473,9 @@ def test_the_workflow_page_size_is_twelve():
 
 def test_capability_is_parked_with_its_frozen_signature():
     """§2 "CAPABILITY is parked": the export every "is every widget mounted /
-    every key consumed" test takes its exemption from (wired in WP5)."""
+    every key consumed" test takes its exemption from (wired in WP5: this
+    file's ``_consumed_keys``, the surf screen, widget-contract and
+    registration tests)."""
     import inspect
     from maxpane_dashboard.widgets.surf.swarm_capability import SurfSwarmCapability
 

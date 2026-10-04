@@ -19,15 +19,17 @@ it. This file is the method; the constants are the record.
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `p` pool4 (key `e`, experimental, since 2026-09-15) | 99 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `4` pool4 market (hint `4 pl4`) | 119 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `s` swarm (hint `s swm`; 116 · 28 from 2026-09-16, re-swept for swarm v2 on 2026-09-21) | 141 cols · 42 rows | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `s` swarm (hint `s swm`; 116 · 28 from 2026-09-16, 141 · 42 for swarm v2 on 2026-09-21; re-swept 2026-10-03: WORKFLOWS for the parked CAPABILITY, THROUGHPUT collapsed behind `x`) | 138 cols · 35 rows (LAUNCHES binds the width; rows measured collapsed) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `a` agent (hero and merged seat-card row, RECORD; re-swept 2026-09-24) | 139 cols · 25 rows; RECORD clears at 167 (165 before panel/tok, 2026-09-23; 204 until launch/sub left it, 2026-09-22) | `screens/surf.SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`, `RECORD_NEVER_CLEARS_BELOW` |
 | surf `b` board (LEADERBOARD beside FLEET; FLEET's five contributor lines 2026-09-22) | 141 cols · 33 rows | `screens/surf.SURF_BOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 
-CAPABILITY's original seven columns remain whole at the SWARM body pin. Its optional `inf`
-and `acc/att` columns appear from `screens/surf.CAPABILITY_OPTIONAL_FULL_COLUMNS`;
-they are named optional omissions below that onset. Mixed service-state text still clips at
+CAPABILITY is parked (2026-10-03) and mounted on no body, so no pin certifies its tiers and its
+optional-column onset was retired with it; a board that mounts it re-sweeps them. On SWARM the
+top row's floor equals THROUGHPUT's **collapsed** height (the state the body opens in); unfolded
+with `x` it outgrows the floor and the top row scrolls with `‹ taller` lit -- a state the reader
+chose, never a silent loss. Mixed service-state text still clips at
 the SWARM pin (F55); this is a documented content limitation, not a whole-state guarantee.
 
 **Layout is a function of terminal columns.** Widgets pick a width tier and

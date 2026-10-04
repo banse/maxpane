@@ -2544,27 +2544,33 @@ SurfScreen #surf-swarm-body {
     scrollbar-gutter: stable;
 }
 
-/* THROUGHPUT's fixed sixteen lines. */
+/* The floor is THROUGHPUT's nine collapsed lines (title, blank, window,
+ * gap, three durations, gap, completed 24h) -- the screen opens it
+ * collapsed and `x` unfolds it; a floor equal to content, bound by the
+ * layout test (`screens/surf.SURF_SWARM_FULL_LAYOUT_ROWS`). */
 SurfScreen #surf-swarm-top {
     height: 1fr;
-    min-height: 16;
+    min-height: 9;
     padding: 0 0;
     overflow-y: auto;
     scrollbar-size: 1 1;
     scrollbar-gutter: stable;
 }
 
-/* Full optional capability columns (114) + gutter 2 + padding 2. */
-SurfSwarmCapability {
+/* WORKFLOWS took CAPABILITY's place (2026-10-03): no max-width -- its
+ * objective / failure column takes every spare cell of the row. */
+SurfSwarmWorkflows {
     width: 1fr;
-    max-width: 118;
     height: 1fr;
     min-height: 8;
     padding: 0 1;
 }
 
-/* The widest fixed line THROUGHPUT paints (`completed 24h  accumulating
- * since HH:MM`, 14 + 2 + 27 cells) plus padding; its two blocks clip to it. */
+/* THROUGHPUT plateaus at 46 outer (44 content + padding 2) from 93 columns
+ * up: its widest fixed line, `completed 24h  counting since HH:MM`, is 40 of
+ * the 44 cells (with the old `accumulating` it was 44 and wrapped onto a
+ * tenth line); its title's fold hint is never clipped; its two blocks clip
+ * to it. */
 SurfSwarmThroughput {
     width: 1fr;
     max-width: 46;
@@ -2578,14 +2584,13 @@ SurfScreen #surf-swarm-bottom {
     padding: 0 0;
 }
 
-/* 4fr : 5fr -- measured, not split on paper: at the 141 pin the 140-cell
- * row gives IN FLIGHT 60 and LAUNCHES 76 (the gutter and fr rounding take
- * the rest), at 145 it gives 62 / 78. LAUNCHES' `tight` tier
- * (`swarm_launches.TIGHT_WIDTH` 75 + gutter 2 + padding 2 = 79) hides no
- * column from 138 up; IN FLIGHT reaches `compact`
- * (`swarm_inflight.COMPACT_WIDTH` 59 + padding 2 + its log's scrollbar 1 =
- * 62) from 145. Both clear their `‹` far above the pin (190 / 205) and the
- * layout test names them as this body's two exceptions. */
+/* 4fr : 5fr -- measured, not split on paper: at the 138 pin the 137-cell
+ * row gives IN FLIGHT 60 and LAUNCHES 77 (fr rounding takes the rest).
+ * LAUNCHES' 75 content cells hold its `tight` table
+ * (`swarm_launches.TIGHT_WIDTH` 75) whole from 138 up -- the SWARM pin's
+ * binder since 2026-10-03; IN FLIGHT reaches `compact` from 177 and `full`
+ * from 222, LAUNCHES clears its `‹` at 205, and the layout test names the
+ * two as this body's exceptions (measured in situ, `screens/surf.py`). */
 SurfSwarmInFlight {
     width: 4fr;
     height: 1fr;

@@ -6,6 +6,17 @@ change, the ``as of`` marker and widen hint in the title, ``None`` vs ``[]``,
 the footer line) are the base's; this module knows the nine columns and the
 summary footer.
 
+Parked 2026-10-03 for a future SKILLS board
+-------------------------------------------
+WORKFLOWS took this panel's place on the ``s`` body
+(``docs/surf_swarm_workflows_spec.md`` §2). The class, this module, its test,
+the ``/skills`` read and ``swarm_skill_rows`` / ``swarm_skill_summary`` stay;
+its frozen signature lives in ``data/surf_models.SWARM_PARKED_WIDGET_SIGNATURES``,
+which every "mounted / consumed / signature" test reads its exemption from. The
+tier widths below were last certified in situ on SWARM (141 columns at the
+time, with the optional ``inf`` / ``acc/att`` columns clearing at 166), so the
+board that mounts it re-sweeps them on its own geometry.
+
 Third-party text
 ----------------
 Skill ids, versions, roles, tiers, judges, checks and every ``requires`` entry

@@ -126,6 +126,8 @@ from .pool4u_stakers import SurfPool4UStakers
 from .signals import DETECTOR_LABELS, SurfSignals
 from .swarm_agent_cards import SurfSwarmSeatCards
 from .swarm_agent_hero import SurfSwarmAgentHero
+# Parked since 2026-10-03 (no body mounts it; data/surf_models.SWARM_PARKED_WIDGET_SIGNATURES
+# names it, and every "exported means mounted" test reads its exemption from there).
 from .swarm_capability import SurfSwarmCapability
 from .swarm_hero import SurfSwarmHero
 from .swarm_inflight import SurfSwarmInFlight
@@ -133,6 +135,7 @@ from .swarm_launches import SurfSwarmLaunches
 from .swarm_seat_record import SurfSwarmSeatRecord
 from .swarm_sites import SurfSwarmSites
 from .swarm_throughput import SurfSwarmThroughput
+from .swarm_workflows import SurfSwarmWorkflows
 
 __all__ = [
     "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
@@ -171,6 +174,7 @@ __all__ = [
     "SurfSwarmSeatCards",
     "SurfSwarmSites",
     "SurfSwarmThroughput",
+    "SurfSwarmWorkflows",
     "TITLE",
     "UNAVAILABLE_LINE",
 ]

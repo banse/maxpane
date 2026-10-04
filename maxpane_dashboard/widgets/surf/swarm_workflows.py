@@ -2,9 +2,8 @@
 
 ``docs/surf_swarm_workflows_spec.md`` §2 "Widget". A
 :class:`~maxpane_dashboard.widgets.surf._swarm_table.SwarmTableBase` table that
-takes CAPABILITY's place on the ``s`` body in WP5; until then it is mounted
-nowhere and **not exported** from ``widgets/surf/__init__.py`` (an exported
-widget must be mounted -- ``swarm_record_filter.py`` is the precedent).
+took CAPABILITY's place on the ``s`` body in WP5 (2026-10-03), exported from
+``widgets/surf/__init__.py`` and named in ``SWARM_WIDGET_SIGNATURES``.
 
 Columns ``when · status · contracts · frontend · objective / failure``:
 
@@ -51,9 +50,9 @@ joins it to a launch, so the address is copyable and unlinked -- the choice
 ``0x5167d0...3281`` is not an address and gets nothing.
 
 The SWARM address sweep (``tests/screens/test_address_icons_everywhere.py``)
-currently demands a link for every surf icon (E7); WP5 extends it with a
-narrow, named "icon, no link: chain unknown" allowance when it mounts this
-widget.
+demands a link for every other surf icon (E7); this one is the named
+exception, by address: ``SweepCase.unlinked`` lists the seeded failure
+address, and E7 asserts it copies and links nowhere (WP5).
 
 Purity: stdlib, ``rich``, ``textual`` and this package's ``widgets/`` modules.
 No ``data/`` (it restates nothing from there: ``ROW_CAP`` is bound to
@@ -122,7 +121,11 @@ _TIGHT = tuple(key for key in _COMPACT if key != "when")
 # one cell less drops a tier (``tests/widgets/test_surf_swarm_workflows.py``,
 # ``test_each_tier_shows_its_columns_whole_at_its_own_threshold_under_the_spec_css``).
 # The panel's outer width is each number plus ``GUTTER_COLS`` (2) plus the
-# padding (2). WP5 certifies the pin in situ.
+# padding (2). Certified in situ on SWARM by WP5 (2026-10-03,
+# ``tests/screens/test_surf_swarm_layout.py``, every payload, both fold
+# states): THROUGHPUT holds its 46-cell cap beside it, so the panel gets the
+# terminal's width minus 48 and goes full from 119 columns, compact from 109,
+# tight below -- each threshold in the layout test's boundary set.
 
 #: ``full``: all five columns, the text at its floor -- 67 cells.
 FULL_WIDTH = table_cols(w for _k, _l, w in _SPECS)                      # 67

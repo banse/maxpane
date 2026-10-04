@@ -1,7 +1,8 @@
 """WORKFLOWS (``widgets/surf/swarm_workflows.py``), SWARM WORKFLOWS WP4.
 
-Unmounted and unexported until WP5 (spec §6: an exported widget must be
-mounted). Every assertion is against composited output; styles are read off
+Mounted on SWARM in CAPABILITY's place and exported since WP5 (2026-10-03),
+its signature the frozen ``SWARM_WIDGET_SIGNATURES`` entry. Every assertion
+is against composited output; styles are read off
 the compositor (``get_style_at``) and links through
 ``tests/widgets/address_probe``. The captured page is folded through
 ``data/surf_swarm.workflow_rows`` -- the producer the screen will hand it --
@@ -17,7 +18,11 @@ import time
 from textual.app import App
 from textual.widgets import DataTable
 
-from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WORKFLOW_LIMIT
+from maxpane_dashboard.data.surf_models import (
+    SURF_ROW_KEYS,
+    SWARM_WIDGET_SIGNATURES,
+    SWARM_WORKFLOW_LIMIT,
+)
 from maxpane_dashboard.data.surf_swarm import workflow_rows
 from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.widgets.surf.swarm_workflows import (
@@ -34,9 +39,9 @@ from tests.widgets.surf_compositing import composite_lines
 ROW_KEYS = SURF_ROW_KEYS["swarm_workflow_rows"]
 GUTTER = SurfSwarmWorkflows.GUTTER_COLS
 
-#: Hand-typed until WP5 flips ``SWARM_WIDGET_SIGNATURES`` from CAPABILITY to
-#: this widget (spec §2 "Screen"); WP5's contract tests bind the two then.
-SIG = ("swarm_workflow_rows", "swarm_scores_as_of_hhmm")
+#: The frozen export since WP5 flipped it from CAPABILITY to this widget
+#: (spec §2 "Screen"); the contract and swarm-models tests bind it too.
+SIG = SWARM_WIDGET_SIGNATURES["SurfSwarmWorkflows"]
 
 SIZE = (140, 24)
 AS_OF = "04:06"

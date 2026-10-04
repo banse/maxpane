@@ -132,6 +132,15 @@ _SWARM_CONTRACT = "0x5b7A2f80cCe8b8f930c60D33c8fb0FA1234abCDe"
 #: ``max-width: 46`` cannot hold 42 characters plus the label, so the cell
 #: renders the anti-poisoning window, never the whole address.
 _SEAT_OWNER = "0x7A11e2d9C4b3f8E6a5D1c0B9e8F7a6D5c4B3a2E1"
+#: A contract named inside a blocked workflow's failure (WORKFLOWS, ``s``;
+#: ``docs/surf_swarm_workflows_spec.md`` §2, WP5), first in the text so it is
+#: whole wherever the text column holds 44 cells (the address and its icon):
+#: at 170. At the SWARM pin the column is narrower than that, and
+#: ``keep_units`` drops the unit whole in front of the ``…`` -- never a ``0x``
+#: fragment, which the pin pass checks. ``/workflows`` serves no chain id, so
+#: the address is copyable and **unlinked** (``SweepCase.unlinked``), the one
+#: such address on surf.
+_SWARM_WORKFLOW = "0xc0DEc0DE7a5B6c8D9e0F1a2B3c4D5e6F7a8B9c0D"
 
 
 def _surf_payload() -> dict:
@@ -149,6 +158,12 @@ def _surf_payload() -> dict:
     launches[0] = {**launches[0], "artifacts": artifacts, "artifact_count": 1}
     payload["swarm_seat_summary"] = {**payload["swarm_seat_summary"], "owner": _SEAT_OWNER}
     payload["swarm_seat_work_rows"][2]["oracle_notes"] = _SURF_PROSE
+    workflows = payload["swarm_workflow_rows"]
+    blocked = next(i for i, row in enumerate(workflows) if row["status"] == "blocked")
+    workflows[blocked] = {
+        **workflows[blocked],
+        "failure": f"{_SWARM_WORKFLOW} reverted in setUp(): constructor failed",
+    }
     return payload
 
 
@@ -169,7 +184,10 @@ SURF_SEEDED: tuple[str, ...] = (
     "0xf53c0a4E4b0F77D1a3Bc4d8e3F2a1B0c9D8e3364",  # 4: STAKERS rank 1, whole/near-whole
     _SWARM_CONTRACT,                                # s: LAUNCHES artifact, shortened
     _SEAT_OWNER,                                    # a: SEAT RECORD owner, shortened
+    _SWARM_WORKFLOW,                                # s: WORKFLOWS failure, whole, unlinked
 )
+#: Of those, the ones rendered with an icon and no link (``SweepCase.unlinked``).
+SURF_UNLINKED: tuple[str, ...] = (_SWARM_WORKFLOW,)
 
 
 # -- curator -------------------------------------------------------------------
@@ -633,9 +651,12 @@ CASES: tuple[SweepCase, ...] = (
         # owner, seeded as ``_SEAT_OWNER`` and linked on the package
         # ``EXPLORER`` (mainnet, this case's ``explorer``). Its other panels
         # render no addresses; RECORD submission prefixes are plain off-chain hashes.
+        # WORKFLOWS (``s``) prints an address out of a failure text with its
+        # icon and no link: ``/workflows`` serves no chain (``unlinked``).
         explorer=ETHEREUM,
         explorers=(ETHEREUM, SEPOLIA, BASE),
         rows_pick_explorer=True,
+        unlinked=SURF_UNLINKED,
         screen_class=SurfScreen,
         build=_surf_app,
         payload=_surf_payload,

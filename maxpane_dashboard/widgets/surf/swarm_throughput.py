@@ -123,7 +123,7 @@ TITLE = "THROUGHPUT"
 STALE_WORD = "stale"
 
 #: The 24 h count's state while the seen slot has under a day of history.
-ACCUMULATING_WORD = "accumulating"
+ACCUMULATING_WORD = "counting"
 
 #: The title's fold hints (``x`` on SWARM, bound by the screen): collapsed
 #: says there is more, expanded says there could be less. Both six cells.

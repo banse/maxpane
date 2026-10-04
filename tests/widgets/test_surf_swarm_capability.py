@@ -1,8 +1,10 @@
 """CAPABILITY (``widgets/surf/swarm_capability.py``), swarm v2 WP6.
 
-Unwired until WP7, so the contract test's per-class checks do not see this
-class yet; the three checks ``widget_wp_common.md`` names are imposed here,
-bound to the frozen export ``SWARM_WIDGET_SIGNATURES["SurfSwarmCapability"]``.
+Parked since 2026-10-03 (``docs/surf_swarm_workflows_spec.md`` §2: WORKFLOWS
+took its place on SWARM, a future SKILLS board mounts it); the three checks
+``widget_wp_common.md`` names are imposed here, bound to the frozen export
+``SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmCapability"]`` (it was
+``SWARM_WIDGET_SIGNATURES`` while SWARM mounted it).
 Every assertion is against composited output (``rules/widgets.md``).
 """
 
@@ -14,7 +16,7 @@ import re
 from textual.app import App
 from textual.widgets import DataTable
 
-from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_PARKED_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.surf.swarm_capability import (
     BASELINE_WIDTH,
     COMPACT_WIDTH,
@@ -24,7 +26,7 @@ from maxpane_dashboard.widgets.surf.swarm_capability import (
 )
 from tests.widgets.surf_compositing import composite_lines
 
-SIG = SWARM_WIDGET_SIGNATURES["SurfSwarmCapability"]
+SIG = SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmCapability"]
 ROW_KEYS = SURF_ROW_KEYS["swarm_skill_rows"]
 GUTTER = SurfSwarmCapability.GUTTER_COLS
 

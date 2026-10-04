@@ -66,7 +66,10 @@ from maxpane_dashboard.screens.surf import (
     TALLER_HINT,
     SurfScreen,
 )
-from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import (
+    SWARM_PARKED_WIDGET_SIGNATURES,
+    SWARM_WIDGET_SIGNATURES,
+)
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from tests.screens._sweeps import boundary_set
 from maxpane_dashboard.widgets.surf.market import (
@@ -100,7 +103,6 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmBoardHero,
     SurfSwarmLeaderboard,
     SurfSwarmFleet,
-    SurfSwarmCapability,
     SurfSwarmHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
@@ -108,6 +110,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmSeatCards,
     SurfSwarmSites,
     SurfSwarmThroughput,
+    SurfSwarmWorkflows,
 )
 
 _THEMES = Path(__file__).resolve().parents[2] / "maxpane_dashboard" / "themes"
@@ -192,7 +195,7 @@ _SWARM_WIDGET_CLASSES = {
     "SurfSwarmHero": SurfSwarmHero,
     "SurfSwarmInFlight": SurfSwarmInFlight,
     "SurfSwarmThroughput": SurfSwarmThroughput,
-    "SurfSwarmCapability": SurfSwarmCapability,
+    "SurfSwarmWorkflows": SurfSwarmWorkflows,
     "SurfSwarmLaunches": SurfSwarmLaunches,
     "SurfSwarmSites": SurfSwarmSites,
     "SurfSwarmAgentHero": SurfSwarmAgentHero,
@@ -221,6 +224,18 @@ def _exported_widget_classes() -> dict[str, type]:
 
 _ALL_WIDGET_CLASSES = _exported_widget_classes()
 
+#: Exported widgets no body mounts -- CAPABILITY since 2026-10-03, parked for
+#: a future SKILLS board (``docs/surf_swarm_workflows_spec.md`` §2). A role of
+#: its own, **read from** ``data/surf_models.SWARM_PARKED_WIDGET_SIGNATURES``
+#: and never typed here: a hand-typed exemption is the one list that could
+#: quietly excuse a widget that should be mounted.
+_PARKED_WIDGET_CLASSES = {name: _ALL_WIDGET_CLASSES[name] for name in SWARM_PARKED_WIDGET_SIGNATURES}
+
+#: The contract keys a parked widget's frozen signature names: still read by
+#: the manager and consumed by that widget's signature, though nothing paints
+#: them while it is parked (``swarm_skill_rows`` / ``swarm_skill_summary``).
+_PARKED_KEYS = frozenset(k for keys in SWARM_PARKED_WIDGET_SIGNATURES.values() for k in keys)
+
 
 def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
     """No role dict may quietly stop naming a widget the package ships.
@@ -239,6 +254,10 @@ def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
     changing, which is the whole of what that paragraph predicted.
 
     **Five since 2026-09-16**, same absorption.
+
+    **Six since 2026-10-03**: the parked role, derived from the export (see
+    :data:`_PARKED_WIDGET_CLASSES`), so CAPABILITY is accounted for without
+    being mounted.
     """
     roles = (
         _WIDGET_CLASSES,
@@ -246,6 +265,7 @@ def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
         _POOL4_WIDGET_CLASSES,
         _POOL4_USER_WIDGET_CLASSES,
         _SWARM_WIDGET_CLASSES,
+        _PARKED_WIDGET_CLASSES,
     )
     union: set[str] = set()
     for dict_ in roles:
@@ -800,9 +820,12 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
 #: **Filled for the fifth time** (WP2 of ``docs/surf_swarm_workflows_spec.md``,
 #: 2026-10-03): ``swarm_workflow_rows`` is read off ``GET /workflows`` and
 #: frozen in ``SWARM_KEYS`` before WORKFLOWS (``SurfSwarmWorkflows``, WP4)
-#: exists; it is **emptied by that spec's WP5**, which mounts the widget and
-#: names the key in ``SWARM_WIDGET_SIGNATURES``.
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset({"swarm_workflow_rows"})
+#: exists. **Emptied for the fifth time by that spec's WP5** (the same day):
+#: the screen mounts WORKFLOWS in CAPABILITY's place and the export names the
+#: key in ``SWARM_WIDGET_SIGNATURES``. CAPABILITY's own two keys are not
+#: parked here: its frozen signature still consumes them
+#: (:data:`_PARKED_KEYS`, read from the export).
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
@@ -1600,13 +1623,11 @@ def _sample_data() -> dict:
              "block_number": None, "job_id": "job-4360",
              "superseded_by": "job-4381"},
         ],
-        # Frozen by WP2 of docs/surf_swarm_workflows_spec.md, parked in
-        # ``_KEYS_PENDING_CONSUMERS`` below until that spec's WP5 mounts
-        # WORKFLOWS -- exercised here only so
-        # ``test_every_list_row_in_the_fixture_matches_the_frozen_row_shape``
-        # measures every row shape ``SURF_ROW_KEYS`` declares, this one
-        # included.  The shapes of the v6 capture: a completed row with no
-        # frontend, a blocked one carrying its failure text.
+        # Frozen by WP2 of docs/surf_swarm_workflows_spec.md and dispatched
+        # to WORKFLOWS since that spec's WP5 mounted it; also measured by
+        # ``test_every_list_row_in_the_fixture_matches_the_frozen_row_shape``.
+        # The shapes of the v6 capture: a completed row with no frontend, a
+        # blocked one carrying its failure text.
         "swarm_workflow_rows": [
             {"workflow_id": "wf-0002", "status": "completed",
              "contracts_job_id": "job-4390", "frontend_job_id": None,
@@ -1900,6 +1921,7 @@ def test_surf_keys_covers_the_local_signature_map():
         - META_KEYS
         - _KEYS_WITHOUT_A_RENDERER
         - _KEYS_PENDING_CONSUMERS
+        - _PARKED_KEYS
     )
     assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
     # The carve-outs are carve-outs from something. A key that left SURF_KEYS
@@ -3525,6 +3547,10 @@ def _record_dispatches(screen) -> dict[str, list[dict]]:
         # dispatch unrecorded. One instance remains; the loop stays so a
         # future second mount cannot halve this file's completeness sweeps.
         widgets = list(screen.query(cls))
+        if name in _PARKED_WIDGET_CLASSES:
+            # Parked (the export's own list): exported and mounted nowhere.
+            assert not widgets, f"{name} is parked but mounted"
+            continue
         assert widgets, f"{name} is exported but never mounted"
         for widget in widgets:
             widget.update_data = _wrap(name, widget.update_data)
@@ -3623,6 +3649,7 @@ async def test_screen_dispatches_every_data_key():
             - META_KEYS
             - _KEYS_WITHOUT_A_RENDERER
             - _KEYS_PENDING_CONSUMERS
+            - _PARKED_KEYS
         )
         assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
 
@@ -7004,7 +7031,8 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
     offer this layout. ``l`` and ``p`` are a different shape of key: each
     swaps the *whole* dashboard body for an unrelated second view (curator's
     ``y``/``f`` precedent) and leaves the hero mounted above it.
-    ``o``/``O`` sort the LEADERBOARD and are not a body toggle.
+    ``o``/``O`` sort the LEADERBOARD and are not a body toggle; nor is ``x``
+    (2026-10-03), which folds THROUGHPUT's blocks inside the SWARM body.
 
     This replaces ``test_the_bindings_are_refresh_and_the_launchpad_toggle``
     rather than sitting beside it: two tests asserting different exact
@@ -7012,7 +7040,7 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
     ``keys == {"r", "l", "escape"}`` is the assertion this task changes.
     """
     keys = {binding.key for binding in SurfScreen.BINDINGS}
-    assert keys == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "f", "escape"}
+    assert keys == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "f", "x", "escape"}
     assert not hasattr(SurfScreen, "action_toggle_view"), (
         "the old c-swap action outlived its binding -- an action with no key "
         "is a surface nobody can reach and nobody maintains"
@@ -8550,7 +8578,7 @@ _SWARM_CSS_SELECTORS = (
     f"#{AGENT_BODY_ID}",
     "SurfSwarmHero", "SurfSwarmHero > SurfSwarmHeroBox",
     "SurfSwarmAgentHero", "SurfSwarmAgentHero > SurfSwarmAgentHeroBox",
-    "SurfSwarmCapability", "SurfSwarmThroughput", "SurfSwarmInFlight",
+    "SurfSwarmWorkflows", "SurfSwarmThroughput", "SurfSwarmInFlight",
     "SurfSwarmLaunches", "SurfSwarmSites",
     "SurfSwarmAgentCards", "SurfSwarmAgentCards > SurfSwarmAgentCard", "SurfSwarmSeatRecord",
     # The AGENT column grid: one weight per column, stated per card id.

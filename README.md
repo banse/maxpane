@@ -145,11 +145,17 @@ an honest gap.
 
 Press **`s`** for the IMD swarm's own control plane (2026-09-16; rebuilt 2026-09-21) — the fifth
 body, and the agent workforce this repo's own branches are built by, watched live rather than read
-from a changelog. CAPABILITY is the swarm's skill catalogue — every skill with its role, kind,
-tier and the judge that scores it — beside THROUGHPUT: how much the job list holds and how it
-splits by state, how long a delivery takes (median, p90, worst) over the jobs that carry a delivery
-stamp, why jobs were cancelled, and how many completed in the last day, counted off every job this
-dashboard has ever seen rather than off the window the host happens to serve. IN FLIGHT lists the
+from a changelog. WORKFLOWS lists the swarm's newest twelve workflows — when each started, its
+status, the job that builds its contracts and the one that builds its frontend (each linked to the
+swarm's job explorer), and its objective, or for a workflow that did not complete, the failure in
+red (an address inside it carries its copy icon but no link: a workflow names no chain). Beside it
+THROUGHPUT shows how much the job list holds, how long a delivery takes (median, p90, worst) over
+the jobs that carry a delivery stamp, and how many completed in the last day, counted off every job
+this dashboard has ever seen rather than off the window the host happens to serve. It opens
+collapsed; press **`x`** to unfold how the list splits by state and why jobs were cancelled, and
+`x` again to fold them (the title says `x more` or `x less`, and the choice holds until you quit).
+The skill catalogue that used to sit where WORKFLOWS is (CAPABILITY) is parked for a later SKILLS
+board; its data is still read. IN FLIGHT lists the
 jobs executing right now, newest first, with the seat that holds each and the node it is on, beside
 LAUNCHES — the deployed artifacts, one row per launch with its status, chain, repo commit and
 contract address, every real address carrying the copy icon and linking its **own** chain's
@@ -179,8 +185,8 @@ read's freshness marker (and the screen title retains its own clock).
 
 One seat-card row sits under the hero, on the same column grid with a blank row between.
 It shows OWNER (the owner's forward-verified ENS name or address, with its copy icon,
-Etherscan link and paired date), RUNTIME (runtime, daemon and devices), SCORE (mean,
-scored reviews and differing entry count), FEEDBACK (sent, submitted and queued),
+Etherscan link and paired date), RUNTIME (runtime, daemon and devices), MODEL (the models and
+effort levels the seat advertises, from its own `/seats` record), FEEDBACK (sent, submitted and queued),
 COLLAB and NODES. In RUNTIME, a yellow line ending in `↑` means either a newer LLM runtime
 is available on npm's `latest` tag or the daemon differs from the fleet's unique most-common
 version. Daemon hashes have no ordering: this is an equality check, not a claim that a build
@@ -514,7 +520,8 @@ beside BURN & SUPPLY over SIGNALS, then STAKERS — whole 42-character addresses
 beside IF IMD FALLS, a ladder of what the hook bids as IMD falls. `4` swaps the **hero** too, for
 IMD PRICE, DOWNSIDE BID and STAKING. **And it binds `s`** (2026-09-16, rebuilt 2026-09-21) for the
 IMD swarm's own control plane — the agent workforce this repo's own branches are built by, watched
-live: CAPABILITY beside THROUGHPUT, IN FLIGHT beside LAUNCHES, SITES full-width beneath. `s` is
+live: WORKFLOWS beside THROUGHPUT (**`x`** folds THROUGHPUT's state and cancel-reason blocks),
+IN FLIGHT beside LAUNCHES, SITES full-width beneath. `s` is
 the second Surfboard view, after `4`, to swap the **hero**, for its own AGENTS / WORKING /
 ACCEPTED 24h / QUEUE / BREAKER / SERVICES boxes. **And it binds `a`** (2026-09-21) for the AGENT
 body — one seat's lifetime record: its hero row (WORK and combined ACCEPTED), one seat-card row with COLLAB
@@ -531,6 +538,7 @@ of any of the six alternate bodies.
 |---|---|
 | `l` / `e` / `4` / `s` / `a` / `b` | Open LAUNCHPAD / POOL4 protocol / POOL4 MARKET / SWARM / AGENT / BOARD |
 | `i` | Choose and save an IDMD seat |
+| `x` in SWARM | Fold / unfold THROUGHPUT's state and cancel-reason blocks (opens folded) |
 | `o` / `O` in BOARD | Cycle sort column / reverse sort |
 | LEADERBOARD header click | Sort that column; click again to reverse |
 | LEADERBOARD row click or Enter | Save that seat and open AGENT |
@@ -639,12 +647,14 @@ the rail (HATCHES over sIMD VAULT) was already the tallest column, so a 44-row t
 shows `‹ taller`.
 
 Surfboard's SWARM view (`s`) is a layout of its own too, pinned by `SURF_SWARM_FULL_LAYOUT_COLUMNS`
-and `SURF_SWARM_FULL_LAYOUT_ROWS` (**141 columns × 42 rows** since the 2026-09-21 rebuild; 116 × 28
-before it). CAPABILITY's original seven columns decide the width. Its optional `inf` and
-`acc/att` columns appear from `CAPABILITY_OPTIONAL_FULL_COLUMNS` and retain `‹ widen` below it.
-The top row decides the height: THROUGHPUT is sixteen fixed lines and its row is floored at exactly that, so at 42 rows
-the body has room for the three rows without any panel scrolling inside itself and `‹ taller` goes
-dark. Mixed service states still clip in the SERVICES hero box (F55); its explicit state words
+and `SURF_SWARM_FULL_LAYOUT_ROWS` (**138 columns × 35 rows** since 2026-10-03, when WORKFLOWS
+replaced CAPABILITY and THROUGHPUT began to open folded; 141 × 42 from the 2026-09-21 rebuild, 116 ×
+28 before it). LAUNCHES decides the width: one column narrower and it hides its last column behind
+its own scrollbar. The top row decides the height: folded, THROUGHPUT is nine fixed lines and its
+row is floored at exactly that, so at 35 rows the body has room for the three rows without any
+panel scrolling inside itself and `‹ taller` goes dark. Unfolded (`x`) THROUGHPUT needs more rows
+than that; below them the top row scrolls with `‹ taller` lit rather than dropping a line.
+Mixed service states still clip in the SERVICES hero box (F55); its explicit state words
 and separate health line do not make all mixed combinations whole at this pin. IN FLIGHT and
 LAUNCHES have measured content exceptions recorded beside their constants in `screens/surf.py`;
 they share the second row on a 4:5 split measured so that

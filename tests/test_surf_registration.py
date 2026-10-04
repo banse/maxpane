@@ -2480,16 +2480,25 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             swarm_text = _screen_text(app)
             from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase
 
-            assert "CAPABILITY" in swarm_text, (
+            assert "WORKFLOWS" in swarm_text, (
                 "pressing `s` did not reach the swarm body -- the sweep "
                 "below would be measuring the market body twice"
             )
             # Explicit rather than blank, for the same reason every other
             # body's panels are checked this way: an outage that renders five
             # empty panels is exactly as wrong as one that renders zeros.
-            # Swarm v2 (WP7): the five panels of the rebuilt body.
-            for title in ("CAPABILITY", "THROUGHPUT", "IN FLIGHT", "LAUNCHES", "SITES"):
+            # Swarm v2 (WP7): the five panels of the rebuilt body; WORKFLOWS
+            # in CAPABILITY's place since 2026-10-03. A parked widget is
+            # mounted nowhere, so its title must not paint either -- the
+            # parked set is read from the export, never typed here.
+            for title in ("WORKFLOWS", "THROUGHPUT", "IN FLIGHT", "LAUNCHES", "SITES"):
                 assert title in swarm_text, f"{title} vanished under outage"
+            import maxpane_dashboard.widgets.surf as surf_widgets
+            from maxpane_dashboard.data.surf_models import SWARM_PARKED_WIDGET_SIGNATURES
+
+            for parked in SWARM_PARKED_WIDGET_SIGNATURES:
+                title = getattr(surf_widgets, parked).TITLE
+                assert title not in swarm_text, f"the parked {parked} ({title}) is mounted"
             # Both markers this body reads (`swarm_as_of_hhmm`,
             # `swarm_scores_as_of_hhmm`) are `None` under a full outage, so
             # every table must say so explicitly rather than rendering an
@@ -2500,7 +2509,7 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 "no swarm table said its rows were unavailable under a cold slot"
             )
             from maxpane_dashboard.widgets.surf import (
-                SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
+                SurfSwarmLaunches, SurfSwarmSites, SurfSwarmWorkflows,
             )
             from maxpane_dashboard.widgets.surf.swarm_inflight import (
                 EMPTY_LINE as INFLIGHT_EMPTY,
@@ -2513,7 +2522,7 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             # word of the panel's `EMPTY_ROW`), never typed here.
             empty_words = [
                 next(cell for cell in cls.EMPTY_ROW if cell and cell != DASH)
-                for cls in (SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites)
+                for cls in (SurfSwarmWorkflows, SurfSwarmLaunches, SurfSwarmSites)
             ] + [Text.from_markup(INFLIGHT_EMPTY).plain.strip()]
             for empty_word in empty_words:
                 assert empty_word not in swarm_text, (

@@ -37,7 +37,11 @@ from rich.errors import MarkupError
 from rich.text import Text
 from textual.app import App, ComposeResult
 
-from maxpane_dashboard.data.surf_models import SURF_KEYS, SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import (
+    SURF_KEYS,
+    SWARM_PARKED_WIDGET_SIGNATURES,
+    SWARM_WIDGET_SIGNATURES,
+)
 
 # Package root, not submodule paths: this is the surface ``screens/surf.py``
 # and its screen test import from (WP5), so the contract sweep exercises it.
@@ -74,6 +78,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmSeatRecord,
     SurfSwarmSites,
     SurfSwarmThroughput,
+    SurfSwarmWorkflows,
 )
 
 
@@ -211,9 +216,12 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # to `data/surf_models.SWARM_WIDGET_SIGNATURES` by each widget's own
         # test; `swarm_network` is accepted and never painted by IN FLIGHT,
         # LAUNCHES and RECORD (their chain word is per row, off the row's own
-        # `chain_id`) -- so all ten belong in the strict check.
+        # `chain_id`) -- so all ten belong in the strict check. WORKFLOWS
+        # took CAPABILITY's place on SWARM on 2026-10-03; CAPABILITY is
+        # parked (mounted nowhere) and still exported, so it stays in the
+        # strict check against its parked signature (below).
         SurfSwarmHero, SurfSwarmInFlight, SurfSwarmThroughput,
-        SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
+        SurfSwarmWorkflows, SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
         SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet,
     SurfSwarmAgentHero, SurfSwarmSeatCards,
         SurfSwarmSeatRecord,
@@ -809,3 +817,19 @@ def test_board_and_agent_exports_implement_the_frozen_source_signatures(name):
     """BOARD WP1 freezes this seam before WP4/WP5 implement the widgets."""
     cls = getattr(surf_widgets, name)
     assert _kwargs_of(cls) == SWARM_WIDGET_SIGNATURES[name]
+
+
+def test_every_exported_swarm_widget_implements_its_mounted_or_parked_signature():
+    """Every exported ``SurfSwarm*`` class takes exactly the keys its
+    signature names -- the mounted map, or for a parked widget the parked
+    one (``SWARM_PARKED_WIDGET_SIGNATURES``, read from the export: CAPABILITY
+    since 2026-10-03). A parked widget is held to the same contract, so the
+    SKILLS board that mounts it inherits a widget that still fits."""
+    swarm = [cls for cls in _ALL_WIDGETS if cls.__name__.startswith("SurfSwarm")]
+    assert SurfSwarmWorkflows in swarm and SurfSwarmCapability in swarm
+    for cls in swarm:
+        name = cls.__name__
+        assert (name in SWARM_WIDGET_SIGNATURES) != (name in SWARM_PARKED_WIDGET_SIGNATURES), name
+        expected = SWARM_WIDGET_SIGNATURES.get(name) or SWARM_PARKED_WIDGET_SIGNATURES[name]
+        assert _kwargs_of(cls) == expected, name
+    assert set(SWARM_PARKED_WIDGET_SIGNATURES) <= {cls.__name__ for cls in swarm}
