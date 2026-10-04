@@ -468,7 +468,7 @@ class SeatLedger:
     def _stored(self, cur: sqlite3.Cursor, line: LogLine) -> bool:
         hash12 = line.fields.get("hash12")
         already = cur.execute("SELECT * FROM tasks WHERE hash12 = ? AND seat IS ?", (hash12, self._seat)).fetchone()
-        if already is not None and already["source_row"] == "local":
+        if already is not None and already["source_row"] == "local" and already["stored_utc"] is not None:
             return False  # replay
         row = cur.execute(
             "SELECT * FROM tasks WHERE seat IS ? AND source_row = 'local' AND submitted_utc IS NOT NULL "
@@ -482,14 +482,29 @@ class SeatLedger:
             "UPDATE tasks SET stored_utc = ?, hash12 = ?, updated_utc = ? WHERE key = ?",
             (line.ts, hash12, _iso(self._now()), row["key"]),
         )
-        if already is not None:
-            columns = ("job_id", "role", "outcome", "outcome_as_of_utc", "accepted_at_api", "verdict_lag_s",
-                       "failure_reason", "failure_class", "node_key", "objective", "source_outcome", "source_reason",
-                       "job_state", "launch_json", "submission_hash", "work_status", "text_expired")
-            cur.execute("UPDATE tasks SET " + ", ".join(f"{c} = ?" for c in columns) + " WHERE key = ?",
-                        (*[already[c] for c in columns], row["key"]))
-            cur.execute("DELETE FROM tasks WHERE key = ?", (already["key"],))
+        if already is not None and already["source_row"] == 'api':
+            self._merge_api_row(cur, row, already)
         return True
+
+    @staticmethod
+    def _merge_api_row(cur: sqlite3.Cursor, local: sqlite3.Row, api: sqlite3.Row) -> None:
+        """Merge the API overlay in fact groups; keep local lifecycle and session identity."""
+        outcome_columns = ("outcome", "outcome_as_of_utc", "accepted_at_api", "verdict_lag_s",
+                           "source_outcome", "work_status", "job_state")
+        outcome = api if api["outcome"] in ("accepted", "rejected", "failed", "pending") else local
+        values = {column: outcome[column] for column in outcome_columns}
+        reasons = ("failure_reason", "failure_class", "source_reason")
+        reason = outcome if local["failure_reason"] not in (None, 'none') and api["failure_reason"] not in (None, 'none') else (
+            api if api["failure_reason"] not in (None, 'none') else local)
+        values.update({column: reason[column] if values["outcome"] == "failed" and reason[column] != 'none' else None
+                       for column in reasons})
+        for column in ("objective", "node_key"):
+            values[column] = local[column] if local[column] is not None else api[column]
+        for column in ("job_id", "role", "launch_json", "submission_hash", "text_expired"):
+            values[column] = api[column] if api[column] is not None else local[column]
+        cur.execute("UPDATE tasks SET " + ", ".join(f"{c} = ?" for c in values) + " WHERE key = ?",
+                    (*values.values(), local["key"]))
+        cur.execute("DELETE FROM tasks WHERE key = ?", (api["key"],))
 
 
     def _cancelled(self, cur: sqlite3.Cursor, line: LogLine) -> None:
@@ -685,13 +700,11 @@ class SeatLedger:
 
     # ------------------------------------------------------------------ API joins
     def attach_work(self, work: list[dict], *, as_of_utc: str) -> int:
-        """Join known attempts by hash, retaining unmatched plane attempts; null hashes never join."""
+        """Join by hash, or uniquely proven job/submission time after a missed stored line."""
+        work = [redact_tree(item) for item in work if isinstance(item, dict)]
         joined = 0
         with self._conn:
             for item in work:
-                item = redact_tree(item)
-                if not isinstance(item, dict):
-                    continue
                 full_hash = item.get("submissionHash")
                 if not isinstance(full_hash, str) or len(full_hash) < 12:
                     continue
@@ -705,6 +718,11 @@ class SeatLedger:
                                                     (hash12, self._seat)).fetchall()
                 if not candidates:
                     continue
+                if self._reconcile_missed_stored(item, work):
+                    candidates = self._conn.execute(
+                        "SELECT key, stored_utc FROM tasks WHERE hash12 = ? AND seat IS ? "
+                        "AND (submission_hash IS NULL OR submission_hash = ?)", (hash12, self._seat, full_hash)
+                    ).fetchall()
                 submitted_epoch = _parse_api_timestamp(item.get("submittedAt"))
                 if len(candidates) > 1 and submitted_epoch is not None:
                     def distance(c: sqlite3.Row) -> tuple[int, float]:
@@ -739,6 +757,30 @@ class SeatLedger:
         for day in {r[0][:10] for r in self._conn.execute("SELECT accepted_utc FROM tasks")}:
             self.rollup_day(day, now_utc=_iso(self._now()))
         return joined
+
+    def _reconcile_missed_stored(self, item: dict, work: list[dict]) -> bool:
+        """Exact timestamps and unique evidence only; never fabricate a journal stored time."""
+        job, stamp = item.get("jobId"), _parse_api_timestamp(item.get("submittedAt"))
+        if not isinstance(job, str) or stamp is None:
+            return False
+        local = [r for r in self._conn.execute(
+            "SELECT * FROM tasks WHERE job_id=? AND seat IS ? AND source_row='local' AND hash12 IS NULL "
+            "AND cancelled IS NULL AND COALESCE(lease_closed,0)=0 AND COALESCE(pre_agent_failure,0)=0 "
+            "AND COALESCE(interrupted_by_restart,0)=0", (job, self._seat)
+        ) if _parse_api_timestamp(r["submitted_utc"]) == stamp and 'failed' not in (_loads(r["phases_json"]) or [])]
+        if len(local) != 1 or (local[0]["node_key"] is not None and local[0]["node_key"] != item.get("nodeKey")):
+            return False
+        hashes = {w.get("submissionHash") for w in work if w.get("jobId") == job
+                  and _parse_api_timestamp(w.get("submittedAt")) == stamp}
+        plane = [r for r in self._conn.execute(
+            "SELECT * FROM tasks WHERE job_id=? AND seat IS ? AND source_row='api'", (job, self._seat)
+        ) if _parse_api_timestamp(r["submitted_utc"]) == stamp]
+        hashes.update(r["submission_hash"] for r in plane)
+        if len(hashes) != 1 or len(plane) != 1:
+            return False
+        self._merge_api_row(self._conn.cursor(), local[0], plane[0])
+        self._conn.execute("UPDATE tasks SET hash12=? WHERE key=?", (item["submissionHash"][:12], local[0]["key"]))
+        return True
 
     def attach_work_dirs(self, entries: list[dict]) -> int:
         """Join ``work-stat`` ``newest`` entries ``{jobId, nodeId, mtimeUtc, abnormal}`` to local rows (spec §5.2, §8 LEDGER detail).
@@ -952,8 +994,16 @@ class SeatLedger:
             for row in rows:
                 if row["source_outcome"] == "api":
                     continue
+                if (row["cancelled"] or row["pre_agent_failure"] or row["interrupted_by_restart"]
+                        or 'failed' in (_loads(row["phases_json"]) or [])):
+                    continue
                 nodes = [n for n in detail.get("nodes", []) if
-                         (n.get("key") == row["node_key"] if row["node_key"] else n.get("seatTokenId") == self._seat)]
+                         n.get("seatTokenId") == self._seat
+                         and (not row["node_key"] or n.get("key") == row["node_key"])]
+                if not nodes and row["source_outcome"] == 'job node state' and row["outcome"] == 'pending':
+                    self._conn.execute("UPDATE tasks SET outcome=NULL,source_outcome='none',outcome_as_of_utc=?, "
+                                       "job_state=NULL WHERE key=?", (as_of, row["key"]))
+                    days.add(row["accepted_utc"][:10])
                 if len(nodes) != 1:
                     continue
                 node = nodes[0]
@@ -961,8 +1011,13 @@ class SeatLedger:
                 if len(attempts) != 1 or node.get("state") not in ("accepted", "rejected", "failed", "pending"):
                     continue
                 self._conn.execute("UPDATE tasks SET outcome=?, source_outcome='job node state', outcome_as_of_utc=?, "
-                                   "node_key=COALESCE(node_key, ?), role=COALESCE(role, ?) WHERE key=?",
-                                   (node["state"], as_of, node.get("key"), node.get("role"), row["key"]))
+                                   "node_key=COALESCE(node_key, ?), role=COALESCE(role, ?), "
+                                   "job_state=CASE WHEN ?='accepted' THEN ? ELSE job_state END WHERE key=?",
+                                   (node["state"], as_of, node.get("key"), node.get("role"),
+                                    node["state"], detail.get("state"), row["key"]))
+                if node["state"] != 'failed' and row["source_reason"] == 'job node state':
+                    self._conn.execute("UPDATE tasks SET failure_reason=NULL,failure_class=NULL,source_reason=NULL WHERE key=?",
+                                       (row["key"],))
                 if node["state"] == "failed" and node.get("failureReason"):
                     self._conn.execute("UPDATE tasks SET failure_reason=COALESCE(failure_reason, ?), "
                                        "source_reason=CASE WHEN failure_reason IS NULL THEN 'job node state' ELSE source_reason END "

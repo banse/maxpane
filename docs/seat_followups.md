@@ -173,3 +173,13 @@ The following remain follow-ups, not fixes in this round. Synthetic local reprod
 58. **64-hex text overmatch.** Both shared redactor copies replace every 64-hex value in prose, including a public digest inside an objective or reply. Round 9 retains this conservative behavior and never widens the document canary. Round 10 must change both copies together with regressions distinguishing public prose from credentials and preserving the status boundary.
 
 59. **The sk- pattern matches inside ordinary words.** For example, `risk-adjusted` becomes `risk-[redacted]`. This is the same open class as item 28; round 10 owns any narrower boundary, with tests for real key forms and embedded tokens in both copies. All other unresolved items above, including concurrency item 56 and the unsuccessful cursor-attach evidence in item 57, remain open. Capacity/tier verbs, payer-chain reads and seat #3's worker-drop-in work remain outside round 9.
+
+## 2026-10-04 — Round 9 fix deferred work
+
+60. **Document UTF-8 byte budget and unbounded node types.** API text caps count characters, while status validation measures UTF-8 bytes and NODES retains an uncapped set of node types. Independent verification constructed an 11.7 MB hostile document: a sufficiently large ledger can exceed the 2 MiB limit and blank the dashboard until the contributing rows age out. Redesign proof 13 covers the shaper rather than the complete manager document. Round 10 should bound the complete serialized document while preserving honest all-history coverage and explicit truncation, with multibyte and many-node regressions through `document()`.
+
+61. **Persisted effects of redactor overmatches.** Items 58 and 59 also affect the ledger's cached objective, reply and oracle text. Because round 9 sanitizes before persistence, a public 64-hex digest or an ordinary word damaged by the sk- pattern cannot be recovered from that cache merely by fixing the renderer. The later redactor correction needs an explicit cache recovery policy alongside both copies' tests. Their existing conservative behavior is unchanged in this fix round.
+
+62. **Busy job-detail class couples oracle and other jobs.** Oracle and non-oracle jobs share the job-detail route class. A shed oracle job-detail request therefore pauses non-oracle detail reads that the verdict fallback needs. A later scheduling change should decide whether narrower pause classes are justified by actual API shedding behavior, preserving a pause floor for every trigger.
+
+All earlier unresolved follow-ups remain open, including the concurrency gate, shared redaction, host probe and installer items. This correction changes no root-broker implementation, control verb, unit, installer, chain read or live system.
