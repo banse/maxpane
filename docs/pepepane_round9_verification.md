@@ -1,6 +1,6 @@
 # PEPEPANE round 9 verification
 
-Package evidence is recorded below. The final whole-branch review and its single finding-only re-review are approved. Repository suites and the deployment archive are pending; host installation and probing are owner-only actions.
+Package evidence is recorded below. The final whole-branch review and its single finding-only re-review are approved. The required repository suites and seeded archive build passed; host installation and probing are owner-only actions.
 
 ## Committed work
 
@@ -13,11 +13,12 @@ Package evidence is recorded below. The final whole-branch review and its single
 | WP4 | 230ccd8 | Six composed bodies and selectable hero; final affected 213 passed; required separate files 27/9/45/168/69/6 passed; two review findings fixed and five-case scoped re-review approved |
 | WP5 hoist 1 | 2d15bc4 | Fitted prose address helpers; precommit 45 passed; postcommit frozen SURF layout plus moved-module and guard checks 592 passed |
 | WP5 hoist 2 | e348e9c | Oracle presentation helpers; precommit 316 passed; postcommit frozen SURF layout plus moved-module and guard checks 863 passed |
-| WP5 bodies/flow/detail | fe3521d | Owned618passed plus corrected stale one-day assertion/whole cost9passed; final affected163passed; two review findings fixed and scoped8-case re-review approved; parent final six separate files27/9/46/170/69/6passed |
+| WP5 bodies/flow/detail | fe3521d | 618 owned checks passed, followed by the corrected one-day expectation and all nine cost checks; final affected gate 163 passed; two review findings fixed and eight-case re-review approved; six separate files 27/9/46/170/69/6 passed |
 | WP6 | 52fa9f2 | Expanded layout/render gate 186 passed; contract/lean/models/docs gate 198 passed; cold peak 62.3 MiB; six compatibility files 27/9/46/170/69/6 passed; task review approved; test-only paint correction passed the full 95-case layout/cursor gate |
 
 | WP7 identity/docs | cf69e45 | Identity regression RED at 0.1.4; 474 scoped checks passed, one pinned operator paragraph corrected and seven focused checks then passed; review approved; broker compile and manifest guards passed |
 | Final review corrections | 5f5b996 | One fix wave for three findings; 412 affected checks passed, periodic-timer isolation followed by 32 navigation/regression checks passed; 13 finding-only review checks passed, all three findings addressed |
+| Journal compatibility | 9dc5271 | Original round-4 long-message cases and new canary regression reproduced the truncation; 219 affected checks passed; final exact seat suite 1,817 passed, two skipped, one deselected |
 
 ## Defect evidence
 
@@ -38,7 +39,7 @@ The nine success criteria map to these tests and measurements:
 | D1 digit-string identities | 347a95d | tests/data/test_seat_round9_defects.py::test_d1_real_capture_string_identities_match |
 | D2 worker-home Claude slugs | 347a95d | tests/data/test_seat_round9_defects.py::test_d2_root_home_classifies_tasks_research_doctor_manual[/home/imd-worker] |
 | D3 persisted startup facts | 347a95d | tests/data/test_seat_round9_defects.py::test_d3_startup_facts_and_restart_flag_survive_empty_tail |
-| D4 journal facts | 347a95d + WP5 presentation | tests/data/test_seat_round9_defects.py::test_d4_journal_facts_use_three_bounded_reads; tests/widgets/test_seat_round9_bodies.py::test_machine_transcripts_label_once_and_journal_explicit_reason |
+| D4 journal facts | 347a95d + fe3521d | tests/data/test_seat_round9_defects.py::test_d4_journal_facts_use_three_bounded_reads; tests/widgets/test_seat_round9_bodies.py::test_machine_transcripts_label_once_and_journal_explicit_reason |
 | D5 recovered API errors | 347a95d | tests/data/test_seat_round9_defects.py::test_d5_summariser_ledger_document_and_fresh_process_agree (401/403/429, recovered and unrecovered) |
 | D6 runtime version short form | 230ccd8 | test_claude_short_form_uses_version_number_not_code_suffix; original suffix extraction inverse paints claude Code), RED |
 | D7 duplicate retention label | fe3521d | tests/widgets/test_seat_round9_bodies.py::test_machine_transcripts_label_once_and_journal_explicit_reason |
@@ -46,7 +47,7 @@ The nine success criteria map to these tests and measurements:
 | D9 busy retry/backoff | 347a95d, integrated 1532082/230ccd8 | tests/data/test_seat_round9_defects.py::test_d9_busy_stops_retry_and_applies_class_floor; test_d9_busy_does_not_gate_ledger_verdicts; test_d9_busy_keeps_ledger_day_counts_and_timestamp |
 | D10 idle empty tail | 347a95d | tests/data/test_seat_round9_defects.py::test_d10_successful_empty_backfill_with_watermark_is_healthy |
 | D11 canary gap | 347a95d | tests/data/test_seat_round9_defects.py::test_d11_objective_reply_document_is_not_refused (base64/100kb/jwt); test_d11_sanitizer_cut_and_dollar_join_boundaries |
-| D12 stable cursor/scroll | 230ccd8 + WP5 integration | test_ledger_refresh_insert_preserves_row_and_scroll; tests/screens/test_seat_round9_flow.py::test_skill_toggle_after_refresh_resize_and_hidden_update_uses_same_id |
+| D12 stable cursor/scroll | 230ccd8 + fe3521d | test_ledger_refresh_insert_preserves_row_and_scroll; tests/screens/test_seat_round9_flow.py::test_skill_toggle_after_refresh_resize_and_hidden_update_uses_same_id |
 
 ## Required mutation proofs
 
@@ -76,7 +77,7 @@ All reported inverse edits were restored byte-for-byte; each named RED is from a
 | 19 | Stop verify tick while detail is pushed | test_actual_detail_popup_does_not_pause_timer_driven_verdict; verifying instead of done |
 | 20 | Use structural check status for outcome | test_fallback_requires_unique_attempt_and_uses_node_state[review_verifier] |
 
-Proof18 separates the exact single-flag declaration regression from the compound reproduction of original behavior. Both independent protections remain; no guard was weakened to create evidence.
+Proof 18 separates the exact single-flag declaration regression from the compound reproduction of original behavior. Both independent protections remain; no guard was weakened to create evidence.
 
 ## Final layout and footprint measurements
 
@@ -97,17 +98,17 @@ The expanded worst payload has 50 skills, 400 records with bounded long-answer p
 
 The WP6 fixture/offline cold test measured **62.3 MiB** lifetime physical peak using the existing libproc v4 fallback, below the 160 MiB limit. All six fresh body observations passed. The driver visits keys 1–6, then LIVE/heartbeats, and fails a missing visit even with a positive memory sample; persistent hero labels cannot satisfy it. Final cold test: 1 passed in 71.07 s.
 
-Final seat suite and split full suites: pending. Python 3.11 compileall passed; final whole-branch review corrections are approved.
+Final exact seat suite passed: 1,817 passed, two skipped, one deselected, one existing pytest-asyncio warning in 658.51 seconds. The split full suites passed: MaxPane 12,640 passed, two skipped in 1,517.82 seconds; sybilkit 444 passed, one expected failure in 10.42 seconds. Python 3.11 compileall passed; final whole-branch review corrections are approved.
 
 ## Follow-ups and interpretation
 
-Follow-up57 preserves the open-ended gap after an unsuccessful empty cursor attach: synthetic fixture reproduces exit1 and no first available timestamp. That cannot distinguish lost history from attach failure; successful empty reads after a valid watermark are fixed separately by D10. No live host diagnosis was attempted.
+Follow-up 57 preserves the open-ended gap after an unsuccessful empty cursor attach: synthetic fixture reproduces exit 1 and no first available timestamp. That cannot distinguish lost history from attach failure; successful empty reads after a valid watermark are fixed separately by D10. No live host diagnosis was attempted.
 
-Launch/workflow association follows the explicit cache fields of spec8.2 and the captured changelog's use of link for the structured objects. Existing job explorer remains separately labelled; no launch/workflow URL was invented. Follow-ups 58 and 59 reserve the two unchanged shared redactor overmatches for round 10: all 64-hex prose and sk- inside ordinary words. Earlier unresolved follow-ups remain.
+Launch/workflow association follows the explicit cache fields of spec 8.2 and the captured changelog's use of link for the structured objects. Existing job explorer remains separately labelled; no launch/workflow URL was invented. Follow-ups 58 and 59 reserve the two unchanged shared redactor overmatches for round 10: all 64-hex prose and sk- inside ordinary words. Earlier unresolved follow-ups remain.
 
 ## Owner deployment steps
 
-Use the same final archive for seat 7 (imd-vps, Python 3.14, agent 51075) and seat 3 (imd-vps3, Python 3.12, agent 52082). On each: check ping for no armed drain and nothing in flight; stop active broker; run installer for that seat; confirm imd-dashd 0.1.5; rerun probe. Seat 3 worker drop-in and probe20 remain owner-controlled independent work. No live systems were contacted during implementation.
+Use the same final archive for seat 7 (imd-vps, Python 3.14, agent 51075) and seat 3 (imd-vps3, Python 3.12, agent 52082). On each: check ping for no armed drain and nothing in flight; stop active broker; run installer for that seat; confirm imd-dashd 0.1.5; rerun probe. Seat 3 worker drop-in and probe 20 remain owner-controlled independent work. No live systems were contacted during implementation.
 
 
 ## Complete CONTROL predecessor/successor inventory
@@ -167,7 +168,7 @@ All 37 original named scenarios remain in the dashboard-backed test file. Cursor
 
 ## Final whole-branch review and fix wave
 
-The required whole-branch review found one Critical and two Important issues after 84 focused checks: JOB collapsed running nodes sharing a job id; auto-update was never populated; CONTROL lacked audit input for its doctor timestamp. Permanent regressions first produced 7 failures and 2 passing unknown-state controls. The single fix wave addresses all three, plus the Minor schema-state spelling correction. The affected gate passed 412 checks; its one key-count test observed an unrelated periodic refresh. Isolating that test timer kept the exact five manual refreshes and no-plan assertions, then the full navigation file plus all 12 new finding cases passed 32 checks. The revised key test also failed under the original wrong-verb mutation (zero refreshes instead of five), then source bytes were restored. Finding-only re-review is approved; final suites are pending.
+The required whole-branch review found one Critical and two Important issues after 84 focused checks: JOB collapsed running nodes sharing a job id; auto-update was never populated; CONTROL lacked audit input for its doctor timestamp. Permanent regressions first produced 7 failures and 2 passing unknown-state controls. The single fix wave addresses all three, plus the Minor schema-state spelling correction. The affected gate passed 412 checks; its one key-count test observed an unrelated periodic refresh. Isolating that test timer kept the exact five manual refreshes and no-plan assertions, then the full navigation file plus all 12 new finding cases passed 32 checks. The revised key test also failed under the original wrong-verb mutation (zero refreshes instead of five), then source bytes were restored. Finding-only re-review and final suites are complete and green.
 
 - `tests/widgets/test_seat_round9_bodies.py::test_same_job_attempts_keep_identity_text_and_detail_while_stepping` covers separate attempt text and detail keys, standing-only node keys, partial cache, stepping and refresh selection.
 - `tests/data/test_seat_round9_defects.py::test_execstart_auto_update_reaches_document_fold_and_config` covers true, false, nonmatching flags and missing/empty ExecStart through the real document fold and CONFIG compositor.
@@ -180,3 +181,55 @@ The final finding-only re-review approved all three corrections: 13 targeted che
 The first exact serial seat run at 5f5b996 completed with 1,814 passed, two skipped, one deselected and two failures in 1,232.18 seconds. Both failures were the original round-4 long-journal-message cases. The generic sanitizer's default API cap had also cut their in-memory lifecycle fields. The targeted correction preserves that older journal boundary while retaining the common canary cleanup and all API cache/storage limits. The original tests remain unchanged; `test_journal_lifecycle_preserves_long_text_after_canary_cleanup` also failed before the correction. This verification-discovered compatibility fix is separate from the completed review's single fix wave; no second broad review was opened.
 
 The affected journal, ledger, cache, manager and detail checks passed: 219 tests in 12.86 seconds.
+
+## Final commands and outcomes
+
+These runs used the source at 9dc5271. One pytest process ran at a time; the full split suites each ran once.
+
+```sh
+env -u NO_COLOR HOME=$(mktemp -d) PYTHONDONTWRITEBYTECODE=1 .venv-pepepane/bin/python -m pytest -p no:cacheprovider -q -m 'not host' tests/broker tests/data/test_seat_*.py tests/analytics/test_seat_*.py tests/widgets/test_seat_*.py tests/screens/test_seat_*.py tests/test_seat_*.py tests/test_select_to_copy.py
+# 1817 passed, 2 skipped, 1 deselected, 1 warning in 658.51s
+
+env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile -m 'not host' tests
+# 12640 passed, 2 skipped, 1 warning in 1517.82s
+
+env -u NO_COLOR HOME=$(mktemp -d) PYTHONPATH=sybilkit/src .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile sybilkit/sybilkit_tests
+# 444 passed, 1 xfailed in 10.42s
+
+PYTHONPYCACHEPREFIX=$(mktemp -d) .venv-pepepane/bin/python -m compileall -q imd_dashd
+# exit 0, Python 3.11.15
+```
+
+The warning is the existing pytest-asyncio fixture-loop-scope deprecation. The two seat capture skips and sybilkit expected failure remain unchanged. The final seat and full MaxPane runs both include the 160 MiB cold-footprint assertion and all six actual dashboard visits.
+
+Each of the following files also ran separately after WP4, WP5 and WP6, with `env -u NO_COLOR HOME=$(mktemp -d) PYTHONDONTWRITEBYTECODE=1 .venv-pepepane/bin/python -m pytest -p no:cacheprovider -q -n 4 FILE`:
+
+| File | WP4 passed | WP5 passed | WP6 passed |
+|---|---:|---:|---:|
+| tests/screens/test_dashboard_screen.py | 27 | 27 | 27 |
+| tests/test_address_sweep_registry.py | 9 | 9 | 9 |
+| tests/screens/test_address_icons_everywhere.py | 45 | 46 | 46 |
+| tests/widgets/test_panels.py | 168 | 170 | 170 |
+| tests/widgets/test_title_blank_row.py | 69 | 69 | 69 |
+| tests/screens/test_refresh_guard.py | 6 | 6 | 6 |
+
+## Final archive evidence
+
+The normal build ran exactly once after the final code commit, using `PYTHON=.venv-pepepane/bin/python scripts/build_wheels.sh`, without an upgrade. The archive is renamed, without rebuilding, to `seat-deploy-<final MANIFEST commit>.tar.gz`. Its digest is unchanged by that rename:
+
+- Archive SHA256: `97967bf20edb6a0c43ebcf5777e1800d775b35beaba649cafe4bc80130f140c9`.
+- Archive size: 9,780,713 bytes; all 46 archived files matched the checkout byte-for-byte.
+- Manifest: 23 entries, each verified against both the checkout and archive.
+- Fork wheel: `maxpane-0.9.3-py3-none-any.whl`, SHA256 `e3a464da6914ccc07d14e78b0e090da7dddc74f8ef41b64fb2362c5d59af65cc`; all 351 packaged Python source files matched the checkout, and the removed CONTROL popup module was absent.
+- Third-party lock: reproduced unchanged; seed SHA256 `fe41bd5ff56bd07e7a20b9cb06582cedb51228f1ea3e1d372ff9a05bbe7ca94a`. Only the fork wheel hash changed.
+- Staged set: 22 wheels, 21 locked requirements. The in-script wheel-hash and dual-ABI guards passed.
+
+| Wheel tag | Staged wheels |
+|---|---|
+| cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64 | pydantic_core 2.46.5 |
+| cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64 | pydantic_core 2.46.5 |
+| py3-none-any | annotated_types 0.8.0; anyio 4.15.1; certifi 2026.7.22; h11 0.16.0; httpcore 1.0.9; httpx 0.28.1; idna 3.20; linkify_it_py 2.2.0; markdown_it_py 4.2.0; maxpane 0.9.3; mdit_py_plugins 0.6.1; mdurl 0.1.2; platformdirs 4.12.1; pydantic 2.13.5; pygments 2.21.0; rich 15.0.0; sybilkit 0.1.1; textual 8.2.8; typing_extensions 4.16.0; typing_inspection 0.4.4 |
+
+The branch stays as-is on `pepepane`. No push, tag, branch operation, host install, live probe or control-plane request was performed. Broker changes are limited to Claude summaries, three version strings, p09 source-reason printing and packaging hashes. Protected paths and redactor copies are unchanged. LOCAL_BROKER_VERSION remains 0.1.0.
+
+Post-build validation passed six targeted lock/manifest/interpreter guards in 0.29 seconds. Third-party lock bytes, including whitespace, exactly match the saved seed. The final packaging commit contains only this report, the fork-wheel lock hash and its matching MANIFEST entries; it is the final commit in the round-9 range beginning after f4de533.
