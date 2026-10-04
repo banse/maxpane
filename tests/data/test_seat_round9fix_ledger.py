@@ -1,4 +1,8 @@
 """Round 9 fix packages 2/6/11: real SQLite, captured jobs, compositor."""
+import subprocess
+import sys
+import types
+
 import pytest
 
 from maxpane_dashboard.analytics.seat_records import node_rows, record_window
@@ -258,3 +262,148 @@ def test_missed_stored_fallback_failed_is_mergeable_and_real_stored_can_arrive_l
     stored(l)
     assert l.rows()[0]['storedUtc'] == '2026-10-03T12:00:00.100Z'
     l.close()
+
+
+def test_late_known_stored_never_claims_newer_attempt(tmp_path):
+    l = ledger(tmp_path)
+    old_key = local_closed(l)
+    l.attach_work([work()], as_of_utc=AS_OF)
+    l.ingest([classify(s) for s in [
+        '2026-10-03T12:01:00.000Z accepted implement 87654321 — artifacts/answer.json (max 60 turns)',
+        '2026-10-03T12:02:00.000Z submitted implement for 87654321',
+        '2026-10-03T12:02:00.100Z submission stored (aaaaaaaaaaaa) — awaiting verdict',
+    ]])
+    new_key = next(r['key'] for r in l.rows() if r['key'] != old_key)
+    l.attach_work([work()], as_of_utc=AS_OF)
+    rows = {r['key']: r for r in l.record_rows()}
+    assert l.today('2026-10-03')['accepted'] == 1
+    assert rows[new_key]['hash12'] is None and rows[new_key]['storedUtc'] is None
+    assert rows[new_key]['outcome'] is None
+    assert rows[old_key]['hash12'] == 'aaaaaaaaaaaa'
+    assert rows[old_key]['storedUtc'] == '2026-10-03T12:02:00.100Z'
+    l.close()
+
+
+@pytest.mark.parametrize('reopen', [False, True])
+def test_gap_merge_unknown_preserves_local_verdict_on_every_read(tmp_path, reopen):
+    l = ledger(tmp_path)
+    key = local_closed(l)
+    l._conn.execute("UPDATE tasks SET outcome='failed',source_outcome='job node state', "
+                    "failure_reason='timeout',failure_class='runtime',source_reason='job node state', "
+                    "outcome_as_of_utc='2026-10-03T12:00:30Z',job_state='running' WHERE key=?", (key,))
+    l._conn.commit()
+    for i in range(3):
+        if reopen and i:
+            l.close()
+            l = ledger(tmp_path)
+        l.attach_work([dict(work(), status='unknown')], as_of_utc=AS_OF)
+        row = l.record_rows()[0]
+        assert l.today('2026-10-03')['failed'] == 1
+        assert row['outcome'] == 'failed' and row['source']['outcome'] == 'job node state'
+        assert row['outcomeAsOfUtc'] == '2026-10-03T12:00:30Z'
+        assert row['workStatus'] is None and row['jobState'] == 'running'
+        assert row['failureReason'] == 'timeout' and row['failureClass'] == 'runtime'
+        assert row['source']['reason'] == 'job node state'
+    # A real API verdict still wins and clears the merged failure group.
+    l.attach_work([work()], as_of_utc=AS_OF)
+    row = l.record_rows()[0]
+    assert l.today('2026-10-03')['failed'] == 0 and l.today('2026-10-03')['accepted'] == 1
+    assert row['outcome'] == 'accepted' and row['jobState'] == 'completed'
+    assert row['source']['outcome'] == 'api'
+    assert row['failureReason'] is None and row['failureClass'] is None and row['source']['reason'] is None
+    l.close()
+
+
+@pytest.mark.parametrize('actual_stored', [False, True])
+def test_gap_merge_keeps_local_objective_on_every_read(tmp_path, actual_stored):
+    l = ledger(tmp_path)
+    key = local_closed(l)
+    l._conn.execute("UPDATE tasks SET objective='local objective',node_key='research_report' WHERE key=?", (key,))
+    l._conn.commit()
+    for i in range(3):
+        if i == 1:
+            if actual_stored:
+                stored(l)
+            l.close()
+            l = ledger(tmp_path)
+        l.attach_work([work()], as_of_utc=AS_OF)
+        row = l.record_rows()[0]
+        assert row['objective'] == 'local objective'
+        assert row['nodeKey'] == 'research_report' and row['source']['row'] == 'local'
+        assert len(l.rows()) == 1
+    l.close()
+
+
+def test_unmerged_local_row_retains_ordinary_seat_work_authority(tmp_path):
+    l = ledger(tmp_path)
+    key = local_closed(l)
+    stored(l)  # work joins by the journal hash directly, without an API-row merge
+    l._conn.execute("UPDATE tasks SET outcome='failed',source_outcome='job node state',objective='local objective' WHERE key=?", (key,))
+    l._conn.commit()
+    l.attach_work([dict(work(), status='unknown')], as_of_utc=AS_OF)
+    row = l.record_rows()[0]
+    assert row['outcome'] == 'unknown' and row['source']['outcome'] == 'api'
+    assert row['objective'] == 'short sentence'
+    l.attach_work([work()], as_of_utc=AS_OF)
+    assert l.rows()[0]['outcome'] == 'accepted'
+    l.close()
+
+
+@pytest.mark.parametrize('invalid', ['ambiguous_hash', 'before_submission'])
+def test_late_known_stored_requires_unique_hash_and_valid_time(tmp_path, invalid):
+    l = ledger(tmp_path)
+    key = local_closed(l)
+    l.attach_work([work()], as_of_utc=AS_OF)
+    if invalid == 'ambiguous_hash':
+        l._conn.execute("INSERT INTO tasks(key,seat,node8,accepted_utc,submitted_utc,hash12,source_row) "
+                        "VALUES ('second',3,'87654321','2026-10-03T11:59:30Z','2026-10-03T12:00:00Z','aaaaaaaaaaaa','local')")
+        l._conn.commit()
+        stamp = '2026-10-03T12:00:00.100Z'
+    else:
+        stamp = '2026-10-03T11:59:59Z'
+    l.ingest([classify(stamp + ' submission stored (aaaaaaaaaaaa) — awaiting verdict')])
+    assert all(r['storedUtc'] is None for r in l.rows())
+    assert next(r for r in l.rows() if r['key'] == key)['outcome'] == 'accepted'
+    l.close()
+
+
+def test_stored_api_merge_keeps_groups_on_repeated_work_reads(tmp_path):
+    l = ledger(tmp_path)
+    key = local_closed(l)
+    l._conn.execute("UPDATE tasks SET outcome='failed',source_outcome='job node state', "
+                    "failure_reason='timeout',source_reason='job node state',objective='local objective' WHERE key=?", (key,))
+    l._conn.commit()
+    l.seed_api_rows([dict(work(), status='unknown')], seat=3)
+    stored(l)
+    for _ in range(2):
+        l.attach_work([dict(work(), status='unknown')], as_of_utc=AS_OF)
+        row = l.record_rows()[0]
+        assert row['outcome'] == 'failed' and row['failureReason'] == 'timeout'
+        assert row['objective'] == 'local objective'
+    l.close()
+
+
+def test_merged_ledger_remains_readable_by_previous_ledger(tmp_path):
+    source = subprocess.check_output(['git', 'show', '757455b:maxpane_dashboard/data/seat_ledger.py'], text=True)
+    old = types.ModuleType('seat_ledger_pre_review_fix')
+    sys.modules[old.__name__] = old
+    try:
+        exec(compile(source, '757455b/seat_ledger.py', 'exec'), old.__dict__)
+        before = old.SeatLedger(tmp_path / 'ledger.sqlite', seat=3)
+        local_closed(before)
+        before.close()
+        l = ledger(tmp_path)
+        l.attach_work([work()], as_of_utc=AS_OF)
+        l.close()
+        previous = old.SeatLedger(tmp_path / 'ledger.sqlite', seat=3)
+        rows = previous.record_rows()
+        assert len(rows) == 1 and rows[0]['outcome'] == 'accepted'
+        assert rows[0]['source']['row'] == 'local'
+        assert previous.meta_get('schema_version') == 1
+        previous.close()
+        l = ledger(tmp_path)
+        l.attach_work([work()], as_of_utc=AS_OF)
+        assert len(l.record_rows()) == 1 and l.record_rows()[0]['outcome'] == 'accepted'
+        l.close()
+    finally:
+        sys.modules.pop(old.__name__, None)

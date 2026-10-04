@@ -210,7 +210,7 @@ class SeatLedger:
         columns = {r[1] for r in self._conn.execute("PRAGMA table_info(tasks)")}
         with self._conn:
             for name, sql_type in (("job_state", "TEXT"), ("launch_json", "TEXT"), ("submission_hash", "TEXT"),
-                                   ("work_status", "TEXT"), ("text_expired", "INTEGER")):
+                                   ("work_status", "TEXT"), ("text_expired", "INTEGER"), ("api_merged", "INTEGER")):
                 if name not in columns:
                     self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {sql_type}")
         self._load_state()
@@ -467,15 +467,24 @@ class SeatLedger:
 
     def _stored(self, cur: sqlite3.Cursor, line: LogLine) -> bool:
         hash12 = line.fields.get("hash12")
-        already = cur.execute("SELECT * FROM tasks WHERE hash12 = ? AND seat IS ?", (hash12, self._seat)).fetchone()
+        matches = cur.execute("SELECT * FROM tasks WHERE hash12 = ? AND seat IS ?", (hash12, self._seat)).fetchall()
+        if len(matches) > 1:
+            return False  # a stored prefix cannot distinguish colliding attempts
+        already = matches[0] if matches else None
         if already is not None and already["source_row"] == "local" and already["stored_utc"] is not None:
             return False  # replay
-        row = cur.execute(
-            "SELECT * FROM tasks WHERE seat IS ? AND source_row = 'local' AND submitted_utc IS NOT NULL "
-            "AND stored_utc IS NULL AND COALESCE(lease_closed, 0) = 0 AND submitted_utc <= ? AND submitted_utc >= ? "
-            "ORDER BY submitted_utc DESC LIMIT 1",
-            (self._seat, line.ts, self._state.last_accept_ts or ""),
-        ).fetchone()
+        if already is not None and already["source_row"] == 'local':
+            submitted, stored = parse_ts(already["submitted_utc"] or ''), parse_ts(line.ts)
+            if submitted is None or stored is None or stored < submitted:
+                return False
+            row = already  # the known hash identifies a late event even after another accept
+        else:
+            row = cur.execute(
+                "SELECT * FROM tasks WHERE seat IS ? AND source_row = 'local' AND submitted_utc IS NOT NULL "
+                "AND stored_utc IS NULL AND COALESCE(lease_closed, 0) = 0 AND submitted_utc <= ? AND submitted_utc >= ? "
+                "ORDER BY submitted_utc DESC LIMIT 1",
+                (self._seat, line.ts, self._state.last_accept_ts or ""),
+            ).fetchone()
         if row is None:
             return False  # a stored line after the next accept never resurrects an older row (spec §5.1 ledger rules)
         cur.execute(
@@ -483,11 +492,12 @@ class SeatLedger:
             (line.ts, hash12, _iso(self._now()), row["key"]),
         )
         if already is not None and already["source_row"] == 'api':
-            self._merge_api_row(cur, row, already)
+            self._merge_api_overlay(cur, row, already)
+            cur.execute("DELETE FROM tasks WHERE key = ?", (already["key"],))
         return True
 
     @staticmethod
-    def _merge_api_row(cur: sqlite3.Cursor, local: sqlite3.Row, api: sqlite3.Row) -> None:
+    def _merge_api_overlay(cur: sqlite3.Cursor, local: sqlite3.Row, api: sqlite3.Row | dict) -> None:
         """Merge the API overlay in fact groups; keep local lifecycle and session identity."""
         outcome_columns = ("outcome", "outcome_as_of_utc", "accepted_at_api", "verdict_lag_s",
                            "source_outcome", "work_status", "job_state")
@@ -502,9 +512,9 @@ class SeatLedger:
             values[column] = local[column] if local[column] is not None else api[column]
         for column in ("job_id", "role", "launch_json", "submission_hash", "text_expired"):
             values[column] = api[column] if api[column] is not None else local[column]
+        values['api_merged'] = 1  # keep this merge policy across work refreshes and ledger reopens
         cur.execute("UPDATE tasks SET " + ", ".join(f"{c} = ?" for c in values) + " WHERE key = ?",
                     (*values.values(), local["key"]))
-        cur.execute("DELETE FROM tasks WHERE key = ?", (api["key"],))
 
 
     def _cancelled(self, cur: sqlite3.Cursor, line: LogLine) -> None:
@@ -710,17 +720,17 @@ class SeatLedger:
                     continue
                 hash12 = full_hash[:12]
                 candidates = self._conn.execute(
-                    "SELECT key, stored_utc FROM tasks WHERE hash12 = ? AND seat IS ? AND (submission_hash IS NULL OR submission_hash = ?)", (hash12, self._seat, full_hash)
+                    "SELECT * FROM tasks WHERE hash12 = ? AND seat IS ? AND (submission_hash IS NULL OR submission_hash = ?)", (hash12, self._seat, full_hash)
                 ).fetchall()
                 if not candidates:
                     self.seed_api_rows([item], seat=self._seat)
-                    candidates = self._conn.execute("SELECT key, stored_utc FROM tasks WHERE hash12 = ? AND seat IS ?",
+                    candidates = self._conn.execute("SELECT * FROM tasks WHERE hash12 = ? AND seat IS ?",
                                                     (hash12, self._seat)).fetchall()
                 if not candidates:
                     continue
                 if self._reconcile_missed_stored(item, work):
                     candidates = self._conn.execute(
-                        "SELECT key, stored_utc FROM tasks WHERE hash12 = ? AND seat IS ? "
+                        "SELECT * FROM tasks WHERE hash12 = ? AND seat IS ? "
                         "AND (submission_hash IS NULL OR submission_hash = ?)", (hash12, self._seat, full_hash)
                     ).fetchall()
                 submitted_epoch = _parse_api_timestamp(item.get("submittedAt"))
@@ -741,6 +751,23 @@ class SeatLedger:
                     verdict_epoch = _parse_api_timestamp(accepted_at_api)
                     if stored_epoch is not None and verdict_epoch is not None:
                         lag = int(verdict_epoch - stored_epoch)
+                if target['api_merged']:
+                    overlay = {
+                        'outcome': outcome, 'outcome_as_of_utc': as_of_utc, 'accepted_at_api': accepted_at_api,
+                        'verdict_lag_s': lag, 'source_outcome': 'api', 'work_status': outcome,
+                        'job_state': item.get('jobState') if isinstance(item.get('jobState'), str) else None,
+                        'failure_reason': None, 'failure_class': None, 'source_reason': None,
+                        'job_id': item.get('jobId') if isinstance(item.get('jobId'), str) else None,
+                        'role': item.get('role') if isinstance(item.get('role'), str) else None,
+                        'node_key': item.get('nodeKey') if isinstance(item.get('nodeKey'), str) else None,
+                        'objective': redact_agent_sentence(item.get('objective')) if isinstance(item.get('objective'), str) else None,
+                        'launch_json': _dumps(self._launch(item.get('launch'))),
+                        'submission_hash': full_hash, 'text_expired': target['text_expired'],
+                    }
+                    self._merge_api_overlay(self._conn.cursor(), target, overlay)
+                    self._conn.execute('UPDATE tasks SET updated_utc=? WHERE key=?', (_iso(self._now()), target['key']))
+                    joined += 1
+                    continue
                 self._conn.execute(
                     "UPDATE tasks SET outcome = ?, outcome_as_of_utc = ?, accepted_at_api = ?, verdict_lag_s = ?, "
                     "job_id = COALESCE(?, job_id), node_key = COALESCE(?, node_key), objective = COALESCE(?, objective), "
@@ -778,7 +805,8 @@ class SeatLedger:
         hashes.update(r["submission_hash"] for r in plane)
         if len(hashes) != 1 or len(plane) != 1:
             return False
-        self._merge_api_row(self._conn.cursor(), local[0], plane[0])
+        self._merge_api_overlay(self._conn.cursor(), local[0], plane[0])
+        self._conn.execute("DELETE FROM tasks WHERE key=?", (plane[0]["key"],))
         self._conn.execute("UPDATE tasks SET hash12=? WHERE key=?", (item["submissionHash"][:12], local[0]["key"]))
         return True
 

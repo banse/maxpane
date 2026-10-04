@@ -66,7 +66,7 @@ class TestSchema:
         assert {"tasks", "sessions", "days", "meta"} <= names
         task_cols = [r[1] for r in ledger._conn.execute("PRAGMA table_info(tasks)")]
         assert task_cols[:8] == ["key", "seat", "node8", "node_id", "job_id", "role", "kind", "accepted_utc"]
-        assert task_cols[53] == "updated_utc" and task_cols[54:] == ["job_state", "launch_json", "submission_hash", "work_status", "text_expired"]
+        assert task_cols[53] == "updated_utc" and task_cols[54:] == ["job_state", "launch_json", "submission_hash", "work_status", "text_expired", "api_merged"]
         assert [r[1] for r in ledger._conn.execute("PRAGMA table_info(days)")][:3] == ["day_utc", "tasks", "stored"]
         indexes = {r[0] for r in ledger._conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
         assert {"tasks_accepted", "tasks_hash12", "tasks_job"} <= indexes
