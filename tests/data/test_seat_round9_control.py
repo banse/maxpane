@@ -69,6 +69,7 @@ async def test_fast_control_reads_twenty_audit_lines_independent_of_slow_journal
         await m.fetch_and_compute(); await m.settle()
         for item in ('plan','apply','verify'):
             phase[0]=item; clock.advance(5)
+            m.update_control_flow({'mode': {'plan':'planned','apply':'applying','verify':'done'}[item], 'plan': {'planId':'7f3a'}})
             await m.fetch_and_compute(); await m.settle()
             flat=await m.fetch_and_compute()
             assert len(flat['seat_control_last_audit'])==20

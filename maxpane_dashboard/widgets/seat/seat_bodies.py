@@ -127,12 +127,12 @@ class SeatGate(PanelBase):
 
     def update_data(self, seat_control_gate=None, seat_control_drain=None, seat_sources=None, seat_as_of_hhmm=None, **_kwargs):
         gate = seat_control_gate or {}
-        stamp = (seat_as_of_hhmm or {}).get('broker')
+        stamp = as_of_hhmm(gate.get('asOfUtc'))
         self.write('.panel-title', Text('GATE' + (f' · as of {stamp}' if stamp else '')))
         word = lambda key: _word(gate.get(key)) if gate.get(key) is not None else DASH
         self.write('#seat-gate-content', Text('\n'.join([
             f'idle beats: {word("idleBeats")} of {word("idleBeatsRequired")}',
-            f'plane: {word("planeMode")} · running {word("planeRunning")}',
+            f'plane: {word("planeMode")}' + (' · plane busy' if gate.get('planeReason') == 'busy' else '') + f' · running {word("planeRunning")}',
             f'last line: {word("lastLifecycleLine")}', f'outbox files: {word("outboxFiles")}',
             f'unit active: {word("unitActive")}',
         ])))

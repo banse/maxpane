@@ -1419,3 +1419,38 @@ The unchanged boundary sweeps keep SEAT at 131 columns by 40 rows and LIVE at 13
 ### 2026-10-04 — PEPEPANE round 9 fix review: unknown-job time evidence
 
 Task review I1 found that the single-row fallback could label a local row even when both its job id and usable accepted time were absent. Unknown-job rows require a valid start within the approved window; neither a singleton nor a known node name substitutes for that time evidence. The fallback without timestamps remains available for an otherwise unambiguous known-job pair. A focused regression pins the distinction.
+
+### 2026-10-04 — PEPEPANE round 9 fix: gate timestamp contract
+
+The `seat_control_gate` block gains nullable `asOfUtc` and `planeReason` fields. The first records the gate's own successful read, independent of the broker source timestamp updated by ping and audit. The second explains why the gate used local-only evaluation during a busy pause. The fold copies those fields explicitly before the GATE widget consumes them. The existing control tier remains due each cycle for ping and audit; the gate's cadence is a separate deadline within it.
+
+### 2026-10-04 — PEPEPANE round 9 fix: definite auto-update observations
+
+CONFIG reports on only when an ExecStart command whose own binary is imd contains the exact auto-update flag token. A readable command with no occurrence of auto-update reports off. Alternate spellings, wrappers containing the word, and other ambiguous forms remain unavailable. This interpretation uses already-read unit facts and executes no command.
+
+Changed round-9 assertion: `tests/data/test_seat_round9_defects.py::test_execstart_auto_update_reaches_document_fold_and_config` changes the combined `--no-auto-update --auto-update-extra` case from false to null. Neither spelling proves that automatic updates are disabled. The table also covers equals forms and quoted or unquoted wrapper arguments through the real document fold and CONFIG compositor.
+
+The independent gate cache changes healthy control landings that omit a gate read. It retains stored facts and their successful-read timestamp after a failure, while the existing broker-source failure rule still controls whether those facts may be displayed. No broker failure is relabelled healthy to keep a stale preview visible.
+
+### 2026-10-04 — PEPEPANE round 9 fix: assertions aligned with elapsed time
+
+These existing tests keep their result assertions while changing the clock or flow setup needed to make the asserted read eligible:
+
+| Existing test | Change and reason |
+|---|---|
+| `tests/data/test_seat_round9_control.py::test_fast_control_reads_twenty_audit_lines_independent_of_slow_journal` | Publishes the actual planned, applying and done modes before asserting changed gate facts. Ordinary five-second refreshes now update ping/audit without requiring a new gate read. |
+| `tests/data/test_seat_manager.py::test_tier_constants_are_the_contract_values` | Adds the explicit 60/15/5 gate cadence assertion. The existing tier tuple and TTL assertions remain unchanged, including the per-cycle control tier. |
+| `tests/data/test_seat_round9_cache.py::test_selected_records_window_and_nodes_only_missing_newest400` | Advances five seconds before the unfiltered RECORDS and NODES read assertions so each receives a fresh API interval. |
+| `tests/data/test_seat_round9_cache.py::test_three_running_jobs_get_immediate_standing_question_then_full_cache` | Advances five seconds before the second detail batch. |
+| `tests/data/test_seat_round9_cache.py::test_oracle_third_route_shares_budget_and_cached_fields_reach_job` | Advances five seconds before the third route can consume the next detail budget. |
+| `tests/data/test_seat_round9_cache.py::test_busy_class_floor_does_not_spend_budget_or_count_skipped_failures` | Observes pre-deadline state at 56 or 116 seconds, then advances four seconds to the same original 60/180-second deadlines. A one-second gap after an API tier spawn is no longer an eligible cycle. |
+| `tests/data/test_seat_round9_cache.py::test_submissions_wait60_after_stored_and_failures_backoff` | Uses the same 56/116 plus four-second split; the submission wait and retry deadlines stay unchanged. |
+| `tests/data/test_seat_round9_cache.py::test_busy_success_restores_nonterminal_detail_cadence` | Observes at 116 seconds and advances four seconds to the original 120-second read. |
+| `tests/data/test_seat_manager.py::test_failure_reasons_share_two_read_budget_with_job_details` | Advances five seconds before asserting the second two-read batch. |
+| `tests/data/test_seat_manager.py::test_fixture_host_healthy_case_is_green_and_fully_populated` | Shared `_run_case` injects a fixture clock and advances five seconds between cycles; expected facts are unchanged. |
+| `tests/data/test_seat_manager.py::test_fixture_host_tail_dead_case_is_red_with_local_panels_stale` | Receives the same elapsed fixture clock through `_run_case`; existing stale/error assertions remain. |
+| `tests/data/test_seat_manager.py::test_fixture_host_api_down_case_keeps_local_panels` | Receives the same elapsed fixture clock, allowing the expected failure attempts to occur instead of being suppressed by the API interval. |
+
+`test_fast_control_phase_facts_reach_gate_audit_and_hero_in_one_panel_refresh` remains byte-for-byte unchanged. The gate block is emitted in the frozen key order, preserving the existing key-order assertion.
+
+The same fake-clock measurement over twelve refreshes at seconds zero through fifty-five changed gate reads from twelve in every scenario to one on LIVE, four on CONTROL, twelve during a verifying flow, and one during a busy pause. That busy read permits no standing fetch, and the broker object remains online. CONTROL boundary sweeps retain 131 columns by 29 rows.

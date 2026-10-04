@@ -393,7 +393,15 @@ async def test_d1_digit_string_route_and_submission_agent_identity():
 @pytest.mark.parametrize('exec_start, expected', [
     ('{ path=/opt/imd-worker/bin/imd ; argv[]=/opt/imd-worker/bin/imd start --runtime claude --auto-update ; }', True),
     ('{ path=/opt/imd-worker/bin/imd ; argv[]=/opt/imd-worker/bin/imd start --runtime claude ; }', False),
-    ('/opt/imd-worker/bin/imd start --no-auto-update --auto-update-extra', False),
+    ('/opt/imd-worker/bin/imd start --no-auto-update --auto-update-extra', None),
+    ('/opt/imd-worker/bin/imd start --auto-update=true', None),
+    ('sh -c \"exec imd start --auto-update\"', None),
+    ('sh -c exec imd start --auto-update', None),
+    ('{ path=/bin/sh ; argv[]=sh -c exec imd start --auto-update ; }', None),
+    ('{ path=/bin/sh ; argv[]=sh -c --auto-update ; } { path=/opt/imd ; argv[]=imd start ; }', None),
+    ('/opt/worker start --auto-update', None),
+    ('imd start --auto-update', True),
+    ('imd start', False),
     (None, None),
     ('', None),
 ])

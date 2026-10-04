@@ -5,8 +5,9 @@
         1. drain(): queue -> ledger.ingest -> ring -> detector state (event bumps)
         2. inline reads: systemd/fixture unit + host (docker: the `unit` tier, 30 s)
         3. detached tiers (asyncio.ensure_future, one in flight per tier, last-good behind its own asOfUtc):
-           broker_status 600 s · workstat 300 s (+ gate/ping/audit-tail) · sessions 120 s · standing 60 s ·
-           seatwork 120/300 s · details (<= 2 reads/refresh, persisted deadlines) · plane 300 s   [--offline removes the last four]
+           control every cycle (ping/audit-tail; gate own 60/15/poll s deadline) · broker_status 600 s ·
+           workstat 300 s · sessions 120 s · standing 60 s ·
+           seatwork 120/300 s · details (<= 2 reads/poll window, persisted deadlines) · plane 300 s   [--offline removes the last four]
         4. build the v2 document -> redact -> validate -> fold -> the flat SEAT_KEYS dict
 
 ``fetch_and_compute()`` never raises and never starts the tail.  ``BrokerProtocol.read`` is a blocking
@@ -55,21 +56,24 @@ Clock = Callable[[], float]
 # -- tier cadences (spec §4.3; contract §B) ------------------------------------
 TIER_UNIT_S = 30                #: Mac docker inspect/stats
 TIER_BROKER_STATUS_S = 600      #: seat, status, skills, tools, hints-stat, auth-mtime; whoami once per session
-TIER_WORKSTAT_S = 300           #: work-stat, outbox and orphans; control reads run every cycle
+TIER_WORKSTAT_S = 300           #: work-stat, outbox and orphans; ping/audit-tail run every cycle
+GATE_DEFAULT_S = 60             #: gate deadline inside control, independent of ping/audit landing
+GATE_CONTROL_S = 15             #: selected CONTROL; active flow uses poll_interval instead
+EVENT_BUMP_GATE_S = 5           #: accepted/submitted/stored and local failure/cancel
 TIER_JOURNAL_S = 300          #: round 9 §9 D4: journal facts are slow reads, independent of workstat event bumps
 TIER_SESSIONS_S = 120           #: +EVENT_BUMP_SESSIONS_S after each `submitted`
 TIER_STANDING_S = 60            #: +EVENT_BUMP_STANDING_S after each `submitted`; 15 s while a control plan is open
 TIER_STANDING_PLAN_OPEN_S = 15
 TIER_SEATWORK_S = 120           #: +EVENT_BUMP_SEATWORK_S after each `stored`
 TIER_SEATWORK_SETTLED_S = 300   #: once every open row has a verdict
-TIER_DETAILS_S = 0              #: offer once per refresh; persisted per-result deadlines do the scheduling.
-DETAIL_READS_PER_CYCLE = 2       #: round 9 §8.1: job + submissions + oracle share one budget.
+TIER_DETAILS_S = 0              #: offer per poll window; persisted per-result deadlines do the scheduling.
+DETAIL_READS_PER_CYCLE = 2       #: round 9 §8.1: job + submissions + oracle share one poll-window budget.
 DETAIL_STORED_DELAY_S = 60       #: allow a stored submission/oracle result about a minute to become visible.
 TIER_PLANE_S = 300              #: /services + /health
 EVENT_BUMP_SESSIONS_S = 20
 EVENT_BUMP_STANDING_S = 30
 EVENT_BUMP_SEATWORK_S = 60
-EVENT_BUMP_WORKSTAT_S = 5       #: (invented) gate preview + outbox after every lifecycle line (deviation 8)
+EVENT_BUMP_WORKSTAT_S = 5       #: outbox/workstat after accepted/submitted/stored (deviation 8)
 TIER_RETRY_S = 60               #: (invented) a failed tier is offered again after min(TTL, 60 s), never at once
 DOCKER_TIMEOUT_S = 25           #: every docker subprocess.run(timeout=25) (§4.2, §5.5, §12.2) -- consumed by seat_broker_client
 DOCKER_BREAKER_S = 300          #: 5-min breaker per verb after any timeout (§4.2)
@@ -331,6 +335,10 @@ class SeatManager:
         self._record_limit = 40
         self._records_open_only = True
         self._restart_required = self._ledger.meta_get("restart_required") is True
+        self._gate_due_at = 0.0
+        self._gate_last_read_at: float | None = None
+        self._gate_last_good: dict | None = None
+        self._api_spawn_at: float | None = None
         self._journal_due_at = 0.0
         self._journal_facts: dict = {"journal": None, "reason": "journal not read"}
         self._refusal: models.Refusal | None = None
@@ -355,8 +363,27 @@ class SeatManager:
 
     def update_control_flow(self, display: dict) -> None:
         """Accept only the explicit transient flow projection; panels still use the fold."""
+        previous = self._control_display
         self._control_display = {key: display.get(key) for key in ("plan", "status", "statusParts", "mode")}
+        def phase(value):
+            plan = value.get("plan") or {}
+            return value.get("mode"), plan.get("planId")
+        if phase(previous) != phase(self._control_display):
+            self._gate_due_at = 0.0
+        elif self._control_display.get("mode") in ("planned", "applying", "verifying") and self._gate_last_read_at is not None:
+            self._gate_due_at = min(self._gate_due_at, self._gate_last_read_at + max(1, self._poll_interval))
         self._due_at["control"] = 0.0
+
+    def gate_refused(self, code: str) -> None:
+        """A fresh plan/apply gate refusal invalidates the display preview immediately."""
+        if code in ("gate_blocked", "force_node8_mismatch"):
+            self._gate_due_at = 0.0
+            self._due_at["control"] = 0.0
+
+    def _gate_interval(self) -> float:
+        if self._control_display.get("mode") in ("planned", "applying", "verifying"):
+            return float(max(1, self._poll_interval))
+        return float(GATE_CONTROL_S if self._selected_dashboard == "CONTROL" else GATE_DEFAULT_S)
 
     def set_restart_required(self, flag: bool) -> None:
         """Set after a verified skills toggle; cleared at the next restart boundary."""
@@ -488,10 +515,15 @@ class SeatManager:
         self._spawn("sessions", self._tier_sessions, now)
         if self._offline or self._api is None or self._seat is None:
             return                                   # --offline removes STANDING, SEATWORK, DETAILS, PLANE (spec §4.3)
-        self._spawn("standing", self._tier_standing, now)
-        self._spawn("seatwork", self._tier_seatwork, now)
-        self._spawn("details", self._tier_details, now)
-        self._spawn("plane", self._tier_plane, now)
+        # All API triggers share a clock window, including manual and flow refreshes.
+        if self._api_spawn_at is not None and now - self._api_spawn_at < self._poll_interval - 1:
+            return
+        spawned = False
+        for tier, factory in (("standing", self._tier_standing), ("seatwork", self._tier_seatwork),
+                              ("details", self._tier_details), ("plane", self._tier_plane)):
+            spawned = self._spawn(tier, factory, now) or spawned
+        if spawned:
+            self._api_spawn_at = now
 
 
 
@@ -511,13 +543,13 @@ class SeatManager:
         delay = self._ttl(tier) if ok else min(self._ttl(tier), float(TIER_RETRY_S))
         self._due_at[tier] = float(now) + delay
 
-    def _spawn(self, tier: str, factory: Callable[[], Any], now: float) -> None:
+    def _spawn(self, tier: str, factory: Callable[[], Any], now: float) -> bool:
         """Detached tier task: one in flight per tier; nobody awaits it, so its exceptions are caught here."""
         running = self._in_flight.get(tier)
         if running is not None and not running.done():
-            return
+            return False
         if not self.due(tier, now):
-            return
+            return False
 
         async def run() -> None:
             try:
@@ -540,6 +572,7 @@ class SeatManager:
                 logger.warning("PEPEPANE tier %s failed: %s", tier, exc)
 
         self._in_flight[tier] = asyncio.ensure_future(run())
+        return True
 
 
     def _land(self, source: str, payload: Any, ts: float) -> None:
@@ -719,6 +752,8 @@ class SeatManager:
     def _apply_bumps(self, events: Sequence[str]) -> None:
         """Event-driven re-reads (spec §4.3): the API and the summariser lag the daemon by a known amount."""
         for event in events:
+            if event in ("accepted", "submitted", "stored", "local_fail", "cancelled"):
+                self._gate_due_at = min(self._gate_due_at, float(self._clock()) + EVENT_BUMP_GATE_S)
             if event == "submitted":
                 self.bump("sessions", EVENT_BUMP_SESSIONS_S)
                 self.bump("standing", EVENT_BUMP_STANDING_S)
@@ -1020,11 +1055,25 @@ class SeatManager:
         if not reachable:
             self._fail("broker", "broker unreachable", now)
             return
-        control: dict[str, Any] = {"reachable": True, "ping": None, "gate": None, "audit": []}
+        control: dict[str, Any] = {"reachable": True, "ping": None, "gate": self._gate_last_good, "audit": []}
         problems: list[str] = []
-        for verb, args, key in (("ping", None, "ping"), ("gate", {"offline": self._offline}, "gate"), ("audit-tail", {"n": 20}, "audit")):
+        reads = [("ping", None, "ping"), ("audit-tail", {"n": 20}, "audit")]
+        if now >= self._gate_due_at:
+            # Consume before await: a phase/event arriving in flight keeps its newer deadline.
+            self._gate_last_read_at = now
+            self._gate_due_at = now + self._gate_interval()
+            reads.insert(1, ("gate", None, "gate"))
+        for verb, args, key in reads:
             try:
+                if key == "gate":
+                    busy = self._api is not None and self._api.pause_until("seat") > float(self._clock())
+                    args = {"offline": self._offline or busy}
                 data = await self._broker_read(verb, args)
+                if key == "gate":
+                    if not isinstance(data, Mapping):
+                        raise ValueError("gate response unavailable")
+                    data = {**data, "asOfUtc": sig.iso_z(float(self._clock())), "planeReason": "busy" if busy else None}
+                    self._gate_last_good = data
                 control[key] = data.get("lines") if key == "audit" and isinstance(data, Mapping) else data
             except Exception as exc:                 # noqa: BLE001
                 problems.append(f"{verb}: {self._broker_reason(exc)}")
@@ -1149,6 +1198,28 @@ class SeatManager:
             return [part.strip() for part in value.split(",") if part.strip()]
         return []
 
+    @staticmethod
+    def _auto_update(exec_start: Any) -> bool | None:
+        """Definite only for an exact flag in the unit's own imd command."""
+        if not isinstance(exec_start, str) or not exec_start.strip():
+            return None
+        if "auto-update" not in exec_start:
+            return False
+        if "argv[]=" in exec_start:
+            entries = re.findall(r"\{([^{}]*)\}", exec_start)
+            for entry in entries:
+                argv = re.search(r"(?:^|;)\s*argv\[\]=(.*?)(?:;|$)", entry)
+                path = re.search(r"(?:^|;)\s*path=([^;\s]+)", entry)
+                tokens = argv.group(1).split() if argv else []
+                binary = path.group(1) if path else (tokens[0] if tokens else "")
+                if Path(binary).name == "imd" and "--auto-update" in tokens[1:]:
+                    return True
+        else:
+            tokens = exec_start.split()
+            if Path(tokens[0]).name == "imd" and "--auto-update" in tokens[1:]:
+                return True
+        return None
+
     def _seat_block(self) -> dict:
         block = models.empty_document(producer=self._producer, started_at_utc="", host=self._host_block())["seat"]
         status = self._payload("status")
@@ -1161,8 +1232,7 @@ class SeatManager:
         unit_payload = self._payload("unit")
         unit = unit_payload.get("unit") if isinstance(unit_payload, Mapping) else None
         exec_start = unit.get("execStart") if isinstance(unit, Mapping) else None
-        auto_update = (bool(re.search(r"(?:^|\s)--auto-update(?=\s|;|$)", exec_start))
-                       if isinstance(exec_start, str) and exec_start.strip() else None)
+        auto_update = self._auto_update(exec_start)
         runtime_id, runtime_version = None, None
         for row in self._as_list(parsed.get("runtimes")):
             if row.startswith("→"):
@@ -1271,6 +1341,7 @@ class SeatManager:
             block["gate"] = {
                 "idleBeats": gate.get("idle_beats"), "idleBeatsRequired": gate.get("idle_beats_required"),
                 "planeRunning": plane.get("running"), "planeAsOfUtc": plane.get("as_of"), "planeMode": plane.get("mode"),
+                "asOfUtc": gate.get("asOfUtc"), "planeReason": gate.get("planeReason"),
                 "lastLifecycleLine": gate.get("last_lifecycle_line"), "lifecycleOpen": gate.get("lifecycle_open"),
                 "outboxFiles": gate.get("outbox_files"), "unitActive": gate.get("unit_active"),
                 "safe": gate.get("safe"), "reason": gate.get("reason"),
@@ -1339,7 +1410,10 @@ class SeatManager:
     def select_dashboard(self, name: str) -> None:
         """Screen-owned selection supplies only a read-interest hint to the manager."""
         if name in ("SEAT", "LIVE", "CONFIG & SKILLS", "RECORDS", "NODES", "CONTROL"):
+            changed = self._selected_dashboard != name
             self._selected_dashboard = name
+            if changed and self._gate_last_read_at is not None:
+                self._gate_due_at = min(self._gate_due_at, self._gate_last_read_at + self._gate_interval())
 
     def set_record_window(self, limit: int = 40, *, open_only: bool = True) -> None:
         self._record_limit = max(40, min(400, int(limit)))

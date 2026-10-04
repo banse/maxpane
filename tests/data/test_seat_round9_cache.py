@@ -263,9 +263,9 @@ async def test_selected_records_window_and_nodes_only_missing_newest400(tmp_path
     await cycle(m);assert len(requests)==2,'SEAT does not hydrate historical records'
     m.select_dashboard('RECORDS');m.set_record_window(40,open_only=True)
     await cycle(m);assert len(requests)==2,'completed filter is applied before the window'
-    m.set_record_window(40,open_only=False)
+    m.set_record_window(40,open_only=False);clock.advance(5)
     await cycle(m);assert len(requests)==4 and '00000190' in requests[-2]
-    m.select_dashboard('NODES')
+    m.select_dashboard('NODES');clock.advance(5)
     before=len(requests);await cycle(m)
     assert len(requests)-before==2 and all(not r.endswith('/submissions') for r in requests[before:])
     m.select_dashboard('SEAT');before=len(requests);await cycle(m);assert len(requests)==before
@@ -298,10 +298,10 @@ async def test_busy_class_floor_does_not_spend_budget_or_count_skipped_failures(
     assert flat['seat_jobs'][0]['reply']=='[literal]\nsecond line'
     assert m._ledger.detail_read('job',JOB)['reason']=='busy'
     await m.settle()
-    clock.advance(59);await cycle(m);assert len(requests)==2
-    clock.advance(1);await cycle(m);assert len(requests)==3
-    busy=False;clock.advance(119);await cycle(m);assert len(requests)==3
-    clock.advance(1);await cycle(m);assert len(requests)==4 and c.pause_until('job')==0
+    clock.advance(56);await cycle(m);assert len(requests)==2
+    clock.advance(4);await cycle(m);assert len(requests)==3
+    busy=False;clock.advance(116);await cycle(m);assert len(requests)==3
+    clock.advance(4);await cycle(m);assert len(requests)==4 and c.pause_until('job')==0
     flat=await m.fetch_and_compute()
     assert flat['seat_records_rows'][0]['outcome']=='accepted'
     assert flat['seat_nodes_all_rows'][0]['attempts']==1
@@ -318,12 +318,12 @@ async def test_submissions_wait60_after_stored_and_failures_backoff(tmp_path):
     stamp=datetime.fromtimestamp(NOW,timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
     m._ledger.attach_work([work(at=stamp)],as_of_utc=stamp)
     await cycle(m);assert len(requests)==1
-    clock.advance(59);await cycle(m);assert len(requests)==1
-    clock.advance(1);await cycle(m);assert len(requests)==3,'regular 500 retries once'
-    clock.advance(59);await cycle(m);assert len(requests)==3
-    clock.advance(1);await cycle(m);assert len(requests)==5
-    ok=True;clock.advance(119);await cycle(m);assert len(requests)==5
-    clock.advance(1);await cycle(m);assert len(requests)==6
+    clock.advance(56);await cycle(m);assert len(requests)==1
+    clock.advance(4);await cycle(m);assert len(requests)==3,'regular 500 retries once'
+    clock.advance(56);await cycle(m);assert len(requests)==3
+    clock.advance(4);await cycle(m);assert len(requests)==5
+    ok=True;clock.advance(116);await cycle(m);assert len(requests)==5
+    clock.advance(4);await cycle(m);assert len(requests)==6
     clock.advance(1000);await cycle(m);assert len(requests)==6
     await m.close();await c.close()
 
@@ -392,6 +392,7 @@ async def test_three_running_jobs_get_immediate_standing_question_then_full_cach
     assert [r['jobId'] for r in flat['seat_current_jobs']]==jobs[::-1]
     assert flat['seat_jobs'][0]['objective']=='standing question 2'
     await m.settle();assert requests==[f'/jobs/{jobs[2]}',f'/jobs/{jobs[1]}']
+    clock.advance(5)
     flat=await m.fetch_and_compute();assert flat['seat_jobs'][0]['objective']=='[FULL]\nquestion'
     await m.settle();assert requests[-1]==f'/jobs/{jobs[0]}'
     await m.close();await c.close()
@@ -406,8 +407,8 @@ async def test_busy_success_restores_nonterminal_detail_cadence(tmp_path):
     m._land('standing',{'running':[dict(jobId=JOB,since='2026-10-03T12:00:00Z')]},clock())
     await cycle(m);clock.advance(60);await cycle(m)
     assert requests==[NOW,NOW+60]
-    clock.advance(59);await cycle(m);assert len(requests)==2
-    clock.advance(1);await cycle(m);assert requests[-1]==NOW+120
+    clock.advance(56);await cycle(m);assert len(requests)==2
+    clock.advance(4);await cycle(m);assert requests[-1]==NOW+120
     await m.close();await c.close()
 
 async def test_submission_reasons_attach_to_exact_attempt_hash_not_creation_proximity(tmp_path):
@@ -434,7 +435,7 @@ async def test_oracle_third_route_shares_budget_and_cached_fields_reach_job(tmp_
     row=work(job=job);row.update(nodeKey='oracle_assess',status='pending')
     m._ledger.attach_work([row],as_of_utc='2026-10-03T12:01:00Z')
     await cycle(m);assert requests==[f'/jobs/{job}',f'/jobs/{job}/submissions']
-    await cycle(m);assert requests[-1]==f'/oracle/requests/{request_id}' and len(requests)==3
+    clock.advance(5);await cycle(m);assert requests[-1]==f'/oracle/requests/{request_id}' and len(requests)==3
     flat=await cycle(m);assert len(requests)==3
     shown=flat['seat_jobs'][0]
     assert shown['oracleAnswer']=='0' and shown['panel']['state']=='no_quorum_in'

@@ -445,8 +445,9 @@ class LocalDockerBroker(_CallMixin):
         except (OSError, ValueError):
             return None
 
-    def _gate(self):
-        standing = self._standing()
+    def _gate(self, *, offline: bool = False):
+        offline = self.offline or offline
+        standing = None if offline else self._standing()
         standing_checked_at = self._now()
         outbox = self._outbox_files()
         inspect = self._inspect()
@@ -463,7 +464,7 @@ class LocalDockerBroker(_CallMixin):
             lifecycle_ok = lifecycle_ok and history_ok and current
             if lifecycle_ok:
                 lines = sorted(set(history + lines))
-        return _gate_mod.evaluate(journal_lines=lines, standing=standing, offline=self.offline,
+        return _gate_mod.evaluate(journal_lines=lines, standing=standing, offline=offline,
                                   outbox_files=outbox, unit_active=unit_active, graceful_stop_possible=graceful,
                                   now=self._now(), lifecycle_read_succeeded=lifecycle_ok, standing_checked_at=standing_checked_at)
 
@@ -527,7 +528,7 @@ class LocalDockerBroker(_CallMixin):
         if verb == "audit-tail":
             return {"lines": self._audit.tail(max(1, min(int(args["n"]), 200)))}
         if verb == "gate":
-            gate = self._gate()
+            gate = self._gate(offline=args.get("offline") is True)
             return {**gate.to_dict(), "last_lifecycle_line": redact(gate.last_lifecycle_line) if gate.last_lifecycle_line is not None else None}
         if verb == "verify":
             return self._verify(str(args["plan_id"]))

@@ -80,6 +80,7 @@ secret and 2 MiB rules are unchanged.
 | `nodes.coverage` | `seat_nodes_coverage` | `attempts`, `covered`, `detailsRead`, `asOfUtc`, `reason` |
 | `seat.autoUpdate`, `seat.runtimeWrapper` | `seat_auto_update`, `seat_runtime_wrapper` | nullable flag from unit facts / wrapper note from status |
 | `cost.outputTokens` | `seat_output_tokens` | `today`, `sevenDays`, `averagePerDay`, `days`, `reason`; the existing `cost.series.outputTokensPerDay` carries 14-day points |
+| `control.gate` | `seat_control_gate` | existing gate facts plus `asOfUtc` (its own last successful read) and `planeReason` (nullable explanation such as busy); retained between gate reads |
 | `control.plan` | `seat_control_plan` | `planId`, `verb`, `command`, `confirm`, `warning`, `expiresAtUtc`, `forced`, `localOnly`, `preconditions`, `inverse`, `verification` |
 | `control.statusParts` | `seat_control_status_parts` | rows containing only `text` and `colour`; at most32 rows and4096 combined characters; colours empty/dim/green/yellow/red |
 | `control.status`, `control.mode` | `seat_control_status`, `seat_control_mode` | nullable plain status text and flow state; the screen owns transient plan state |
@@ -244,4 +245,9 @@ no detail reads. `apiErrors[].outputFollowed` preserves recovery ordering throug
 401, 403 or 429 does not raise auth degradation. Startup facts and recent session metadata survive fresh processes.
 The broker identity is imd-dashd 0.1.5; status schema 2, producer and local Docker broker identity are unchanged.
 
-CONTROL also receives `seat_control_last_audit` through its widget signature, using the same audit projection as AUDIT to display the latest doctor time. `seat.autoUpdate` is true or false from a readable unit ExecStart flag; an absent or empty ExecStart remains null.
+CONTROL also receives `seat_control_last_audit` through its widget signature, using the same audit projection as AUDIT to display the latest doctor time. `seat.autoUpdate` is true only for the exact `--auto-update` token in the unit command whose binary is imd. It is false when a readable ExecStart contains no occurrence of auto-update. Other spellings or wrapper commands containing that word, and absent or empty ExecStart, remain null and display unavailable.
+
+
+The gate read has its own deadline inside the control tier: 60 seconds normally, 15 seconds while CONTROL is selected, five seconds after a local lifecycle change, and once per poll interval during an active write flow. A flow phase change or gate refusal requests an immediate read. Its stored last-good facts and `asOfUtc` survive intervening ping/audit refreshes and failed gate reads. Healthy cycles that omit a gate read keep its displayed value and age; an actual broker-source failure retains the existing unavailable display rule. During a seat-class busy pause the gate read uses local-only evaluation, with `planeReason: busy`; this does not switch the broker object's offline mode or alter fresh plan/apply checks.
+
+API tier spawning also observes elapsed time. Once standing, seat-work, details or plane work is spawned, refreshes less than poll interval minus one second later spawn none of those tiers. Each eligible detail run retains the two-request budget. Extra UI refreshes cannot spend another budget, while verify polling remains independent.

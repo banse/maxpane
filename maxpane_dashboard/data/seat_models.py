@@ -391,7 +391,7 @@ SEAT_BLOCK_KEYS: dict[str, tuple[str, ...]] = {
     "seat_current": ("nodeId8", "jobId", "role", "kind", "phase", "startedUtc", "elapsedS", "maxTurns", "model",
                      "tierDerived", "lastMessage", "lastMessageUtc", "planeSince", "objective", "nodeKey"),
     "seat_queue": ("ready", "eligible", "fleetOnline", "blocked", "asOfUtc"),
-    "seat_control_gate": ("idleBeats", "idleBeatsRequired", "planeRunning", "planeAsOfUtc", "planeMode",
+    "seat_control_gate": ("idleBeats", "idleBeatsRequired", "planeRunning", "planeAsOfUtc", "planeMode", "asOfUtc", "planeReason",
                           "lastLifecycleLine", "lifecycleOpen", "outboxFiles", "unitActive", "safe", "reason"),
     "seat_control_drain": ("armedAtUtc", "idleBeats", "rearmed", "expiresAtUtc"),
     "seat_control_in_flight": ("verb", "planId", "sinceUtc"),

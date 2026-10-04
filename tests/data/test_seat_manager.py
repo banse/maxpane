@@ -127,6 +127,7 @@ def test_tier_constants_are_the_contract_values():
     assert sm_mod.TIERS == ("unit", "control", "broker_status", "workstat", "sessions", "standing", "seatwork", "details", "plane")
     assert sm_mod.TIER_TTL_S == {"unit": 30, "control": 0, "broker_status": 600, "workstat": 300, "sessions": 120, "standing": 60,
                                  "seatwork": 120, "details": 0, "plane": 300}
+    assert (sm_mod.GATE_DEFAULT_S, sm_mod.GATE_CONTROL_S, sm_mod.EVENT_BUMP_GATE_S) == (60, 15, 5)
     assert sm_mod.OFFLINE_REMOVES == ("standing", "seatwork", "details", "plane")
     assert (sm_mod.TIER_UNIT_S, sm_mod.TIER_BROKER_STATUS_S, sm_mod.TIER_WORKSTAT_S, sm_mod.TIER_SESSIONS_S) == (30, 600, 300, 120)
     assert (sm_mod.TIER_STANDING_S, sm_mod.TIER_STANDING_PLAN_OPEN_S, sm_mod.TIER_SEATWORK_S, sm_mod.TIER_SEATWORK_SETTLED_S) == (60, 15, 120, 300)
@@ -1008,6 +1009,7 @@ async def test_failure_reasons_share_two_read_budget_with_job_details(tmp_path):
     await m.fetch_and_compute(); await m.settle()
     assert len(requests) == 2 and requests[1].endswith("/submissions")
     assert [r["failureReason"] for r in m._ledger.rows()].count("runtime_error") == 1
+    clock.advance(5)
     await m.fetch_and_compute(); await m.settle()
     assert len(requests) == 4 and all(r["failureReason"] == "runtime_error" for r in m._ledger.rows())
     await m.fetch_and_compute(); await m.settle()
@@ -1276,14 +1278,17 @@ async def test_once_journal_gap_fallback_shares_total_deadline(tmp_path, monkeyp
 
 
 async def _run_case(name, *, cycles=2):
-    m = sm_mod.build_fixture_manager(FIXTURES / name)
+    clock = Clock(sm_mod.sig.parse_iso(sm_mod.load_case(FIXTURES / name)["now_utc"]))
+    m = sm_mod.build_fixture_manager(FIXTURES / name, now=clock)
     assert m.start_tail() is True
     expected = len((FIXTURES / name / "log.txt").read_text(encoding="utf-8").splitlines())
     deadline = time.monotonic() + 5.0
     while m.pending_lines() < expected and time.monotonic() < deadline:
         await asyncio.sleep(0.02)
     flat = None
-    for _ in range(cycles):
+    for index in range(cycles):
+        if index:
+            clock.advance(5)
         flat = await m.fetch_and_compute()
         await m.settle()
     flat = await m.fetch_and_compute()

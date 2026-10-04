@@ -42,6 +42,12 @@ class SeatWriteFlow:
     def _broker(self):
         return self._manager.broker
 
+    def _gate_refused(self, code: str) -> None:
+        if code in ("gate_blocked", "force_node8_mismatch"):
+            notify = getattr(self._manager, "gate_refused", None)
+            if notify is not None:
+                notify(code)
+
     def _set_plan_open(self, flag: bool) -> None:
         """``SeatManager.plan_open`` drives the 15 s standing cadence while a plan is open (spec §6, WP7)."""
         try:
@@ -214,6 +220,7 @@ class SeatWriteFlow:
                 self._set_status(f"plan {plan.plan_id[:4]} dropped — not applied", "dim")
                 return
         except BrokerError as exc:
+            self._gate_refused(exc.code)
             if generation != self._generation:
                 return
             self._set_plan_open(False)
@@ -307,6 +314,7 @@ class SeatWriteFlow:
         try:
             result = await asyncio.to_thread(self._broker.apply, plan.plan_id, confirm, **kwargs)
         except BrokerError as exc:
+            self._gate_refused(exc.code)
             detail = _dict(exc.detail)
             if "killed" in detail or "skipped" in detail:
                 killed = []

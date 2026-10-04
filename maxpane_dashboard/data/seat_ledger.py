@@ -315,6 +315,7 @@ class SeatLedger:
                     events.append("stored")
                 elif kind == g.KIND_CANCELLED:
                     self._cancelled(cur, line)
+                    events.append("cancelled")
                 elif kind == g.KIND_SERVER_ERROR:
                     if line.fields.get("code") == "unknown_lease":
                         self._lease_closed(cur, line)
@@ -322,6 +323,7 @@ class SeatLedger:
                     self._resending(cur, line)
                 elif kind == g.KIND_LOCAL_FAIL:
                     self._local_fail(cur, line)
+                    events.append("local_fail")
                 elif kind == g.KIND_RATE_LIMITED:
                     self._state.paused_local_utc = line.ts
                 elif kind == g.KIND_HEARTBEAT:
