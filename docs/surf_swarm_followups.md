@@ -8,7 +8,7 @@ branch's working notes (`task-*-review.md`, `task-*-re-review*.md` under
 `.superpowers/sdd/2026-09-16-surf-swarm-body/`) live in a git-ignored workspace that is deleted
 when this plan finishes, so this file is the only place these survive.
 
-## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme
+## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme; F16 (SWARM half), F23, F47, F51 and F54 resolved and F73–F85 filed 2026-10-04 by `feature/surf-swarm-workflows`
 
 Swarm v2 (WP7, `docs/surf_swarm_v2_implementation_plan.md`) deleted `swarm_queue.py` and retired
 `swarm_queue_depths` with the other seven v1 keys, so F13 (the `depths or None` conflation behind
@@ -536,7 +536,15 @@ Sources: the WP2–WP8 reviews and the controller's own checks, all recorded in
 the Follow-ups rule applies (Tier 0 when its file is next touched, never its own branch) except where an item is an
 owner decision.
 
-### F16 — row pins exceed the owner's terminals — AGENT CLOSED; SWARM OWNER DECISION
+### F16 — row pins exceed the owner's terminals — AGENT CLOSED; SWARM RESOLVED 2026-10-04
+
+*2026-10-04:* **SWARM resolved, by the owner's choice of 2026-10-03:** "collapse THROUGHPUT's state and
+cancel-reason blocks behind a key". `x` folds them, and SWARM opens folded (`feature/surf-swarm-workflows`, `274e14f`).
+SWARM's pin went from 141×42 to **138×35**. LAUNCHES binds the width and THROUGHPUT's nine collapsed
+lines set the row floor. The final review's I1 (a horizontal scrollbar in LAUNCHES at 138×35) was
+fixed in `d583e73`. The owner's 119×35 terminal now has the pin's height but is 19 columns
+narrower than it. The 138×31 terminal has the pin's width but is four rows short, with `‹ taller` lit. Expanded, the body clears
+`‹ taller` from 55 rows (73 on F47's extra states); see F73.
 
 *2026-09-22:* **AGENT closed: owner accepted 32 rows, 2026-09-22.** The historical
 40-row layout below was replaced by the measured 32-row seat-details layout. SWARM `s` at
@@ -584,7 +592,11 @@ Closed by removal, not by listing: the owner retired the variable for a seat pro
 The fold tests bind the re-export (`fold.seen_since_ts`). Either import it in the tests from analytics and drop the
 re-export, or say in the `__all__` comment why the fold's public surface carries an analytics helper.
 
-### F23 — THROUGHPUT's state/cancel blocks are unbounded in rows
+### F23 — THROUGHPUT's state/cancel blocks are unbounded in rows — CLOSED 2026-10-04
+
+*2026-10-04:* closed by the fold (`274e14f`). The pinned height is the collapsed one, so the fold
+decides it, not the vocabulary. Expanded stays unbounded, but expanding is the reader's choice and
+the top row advertises the cost with `‹ taller`.
 The panel height is pinned against the corpus vocabulary (six states, a handful of cancel reasons); a new state adds
 a line. Cap the blocks (top-N + `… n more`) or bind the pin to a vocabulary test.
 
@@ -829,7 +841,11 @@ and their source separation were requested; no field was silently removed to pre
 height. The owner can accept this height or request a separate layout change to recover rows.
 SWARM's existing 42-row height remains F16's open half.
 
-## F47 — live SWARM's extra states row exceeds its fixture height — OPEN (F23)
+## F47 — live SWARM's extra states row exceeds its fixture height — CLOSED 2026-10-04 (F23)
+
+*2026-10-04:* the extra-states payload is now one of the four SWARM layout payloads. Collapsed, it
+costs the pin nothing (whole from 35 rows). Expanded, it clears `‹ taller` from 73 rows
+(`EXPANDED_THROUGHPUT_CLEARS_AT` in `tests/screens/test_surf_swarm_layout.py`).
 
 The required real CLI render on **2026-09-22 around 06:35 Europe/Berlin**, with a fresh isolated
 HOME at **142×42**, showed `‹ taller` and a THROUGHPUT scrollbar; bottom `cancel reasons`
@@ -874,7 +890,13 @@ Filed by the BOARD fix-wave re-review, 2026-09-22. `tests/screens/test_surf_swar
 `assert not r["status_whole"] or …` is always true where the status bar is cropped (< 134) — the
 M2 shape. `test_the_column_pin_is_not_loose` still covers pin−1. Do as Tier 0 when the file is next touched.
 
-## F51 — workflows have no free SWARM layout slot — OPEN (owner design decision)
+## F51 — workflows have no free SWARM layout slot — RESOLVED 2026-10-04
+
+*2026-10-04:* the owner's decision of 2026-10-03 was to hide CAPABILITY and show workflows in its
+place, parking CAPABILITY for a later SKILLS board. WORKFLOWS (`widgets/surf/swarm_workflows.py`)
+reads `GET /workflows?limit=12` on the swarm scores tier (`9bcd8f4`, `6d0342a`, `032e6e7`,
+`274e14f`). CAPABILITY is mounted on no body. Its contract lives on in
+`data/surf_models.SWARM_PARKED_WIDGET_SIGNATURES`.
 
 Polish handover §1.3 explicitly defers `/workflows`. The read-only shared reference
 `/Library/Vibes/aidude/docs/imd-api-changelog.md` (2026-09-22) describes contractsJobId and
@@ -898,7 +920,13 @@ found from this path. A full per-seat rejected-attempt record therefore needs a 
 never claim the currently known jobs are the seat's complete rejected history. Deferred by polish
 handover §1.3.
 
-## F54 — approved SEAT grouping requires 37 rows — OPEN (polish budget skip)
+## F54 — approved SEAT grouping requires 37 rows — RESOLVED 2026-10-04 (differently)
+
+*2026-10-04:* the owner chose a different route on 2026-10-03: "replace the content of the SCORE
+card with LLM model info". AGENT's SCORE card became **MODEL** (`ef62eb5`). It shows the seat's
+advertised model and effort pairs from `/seats` `runtimes[].premiumModel` (`swarm_seat_summary`
+`models`), in the same 20fr slot. The AGENT pin held at 139×25. The 37-row SEAT grouping below is
+withdrawn, not built.
 
 The exact polish §2.3 grouping was rendered at 138 columns with its separate pairing/model
 rows, two group gaps and CONTRIBUTORS header plus two fact rows. The measured SEAT panel is
@@ -918,6 +946,10 @@ Measurement harness: `/tmp/test_polish_seat_budget.py`; SVGs and region/scroll J
 `/tmp/polish-wp3-seat-budget-v4/`. These are local review artifacts, not shipped runtime files.
 
 ## F55 — mixed service states clip at the SWARM column pin — OPEN (pre-existing layout)
+
+*2026-10-04:* the SWARM pin this entry measures against moved from 141×42 to 138×35
+(`feature/surf-swarm-workflows`). The mixed-state line was not re-measured at the new pin. The figures below are the
+141×42 ones.
 
 WP5 measured the existing SERVICES box at 141×42: 23 outer columns and 19 content cells.
 The mixed-state line (`verifier` down, `publisher` up, `deployer` unknown) already rendered
@@ -1016,3 +1048,66 @@ work and the stored-safety predicate in step with the cleaner.
 - **F72 — SITES' two empty words sit in different columns.** `No current site` (15 cells) no
   longer fits the 13-cell label column since F67, so `_degraded_row` lays it under `ens`, while
   `No data` stays under `label`. The documented base rule, cosmetic only. Minor.
+
+## F73 — F85 — filed at the close of the SWARM WORKFLOWS programme (`feature/surf-swarm-workflows`, 2026-10-04)
+
+Sources: the WP1–WP5 task reviews, the final whole-branch review (opus), the scoped re-review of
+`d583e73`, and the controller's own checks. The spec is `docs/surf_swarm_workflows_spec.md`. Each
+item is Minor unless it says otherwise. The Follow-ups rule applies: do it as Tier 0 when its file is
+next touched, never as its own branch, except where an item is an owner decision.
+
+- **F73 — at the 138×35 pin, `x` reveals nothing without scrolling. OWNER DECISION.** Pressing `x`
+  flips the title to `x less` and lights `‹ taller`, and the top row gains a scroll nub. No states
+  or cancel-reasons line becomes visible until that row is scrolled (final review M3). The spec
+  allows this: expanded clears `‹ taller` from 55 rows, or 73 on F47's extra states. But on the
+  owner's terminals `x` looks like it does almost nothing. Options:
+  - accept it as is;
+  - let the expanded top row's floor grow, at the table rows' expense;
+  - show the blocks in a popup instead of inline.
+- **F74 — the upgrade rule is dead code at today's start-up.** `SurfManager._upgrade_swarm_scores_slot`
+  makes `TIER_SWARM_SCORES` due when the persisted sweep slot has no `"workflows"` key. Tier clocks are
+  not persisted, so on a cold start the tier is due anyway (WP2 review). This is a spec-premise
+  defect, recorded under the spec's §2 "Upgrade". Keep the rule, or drop it with its test.
+- **F75 — `_swarm_scores_keys` gates skills, launches and sites on `is not None`.** A hand-edited
+  non-list for any of them publishes `[]`, a real negative, instead of `None` (pre-existing; WP2
+  review). Workflows gate on `isinstance(…, list)`; do the same for the other three.
+- **F76 — IN FLIGHT's prose cells give an embedded 0x address no copy icon. IMPORTANT.** This breaks
+  CLAUDE.md's address convention (pre-existing; WP4 review). The E2/E7 sweep misses it only because
+  no seeded IN FLIGHT objective or note carries an address. Fix: route the cells through
+  `widgets/surf/_icons.py` with `explorer=None`, as WORKFLOWS' text cell does (`032e6e7`), and seed
+  the sweep.
+- **F77 — WORKFLOWS: no committed test combines a red failure with an embedded address** (WP4
+  re-review). Add one case that composites the failure's colour and the icon together.
+- **F78 — WORKFLOWS: the 20-cell text-column floor has no test.** The final review changed
+  `max(TEXT_MIN_COLS, spare)` to `spare` in `swarm_workflows.py`, and
+  `tests/widgets/test_surf_swarm_workflows.py` stayed green. The floor matters only under
+  `TIGHT_WIDTH` (about 92 terminal columns on SWARM).
+- **F79 — WORKFLOWS: an entry with no usable field folds to an all-`None` row.** `workflow_rows` keeps
+  one row per mapping, so a persisted mapping with garbage values becomes a row of `None`s. No test
+  pins how WORKFLOWS paints it.
+- **F80 — LAUNCHES' `#` column cuts a four-digit launch number. IMPORTANT WHEN REACHABLE.** The
+  worst-case payload's 1000 paints as `1,00`, cut by the `DataTable` with no ellipsis (pre-existing;
+  WP5 review). That would be a wrong number on screen. It is latent: the capture's launches are
+  numbered around 60. Widen the column, or switch to a compact form from 1,000, before launch
+  numbers reach four digits.
+- **F81 — LAUNCHES: nothing binds the `tight` `repo` cell's fit to its 26-cell column** (re-review
+  M1). Mutant G (`repo_cols = _REPO_COLS` at every tier) painted `Identity-md/launch-58-buil` at
+  138×35, cut with no `…`, and every selected test stayed green. Add one widget test: at the `tight`
+  tier the composited repo cell ends in `…` and is at most `_TIGHT_REPO_COLS` wide.
+- **F82 — SWARM's column sweep moved to 35 rows instead of adding 35** (re-review M2).
+  `_S_COLUMN_SWEEP_HEIGHT` (35) replaced 80 for SWARM's column checks, so no test asserts the whole
+  body at (138, 80) on every payload. The expanded half of the 35-row sweep never composites
+  THROUGHPUT's blocks. No defect hides there today, because the 80-row detectors never saw those
+  lines either. Add an 80-row pass, or record why the 35-row one suffices.
+- **F83 — a stale docstring in `tests/screens/test_surf_swarm_screen.py`** still names ROSTER, SEAT
+  RECORD and FEEDBACK, panels SWARM no longer mounts (WP5 review).
+- **F84 — out of scope by the spec's §5. OWNER DECISIONS.** The candidates:
+  - `/workflows` pagination (the read is the newest 12);
+  - a workflow detail popup;
+  - the SKILLS board that CAPABILITY is parked for (`SWARM_PARKED_WIDGET_SIGNATURES`);
+  - a status-bar hint for `x` (the key is in README and in THROUGHPUT's title only);
+  - persisting the fold across restarts (today it lasts for the session).
+- **F85 — the sparklines outside `SparklinePanel` still draw a `None` series as an empty one.
+  IMPORTANT.** These are fwa's, curator's and surf's market and pool4 sparklines. #34 fixed the
+  shared base only (spec §4). Each remaining one is the same "failed read in the real negative's
+  clothes" shape. Do them per dashboard, one regression case each on composited output.

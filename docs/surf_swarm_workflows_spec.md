@@ -120,9 +120,14 @@ Probed 2026-10-03 (`tests/fixtures/surf/swarm/v6/`):
   * When the last-good slot lacks the key, the manager makes `TIER_SWARM_SCORES` due on the next
     cycle. Otherwise the panel would say `unavailable` for up to 30 minutes after an upgrade.
   * Pin this with a test.
+  * *As built (WP2, `9bcd8f4`):* `SurfManager._upgrade_swarm_scores_slot` makes the tier due
+    once, after the cache load. Tier clocks are not persisted, so on today's cold start the tier
+    is due anyway and the rule changes nothing. It holds only for a cache whose clock is already
+    warm. The premise above was wrong; the rule is kept and filed (F74).
 * **Docs.**
   * `docs/imd_swarm_api.md` gains a `/workflows` section with the probe facts above.
-  * `docs/surf_PRD.md` §5 gains the key (`tests/data/test_surf_models.py` reads it).
+  * `docs/surf_PRD.md` §5 gains the key. `tests/data/test_surf_models.py` does not read the PRD:
+    its `EXPECTED_KEYS` restates the keys by hand, under a comment naming §5.
 
 ### Widget `SurfSwarmWorkflows` (`widgets/surf/swarm_workflows.py`)
 

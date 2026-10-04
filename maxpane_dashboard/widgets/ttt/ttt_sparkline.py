@@ -91,8 +91,9 @@ class TTTSparkline(SparklinePanel):
         """Refresh both rows.
 
         ``*_history`` may be ``None``, an empty list, or a list of
-        ``(ts, value)`` tuples / 2-element lists.  Anything shorter than
-        2 points renders the ``waiting for data...`` placeholder.
+        ``(ts, value)`` tuples / 2-element lists.  ``None`` (a failed
+        read) renders ``unavailable`` beside the label; anything else
+        shorter than 2 points renders ``waiting for data...`` (#34).
         """
         self.render_series([
             ("BURNS", burns_history, "#ffa500", _BURNS),

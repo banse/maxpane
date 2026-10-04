@@ -1719,8 +1719,10 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 138
 #: table scrolls its rows inside its ``1fr`` share, and its vertical
 #: scrollbar costs the table two cells of content width. **Through
 #: 2026-10-03 this was a real loss, not padding**: ``max_scroll_x`` read 2
-#: and a horizontal scrollbar showed, hiding the ``parked reason`` column's
-#: last two cells behind it -- a width requirement that held at 138 only
+#: and a horizontal scrollbar was painted, hiding the ``artifacts`` column's
+#: trailing padding (``tight`` installs no ``parked`` column) and taking one
+#: of the table's five viewport lines -- three data rows instead of four.
+#: A width requirement that held at 138 only
 #: above 56 rows, exactly the "becomes a function of its height" the
 #: terminal-layout skill forbids, and invisible to every sweep because the
 #: column pin was measured at 80 rows, where LAUNCHES never needs this

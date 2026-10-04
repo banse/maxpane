@@ -238,8 +238,13 @@ each:
   because `build_sparkline_from_points` draws one point as a flat baseline and a flat baseline is a
   run of zeroes that never happened. `EMPTY_KEEPS_LABEL` keeps the label column on that line
   (`MYTHIC COUNT     waiting for data...`): with two stacked series the reader has to be able to
-  tell *which* one is not ready. It means nothing where `EMPTY_TEXT` is empty, and a line whose
-  entry could not even be unpacked has no label to keep and writes `EMPTY_TEXT` bare.
+  tell *which* one is not ready. It means nothing where `EMPTY_TEXT` is empty. **A series that
+  could not be read is not an empty one** (#34, 2026-10-03): points that are `None` or not a
+  list/tuple write `unavailable_line(label)` — yellow `unavailable`, beside the label when
+  `EMPTY_KEEPS_LABEL` is set, else `UNAVAILABLE_LINE` — and an entry that cannot even be unpacked
+  has no label to keep and writes `UNAVAILABLE_LINE` bare. `[]` and too few usable points keep
+  `EMPTY_TEXT`. Nothing reaches the `None` branch today: no manager passes one (bakery's
+  collapse to `[]` is #75).
 - **`TableLeaderboard(PanelBase)`** — `TABLE_ID`, `COLUMNS` of `(label, width)`, `CURSOR_TYPE`
   (`"row"`), `ZEBRA` (`True`), `ROW_CAP` (10; 20 in dota, 12 in talismans' materials ledger, 6 in
   ttt's claims table, `None` for talismans' matrix), `LOADING_ROW` and `EMPTY_ROW` tuples,

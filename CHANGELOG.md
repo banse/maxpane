@@ -20,6 +20,24 @@
 - Surfboard AGENT: keep the last good record for up to six seats, each with its own timestamp.
   Temporary host overload shows `busy · retrying`, or `busy` beside the cached record's timestamp.
   Eligible pending answers, oracle panels and submission job details now say `loading…`.
+- Surfboard SWARM: WORKFLOWS takes CAPABILITY's place. It lists the newest twelve two-stage
+  launches from `/workflows`: status, start time, the contracts and frontend jobs, and the objective, or
+  the failure in red when the workflow did not complete. The footer counts them by status
+  (`newest 12 · 8 blocked · 4 completed`). An address inside the text gets its copy icon but no
+  explorer link, because a workflow does not say which chain it ran on. CAPABILITY is parked for a
+  later SKILLS board, not deleted.
+- Surfboard SWARM: `x` folds THROUGHPUT's `states` and `cancel reasons` blocks. SWARM opens
+  folded. The title says `x more` or `x less`, and the choice survives a refresh and a trip to
+  AGENT and back. While THROUGHPUT is still collecting, its completed line reads
+  `counting since HH:MM` (was `accumulating`). SWARM's full layout is now 138×35 (was 141×42), and
+  LAUNCHES no longer loses a row to a horizontal scrollbar there.
+- Surfboard AGENT: the SCORE card becomes MODEL, showing the LLM model and effort the seat
+  advertises on `/seats`. It shows up to three of them, then `+N more`, and hovering lists every
+  one. The card says `not advertised` when the seat names none and `unavailable` when the read
+  failed.
+- Sparkline panels on the shared base (bakery, ocm, cattown, dota, talismans, ttt, base): a series
+  that could not be read now says `unavailable` instead of looking empty. Nothing changes on
+  screen yet, because no manager passes a failed read through.
 
 ## v0.9.3 — 2026-09-26
 

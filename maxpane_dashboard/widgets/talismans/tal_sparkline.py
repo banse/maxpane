@@ -68,8 +68,9 @@ class TalismansSparkline(SparklinePanel):
         """Refresh both rows.
 
         ``*_history`` may be ``None``, an empty list, or a list of
-        ``[ts, value]`` lists / tuples.  Anything shorter than 2 points
-        renders the ``waiting for data...`` placeholder.
+        ``[ts, value]`` lists / tuples.  ``None`` (a failed read) renders
+        ``unavailable`` beside the label; anything else shorter than 2
+        points renders the ``waiting for data...`` placeholder (#34).
         """
         self.render_series([
             ("MYTHIC COUNT", mythic_history, "#8a6fd6", ""),

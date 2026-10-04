@@ -12,8 +12,13 @@ What the base adds to ``TableLeaderboard``
 --------------------------------------------
 * **A width ladder** (``rowfit.Ladder``) over the panel's own ``size.width``
   less :attr:`SwarmTableBase.GUTTER_COLS`, the two cells the table's vertical
-  scrollbar costs once its rows overflow -- reserved always, so the width
-  requirement is not a function of the height (terminal-layout skill).
+  scrollbar costs once its rows overflow -- reserved in the tier choice
+  (terminal-layout skill). The reservation holds only while the budget reaches
+  the last tier: ``tight`` installs below it too, and a ``tight`` table wider
+  than its budget overflows exactly when the scrollbar shows. A body pin must
+  therefore give its binding table ``tight`` plus the gutter; under the pin the
+  requirement is again a function of the height (LAUNCHES: 138 at 35-56 rows,
+  135 from 57; SWARM WORKFLOWS final review, 2026-10-04).
 * **Columns re-installed on a tier change**, never hidden: a shed column is
   removed from the ``DataTable`` (``clear(columns=True)`` and re-add), because
   the layout sweep reads ``max_scroll_x`` and a zero-width column left behind

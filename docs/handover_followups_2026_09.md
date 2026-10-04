@@ -380,7 +380,12 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     row for each `_HERO_ROWS` entry in the good-poll case. **Minor, Tier 0** when the file is next
     touched (Branch 8 WP-A re-review N1, filed 2026-09-20).
 
-34. **`SparklinePanel.render_series` writes `EMPTY_TEXT` for a `None` series — the C1 shape in the
+34. **CLOSED 2026-10-04 (`feature/surf-swarm-workflows`, `2c448c6`).** `None` or non-list points
+    now write yellow `unavailable` (beside the label under `EMPTY_KEEPS_LABEL`), an entry that does
+    not unpack writes `UNAVAILABLE_LINE`, and `[]` keeps `EMPTY_TEXT`. There is one composited case
+    per subscriber in `tests/widgets/test_sparkline_unavailable.py`. Latent: no manager passes `None` today, and
+    #75 is still open. The sparklines outside the base are surf follow-up F85. Was:
+    **`SparklinePanel.render_series` writes `EMPTY_TEXT` for a `None` series — the C1 shape in the
     base.** `maxpane_dashboard/widgets/panels.py:573-575`: `coerce_points(None)` is `[]`, so a series
     whose points the manager could not read (`None`) and a series that is genuinely empty (`[]`) both
     land on `empty_line(label)` — a failed read wearing the real negative's clothes, the very shape
@@ -860,3 +865,19 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     test exercises `12.0` only (review M5). Harmless against the live API; a docstring word and a `12.9`
     parametrisation when the file is next touched. **Minor, Tier 0.**
 
+## SWARM WORKFLOWS programme — repo-wide residuals (2026-10-04, `feature/surf-swarm-workflows`)
+
+80. **Third-party text can carry raw ESC / NUL to the terminal.** `widgets/markup_safety.flatten`
+    collapses only whitespace, and Rich's `Text` strips only BEL, BS, VT, FF and CR. So an ESC in a
+    served string reaches the terminal driver's output. A probe during WP4 rendered
+    `"\x1b]0;PWNED"` through a `Text` and found the escape sequence intact in the output, which is
+    an OSC or CSI injection by any party that controls a displayed string (token symbols, IMD
+    objectives and failures, ENS names). Pre-existing and repo-wide; this branch adds no new path
+    that bypasses the shared helpers. Fix it once in `markup_safety` (strip C0 except `\t\n`, plus
+    DEL and C1) and pin it with a probe over `render_strips()`. **Important, Tier 2** (shared
+    `widgets/*.py`); the owner schedules it.
+
+81. **`tests/widgets/test_title_blank_row.py:284` passes `burn_history` to `TTTSparkline`, whose
+    keyword is `burns_history`.** `update_data`'s `**_kwargs` swallows the typo, so the case renders
+    a `None` series, which reads `unavailable` since #34. The blank-row assertion still holds, but
+    the case is not exercising the series it names. **Minor, Tier 0.**
