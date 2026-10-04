@@ -596,7 +596,8 @@ SEAT_WIDGET_SIGNATURES.update({
     "SeatControl": ("seat_control_gate", "seat_control_drain", "seat_control_in_flight", "seat_control_broker_reachable",
                     "seat_unit_boot_enabled", "seat_unit_graceful_stop_possible", "seat_unit_active_state",
                     "seat_host_kind", "seat_machine_orphans", "seat_daemon_version", "seat_release_available",
-                    "seat_control_plan", "seat_control_status", "seat_control_status_parts", "seat_control_mode", "seat_sources"),
+                    "seat_control_plan", "seat_control_status", "seat_control_status_parts", "seat_control_mode",
+                    "seat_control_last_audit", "seat_sources"),
 })
 
 

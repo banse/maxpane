@@ -119,7 +119,7 @@ class SeatControl(PanelBase):
                     seat_control_broker_reachable=None, seat_unit_boot_enabled=None, seat_unit_graceful_stop_possible=None,
                     seat_unit_active_state=None, seat_host_kind=None, seat_machine_orphans=None, seat_daemon_version=None,
                     seat_release_available=None, seat_control_plan=None, seat_control_status=None, seat_control_status_parts=None,
-                    seat_control_mode=None, seat_sources=None, **_kwargs):
+                    seat_control_mode=None, seat_control_last_audit=None, seat_sources=None, **_kwargs):
         flat = {key:value for key,value in locals().items() if key.startswith('seat_')}
         text = Text('\n').join(verb_lines(flat))
         installed = _word(seat_daemon_version) or DASH

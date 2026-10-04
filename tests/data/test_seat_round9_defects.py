@@ -372,3 +372,37 @@ async def test_d1_digit_string_route_and_submission_agent_identity():
     assert api_mod.normalise_submission({'seat': {'tokenId': '3', 'agentId': '51075'}})['seatAgentId'] == 51075
     for value in [True, 3.0, '-3', '3.0', '٣', '']:
         assert api_mod.identity_int(value) is None
+
+
+@pytest.mark.parametrize('exec_start, expected', [
+    ('{ path=/opt/imd-worker/bin/imd ; argv[]=/opt/imd-worker/bin/imd start --runtime claude --auto-update ; }', True),
+    ('{ path=/opt/imd-worker/bin/imd ; argv[]=/opt/imd-worker/bin/imd start --runtime claude ; }', False),
+    ('/opt/imd-worker/bin/imd start --no-auto-update --auto-update-extra', False),
+    (None, None),
+    ('', None),
+])
+async def test_execstart_auto_update_reaches_document_fold_and_config(tmp_path, exec_start, expected):
+    import re
+    from tests.address_sweep.builders import _seat_app
+    from tests.screens.test_seat_round9_navigation import strips
+
+    class Reader:
+        def read_unit(self):
+            return {'execStart': exec_start}
+        def read_host(self):
+            return {'load1': 0, 'memAvailMiB': 100, 'diskFreeGiB': 1}
+
+    m = manager(tmp_path, unit_reader=Reader())
+    try:
+        doc = await document(m)
+        assert doc['sources']['unit']['ok'] is True
+        assert doc['seat']['autoUpdate'] is expected
+        flat = models.fold_status_document(doc)
+        assert flat['seat_auto_update'] is expected
+        async with _seat_app(flat).run_test(size=(180,55)) as pilot:
+            await pilot.pause(); await pilot.press('3'); await pilot.pause()
+            line = next(line for line in strips(pilot.app.screen) if 'auto-update' in line)
+            word = 'on' if expected is True else 'off' if expected is False else 'unavailable'
+            assert re.search(rf'auto-update\s+{word}\s+never', line), line
+    finally:
+        await m.close()

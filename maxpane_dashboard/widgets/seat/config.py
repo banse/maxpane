@@ -63,7 +63,7 @@ class SeatConfig(SeatTable):
     _ROW_SOURCE = {
         "seat-cfg-server": "seat", "seat-cfg-capacity": "status", "seat-cfg-offers": "status", "seat-cfg-runtime": "status",
         "seat-cfg-daemon": "tail", "seat-cfg-premium": "standing", "seat-cfg-inference": "seat", "seat-cfg-wrapper": "status",
-        "seat-cfg-hints": "hints", "seat-cfg-tools": "seat",
+        "seat-cfg-hints": "hints", "seat-cfg-tools": "seat", "seat-cfg-auto-update": "unit",
         "seat-cfg-changed": "seat", "seat-cfg-skills-title": "skills",
     }
 
@@ -97,7 +97,7 @@ class SeatConfig(SeatTable):
     def _degraded(self, row_id: str) -> str | None:
         """The degraded sentence for *row_id*, or ``None`` when its sources are fine."""
         broker = self._source("broker")
-        if broker.get("ok") is False:
+        if broker.get("ok") is False and self._ROW_SOURCE.get(row_id) != "unit":
             return f"unavailable (broker: {_word(broker.get('reason')) or 'unreachable'})"
         name = self._ROW_SOURCE.get(row_id)
         source = self._source(name) if name else {}

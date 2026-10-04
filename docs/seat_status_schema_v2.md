@@ -95,8 +95,8 @@ Existing source gating remains in force for earlier keys. The manager's live mer
 
 `objective`, `reply`, `oracleQuestion`, `oracleAnswer` and `oracleNotes` keep line breaks and brackets and are capped
 at 4,096 characters including a final ellipsis when cut. `structuralCheck.detail` and `delivery.url` are capped at
-512 characters. Other new string fields are capped at 160. Question/reply states are `read`, `not_read`, `busy`,
-`unavailable` or `expired`, with separate reasons and read timestamps; `textExpired` marks removed ledger text.
+512 characters. Other new string fields are capped at 160. Question/reply states are `read`, `not read`, `busy`,
+`unavailable` or `text expired`, with separate reasons and read timestamps; `textExpired` marks removed ledger text.
 The manager chooses the full objective over the running objective and the oracle question over the objective, and
 fills `usage` from the local ledger first, then submission usage. `paid` is a nullable derived flag; no payer address
 or full submission hash is emitted.
@@ -243,3 +243,5 @@ rule; cached outcomes, RECORDS and NODES retain their stored timestamps and rema
 no detail reads. `apiErrors[].outputFollowed` preserves recovery ordering through session attachment; a recovered
 401, 403 or 429 does not raise auth degradation. Startup facts and recent session metadata survive fresh processes.
 The broker identity is imd-dashd 0.1.5; status schema 2, producer and local Docker broker identity are unchanged.
+
+CONTROL also receives `seat_control_last_audit` through its widget signature, using the same audit projection as AUDIT to display the latest doctor time. `seat.autoUpdate` is true or false from a readable unit ExecStart flag; an absent or empty ExecStart remains null.

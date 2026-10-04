@@ -28,17 +28,37 @@ class SeatJob(PanelBase):
         self._offline = seat_offline is True
         self._clock = (seat_as_of_hhmm or {}).get('standing')
         current = seat_current_jobs or []
+        selected = self.selected_row()
         self._running = {job.get('jobId') for job in current}
-        cached = {job.get('jobId'): job for job in seat_jobs or []}
-        self._jobs = [dict(job, **{key:value for key,value in cached.get(job.get('jobId'), {}).items() if value is not None})
-                      for job in current] if current else (seat_jobs or [])[:1]
+        self._jobs = []
+        for job in current:
+            cached = next((row for row in seat_jobs or [] if self._same_attempt(job, row)), {})
+            self._jobs.append(dict(job, **{key:value for key,value in cached.items() if value is not None}))
+        if not current:
+            self._jobs = (seat_jobs or [])[:1]
         if not any(self._identity(j) == self._selected_key for j in self._jobs):
-            self._selected_key = self._identity(self._jobs[0]) if self._jobs else None
+            row = next((j for j in self._jobs if selected and self._same_attempt(j, selected)),
+                       self._jobs[0] if self._jobs else None)
+            self._selected_key = self._identity(row) if row else None
         self._paint()
 
     @staticmethod
+    def _attempt(job):
+        return job.get('jobId'), job.get('nodeId8') or job.get('nodeKey')
+
+    @staticmethod
+    def _same_attempt(left, right):
+        if left.get('jobId') != right.get('jobId'):
+            return False
+        # Standing can name only the node key; a cached local row also has its id.
+        for name in ('key', 'nodeId8', 'nodeKey'):
+            if left.get(name) and right.get(name):
+                return left[name] == right[name]
+        return not any(left.get(name) or right.get(name) for name in ('nodeId8', 'nodeKey'))
+
+    @staticmethod
     def _identity(job):
-        return job.get('key') or job.get('jobId')
+        return job.get('key') or SeatJob._attempt(job)
 
     def selected_row(self):
         return next((j for j in self._jobs if self._identity(j) == self._selected_key), None)

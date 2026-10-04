@@ -668,7 +668,7 @@ def test_round9_all_six_bodies_have_frozen_signatures():
         "SeatNodes": {"seat_nodes_all_rows", "seat_nodes_week_rows", "seat_nodes_coverage"},
         "SeatGate": {"seat_control_gate", "seat_control_drain", "seat_sources"},
         "SeatAudit": {"seat_control_last_audit", "seat_control_in_flight"},
-        "SeatControl": {"seat_control_gate", "seat_control_in_flight", "seat_unit_boot_enabled", "seat_control_plan", "seat_control_status"},
+        "SeatControl": {"seat_control_gate", "seat_control_in_flight", "seat_unit_boot_enabled", "seat_control_plan", "seat_control_status", "seat_control_last_audit"},
         "SeatConfig": {"seat_token_id", "seat_wallet", "seat_device_key_public", "seat_auto_update", "seat_runtime_wrapper"},
     }
     for widget, keys in needs.items():

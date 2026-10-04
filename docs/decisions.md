@@ -1346,3 +1346,16 @@ The approved summariser changes ship with root broker identity `imd-dashd 0.1.5`
 ### 2026-10-04 — PEPEPANE round 9: verification evidence and finishing
 
 The approved brief remains the sole implementation plan. `docs/pepepane_round9_verification.md` records package and defect evidence, the twenty inverse proofs, independent body measurements and every original control-test successor. It is a verification report, not a replacement design or plan. The final split suite, package archive and owner deployment checks are recorded separately as they complete. The branch stays pepepane without merging, pushing or tagging. The two shared redactor overmatches remain explicit next-round follow-ups; their copies stay byte-identical.
+
+
+### 2026-10-04 — PEPEPANE round 9 review: JOB attempt identity
+
+The final review reproduced two concurrent nodes of one DAG job collapsing into the same JOB row. Cache joining now uses the job plus node identity, retaining the first running cache row over a later finished row. Selection uses a ledger key when available and a job/node identity for standing-only rows; cache arrival preserves the selected node while adding its detail key. Composited regressions cover no, partial and complete cache coverage, node ids or standing node keys, stepping, detail entry and reordered refreshes.
+
+### 2026-10-04 — PEPEPANE round 9 review: observed auto-update flag
+
+The CONFIG contract's auto-update value is now populated from the already-read unit ExecStart. A readable command reports the presence or absence of the exact auto-update flag; a missing or empty command remains unavailable. This adds no host read or control verb. CONFIG gates this unit-derived value by the unit source, so a separate broker failure cannot hide a successful unit read. A fake unit reader exercises the manager, status document, fold and composited CONFIG row for positive, negative and unknown cases.
+
+### 2026-10-04 — PEPEPANE round 9 review: CONTROL audit signature
+
+SeatControl's signature gains the existing audit projection so its doctor line can show the latest observed run. This corrects the always-never value without introducing a second panel writer or another audit read. PANELS supplies the same bounded audit rows already used by AUDIT; a complete-screen regression distinguishes the newest doctor event from a later unrelated action. The signature agreement and schema documentation move together. The schema guide also uses the producers' literal not-read and text-expired state spellings.

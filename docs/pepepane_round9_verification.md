@@ -160,3 +160,14 @@ Every original scenario now runs against the dashboard. Four test names changed;
 | tests/screens/test_seat_screen.py::test_the_control_modal_paints_its_cycles_onto_the_suspended_screen | tests/screens/test_seat_round9_navigation.py::test_hidden_log_emitted_line_is_visible_once_after_live and test_hidden_updated_then_shown_matches_visible_updated_strips[5] |
 
 All37 original named scenarios remain in the dashboard-backed test file. Cursor-selected skill ids replace typed ids with a separate invalid-row regex case. Ordinary PANELS refresh replaces modal payload forwarding. Held broker tests dispatch actual Escape Key events and wait for the rendered LIVE selection while the reply remains held. Parametrized scenarios (transport/root/mac/partial/refusal) remain intact. The final WP5 affected gate passed 163 checks and its finding-only review passed eight. The six compatibility files separately passed 27/9/46/170/69/6 checks.
+
+
+## Final whole-branch review and fix wave
+
+The required whole-branch review found one Critical and two Important issues after 84 focused checks: JOB collapsed running nodes sharing a job id; auto-update was never populated; CONTROL lacked audit input for its doctor timestamp. Permanent regressions first produced 7 failures and 2 passing unknown-state controls. The single fix wave addresses all three, plus the Minor schema-state spelling correction. The affected gate passed 412 checks; its one key-count test observed an unrelated periodic refresh. Isolating that test timer kept the exact five manual refreshes and no-plan assertions, then the full navigation file plus all 12 new finding cases passed 32 checks. The revised key test also failed under the original wrong-verb mutation (zero refreshes instead of five), then source bytes were restored. Finding-only re-review and final suites are pending.
+
+- `tests/widgets/test_seat_round9_bodies.py::test_same_job_attempts_keep_identity_text_and_detail_while_stepping` covers separate attempt text and detail keys, standing-only node keys, partial cache, stepping and refresh selection.
+- `tests/data/test_seat_round9_defects.py::test_execstart_auto_update_reaches_document_fold_and_config` covers true, false, nonmatching flags and missing/empty ExecStart through the real document fold and CONFIG compositor.
+- `tests/widgets/test_seat_round9_bodies.py::test_control_doctor_last_run_arrives_through_panels_audit_contract` binds the latest doctor timestamp to ordinary panel dispatch.
+
+The final finding-only re-review approved all three corrections: 13 targeted checks passed. Restoring the job-only cache match made the attempt regression fail; byte-identical restoration passed again. No review finding remains open.

@@ -98,6 +98,8 @@ async def test_live_refresh_and_control_keys_never_open_plan_elsewhere(monkeypat
     async with app.run_test(size=(170, 50)) as pilot:
         screen = app.screen
         await pilot.pause()
+        # Count key-driven refreshes only, independent of the five-second cadence.
+        screen._refresh_timer.pause()
         refreshes = []
         monkeypatch.setattr(screen, 'start_refresh', lambda: refreshes.append(True))
         for key in ('2', '1', '3', '4', '5'):

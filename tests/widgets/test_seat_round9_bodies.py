@@ -212,3 +212,63 @@ async def test_job_usage_falls_back_to_submission_wall_clock():
     text = '\n'.join(await composite_lines(SeatJob, (110,30), seat_jobs=[dict(jobId=JOB,
         usage={'model':'api-model','turns':4,'tokens':{'output':900},'wallMs':55000,'wallS':None})]))
     assert 'api-model · 4 turns · out 900 · took 55 s' in text
+
+
+@pytest.mark.parametrize('cached_count', [0, 1, 2])
+@pytest.mark.parametrize('node_ids', [True, False])
+async def test_same_job_attempts_keep_identity_text_and_detail_while_stepping(cached_count, node_ids):
+    from maxpane_dashboard.screens.seat_task_detail import SeatTaskDetail
+
+    current = [dict(jobId=JOB, nodeId8=node if node_ids else None, nodeKey='node_' + label, phase='working',
+                    elapsedS=elapsed, objective='standing ' + label)
+               for label, node, elapsed in [('first', '11111111', 11), ('second', '22222222', 22)]]
+    cached = [dict(row, key='attempt-' + label, nodeId8=node, objective='cached ' + label, questionState='read')
+              for row, label, node in zip(current, ('first', 'second'), ('11111111', '22222222'))][:cached_count]
+    flat = _seat_payload()
+    flat.update(seat_current_jobs=current, seat_jobs=cached)
+    async with _seat_app(flat).run_test(size=(180,55)) as pilot:
+        await pilot.pause()
+        screen = pilot.app.screen
+        panel = screen.query_one(SeatJob)
+        for index, label in enumerate(('first', 'second')):
+            if index:
+                await pilot.press('n'); await pilot.pause()
+            text = '\n'.join(strips(screen))
+            row = panel.selected_row()
+            assert row['nodeId8'] == (('11111111', '22222222')[index] if node_ids or index < cached_count else None)
+            assert row.get('key') == ('attempt-' + label if index < cached_count else None)
+            assert 'node_' + label in text and f'{current[index]["elapsedS"]} s' in text
+            question = ('cached ' if index < cached_count else 'standing ') + label
+            assert question in text and f'{index+1} of 2' in text
+            await pilot.press('enter'); await pilot.pause()
+            assert isinstance(pilot.app.screen, SeatTaskDetail)
+            assert question in '\n'.join(strips(pilot.app.screen))
+            await pilot.press('escape'); await pilot.pause()
+        # A refresh reorders the same running attempts; the selected attempt stays selected.
+        panel.update_data(seat_current_jobs=list(reversed(current)), seat_jobs=list(reversed(cached)))
+        await pilot.pause()
+        assert panel.selected_row()['nodeId8'] == ('22222222' if node_ids or cached_count == 2 else None)
+        assert 'node_second' in '\n'.join(strips(screen))
+        # Cache arrival also keeps the standing-only selection while adding its detail key.
+        if not cached_count:
+            complete = [dict(row, key='attempt-' + label, nodeId8=node, objective='cached ' + label, questionState='read')
+                        for row, label, node in zip(current, ('first', 'second'), ('11111111', '22222222'))]
+            panel.update_data(seat_current_jobs=current, seat_jobs=complete)
+            await pilot.pause()
+            assert panel.selected_row()['key'] == 'attempt-second'
+            assert 'cached second' in '\n'.join(strips(screen))
+
+
+async def test_control_doctor_last_run_arrives_through_panels_audit_contract():
+    from datetime import datetime
+    flat = _seat_payload()
+    flat['seat_control_last_audit'] = [
+        dict(ts='2026-10-03T16:00:00Z', verb='doctor', outcome='applied'),
+        dict(ts='2026-10-03T17:08:00Z', verb='doctor', outcome='applied'),
+        dict(ts='2026-10-03T17:09:00Z', verb='restart', outcome='verified'),
+    ]
+    async with _seat_app(flat).run_test(size=(180,50)) as pilot:
+        await pilot.pause(); await pilot.press('6'); await pilot.pause()
+        line = next(line for line in strips(pilot.app.screen) if '[D]' in line)
+        clock = datetime.fromisoformat('2026-10-03T17:08:00+00:00').astimezone().strftime('%H:%M')
+        assert 'last ' + clock in line and 'last never' not in line

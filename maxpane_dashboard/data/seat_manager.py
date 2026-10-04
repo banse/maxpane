@@ -1158,6 +1158,11 @@ class SeatManager:
         skills_parsed = skills.get("parsed") if isinstance(skills, Mapping) and isinstance(skills.get("parsed"), Mapping) else {}
         standing = self._payload("standing") if isinstance(self._payload("standing"), Mapping) else {}
         hints = self._payload("hints")
+        unit_payload = self._payload("unit")
+        unit = unit_payload.get("unit") if isinstance(unit_payload, Mapping) else None
+        exec_start = unit.get("execStart") if isinstance(unit, Mapping) else None
+        auto_update = (bool(re.search(r"(?:^|\s)--auto-update(?=\s|;|$)", exec_start))
+                       if isinstance(exec_start, str) and exec_start.strip() else None)
         runtime_id, runtime_version = None, None
         for row in self._as_list(parsed.get("runtimes")):
             if row.startswith("→"):
@@ -1182,6 +1187,7 @@ class SeatManager:
             "runtime": {"id": runtime_id or self._runtime, "version": runtime_version},
             "releaseAvailable": self._state.release_available,
             "buildMismatch": bool(self._state.build_mismatch) if self._state.daemon_version is not None else None,
+            "autoUpdate": auto_update,
             "skills": {
                 "offered": self._first_int(skills_parsed.get("offered")),
                 "on": self._first_int(skills_parsed.get("on")),
