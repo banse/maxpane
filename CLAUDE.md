@@ -105,7 +105,8 @@ python -m maxpane_dashboard --version                     # trust this over memo
 `BINDINGS` in `screens/*.py` are the truth. **Layout is a function of terminal columns and its
 rules live in `.claude/skills/terminal-layout/SKILL.md`** — read it before changing anything that
 affects how a dashboard is sized. Numbers live only in the `#:` block beside each pin constant;
-the app-wide pin is `__main__.FULL_LAYOUT_COLUMNS`. Logs: `~/.maxpane/maxpane.log`; caches:
+the app-wide pin is `__main__.FULL_LAYOUT_COLUMNS`. To measure surf's `s`/`a`/`b` bodies, use
+`scripts/measure_layout.py` (the layout sweep's own `_render()`), not a one-off script. Logs: `~/.maxpane/maxpane.log`; caches:
 `~/.maxpane/*.json`. **Env vars** (all optional, none a key or secret): `MAXPANE_ETH_RPC_URL`,
 `MAXPANE_BASE_RPC_URL`, `MAXPANE_WALLET`, `MAXPANE_INDEXER_DB`, `MAXPANE_BASEBOARD_ENV`,
 `MAXPANE_FONT_SIZE` (0 = leave the terminal alone).
@@ -139,13 +140,13 @@ packages both named `tests` raised `ImportPathMismatchError`.
 - **Once, before the commit:** the touched test files and the composing screen/manager file whole,
   `HOME=$(mktemp -d) .venv/bin/python -m pytest -n 4 --dist worksteal <files>` (a file that goes
   red only under worksteal: rerun it serially and file it), plus the fast guard list
-  `tests/analytics/test_range_filters.py tests/data/test_rpc_classify.py tests/data/test_rpc_shared.py
+  `-m guard tests/analytics/test_range_filters.py tests/data/test_rpc_classify.py tests/data/test_rpc_shared.py
   tests/test_address_rule.py tests/test_address_sweep_registry.py tests/test_fwa_guardrails.py
   tests/widgets/test_bakery_widgets.py tests/widgets/test_filter_editor.py tests/widgets/test_panels.py`
   (67 tests, ~6 s). Add `tests/test_surf_registration.py tests/test_curator_registration.py`
   (~100 s, they mount the app) only when README, a SKILL.md, CLAUDE.md, `.claude/rules/`,
-  `BINDINGS`, a key or another registration surface changed. Not `-m guard`: it always pulls
-  those two files in.
+  `BINDINGS`, a key or another registration surface changed. Not a bare `-m guard` over `tests/`:
+  it always pulls those two files in.
 
 The full suite runs only when the owner asks or right before a version tag, by the controller —
 never by an implementer or reviewer, never as a merge or push gate; cite the last green run.
@@ -183,8 +184,9 @@ and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports 
 - **Classify RPC errors on message text, not code**; state and logs need different endpoint
   pools; a provider's error is evidence only about the request it read — rotate, do not shrink.
 - **Tests:** assert against composited output (`render_strips()`), not the content string; prove
-  a test bites where the change is decoder- or concurrency-shaped or moves a pin; no wall-clock
-  waits in pilot tests — await an observable state.
+  a test bites where the change is decoder- or concurrency-shaped or moves a pin, with
+  `scripts/mutate.py` (it applies, runs, names which test reddened, and restores byte for byte);
+  no wall-clock waits in pilot tests — await an observable state.
 
 ## Known hazards
 
@@ -229,10 +231,10 @@ Checker, Evidence Collector, `feature-dev:code-reviewer` — it has no shell) as
    crash, any network/key/signing path, a weakened security gate. Important = a convention above
    broken, a missing requirement, a test that cannot fail. Minor = everything else, including
    test-rigor-only findings. No target count: zero findings is a valid report.
-3. **Verification is expected:** mutate files in place to test a claim and run the *named* test;
-   restore by inverse edit only — `git checkout`, `git stash`, `git reset`, `git restore`,
-   `git clean`, `git add` are forbidden — and finish with `git status` clean. Never commit, fix,
-   or widen the diff; no directory or suite runs. No shell → say so in line 1 and mark every
+3. **Verification is expected:** mutate files in place to test a claim and run the *named* test
+   (`scripts/mutate.py` does both and restores); restore by inverse edit only — `git checkout`,
+   `git stash`, `git reset`, `git restore`, `git clean`, `git add` are forbidden — and finish with
+   `git status` clean. Never commit, fix, or widen the diff; no directory or suite runs. No shell → say so in line 1 and mark every
    mutation claim unverified.
 4. **Mandated redundancy is not duplication:** a hand-typed copy an agreement test binds is
    correct; flag a copy only when no agreement test names it. **Precedence:** CLAUDE.md

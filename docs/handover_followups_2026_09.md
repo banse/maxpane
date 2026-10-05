@@ -881,3 +881,27 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     keyword is `burns_history`.** `update_data`'s `**_kwargs` swallows the typo, so the case renders
     a `None` series, which reads `unavailable` since #34. The blank-row assertion still holds, but
     the case is not exercising the series it names. **Minor, Tier 0.**
+
+## Slow-work tooling — `scripts/mutate.py` and `scripts/measure_layout.py` (2026-10-05, review residuals)
+
+82. **`measure_layout.problems()` is not BOARD's wholeness.** `scripts/measure_layout.py:57-74` applies
+    `_assert_whole` + overflow + `‹ taller` only. `_assert_board_whole`
+    (`tests/screens/test_surf_swarm_layout.py:1072-1079`) also requires LEADERBOARD's `full` tier, its
+    twelve column labels and `clipped_fields` within `{"runtime"}` (worst) or empty, and it excuses
+    LEADERBOARD's marker on `board-worst`. So the script reports `board-worst` at 141×33 as not whole,
+    and could call a BOARD size whole that the sweep rejects. The docstring's "the number read here is the
+    number the test will see" overstates it for `b`. Fix: reuse `_assert_board_whole` for `b` (catch the
+    assertion) or narrow the docstring. **Minor, Tier 0.**
+
+83. **Four of `problems()`'s six checks are unpinned.** Mutating the `overflow`, `marked`, `clipped` or
+    status-bar branch to `if False:` survives `tests/screens/test_measure_layout_script.py`; only `hidden`
+    and `taller` are killed. Fix: one unit test on `problems()` over hand-built result dicts. **Minor,
+    Tier 0.**
+
+84. **`mutate.py`: worktree runs and the signal path.** `--root` changes only the cwd: no `PYTHONPATH`,
+    and the default `--python` is the main `.venv`, so a run against a tree copy tests MAIN for anything
+    outside `pytest.pythonpath = ["."]` (`sybilkit/src`); say so in the docstring or set `PYTHONPATH`
+    from `--root`. The SIGINT/SIGTERM restore was verified by hand (both exit 130, file byte-identical, no
+    child left) but no committed test covers it, and a `--mutants` batch stops with a traceback on the
+    first mutant that cannot be encoded (a lone surrogate), leaving later ones unrun (the file is
+    restored). **Minor, Tier 0.**
