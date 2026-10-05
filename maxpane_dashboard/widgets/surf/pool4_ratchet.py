@@ -49,6 +49,7 @@ from textual.widgets import Static
 
 from maxpane_dashboard.widgets.fmt import fmt_eth
 from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.panels import UNAVAILABLE
 from maxpane_dashboard.widgets.sparkline_common import (
     build_sparkline,
     coerce_points,
@@ -242,7 +243,7 @@ def _fmt_tick(value: object) -> str:
 
 
 def _reserve_spark(series: object) -> str:
-    """The reserve sparkline, or ``""`` when there is not enough history.
+    """The reserve sparkline, unavailable on failure, or blank for a short list.
 
     Deliberately **not** ``build_sparkline_from_points``: that helper renders
     a series shorter than ``min_points`` as a flat baseline, and a flat line
@@ -250,10 +251,12 @@ def _reserve_spark(series: object) -> str:
     sparkline says "no history yet"; a flat one says "nothing is happening",
     and only one of those is true on a cold cache.
     """
+    if not isinstance(series, list):
+        return UNAVAILABLE
     points = coerce_points(series)
     if len(points) < 2:
         return ""
-    return build_sparkline([v for _, v in points], width=RESERVE_SPARK_WIDTH)
+    return f"[dim]{build_sparkline([v for _, v in points], width=RESERVE_SPARK_WIDTH)}[/]"
 
 
 def _row(label: str, value: str) -> str:
@@ -407,7 +410,7 @@ class SurfPool4Ratchet(Vertical):
         reserve = f"{_fmt_imd_compact(p.get('tokens_in_pool'))} IMD"
         spark = _reserve_spark(p.get("series")) if full else ""
         if spark:
-            reserve = f"{reserve} [dim]{spark}[/]"
+            reserve = f"{reserve} {spark}"
         markup.append(_row("reserve", reserve))
 
         markup.append(

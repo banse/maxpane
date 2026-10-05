@@ -1710,3 +1710,26 @@ async def test_hatches_with_no_network_word_links_nothing():
     allowlist is not a network. Neither may guess an explorer."""
     assert await _hatches_links(dict(HATCHES_HEALTHY, pool4_network=None)) == []
     assert await _hatches_links(dict(HATCHES_HEALTHY, pool4_network="ARBITRUM")) == []
+
+
+@pytest.mark.parametrize("series", [None, [], {}], ids=["none", "empty", "non-list"])
+async def test_ratchet_failed_series_is_yellow_and_empty_has_no_spark(series):
+    class _A(App):
+        def compose(self):
+            yield SurfPool4Ratchet()
+
+    async with _A().run_test(size=(100, 40)) as pilot:
+        pilot.app.query_one(SurfPool4Ratchet).update_data(
+            **dict(RATCHET_HEALTHY, pool4_reserve_series=series))
+        await pilot.pause()
+        rows = ["".join(seg.text for seg in strip)
+                for strip in pilot.app.screen._compositor.render_strips()]
+        y = next(y for y, row in enumerate(rows) if row.strip().startswith("reserve"))
+        assert "152.0M" in rows[y]
+        assert not any(ch in rows[y] for ch in SPARK_CHARS)
+        if isinstance(series, list):
+            assert "unavailable" not in rows[y]
+        else:
+            assert "unavailable" in rows[y]
+            style = pilot.app.screen.get_style_at(rows[y].index("unavailable"), y)
+            assert style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]

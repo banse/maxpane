@@ -1062,14 +1062,15 @@ async def test_market_supply_sparkline_shows_the_burn_steps():
         assert "2.4M" in supply_line          # the live end-state, labelled
 
 
-async def test_market_short_or_missing_series_say_waiting():
+async def test_market_empty_waits_but_missing_is_unavailable():
     widget = SurfMarket()
     app = _Harness(widget)
     async with app.run_test(size=(80, 14)) as pilot:
         widget.update_data(**{**_FULL_MARKET, "supply_series": [], "price_series": None})
         await pilot.pause()
         screen = _screen_text(app)
-        assert screen.count("waiting for data") == 2
+        assert screen.count("waiting for data") == 1
+        assert "unavailable" in next(line for line in screen.splitlines() if "price" in line)
 
 
 async def test_market_no_args_and_all_none_render_dashes_never_zero():
@@ -2154,3 +2155,21 @@ def test_the_boards_box_drops_quotes_and_dash_only_at_the_minimal_tier():
         assert [l.strip() for l in _boards_lines(tier)[1:]] == [
             "'a' - imd agent", "'b' - leaderboard", "'s' - swarm", "'4' - pool4"]
     assert max(len(l) for l in _boards_lines("minimal")[1:]) == 13
+
+
+@pytest.mark.parametrize("series", [None, [], {}], ids=["none", "empty", "non-list"])
+async def test_market_failed_series_is_yellow_and_empty_waits(series):
+    widget = SurfMarket()
+    async with _Harness(widget).run_test(size=(140, 14)) as pilot:
+        widget.update_data(**{**_FULL_MARKET, "price_series": series, "supply_series": series})
+        await pilot.pause()
+        rows = ["".join(seg.text for seg in strip)
+                for strip in pilot.app.screen._compositor.render_strips()]
+        for label in ("price", "supply"):
+            y = next(y for y, row in enumerate(rows) if label in row)
+            if isinstance(series, list):
+                assert "waiting for data" in rows[y] and "unavailable" not in rows[y]
+            else:
+                assert "unavailable" in rows[y] and "waiting for data" not in rows[y]
+                style = pilot.app.screen.get_style_at(rows[y].index("unavailable"), y)
+                assert style.color.get_truecolor() == (255, 255, 0)

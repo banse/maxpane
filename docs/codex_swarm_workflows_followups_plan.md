@@ -451,6 +451,25 @@ widget (drop the `None` branch; the `None` case must fail). Tests as in §2: whi
 widget's cases; before the commit, the widget's test file and the dashboard's composing screen
 file, whole.
 
+**Landed — F85/SURF (Tier 1), 2026-10-05.**
+Commit: `fix(surf): distinguish failed sparkline histories` (same-commit title).
+MARKET and RATCHET use shared yellow unavailable for missing/non-list history.
+BURN & SUPPLY already distinguished None from empty; its non-list flow now
+takes the unavailable route too. Empty-list wording and chart formatting stay intact.
+Live keyless default, `e` and `4` views shown at 200×48: successful histories
+draw price, supply, reserve and burn charts. No layout pin moved.
+Red first: **6 failed / 4 passed**; focused green: **10 passed**.
+Whole three widget files plus default/pool4/pool4-market composing screens:
+**538 passed**; fast guards: **120 passed**; doc pins: **12 passed**.
+`scripts/mutate.py` verdicts (all restored byte-for-byte):
+- **KILLED MARKET history boundary**:
+  `test_market_failed_series_is_yellow_and_empty_waits[none]`.
+- **KILLED RATCHET history boundary**:
+  `test_ratchet_failed_series_is_yellow_and_empty_has_no_spark[none]`.
+- **KILLED BURN failed flow as empty**:
+  `test_burn_failed_series_is_yellow_and_empty_is_quiet[none]`.
+Owner-run Tier 1 review remains pending.
+
 ## 8. WP5 — the Tier 0 items (one commit each, any order)
 
 - **F74: keep the upgrade rule, and say why.**

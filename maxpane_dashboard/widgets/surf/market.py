@@ -225,6 +225,7 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.markup_safety import visible_len
+from maxpane_dashboard.widgets.panels import UNAVAILABLE
 from maxpane_dashboard.widgets.rowfit import SHORT_HINT
 from maxpane_dashboard.widgets.sparkline_common import (
     SPARK_WIDTH,
@@ -520,7 +521,9 @@ def _fmt_parity(value) -> str:
 
 
 def _spark(series) -> str:
-    """A block sparkline from ``[[ts, value]]``, or the waiting message."""
+    """A block sparkline, waiting for a short list, or unavailable on a failed read."""
+    if not isinstance(series, list):
+        return UNAVAILABLE
     points = coerce_points(series)
     if len(points) < 2:
         return _WAITING

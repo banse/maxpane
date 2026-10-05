@@ -212,12 +212,9 @@ def burn_points(rows) -> list[tuple[float, float]] | None:
     An empty *list* in, an empty list out: that is the real "we looked and the
     window is quiet" state, and the caller tells the two apart.
     """
-    if rows is None:
+    if not isinstance(rows, list):
         return None
-    try:
-        items = list(rows)
-    except TypeError:
-        return None
+    items = rows
     pairs: list[tuple[float, float]] = []
     for row in items:
         if not isinstance(row, dict):

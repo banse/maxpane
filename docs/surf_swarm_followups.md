@@ -1117,3 +1117,10 @@ next touched, never as its own branch, except where an item is an owner decision
   IMPORTANT.** These are fwa's, curator's and surf's market and pool4 sparklines. #34 fixed the
   shared base only (spec §4). Each remaining one is the same "failed read in the real negative's
   clothes" shape. Do them per dashboard, one regression case each on composited output.
+
+  **F85 CLOSED 2026-10-05** for the prescribed FWA/curator/SURF widgets
+  (`c7146ba`, `7deb9d6`, and commit `fix(surf): distinguish failed sparkline histories`).
+  Missing/non-list histories now paint yellow unavailable, empty lists keep their
+  existing sentences, and all five widget mutants are KILLED. Live 200×48 views shown;
+  scoped runs: FWA 55, curator 668, SURF 538 passed. Upstream manager gaps and legacy
+  Frenpet inventory findings are filed as handover #96–#99.

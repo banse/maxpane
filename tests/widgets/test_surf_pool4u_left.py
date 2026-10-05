@@ -1178,3 +1178,24 @@ def test_the_rail_panels_share_one_label_column() -> None:
     # agrees with itself while both panels run their labels into their values.
     for label in BURN_ROW_LABELS:
         assert cell_len(label) < BURN_LABEL_COLS, label
+
+
+@pytest.mark.parametrize("series", [None, [], {}], ids=["none", "empty", "non-list"])
+async def test_burn_failed_series_is_yellow_and_empty_is_quiet(series):
+    class _A(App):
+        def compose(self):
+            yield SurfPool4UBurn()
+
+    async with _A().run_test(size=(80, 16)) as pilot:
+        pilot.app.query_one(SurfPool4UBurn).update_data(**dict(BURN_KW, pool4_flow=series))
+        await pilot.pause()
+        rows = ["".join(seg.text for seg in strip)
+                for strip in pilot.app.screen._compositor.render_strips()]
+        text = "\n".join(rows)
+        if isinstance(series, list):
+            assert BURN_EMPTY_LINE in text and BURN_UNAVAILABLE_LINE not in text
+        else:
+            assert BURN_UNAVAILABLE_LINE in text and BURN_EMPTY_LINE not in text
+            y = next(y for y, row in enumerate(rows) if "unavailable" in row)
+            style = pilot.app.screen.get_style_at(rows[y].index("unavailable"), y)
+            assert style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
