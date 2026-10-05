@@ -55,6 +55,12 @@ rule overrides its "take the heavier path" and its Bounded path maps to Tier 1.)
   single payload) is Minor: file it, do it as Tier 0 when its file is next touched, never its own
   branch or dispatch. A follow-ups branch is Tier 0 per item unless the item names a pin, a
   contract key or a shared widget. A perf item enters a branch only with a measured number.
+- **Show the real render before hardening.** Any tier that changes what a dashboard paints: once
+  it works, render it keyless against live data at the owner's terminal size (ask once if
+  unknown) and show the owner — the app in their terminal, or a live render pasted back — before
+  re-sweeping pins, writing `#:` blocks or docs, or dispatching a review. A mock-up or a fixture
+  render is not this step: the owner's corrections come from the live render, so they land before
+  the hardening, not after it.
 
 **New dashboard (Tier 2):** research the project into `docs/<game>_game_mechanics.md` (existing
 files are the pattern); brainstorm with the owner in chat; write `docs/<game>_PRD.md` on the
@@ -205,6 +211,9 @@ and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports 
   `git add` are forbidden in a review — ending with `git status` clean. **The working tree may
   contain uncommitted user work**: never `git checkout --` a file to undo your own edit.
   Subagents never spawn subagents; one reviewer per diff, never two.
+- **A brief carries what the controller already read:** it names the files and the line ranges or
+  symbols the agent needs, and which of them it may change, so the agent starts at the code
+  instead of re-reading the package cold. The ranges are where to start, not a fence.
 
 ## Reviewer contract
 
