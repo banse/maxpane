@@ -19,5 +19,5 @@ a62ba9e8e0ae64e1bbe2e90594e948efe9ecbaba6cca7cbe1f91b2741cfad56f  deploy/vps/20-
 0e25f8c6665e7c7265dde4ad922271599eae38ae9259866f359bff459380b8ac  deploy/vps/install.sh
 101c5c39046f30e7e5c5e7dec3f3a83a8deed4fb10ac08aafa087bc6a30e6b3c  deploy/vps/probe_seat_host.sh
 3d9efcceed7e0221bcd4470569a3b27da71f6ef3badf23393ef35a35db1ba002  deploy/vps/check_fork_wheel.py
-d23ba77603730cd80549b716e747007d3412852d9903132fb2e6bca670b8b662  deploy/vps/requirements.lock
-d4fc790baa12a5fba44f09c464e8c431084491a475aa4cfde1a711bb2db9f499  deploy/vps/wheels/maxpane-0.9.3-py3-none-any.whl
+d6158b9a83ed61c1e0b2324daed8360cefa591f0f9940a0a8ca5cee77d52f6a2  deploy/vps/requirements.lock
+bcb0e68b5ddc944f2f6da59e00ad12d27ac408ea1d6de30fcda02e50847c67e2  deploy/vps/wheels/maxpane-0.9.3-py3-none-any.whl
