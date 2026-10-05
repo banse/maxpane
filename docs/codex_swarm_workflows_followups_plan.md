@@ -544,6 +544,15 @@ the failure and address colors, copy target and link absence from the compositor
 Focused: **1 passed**; whole widget/composing screen: **132 passed**;
 fast guards: **120 passed**; doc pins: **12 passed**. No mutation mandated.
 
+**Landed — F78 (Tier 0, test only), 2026-10-05.**
+Commit: `test(surf): pin the workflow text column floor`.
+A measured widget budget below `TIGHT_WIDTH` retains a 20-cell column;
+scrolling to its end exposes the composited 19-character prefix plus ellipsis.
+Focused: **1 passed**; whole widget/composing screen: **133 passed**;
+fast guards: **120 passed**; doc pins: **12 passed**.
+`scripts/mutate.py`: **KILLED m1** (`max(TEXT_MIN_COLS, spare)` → `spare`);
+named red `test_text_floor_clips_below_the_tight_budget`.
+
 **Stop after WP5.** Report:
 - the branch head and the commit list;
 - per item: its tier, the tests run with their counts, and the mutants with which test

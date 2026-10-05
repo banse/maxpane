@@ -519,3 +519,18 @@ async def test_red_failure_and_embedded_address_render_together_without_a_link()
         start = lines[y].index(C0DE)
         assert not [t for t in link_targets(pilot.app)
                     if t[1] == y and start <= t[0] < start + len(C0DE) + 2]
+
+
+async def test_text_floor_clips_below_the_tight_budget():
+    async with _Probe().run_test(size=(TIGHT_WIDTH + GUTTER - 1, 20)) as pilot:
+        widget = pilot.app.query_one(SurfSwarmWorkflows)
+        widget.update_data(swarm_workflow_rows=[_row(objective="z" * 80)])
+        await pilot.pause()
+        assert widget._budget() < TIGHT_WIDTH
+        table = pilot.app.query_one(DataTable)
+        column = next(c for c in table.columns.values() if c.label.plain == "objective / failure")
+        assert column.width == TEXT_MIN_COLS == 20
+        table.scroll_to(x=table.max_scroll_x, animate=False)
+        await pilot.pause()
+        row = next(row for row in _strip_rows(pilot.app) if "zzz" in row)
+        assert "z" * 19 + "…" in row, row

@@ -1094,6 +1094,9 @@ next touched, never as its own branch, except where an item is an owner decision
   `max(TEXT_MIN_COLS, spare)` to `spare` in `swarm_workflows.py`, and
   `tests/widgets/test_surf_swarm_workflows.py` stayed green. The floor matters only under
   `TIGHT_WIDTH` (about 92 terminal columns on SWARM).
+  **CLOSED 2026-10-05** (commit: `test(surf): pin the workflow text column floor`).
+  Below the tight budget, the installed column stays 20 cells and its composited
+  text ends in an ellipsis. Replacing the minimum with spare is KILLED.
 - **F79 — WORKFLOWS: an entry with no usable field folds to an all-`None` row.** `workflow_rows` keeps
   one row per mapping, so a persisted mapping with garbage values becomes a row of `None`s. No test
   pins how WORKFLOWS paints it.
