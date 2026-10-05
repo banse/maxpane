@@ -568,6 +568,13 @@ Whole layout and composing screen files (also validating F83's prepared docstrin
 **682 passed** (314.32 s); fast guards: **120 passed**; doc pins: **12 passed**.
 No pin changed and no mutation was mandated.
 
+**Landed — F83 (Tier 0, comment only), 2026-10-05.**
+Commit: `docs(surf): describe the current agent screen composition`.
+Docstring checked against `SurfScreen.compose`: hero, seat-card row, RECORD,
+and the filter replacing RECORD. Its unchanged test code was validated together
+with F82: **682 passed**, including the whole composing screen file.
+Fast guards: **120 passed**; doc pins: **12 passed**. No mutation required.
+
 **Stop after WP5.** Report:
 - the branch head and the commit list;
 - per item: its tier, the tests run with their counts, and the mutants with which test

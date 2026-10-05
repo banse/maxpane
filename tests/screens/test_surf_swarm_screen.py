@@ -4,8 +4,9 @@ Swarm v2 (WP7, 2026-09-21): the 2026-09-16 body (THE FIELD, QUEUE, JUST
 SHIPPED, the score-table THROUGHPUT) is gone; ``s`` shows the hero over
 WORKFLOWS | THROUGHPUT (WORKFLOWS in CAPABILITY's place since 2026-10-03,
 THROUGHPUT folded by ``x``), IN FLIGHT | LAUNCHES and SITES, and the new ``a``
-shows the seat hero over ROSTER | SEAT RECORD, RECORD and FEEDBACK. Geometry is
-``test_surf_swarm_layout.py``'s; this file is composition and behaviour.
+shows the agent hero over one seat-card row and full-width RECORD. The record
+filter editor takes RECORD's place while open; the hero and cards stay.
+Geometry is ``test_surf_swarm_layout.py``'s; this file is composition and behaviour.
 
 The AGENT body reads the seat's lifetime ``/seats`` record since WP5 of
 ``docs/surf_agent_seats_plan.md`` (the contract flip). The seat tests below

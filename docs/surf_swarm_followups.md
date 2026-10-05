@@ -1125,6 +1125,8 @@ next touched, never as its own branch, except where an item is an owner decision
   through the existing whole-body geometry checks.
 - **F83 — a stale docstring in `tests/screens/test_surf_swarm_screen.py`** still names ROSTER, SEAT
   RECORD and FEEDBACK, panels SWARM no longer mounts (WP5 review).
+  **CLOSED 2026-10-05** (commit: `docs(surf): describe the current agent screen composition`).
+  The test module now names the agent hero, seat-card row, RECORD and its replacement filter.
 - **F84 — out of scope by the spec's §5. OWNER DECISIONS.** The candidates:
   - `/workflows` pagination (the read is the newest 12);
   - a workflow detail popup;
