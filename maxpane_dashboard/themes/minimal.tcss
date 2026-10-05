@@ -2544,9 +2544,9 @@ SurfScreen #surf-swarm-body {
     scrollbar-gutter: stable;
 }
 
-/* The floor is THROUGHPUT's nine collapsed lines (title, blank, window,
+/* Layout v3 (2026-10-05): the floor is THROUGHPUT's nine short-form lines (title, blank, window,
  * gap, three durations, gap, completed 24h) -- the screen opens it
- * collapsed and `x` unfolds it; a floor equal to content, bound by the
+ * short; `x` opens a separate popup. The floor equals content, bound by the
  * layout test (`screens/surf.SURF_SWARM_FULL_LAYOUT_ROWS`). */
 SurfScreen #surf-swarm-top {
     height: 1fr;
@@ -2602,6 +2602,8 @@ SurfSwarmInFlight {
     padding: 0 1;
 }
 
+/* Layout v3: LAUNCHES now takes the rest of the top row beside THROUGHPUT.
+ * The old 4:5 IN FLIGHT split above is historical; that widget is parked. */
 SurfSwarmLaunches {
     width: 1fr;
     height: 1fr;
@@ -2609,7 +2611,7 @@ SurfSwarmLaunches {
     padding: 0 1;
 }
 
-/* `swarm_sites.FULL_WIDTH` (111) + 4 = 115 fits the body at the pin. */
+/* Layout v3: measured SITES full from 129, compact from 121; see surf.py. */
 SurfSwarmSites {
     width: 100%;
     height: 1fr;

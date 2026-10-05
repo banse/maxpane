@@ -7,7 +7,7 @@ them, ``b`` by ``_assert_board_whole`` itself. Committed fixtures only: nothing 
 network.
 
     .venv/bin/python scripts/measure_layout.py s capture 136:140x35
-    .venv/bin/python scripts/measure_layout.py s worst-s 138x30:36 --expanded
+    .venv/bin/python scripts/measure_layout.py s worst-s 138x30:36
     .venv/bin/python scripts/measure_layout.py a capture 130:150x33 --whole-from
     .venv/bin/python scripts/measure_layout.py b board-worst 140x40 --json
 
@@ -97,16 +97,17 @@ def board_problems(r: dict, kind: str) -> list[str]:
     return out
 
 
-async def measure(key: str, payload_name: str, sizes: list[tuple[int, int]], *,
-                  expanded: bool = False) -> list[dict]:
+async def measure(key: str, payload_name: str, sizes: list[tuple[int, int]]) -> list[dict]:
     build = payloads()[payload_name]
     rows = []
     for size in sizes:
-        r = await layout._render(build(), size, key, expanded=expanded)
+        r = await layout._render(build(), size, key)
         found = (board_problems(r, payload_name.removeprefix("board-")) if key == "b"
                  else problems(r))
         rows.append({"size": size, "problems": found, "widths": r["widths"],
-                     "heights": r["heights"], "tiers": r["tiers"]})
+                     "heights": r["heights"], "tiers": r["tiers"],
+                     "hidden": r["hidden"], "marked": sorted(r["marked"]),
+                     "status_whole": r["status_whole"]})
     return rows
 
 
@@ -125,7 +126,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("key", choices=("s", "a", "b"))
     parser.add_argument("payload", help="one of: " + ", ".join(payloads()))
     parser.add_argument("size", help="WxH, either side LO:HI")
-    parser.add_argument("--expanded", action="store_true", help="press x: THROUGHPUT unfolded")
     parser.add_argument("--whole-from", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--whole-from needs one fixed side")
     sizes = [(w, h) for w in widths for h in heights]
 
-    rows = asyncio.run(measure(args.key, args.payload, sizes, expanded=args.expanded))
+    rows = asyncio.run(measure(args.key, args.payload, sizes))
     if args.json:
         print(json.dumps(rows, default=list, indent=1))
     else:

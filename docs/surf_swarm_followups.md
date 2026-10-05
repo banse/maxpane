@@ -8,12 +8,12 @@ branch's working notes (`task-*-review.md`, `task-*-re-review*.md` under
 `.superpowers/sdd/2026-09-16-surf-swarm-body/`) live in a git-ignored workspace that is deleted
 when this plan finishes, so this file is the only place these survive.
 
-## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme; F16 (SWARM half), F23, F47, F51 and F54 resolved and F73–F85 filed 2026-10-04 by `feature/surf-swarm-workflows`; F86–F87 filed 2026-10-05 by the WP2 review
+## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme; F16 (SWARM half), F23, F47, F51 and F54 resolved and F73–F85 filed 2026-10-04 by `feature/surf-swarm-workflows`; F86–F87 filed 2026-10-05 by the WP2 review; layout v3 closes F55/F60/F73, resolves F84 except SKILLS, and parks IN FLIGHT 2026-10-05
 
 Swarm v2 (WP7, `docs/surf_swarm_v2_implementation_plan.md`) deleted `swarm_queue.py` and retired
 `swarm_queue_depths` with the other seven v1 keys, so F13 (the `depths or None` conflation behind
 QUEUE's PENDING block) and F14 (a markup-only counter name rendering as `-- 3`) have no code left
-to fix: closed by removal, not by a fix. The hero's QUEUE box now reads `swarm_queue_total`, which is
+to fix: closed by removal, not by a fix. The v2 hero's QUEUE box read `swarm_queue_total` (both retired by layout v3), which was
 `None` only when nothing could be summed and `0` for a real zero (`sw.queue_total`). F11, F12 and F15
 remain open.
 
@@ -945,7 +945,10 @@ until this grouping is reconsidered (M5). FLEET's advertised model mix is render
 Measurement harness: `/tmp/test_polish_seat_budget.py`; SVGs and region/scroll JSON in
 `/tmp/polish-wp3-seat-budget-v4/`. These are local review artifacts, not shipped runtime files.
 
-## F55 — mixed service states clip at the SWARM column pin — OPEN (pre-existing layout)
+## F55 — mixed service states clip at the SWARM column pin — CLOSED BY REMOVAL 2026-10-05
+
+Layout v3 removes SERVICES from the hero. Breaker, service and health alarms move to the title,
+with compact count/labels approved by the owner; the former mixed-state card no longer exists.
 
 *2026-10-04:* the SWARM pin this entry measures against moved from 141×42 to 138×35
 (`feature/surf-swarm-workflows`). The mixed-state line was not re-measured at the new pin. The figures below are the
@@ -992,7 +995,9 @@ work and the stored-safety predicate in step with the cleaner.
   exposes `bob`, and the stored-safety predicate accepts it. Privacy gap.
 - **F59 — a non-breaking space or tab inside a user name leaks the surname.** `_HOME_USER`
   allows only `[ ]+`, so `/Users/Jane Doe/work/a.json` → `~ Doe/work/a.json`. Privacy gap.
-- **F60 — bidi format characters pass.** Only C0/C1 controls are stripped, so `x‮y` is
+- **F60 — bidi format characters pass. CLOSED 2026-10-05 (`ea7c33f`).**
+  Shared control cleaning now strips U+202A–U+202E and U+2066–U+2069, preserving ZWJ and other Cf.
+  The exact-category regression kills removal of the bidi ranges. Historical finding: Only C0/C1 controls are stripped, so `x‮y` is
   accepted and `sanitize_cell` hands it to the RECORD cell unchanged (Unicode category Cf).
 
 ## F61 — F62 — AGENT card batch review Minors (2026-09-23)
@@ -1056,7 +1061,9 @@ Sources: the WP1–WP5 task reviews, the final whole-branch review (opus), the s
 item is Minor unless it says otherwise. The Follow-ups rule applies: do it as Tier 0 when its file is
 next touched, never as its own branch, except where an item is an owner decision.
 
-- **F73 — at the 138×35 pin, `x` reveals nothing without scrolling. OWNER DECISION.** Pressing `x`
+- **F73 — at the 138×35 pin, `x` reveals nothing without scrolling. CLOSED 2026-10-05 (`46e8f82`).**
+  `x` now opens a cached throughput popup; no inline fold remains. The owner approved the live
+  200×48 layout before WP5. Historical finding: Pressing `x`
   flips the title to `x less` and lights `‹ taller`, and the top row gains a scroll nub. No states
   or cancel-reasons line becomes visible until that row is scrolled (final review M3). The spec
   allows this: expanded clears `‹ taller` from 55 rows, or 73 on F47's extra states. But on the
@@ -1085,6 +1092,8 @@ next touched, never as its own branch, except where an item is an owner decision
   **CLOSED 2026-10-05** (commit: `fix(surf): add copy icons to in-flight prose`).
   Shared fitted prose now keeps whole copyable, unlinked address units; live 200×48
   shown, 779 scoped tests pass and both widget/sweep tests kill the old-cell mutant.
+  **IN FLIGHT parked 2026-10-05; applies when it returns.**
+
 - **F77 — WORKFLOWS: no committed test combines a red failure with an embedded address** (WP4
   re-review). Add one case that composites the failure's colour and the icon together.
   **CLOSED 2026-10-05** (commit: `test(surf): cover red failures with embedded addresses`).
@@ -1130,12 +1139,13 @@ next touched, never as its own branch, except where an item is an owner decision
   RECORD and FEEDBACK, panels SWARM no longer mounts (WP5 review).
   **CLOSED 2026-10-05** (commit: `docs(surf): describe the current agent screen composition`).
   The test module now names the agent hero, seat-card row, RECORD and its replacement filter.
-- **F84 — out of scope by the spec's §5. OWNER DECISIONS.** The candidates:
-  - `/workflows` pagination (the read is the newest 12);
-  - a workflow detail popup;
-  - the SKILLS board that CAPABILITY is parked for (`SWARM_PARKED_WIDGET_SIGNATURES`);
-  - a status-bar hint for `x` (the key is in README and in THROUGHPUT's title only);
-  - persisting the fold across restarts (today it lasts for the session).
+- **F84 — owner decisions, resolved by layout v3 except SKILLS (2026-10-05).**
+  - Pagination: done as persisted history in WORKFLOWS (`5d88ea6`), up to 1,000 rows.
+    Only the newest 100 refresh each completed sweep; older changes wait for a later backfill.
+  - Workflow detail popup: done (`46e8f82`), snapshot-only and scrollable.
+  - Status-bar hint: `x more` replaces `l launchpad`; `l` stays bound (`46e8f82`).
+  - Fold persistence: dropped by the owner; the inline fold no longer exists.
+  - **SKILLS board remains OPEN.** CAPABILITY is still parked in `SWARM_PARKED_WIDGET_SIGNATURES`.
 - **F85 — the sparklines outside `SparklinePanel` still draw a `None` series as an empty one.
   IMPORTANT.** These are fwa's, curator's and surf's market and pool4 sparklines. #34 fixed the
   shared base only (spec §4). Each remaining one is the same "failed read in the real negative's
@@ -1154,6 +1164,10 @@ next touched, never as its own branch, except where an item is an owner decision
   `widgets/surf/swarm_inflight.py:10` is stale: since `ad2e058`, notes go
   `strip_tags` → `fit_prose` → plain `Text`, the same literal contract as the other
   cells, and nothing is parsed as markup. **Minor, Tier 0 when the file is next touched.**
+  **IN FLIGHT parked 2026-10-05; applies when it returns.**
+
 - **F87 — IN FLIGHT marks addresses twice in its note branch.**
   `mark_addresses(clean_note)` runs inside `fit_prose` and again for `_note_clipped`.
   Both give the same result; `fit_prose` could return its cut flag. **Minor, Tier 0.**
+
+  **IN FLIGHT parked 2026-10-05; applies when it returns.**

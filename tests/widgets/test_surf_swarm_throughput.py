@@ -1,9 +1,8 @@
 """THROUGHPUT -- the swarm signals panel on ``panels.SignalsPanelBase`` (WP5, on screen since WP7).
 
 The panel reads the plan §1.3 dict **only**; the hand dict below is that shape.
-Every assertion is against composited output. The fold (``set_expanded``, the
-``x more`` / ``x less`` hint, the collapsed display) is SWARM WORKFLOWS WP4,
-``docs/surf_swarm_workflows_spec.md`` §1; its tests are at the end.
+Every assertion is against composited output. Layout v3 keeps the panel short;
+``x more`` opens a snapshot popup. The inline fold is absent.
 """
 
 from __future__ import annotations
@@ -17,14 +16,10 @@ from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.surf.swarm_throughput import (
     ACCUMULATING_WORD,
-    CANCELS_ID,
-    FOLD_GAP_ID,
-    LESS_HINT,
     MORE_HINT,
     NO_JOBS_LINE,
     SAMPLE_FLOOR_WORD,
     STALE_WORD,
-    STATES_ID,
     SurfSwarmThroughput,
 )
 from tests.widgets.surf_compositing import composite_lines

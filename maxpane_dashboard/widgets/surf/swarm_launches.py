@@ -1,6 +1,6 @@
 """LAUNCHES: the swarm's ``/launches``, one row per launch (swarm v2, WP6).
 
-Mounted on the ``s`` body since WP7 (beside IN FLIGHT, ``minimal.tcss``);
+Mounted on the ``s`` body since WP7 (beside THROUGHPUT since layout v3, ``minimal.tcss``);
 a new file that imported nothing from the old ``swarm_shipped.py`` WP7
 deleted -- its ``TIGHT_ADDR_COLS`` reasoning is restated below, not
 imported.

@@ -29,7 +29,10 @@ the *previous* content on screen instead — a stale value presented as live. To
 symbols are attacker-controlled: anyone can deploy an ERC-20 named `[/x]`. Analytics never
 sanitises; escaping (or a `Text` with markup disabled) happens at the widget boundary, and a
 brief's test that cannot pass under escaping is a brief defect.
-The markup helpers also drop C0, DEL and C1 control characters except newline and tab.
+The markup helpers drop C0, DEL and C1 control characters except newline and tab,
+and the bidi formatting characters U+202A–U+202E and U+2066–U+2069. Other format
+characters, including emoji-joining U+200D, stay. `flatten` collapses whitespace
+before and after stripping, preserving word separation without leaving doubled spaces.
 A literal `Text` built from served text calls `strip_controls` (or `flatten` for a single line) before fitting or rendering it.
 
 ## A widget that renders third-party text through `Static` hands it a pre-built `rich.text.Text`

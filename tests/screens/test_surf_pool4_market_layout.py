@@ -1415,7 +1415,7 @@ def test_the_market_body_is_shorter_than_p_and_taller_than_the_launchpad() -> No
 #: ``STATUS_BAR_WHOLE_FROM``) before this copy followed. This literal is
 #: the hand-typed copy the last assertion of the test below binds to
 #: ``SurfScreen.KEY_HINTS``.
-KEY_HINT_PHRASE = "l launchpad · 4 pl4 · s swm · a agt · b brd"
+KEY_HINT_PHRASE = "x more · 4 pl4 · s swm · a agt · b brd"
 
 
 async def test_the_key_hint_fits_the_status_bar_at_the_full_layout() -> None:
@@ -1447,7 +1447,7 @@ async def test_the_key_hint_fits_the_status_bar_at_the_full_layout() -> None:
 
     assert KEY_HINT_PHRASE in text, (
         "the hint did not reach a pixel at the documented layout "
-        "width -- shorten '4 pool4', never 'l launchpad'"
+        "width -- shorten '4 pool4', never 'x more'"
     )
     assert any(KEY_HINT_PHRASE in segment for segment in segments), (
         "the hint reaches the screen but is split across Segments: KEY_HINTS "

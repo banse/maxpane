@@ -339,7 +339,7 @@ async def test_the_status_hint_names_both_views() -> None:
     phrase is one styled run", and a split is what makes those greps fail
     while the status bar looks perfectly correct on screen.
     """
-    phrase = "l launchpad · 4 pl4"
+    phrase = "x more · 4 pl4"
     async with _pool4_app().run_test() as pilot:
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
@@ -368,7 +368,7 @@ async def test_the_pool4_key_hint_fits_the_status_bar_at_the_full_layout() -> No
     band below it, so the test says *where* it stops fitting rather than only
     that it fits somewhere.
 
-    Both halves of the phrase are checked. ``l launchpad`` alone survives
+    Both halves of the phrase are checked. ``x more`` alone survives
     several columns further than the whole hint does, so a test that only
     looked for the new half would call the row healthy while the old half
     had been cut off the other end.
@@ -378,7 +378,7 @@ async def test_the_pool4_key_hint_fits_the_status_bar_at_the_full_layout() -> No
     ) as pilot:
         await pilot.pause()
         text = _screen_text(pilot.app)
-    assert "l launchpad · 4 pl4" in text
+    assert "x more · 4 pl4" in text
 
     # The band below it: find where the whole phrase stops reaching a pixel,
     # and assert that width is under the documented layout rather than over.
@@ -386,7 +386,7 @@ async def test_the_pool4_key_hint_fits_the_status_bar_at_the_full_layout() -> No
     for width in range(SURF_FULL_LAYOUT_COLUMNS, 79, -1):
         async with _pool4_app().run_test(size=(width, 46)) as pilot:
             await pilot.pause()
-            if "l launchpad · 4 pl4" not in _screen_text(pilot.app):
+            if "x more · 4 pl4" not in _screen_text(pilot.app):
                 lost_at = width
                 break
     assert lost_at is None or lost_at < SURF_FULL_LAYOUT_COLUMNS, (

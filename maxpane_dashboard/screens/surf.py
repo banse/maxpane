@@ -1666,7 +1666,23 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: complete composited note checked (BOARD WP5). Those payload-dependent
 #: widths do not raise the body's pin. A fitting literal ellipsis does not
 #: light widen.
-SURF_SWARM_FULL_LAYOUT_COLUMNS = 138
+#:
+#: 2026-10-05, layout v3: re-swept after the owner approved the live 200x48
+#: render. LAUNCHES now shares the top row with THROUGHPUT; WORKFLOWS and
+#: SITES each span the body. IN FLIGHT is parked, so its old onsets above
+#: certify no mounted widget. The four SWARM payloads all clear from 129:
+#: SITES reaches full and the complete status bar reaches its last cell
+#: there; at 128 SITES still marks and the status bar is cropped. Widths
+#: 122-142 were measured on capture, 122-135 on worst-s, 124-133 on v3-s
+#: and extra-states-s, using scripts/measure_layout.py at 35 rows.
+#: WORKFLOWS compact/full now start at 62/72; SITES compact/full at 121/129.
+#: SITES hides a column below 103 at 35 rows. LAUNCHES hides none from
+#: 125 at 35 rows, or 123 at 80 rows, and remains the named content exception.
+#: LAUNCHES compact/full start at 148/162; capture clears its marker at 162.
+#: The owner authorized a compact title source count and shortened labels,
+#: retaining price, parity, freshness and every alarm. Missing health now
+#: says unavailable: the manager does not add a SWARM degraded group.
+SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
 #: the 2x2 grid, 28 on 2026-09-17 (F6, QUEUE's counter block), 42 again on
@@ -1739,6 +1755,14 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 138
 #: payload in both THROUGHPUT fold states -- every glyph of the 138 x 35
 #: render now matches the 138 x 80 one, so no content is lost, and at 150
 #: columns nothing hides at any height either.
+#:
+#: 2026-10-05, layout v3: unchanged at 35. scripts/measure_layout.py swept
+#: 32-37 rows at 129 columns on capture, worst-s, v3-s and extra-states-s:
+#: every payload marks through 34 and clears from 35. THROUGHPUT is always
+#: nine lines; x opens a snapshot popup and cannot change the body's height.
+#: The middle WORKFLOWS row and bottom SITES keep their eight-line floors.
+#: Owner-approved live 200x48 regions: LAUNCHES 152x12, THROUGHPUT 46x9,
+#: WORKFLOWS 199x13, SITES 199x13; their tables scroll internally.
 SURF_SWARM_FULL_LAYOUT_ROWS = 35
 
 #: AGENT full-layout width, re-swept 2026-09-24: 139 (unchanged).
@@ -2141,6 +2165,8 @@ POOL4_USER_BOTTOM_ID = "surf-pool4-user-bottom"
 #: what lets CAPABILITY reach ``full`` at the pin -- see
 #: :data:`SURF_SWARM_FULL_LAYOUT_COLUMNS`. The 2026-09-16 2x2 grid (THE FIELD
 #: beside QUEUE, JUST SHIPPED beside THROUGHPUT) went with those panels.
+#: 2026-10-05 layout v3: LAUNCHES beside THROUGHPUT, then full-width
+#: WORKFLOWS and SITES. IN FLIGHT is parked.
 SWARM_BODY_ID = "surf-swarm-body"
 
 #: The swarm body's top row: **WORKFLOWS beside THROUGHPUT** since
@@ -2150,6 +2176,8 @@ SWARM_BODY_ID = "surf-swarm-body"
 #: open-ended blocks past its share (``height: auto``), so it is named in
 #: ``_SCROLL_COLUMNS[MODE_SWARM]``. Held THE FIELD beside QUEUE from
 #: 2026-09-16 to WP7.
+#: 2026-10-05 layout v3: LAUNCHES replaces WORKFLOWS here; THROUGHPUT
+#: stays nine lines. x opens a popup, so no expanded content grows this row.
 SWARM_TOP_ID = "surf-swarm-top"
 
 #: The swarm body's bottom row: **IN FLIGHT beside LAUNCHES** (WP7). Both
@@ -2157,6 +2185,8 @@ SWARM_TOP_ID = "surf-swarm-top"
 #: row itself cannot overflow and carries no scrollbar; SITES follows it in
 #: the body directly, with no row container of its own. Held JUST SHIPPED
 #: beside THROUGHPUT from 2026-09-16 to WP7.
+#: 2026-10-05 layout v3: this middle container holds WORKFLOWS alone;
+#: SITES still follows directly. Both tables scroll inside their panels.
 SWARM_BOTTOM_ID = "surf-swarm-bottom"
 
 #: The AGENT container: the seat-card and node-card rows (fixed height,
@@ -2170,6 +2200,7 @@ AGENT_BODY_ID = "surf-agent-body"
 #: would never be painted -- ``tests/screens/test_surf_screen.py`` binds the
 #: two by identity of their name sets (the one legitimate hand-typed copy:
 #: the export cannot name classes without importing widgets into ``data/``).
+#: 2026-10-05: eleven mounted widgets; IN FLIGHT is parked by the contract.
 _SWARM_PANELS = (
     SurfSwarmBoardHero,
     SurfSwarmLeaderboard,
@@ -2313,7 +2344,7 @@ def _fmt_degraded(sources, *, compact: bool = False) -> str:
     if not names:
         return " · ⚠ ?"
     if compact:
-        return f" · ⚠ {len(names)} sources"
+        return f" · ⚠ {len(names)} src"
     return " · ⚠ " + ", ".join(names)
 
 
@@ -2435,7 +2466,7 @@ def _title_line(data: dict, row_hint: bool = False, agent: bool = False,
     if swarm:
         line += _swarm_alarms(data)
         if columns is not None and Text.from_markup(line).cell_len > columns:
-            line = (f"SURF · IMD {_fmt_usd(data.get('imd_price_usd'))} · "
+            line = (f"IMD {_fmt_usd(data.get('imd_price_usd'))} · "
                     f"par {_fmt_signed_pct(data.get('parity_pct'))} · as of {_fmt_hhmm(data.get('as_of'))}")
             if row_hint:
                 line += f" · [yellow]{TALLER_HINT}[/]"
@@ -2494,8 +2525,7 @@ class SurfScreen(DashboardScreen):
         # `priority` like curator's, so it applies from a focused field;
         # the editor's only text fields take numbers. A no-op elsewhere.
         Binding("f", "toggle_record_filter", "Filter", show=False, priority=True),
-        # `x` folds THROUGHPUT's state and cancel-reason blocks on SWARM
-        # (2026-10-03, docs/surf_swarm_workflows_spec.md §1); a no-op on every
+        # `x` opens cached THROUGHPUT details on SWARM (layout v3); a no-op on every
         # other body. Free on this screen, in the app (`q t tab m`) and in
         # `DataTable`'s and `Input`'s own bindings -- read, not assumed.
         # **Not** `priority`: the focused widget and its ancestors get the
@@ -2571,6 +2601,10 @@ class SurfScreen(DashboardScreen):
     #: reason: ``l launchpad`` is the one the app-level acceptance test greps
     #: for as a contiguous string.
     #: §11: shortened by owner to keep the body as width binder; whole bar from 134.
+    #:
+    #: 2026-10-05 layout v3: x more replaces l launchpad. l stays bound,
+    #: unlisted like e. The complete bar (poll/errors and right-hand label)
+    #: is cropped at 128 and whole from 129, measured in the real screen.
     KEY_HINTS = "[dim]x more · 4 pl4 · s swm · a agt · b brd[/]"
 
     #: The words the status bar shows for this dashboard.
@@ -3283,11 +3317,6 @@ class SurfScreen(DashboardScreen):
         self._record_filter_open = False
         #: WHEN's clock seam: read once, at apply, never by a widget.
         self._clock = time.time
-        #: THROUGHPUT's fold (``x`` on SWARM, spec §1): in memory on this
-        #: instance, never in ``config.toml``. **Collapsed by default** -- the
-        #: row pin is measured collapsed -- and kept across refreshes and body
-        #: switches; :meth:`_apply_throughput_fold` is the one place it reaches
-        #: the widget.
 
     # ------------------------------------------------------------------
     # Layout

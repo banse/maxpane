@@ -143,29 +143,33 @@ The NFT floor is shown as `n/a — no keyless source`, not estimated. There is n
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
 an honest gap.
 
-Press **`s`** for the IMD swarm's own control plane (2026-09-16; rebuilt 2026-09-21) — the fifth
-body, and the agent workforce this repo's own branches are built by, watched live rather than read
-from a changelog. WORKFLOWS lists the swarm's newest twelve workflows — when each started, its
-status, the job that builds its contracts and the one that builds its frontend (each linked to the
-swarm's job explorer), and its objective, or for a workflow that did not complete, the failure in
-red (an address inside it carries its copy icon but no link: a workflow names no chain). Beside it
-THROUGHPUT shows how much the job list holds, how long a delivery takes (median, p90, worst) over
-the jobs that carry a delivery stamp, and how many completed in the last day, counted off every job
-this dashboard has ever seen rather than off the window the host happens to serve. It opens
-collapsed; press **`x`** to unfold how the list splits by state and why jobs were cancelled, and
-`x` again to fold them (the title says `x more` or `x less`, and the choice holds until you quit).
-The skill catalogue that used to sit where WORKFLOWS is (CAPABILITY) is parked for a later SKILLS
-board; its data is still read. IN FLIGHT lists the
-jobs executing right now, newest first, with the seat that holds each and the node it is on, beside
-LAUNCHES — the deployed artifacts, one row per launch with its status, chain, repo commit and
-contract address, every real address carrying the copy icon and linking its **own** chain's
-explorer, because the corpus mixes mainnet and Sepolia in one list. SITES, the ENS-named sites,
-runs full-width beneath: a site's name resolves a content hash rather than a wallet, so it carries
-no copy icon, but a click on it opens the site itself (`mswap.site.identitymd.eth` opens
-`https://mswap.site.identitymd.eth.limo/`). A build replaced by a newer one and a build that never
-got a name are left out; when that leaves nothing, the panel says `No current site`, not `No data`. The hero swaps too, the second Surfboard view (after `4`) to do so, for
-AGENTS (online/enrolled), WORKING, ACCEPTED 24h, QUEUE, BREAKER and SERVICES; a zero is a zero and
-only a failed read says `unavailable`.
+Press **`s`** for the IMD swarm's control plane. LAUNCHES sits beside THROUGHPUT, with
+WORKFLOWS and SITES in full-width rows beneath. The hero shows AGENTS (online/enrolled),
+WORKING, ACCEPTED 24h, LAUNCHES, WORKFLOWS and SITES. The last three show totals and the largest
+status counts that fit as whole pairs; missing data says `unavailable`, while an empty list is `0`.
+
+WORKFLOWS retains up to 1,000 workflows, newest first, and scrolls inside its table. It shows
+start time, status, contracts and frontend jobs linked to the swarm's job explorer, and the
+objective or a non-completed workflow's failure in red. Enter or a row click opens a snapshot
+with the full objective and failure, timestamps, both jobs and waiting-for-hosting status.
+Job-link clicks open the explorer directly. Addresses in workflow prose are copyable but unlinked:
+a workflow names no chain. Initial history is read in pages of 100; subsequent sweeps merge the
+newest 100 into the retained history. A status change on an older row is seen only on a later
+backfill, so retained history is not a fresh read of every old workflow.
+
+THROUGHPUT shows the job-list window, delivery durations and completed jobs over the last day.
+Press **`x`** for its states and cancel reasons in a snapshot popup; Space or Escape closes either
+popup. The panel stays short and its title always says `x more`. The status bar lists `x more`;
+`l` still opens LAUNCHPAD, but is unlisted, like `e`. CAPABILITY and IN FLIGHT are parked:
+their modules, tests and source reads remain, but neither panel is mounted.
+
+LAUNCHES shows status, chain, repo and deployed artifacts, with each address linked to its own
+chain's explorer. SITES shows wider labels and a final linked job column. A site's ENS name opens
+its eth.limo site, without a wallet-copy icon. Replaced builds and builds without names are hidden;
+when none remain the panel says `No current site`. LAUNCHES and WORKFLOWS retain a blank footer row.
+SWARM's title reports a tripped breaker, explicitly down services and unhealthy or unavailable
+health. When space is tight, source names become a count and labels shorten while retaining
+price, parity, freshness and each alarm. Unknown services never count as down.
 
 Press **`a`** for the AGENT body — one seat's **lifetime record** from its own keyless
 `/seats/{tokenId}` page. Press **`i`** to choose and save a seat; without a saved seat, the view
@@ -252,18 +256,18 @@ SWARM and AGENT status colours retain their words — except AGENT's STATUS, whi
 red means offline, paused or down; yellow marks unavailable or existing pending counts. Zero
 working is dim `quiet`. Rates and scores are bold without invented thresholds. BOARD's offline
 rows are dim. SEAT stays as it is by owner decision; its larger grouping exceeded the budget
-(F54). QUEUE counts stay bold without status colour.
+(F54). SWARM summary counts stay bold without status colour.
 
 It reads one keyless host and nothing else — the swarm's own control plane, under two names that
 serve one deployment, rotated per request and never followed off the pool — and never the total it
 says it has inferred for anyone: the explorer publishes a running inference figure on its own page,
 and no public route on the control plane serves that number, so this view shows none of it rather
-than a guess. The job list behind IN FLIGHT and THROUGHPUT is the one expensive read here, so it is
+than a guess. The job list behind THROUGHPUT and the parked IN FLIGHT is the one expensive read here, so it is
 not fetched on every tick: it is re-read only when one of the host's own health counters has
 actually moved, or when a ceiling has elapsed regardless, so a counter this dashboard does not
 track can never freeze the list forever. A failed read serves each panel's own last-good behind an
-`as of HH:MM` marker rather than a blank screen, and no new degraded group was added for it — the
-title row was already full. Each body is whole from its own pin — `SURF_SWARM_FULL_LAYOUT_COLUMNS`
+`as of HH:MM` marker rather than a blank screen, and no new degraded group is added. SWARM has a separate
+`health unavailable` title indicator for an unread health value. Each body is whole from its own pin — `SURF_SWARM_FULL_LAYOUT_COLUMNS`
 × `SURF_SWARM_FULL_LAYOUT_ROWS`, `SURF_AGENT_FULL_LAYOUT_COLUMNS` × `SURF_AGENT_FULL_LAYOUT_ROWS`,
 and `SURF_BOARD_FULL_LAYOUT_COLUMNS` × `SURF_BOARD_FULL_LAYOUT_ROWS`
 in `screens/surf.py` (the `#:` block beside each constant carries the number and how it was
@@ -520,10 +524,9 @@ beside BURN & SUPPLY over SIGNALS, then STAKERS — whole 42-character addresses
 beside IF IMD FALLS, a ladder of what the hook bids as IMD falls. `4` swaps the **hero** too, for
 IMD PRICE, DOWNSIDE BID and STAKING. **And it binds `s`** (2026-09-16, rebuilt 2026-09-21) for the
 IMD swarm's own control plane — the agent workforce this repo's own branches are built by, watched
-live: WORKFLOWS beside THROUGHPUT (**`x`** folds THROUGHPUT's state and cancel-reason blocks),
-IN FLIGHT beside LAUNCHES, SITES full-width beneath. `s` is
-the second Surfboard view, after `4`, to swap the **hero**, for its own AGENTS / WORKING /
-ACCEPTED 24h / QUEUE / BREAKER / SERVICES boxes. **And it binds `a`** (2026-09-21) for the AGENT
+live: LAUNCHES beside THROUGHPUT, then full-width WORKFLOWS and SITES. **`x`** opens throughput
+details; workflow Enter or row-click opens a workflow snapshot. `s` swaps the **hero** for
+AGENTS / WORKING / ACCEPTED 24h / LAUNCHES / WORKFLOWS / SITES. **And it binds `a`** (2026-09-21) for the AGENT
 body — one seat's lifetime record: its hero row (WORK and combined ACCEPTED), one seat-card row with COLLAB
 and NODES, and RECORD beneath; its title
 bar reads `SURFBOARD · Identity.md AGENT #<seat>` (the seat in green) in place of the IMD price,
@@ -538,7 +541,8 @@ of any of the six alternate bodies.
 |---|---|
 | `l` / `e` / `4` / `s` / `a` / `b` | Open LAUNCHPAD / POOL4 protocol / POOL4 MARKET / SWARM / AGENT / BOARD |
 | `i` | Choose and save an IDMD seat |
-| `x` in SWARM | Fold / unfold THROUGHPUT's state and cancel-reason blocks (opens folded) |
+| `x` in SWARM | Open THROUGHPUT states and cancel reasons; Space / Escape closes |
+| WORKFLOWS row click or Enter | Open a workflow snapshot; job links still open the explorer |
 | `o` / `O` in BOARD | Cycle sort column / reverse sort |
 | LEADERBOARD header click | Sort that column; click again to reverse |
 | LEADERBOARD row click or Enter | Save that seat and open AGENT |
@@ -647,19 +651,13 @@ the rail (HATCHES over sIMD VAULT) was already the tallest column, so a 44-row t
 shows `‹ taller`.
 
 Surfboard's SWARM view (`s`) is a layout of its own too, pinned by `SURF_SWARM_FULL_LAYOUT_COLUMNS`
-and `SURF_SWARM_FULL_LAYOUT_ROWS` (**138 columns × 35 rows** since 2026-10-03, when WORKFLOWS
-replaced CAPABILITY and THROUGHPUT began to open folded; 141 × 42 from the 2026-09-21 rebuild, 116 ×
-28 before it). LAUNCHES decides the width: one column narrower and it hides its last column behind
-its own scrollbar. The top row decides the height: folded, THROUGHPUT is nine fixed lines and its
-row is floored at exactly that, so at 35 rows the body has room for the three rows without any
-panel scrolling inside itself and `‹ taller` goes dark. Unfolded (`x`) THROUGHPUT needs more rows
-than that; below them the top row scrolls with `‹ taller` lit rather than dropping a line.
-Mixed service states still clip in the SERVICES hero box (F55); its explicit state words
-and separate health line do not make all mixed combinations whole at this pin. IN FLIGHT and
-LAUNCHES have measured content exceptions recorded beside their constants in `screens/surf.py`;
-they share the second row on a 4:5 split measured so that
-LAUNCHES hides no column from 138 up. Like the announce feed's linked-transaction post, those are
-measured and accepted conditions at this pin and below, not something a wider pin could buy back.
+and `SURF_SWARM_FULL_LAYOUT_ROWS` (**129 columns × 35 rows**, re-swept 2026-10-05 after the
+owner approved the live 200×48 layout). SITES and the complete status bar bind the width.
+THROUGHPUT's nine fixed lines set the top row's floor; WORKFLOWS and SITES each have an eight-line
+floor. The body scrolls with `‹ taller` below 35 rows; its tables scroll internally as their
+histories grow. LAUNCHES remains a content exception: all columns are reachable from 125 columns
+at the row pin, and the captured content clears `‹ widen` at 162. Arbitrarily long parked reasons
+can still mark. IN FLIGHT no longer contributes a layout or address-sweep requirement.
 The AGENT view (`a`) has its own pair, `SURF_AGENT_FULL_LAYOUT_COLUMNS` ×
 `SURF_AGENT_FULL_LAYOUT_ROWS`, re-measured for the card rows over RECORD. The `#:` blocks
 beside those constants in `screens/surf.py` record the measured dimensions and binding content.

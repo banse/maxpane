@@ -166,7 +166,7 @@ async def test_compact_swarm_title_keeps_every_alarm_at_the_existing_pin(down):
         title = _region_text(pilot.app, screen.query_one('#title-bar')).strip()
         assert 'IMD $0.71' in title and 'par -2.7%' in title
         assert 'as of ' in title and '‹ taller' in title and 'LP changed' in title
-        assert f'⚠ {len(SOURCES)} sources' in title
+        assert f'⚠ {len(SOURCES)} src' in title
         assert 'breaker open' in title
         assert ('3 svc down' if len(down) > 1 else 'pub down') in title
         assert title.endswith('health abcdefghijkl')

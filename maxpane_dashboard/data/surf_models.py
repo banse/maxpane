@@ -1645,6 +1645,10 @@ SWARM_ANSWER_ROW_CAP = 40
 #: ``GET /workflows?limit=`` page size: the newest WORKFLOWS window only (the default
 #: page is 100 rows / ~370 KB). An agreement test (docs/surf_swarm_workflows_spec.md
 #: WP4) binds it to ``SurfSwarmWorkflows.ROW_CAP``; data must never import its widget.
+#:
+#: 2026-10-05 layout v3: page size is 100; cold/incomplete history reads at
+#: most 10 pages. Retained history, not page size, now agrees with ROW_CAP.
+#: Complete sweeps merge page 1 only; older status changes await backfill.
 SWARM_WORKFLOW_PAGE_SIZE = 100
 SWARM_WORKFLOW_MAX_PAGES = 10
 SWARM_WORKFLOW_HISTORY_CAP = 1000
@@ -1654,6 +1658,7 @@ SWARM_WORKFLOW_HISTORY_CAP = 1000
 #: SKILLS board. Every "is every widget mounted / every key consumed" test takes its
 #: exemption from this export, never from a hand-typed copy (wired in that spec's WP5:
 #: the surf screen, swarm-models, widget-contract and registration tests read it).
+#: 2026-10-05: IN FLIGHT joins CAPABILITY; its jobs read and tests remain.
 SWARM_PARKED_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
     "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),

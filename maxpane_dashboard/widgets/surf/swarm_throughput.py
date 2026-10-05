@@ -1,92 +1,13 @@
-"""THROUGHPUT -- how fast work moves through the swarm (swarm v2, WP5).
+"""THROUGHPUT's fixed short form and pure snapshot detail blocks.
 
-A ``panels.SignalsPanelBase`` reading the plan §1.3 ``swarm_throughput``
-dict **only**::
+The panel shows the job window, median/p90/max delivery durations and completed
+24h (or counting since HH:MM). Its title always ends x more; the screen opens
+ThroughputDetailScreen from the last payload. There is no inline fold.
 
-    { window_start_ts, window_end_ts, window_n,          # what /jobs returned
-      states: [{state, count}],                          # open vocabulary
-      dur_median_s, dur_p90_s, dur_max_s,                # None under 2 samples
-      cancel_reasons: [{reason, count}],                 # verbatim, open
-      completed_24h, seen_since_ts }                     # None while accumulating
-
-Mounted on the ``s`` body since WP7, in the rail beside IN FLIGHT.
-
-Rows, top to bottom
--------------------
-1. a **label-less** window row: ``over 14 min · 100 jobs`` from
-   ``window_end_ts - window_start_ts`` and ``window_n``; ``over --`` when
-   either stamp is ``None``; a 0-job window says :data:`NO_JOBS_LINE`
-   rather than ``0 jobs`` -- the read happened and found nothing;
-2. a separator, then ``median`` / ``p90`` / ``max`` -- two-unit durations
-   (``54m``, ``1h 12m``, ``3h 5m``); ``None`` says :data:`SAMPLE_FLOOR_WORD`
-   (``-- (n<2)``), the analytics' own floor: one duration is a data point,
-   not a distribution. A real duration carries its sample beside it --
-   ``54m · n=10`` -- off ``dur_n`` (WP7, additive to §1.3: the count of
-   completed jobs that carried a delivery); a dict folded without the
-   field prints the bare duration rather than a count nobody measured;
-3. a separator, then ``completed 24h``: :data:`ACCUMULATING_WORD` ``since
-   HH:MM`` off ``seen_since_ts`` while ``completed_24h is None`` (the seen
-   slot has under 24 h of history), and a real ``0`` once it has (plan R-A:
-   never ``0`` for "not yet measured");
-4. a separator (:data:`FOLD_GAP_ID`), then the **state rollup** --
-   ``states`` is an open list, so the fixed ``ROWS`` cannot name them: one
-   body ``Static`` (:data:`STATES_ID`) carries ``state  count`` lines sorted
-   by count descending, built as a single ``rich.text.Text`` inside
-   ``write_guarded``; then the **cancel reasons** block (:data:`CANCELS_ID`)
-   the same way -- ``none`` for ``[]``, ``unavailable`` for ``None``.
-
-The fold (``docs/surf_swarm_workflows_spec.md`` §1)
----------------------------------------------------
-Row 4 -- the separator and the two blocks -- is what :meth:`set_expanded`
-folds: ``set_expanded(False)`` sets ``display = False`` on exactly those three
-``Static`` widgets (not painted, not empty lines), so the panel is its title, the
-blank row and rows 1-3; ``set_expanded(True)`` shows them again. Either call
-repaints from the stored payload (no data needed; before any payload only the
-title is rewritten, so the ``Loading...`` seed is not replaced by a false
-``unavailable``). A non-``bool`` -- ``1``, ``0``, ``None`` -- is ignored. The
-separator is the one ``.panel-line`` separator here that carries an id
-(``SignalsPanelBase`` gives its own none, since nothing writes to one):
-nothing writes to this one either; the fold toggles its display.
-
-**The widget's own default is expanded and hint-free**: until a screen calls
-:meth:`set_expanded` every block shows and the title carries no hint, so
-nothing on the ``s`` body changes before the screen binds ``x`` (WP4 → WP5)
-and the panel never advertises a key no screen binds. Once told, the title
-ends ``· x more`` (:data:`MORE_HINT`, collapsed) or ``· x less``
-(:data:`LESS_HINT`, expanded) -- the same six cells, so a toggle never moves
-the title's width.
-
-**A ``None`` dict is every row ``unavailable``; a dict missing a field is
-that row ``--``.** Two different facts (the read failed / the read came
-back without this number), kept apart per row: a duration *key absent* is
-``--``, a duration *present as ``None``* is the sample floor. The fixed
-rows go through ``render_signal`` → ``fmt_signal``, which escapes
-``value_str``; every value here is the widget's own formatting of a number,
-so nothing third-party reaches that path.
-
-Third-party text renders literally
-----------------------------------
-State words and cancel reasons are the host's. Each is appended to a
-``Text`` with ``Text.append`` after ``markup_safety.flatten`` and
-``rowfit.clip`` (``cell_len``); ``Text.append`` parses nothing, so ``[/x]``
-renders as the literal four characters and ``[$error]`` cannot raise.
-``sanitize_cell`` was not used on purpose: its ``strip_tags`` deletes a
-complete ``[...]`` run, and the plan (WP5) requires a hostile tag in a
-cancel reason to **render literally**. A reason is clipped to the panel's
-own measured width; the panel re-renders on resize for that.
-
-Title: ``THROUGHPUT``, ``· as of HH:MM`` when ``rowfit.has_marker``,
-``· stale`` (:data:`STALE_WORD`, the old panel's word) **only when
-``swarm_stale is True``** -- never on ``None`` (not measured) or ``False`` --
-and then the fold hint once a screen has set the state. The hint is never
-clipped: a title wider than its room clips the text *before* the hint with
-``…`` (``rowfit.clip``, ``cell_len``). Measured on the 46-cell panel the
-SWARM pin renders (title room 42): the worst title,
-``THROUGHPUT · as of 17:45 · stale · x more``, is 41 cells and whole.
-
-Purity: stdlib, ``rich``, ``textual``, ``widgets/panels``, ``widgets/fmt``,
-``widgets/rowfit``, ``widgets/markup_safety``. No ``data/``, no
-``analytics/``, no clock, no I/O.
+A failed dict is unavailable; an absent field is --; a present None duration
+is the n<2 sample floor. The pure throughput_detail_blocks helper renders
+states and cancel reasons, count-descending, with literal cleaned text.
+None blocks are yellow unavailable; empty blocks say none. No clock or I/O.
 """
 
 from __future__ import annotations
@@ -103,15 +24,11 @@ from maxpane_dashboard.widgets.panels import UNAVAILABLE_LINE, SignalsPanelBase
 
 __all__ = [
     "ACCUMULATING_WORD",
-    "CANCELS_ID",
-    "FOLD_GAP_ID",
-    "LESS_HINT",
     "MORE_HINT",
     "NO_JOBS_LINE",
     "ROW_IDS",
     "SAMPLE_FLOOR_WORD",
     "STALE_WORD",
-    "STATES_ID",
     "TITLE",
     "SurfSwarmThroughput",
 ]
@@ -125,10 +42,8 @@ STALE_WORD = "stale"
 #: The 24 h count's state while the seen slot has under a day of history.
 ACCUMULATING_WORD = "counting"
 
-#: The title's fold hints (``x`` on SWARM, bound by the screen): collapsed
-#: says there is more, expanded says there could be less. Both six cells.
+#: The screen binds x to its cached throughput popup.
 MORE_HINT = "x more"
-LESS_HINT = "x less"
 
 #: A duration row's state under the analytics' two-sample floor.
 SAMPLE_FLOOR_WORD = "-- (n<2)"
@@ -141,15 +56,8 @@ _MEDIAN_ID = "surf-swarm-throughput-median"
 _P90_ID = "surf-swarm-throughput-p90"
 _MAX_ID = "surf-swarm-throughput-max"
 _COMPLETED_ID = "surf-swarm-throughput-completed"
-#: The separator above the two blocks -- the fold hides it with them.
-FOLD_GAP_ID = "surf-swarm-throughput-fold-gap"
-STATES_ID = "surf-swarm-throughput-states"
-CANCELS_ID = "surf-swarm-throughput-cancels"
 
 ROW_IDS = (_WINDOW_ID, _MEDIAN_ID, _P90_ID, _MAX_ID, _COMPLETED_ID)
-
-#: What the fold hides, in panel order.
-_FOLD_IDS = (FOLD_GAP_ID, STATES_ID, CANCELS_ID)
 
 _GAP = rowfit.GAP
 #: The rollup lines' own indent, the same two cells ``fmt_signal`` spends.
@@ -308,7 +216,7 @@ def _with_hint(prefix: str, hint: str, room: int) -> str:
 
 
 class SurfSwarmThroughput(SignalsPanelBase):
-    """THROUGHPUT -- window, three durations, the 24 h count, states, cancels."""
+    """THROUGHPUT -- window, three durations and the 24 h count."""
 
     TITLE = TITLE
     LABEL_WIDTH = 14

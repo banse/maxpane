@@ -2551,7 +2551,7 @@ async def test_screen_survives_manager_exception():
         # trades the freshness segment for the hints segment when a screen
         # sets one -- the same tradeoff curator already made for its own
         # hints. The error count is unaffected; it is appended either way.
-        assert "l launchpad" in rendered
+        assert "x more" in rendered
         assert "updated" not in rendered
         assert "3 errors" in rendered   # manager's _error_count is surfaced
 

@@ -1,11 +1,10 @@
 """The ``s`` SWARM body and the ``a`` AGENT body: modes, keys, bodies, hero swap.
 
-Swarm v2 (WP7, 2026-09-21): the 2026-09-16 body (THE FIELD, QUEUE, JUST
-SHIPPED, the score-table THROUGHPUT) is gone; ``s`` shows the hero over
-WORKFLOWS | THROUGHPUT (WORKFLOWS in CAPABILITY's place since 2026-10-03,
-THROUGHPUT folded by ``x``), IN FLIGHT | LAUNCHES and SITES, and the new ``a``
-shows the agent hero over one seat-card row and full-width RECORD. The record
-filter editor takes RECORD's place while open; the hero and cards stay.
+Layout v3 (2026-10-05): ``s`` shows the hero above LAUNCHES | THROUGHPUT,
+then full-width WORKFLOWS and SITES. IN FLIGHT and CAPABILITY are parked.
+``x`` opens throughput details; workflow rows open their snapshot popup.
+``a`` shows the agent hero over one seat-card row and full-width RECORD. The
+record filter editor takes RECORD's place while open; the hero and cards stay.
 Geometry is ``test_surf_swarm_layout.py``'s; this file is composition and behaviour.
 
 The AGENT body reads the seat's lifetime ``/seats`` record since WP5 of

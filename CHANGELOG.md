@@ -20,17 +20,16 @@
 - Surfboard AGENT: keep the last good record for up to six seats, each with its own timestamp.
   Temporary host overload shows `busy · retrying`, or `busy` beside the cached record's timestamp.
   Eligible pending answers, oracle panels and submission job details now say `loading…`.
-- Surfboard SWARM: WORKFLOWS takes CAPABILITY's place. It lists the newest twelve two-stage
-  launches from `/workflows`: status, start time, the contracts and frontend jobs, and the objective, or
-  the failure in red when the workflow did not complete. The footer counts them by status
-  (`newest 12 · 8 blocked · 4 completed`). An address inside the text gets its copy icon but no
-  explorer link, because a workflow does not say which chain it ran on. CAPABILITY is parked for a
-  later SKILLS board, not deleted.
-- Surfboard SWARM: `x` folds THROUGHPUT's `states` and `cancel reasons` blocks. SWARM opens
-  folded. The title says `x more` or `x less`, and the choice survives a refresh and a trip to
-  AGENT and back. While THROUGHPUT is still collecting, its completed line reads
-  `counting since HH:MM` (was `accumulating`). SWARM's full layout is now 138×35 (was 141×42), and
-  LAUNCHES no longer loses a row to a horizontal scrollbar there.
+- Surfboard SWARM layout v3: LAUNCHES beside THROUGHPUT, with full-width WORKFLOWS and SITES.
+  The hero shows launch, workflow and current-site totals with whole status summaries. WORKFLOWS
+  retains up to 1,000 rows; Enter or row click opens a full workflow snapshot. `x` opens throughput
+  states and cancel reasons in a popup, closed with Space or Escape. The status hint now lists
+  `x more`; `l` still opens LAUNCHPAD. SITES has wider labels and a linked job column. IN FLIGHT
+  and CAPABILITY are parked. The owner approved the live 200×48 layout; measured pins are now
+  129×35, down from 138×35. SWARM title alarms cover breaker, services and health, with compact
+  labels when needed and an explicit unread-health indicator.
+- Shared text cleaning now removes the nine bidi direction-control characters while preserving
+  ZWJ and other format characters, and collapses spaces left around stripped controls.
 - Surfboard AGENT: the SCORE card becomes MODEL, showing the LLM model and effort the seat
   advertises on `/seats`. It shows up to three of them, then `+N more`, and hovering lists every
   one. The card says `not advertised` when the seat names none and `unavailable` when the read

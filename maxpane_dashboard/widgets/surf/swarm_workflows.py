@@ -27,10 +27,10 @@ whitespace or the end (:func:`first_sentence`; an abbreviation such as
 column on ``cell_len``. The cell is a pre-built ``rich.text.Text``, so the
 served words render **literally**: ``sanitize_cell``'s ``strip_tags`` would
 delete ``[FAIL: project constructor failed]``, the failure's own words. That
-is IN FLIGHT's objective precedent (``swarm_inflight._cell``), and so is the
+follows the parked IN FLIGHT objective precedent, and so does the
 clip: a text cut with ``…`` does **not** light ``‹ widen`` -- only a shed
 column does. ``markup_safety.flatten`` is the one cleaning step, as in IN
-FLIGHT (its non-whitespace C0/ESC gap is filed; no private sanitiser here).
+FLIGHT (shared control and whitespace cleaning; no private sanitiser here).
 
 An address inside the text: its copy icon, and no link
 ------------------------------------------------------
@@ -55,8 +55,8 @@ exception, by address: ``SweepCase.unlinked`` lists the seeded failure
 address, and E7 asserts it copies and links nowhere (WP5).
 
 Purity: stdlib, ``rich``, ``textual`` and this package's ``widgets/`` modules.
-No ``data/`` (it restates nothing from there: ``ROW_CAP`` is bound to
-``surf_models.SWARM_WORKFLOW_LIMIT`` by an agreement test), no
+No ``data/`` imports (its history cap is restated: ``ROW_CAP`` is bound to
+``surf_models.SWARM_WORKFLOW_HISTORY_CAP`` by an agreement test), no
 ``analytics/``, no clock, no I/O.
 """
 
@@ -214,7 +214,7 @@ class SurfSwarmWorkflows(SwarmTableBase):
 
     TITLE = "WORKFLOWS"
     TABLE_ID = "surf-swarm-workflows-table"
-    #: Newest twelve: ``surf_models.SWARM_WORKFLOW_LIMIT``, bound by a test.
+    #: Newest twelve: ``surf_models.SWARM_WORKFLOW_HISTORY_CAP``, bound by a test.
     ROW_CAP = 1000
     CURSOR_TYPE = "row"
 
@@ -263,7 +263,7 @@ class SurfSwarmWorkflows(SwarmTableBase):
         swarm_scores_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
-        """Refresh from the manager's flat dict; the footer counts these rows."""
+        """Refresh retained history; summary counts live in the hero."""
         self.store(swarm_workflow_rows, swarm_scores_as_of_hhmm, swarm_workflow_rows)
 
     def column_plan(self, tier: str, budget: int) -> tuple[tuple[str, str, int], ...]:

@@ -1058,6 +1058,9 @@ The four WP2/WP4 reviews and the `df9272f` re-review are **Approved, 0 Critical 
      `" ".join(strip_controls(" ".join(text.split())).split())`, plus one regression case.
      **Minor; Tier 1 when done**, as it touches shared `markup_safety.py`
      (`df9272f` re-review N1).
+     **CLOSED 2026-10-05 (`ea7c33f`, layout v3 WP1).** A second collapse after stripping
+     removes double and edge spaces; regression cases kill its removal. CR/VT/FF/NEL still
+     separate words, preserving #94.
 
 101. **TRENDS' docstring overstates the failed/empty distinction.**
      `widgets/curator/sparklines.py:24`, "Failed and empty histories are distinct",

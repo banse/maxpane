@@ -35,7 +35,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `l` | MODE_LAUNCHPAD | LAUNCHPAD COINS over LAUNCHPAD ACTIVITY left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail | `SurfHero` stays |
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
-| `s` | MODE_SWARM | WORKFLOWS beside THROUGHPUT (folded; `x` unfolds); IN FLIGHT beside LAUNCHES; SITES full-width beneath | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / QUEUE / BREAKER / SERVICES |
+| `s` | MODE_SWARM | LAUNCHES beside THROUGHPUT; WORKFLOWS and SITES full-width; `x` opens throughput details | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / LAUNCHES / WORKFLOWS / SITES |
 | `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED JOBS / WORK / REWARDS / RANK / STATUS |
 | `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
 
@@ -172,7 +172,7 @@ has moved since the manager last saw them, or when `SWARM_LIST_CEILING_S` has el
 row or the read; an all-host `503 busy` stops the fan-out at that id, stores nothing and backs the
 tier off in both tiers -- `SurfManager._swarm_details`, F-S3 -- and the live tier also puts its
 list gate back). The slow tier (`TIER_SWARM_SCORES`) sweeps the newest `SWARM_SWEEP_CAP` details
-plus `/skills`, `/workflows` (`?limit=SWARM_WORKFLOW_LIMIT`), `/launches` and `/sites` on its own
+plus `/skills`, `/workflows` (`?limit=SWARM_WORKFLOW_PAGE_SIZE`), `/launches` and `/sites` on its own
 clock and feeds WORKFLOWS, LAUNCHES, SITES and the internal seat-selection fold; `/skills` is still
 read and folded for the parked CAPABILITY (below), which no body mounts; `swarm_throughput` is folded off the **live** slot because its widget shows
 the live marker (two clocks never meet behind one `as of`). A third slot, `SLOT_SWARM_JOBS_SEEN`,
@@ -404,43 +404,50 @@ visible `…` (accepted, `docs/decisions.md`).
 **The explorer's own inference headline is deliberately absent**: no public route serves that
 number, so this view shows none of it — absent, never estimated.
 
-**`x` folds THROUGHPUT** (owner 2026-10-03, F16, `docs/surf_swarm_workflows_spec.md` §1):
-SWARM-only and **not** `priority`, so a focused widget's own `x` binding wins; a focused text field
-(RECORD's filter editor, the seat prompt) keeps a typed `x` either way, because Textual 8.1.1 drops
-every binding for a key an `Input` claims (`check_consume_key`), priority or not -- a test that
-types into a field cannot tell the two apart. `DataTable` binds no `x`, so a focused WORKFLOWS
-table lets it through. The state is the
-screen's (`_throughput_expanded`), in memory, never written to `config.toml`; **the default is
-collapsed**, and it survives a refresh and `s` → `a` → `s`. Collapsed, THROUGHPUT paints its title,
-the blank row, window, the three durations and completed 24h -- the states and cancel-reason
-blocks and their separator are `display: none`, not empty lines -- and its title ends `x more`;
-expanded it ends `x less` (same cells, so a toggle moves no title). The widget's own default stays
-expanded; the screen applies its state through `set_expanded`. KEY_HINTS does not name `x`.
+**SWARM layout v3** (`docs/codex_swarm_layout_v3_plan.md`, owner-approved live at 200×48,
+2026-10-05): LAUNCHES beside THROUGHPUT; full-width WORKFLOWS; full-width SITES. The hero's last
+three cards show their totals and descending whole status/count pairs that fit the measured box.
+SITES and its hero count share `is_current_site`; superseded or unnamed builds are excluded.
+LAUNCHES and WORKFLOWS keep one blank footer row. SITES' label is 32 cells plus its layout pad,
+and the final job column uses `job_text(..., explorer=JOB_EXPLORER)`.
 
-**WORKFLOWS took CAPABILITY's place** (F51): `/workflows`' newest rows as `when · status ·
-contracts · frontend · objective / failure`, the two job cells linked on the IMD explorer, a
-non-completed row's failure in red. CAPABILITY is **parked** for a future SKILLS board: its
-module, class, test, the `/skills` read and its keys stay; its frozen signature lives in
-`SWARM_PARKED_WIDGET_SIGNATURES`, and every "mounted / consumed / signature" test reads its
-exemption from there, never a hand-typed name.
+**`x` opens `ThroughputDetailScreen`** from a deepcopy of the last payload. The short panel always
+shows `x more`; there is no inline expansion or persisted fold. The binding stays non-priority,
+so a focused widget's own binding wins and Input keeps typed text. Missing detail blocks show
+yellow unavailable. Both new popups use the `RecordDetailScreen` frame: scrollable content,
+Space/Escape or its X to close, no network await while opening.
 
-Pins: `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` (LAUNCHES binds the width -- one
-column under the pin it hides its last column behind its own scrollbar; the top row's
-`min-height` is a floor equal to THROUGHPUT's **collapsed** line count, so the row pin is the
-body's three rows of content measured as the body opens, and not a `1fr` split; expanded,
-THROUGHPUT outgrows the floor and the top row scrolls with `‹ taller` lit) and `SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`
-(card rows above RECORD on one column grid; the seat row's OWNER binds the width; RECORD's floor is 6; the measured binding content lives in each pin's `#:` block).
-Named permanent exceptions, each
-with a measured clearing width in the `#:` block and in the layout test (`INFLIGHT_NEVER_CLEARS_BELOW`,
-`LAUNCHES_NEVER_CLEARS_BELOW`, `LAUNCHES_HIDES_NO_COLUMN_FROM`, `RECORD_NEVER_CLEARS_BELOW`):
-IN FLIGHT and LAUNCHES share a 4fr:5fr row measured so LAUNCHES hides no table column from below
-the pin up; RECORD's elastic `answer` column keeps `‹ widen` lit only when its cleaned reply
-actually clips and has no popup button. The button-less capture's clearing width is recorded
-beside its constant. Heroes are part of the tested whole-body states; their clipped boxes fail those sweeps. F55 separately
-records the mixed SERVICES combinations which still clip and are not a whole-state guarantee.
-The original swarm grid decisions remain recorded in `docs/decisions.md`; the old A1 agent-grid
-arithmetic is historical (F32). AGENT now has its hero and one seat-card row above elastic RECORD.
+**WORKFLOWS history:** cold or incomplete caches backfill pages of 100, at most 10 pages, using
+strict UTC `createdAt` cursors, an advancing-cursor guard and the existing inter-call delay.
+The scores slot persists raw rows plus `workflows_complete`. After completion, sweeps fetch page 1
+and merge by workflow identity, fetched values winning, newest timestamps first and unknown last,
+capped at 1,000. Failed page 1 returns None on cold start and retains cached last-good otherwise;
+a later-page failure retains the pages read and logs it. An older workflow's status change beyond
+the newest 100 is seen only on a later backfill. No row shape changes.
 
+WORKFLOWS paints `when · status · contracts · frontend · objective / failure`; a non-completed
+failure is red. Enter or a row click posts a snapshot message for `WorkflowDetailScreen`; job-link
+clicks open the IMD explorer directly (verified on Textual 8.1.1 and 8.2.8). The popup shows status,
+created/updated, both job links, waiting for hosting, objective and failure. Full prose wraps as
+literal Text through shared control cleaning and copy-icon helpers; workflow prose has no chain
+and therefore no explorer link.
+
+**Title alarms, SWARM only:** tripped exactly True means breaker open; services exactly False
+mean one named service or N services down; unknown services are not down. A non-ok health string
+is sanitized and capped at 12 cells. The owner approved `health unavailable` for unread health,
+because existing manager tests explicitly require no new SWARM degraded group. A title too wide
+uses a source count (`src`), compact labels (`par`, `svc`, `ver`/`pub`/`dep`) and omits the redundant
+SURF heading; price, parity, `as of`, LP warning, taller marker and every alarm remain. Default and
+AGENT titles do not change. KEY_HINTS begins `x more`; `l` stays bound, unlisted like `e`.
+
+CAPABILITY and IN FLIGHT are parked, with their modules, tests and reads retained. Every mounted /
+consumed exemption comes from `SWARM_PARKED_WIDGET_SIGNATURES`. Neither has a current body pin.
+SWARM's pins now measure 129×35: SITES and the full status bar bind the width; THROUGHPUT's nine
+lines and the two eight-line table floors bind height. LAUNCHES is the content exception,
+`LAUNCHES_NEVER_CLEARS_BELOW` 162 on capture, with no hidden columns from 125 at 35 rows or 123 at
+80 rows. WORKFLOWS compact/full start at 62/72, SITES at 121/129; these enter the boundary sets.
+AGENT's 139×25 pin and RECORD's content exception are unchanged. The original grids remain
+historical in `docs/decisions.md` and the appended pin blocks in `screens/surf.py`.
 
 **Polish answer reads** (`docs/surf_swarm_polish_handover.md`): RECORD renders
 `when · job · node · state · model · took · tok · panel · answer`; objective remains
@@ -567,9 +574,8 @@ because these jobs carry no chain id. Every third-party string reaches Static as
 
 **Palette:** dim labels, bold counts; green healthy/working/accepted, red offline/paused/down,
 yellow unavailable or existing pending counts. Zero working keeps `0 quiet` dim. Rates and
-scores and QUEUE counts are bold without thresholds or status colour. SWARM SERVICES keeps
-explicit up/down/unreported words and a separately served health word; its pre-existing mixed-state clipping is F55. The new
-health row fits the existing hero height. BOARD's offline rows are dim, per its own row design;
+scores and summary counts are bold without thresholds or status colour. SWARM service and health
+alarms live in the title; F55 is closed by removing the SERVICES card. BOARD's offline rows are dim, per its own row design;
 its hero is unchanged by polish. Every colour assertion uses actual composited styles.
 
 CAPABILITY is parked (2026-10-03) and mounted nowhere, so no pin certifies it now: its tier
@@ -613,6 +619,6 @@ BOARD uses `SURF_BOARD_FULL_LAYOUT_COLUMNS` × `SURF_BOARD_FULL_LAYOUT_ROWS`, wi
 FLEET and paused detail binding height. The constants and their `#:` blocks own the measurements.
 The existing global market title remains unchanged; source clocks belong in BOARD content.
 
-IN FLIGHT keeps the folded dispatch/failure note as its last column. Actual note clipping
+Parked IN FLIGHT keeps the folded dispatch/failure note as its last column; these constraints apply when it returns. Actual note clipping
 lights widen in every tier; a fitting literal ellipsis does not. Full tier is a column
 guarantee, not a promise that arbitrary notes fit; measured content limits are in surf.py.

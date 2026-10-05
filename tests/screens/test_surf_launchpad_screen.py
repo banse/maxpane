@@ -76,7 +76,7 @@ async def test_the_status_hint_names_the_new_view() -> None:
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
         text = "\n".join(seg.text for s in strips for seg in s)
-        assert "l launchpad" in text
+        assert "x more" in text
 
 
 async def test_l_also_hides_the_separator_and_bottom_row() -> None:

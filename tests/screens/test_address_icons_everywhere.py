@@ -31,7 +31,7 @@ Per case, across all of its views, four questions (PRD §7 E2):
 Each case is swept at :data:`SIZE` (170 columns) and again at each view's own
 layout pin, plus any ``extra_sizes`` it names (:func:`sizes_for`). Questions 1,
 2 and 5 are asked at every size; 3 and 4 only on the wide pass (SWARM uses
-400 columns for IN FLIGHT prose; surf also retains the original 170 pass).
+118 columns after IN FLIGHT was parked; surf also retains the original 170 pass).
 
 An address-free case gets the opposite: no icon, no whole or shortened address,
 and no helper-using widget mounted at all.
@@ -58,11 +58,18 @@ from tests.widgets.address_probe import icon_targets, link_targets
 #: The sweep's wide terminal: wide and tall enough for every body to render.
 SIZE = (170, 60)
 
+#: 2026-10-05 layout v3: SWARM's former 400-column IN FLIGHT prose pass
+#: is retired with that panel. In-situ 110-130 sweep: both remaining seeds
+#: carry their whole copyable units from 118; LAUNCHES' icon is absent at
+#: 117, while WORKFLOWS' unlinked failure address is already whole. The
+#: original 170 pass remains in extra_sizes; this width is not a body pin.
+SWARM_WIDE_COLUMNS = 118
+
 
 def sizes_for(case: SweepCase, kind: str) -> list[tuple[int, int]]:
     """The terminal each of ``case``'s views is swept at, in ``views`` order.
 
-    ``wide`` is :data:`SIZE`, except SWARM prose coverage at 400 columns.
+    ``wide`` is :data:`SIZE`, except SWARM at its measured seed-completeness width.
     ``pin`` is each view's own layout
     pin (``case.pins``; ``__main__.FULL_LAYOUT_COLUMNS`` when it names none),
     because 170 columns hides every defect that only exists where a panel is
@@ -71,10 +78,7 @@ def sizes_for(case: SweepCase, kind: str) -> list[tuple[int, int]]:
     """
     count = len(case.views)
     if kind == "wide":
-        # IN FLIGHT shares the 4fr:5fr row and splits its remaining prose
-        # budget again. Its whole address+icon units need the wider SWARM
-        # view; surf also retains 170 in extra_sizes and its unchanged pins.
-        return [(400, SIZE[1]) if case.name == "surf" and view == ("s",) else SIZE
+        return [(SWARM_WIDE_COLUMNS, SIZE[1]) if case.name == "surf" and view == ("s",) else SIZE
                 for view in case.views]
     if kind == "pin":
         pins = case.pins or ((FULL_LAYOUT_COLUMNS, None),)
@@ -1208,3 +1212,15 @@ async def test_surf_board_body_has_no_wallet_or_token_address_text():
         await pilot.app.screen._do_refresh();await pilot.press('b');await pilot.pause()
         text=_region_text(pilot.app,pilot.app.screen.query_one(f'#{BOARD_BODY_ID}'))
         assert '0x' not in text and '⧉' not in text
+
+
+@pytest.mark.parametrize("width,whole", [(SWARM_WIDE_COLUMNS - 1, False), (SWARM_WIDE_COLUMNS, True)])
+async def test_swarm_wide_size_is_the_seed_completeness_boundary(width, whole):
+    from tests.address_sweep.builders import _SWARM_CONTRACT, _SWARM_WORKFLOW
+    case = next(case for case in CASES if case.name == "surf")
+    app = case.build()
+    async with app.run_test(size=(width, SIZE[1])) as pilot:
+        await _enter(("s",), app, pilot)
+        copied = {value.lower() for _, _, value in icon_targets(app) if value}
+        assert _SWARM_WORKFLOW.lower() in copied
+        assert (_SWARM_CONTRACT.lower() in copied) is whole

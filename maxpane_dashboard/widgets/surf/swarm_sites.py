@@ -4,7 +4,7 @@ Mounted full-width at the foot of the ``s`` body since WP7
 (``minimal.tcss``); a new file that imported nothing from the old
 ``swarm_shipped.py`` WP7 deleted.
 
-Columns ``label · ens · size · cid · tx`` on
+Columns ``label · ens · size · cid · tx · job`` on
 :class:`~maxpane_dashboard.widgets.surf._swarm_table.SwarmTableBase`
 (the tier machinery the three WP6 tables share; see that module).
 
@@ -83,13 +83,14 @@ __all__ = [
 # ``tests/fixtures/surf/swarm/v2/sites.json`` (6 sites, 2026-09-21).
 
 #: A site label: 13 is the widest captured (``site-7018907b``).
+#: 2026-10-05 layout v3: widened to the live maximum label length, 32.
 _LABEL_COLS = 32
 #: The label cell: one label. It was 29 (``<label> → <label>``) while a
 #: superseded row showed its successor; those rows left the panel on
 #: 2026-09-23 (owner), and F67 gave the 16 cells back -- SITES' tiers moved
 #: 116/108/87 -> 100/92/72 (``screens/surf.py`` SWARM ``#:`` block); the body
 #: pin did not (CAPABILITY binds it).
-_LABEL_CELL_COLS = _LABEL_COLS                                          # 13
+_LABEL_CELL_COLS = _LABEL_COLS                                          # 32
 #: The ENS suffix every captured name carries.
 _ENS_SUFFIX = ".site.identitymd.eth"
 #: ``ens``: ``<label>.site.identitymd.eth`` -- 33 at the widest captured
@@ -106,6 +107,7 @@ CID_COLS = 16
 #: ``tx``: surf's 17-cell hash window (``0x`` + 8 + ``…`` + 6).
 TX_COLS = 17
 
+#: Final job column: the same eight-cell linked UUID prefix as WORKFLOWS.
 JOB_COLS = 8
 
 _SPECS = (
@@ -121,12 +123,16 @@ _COMPACT = tuple(key for key in _ALL if key != "size")
 _TIGHT = tuple(key for key in _COMPACT if key != "cid")
 
 #: ``full``: all five columns -- 95 cells.
-FULL_WIDTH = table_cols(w for k, _l, w in _SPECS)                      # 95
+#: 2026-10-05: six columns, 124 table cells; full at 129 on SWARM.
+FULL_WIDTH = table_cols(w for k, _l, w in _SPECS)                      # 124
 #: ``compact``: ``size`` shed (the cheapest column; the CID still identifies
 #: the pin) -- 87.
-COMPACT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _COMPACT)  # 87
+#: 2026-10-05: 116 table cells, compact at 121 on SWARM.
+COMPACT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _COMPACT)  # 116
 #: ``tight``: ``cid`` shed too; the ENS name and the tx stay -- 69.
-TIGHT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _TIGHT)      # 69
+#: 2026-10-05: 98 table cells; no hidden column from 103 at 35 rows,
+#: or 101 at 80 rows when the capture needs no vertical scrollbar.
+TIGHT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _TIGHT)      # 98
 
 #: Colour looked up on the **raw** status word; ``named`` is the corpus's
 #: own live state (6/6 rows) and is green beside the brief's ``published``/
