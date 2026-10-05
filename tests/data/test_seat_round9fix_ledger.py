@@ -8,7 +8,7 @@ import pytest
 from maxpane_dashboard.analytics.seat_records import node_rows, record_window
 from maxpane_dashboard.data import seat_api as api
 from maxpane_dashboard.data.seat_log_grammar import classify
-from maxpane_dashboard.widgets.seat import SeatRecords
+from maxpane_dashboard.widgets.seat import SeatJob, SeatRecords
 from tests.data.test_seat_round9_cache import body, ledger, work, JOB, HASH
 from tests.widgets.test_seat_hero import composite_lines
 
@@ -199,14 +199,30 @@ def test_stored_merge_preserves_fact_groups(tmp_path, api_status, local_reason, 
 
 
 @pytest.mark.parametrize('order', ['local_first', 'plane_first'])
-def test_missed_stored_exact_attempt_reconciles_without_duplicate_counts(tmp_path, order):
+@pytest.mark.parametrize('stamp,merges', [
+    ('2026-10-03T12:00:00.000Z', True),
+    ('2026-10-03T12:00:00.073Z', True),  # measured API lead over the journal
+    ('2026-10-03T11:59:58.000Z', True),
+    ('2026-10-03T12:00:05.000Z', True),
+    ('2026-10-03T11:59:57.999Z', False),
+    ('2026-10-03T12:00:05.001Z', False),
+    ('2026-10-03T12:00:06.000Z', False),
+])
+def test_missed_stored_exact_attempt_reconciles_without_duplicate_counts(tmp_path, order, stamp, merges):
     l = ledger(tmp_path)
+    item = work(at=stamp)
     if order == 'plane_first':
-        l.attach_work([work()], as_of_utc=AS_OF)
+        l.attach_work([item], as_of_utc=AS_OF)
     key = local_closed(l)
-    l.attach_work([work()], as_of_utc=AS_OF)
-    l.attach_work([work()], as_of_utc=AS_OF)
+    l.attach_work([item], as_of_utc=AS_OF)
+    l.attach_work([item], as_of_utc=AS_OF)
     rows = l.record_rows()
+    if not merges:
+        assert len(rows) == 2
+        local = next(r for r in rows if r['key'] == key)
+        assert local['hash12'] is None and local['outcome'] is None
+        l.close()
+        return
     assert len(rows) == 1
     assert rows[0]['key'] == key and rows[0]['source']['row'] == 'local'
     assert rows[0]['submissionHash'] == HASH and rows[0]['outcome'] == 'accepted'
@@ -228,7 +244,7 @@ def test_missed_stored_ambiguous_evidence_keeps_separate_rows(tmp_path, ambiguit
     elif ambiguity == 'persisted_plane':
         l.seed_api_rows([work(digest='b' * 64)], seat=3)
     elif ambiguity == 'time':
-        rows[0]['submittedAt'] = '2026-10-03T12:00:01Z'
+        rows[0]['submittedAt'] = '2026-10-03T12:00:06Z'
     elif ambiguity == 'job':
         rows[0]['jobId'] = 'foreign-job'
     elif ambiguity == 'node':
@@ -407,3 +423,161 @@ def test_merged_ledger_remains_readable_by_previous_ledger(tmp_path):
         l.close()
     finally:
         sys.modules.pop(old.__name__, None)
+
+
+def seat_local_open(l, raw):
+    l.ingest([classify('2026-10-03T10:00:00.000Z accepted implement 12345678 — q (max 60 turns)')])
+    l.attach_work_dirs([dict(jobId=raw['id'], nodeId='12345678-0000-4000-8000-000000000000',
+                             mtimeUtc='2026-10-03T10:00:00Z')])
+    return next(r['key'] for r in l.rows() if r['source']['row'] == 'local')
+
+
+def seat_close_unsubmitted(l, close):
+    line = {
+        'local_fail': 'question failed: boom',
+        'cancelled': 'cancelled 12345678: superseded',
+        'interrupted': 'runtimes: codex codex-cli 0.157.0 (using codex, as asked)',
+    }[close]
+    l.ingest([classify('2026-10-03T10:01:00.000Z ' + line)])
+
+
+@pytest.mark.parametrize('close', ['local_fail', 'cancelled', 'interrupted'])
+def test_closed_unsubmitted_can_read_owned_failure_without_prior_fallback(tmp_path, close):
+    l = ledger(tmp_path)
+    raw = chain()
+    seat_local_open(l, raw)
+    seat_close_unsubmitted(l, close)
+    assert l.record_rows()[0]['nodeKey'] is None
+    raw['nodes'][0].update(seat={'tokenId': '3'}, state='failed', failureReason='timeout')
+    store_job(l, raw)
+    row = l.record_rows()[0]
+    assert row['outcome'] == 'failed' and row['failureReason'] == 'timeout'
+    assert row['source']['outcome'] == row['source']['reason'] == 'job node state'
+    assert row['jobState'] is None
+    l.close()
+
+
+@pytest.mark.parametrize('close', ['local_fail', 'cancelled', 'interrupted'])
+@pytest.mark.parametrize('failed_read', [False, True])
+async def test_closed_unsubmitted_releases_pending_and_retains_owned_failure(tmp_path, close, failed_read):
+    l = ledger(tmp_path)
+    raw = chain()
+    raw['state'] = 'running'
+    key = seat_local_open(l, raw)
+    raw['nodes'][0].update(seat={'tokenId': '3'}, state='pending')
+    store_job(l, raw)
+    assert l.record_rows()[0]['outcome'] == 'pending'
+    seat_close_unsubmitted(l, close)
+    if failed_read:
+        raw['nodes'][0].update(state='failed', failureReason='timeout')
+        store_job(l, raw)
+        row = l.record_rows()[0]
+        assert row['outcome'] == 'failed' and row['failureReason'] == 'timeout'
+        assert row['source']['outcome'] == row['source']['reason'] == 'job node state'
+    raw['nodes'][0].update(seat={'tokenId': '721'}, state='accepted')
+    store_job(l, raw)
+    row = l.record_rows()[0]
+    assert row['outcome'] == ('failed' if failed_read else None)
+    assert row['source']['outcome'] == ('job node state' if failed_read else 'none')
+    assert row['jobState'] is None and row['submittedUtc'] is None
+    assert l.today('2026-10-03')['pending'] == 0
+    records = '\n'.join(await composite_lines(SeatRecords, (132, 12), seat_records_rows=[row]))
+    job = '\n'.join(await composite_lines(SeatJob, (110, 30), seat_jobs=[l.task_detail(key)]))
+    assert 'pending' not in records and 'pending' not in job
+    if failed_read:
+        assert 'failed' in records and 'timeout' in job
+    l.close()
+
+
+@pytest.mark.parametrize('state', ['accepted', 'rejected', 'pending'])
+def test_cancelled_unsubmitted_never_takes_other_attempt_states(tmp_path, state):
+    l = ledger(tmp_path)
+    raw = chain()
+    raw['state'] = 'completed'
+    seat_local_open(l, raw)
+    seat_close_unsubmitted(l, 'cancelled')
+    raw['nodes'][0].update(seat={'tokenId': '3'}, state=state)
+    store_job(l, raw)
+    assert l.record_rows()[0]['outcome'] is None
+    assert l.record_rows()[0]['jobState'] is None
+    l.close()
+
+
+@pytest.mark.parametrize('other', ['open', 'closed', 'api'])
+def test_closed_unsubmitted_same_node_reattempt_blocks_fallback_for_both(tmp_path, other):
+    l = ledger(tmp_path)
+    raw = chain()
+    seat_local_open(l, raw)
+    raw['nodes'][0].update(seat={'tokenId': '3'}, state='pending')
+    store_job(l, raw)
+    assert l.record_rows()[0]['outcome'] == 'pending'
+    seat_close_unsubmitted(l, 'local_fail')
+    if other == 'api':
+        l.seed_api_rows([dict(work(job=raw['id']), status='unknown', nodeKey=None)], seat=3)
+    else:
+        l.ingest([classify('2026-10-03T10:02:00.000Z accepted implement 12345678 — q (max 60 turns)')])
+        l.attach_work_dirs([dict(jobId=raw['id'], nodeId='12345678-0000-4000-8000-000000000000',
+                                 mtimeUtc='2026-10-03T10:02:00Z')])
+        if other == 'closed':
+            l.ingest([classify('2026-10-03T10:03:00.000Z question failed: boom')])
+    raw['nodes'][0].update(seat={'tokenId': '3'}, state='failed', failureReason='timeout')
+    store_job(l, raw)
+    assert len(l.rows()) == 2
+    assert all(r['outcome'] in (None, 'unknown') for r in l.rows())
+    assert all(r['source']['outcome'] != 'job node state' for r in l.rows())
+    l.close()
+
+
+@pytest.mark.parametrize('state', ['accepted', 'rejected', 'pending'])
+def test_closed_unsubmitted_releases_pending_before_owned_state_is_refused(tmp_path, state):
+    l = ledger(tmp_path)
+    raw = chain()
+    seat_local_open(l, raw)
+    raw['nodes'][0].update(seat={'tokenId': '3'}, state='pending')
+    store_job(l, raw)
+    seat_close_unsubmitted(l, 'cancelled')
+    raw['nodes'][0]['state'] = state
+    store_job(l, raw)
+    assert l.record_rows()[0]['outcome'] is None
+    assert l.today('2026-10-03')['pending'] == 0
+    l.close()
+
+
+async def test_missed_stored_measured_window_needs_no_api_node_identity_and_paints_one_record(tmp_path):
+    l = ledger(tmp_path)
+    key = local_closed(l)
+    item = work(at='2026-10-03T12:00:00.073Z')
+    item.pop('nodeKey')  # work has no node id; nodeKey is not required evidence either.
+    l.attach_work([item], as_of_utc=AS_OF)
+    rows = l.record_rows()
+    assert len(rows) == 1 and rows[0]['key'] == key
+    assert rows[0]['submissionHash'] == HASH and rows[0]['storedUtc'] is None
+    text = '\n'.join(await composite_lines(SeatRecords, (132, 12), seat_records_rows=rows))
+    assert text.count(JOB[:8]) == 1
+    assert 'completed' in text
+    l.close()
+
+
+@pytest.mark.parametrize('evidence', ['work', 'persisted'])
+def test_missed_stored_window_hash_uniqueness_includes_already_stored_attempt(tmp_path, evidence):
+    l = ledger(tmp_path)
+    key = local_closed(l)
+    # A second submitted attempt already has its stored hash; it is not a missing-stored candidate.
+    l.ingest([classify(s) for s in [
+        '2026-10-03T12:00:01.000Z accepted implement 87654321 — q (max 60 turns)',
+        '2026-10-03T12:00:02.000Z submitted implement for 87654321',
+        '2026-10-03T12:00:02.100Z submission stored (bbbbbbbbbbbb) — awaiting verdict',
+    ]])
+    l.attach_work_dirs([dict(jobId=JOB, nodeId='87654321-0000-4000-8000-000000000000',
+                             mtimeUtc='2026-10-03T12:00:01Z')])
+    second = work(digest='b' * 64, at='2026-10-03T12:00:02.073Z')
+    items = [work(at='2026-10-03T12:00:00.073Z')]
+    if evidence == 'work':
+        items.append(second)
+    else:
+        # Persisted API evidence inside the window must block even when omitted by this read.
+        l.seed_api_rows([work(digest='c' * 64, at='2026-10-03T12:00:03Z')], seat=3)
+    l.attach_work(items, as_of_utc=AS_OF)
+    local = next(r for r in l.rows() if r['key'] == key)
+    assert local['hash12'] is None and local['outcome'] is None
+    l.close()

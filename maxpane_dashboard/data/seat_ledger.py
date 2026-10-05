@@ -788,22 +788,27 @@ class SeatLedger:
         return joined
 
     def _reconcile_missed_stored(self, item: dict, work: list[dict]) -> bool:
-        """Exact timestamps and unique evidence only; never fabricate a journal stored time."""
+        """Unique evidence within API minus journal [-2, +5] s; never fabricate a stored time."""
         job, stamp = item.get("jobId"), _parse_api_timestamp(item.get("submittedAt"))
         if not isinstance(job, str) or stamp is None:
             return False
+        def in_window(api_stamp: object, local_stamp: object) -> bool:
+            api_time, local_time = _parse_api_timestamp(api_stamp), _parse_api_timestamp(local_stamp)
+            return api_time is not None and local_time is not None and -2 <= api_time - local_time <= 5
+
         local = [r for r in self._conn.execute(
             "SELECT * FROM tasks WHERE job_id=? AND seat IS ? AND source_row='local' AND hash12 IS NULL "
             "AND cancelled IS NULL AND COALESCE(lease_closed,0)=0 AND COALESCE(pre_agent_failure,0)=0 "
             "AND COALESCE(interrupted_by_restart,0)=0", (job, self._seat)
-        ) if _parse_api_timestamp(r["submitted_utc"]) == stamp and 'failed' not in (_loads(r["phases_json"]) or [])]
+        ) if in_window(item.get("submittedAt"), r["submitted_utc"]) and 'failed' not in (_loads(r["phases_json"]) or [])]
         if len(local) != 1 or (local[0]["node_key"] is not None and local[0]["node_key"] != item.get("nodeKey")):
             return False
+        anchor = local[0]["submitted_utc"]
         hashes = {w.get("submissionHash") for w in work if w.get("jobId") == job
-                  and _parse_api_timestamp(w.get("submittedAt")) == stamp}
+                  and in_window(w.get("submittedAt"), anchor)}
         plane = [r for r in self._conn.execute(
             "SELECT * FROM tasks WHERE job_id=? AND seat IS ? AND source_row='api'", (job, self._seat)
-        ) if _parse_api_timestamp(r["submitted_utc"]) == stamp]
+        ) if in_window(r["submitted_utc"], anchor)]
         hashes.update(r["submission_hash"] for r in plane)
         if len(hashes) != 1 or len(plane) != 1:
             return False
@@ -1046,21 +1051,25 @@ class SeatLedger:
         days = set()
         with self._conn:
             for row in rows:
-                if row["source_outcome"] == "api":
+                if row["source_outcome"] == "api" or row["pre_agent_failure"]:
                     continue
-                if (row["cancelled"] or row["pre_agent_failure"] or row["interrupted_by_restart"]
-                        or 'failed' in (_loads(row["phases_json"]) or [])):
+                locally_closed = (row["cancelled"] or row["interrupted_by_restart"]
+                                  or 'failed' in (_loads(row["phases_json"]) or []))
+                closed_unsubmitted = row["submitted_utc"] is None and bool(locally_closed)
+                if locally_closed and not closed_unsubmitted:
                     continue
                 nodes = [n for n in detail.get("nodes", []) if
                          n.get("seatTokenId") == self._seat
                          and (not row["node_key"] or n.get("key") == row["node_key"])]
-                if not nodes and row["source_outcome"] == 'job node state' and row["outcome"] == 'pending':
+                if (closed_unsubmitted or not nodes) and row["source_outcome"] == 'job node state' and row["outcome"] == 'pending':
                     self._conn.execute("UPDATE tasks SET outcome=NULL,source_outcome='none',outcome_as_of_utc=?, "
                                        "job_state=NULL WHERE key=?", (as_of, row["key"]))
                     days.add(row["accepted_utc"][:10])
                 if len(nodes) != 1:
                     continue
                 node = nodes[0]
+                if closed_unsubmitted and node.get("state") != 'failed':
+                    continue
                 attempts = [r for r in rows if r["node_key"] in (None, node.get("key"))]
                 if len(attempts) != 1 or node.get("state") not in ("accepted", "rejected", "failed", "pending"):
                     continue

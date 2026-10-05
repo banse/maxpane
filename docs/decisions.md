@@ -1525,3 +1525,24 @@ This is an in-process test guard, not a host firewall. It does not govern `sybil
 Guard regressions run copied conftest code in pytester subprocesses. The sandbox permits the always-running local-host delegation checks but denies listener binding; that genuine-listener control reports one explicit environment skip. The authorized scoped run outside that restriction passed all thirteen guard tests, including temporary loopback and Unix listeners. The ordinary and survey-isolation scoped runs each passed twelve with that one skip. No external-refusal assertion is skipped or weakened for the sandbox.
 
 The three surveyed cases were then run with enforcement: all three test bodies passed and all three teardowns failed, proving that caught exceptions cannot conceal an attempted connection. The Mac case now stubs only the underlying standing-fetch function to raise OSError; its broker stays online and its gate arguments and refusal behavior are unchanged. The two FrenPet snapshot cases inject a lifecycle-managed HTTP mock transport that raises ConnectError, preserving the real reward-pool fallback. All three pass after those stubs with an empty refusal record. These are test setup changes; no existing result assertion is removed or relaxed.
+
+### 2026-10-05 — PEPEPANE round 9 second fix: closed unsubmitted outcomes
+
+This clarifies the previous correction's exclusion from job completion state. A closed, unsubmitted attempt is cancelled, has a failed phase, or was interrupted by a restart, and has no submitted timestamp. Pre-agent failures are submitted rows and follow the submitted-row rules. A closed, unsubmitted row first loses any pending outcome written by the node fallback, even if the node is now assigned elsewhere. It may receive only a failed node outcome and reason, subject to the existing ownership evidence and single-attempt rule. Every row for that job with an equal or unknown node key counts toward that uniqueness check, including closed and API rows. Such a row receives neither accepted, rejected or pending from a node nor the job's completion state. Open and submitted attempts retain their existing rules.
+
+### 2026-10-05 — PEPEPANE round 9 second fix: missed stored timestamp evidence
+
+Missed-stored reconciliation uses the inclusive interval from two seconds before to five seconds after the single local candidate's submitted timestamp. The API item's submitted timestamp must fall in that interval; the distinct work hashes and seeded API rows are counted against the same local anchor. Exactly one local candidate, one hash and one API row are required. Existing job, row-source, submission and known-node-key restrictions remain. No node id or node key is newly required: work rows omit the node id and a local attempt often learns its node key only through the hash join.
+
+The owner's 2026-10-05 measurement matched these journal and API stamps by submission hash:
+
+| Hash prefix | Journal submitted | API submittedAt | API lead |
+|---|---|---|---|
+| `269c57c837f9` | `20:44:13.523Z` | `20:44:13.596Z` | 73 ms |
+| `ba3d2f8103a4` | `20:59:52.612Z` | `20:59:52.687Z` | 75 ms |
+| `e2394293a04a` | `21:20:26.331Z` | `21:20:26.405Z` | 74 ms |
+| `179d2e5877cc` | `21:52:20.100Z` | `21:52:20.173Z` | 73 ms |
+
+The observed lead motivates accepting the measured 73 ms shape; the wider interval allows a small clock offset between a worker and the plane. Two cases remain unmeasured and fail safe by retaining separate rows when outside this evidence window: a re-sending resend whose API timestamp follows the resend, and a Mac Docker VM clock drifting beyond the negative two-second edge. The API timestamp parser remains unchanged.
+
+Changed assertions for this timestamp correction are confined to `tests/data/test_seat_round9fix_ledger.py`. `test_missed_stored_exact_attempt_reconciles_without_duplicate_counts` retains its original exact-stamp merge assertions and adds both ingest orders for the measured 73 ms lead, the inclusive negative-two and positive-five-second edges, and non-merges just beyond either edge and at six seconds. `test_missed_stored_ambiguous_evidence_keeps_separate_rows[time]` moves its API stamp from one second after the local stamp to six seconds after it: one second now lies inside the approved matching window. Its two-local-candidate case remains unchanged. The accepted-state cases of `test_unknown_attempt_never_inherits_completed_job_state` are unchanged.
