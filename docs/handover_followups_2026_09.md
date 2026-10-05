@@ -879,12 +879,16 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     Shared control stripping plus the inventoried literal-Text boundaries remove C0/DEL/C1
     except newline/tab, preserving ZWJ/bidi; composited regressions and both required mutants
     prove the boundary. The same commit's sink inventory, validation counts and hash lookup
-    are in `docs/codex_swarm_workflows_followups_plan.md`, WP1 Landed; final owner review pending.
+    are in `docs/codex_swarm_workflows_followups_plan.md`, WP1 Landed; owner review Approved (0 Critical, 0 Important, 5 Minor).
 
 81. **`tests/widgets/test_title_blank_row.py:284` passes `burn_history` to `TTTSparkline`, whose
     keyword is `burns_history`.** `update_data`'s `**_kwargs` swallows the typo, so the case renders
     a `None` series, which reads `unavailable` since #34. The blank-row assertion still holds, but
     the case is not exercising the series it names. **Minor, Tier 0.**
+    **CLOSED 2026-10-05** (commit: `test(ttt): exercise the burn series in the title case`).
+    Corrected to `burns_history`; the same table payload now proves that its two-point
+    BURNS line draws a chart rather than unavailable. The regression failed before the
+    spelling correction; 63 title/composing-screen tests pass.
 
 ## Slow-work tooling — `scripts/mutate.py` and `scripts/measure_layout.py` (2026-10-05, review residuals)
 

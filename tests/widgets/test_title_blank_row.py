@@ -281,7 +281,7 @@ _PANELS = [
         }],
     }),
     # -- ttt ----------------------------------------------------------------
-    ("TTTSparkline", TTTSparkline, {"burn_history": _SERIES}),
+    ("TTTSparkline", TTTSparkline, {"burns_history": _SERIES}),
     # Two states, because the defect fixed on 2026-09-12 was visible in only
     # one of them: the optional fresh-launch row used to double as the spacer,
     # so the blank row vanished exactly when there was a fresh launch to
@@ -379,3 +379,15 @@ def test_the_panel_table_names_every_widget_once_per_state() -> None:
         assert pid.split("-")[0] == cls.__name__, (
             f"id {pid!r} does not name its widget {cls.__name__}"
         )
+
+
+async def test_ttt_title_case_draws_a_real_burn_series():
+    from maxpane_dashboard.widgets.sparkline_common import SPARK_CHARS
+
+    payload = next(payload for name, _, payload in _PANELS if name == "TTTSparkline")
+    assert len(_SERIES) >= TTTSparkline.MIN_POINTS == 2
+    rows = await composite_lines(
+        TTTSparkline, _SIZE, css_path=CSS_PATH, region_only=True, **payload)
+    burn_line = next(row for row in rows if "BURNS" in row)
+    assert "unavailable" not in burn_line
+    assert any(ch in burn_line for ch in SPARK_CHARS)

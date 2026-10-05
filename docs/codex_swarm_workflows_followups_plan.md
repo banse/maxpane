@@ -575,6 +575,26 @@ and the filter replacing RECORD. Its unchanged test code was validated together
 with F82: **682 passed**, including the whole composing screen file.
 Fast guards: **120 passed**; doc pins: **12 passed**. No mutation required.
 
+**Landed — #81 (Tier 0, test only), 2026-10-05.**
+Commit: `test(ttt): exercise the burn series in the title case`.
+Corrected `burn_history` to `burns_history`. The new test reuses the table's
+actual payload, requires `MIN_POINTS == 2` valid samples, and checks the
+composited BURNS line for chart glyphs and no unavailable word.
+Red first: **1 failed** with the typo; focused green: **1 passed**.
+Whole title file and TTT composing-screen file: **63 passed**;
+fast guards: **120 passed**; doc pins: **12 passed**. No mutation mandated.
+
+**F79 verification — pending owner decision, 2026-10-05.**
+The decoder's malformed entry renders the existing dash-only row (frontend uses
+its established em dash), but the footer is `newest 1 · 1 --`, not `newest 1`.
+This is neither a crash nor stale data; the brief's test-only scope and its
+requested exclusion from status counts disagree with current behavior.
+The focused regression is red; the whole widget/composing run was
+**1 failed / 133 passed**, solely that new footer assertion.
+No production fix was made. The owner was asked whether to skip missing statuses
+in footer counts or preserve the behavior and file the brief mismatch.
+The failing regression remains uncommitted pending that decision.
+
 **Stop after WP5.** Report:
 - the branch head and the commit list;
 - per item: its tier, the tests run with their counts, and the mutants with which test
