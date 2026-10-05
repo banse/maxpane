@@ -560,6 +560,14 @@ fast guards: **120 passed**; doc pins: **12 passed**.
 `scripts/mutate.py`: **KILLED m1** (always use `_REPO_COLS`);
 named red `test_tight_repo_cell_fits_its_column_with_a_visible_ellipsis`.
 
+**Landed — F82 (Tier 0, test only), 2026-10-05.**
+Commit: `test(surf): cover swarm layouts at eighty rows`.
+Added the `sweep`-marked four-payload × two-fold pass at the pinned width and
+`_COLUMN_SWEEP_HEIGHT`, judged by `_check_width`. Focused: **8 passed**.
+Whole layout and composing screen files (also validating F83's prepared docstring):
+**682 passed** (314.32 s); fast guards: **120 passed**; doc pins: **12 passed**.
+No pin changed and no mutation was mandated.
+
 **Stop after WP5.** Report:
 - the branch head and the commit list;
 - per item: its tier, the tests run with their counts, and the mutants with which test

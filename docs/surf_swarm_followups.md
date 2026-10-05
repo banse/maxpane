@@ -1120,6 +1120,9 @@ next touched, never as its own branch, except where an item is an owner decision
   body at (138, 80) on every payload. The expanded half of the 35-row sweep never composites
   THROUGHPUT's blocks. No defect hides there today, because the 80-row detectors never saw those
   lines either. Add an 80-row pass, or record why the 35-row one suffices.
+  **CLOSED 2026-10-05** (commit: `test(surf): cover swarm layouts at eighty rows`).
+  All four payloads × both folds now run at the pinned width and 80 rows
+  through the existing whole-body geometry checks.
 - **F83 — a stale docstring in `tests/screens/test_surf_swarm_screen.py`** still names ROSTER, SEAT
   RECORD and FEEDBACK, panels SWARM no longer mounts (WP5 review).
 - **F84 — out of scope by the spec's §5. OWNER DECISIONS.** The candidates:

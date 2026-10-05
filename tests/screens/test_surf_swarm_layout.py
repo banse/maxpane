@@ -1376,3 +1376,12 @@ async def _open_agent_editor(pilot):
             break
     await pilot.pause()
     return pilot.app.screen
+
+
+@pytest.mark.sweep
+@pytest.mark.parametrize("payload_name,expanded", [(n, x) for n in _S_PAYLOADS for x in _FOLDS])
+async def test_the_swarm_body_is_whole_at_eighty_rows(payload_name, expanded):
+    width = SURF_SWARM_FULL_LAYOUT_COLUMNS
+    r = await _render(PAYLOADS[payload_name](), (width, _COLUMN_SWEEP_HEIGHT),
+                      "s", expanded=expanded)
+    _check_width(r, "s", payload_name, width, expanded)
