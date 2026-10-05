@@ -243,7 +243,7 @@ class SurfSwarmWorkflows(SwarmTableBase):
 
     def build_footer(self, summary) -> tuple[str, ...] | None:
         """``newest 12 · 8 blocked · 4 completed``: the rows shown, by status,
-        count descending then word; no footer for ``None`` or ``[]``."""
+        count descending then word; skip missing statuses. No footer for ``None`` or ``[]``."""
         if not isinstance(summary, list):
             return None
         shown = [row for row in summary[: self.ROW_CAP] if isinstance(row, dict)]
@@ -251,7 +251,8 @@ class SurfSwarmWorkflows(SwarmTableBase):
             return None
         counts: dict[str, int] = {}
         for row in shown:
-            word = strip_tags(flatten(row.get("status"))) or DASH
-            counts[word] = counts.get(word, 0) + 1
+            word = strip_tags(flatten(row.get("status")))
+            if word:
+                counts[word] = counts.get(word, 0) + 1
         ordered = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
         return (f"newest {len(shown)}", *(f"{count} {word}" for word, count in ordered))

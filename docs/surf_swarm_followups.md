@@ -1100,6 +1100,9 @@ next touched, never as its own branch, except where an item is an owner decision
 - **F79 — WORKFLOWS: an entry with no usable field folds to an all-`None` row.** `workflow_rows` keeps
   one row per mapping, so a persisted mapping with garbage values becomes a row of `None`s. No test
   pins how WORKFLOWS paints it.
+  **CLOSED 2026-10-05** (commit: `fix(surf): skip missing workflow statuses in footer counts`).
+  The composited regression keeps the dash-only row and counts it in `newest N`,
+  while the owner-approved footer fix skips missing statuses; restoring the dash bucket is KILLED.
 - **F80 — LAUNCHES' `#` column cuts a four-digit launch number. IMPORTANT WHEN REACHABLE.** The
   worst-case payload's 1000 paints as `1,00`, cut by the `DataTable` with no ellipsis (pre-existing;
   WP5 review). That would be a wrong number on screen. It is latent: the capture's launches are

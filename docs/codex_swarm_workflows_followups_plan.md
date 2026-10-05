@@ -501,6 +501,8 @@ Owner-run Tier 1 review remains pending.
   - Assert the footer's status counts do not count it.
   - Test only, unless the pinned behaviour turns out to crash or to show a stale value, in which
     case stop and report.
+  - **Owner amendment, 2026-10-05:** "skip missing statuses" authorizes the small footer
+    correction: keep the unreadable row in `newest N`, but omit it from status counts.
 - **F81: LAUNCHES' tight `repo` cell.** In `tests/widgets/test_surf_swarm_launches.py`: at the
   `tight` tier, the composited `repo` cell ends in `…` and is at most `_TIGHT_REPO_COLS` wide.
   **Mutation proof:** `repo_cols = _REPO_COLS` at every tier (the re-review's mutant G) must
@@ -584,16 +586,23 @@ Red first: **1 failed** with the typo; focused green: **1 passed**.
 Whole title file and TTT composing-screen file: **63 passed**;
 fast guards: **120 passed**; doc pins: **12 passed**. No mutation mandated.
 
-**F79 verification — pending owner decision, 2026-10-05.**
-The decoder's malformed entry renders the existing dash-only row (frontend uses
-its established em dash), but the footer is `newest 1 · 1 --`, not `newest 1`.
-This is neither a crash nor stale data; the brief's test-only scope and its
-requested exclusion from status counts disagree with current behavior.
-The focused regression is red; the whole widget/composing run was
-**1 failed / 133 passed**, solely that new footer assertion.
-No production fix was made. The owner was asked whether to skip missing statuses
-in footer counts or preserve the behavior and file the brief mismatch.
-The failing regression remains uncommitted pending that decision.
+**Landed — F79 (Tier 0), 2026-10-05.**
+Commit: `fix(surf): skip missing workflow statuses in footer counts`.
+The owner approved skipping missing statuses after the regression exposed
+`newest 1 · 1 --`. The malformed entry still renders its dash-only row (frontend
+uses its established em dash), and its footer now reads `newest 1`.
+Nonempty statuses retain their existing counts and ordering.
+Red first: **1 failed / 133 passed**, solely the new footer assertion.
+Focused green: **4 passed**; whole widget/composing screen: **134 passed**;
+fast guards: **120 passed**; doc pins: **12 passed**.
+`scripts/mutate.py`: **KILLED restore_missing_status_bucket**; named red
+`test_unreadable_workflow_entry_renders_dashes_without_counting_a_status`.
+Keyless live 200×48 preview shown before closure (`/tmp/followups-surf-s.svg`):
+normal footer `newest 12 · 7 blocked · 5 completed`; malformed input is covered
+by the composited regression.
+
+WP1–WP5 implementation is complete. The owner-run WP2 and WP4 Tier 1 reviews
+remain pending; the unrelated decisions in §9 remain outside this implementation.
 
 **Stop after WP5.** Report:
 - the branch head and the commit list;

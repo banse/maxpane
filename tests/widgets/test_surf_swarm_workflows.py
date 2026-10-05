@@ -534,3 +534,13 @@ async def test_text_floor_clips_below_the_tight_budget():
         await pilot.pause()
         row = next(row for row in _strip_rows(pilot.app) if "zzz" in row)
         assert "z" * 19 + "…" in row, row
+
+
+async def test_unreadable_workflow_entry_renders_dashes_without_counting_a_status():
+    rows = workflow_rows([{"bogus": 1}])
+    text = await _workflows(swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    lines = _data_lines(text)
+    assert len(lines) == 1
+    assert lines[0].split() == ["--", "--", "--", "—", "--"]
+    footer = next(line.strip() for line in text.splitlines() if "newest" in line)
+    assert footer == "newest 1", footer
