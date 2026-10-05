@@ -119,7 +119,7 @@ the app-wide pin is `__main__.FULL_LAYOUT_COLUMNS`. To measure surf's `s`/`a`/`b
 .venv/bin/python -m pytest tests/data tests/analytics tests/test_*.py sybilkit/sybilkit_tests  # fast: ~5,700 tests, ~3 min
 .venv/bin/python -m pytest -m 'not screen' sybilkit/sybilkit_tests tests   # + widgets, no composites: ~7,500 tests, ~6 min
 .venv/bin/python -m pytest sybilkit/sybilkit_tests tests                   # full: ~8,330 tests (7,885 + 445 sybilkit), ~30 min
-HOME=$(mktemp -d) .venv/bin/python -m pytest -n 4 --dist loadfile sybilkit/sybilkit_tests tests   # full, parallel: ~12.5 min
+HOME=$(mktemp -d) .venv/bin/python -m pytest -n 4 --dist worksteal sybilkit/sybilkit_tests tests  # full, parallel: 11,978 tests, ~17 min (2026-10-05)
 cargo test                                          # the Rust crate, from maxpane/
 ```
 
