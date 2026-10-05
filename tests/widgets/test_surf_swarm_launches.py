@@ -270,13 +270,16 @@ async def test_the_title_carries_the_marker_only_when_it_is_real():
         assert "as of" not in text and "LAUNCHES" in text
 
 
-async def test_the_footer_counts_by_status_desc_and_suppresses_no_data():
-    text = await _launches(swarm_launch_rows=[], swarm_launch_summary=SUMMARY,
-                           swarm_scores_as_of_hhmm=AS_OF)
-    for part in ("30 launches", "19 live", "10 abandoned", "1 parked"):
-        assert part in text, (part, text)
-    assert text.index("19 live") < text.index("10 abandoned") < text.index("1 parked")
-    assert "No data" not in text
+async def test_the_launch_footer_keeps_a_blank_row():
+    async with _Probe().run_test(size=SIZE) as pilot:
+        widget = pilot.app.query_one(SurfSwarmLaunches)
+        widget.update_data(swarm_launch_rows=[], swarm_launch_summary=SUMMARY)
+        await pilot.pause()
+        footer = widget.query_one("#" + widget.footer_id)
+        assert footer.display and footer.region.height == 1
+        lines = [strip.text for strip in pilot.app.screen._compositor.render_strips()]
+        assert lines[footer.region.y].strip() == ""
+        assert "No data" in "\n".join(lines)
 
 
 async def test_no_summary_means_no_footer():

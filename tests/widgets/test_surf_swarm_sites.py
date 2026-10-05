@@ -99,7 +99,7 @@ async def test_an_empty_list_is_a_real_negative_and_differs_from_none():
 
 def test_the_row_tuples_agree_with_the_column_count():
     width = len(SurfSwarmSites.COLUMNS)
-    assert width == len(SurfSwarmSites.COLUMN_SPECS) == 5
+    assert width == len(SurfSwarmSites.COLUMN_SPECS) == 6
     assert len(SurfSwarmSites.EMPTY_ROW) == width
     assert len(SurfSwarmSites.LOADING_ROW) == width
     assert SurfSwarmSites.ROW_CAP == 10
@@ -108,21 +108,22 @@ def test_the_row_tuples_agree_with_the_column_count():
 # -- cells -------------------------------------------------------------------------------
 
 
+JOB_URL = "https://explorer.imd.fun/jobs/115a2caa-323b-411a-bc39-e69977e85e34"
 SITE_URL = "https://roll.site.identitymd.eth.limo/"
 
 
 async def test_the_tx_links_on_etherscan_mainnet_with_no_icon():
-    assert await _urls([_site()]) == [f"https://etherscan.io/tx/{TX}", SITE_URL]
+    assert await _urls([_site()]) == [f"https://etherscan.io/tx/{TX}", JOB_URL, SITE_URL]
     text = await _sites(swarm_site_rows=[_site()], swarm_scores_as_of_hhmm=AS_OF)
     assert COPY_GLYPH not in text, "a hash is outside the copy rule"
     assert TX[: 2 + 8] in text, text
 
 
 async def test_a_value_that_is_not_a_tx_hash_renders_plain_and_unlinked():
-    assert await _urls([_site(tx_hash="0x" + "9d" * 20)]) == [SITE_URL]
-    assert await _urls([_site(tx_hash=None)]) == [SITE_URL]
+    assert await _urls([_site(tx_hash="0x" + "9d" * 20)]) == [JOB_URL, SITE_URL]
+    assert await _urls([_site(tx_hash=None)]) == [JOB_URL, SITE_URL]
     text = await _sites(swarm_site_rows=[_site(tx_hash=None)], swarm_scores_as_of_hhmm=AS_OF)
-    assert _data_lines(text)[0].rstrip().endswith("--"), text
+    assert re.search(r"--\s+115a2caa$", _data_lines(text)[0].rstrip()), text
 
 
 async def test_the_cid_window_keeps_its_head_and_its_tail():
@@ -160,7 +161,7 @@ async def test_the_ens_name_opens_its_eth_limo_site_with_no_icon():
     """Owner 2026-09-23: a click on ``mswap.site.identitymd.eth`` opens
     ``https://mswap.site.identitymd.eth.limo/``."""
     rows = [_site(label="mswap", ens_name="mswap.site.identitymd.eth", tx_hash=None)]
-    assert await _urls(rows) == ["https://mswap.site.identitymd.eth.limo/"]
+    assert await _urls(rows) == [JOB_URL, "https://mswap.site.identitymd.eth.limo/"]
     text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
     assert "mswap.site.identitymd.eth" in text and COPY_GLYPH not in text, text
 
@@ -169,7 +170,7 @@ async def test_a_name_outside_site_identitymd_eth_shows_but_never_links():
     for name in ("mswap.evil.eth", "a.b.site.identitymd.eth", "MSWAP.site.identitymd.eth",
                  "x.site.identitymd.eth[/x]"):
         rows = [_site(ens_name=name, tx_hash=None)]
-        assert await _urls(rows) == [], name
+        assert await _urls(rows) == [JOB_URL], name
         text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
         assert _data_lines(text), (name, text)
 
@@ -300,8 +301,22 @@ async def test_the_full_tier_hides_no_column_at_its_own_threshold():
         await pilot.pause()
         table = pilot.app.query_one(DataTable)
         assert table.max_scroll_x == 0
-        assert len(table.columns) == 5
+        assert len(table.columns) == 6
         text = "\n".join("".join(seg.text for seg in strip)
                          for strip in pilot.app.screen._compositor.render_strips())
         assert re.search(r"label\s+ens\s+size\s+cid\s+tx", text), text
         assert "‹" not in text
+
+
+async def test_sites_job_column_links_to_the_imd_job():
+    from tests.widgets.address_probe import link_targets
+    from textual.app import App
+    class Probe(App):
+        def compose(self):
+            yield SurfSwarmSites()
+    job = "86c76df1-724d-4c85-8e59-7379fe6ff012"
+    async with Probe().run_test(size=(170, 18)) as pilot:
+        panel = pilot.app.query_one(SurfSwarmSites)
+        panel.update_data(swarm_site_rows=[{"label": "a-label-of-thirty-two-characters!", "ens_name": "test.site.identitymd.eth", "job_id": job}])
+        await pilot.pause()
+        assert any(target[5].endswith("/jobs/" + job) for target in link_targets(pilot.app))

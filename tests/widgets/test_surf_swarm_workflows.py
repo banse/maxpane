@@ -160,7 +160,7 @@ async def test_the_captured_page_renders_twelve_rows_and_the_first_reads_as_by_h
     sixth = lines[5]
     assert "A tip jar on Sepolia." in sixth and "Contract TipJar" not in sixth, sixth
     assert "WORKFLOWS · as of 04:06" in text, text
-    assert "newest 12 · 8 blocked · 4 completed" in text, text
+    assert "newest" not in text, text
 
 
 async def test_the_job_cells_link_their_jobs_on_the_imd_explorer_without_an_icon():
@@ -278,14 +278,14 @@ async def test_an_all_none_row_renders_dashes_without_raising():
     assert cells == ["--", "--", "--", "—", "--"], cells
 
 
-async def test_the_thirteenth_row_is_not_shown():
+async def test_the_thirteenth_row_is_shown():
     rows = [_row(objective=f"Workflow number {n:02d}.") for n in range(13, 0, -1)]
     text = await _workflows((SIZE[0], 30), swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
     lines = _data_lines(text)
-    assert len(lines) == 12, lines
-    assert "Workflow number 13." in lines[0] and "Workflow number 02." in lines[-1], lines
-    assert "Workflow number 01." not in text, text
-    assert "newest 12 · 12 completed" in text, text
+    assert len(lines) == 13, lines
+    assert "Workflow number 13." in lines[0] and "Workflow number 01." in lines[-1], lines
+    assert "Workflow number 01." in text, text
+    assert "newest" not in text, text
 
 
 # -- status colours ----------------------------------------------------------------------------
@@ -334,7 +334,7 @@ async def test_the_footer_counts_the_rows_it_was_handed_by_count_then_word():
     rows = [_row(status=s, failure="") for s in statuses]
     text = await _workflows(swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
     # 3 completed, then the 2/2 tie broken by word (blocked < cancelled), then 1.
-    assert "newest 8 · 3 completed · 2 blocked · 2 cancelled · 1 executing" in text, text
+    assert "newest" not in text, text
 
 
 # -- tiers ------------------------------------------------------------------------------------
@@ -393,7 +393,7 @@ async def test_each_tier_shows_its_columns_whole_at_its_own_threshold_under_the_
     assert keys == ["status", "contracts", "objective / failure"], keys
     assert scroll == 0
     assert re.search(r"status\s+contracts\s+objective / failure", text), text
-    assert "newest 12" in text
+    assert "newest" not in text
 
 
 async def test_the_text_column_takes_every_spare_cell():
@@ -542,5 +542,56 @@ async def test_unreadable_workflow_entry_renders_dashes_without_counting_a_statu
     lines = _data_lines(text)
     assert len(lines) == 1
     assert lines[0].split() == ["--", "--", "--", "—", "--"]
-    footer = next(line.strip() for line in text.splitlines() if "newest" in line)
-    assert footer == "newest 1", footer
+    assert "newest" not in text
+
+
+async def test_workflow_enter_and_click_post_snapshot_but_job_link_does_not():
+    from tests.widgets.address_probe import LinkRecorder
+    from maxpane_dashboard.explorer_action import ExplorerLinkMixin
+    class Probe(LinkRecorder, ExplorerLinkMixin, _Probe):
+        def __init__(self):
+            super().__init__()
+            self.selected = []
+        def on_surf_swarm_workflows_selected(self, message):
+            self.selected.append(message.row)
+    async with Probe().run_test(size=SIZE) as pilot:
+        widget = pilot.app.query_one(SurfSwarmWorkflows)
+        source = [_row(), _row(workflow_id="second", objective="Second objective")]
+        widget.update_data(swarm_workflow_rows=source)
+        table = widget.query_one(DataTable)
+        table.focus()
+        await pilot.pause()
+        await pilot.press("enter")
+        assert pilot.app.selected[0]["workflow_id"] == "wf-1"
+        source[0]["objective"] = "changed afterwards"
+        assert pilot.app.selected[0]["objective"] != "changed afterwards"
+        x, y, *_ = link_targets(pilot.app)[0]
+        await pilot.click(offset=(x, y))
+        assert len(pilot.app.selected) == 1
+        assert len(pilot.app.opened) == 1
+        lines = _strip_rows(pilot.app)
+        y = next(y for y, line in enumerate(lines) if "Second objective" in line)
+        await pilot.click(offset=(lines[y].index("Second objective"), y))
+        assert pilot.app.selected[-1]["workflow_id"] == "second"
+
+
+async def test_workflow_footer_row_is_present_and_blank():
+    async with _Probe().run_test(size=SIZE) as pilot:
+        widget = pilot.app.query_one(SurfSwarmWorkflows)
+        widget.update_data(swarm_workflow_rows=[_row()])
+        await pilot.pause()
+        footer = widget.query_one("#" + widget.footer_id)
+        assert footer.display and footer.region.height == 1
+        assert _strip_rows(pilot.app)[footer.region.y].strip() == ""
+
+
+async def test_workflow_history_scrolls_to_its_last_row():
+    async with _Probe().run_test(size=(140, 12)) as pilot:
+        widget = pilot.app.query_one(SurfSwarmWorkflows)
+        widget.update_data(swarm_workflow_rows=[_row(workflow_id=str(n), objective=f"Entry {n:04d}.") for n in range(138)])
+        table = widget.query_one(DataTable)
+        await pilot.pause()
+        assert table.row_count == 138
+        table.move_cursor(row=137)
+        await pilot.pause()
+        assert "Entry 0137." in "\n".join(_strip_rows(pilot.app))

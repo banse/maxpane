@@ -14,7 +14,6 @@ from textual.app import App
 
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.surf.swarm_hero import (
-    ALL_SERVICES_UP,
     BOX_IDS,
     SurfSwarmHeroBox,
     SurfSwarmHero,
@@ -36,7 +35,7 @@ KW = {
 #: pin clipping is separately checked in the real screen harness.
 SIZE = (360, 8)
 
-AGENTS, WORKING, ACCEPTED, QUEUE, BREAKER, SERVICES = BOX_IDS
+AGENTS, WORKING, ACCEPTED, LAUNCHES, WORKFLOWS, SITES = BOX_IDS
 
 
 class _A(App):
@@ -124,7 +123,7 @@ async def test_the_six_labels_stand_in_row_order():
     rows, regions, _ = await _render([KW])
     label_y = regions[AGENTS].y
     line = rows[label_y]
-    order = [line.index(w) for w in ("AGENTS", "WORKING", "ACCEPTED 24h", "QUEUE", "BREAKER", "SERVICES")]
+    order = [line.index(w) for w in ("AGENTS", "WORKING", "ACCEPTED 24h", "LAUNCHES", "WORKFLOWS", "SITES")]
     assert order == sorted(order), line
 
 
@@ -183,217 +182,42 @@ async def test_accepted_24h_is_grouped_and_three_states():
     assert "unavailable" in await _box(ACCEPTED, swarm_accepted_today=None)
 
 
-async def test_queue_three_states_and_zero_is_real():
-    assert "68" in await _box(QUEUE)
-    zero = await _box(QUEUE, swarm_queue_total=0)
-    assert zero.splitlines()[2].strip() == "0", zero
-    assert "unavailable" in await _box(QUEUE, swarm_queue_total=None)
-
-
-async def test_a_malformed_count_lands_on_unavailable_not_the_previous_poll():
-    """MEDI-38: the body is built inside ``render_box``'s guard."""
-    rows, regions, _ = await _render([KW, {**KW, "swarm_queue_total": "lots"}])
-    text = "\n".join(_slice(rows, regions[QUEUE]))
-    assert "68" not in text, text
-    assert "unavailable" in text or "--" in text, text
-
-
-# -- BREAKER ----------------------------------------------------------------
-
-
-async def test_breaker_not_tripped_says_closed():
-    text = await _box(BREAKER)
-    assert "closed" in text, text
-    assert "tripped" not in text
-
-
-async def test_breaker_tripped_shows_the_detail_and_it_is_the_red_the_down_word_wears():
-    """Textual resolves ``red`` to the theme's triplet, so colour is asserted
-    as a property read off one composited frame: the tripped detail and a
-    *down* service word share a colour, and an *up* word does not."""
-    rows, regions, styles = await _render([{
-        **KW,
-        "swarm_breaker": {"tripped": True, "detail": "deploy failed twice"},
-        "swarm_services_up": {"verifier": False, "publisher": True, "deployer": True},
-    }])
-    region = regions[BREAKER]
-    box = _slice(rows, region)
-    body_y = next(i for i, r in enumerate(box) if "deploy failed twice" in r)
-    x = region.x + box[body_y].index("deploy")
-    detail_colour = styles[(x, region.y + body_y)].color
-    assert detail_colour is not None
-    s_region = regions[SERVICES]
-    s_box = _slice(rows, s_region)
-    s_y = next(i for i, r in enumerate(s_box) if "verifier" in r)
-    down, up = [styles[(s_region.x + s_box[s_y].index(word), s_region.y + s_y)].color
-                for word in ("down", "up")]
-    assert down == detail_colour, (down, detail_colour)
-    assert up != down, (up, down)
-
-
-async def test_breaker_tripped_without_detail_says_open():
-    text = await _box(BREAKER, swarm_breaker={"tripped": True, "detail": None})
-    assert "open" in text, text
-
-
-async def test_breaker_none_and_non_dict_are_unavailable():
-    assert "unavailable" in await _box(BREAKER, swarm_breaker=None)
-    assert "unavailable" in await _box(BREAKER, swarm_breaker="tripped")
-    assert "unavailable" in await _box(BREAKER, swarm_breaker=["tripped"])
-
-
-async def test_a_hostile_breaker_detail_renders_literally_and_a_theme_token_does_not_raise():
-    text = await _box(BREAKER, swarm_breaker={"tripped": True, "detail": "bad [/x] tag"})
-    assert "[/x]" in text, text
-    assert "unavailable" not in text
-    text = await _box(BREAKER, swarm_breaker={"tripped": True, "detail": "[$success] deploy"})
-    assert "[$success] deploy" in text, text
-
-
-async def test_a_long_breaker_detail_is_clipped_to_the_box_not_wrapped():
-    detail = "x" * 200
-    rows, regions, _ = await _render([{**KW, "swarm_breaker": {"tripped": True, "detail": detail}}])
-    region = regions[BREAKER]
-    box = _slice(rows, region)
-    value_rows = [r for r in box if "x" in r]
-    assert len(value_rows) == 1, box
-    assert value_rows[0].rstrip().endswith("…"), value_rows
-
-
-# -- SERVICES ---------------------------------------------------------------
-
-
-async def test_all_services_up_summarises_instead_of_listing():
-    text = await _box(SERVICES)
-    assert ALL_SERVICES_UP in text, text
-    assert "●" not in text
-    assert "?" not in text
-
-
-async def test_a_down_service_lists_every_service_with_its_own_word():
-    rows, regions, styles = await _render([
-        {**KW, "swarm_services_up": {"verifier": False, "publisher": True, "deployer": True}}
-    ])
-    region = regions[SERVICES]
-    box = _slice(rows, region)
-    text = "\n".join(box)
-    assert ALL_SERVICES_UP not in text
-    assert "verifier down publisher up deployer up" in text
-    body_y = next(i for i, r in enumerate(box) if "verifier" in r)
-    line = box[body_y]
-    positions = [line.index("down"), line.index("up"), line.rindex("up")]
-    colours = [styles[(region.x + x, region.y + body_y)].color for x in positions]
-    assert colours[1] == colours[2] != colours[0], colours
-
-
-async def test_an_unreported_service_is_explicit_not_down():
-    text = await _box(SERVICES, swarm_services_up={"verifier": True, "publisher": None, "deployer": True})
-    assert "verifier up publisher unreported deployer up" in text
-    assert "down" not in text
-
-
-async def test_a_none_or_non_dict_services_payload_is_unavailable():
-    """The whole read failed -- ``unavailable``, not three ``unreported`` (the common
-    rule: a dict that is ``None`` is unavailable; a *missing field* inside a
-    dict is the per-service ``unreported``)."""
-    assert "unavailable" in await _box(SERVICES, swarm_services_up=None)
-    assert "unavailable" in await _box(SERVICES, swarm_services_up="up")
-
-
-async def test_a_dict_missing_a_service_marks_only_that_one_unreported():
-    text = await _box(SERVICES, swarm_services_up={"verifier": True, "publisher": True})
-    line = next(r for r in text.splitlines() if "deployer" in r)
-    assert "deployer unreported" in line, line
-    assert line.count(" up") == 2, line
-    assert "unavailable" not in text
 
 
 import pytest
 
-
-def _painted_style(app,box_id,word):
-    region=app.query_one('#'+box_id).region
-    lines=[''.join(segment.text for segment in strip) for strip in app.screen._compositor.render_strips()]
-    y=next(y for y in range(region.y,region.bottom) if word in lines[y][region.x:region.right])
-    return app.screen.get_style_at(lines[y].index(word,region.x),y)
-
-
-@pytest.mark.parametrize('patch,box,word,color',[
-    ({'swarm_working_now':2},WORKING,'2',2),
-    ({'swarm_working_now':None},WORKING,'unavailable',3),
-    ({'swarm_breaker':{'tripped':False,'detail':None}},BREAKER,'closed',2),
-    ({'swarm_breaker':{'tripped':True,'detail':'failed twice'}},BREAKER,'open',1),
-    ({'swarm_health_status':'ok'},SERVICES,'ok',2),
-    ({'swarm_health_status':'degraded'},SERVICES,'degraded',1),
-    ({'swarm_health_status':None},SERVICES,'unavailable',3),
-])
-async def test_polish_hero_state_words_have_composited_colors(patch,box,word,color):
-    async with _A().run_test(size=SIZE) as pilot:
-        pilot.app.query_one(SurfSwarmHero).update_data(**{**KW,**patch})
-        await pilot.pause()
-        style=_painted_style(pilot.app,box,word)
-        assert style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[color]
-        if box in (WORKING,QUEUE) and word!='unavailable':assert style.bold
-
-
-async def test_polish_quiet_zero_is_dim_but_remains_a_real_zero():
-    async with _A().run_test(size=SIZE) as pilot:
-        pilot.app.query_one(SurfSwarmHero).update_data(**{**KW,'swarm_working_now':0})
-        await pilot.pause()
-        zero=_painted_style(pilot.app,WORKING,'0')
-        quiet=_painted_style(pilot.app,WORKING,'quiet')
-        normal=_painted_style(pilot.app,QUEUE,'68')
-        assert zero.color==quiet.color and zero.color!=normal.color
-        assert zero.bold
+@pytest.mark.parametrize("size", [(138, 8), (96, 8)])
+async def test_summary_cards_keep_only_whole_pairs(size):
+    payload = {**KW,
+        "swarm_launch_summary": {"by_status": [{"status": "live", "count": 75}, {"status": "parked", "count": 25}]},
+        "swarm_workflow_rows": [{"status": "completed"}] * 102 + [{"status": "blocked"}] * 28 + [{}],
+        "swarm_site_rows": [{"ens_name": "a.site.identitymd.eth", "status": "named"}] * 90 +
+                           [{"ens_name": "b.site.identitymd.eth", "status": "failed"}] +
+                           [{"ens_name": "old.site.identitymd.eth", "status": "superseded"}],
+    }
+    rows, regions, styles = await _render([payload], size=size)
+    for box, total, pairs in ((LAUNCHES, "100", ["75 live", "25 parked"]),
+                             (WORKFLOWS, "131", ["102 completed", "28 blocked"]),
+                             (SITES, "91", ["90 named", "1 failed"])):
+        lines = _slice(rows, regions[box])
+        assert lines[2].strip() == total
+        from rich.cells import cell_len
+        room = regions[box].width - 2
+        fitted = []
+        for pair in pairs:
+            if cell_len(" · ".join([*fitted, pair])) <= room:
+                fitted.append(pair)
+        assert lines[3].strip() == " · ".join(fitted)
+        assert "…" not in lines[3]
 
 
-async def test_polish_each_service_keeps_its_name_and_semantic_color():
-    async with _A().run_test(size=SIZE) as pilot:
-        hero=pilot.app.query_one(SurfSwarmHero)
-        hero.update_data(**{**KW,'swarm_services_up':{'verifier':False,'publisher':True,'deployer':None},'swarm_health_status':'ok'})
-        await pilot.pause()
-        for word,color in (('verifier',1),('publisher',2),('ok',2)):
-            assert _painted_style(pilot.app,SERVICES,word).color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[color]
-        assert _painted_style(pilot.app,SERVICES,'deployer').color not in (
-            _painted_style(pilot.app,SERVICES,'verifier').color,
-            _painted_style(pilot.app,SERVICES,'publisher').color)
-        hero.update_data(**{**KW,'swarm_health_status':'ok'});await pilot.pause()
-        assert _painted_style(pilot.app,SERVICES,'all services up').color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[2]
-
-
-async def test_polish_health_word_is_sanitized_and_independent_of_service_read():
-    text=await _box(SERVICES,swarm_services_up=None,swarm_health_status='[/x]degraded')
-    assert 'unavailable' in text and 'health degraded' in text and '[/x]' not in text
-    text=await _box(SERVICES,swarm_health_status='maintenance-'+'x'*80)
-    assert 'health maintenance-' in text and '…' in text
-
-
-async def test_polish_mixed_services_remain_distinct_without_color():
-    rows, regions, _ = await _render([{**KW, 'swarm_services_up': {
-        'verifier': False, 'publisher': True, 'deployer': None,
-    }}], size=(360, 8))
-    text = '\n'.join(_slice(rows, regions[SERVICES]))
-    assert 'verifier down publisher up deployer unreported' in text
-    assert 'health ok' in text
-    assert 'unavailable' not in text
-    unread = await _box(SERVICES, swarm_services_up=None)
-    assert 'unavailable' in unread and 'unreported' not in unread
-
-
-@pytest.mark.parametrize("count", [0, 68])
-async def test_queue_count_is_bold_without_status_color(count):
-    async with _A().run_test(size=SIZE) as pilot:
-        pilot.app.query_one(SurfSwarmHero).update_data(**{**KW, 'swarm_queue_total': count})
-        await pilot.pause()
-        queue = _painted_style(pilot.app, QUEUE, str(count))
-        default_color = pilot.app.query_one('#' + QUEUE).rich_style.color
-        assert queue.bold
-        assert queue.color == default_color
-
-
-async def test_unavailable_queue_keeps_its_yellow_word():
-    async with _A().run_test(size=SIZE) as pilot:
-        pilot.app.query_one(SurfSwarmHero).update_data(**{**KW, 'swarm_queue_total': None})
-        await pilot.pause()
-        style = _painted_style(pilot.app, QUEUE, 'unavailable')
-        assert style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
+@pytest.mark.parametrize("key,box", [("swarm_launch_summary", LAUNCHES), ("swarm_workflow_rows", WORKFLOWS), ("swarm_site_rows", SITES)])
+async def test_summary_cards_distinguish_unavailable_from_empty(key, box):
+    rows, regions, styles = await _render([{key: None}])
+    region = regions[box]
+    y = next(y for y in range(region.y, region.bottom) if "unavailable" in rows[y][region.x:region.right])
+    x = rows[y].index("unavailable", region.x)
+    assert styles[x, y].color.get_truecolor() == _A().ansi_theme.ansi_colors[3]
+    empty = {"by_status": []} if key == "swarm_launch_summary" else []
+    text = await _box(box, **{key: empty})
+    assert text.splitlines()[2].strip() == "0"

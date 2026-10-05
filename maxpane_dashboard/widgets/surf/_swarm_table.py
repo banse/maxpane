@@ -318,6 +318,8 @@ class SwarmTableBase(TableLeaderboard):
         widen = self._widen or self._clipped
         self.write(".panel-title", Text(rowfit.title_with_hint(base, widen, room)))
 
+    BLANK_FOOTER = False
+
     def _write_footer(self, parts, *, style: str = "dim") -> bool:
         """Write the ``·``-joined *parts* under the table; ``False`` when none."""
         words = [strip_tags(flatten(part)) for part in (parts or ())]
@@ -326,6 +328,10 @@ class SwarmTableBase(TableLeaderboard):
             footer = self.query_one(f"#{self.footer_id}", Static)
         except Exception:
             return bool(words)
+        if self.BLANK_FOOTER:
+            footer.display = True
+            footer.update(Text(""))
+            return False
         footer.display = bool(words)
         if words:
             room = max(self.size.width - self.FOOTER_PADDING_COLS, 0)

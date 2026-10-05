@@ -62,6 +62,11 @@ No ``data/`` (it restates nothing from there: ``ROW_CAP`` is bound to
 
 from __future__ import annotations
 
+from copy import deepcopy
+from textual.message import Message
+from textual.widgets import DataTable, Static
+from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
+
 import re
 
 from rich.text import Text
@@ -188,6 +193,22 @@ def _text_cell(item: dict, width: int) -> Text:
     return fit_prose(raw, width, style=style)
 
 
+
+
+class _WorkflowTable(DataTable):
+    async def _on_click(self, event):
+        event.prevent_default()
+        if is_copy_click(event) or is_explorer_click(event):
+            await self.app.run_action(event.style.meta["@click"])
+            event.stop()
+            return
+        row = event.style.meta.get("row")
+        if isinstance(row, int) and 0 <= row < self.row_count:
+            self.move_cursor(row=row)
+            self._post_selected_message()
+            event.stop()
+
+
 class SurfSwarmWorkflows(SwarmTableBase):
     """WORKFLOWS -- ``when · status · contracts · frontend · objective / failure``."""
 
@@ -207,6 +228,34 @@ class SurfSwarmWorkflows(SwarmTableBase):
     #: ``no workflows`` (12 cells) lands in the first column wide enough --
     #: the text column at every tier.
     EMPTY_ROW = ("", "", "", "", "no workflows")
+
+    class Selected(Message):
+        def __init__(self, row):
+            super().__init__()
+            self.row = deepcopy(row)
+
+    def compose_body(self):
+        yield _WorkflowTable(id=self.TABLE_ID)
+        yield Static("", id=self.footer_id, classes=self.FOOTER_CLASS)
+
+    def render_table(self, rows, *, footer=None):
+        self._selection_rows = []
+        super().render_table(rows, footer=footer)
+
+    def build_row(self, index, item):
+        cells = super().build_row(index, item)
+        if cells is not None:
+            self._selection_rows.append(deepcopy(item) if isinstance(item, dict) else None)
+        return cells
+
+    def on_data_table_row_selected(self, event):
+        event.stop()
+        if event.row_key not in event.data_table.rows:
+            return
+        index = event.data_table.get_row_index(event.row_key)
+        rows = getattr(self, "_selection_rows", [])
+        if index < len(rows) and rows[index] is not None:
+            self.post_message(self.Selected(rows[index]))
 
     def update_data(
         self,
@@ -241,18 +290,4 @@ class SurfSwarmWorkflows(SwarmTableBase):
             "text": _text_cell(item, self._text_cols()),
         }
 
-    def build_footer(self, summary) -> tuple[str, ...] | None:
-        """``newest 12 · 8 blocked · 4 completed``: the rows shown, by status,
-        count descending then word; skip missing statuses. No footer for ``None`` or ``[]``."""
-        if not isinstance(summary, list):
-            return None
-        shown = [row for row in summary[: self.ROW_CAP] if isinstance(row, dict)]
-        if not shown:
-            return None
-        counts: dict[str, int] = {}
-        for row in shown:
-            word = strip_tags(flatten(row.get("status")))
-            if word:
-                counts[word] = counts.get(word, 0) + 1
-        ordered = sorted(counts.items(), key=lambda pair: (-pair[1], pair[0]))
-        return (f"newest {len(shown)}", *(f"{count} {word}" for word, count in ordered))
+    BLANK_FOOTER = True

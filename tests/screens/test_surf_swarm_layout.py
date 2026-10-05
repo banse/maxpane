@@ -267,7 +267,6 @@ def _corpus_keys() -> dict:
         "swarm_agents_enrolled": hf.get("agents_enrolled"),
         "swarm_working_now": hf.get("working_now"),
         "swarm_accepted_today": hf.get("accepted_today"),
-        "swarm_queue_total": sw.queue_total(health),
         "swarm_breaker": sw.breaker(health),
         "swarm_services_up": hf.get("services_up"),
         "swarm_inflight_rows": sw.inflight_rows(jobs, details, now_ts=_NOW),

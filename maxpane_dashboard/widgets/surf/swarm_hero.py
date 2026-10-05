@@ -75,6 +75,7 @@ from maxpane_dashboard.widgets.fmt import DASH, fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell
 from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
 from maxpane_dashboard.widgets.rowfit import clip
+from ._swarm_summary import SERVICE_NAMES, launch_counts, row_counts, summary_body
 
 __all__ = [
     "ALL_SERVICES_UP",
@@ -90,16 +91,16 @@ ALL_SERVICES_UP = "all services up"
 #: Fixed rendering order for the three swarm services -- the order the
 #: contract's own comment names them (``surf_models.SWARM_KEYS``:
 #: ``swarm_services_up  # dict | None  -- verifier/publisher/deployer``).
-SERVICE_NAMES = ("verifier", "publisher", "deployer")
+
 
 #: ``(widget id, label)`` per box, in row order (plan §2's hero line).
 BOXES: tuple[tuple[str, str], ...] = (
     ("surf-swarm-hero-agents", "AGENTS"),
     ("surf-swarm-hero-working", "WORKING"),
     ("surf-swarm-hero-accepted", "ACCEPTED 24h"),
-    ("surf-swarm-hero-queue", "QUEUE"),
-    ("surf-swarm-hero-breaker", "BREAKER"),
-    ("surf-swarm-hero-services", "SERVICES"),
+    ("surf-swarm-hero-launches", "LAUNCHES"),
+    ("surf-swarm-hero-workflows", "WORKFLOWS"),
+    ("surf-swarm-hero-sites", "SITES"),
 )
 
 BOX_IDS: tuple[str, ...] = tuple(box_id for box_id, _label in BOXES)
@@ -147,57 +148,6 @@ def _working_body(value) -> Text:
     return Text(fmt_int(count), style="bold green")
 
 
-def _queue_body(value) -> Text:
-    count = _int_or_none(value)
-    if count is None:
-        return Text.from_markup(UNAVAILABLE)
-    return Text(fmt_int(count), style="bold")
-
-
-def _breaker_body(breaker, width: int) -> Text:
-    """Closed / open with independent detail / unavailable."""
-    if not isinstance(breaker, dict) or not isinstance(breaker.get("tripped"), bool):
-        return Text.from_markup(UNAVAILABLE)
-    if breaker["tripped"] is False:
-        return Text("closed", style="green")
-    body = Text("open", style="red")
-    detail = flatten(breaker.get("detail"))
-    if detail:
-        body.append("\n" + (clip(detail, width) if width > 0 else detail))
-    return body
-
-
-def _services_body(services_up, health_status, width: int) -> Text:
-    """Existing service summary, plus the independently served health word."""
-    line = Text()
-    if not isinstance(services_up, dict):
-        line.append_text(Text.from_markup(UNAVAILABLE))
-    else:
-        states = [services_up.get(name) for name in SERVICE_NAMES]
-        if all(state is True for state in states):
-            line.append(ALL_SERVICES_UP, style="bold green")
-        else:
-            for index, (name, state) in enumerate(zip(SERVICE_NAMES, states)):
-                if index:
-                    line.append(" ")
-                style = "green" if state is True else "red" if state is False else "dim"
-                line.append(name, style="bold " + style)
-                line.append(" up" if state is True else " down" if state is False else " unreported", style=style)
-    line.append("\n").append("health ", style="dim")
-    if health_status is None:
-        line.append("unavailable", style="yellow")
-    else:
-        # Preserve the served word, sanitized and visibly clipped if a host
-        # supplies a long status. Its colour uses the raw status, not markup.
-        shown = Text.from_markup(sanitize_cell(health_status, max(width-7, 0))) if width else Text(flatten(health_status))
-        shown.stylize("green" if health_status == "ok" else "red")
-        line.append_text(shown)
-    return line
-
-
-# -- widgets ----------------------------------------------------------------------
-
-
 class SurfSwarmHeroBox(HeroBoxBase):
     """One swarm hero box. No geometry here: the stylesheet names this class."""
 
@@ -220,10 +170,9 @@ class SurfSwarmHero(HeroRow):
         swarm_agents_enrolled=None,
         swarm_working_now=None,
         swarm_accepted_today=None,
-        swarm_queue_total=None,
-        swarm_breaker=None,
-        swarm_services_up=None,
-        swarm_health_status=None,
+        swarm_launch_summary=None,
+        swarm_workflow_rows=None,
+        swarm_site_rows=None,
         **_kwargs,
     ) -> None:
         """Refresh all six boxes; every box is written on every poll (MEDI-38).
@@ -235,10 +184,9 @@ class SurfSwarmHero(HeroRow):
             "enrolled": swarm_agents_enrolled,
             "working": swarm_working_now,
             "accepted": swarm_accepted_today,
-            "queue": swarm_queue_total,
-            "breaker": swarm_breaker,
-            "services": swarm_services_up,
-            "health_status": swarm_health_status,
+            "launches": swarm_launch_summary,
+            "workflows": swarm_workflow_rows,
+            "sites": swarm_site_rows,
         }
         self._render_view()
 
@@ -255,7 +203,7 @@ class SurfSwarmHero(HeroRow):
 
     def _render_view(self) -> None:
         data = self._payload or {}
-        agents, working, accepted, queue, breaker, services = BOX_IDS
+        agents, working, accepted, launches, workflows, sites = BOX_IDS
         self.render_box(
             f"#{agents}", "AGENTS",
             lambda: _agents_body(data.get("online"), data.get("enrolled")),
@@ -266,13 +214,10 @@ class SurfSwarmHero(HeroRow):
         self.render_box(
             f"#{accepted}", "ACCEPTED 24h", lambda: _count_body(data.get("accepted")),
         )
-        self.render_box(
-            f"#{queue}", "QUEUE", lambda: _queue_body(data.get("queue")),
-        )
-        self.render_box(
-            f"#{breaker}", "BREAKER",
-            lambda: _breaker_body(data.get("breaker"), self._box_width(breaker)),
-        )
-        self.render_box(
-            f"#{services}", "SERVICES", lambda: _services_body(data.get("services"), data.get("health_status"), self._box_width(services)),
-        )
+        for box_id, label, summary in (
+            (launches, "LAUNCHES", launch_counts(data.get("launches"))),
+            (workflows, "WORKFLOWS", row_counts(data.get("workflows"))),
+            (sites, "SITES", row_counts(data.get("sites"), sites=True)),
+        ):
+            self.render_box(f"#{box_id}", label,
+                            lambda s=summary, b=box_id: summary_body(s, self._box_width(b)))

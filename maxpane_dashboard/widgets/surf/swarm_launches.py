@@ -281,20 +281,4 @@ class SurfSwarmLaunches(SwarmTableBase):
             "parked": sanitize_cell(reason, parked_cols),
         }
 
-    def build_footer(self, summary) -> tuple[str, ...] | None:
-        """``30 launches · 19 live · 10 abandoned · 1 parked`` (by_status, count desc)."""
-        if not isinstance(summary, dict):
-            return None
-        by_status = summary.get("by_status")
-        counted = [
-            entry for entry in (by_status if isinstance(by_status, list) else ())
-            if isinstance(entry, dict) and fmt_int(entry.get("count")) != DASH
-        ]
-        counted.sort(key=lambda entry: -int(entry.get("count")))
-        total = sum(int(entry.get("count")) for entry in counted)
-        parts = [f"{fmt_int(total)} launches"]
-        parts.extend(
-            f"{fmt_int(entry.get('count'))} {strip_tags(entry.get('status')) or DASH}"
-            for entry in counted
-        )
-        return tuple(parts)
+    BLANK_FOOTER = True

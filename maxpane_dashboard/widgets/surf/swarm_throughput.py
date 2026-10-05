@@ -332,37 +332,6 @@ class SurfSwarmThroughput(SignalsPanelBase):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._payload: dict | None = None
-        #: ``None`` until a screen calls :meth:`set_expanded`: expanded, no hint.
-        self._expanded: bool | None = None
-
-    def compose_body(self) -> ComposeResult:
-        """The base's fixed rows, then the fold: a separator and the two blocks."""
-        yield from super().compose_body()
-        shown = self._expanded is not False
-        for node_id in _FOLD_IDS:
-            line = Static("", classes="panel-line", id=node_id)
-            line.display = shown
-            yield line
-
-    def set_expanded(self, expanded: bool) -> None:
-        """Show (``True``) or fold (``False``) the separator and the two blocks.
-
-        A non-``bool`` is ignored. Repaints from the stored payload; before
-        any payload only the title is rewritten (module docstring).
-        """
-        if not isinstance(expanded, bool):
-            return
-        self._expanded = expanded
-        for node_id in _FOLD_IDS:
-            try:
-                self.query_one(f"#{node_id}", Static).display = expanded
-            except Exception:  # not composed yet: ``compose_body`` reads the state
-                pass
-        if self._payload is not None:
-            self._render_view()
-        else:
-            self._set_title()
-
     def update_data(
         self,
         swarm_throughput=None,
@@ -381,7 +350,7 @@ class SurfSwarmThroughput(SignalsPanelBase):
     def on_resize(self, _event=None) -> None:
         if self._payload is not None:
             self._render_view()
-        elif self._expanded is not None:
+        else:
             self._set_title()  # the hint's room moved
 
     # -- rendering ---------------------------------------------------------------
@@ -400,9 +369,8 @@ class SurfSwarmThroughput(SignalsPanelBase):
             text += f" · as of {payload['as_of']}"
         if payload.get("stale") is True:
             text += f" · {STALE_WORD}"
-        if self._expanded is not None:
-            room = max(self.content_size.width - self._TITLE_PADDING_COLS, 0)
-            text = _with_hint(text, LESS_HINT if self._expanded else MORE_HINT, room)
+        room = max(self.content_size.width - self._TITLE_PADDING_COLS, 0)
+        text = _with_hint(text, MORE_HINT, room)
         title.update(Text(text))
 
     def _render_view(self) -> None:
@@ -429,18 +397,11 @@ class SurfSwarmThroughput(SignalsPanelBase):
             f"#{_COMPLETED_ID}", "completed 24h", sig(lambda: _completed_signal(tp)),
         )
 
-        # The open-vocabulary blocks: a reason gets the panel's remaining width.
-        width = self._line_width()
-        reason_cols = max(width - len(_INDENT) - _GAP - _COUNT_COLS, 1)
-        states = None if tp is None else tp.get("states")
-        cancels = None if tp is None else tp.get("cancel_reasons")
-        self.write_guarded(
-            f"#{STATES_ID}",
-            lambda: _rollup_text("states", states, "state", _STATE_COLS),
-            Text.from_markup(UNAVAILABLE_LINE),
-        )
-        self.write_guarded(
-            f"#{CANCELS_ID}",
-            lambda: _rollup_text("cancel reasons", cancels, "reason", reason_cols),
-            Text.from_markup(UNAVAILABLE_LINE),
-        )
+
+
+def throughput_detail_blocks(raw, width: int) -> tuple[Text, Text]:
+    """The snapshot popup's state and cancellation blocks."""
+    tp = raw if isinstance(raw, dict) else {}
+    reason_cols = max(width - len(_INDENT) - _GAP - _COUNT_COLS, 1)
+    return (_rollup_text("states", tp.get("states"), "state", _STATE_COLS),
+            _rollup_text("cancel reasons", tp.get("cancel_reasons"), "reason", reason_cols))

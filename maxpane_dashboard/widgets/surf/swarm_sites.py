@@ -65,7 +65,9 @@ from maxpane_dashboard.widgets.fmt import as_float, fmt_int
 from maxpane_dashboard.widgets.markup_safety import safe_markup, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.panels import LOADING
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
-from maxpane_dashboard.widgets.surf._fmt import DASH, EXPLORER, SITE_EXPLORER
+from maxpane_dashboard.widgets.surf._fmt import DASH, EXPLORER, SITE_EXPLORER, JOB_EXPLORER
+from maxpane_dashboard.widgets.address import job_text
+from ._swarm_summary import is_current_site
 from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase, table_cols
 
 __all__ = [
@@ -81,7 +83,7 @@ __all__ = [
 # ``tests/fixtures/surf/swarm/v2/sites.json`` (6 sites, 2026-09-21).
 
 #: A site label: 13 is the widest captured (``site-7018907b``).
-_LABEL_COLS = 13
+_LABEL_COLS = 32
 #: The label cell: one label. It was 29 (``<label> → <label>``) while a
 #: superseded row showed its successor; those rows left the panel on
 #: 2026-09-23 (owner), and F67 gave the 16 cells back -- SITES' tiers moved
@@ -94,7 +96,7 @@ _ENS_SUFFIX = ".site.identitymd.eth"
 #: label (``site-7018907b.site.identitymd.eth``). The brief budgeted 28 off a
 #: ``roll``-shaped name; the corpus's own widest row would have clipped at
 #: 28, so the column is sized to the state the data is normally in.
-_ENS_COLS = _LABEL_COLS + len(_ENS_SUFFIX)                              # 33
+_ENS_COLS = 33                              # 33
 #: ``size``: ``999.9K`` is the widest compact form under a megabyte; the
 #: corpus runs 584 B – 2.5 MB.
 _SIZE_COLS = 6
@@ -104,12 +106,15 @@ CID_COLS = 16
 #: ``tx``: surf's 17-cell hash window (``0x`` + 8 + ``…`` + 6).
 TX_COLS = 17
 
+JOB_COLS = 8
+
 _SPECS = (
     ("label", "label", _LABEL_CELL_COLS),
     ("ens", "ens", _ENS_COLS),
     ("size", "size", _SIZE_COLS),
     ("cid", "cid", CID_COLS),
     ("tx", "tx", TX_COLS),
+    ("job", "job", JOB_COLS),
 )
 _ALL = tuple(key for key, _l, _w in _SPECS)
 _COMPACT = tuple(key for key in _ALL if key != "size")
@@ -129,12 +134,6 @@ TIGHT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _TIGHT)      # 69
 _STATUS_COLOURS = {
     "named": "green", "published": "green", "live": "green", "failed": "red",
 }
-
-
-def _is_current_site(row: object) -> bool:
-    """A row the panel shows: a mapping with an ENS name, not replaced."""
-    return (isinstance(row, dict) and bool(row.get("ens_name"))
-            and not row.get("superseded_by") and row.get("status") != "superseded")
 
 
 def _window_cid(value, width: int) -> str:
@@ -189,12 +188,12 @@ class SurfSwarmSites(SwarmTableBase):
         ("full", FULL_WIDTH), ("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH)
     )
 
-    LOADING_ROW = (LOADING, "", "", "", "")
-    EMPTY_ROW = ("No data", "", "", "", "")
+    LOADING_ROW = (LOADING, "", "", "", "", "")
+    EMPTY_ROW = ("No data", "", "", "", "", "")
     #: ``/sites`` answered with rows and every one was left out (F68): a
     #: different fact from an empty feed. Not ``live``: the panel never
     #: claims reachability.
-    ALL_HIDDEN_ROW = ("No current site", "", "", "", "")
+    ALL_HIDDEN_ROW = ("No current site", "", "", "", "", "")
 
     def update_data(
         self,
@@ -207,7 +206,7 @@ class SurfSwarmSites(SwarmTableBase):
         # this poll's empty list means.
         self.EMPTY_ROW = type(self).EMPTY_ROW
         if isinstance(swarm_site_rows, list):
-            shown = [row for row in swarm_site_rows if _is_current_site(row)]
+            shown = [row for row in swarm_site_rows if is_current_site(row)]
             if swarm_site_rows and not shown:
                 self.EMPTY_ROW = self.ALL_HIDDEN_ROW
             swarm_site_rows = shown
@@ -223,6 +222,7 @@ class SurfSwarmSites(SwarmTableBase):
 
         return {
             "label": label_cell,
+            "job": job_text(item.get("job_id"), JOB_COLS, explorer=JOB_EXPLORER),
             "ens": site_text(item.get("ens_name"), _ENS_COLS, explorer=SITE_EXPLORER),
             "size": _fmt_bytes(item.get("bytes")),
             "cid": safe_markup(_window_cid(item.get("cid"), CID_COLS)),
