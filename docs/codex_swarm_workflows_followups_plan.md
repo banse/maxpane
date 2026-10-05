@@ -1,4 +1,4 @@
-# Codex plan — SWARM WORKFLOWS follow-ups (written 2026-10-04)
+# Codex plan — SWARM WORKFLOWS follow-ups (written 2026-10-04; rules updated 2026-10-05)
 
 The SWARM WORKFLOWS programme (`docs/surf_swarm_workflows_spec.md`) merged and was pushed to
 `origin/main` at `1147b6d` on 2026-10-04. Its close filed **F73–F85** in
@@ -22,50 +22,50 @@ Older open items in other follow-up docs are out of scope.
 
 ## 1. Where to work
 
-You work in your clone, `/Users/banse/codex/maxpane`. Its `autopull` remote is this repo, and
-`autopull/main` carries this plan on top of `1147b6d`.
+This brief is for maxpane **`main`**. In your clone, `/Users/banse/codex/maxpane`, run
+`git fetch autopull && git switch -c feature/swarm-workflows-followups autopull/main`, and do
+every item on that branch. `autopull` is this repo; its `main` is `origin/main` `41691bf` (which
+includes the 2026-10-05 test-speed changes to `CLAUDE.md` and `scripts/`) plus this plan's update.
 
-**Do not disturb `pepepane`**, your active branch. Pick one of the two setups below.
+Use the clone's own `.venv/bin/python`. Check once that it imports the clone. Run this from
+outside the repo, because `python -c` imports from the current directory first:
+`cd /tmp && /Users/banse/codex/maxpane/.venv/bin/python -c "import maxpane_dashboard; print(maxpane_dashboard.__file__)"`.
 
-- **Sequential (preferred).** Once `pepepane` has no uncommitted tracked changes, run
-  `git fetch autopull && git switch -c feature/swarm-workflows-followups autopull/main`. The
-  untracked `.codex/` and `.venv311/` come along untouched. Use your clone's own
-  `.venv/bin/python`, which imports the clone's `maxpane_dashboard`.
-- **Parallel (worktree).** Run `git worktree add ../maxpane-wf -b feature/swarm-workflows-followups
-  autopull/main`. **The clone's `.venv` still imports the clone's checkout, not the worktree's,
-  so a plain `pytest` there tests the wrong code and reports a false green.** Use this form
-  for every command, as one call:
-  `cd /Users/banse/codex/maxpane-wf && PYTHONPATH=/Users/banse/codex/maxpane-wf/sybilkit/src:/Users/banse/codex/maxpane-wf /Users/banse/codex/maxpane/.venv/bin/python -m pytest …`.
-  First prove the path. `python -c "import maxpane_dashboard; print(maxpane_dashboard.__file__)"`,
-  run under that same prefix, must print the worktree's path.
+That venv runs Textual 8.2.8, while the owner's dev venv runs 8.1.1. The 2026-10-05 Linux dry run
+passed every layout sweep on 8.2.8 (`docs/handover_followups_2026_09.md`, "CI dry run"). If a
+layout result here disagrees with a pin, report it with both versions named; do not re-pin.
 
 ## 2. Rules for every item
 
 - **One item, one commit**, made by pathspec (`git commit -- <paths>`). Use `git add` only for a
   brand-new file's exact path. Never `git stash`, `reset`, `restore`, `clean`, or `checkout --`
   a file. **Never merge, push or tag**: you stop at a committed branch, and the owner merges.
-- **Tests.**
-  - Use `.venv/bin/python -m pytest` (or the worktree form above). Every screen-tier run gets
-    `HOME=$(mktemp -d)`.
-  - **Never run a whole `tests/screens` file or a directory.** Select with `-k`. The whole
-    `test_surf_swarm_layout.py` takes about 17 min; `-k` subsets take seconds to a few minutes.
-  - **Never run the full suite.** The controller runs it once, before merge.
-  - Never start a second pytest while one is running.
-  - Each item's named set is: its own test files, the `-k` screen subset that composites the
-    touched widget, and `-m guard` restricted to the touched test files plus
-    `tests/test_surf_registration.py`.
-  - For a doc edit, also run:
-    `.venv/bin/python -m pytest tests/test_surf_registration.py tests/test_curator_registration.py -k "claude_md or readme or the_docs_ or documented or terminal_layout_skill or spec_docs"`.
-- **Mutation proof** wherever an item says so. Keep `orig = p.read_text()` in memory, assert
-  `orig.count(old) == 1`, write the mutant, run the named test, write `orig` back, and confirm
-  `git diff --stat` is empty for that file. Report **which** test reddened, and that it
-  `failed`, not `error`. An `error` is suspect.
+- **Tests follow `CLAUDE.md` "Tests", in two steps:**
+  - **While editing:** run only the cases that exercise the touched behaviour, by node id or
+    `-k`, on the touched test file and on the screen or manager test that composites it. Screen
+    runs get `HOME=$(mktemp -d)`. SWARM's composing files are `tests/screens/test_surf_swarm_*.py`.
+  - **Once, before each commit:** run the touched test files and the composing screen or manager
+    file whole, with `HOME=$(mktemp -d) .venv/bin/python -m pytest -n 4 --dist worksteal <files>`.
+    Add the fast guard set, `.venv/bin/python -m pytest -m "guard and not mounts_app" tests`.
+    `-m mounts_app` is only for a changed binding or key, which no item here makes.
+  - **After a doc edit**, also run
+    `.venv/bin/python -m pytest -m docpin tests/test_surf_registration.py tests/test_curator_registration.py`.
+  - **Never run the full suite**: it runs only when the owner asks or before a tag. Never start a
+    second pytest while one is running.
+- **Mutation proof** wherever an item says so, with `scripts/mutate.py` (usage in its
+  docstring: `--file --old --new --expect <node id> -- <pytest args>`, or `--mutants
+  mutants.json`). Only `KILLED` with the named `--expect` test counts. `WRONG TEST`, `SURVIVED`
+  and `ERROR` are not proof. Report the script's verdict lines.
+- **Measure, never derive.** For any SWARM width or height question, use
+  `scripts/measure_layout.py s <payload> WxH` (its docstring lists the forms; payload names are
+  `PAYLOADS` in `tests/screens/test_surf_swarm_layout.py`).
 - **Assert on composited output** (`render_strips()` or the existing `_render` / `_screen_text`
   helpers), never on a content string.
 - **Close the entry as you land it.** In the same commit, mark the follow-up entry
-  `CLOSED 2026-MM-DD (<hash>)` with one sentence on how. Then append a **Landed** block under
-  the item in this file: the commit, the tests run with their counts, and each mutant with the
-  test that reddened.
+  `CLOSED 2026-MM-DD (<hash>)` with one sentence on how. Append a **Landed** block under the item
+  in this file: the commit, the tests run with their counts, and each mutant with the test that
+  reddened. The exception is WP2–WP4: they change what a dashboard paints, so their entries
+  close only after the owner's live look (§3).
 - **No subagents are required.** If you dispatch one anyway, only one writer touches the tree
   at a time.
 
@@ -73,17 +73,33 @@ You work in your clone, `/Users/banse/codex/maxpane`. Its `autopull` remote is t
 
 | # | Item | Tier | Severity | Stop after? |
 |---|------|------|----------|-------------|
-| WP1 | #80 control characters reach the terminal | 2 | Important (security) | **Yes**, for review |
+| WP1 | #80 control characters reach the terminal | 2 | Important (security) | **Yes**, final review |
 | WP2 | F76 IN FLIGHT prose addresses get no icon | 1 | Important | no |
 | WP3 | F80 LAUNCHES `#` cuts four-digit numbers | 0 | Important when reachable | no |
-| WP4 | F85 sparklines outside `SparklinePanel` (fwa, curator, surf) | 1 per dashboard | Important | no |
+| WP4 | F85 sparklines outside `SparklinePanel` (fwa, curator, surf) | 1 per dashboard | Important | **Yes**, owner's live look |
 | WP5 | F74 F75 F77 F78 F79 F81 F82 F83 #81 | 0 each | Minor | **Yes**, end of plan |
 
-The owner runs the reviews from Claude Code with `CLAUDE.md`'s reviewer contract:
-- one review per Tier 1 or Tier 2 commit;
-- for WP1, a final review on the most capable model.
+**Live look before hardening** (`CLAUDE.md` triage).
+1. Commit WP2, WP3 and WP4 as code and tests.
+2. Then stop and give the owner the command:
+   `cd /Users/banse/codex/maxpane && .venv/bin/python -m maxpane_dashboard --game surf`.
+   They look at `s` for IN FLIGHT and LAUNCHES, and at the sparkline panels on fwa, curator and
+   surf. Ask once for the owner's terminal size.
+3. Live data has no 1000th launch and no failed read, so the look checks that nothing else moved.
+4. Fold in any corrections. Then close the three entries, write their Landed blocks, and ask
+   for the reviews.
 
-**Fix rounds are yours, at most one per review** (Tier 2 allows two). Tier 0 commits get no review.
+WP1 changes a render only for control characters, which live data does not carry, so it needs
+no live stop.
+
+**Reviews** are run by the owner from Claude Code with `CLAUDE.md`'s reviewer contract:
+- **WP1 (Tier 2, well under ~1,000 production lines):** no task review. The final review, on
+  the most capable model, is the only one. You get one fix wave, and a scoped re-review follows
+  only if that fix wave touched production code.
+- **WP2 and each WP4 dashboard (Tier 1):** one `sonnet` review each and at most one fix round.
+  A re-review follows only if the fix touched production code.
+- **Tier 0:** no review.
+- **Minor-only findings are filed, not fixed.**
 
 ---
 
@@ -137,12 +153,11 @@ guard.
     fail;
   - drop it from WORKFLOWS' sink: that render case must fail.
 
-**Named set.** `tests/widgets/test_markup_safety.py` and the widget test files of every touched
-sink. The `-k` screen subsets for those widgets.
-`HOME=$(mktemp -d) .venv/bin/python -m pytest tests/screens/test_address_icons_everywhere.py -k surf`,
-plus the guard set and the doc-pin command (step 4 edits a rules file).
+**Before the commit** (§2): `tests/widgets/test_markup_safety.py`, the widget test file of
+every touched sink, their composing screen files, and `tests/screens/test_address_icons_everywhere.py`,
+all whole. Then the fast guard set, and the docpin command (step 4 edits a rules file).
 
-**Stop after WP1.** Commit, write the Landed block, and wait for the review.
+**Stop after WP1.** Commit, write the Landed block, and wait for the final review.
 
 ## 5. WP2 — F76: IN FLIGHT's prose addresses get the copy icon (Tier 1, surf only)
 
@@ -181,9 +196,12 @@ because no seeded IN FLIGHT objective or note carries an address.
 - **Mutation proof:** route IN FLIGHT back to its old cells. The new widget test and the
   address-sweep surf case must fail.
 
-**Pin check.** The icon is paid inside the prose budget, so no pin should move. Run
-`HOME=$(mktemp -d) .venv/bin/python -m pytest tests/screens/test_surf_swarm_layout.py -k "s and (whole or loose or exceptions or row_pin)"`.
-If anything reddens, stop and report.
+**Pin check.** The icon is paid inside the prose budget, so no pin should move.
+1. Run `.venv/bin/python scripts/measure_layout.py s <payload> 137:139x35` for every SWARM
+   payload, both folds (`--expanded`). From 138 up, every size must read `whole`.
+2. Before the commit, `tests/screens/test_surf_swarm_layout.py` runs whole with the rest
+   (§2).
+3. If anything reddens, stop and report.
 
 ## 6. WP3 — F80: LAUNCHES' `#` shows the whole launch number (Tier 0)
 
@@ -227,8 +245,9 @@ and exclude `panels.py` and its subclasses. Expected candidates: `widgets/fwa/fw
 - A sparkline that already tells them apart closes with evidence and no code change.
 
 **Tests.** One composited case per widget over `None`, `[]` and a non-list, plus one mutant per
-widget (drop the `None` branch; the `None` case must fail). Named set: the widget's test file and
-the dashboard's `-k` screen subset for that panel.
+widget (drop the `None` branch; the `None` case must fail). Tests as in §2: while editing, the
+widget's cases; before the commit, the widget's test file and the dashboard's composing screen
+file, whole.
 
 ## 8. WP5 — the Tier 0 items (one commit each, any order)
 
@@ -266,13 +285,13 @@ the dashboard's `-k` screen subset for that panel.
   **Mutation proof:** `repo_cols = _REPO_COLS` at every tier (the re-review's mutant G) must
   fail it. Test only.
 - **F82: SWARM's whole body at 80 rows.**
-  - In `tests/screens/test_surf_swarm_layout.py`, add one parametrised test at
-    (`SURF_SWARM_FULL_LAYOUT_COLUMNS`, 80) over the four SWARM payloads in both fold states,
-    8 composites.
+  - In `tests/screens/test_surf_swarm_layout.py`, add one test parametrised over `_S_PAYLOADS`
+    × `_FOLDS`, like `test_the_swarm_body_is_whole_from_its_pinned_width` (`:746`). Render at
+    (`SURF_SWARM_FULL_LAYOUT_COLUMNS`, `_COLUMN_SWEEP_HEIGHT`) and judge with `_check_width`.
   - Assert the same invariants as the 35-row sweep: no hidden column, no horizontal scrollbar,
     no region overflow, no clipped line, no unnamed mark.
   - Mark it like its neighbours (`sweep`).
-  - Run only it, with `-k`.
+  - While editing, run only it, with `-k`.
 - **F83: stale docstring.** `tests/screens/test_surf_swarm_screen.py:7` still names ROSTER, SEAT
   RECORD and FEEDBACK. Rewrite it from the screen's current `compose`.
 - **#81: kwarg typo.** `tests/widgets/test_title_blank_row.py:284` passes `burn_history`, but
