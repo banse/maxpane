@@ -84,11 +84,14 @@ def visible_len(markup: str | None) -> int:
 
 
 #: Unicode Cc is C0 + DEL + C1; newline and tab deliberately survive.
-_CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+_CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]")
 
 
 def strip_controls(text: str) -> str:
-    """Drop C0/DEL/C1 controls except newline and tab; preserve Unicode formatters."""
+    """Drop C0/DEL/C1 except newline/tab and the nine bidi embedding/isolate controls.
+
+    Preserve other Unicode formatters, including the emoji-joining U+200D.
+    """
     return _CONTROLS.sub("", text)
 
 
@@ -105,7 +108,7 @@ def safe_markup(value: object) -> str:
 
 
 def flatten(value: object) -> str:
-    """Collapse whitespace to single spaces, then drop remaining controls.
+    """Collapse whitespace, strip controls, then collapse any newly adjacent spaces.
 
     On-chain strings can contain raw newlines the same way an announce-
     channel post can, and this has to run before both :func:`strip_tags` and
@@ -122,7 +125,7 @@ def flatten(value: object) -> str:
         text = str(value)
     except Exception:
         return ""
-    return strip_controls(" ".join(text.split()))
+    return " ".join(strip_controls(" ".join(text.split())).split())
 
 
 def strip_tags(value: object) -> str:

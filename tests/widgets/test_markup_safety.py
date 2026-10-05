@@ -584,10 +584,10 @@ def test_helpers_drop_controls(helper, control):
     assert result == expected
 
 
-def test_strip_controls_keeps_newlines_tabs_and_format_characters():
+def test_strip_controls_keeps_newlines_tabs_and_other_format_characters():
     from maxpane_dashboard.widgets import markup_safety
 
-    value = "海豚 👩\u200d💻\n\t\u202e\u2066"
+    value = "海豚 👩\u200d💻\n\t\u200b"
     assert markup_safety.strip_controls(value) == value
 
 
@@ -699,3 +699,21 @@ def test_flatten_collapses_whitespace_before_stripping_controls():
     assert flatten("line one\rline two\vline three\fline four\x85line five\x1cline six\x1dline seven\x1eline eight\x1fline nine\x00!") == (
         "line one line two line three line four line five line six line seven line eight line nine!"
     )
+
+
+def test_strip_controls_drops_exactly_cc_and_nine_bidi_formatters():
+    import unicodedata
+    from maxpane_dashboard.widgets.markup_safety import strip_controls
+
+    bidi = set(range(0x202a, 0x202f)) | set(range(0x2066, 0x206a))
+    for point in range(0x110000):
+        char = chr(point)
+        if unicodedata.category(char) not in ("Cc", "Cf"):
+            continue
+        removed = (unicodedata.category(char) == "Cc" and char not in "\n\t") or point in bidi
+        assert strip_controls(char) == ("" if removed else char), hex(point)
+
+
+@pytest.mark.parametrize("value", ["a \x1b b", "\x1b a b \x1b", "a \u202e b"])
+def test_flatten_collapses_again_after_stripping(value):
+    assert flatten(value) == "a b"
