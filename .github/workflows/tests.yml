@@ -1,0 +1,55 @@
+name: Tests
+
+# The full suite, off the owner's laptop (CLAUDE.md "Tests"). Informational: it
+# is not a required check, so it never gates a merge or a push. Nothing here
+# needs a secret -- the suite never touches the network (CLAUDE.md hard
+# constraint 3), and the job's token is read-only.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # A Linux dry run (4 workers, python:3.11-slim) took 41 min on 2026-10-05.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          # No requirements file exists; key the pip cache on both distributions.
+          cache-dependency-path: |
+            pyproject.toml
+            sybilkit/pyproject.toml
+
+      # sybilkit is the repo's second distribution; maxpane depends on it, so
+      # the local copy goes in first, editable, as on the owner's machine.
+      # Textual is pinned to the owner's venv, where the suite is green
+      # (8.1.1, 2026-10-05): under 8.2.8 two select-to-copy tests read one
+      # more cell (follow-up #89).
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./sybilkit -e ".[test]" "textual==8.1.1"
+
+      # HOME is isolated because some tests write ~/.maxpane/<game>_cache.json
+      # through an un-mocked manager (CLAUDE.md "Tests").
+      # TZ: one AGENT card test renders a local-time stamp and expects the
+      # owner's zone (follow-up #88); the runner's own zone is UTC.
+      - name: Test
+        env:
+          TZ: Europe/Zurich
+        run: HOME="$(mktemp -d)" python -m pytest -n 4 --dist worksteal --durations=25 sybilkit/sybilkit_tests tests

@@ -149,6 +149,8 @@ packages both named `tests` raised `ImportPathMismatchError`.
 
 The full suite runs only when the owner asks or right before a version tag, by the controller —
 never by an implementer or reviewer, never as a merge or push gate; cite the last green run.
+GitHub runs it too (`.github/workflows/tests.yml`: push to main, pull requests, by hand), off the
+laptop and informational only — never a required check.
 A docs-only edit still needs the tests that pin the doc (12 tests, ~15 s):
 `.venv/bin/python -m pytest -m docpin tests/test_surf_registration.py tests/test_curator_registration.py`.
 A new test that reads README, CLAUDE.md, a SKILL.md, `.claude/rules/` or `docs/` carries

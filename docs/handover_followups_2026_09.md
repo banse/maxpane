@@ -925,3 +925,39 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
 87. **`docs/surf_swarm_polish_handover.md:460` names the old sweep.** SWARM's width sweep is
     `test_the_swarm_body_is_whole_from_its_pinned_width` since 2026-10-05; the old name now runs AGENT
     only. Historical row: a one-line note, not an edit of the row. **Minor, Tier 0** (same review).
+
+## CI dry run on Linux — `.github/workflows/tests.yml` (2026-10-05)
+
+A fresh clone of 8e2cef3 ran the workflow's own command in `python:3.11-slim` (4 workers, 41 min):
+11,971 passed, 1 xfailed, 6 failed. No test needs an untracked file (the 300 protected curator
+polls under `captures/live/` stay out of git, HANDOVER §1.3). Rerunning the six as a non-root user
+isolated three causes:
+
+88. **An AGENT card test depends on the machine's timezone.**
+    `tests/screens/test_surf_swarm_screen.py::test_the_agent_card_row_keeps_seat_values_and_has_no_third_row`
+    expects `paired 09-20 07:34`, a local-time rendering that holds under Europe/Zurich only (fails
+    under UTC, passes with `TZ=Europe/Zurich`). CI sets `TZ` to the owner's zone as a stopgap. Fix:
+    the test pins its zone (or derives the expected stamp from the fixture's epoch with the same
+    local-time call), so it holds anywhere. **Minor, Tier 0.**
+
+89. **Under Textual 8.2.8 a drag copies one more cell.** `tests/test_select_to_copy.py::
+    test_releasing_a_drag_copies_the_selection` gets `hello world` for `LINE[:10]` and
+    `test_ctrl_c_after_a_drag_copies_the_same_way` gets `world ` for `LINE[6:11]`; both pass on 8.1.1.
+    `pyproject.toml` allows `textual>=0.80`, so a fresh `pip install maxpane` today gets 8.2.8 and
+    with it this behaviour. Not diagnosed: Textual's selection end may have become inclusive, or the
+    test's drag coordinates may encode 8.1.1. CI pins `textual==8.1.1`, the owner's venv where the suite is green (the repo records no Textual
+    version beside its pins, so CI cannot see an 8.2.x regression). Owner
+    decides: an upper bound on Textual in `pyproject.toml`, or a fix and a re-measure on 8.2.x
+    (layout pins included — only these two tests went red, but nothing was re-swept). **Important**
+    for users on a fresh install; Tier 1.
+
+90. **Three tests assume a non-root user.** `tests/data/test_series_cache.py::test_a_read_only_directory_is_not_fatal`
+    and `tests/screens/test_curator_screen.py::test_a_failed_export_never_leaves_a_stale_receipt` /
+    `test_a_first_export_that_fails_says_so_and_writes_nothing` force a write failure with `chmod`,
+    which root ignores. GitHub's runner is not root; a container run as root goes red. Fix: skip with
+    a reason when `os.geteuid() == 0`. **Minor, Tier 0.**
+
+91. **Workflow actions are pinned by tag, not by commit SHA** (`actions/checkout@v4`,
+    `actions/setup-python@v5`, in `tests.yml` as in `publish.yml`). Small exposure in `tests.yml`
+    (read-only token, no secrets); `publish.yml` holds the PyPI `id-token: write`, so pin that one
+    first. **Minor, Tier 0** (step-6 review, 2026-10-05).
