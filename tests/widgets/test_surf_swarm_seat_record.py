@@ -820,6 +820,29 @@ async def test_busy_record_title_is_yellow_and_keeps_its_own_as_of(width):
             assert _job(NEWEST) in '\n'.join(lines)
 
 
+async def test_a_shrink_paints_what_a_fresh_mount_at_that_size_paints():
+    """The title is rebuilt for the narrower width on resize, and must be laid out
+    at that text's height: Textual 8.1.1 keys a widget's box model on a counter
+    that ``refresh(layout=True)`` bumps only when no layout is already pending,
+    and the resize leaves one pending -- so the one-line title kept the two rows
+    the wider title wrapped to, a blank row above the header, until the next
+    poll (159x80 -> 149x31 on AGENT, 2026-10-05)."""
+    async def painted(*sizes):
+        async with _RecordApp().run_test(size=sizes[0]) as pilot:
+            pilot.app.query_one(SurfSwarmSeatRecord).update_data(
+                swarm_seat_work_rows=ROWS_420, swarm_seat_state='ok', swarm_seat_as_of_hhmm=AS_OF)
+            await pilot.pause()
+            for size in sizes[1:]:
+                await pilot.resize_terminal(*size)
+                await pilot.pause()
+            await pilot.pause()
+            return _lines(pilot.app)
+
+    fresh = await painted((149, 20))
+    assert "type 'i'" in fresh[0] and 'when' in fresh[1], fresh[:2]
+    assert await painted((159, 20), (149, 20)) == fresh
+
+
 async def test_busy_record_without_last_good_has_yellow_footer_and_no_stale_rows():
     class Harness(App):
         def compose(self):

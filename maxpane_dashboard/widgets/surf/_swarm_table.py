@@ -215,6 +215,17 @@ class SwarmTableBase(TableLeaderboard):
     def on_resize(self, _event=None) -> None:
         if self._payload is not None:
             self._repaint()
+            # Textual 8.1.1 keys a widget's box model on a counter that
+            # ``refresh(layout=True)`` bumps only when no layout is already
+            # pending, and the resize leaves one pending on the title and the
+            # footer: the text just written would keep the height the wider
+            # text wrapped to (a blank row under RECORD's title until the next
+            # poll). Ask again once that layout has run.
+            self.call_after_refresh(self._relayout_text)
+
+    def _relayout_text(self) -> None:
+        for widget in self.query(f".panel-title, #{self.footer_id}"):
+            widget.refresh(layout=True)
 
     # -- hooks --------------------------------------------------------------
 
