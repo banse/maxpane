@@ -520,6 +520,14 @@ Owner-run Tier 1 review remains pending.
   name. Check that `_SERIES` has at least `MIN_POINTS` (2) points so the case draws a real line,
   and assert the composited line is not `unavailable`.
 
+**Landed — F74 (Tier 0), 2026-10-05.**
+Commit: `docs(surf): clarify the deliberate scores upgrade rule`.
+Confirmed `SurfCache.__init__` starts with empty tier clocks, `load` restores no
+clock, and the manager calls the upgrade immediately after load with no warm-up.
+Kept deliberately; only the method docstring changed. Whole manager test file:
+**131 passed**; fast guards: **120 passed**; doc pins: **12 passed**.
+No mutation required for a comment-only change.
+
 **Stop after WP5.** Report:
 - the branch head and the commit list;
 - per item: its tier, the tests run with their counts, and the mutants with which test

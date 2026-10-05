@@ -1186,9 +1186,10 @@ class SurfManager:
         per-cycle check would re-sweep on every tick while the forced sweep
         kept failing early and so defeat the tier's failure backoff. A slot
         with the key -- ``None`` included, a read that failed -- keeps its TTL.
-        Tier clocks are not persisted (``SurfCache.load`` seeds none), so on a
-        cold start the tier is due anyway; this holds the rule for a cache
-        whose clock is already warm.
+        Kept deliberately for a future cache that persists tier clocks:
+        ``SurfCache.load`` currently seeds none, and production does not warm
+        this tier before the check, so a cold start is already due. The
+        warm injected-cache test pins the upgrade rule for that future case.
         """
         try:
             entry = self.cache.get_last_good(SLOT_SWARM_SCORES)

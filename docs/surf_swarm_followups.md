@@ -1068,6 +1068,9 @@ next touched, never as its own branch, except where an item is an owner decision
   makes `TIER_SWARM_SCORES` due when the persisted sweep slot has no `"workflows"` key. Tier clocks are
   not persisted, so on a cold start the tier is due anyway (WP2 review). This is a spec-premise
   defect, recorded under the spec's §2 "Upgrade". Keep the rule, or drop it with its test.
+  **CLOSED 2026-10-05** (commit: `docs(surf): clarify the deliberate scores upgrade rule`).
+  Kept deliberately for future persisted tier clocks; load currently restores none,
+  and no production path warms scores before the check. Existing warm-cache tests retained.
 - **F75 — `_swarm_scores_keys` gates skills, launches and sites on `is not None`.** A hand-edited
   non-list for any of them publishes `[]`, a real negative, instead of `None` (pre-existing; WP2
   review). Workflows gate on `isinstance(…, list)`; do the same for the other three.
