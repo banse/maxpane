@@ -351,3 +351,11 @@ async def test_repo_cell_drops_controls_before_fitting():
     output = await _launches(swarm_launch_rows=[_launch(repo_url=CONTROL_PAYLOAD + "A\x85B")])
     assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
     assert CONTROL_REMAINDER + "A B" in output
+
+
+async def test_launch_numbers_are_plain_identifiers_and_overflow_is_marked():
+    for number, shown in ((62, "62"), (1000, "1000"), (9999, "9999"), (12345, "123…"),
+                          (None, "--"), (True, "--"), ("1000", "--")):
+        text = await _launches(swarm_launch_rows=[_launch(launch_number=number)])
+        assert _data_lines(text)[0].split()[0] == shown, text
+        assert ("‹" in text.splitlines()[0]) == (number == 12345), text

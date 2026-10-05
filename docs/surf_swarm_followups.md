@@ -1093,6 +1093,9 @@ next touched, never as its own branch, except where an item is an owner decision
   WP5 review). That would be a wrong number on screen. It is latent: the capture's launches are
   numbered around 60. Widen the column, or switch to a compact form from 1,000, before launch
   numbers reach four digits.
+  **CLOSED 2026-10-05** (commit: `fix(surf): render launch identifiers without grouping`).
+  Identifiers use plain digits; overflow gets an ellipsis and widen marker.
+  Live 200×48 shown; 130 scoped tests pass; restoring grouping is KILLED.
 - **F81 — LAUNCHES: nothing binds the `tight` `repo` cell's fit to its 26-cell column** (re-review
   M1). Mutant G (`repo_cols = _REPO_COLS` at every tier) painted `Identity-md/launch-58-buil` at
   138×35, cut with no `…`, and every selected test stayed green. Add one widget test: at the `tight`

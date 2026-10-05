@@ -375,6 +375,17 @@ thousands. So 1000 becomes `1,000`, five cells in a four-cell column, and the `D
   9999 → `9999`, and 12345 → a visible `…` with `‹ widen` lit.
 - **Mutation proof:** put `fmt_int` back. The 1000 case must fail.
 
+**Landed — F80 (Tier 0), 2026-10-05.**
+Commit: `fix(surf): render launch identifiers without grouping` (same-commit title).
+Plain integer identifiers fit through 9999; larger values visibly clip with
+`…` and light `‹ widen`. Unusable values render the dash; footer counts retain
+grouping. Live keyless 200×48 SURF shown before the column comment update.
+Red first: the 1000 case painted `1,00`; focused green: **1 passed**.
+Whole widget/composing screen: **130 passed**; fast guards: **120 passed**;
+doc pins: **12 passed**. No pin moved.
+`scripts/mutate.py`: **KILLED m1** (restore `fmt_int`), named red test
+`test_launch_numbers_are_plain_identifiers_and_overflow_is_marked`.
+
 ## 7. WP4 — F85: the other sparklines tell a failed read from an empty one (Tier 1, one per dashboard)
 
 **Defect.** #34 fixed `widgets/panels.SparklinePanel` only. The sparklines outside the base still

@@ -77,7 +77,8 @@ __all__ = [
 # Column budgets, in rendered cells, measured against the committed corpus
 # ``tests/fixtures/surf/swarm/v2/launches.json`` (30 launches, 2026-09-21).
 
-#: ``#``: ``launch_number`` -- 62 is the highest today; four cells hold 9999.
+#: ``#``: plain-digit launch identifier; four cells hold 9999 without grouping.
+#: Longer identifiers clip with an explicit ellipsis and light the widen marker.
 _NUMBER_COLS = 4
 #: ``kind``: ``evm_project`` (11) / ``univ4_hook`` (10), one spare cell.
 _KIND_COLS = 12
@@ -266,8 +267,12 @@ class SurfSwarmLaunches(SwarmTableBase):
         reason = strip_tags(item.get("parked_reason"))
         if cell_len(reason) > parked_cols and "parked" in self._keys:
             self._clipped = True
+        number = item.get("launch_number")
+        number_text = str(number) if isinstance(number, int) and not isinstance(number, bool) else DASH
+        if cell_len(number_text) > _NUMBER_COLS:
+            self._clipped = True
         return {
-            "number": fmt_int(item.get("launch_number")),
+            "number": rowfit.clip(number_text, _NUMBER_COLS),
             "kind": sanitize_cell(item.get("kind"), _KIND_COLS) or DASH,
             "status": status,
             "chain": sanitize_cell(chain_word(item.get("chain_id")), CHAIN_COLS),
