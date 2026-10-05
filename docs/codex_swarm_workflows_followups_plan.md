@@ -427,6 +427,18 @@ doc pins: **12 passed**. `scripts/mutate.py`: **KILLED m1**, named red
 `test_sparkline_failed_series_is_yellow_and_empty_still_waits[none]`
 (and `[non-list]`). Owner-run Tier 1 review remains pending.
 
+**Landed — F85/curator (Tier 1), 2026-10-05.**
+Commit: `fix(curator): distinguish unavailable trend history` (same-commit title).
+Each failed/non-list series paints shared yellow unavailable independently;
+the other healthy row remains visible, and empty lists still wait.
+Live keyless History shown at 200×48; failed log reads demonstrated #97's
+upstream empty-list limitation. Red first: **4 failed / 2 passed**;
+focused green: **6 passed**. Whole widget/composing screen: **668 passed**;
+fast guards: **120 passed**; doc pins: **12 passed**.
+`scripts/mutate.py`: **KILLED m1**, named red
+`test_failed_trend_series_is_yellow_and_empty_still_waits[volume_series-none]`;
+both rows' missing and non-list cases reddened. Owner-run Tier 1 review pending.
+
 **Step 2: per dashboard, its own commit, in the order fwa, curator, surf.**
 - The widget's `None` or non-list paints yellow `unavailable`, reusing `panels.UNAVAILABLE` or
   `UNAVAILABLE_LINE` (never re-declared). `[]` keeps its empty sentence.

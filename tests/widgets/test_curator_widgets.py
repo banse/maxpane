@@ -1631,16 +1631,32 @@ async def test_an_unknown_threshold_dashes_the_bar_rather_than_inventing_one():
     assert f"{DASH} ETH bar" in text
 
 
-async def test_a_none_series_and_an_empty_series_render_the_same_state():
-    """Deliberate, and the one place in this package where they agree: both
-    mean "no history to draw", and a flat baseline would be a line the data
-    never justified.  A failed read still reaches the reader — through the
-    title bar's degraded groups, not through this panel."""
-    dead = await _rendered(CuratorSparklines, volume_series=None,
-                           contributors_series=None)
-    empty = await _rendered(CuratorSparklines, volume_series=[],
-                            contributors_series=[])
-    assert WAITING in dead and WAITING in empty
+@pytest.mark.parametrize("field,series", [
+    pytest.param(field, series, id=f"{field}-{label}")
+    for field in ("volume_series", "contributors_series")
+    for label, series in (("none", None), ("empty", []), ("non-list", {}))
+])
+async def test_failed_trend_series_is_yellow_and_empty_still_waits(field, series):
+    widget = CuratorSparklines()
+    payload = dict(volume_series=_volume_series(), contributors_series=_contributors_series(),
+                   hourly_threshold_eth=5.0)
+    payload[field] = series
+    async with _Harness(widget).run_test(size=(100, 12)) as pilot:
+        widget.update_data(**payload)
+        await pilot.pause()
+        rows = ["".join(seg.text for seg in strip)
+                for strip in pilot.app.screen._compositor.render_strips()]
+        label = "VOL/h" if field == "volume_series" else "WALLETS"
+        y = next(y for y, row in enumerate(rows) if label in row)
+        if isinstance(series, list):
+            assert WAITING in rows[y] and "unavailable" not in rows[y]
+        else:
+            assert "unavailable" in rows[y] and WAITING not in rows[y]
+            style = pilot.app.screen.get_style_at(rows[y].index("unavailable"), y)
+            assert style.color.get_truecolor() == (255, 255, 0)
+        other = "WALLETS" if field == "volume_series" else "VOL/h"
+        healthy = next(row for row in rows if other in row)
+        assert "unavailable" not in healthy and WAITING not in healthy
 
 
 async def test_a_series_with_a_null_point_survives_through_coerce_points():

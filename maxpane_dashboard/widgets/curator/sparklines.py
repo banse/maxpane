@@ -21,15 +21,12 @@ scale is relative to its window.  The bar's value comes from the payload
 literal — CLAUDE.md's rule about documented values, and this one is exactly
 the kind that gets quoted in research and then differs on chain.
 
-``None`` and ``[]`` render the *same* state here
-------------------------------------------------
+Failed and empty histories are distinct
+---------------------------------------
 
-Everywhere else in this package the two are different facts and are rendered
-differently.  Not here: both mean "there is no history to draw", and a
-sparkline has no honest rendering of either — a flat baseline would be a
-line the data never justified.  The distinction is not lost, it moves: a
-failed log read reaches the reader through the title bar's ``degraded``
-groups, which is where a source-level failure belongs.
+A missing or non-list series renders yellow unavailable. A list with fewer
+than two usable points keeps the waiting message; neither invents a flat
+history. Source-level degradation remains visible in the screen title too.
 
 Sparkline primitives are **imported** from ``widgets/sparkline_common``,
 never copied (MEDI-36).
@@ -49,6 +46,7 @@ from maxpane_dashboard.widgets.curator._fmt import (
 )
 from maxpane_dashboard.widgets.curator._table import WIDEN_HINT, title_with_hint
 from maxpane_dashboard.widgets.markup_safety import visible_len
+from maxpane_dashboard.widgets.panels import UNAVAILABLE
 from maxpane_dashboard.widgets.sparkline_common import (
     SPARK_WIDTH,
     build_sparkline,
@@ -59,8 +57,7 @@ from maxpane_dashboard.widgets.sparkline_common import (
 #: Panel title.  The hint is appended, never substituted.
 SPARKLINES_TITLE = "TRENDS"
 
-#: Rendered when a series holds fewer than two usable points — no history,
-#: from either a dead fold or a game one hour old (see the module docstring).
+#: Rendered when a successfully read list holds fewer than two usable points.
 WAITING = "waiting for data..."
 
 #: Marker appended to the title, naming what the row gave up.  The bar label
@@ -128,6 +125,8 @@ def _spark_row(label: str, points, tail: str, spark_cols: int) -> str:
     quiet hours that never happened, on the panel whose whole subject is
     whether an hour was quiet.  Spaces instead.
     """
+    if not isinstance(points, list):
+        return f"  [dim]{label:<{_LABEL_COLS}}[/]  {UNAVAILABLE}"
     pts = coerce_points(points)
     if len(pts) < 2:
         return f"  [dim]{label:<{_LABEL_COLS}}[/]  [dim]{WAITING}[/]"
