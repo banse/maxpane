@@ -1439,10 +1439,19 @@ class SeatManager:
                             "lastMessage": row.get("lastMessage"), "nodeKey": row.get("nodeKey")})
         standing = self._payload("standing") or {}
         if not self._source_entry("standing", now).get("unavailable") and not self._offline:
-            planes = [p for p in standing.get("running") or [] if not seat_attempts.stale_plane(p, rows)]
+            planes = standing.get("running") or []
             pairs = seat_attempts.unique_pairs(planes, local)
+            unpaired_planes = [i for i in range(len(planes)) if i not in pairs]
+            stale = {unpaired_planes[i] for i in seat_attempts.stale_planes([planes[i] for i in unpaired_planes], rows)}
+            unpaired_planes = [i for i in unpaired_planes if i not in stale]
+            unpaired_locals = [j for j in range(len(local)) if j not in pairs.values()]
+            # Reserve the first pairs: removing stale evidence must not take their labels away.
+            repaired = seat_attempts.unique_pairs([planes[i] for i in unpaired_planes], [local[j] for j in unpaired_locals])
+            pairs.update({unpaired_planes[i]: unpaired_locals[j] for i, j in repaired.items()})
             unpaired = [r for j, r in enumerate(local) if j not in pairs.values()]
             for i, plane in enumerate(planes):
+                if i in stale:
+                    continue
                 if i in pairs:
                     match = running[pairs[i]]
                 elif any(r.get("jobId") == plane.get("jobId") or

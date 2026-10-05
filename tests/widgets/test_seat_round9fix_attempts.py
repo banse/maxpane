@@ -4,6 +4,7 @@ from maxpane_dashboard.data.seat_models import fold_status_document
 from maxpane_dashboard.widgets.seat import SeatJob
 from tests.address_sweep.builders import _seat_app, _seat_payload
 from tests.screens.test_seat_round9_navigation import strips
+from tests.data.test_seat_round9fix_attempts import attempt_ledger, closed_dag_scenario, manager, NOW
 
 JOB = 'job-a'
 
@@ -122,3 +123,19 @@ async def test_starting_seat_keeps_boot_disabled_amber_rule(state):
         assert 'SEAT ⚠' in line
         color = screen.get_style_at(hero.region.x + line.index('SEAT'), y).color.get_truecolor(pilot.app.ansi_theme)
         assert color == pilot.app.ansi_theme.ansi_colors[3]
+
+
+@pytest.mark.parametrize('closed', ['submitted', 'failed', 'cancelled', 'interrupted'])
+async def test_ledger_closed_dag_attempt_has_no_working_phantom_in_compositor(attempt_ledger, closed):
+    rows, planes = closed_dag_scenario(attempt_ledger, closed)
+    current, chosen = manager(rows, planes)._job_rows(NOW)
+    flat = _seat_payload()
+    flat.update(jobs_payload(current, chosen))
+    async with _seat_app(flat).run_test(size=(131, 40)) as pilot:
+        await pilot.pause()
+        panel = pilot.app.screen.query_one(SeatJob)
+        panel.next_job()
+        await pilot.pause()
+        text = '\n'.join(strips(pilot.app.screen))
+        assert 'contracts' not in text and 'of 2' not in text
+        assert 'aaaa1111' in text and 'tests' in text and 'JOB · working' in text

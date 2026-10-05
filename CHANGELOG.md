@@ -206,3 +206,4 @@ that `git merge main` from upstream never conflicts here (spec §1 #7; `docs/dec
 - Tests under `tests/` now refuse and record external connection and name-resolution attempts, failing teardown even when application code catches the error. The full blocking survey identified and isolated the Mac CONTROL test and two FrenPet snapshot tests. Subprocesses and the separate sybilkit suite remain outside this in-process guard.
 - Clear fallback pending outcomes after a local attempt closes without submitting; retain owned node failures without inheriting another attempt's successful state.
 - Reconcile missed stored events using the measured API timestamp lead and a bounded clock window, preserving unique-attempt checks and rollback-compatible ledger storage.
+- Pair live local attempts before filtering stale standing rows, removing finished-attempt phantoms without stripping a newer attempt's node labels; retain ambiguous evidence.

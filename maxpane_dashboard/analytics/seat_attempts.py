@@ -60,7 +60,18 @@ def unique_pairs(planes, locals):
             and sum(matches[0] in other for other in candidates) == 1}
 
 
-def stale_plane(plane, rows):
-    return any(not is_open(row) and row.get('jobId') == plane.get('jobId')
-               and row.get('nodeKey') and row.get('nodeKey') == plane.get('nodeKey')
-               and in_start_window(plane, row) for row in rows)
+def stale_planes(planes, rows):
+    """Indices uniquely claimed by closed local attempts, among unpaired planes only."""
+    closed = [row for row in rows if (row.get('source') or {}).get('row') == 'local' and not is_open(row)]
+    candidates = []
+    for plane in planes:
+        matches = []
+        for j, row in enumerate(closed):
+            named = (row.get('jobId') == plane.get('jobId') and row.get('nodeKey')
+                     and row.get('nodeKey') == plane.get('nodeKey'))
+            if (named or compatible(plane, row)) and in_start_window(plane, row):
+                matches.append(j)
+        candidates.append(matches)
+    # Named evidence follows the same mutual uniqueness rule as unnamed evidence.
+    return {i for i, matches in enumerate(candidates) if len(matches) == 1
+            and sum(matches[0] in other for other in candidates) == 1}
