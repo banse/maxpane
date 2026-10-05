@@ -136,7 +136,9 @@ packages both named `tests` raised `ImportPathMismatchError`.
 
 - **While editing:** only the cases that exercise the touched behaviour — a node id or `-k` on the
   touched module's test file and on the screen/manager test that consumes it. Never a whole screen
-  file per edit: `tests/screens/test_surf_screen.py` alone is ~8 min serial.
+  file per edit: `tests/screens/test_surf_screen.py` alone is ~4 min serial. Surf's composing file
+  is the body's own: `test_surf_screen.py` (default), `test_surf_launchpad_screen.py` (`l`),
+  `test_surf_pool4_screen.py` (`e`), `test_surf_pool4_market_*.py` (`4`), `test_surf_swarm_*.py` (`s`/`a`/`b`).
 - **Once, before the commit:** the touched test files and the composing screen/manager file whole,
   `HOME=$(mktemp -d) .venv/bin/python -m pytest -n 4 --dist worksteal <files>` (a file that goes
   red only under worksteal: rerun it serially and file it), plus the fast guard set

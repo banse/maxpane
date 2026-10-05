@@ -24,10 +24,14 @@ from __future__ import annotations
 import pytest
 from textual.widgets import DataTable
 
+from maxpane_dashboard.screens import surf as surf_mod
 from maxpane_dashboard.screens.surf import (
     AGENT_BODY_ID, BOARD_BODY_ID, LAUNCHPAD_BODY_ID, MODE_AGENT, MODE_SWARM, MODE_BOARD, POOL4_BODY_ID,
-    POOL4_USER_BODY_ID, SURF_AGENT_FULL_LAYOUT_COLUMNS, SWARM_BODY_ID, SurfScreen,
+    POOL4_USER_BODY_ID, SURF_AGENT_FULL_LAYOUT_COLUMNS, SWARM_BODY_ID, SWARM_BOTTOM_ID, SWARM_TOP_ID,
+    TALLER_HINT, SurfScreen,
 )
+from maxpane_dashboard.widgets.surf.swarm_agent_cards import SEAT_BOX_IDS
+from maxpane_dashboard.widgets.surf.swarm_agent_hero import BOX_IDS as AGENT_HERO_BOX_IDS
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import ONLINE_LINE, WORKING_GLYPH
 from maxpane_dashboard.widgets.surf import (
     SurfSwarmAgentHero, SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet, SurfSwarmHero, SurfSwarmInFlight,
@@ -38,8 +42,9 @@ from maxpane_dashboard.widgets.surf import (
 from maxpane_dashboard.data import surf_swarm as sw
 from tests.data.test_surf_manager_swarm import _FakeSwarm, _seated, _settle
 from tests.screens.test_surf_screen import (
-    _FakeManager, _frozen_payload, _region_text, _screen_text, _surf_app,
-    _ThemedHarness,
+    _AS_OF_HHMM, _css_rules, _expand_css_box, _FakeManager, _frozen_payload,
+    _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS, _LAUNCHPAD_CSS_STRUCTURAL, _region_text, _screen_text,
+    _surf_app, _surf_stylesheet_block, _ThemedHarness,
 )
 from tests.surf_swarm_fixtures import swarm_seat_capture
 
@@ -1312,3 +1317,87 @@ async def test_a_view_set_before_the_first_seat_is_reset_in_the_manager_too(monk
         assert screen._record_seat_token == 421
         assert (screen.record_cap, screen.record_open_only, screen.record_spec) == (40, False, None)
         assert (manager.record_cap, manager.record_open_only, manager.record_spec) == (40, False, None)
+
+
+# -- the AGENT title bar and the swarm bodies' stylesheet agreement ------------------------
+
+
+@pytest.mark.parametrize("selected,word", [
+    ({"token_id": 420}, "#420"), ({"token_id": 0}, "#0"),
+    (None, "#—"), ({"token_id": True}, "#—"), ({"token_id": "420"}, "#—"),
+    ({"token_id": -1}, "#—"), ({}, "#—"),
+])
+def test_the_agent_title_names_the_idmd_seat_in_place_of_the_market(selected, word):
+    """Owner, 2026-09-22: ``SURFBOARD · Identity.md AGENT #420`` on the AGENT body,
+    the name in green, and no degraded list ("remove the activity warning")."""
+    payload = _frozen_payload(degraded=["logs", "activity"], lp_owner_ok=False)
+    payload["swarm_seat_selected"] = selected
+    line = surf_mod._title_line(payload, row_hint=True, agent=True)
+    assert line.startswith(f"SURFBOARD · [ansi_green]Identity.md AGENT {word}[/] · as of {_AS_OF_HHMM} · ")
+    assert "IMD $" not in line and "parity" not in line
+    assert TALLER_HINT in line and "⚠ LP owner changed" in line
+    assert "⚠ logs" not in line and "activity" not in line
+    assert "⚠ logs, activity" in surf_mod._title_line(payload)
+    assert surf_mod._title_line(payload) == surf_mod._title_line(payload, agent=False)
+    assert "AGENT" not in surf_mod._title_line(payload)
+
+
+_SWARM_CSS_SELECTORS = (
+    f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}", f"#{SWARM_BOTTOM_ID}",
+    f"#{AGENT_BODY_ID}",
+    "SurfSwarmHero", "SurfSwarmHero > SurfSwarmHeroBox",
+    "SurfSwarmAgentHero", "SurfSwarmAgentHero > SurfSwarmAgentHeroBox",
+    "SurfSwarmWorkflows", "SurfSwarmThroughput", "SurfSwarmInFlight",
+    "SurfSwarmLaunches", "SurfSwarmSites",
+    "SurfSwarmAgentCards", "SurfSwarmAgentCards > SurfSwarmAgentCard", "SurfSwarmSeatRecord",
+    # The AGENT column grid: one weight per column, stated per card id.
+    *(f"#{box_id}" for box_id in (*AGENT_HERO_BOX_IDS.values(), *SEAT_BOX_IDS.values())),
+)
+
+
+def test_the_swarm_body_css_agrees_between_default_css_and_the_stylesheet() -> None:
+    """``SurfScreen.DEFAULT_CSS`` and the surf block in ``minimal.tcss`` must
+    describe the swarm body's geometry identically -- edit both or neither.
+
+    The app stylesheet is what actually renders (it outranks ``DEFAULT_CSS``);
+    ``DEFAULT_CSS`` is what keeps the screen correctly proportioned when it is
+    reviewed or mounted without it. A property declared in one copy and not
+    the other is *invisible* rather than conflicting: Textual falls back to
+    ``DEFAULT_CSS`` for anything the app stylesheet never mentions, so the
+    layout is right under both copies today and wrong under one of them the
+    moment either value changes.
+
+    Reuses the ``l``/``4`` bodies' own comparator and property list, which
+    already covers ``overflow-y``, ``scrollbar-gutter`` and ``scrollbar-size``
+    -- all three load-bearing here for the same reasons they are next door.
+    """
+    fallback = _css_rules(SurfScreen.DEFAULT_CSS)
+    block = _css_rules(_surf_stylesheet_block())
+
+    for selector in _SWARM_CSS_SELECTORS:
+        assert selector in fallback, (
+            f"{selector} is not styled in SurfScreen.DEFAULT_CSS"
+        )
+        assert selector in block, (
+            f"{selector} is not styled in the surf block of minimal.tcss"
+        )
+        for prop in _LAUNCHPAD_CSS_STRUCTURAL:
+            default = _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS.get(prop)
+            left = fallback[selector].get(prop, default)
+            right = block[selector].get(prop, default)
+            if left is None and right is None:
+                continue
+            assert left is not None and right is not None, (
+                f"{selector}: {prop} is declared in only one copy "
+                f"(DEFAULT_CSS={left!r}, minimal.tcss={right!r})"
+            )
+            if prop in _LAUNCHPAD_CSS_SHORTHAND_DEFAULTS:
+                assert _expand_css_box(left) == _expand_css_box(right), (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
+            else:
+                assert left == right, (
+                    f"{selector}: {prop} is {left!r} in DEFAULT_CSS and "
+                    f"{right!r} in minimal.tcss"
+                )
