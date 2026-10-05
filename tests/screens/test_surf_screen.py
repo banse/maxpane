@@ -164,7 +164,6 @@ _SWARM_WIDGET_CLASSES = {
     "SurfSwarmLeaderboard": SurfSwarmLeaderboard,
     "SurfSwarmFleet": SurfSwarmFleet,
     "SurfSwarmHero": SurfSwarmHero,
-    "SurfSwarmInFlight": SurfSwarmInFlight,
     "SurfSwarmThroughput": SurfSwarmThroughput,
     "SurfSwarmWorkflows": SurfSwarmWorkflows,
     "SurfSwarmLaunches": SurfSwarmLaunches,
@@ -691,6 +690,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
 #:   key directly is the original meaning of this set.
 META_KEYS = frozenset({
     "as_of", "degraded", "eth_usd",
+    "swarm_breaker", "swarm_services_up", "swarm_health_status",
     "gate_open", "identities_written", "lp_liquidity",
     "decoy_pool_count", "lp_owner_ok",
 })
@@ -1519,7 +1519,6 @@ def _sample_data() -> dict:
         # the dict keys carry the field names §1.1 and A1 name rather than
         # a bare ``{}``. Every row carries exactly its ``SURF_ROW_KEYS``
         # fields -- the walk asserts set equality per row, both directions.
-        "swarm_queue_total": 3,
         "swarm_breaker": {"tripped": False, "detail": None},
         "swarm_skill_summary": {
             "total": 2,

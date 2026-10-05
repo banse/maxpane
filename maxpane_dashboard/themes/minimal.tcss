@@ -2560,7 +2560,7 @@ SurfScreen #surf-swarm-top {
 /* WORKFLOWS took CAPABILITY's place (2026-10-03): no max-width -- its
  * objective / failure column takes every spare cell of the row. */
 SurfSwarmWorkflows {
-    width: 1fr;
+    width: 100%;
     height: 1fr;
     min-height: 8;
     padding: 0 1;
@@ -2603,7 +2603,7 @@ SurfSwarmInFlight {
 }
 
 SurfSwarmLaunches {
-    width: 5fr;
+    width: 1fr;
     height: 1fr;
     min-height: 8;
     padding: 0 1;

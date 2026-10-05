@@ -2510,11 +2510,14 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             # in CAPABILITY's place since 2026-10-03. A parked widget is
             # mounted nowhere, so its title must not paint either -- the
             # parked set is read from the export, never typed here.
-            for title in ("WORKFLOWS", "THROUGHPUT", "IN FLIGHT", "LAUNCHES", "SITES"):
-                assert title in swarm_text, f"{title} vanished under outage"
             import maxpane_dashboard.widgets.surf as surf_widgets
             from maxpane_dashboard.data.surf_models import SWARM_PARKED_WIDGET_SIGNATURES
 
+            for cls in (surf_widgets.SurfSwarmWorkflows, surf_widgets.SurfSwarmThroughput,
+                        surf_widgets.SurfSwarmInFlight, surf_widgets.SurfSwarmLaunches,
+                        surf_widgets.SurfSwarmSites):
+                if cls.__name__ not in SWARM_PARKED_WIDGET_SIGNATURES:
+                    assert cls.TITLE in swarm_text, f"{cls.TITLE} vanished under outage"
             for parked in SWARM_PARKED_WIDGET_SIGNATURES:
                 title = getattr(surf_widgets, parked).TITLE
                 assert title not in swarm_text, f"the parked {parked} ({title}) is mounted"

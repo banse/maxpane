@@ -221,6 +221,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -237,8 +238,11 @@ from maxpane_dashboard.screens.submission_detail import SubmissionDetailScreen
 from maxpane_dashboard.widgets.surf._oracle_answer import valid_identity, joined, can_open_submission
 from maxpane_dashboard.status_message import post_status_message
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.widgets.surf._swarm_summary import SERVICE_NAMES
+from maxpane_dashboard.screens.swarm_detail import ThroughputDetailScreen, WorkflowDetailScreen
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
+from maxpane_dashboard.widgets.markup_safety import sanitize_cell
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 from maxpane_dashboard.widgets.surf.swarm_record_filter import (
@@ -270,7 +274,6 @@ from maxpane_dashboard.widgets.surf import (
     SurfSignals,
     SurfSwarmAgentHero,
     SurfSwarmHero,
-    SurfSwarmInFlight,
     SurfSwarmLaunches,
     SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
@@ -2172,7 +2175,6 @@ _SWARM_PANELS = (
     SurfSwarmLeaderboard,
     SurfSwarmFleet,
     SurfSwarmHero,
-    SurfSwarmInFlight,
     SurfSwarmThroughput,
     SurfSwarmWorkflows,
     SurfSwarmLaunches,
@@ -2274,7 +2276,7 @@ def _fmt_hhmm(ts) -> str:
         return _EMDASH
 
 
-def _fmt_degraded(sources) -> str:
+def _fmt_degraded(sources, *, compact: bool = False) -> str:
     """``· ⚠ logs, market`` — or an empty string when all is well.
 
     Only ``None``/``[]`` (or anything else falsy) genuinely mean "nothing is
@@ -2310,6 +2312,8 @@ def _fmt_degraded(sources) -> str:
 
     if not names:
         return " · ⚠ ?"
+    if compact:
+        return f" · ⚠ {len(names)} sources"
     return " · ⚠ " + ", ".join(names)
 
 
@@ -2326,7 +2330,29 @@ def _agent_title_head(data: dict) -> str:
     return f"Identity.md AGENT #{'—' if token is None else token}"
 
 
-def _title_line(data: dict, row_hint: bool = False, agent: bool = False) -> str:
+def _swarm_alarms(data: dict, *, compact: bool = False) -> str:
+    parts = []
+    breaker = data.get("swarm_breaker")
+    if isinstance(breaker, dict) and breaker.get("tripped") is True:
+        parts.append("breaker open")
+    services = data.get("swarm_services_up")
+    if isinstance(services, dict):
+        down = [name for name in SERVICE_NAMES if services.get(name) is False]
+        if len(down) == 1:
+            parts.append(f"{down[0][:3] if compact else down[0]} down")
+        elif down:
+            parts.append(f"{len(down)} {'svc' if compact else 'services'} down")
+    health = data.get("swarm_health_status")
+    if not isinstance(health, str) or not health.strip():
+        parts.append("health unavailable")
+    elif health != "ok":
+        parts.append(f"health {sanitize_cell(health, 12)}")
+    joiner = " · " if compact else " · ⚠ "
+    return " · [yellow]⚠ " + joiner.join(parts) + "[/]" if parts else ""
+
+
+def _title_line(data: dict, row_hint: bool = False, agent: bool = False,
+                swarm: bool = False, columns: int | None = None) -> str:
     """Compose the meta row (PRD §4).
 
     ``agent`` -- the AGENT body is showing -- swaps the IMD price and parity
@@ -2406,6 +2432,17 @@ def _title_line(data: dict, row_hint: bool = False, agent: bool = False) -> str:
 
     if not agent:
         line += _fmt_degraded(data.get("degraded"))
+    if swarm:
+        line += _swarm_alarms(data)
+        if columns is not None and Text.from_markup(line).cell_len > columns:
+            line = (f"SURF · IMD {_fmt_usd(data.get('imd_price_usd'))} · "
+                    f"par {_fmt_signed_pct(data.get('parity_pct'))} · as of {_fmt_hhmm(data.get('as_of'))}")
+            if row_hint:
+                line += f" · [yellow]{TALLER_HINT}[/]"
+            if data.get("lp_owner_ok") is False:
+                line += " · [yellow]⚠ LP changed[/]"
+            line += _fmt_degraded(data.get("degraded"), compact=True)
+            line += _swarm_alarms(data, compact=True)
     return line
 
 
@@ -2466,7 +2503,7 @@ class SurfScreen(DashboardScreen):
         # `Input` -- AGENT's filter fields, the seat prompt -- keeps a typed
         # `x` either way: Textual 8.1.1's `Screen._binding_chain` drops every
         # binding for a key `check_consume_key` claims, priority or not.)
-        Binding("x", "toggle_throughput", "Fold", show=False),
+        Binding("x", "toggle_throughput", "More", show=False),
         # `escape` closes the filter editor first (discarding its draft),
         # then leaves any alternate body as before.
         Binding("escape", "back", show=False),
@@ -2534,7 +2571,7 @@ class SurfScreen(DashboardScreen):
     #: reason: ``l launchpad`` is the one the app-level acceptance test greps
     #: for as a contiguous string.
     #: §11: shortened by owner to keep the body as width binder; whole bar from 134.
-    KEY_HINTS = "[dim]l launchpad · 4 pl4 · s swm · a agt · b brd[/]"
+    KEY_HINTS = "[dim]x more · 4 pl4 · s swm · a agt · b brd[/]"
 
     #: The words the status bar shows for this dashboard.
     GAME_NAME = "surf"
@@ -3108,7 +3145,7 @@ class SurfScreen(DashboardScreen):
         scrollbar-gutter: stable;
     }
     SurfScreen SurfSwarmWorkflows {
-        width: 1fr;
+        width: 100%;
         height: 1fr;
         min-height: 8;
         padding: 0 1;
@@ -3131,7 +3168,7 @@ class SurfScreen(DashboardScreen):
         padding: 0 1;
     }
     SurfScreen SurfSwarmLaunches {
-        width: 5fr;
+        width: 1fr;
         height: 1fr;
         min-height: 8;
         padding: 0 1;
@@ -3251,7 +3288,6 @@ class SurfScreen(DashboardScreen):
         #: row pin is measured collapsed -- and kept across refreshes and body
         #: switches; :meth:`_apply_throughput_fold` is the one place it reaches
         #: the widget.
-        self._throughput_expanded = False
 
     # ------------------------------------------------------------------
     # Layout
@@ -3401,11 +3437,10 @@ class SurfScreen(DashboardScreen):
         # other alternate body.
         with Vertical(id=SWARM_BODY_ID):
             with Horizontal(id=SWARM_TOP_ID):
-                yield SurfSwarmWorkflows()
+                yield SurfSwarmLaunches()
                 yield SurfSwarmThroughput()
             with Horizontal(id=SWARM_BOTTOM_ID):
-                yield SurfSwarmInFlight()
-                yield SurfSwarmLaunches()
+                yield SurfSwarmWorkflows()
             yield SurfSwarmSites()
 
         # The `a` AGENT body: one seat-card row above a full-width RECORD -- see
@@ -3523,7 +3558,6 @@ class SurfScreen(DashboardScreen):
         if self._mode != MODE_AGENT:
             self._record_filter_open = False
         self._show_record_editor()
-        self._apply_throughput_fold()
         setter = getattr(self._data_manager, "set_agent_active", None)
         if setter is not None:
             setter(self._mode == MODE_AGENT)
@@ -3606,34 +3640,16 @@ class SurfScreen(DashboardScreen):
         self._mode = MODE_SWARM
         self._show_mode()
 
-    def _apply_throughput_fold(self) -> None:
-        """Hand THROUGHPUT the screen's fold state -- the one place it does.
+    async def action_toggle_throughput(self) -> None:
+        """Open the cached throughput details in SWARM mode."""
+        if self._mode == MODE_SWARM:
+            await self.app.push_screen(ThroughputDetailScreen(
+                (self._title_data or {}).get("swarm_throughput")))
 
-        Runs from :meth:`_show_mode` (so on mount, before any payload, and on
-        every body switch) and from ``x``. The widget is composed once and
-        never recreated, and a refresh only calls its ``update_data``, which
-        keeps the fold it was told; so the state survives a refresh without
-        being re-applied there.
-        """
-        try:
-            self.query_one(SurfSwarmThroughput).set_expanded(self._throughput_expanded)
-        except Exception as exc:  # noqa: BLE001 -- a fold must never crash
-            logger.debug("surf throughput fold failed: %s", exc)
-
-    def action_toggle_throughput(self) -> None:
-        """``x`` -- fold or unfold THROUGHPUT's state and cancel-reason blocks.
-
-        SWARM only; a no-op on every other body (the state does not move
-        there). The title's ``x more`` / ``x less`` is the hint, so
-        ``KEY_HINTS`` stays as it is. The row marker is re-read after the next
-        refresh, as on a resize: an expanded THROUGHPUT can make the body
-        scroll, and then ``‹ taller`` says so.
-        """
-        if self._mode != MODE_SWARM:
-            return
-        self._throughput_expanded = not self._throughput_expanded
-        self._apply_throughput_fold()
-        self.call_after_refresh(self._render_title)
+    async def on_surf_swarm_workflows_selected(self, event: SurfSwarmWorkflows.Selected) -> None:
+        event.stop()
+        if self._mode == MODE_SWARM:
+            await self.app.push_screen(WorkflowDetailScreen(event.row))
 
     def action_toggle_agent(self) -> None:
         """``a`` -- swap the dashboard body for one seat's AGENT panels.
@@ -3981,7 +3997,9 @@ class SurfScreen(DashboardScreen):
             # ahead of two warnings this branch has no payload to produce.
             line = INITIAL_TITLE + (f" · [yellow]{TALLER_HINT}[/]" if cut else "")
         else:
-            line = _title_line(self._title_data, row_hint=cut, agent=self._mode == MODE_AGENT)
+            line = _title_line(self._title_data, row_hint=cut, agent=self._mode == MODE_AGENT,
+                               swarm=self._mode == MODE_SWARM,
+                               columns=self.query_one("#title-bar", Static).content_size.width)
         try:
             self.query_one("#title-bar", Static).update(line)
         except Exception as exc:  # noqa: BLE001 -- a title must never crash

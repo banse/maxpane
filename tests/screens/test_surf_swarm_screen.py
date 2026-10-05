@@ -40,6 +40,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmSeatRecord, SurfSwarmSeatCards, SurfSwarmSites,
     SurfSwarmThroughput, SurfSwarmWorkflows,
 )
+from maxpane_dashboard.data.surf_models import SWARM_PARKED_WIDGET_SIGNATURES
 from maxpane_dashboard.data import surf_swarm as sw
 from tests.data.test_surf_manager_swarm import _FakeSwarm, _seated, _settle
 from tests.screens.test_surf_screen import (
@@ -50,8 +51,8 @@ from tests.screens.test_surf_screen import (
 from tests.surf_swarm_fixtures import swarm_seat_capture
 
 _SIZE = (150, 45)
-_S_PANELS = (SurfSwarmWorkflows, SurfSwarmThroughput, SurfSwarmInFlight,
-             SurfSwarmLaunches, SurfSwarmSites)
+_S_PANELS = tuple(cls for cls in (SurfSwarmWorkflows, SurfSwarmThroughput, SurfSwarmInFlight,
+             SurfSwarmLaunches, SurfSwarmSites) if cls.__name__ not in SWARM_PARKED_WIDGET_SIGNATURES)
 _A_PANELS = (SurfSwarmSeatCards, SurfSwarmSeatRecord)
 _BODIES = {"s": (SWARM_BODY_ID, _S_PANELS, SurfSwarmHero),
            "a": (AGENT_BODY_ID, _A_PANELS, SurfSwarmAgentHero),
@@ -223,7 +224,7 @@ async def test_the_key_hint_names_the_swarm_and_the_agent():
         await pilot.pause()
         text = _screen_text(pilot.app)
         assert "s swm" in text and "a agt" in text
-    assert SurfScreen.KEY_HINTS == "[dim]l launchpad · 4 pl4 · s swm · a agt · b brd[/]"
+    assert SurfScreen.KEY_HINTS == "[dim]x more · 4 pl4 · s swm · a agt · b brd[/]"
 
 
 async def test_the_bindings_include_board_agent_and_seat_selection():
@@ -241,39 +242,8 @@ def _throughput_lines(pilot, screen) -> list[str]:
     return [row.strip() for row in _region_text(pilot.app, panel).split("\n") if row.strip()]
 
 
-def _folded(lines: list[str]) -> bool | None:
-    """``True`` collapsed, ``False`` expanded, read off pixels only: the
-    title's hint and whether the states block's own header is painted."""
-    title, states = lines[0], any(line.startswith("states") for line in lines)
-    if title.endswith("x more") and not states:
-        return True
-    if title.endswith("x less") and states:
-        return False
-    return None
-
-
-async def test_swarm_opens_with_throughput_collapsed_and_x_toggles_it():
-    """The default is collapsed (spec §1): the title says ``x more`` and the
-    states and cancel-reason blocks are not painted; ``x`` unfolds them and
-    the title says ``x less``; ``x`` again folds them. Composited."""
-    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
-        screen = await _open(pilot, "s")
-        collapsed = _throughput_lines(pilot, screen)
-        assert _folded(collapsed) is True, collapsed
-        await pilot.press("x")
-        await pilot.pause()
-        expanded = _throughput_lines(pilot, screen)
-        assert _folded(expanded) is False, expanded
-        assert len(expanded) > len(collapsed)
-        await pilot.press("x")
-        await pilot.pause()
-        assert _throughput_lines(pilot, screen) == collapsed
-
-
 @pytest.mark.parametrize("key", [None, "l", "e", "4", "a", "b"])
-async def test_x_is_a_no_op_off_swarm_and_keeps_the_state_for_swarm(key):
-    """Off SWARM ``x`` neither moves the state nor the mode; the next ``s``
-    still opens collapsed."""
+async def test_x_is_a_no_op_off_swarm(key):
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = pilot.app.screen
         await screen._do_refresh()
@@ -284,70 +254,36 @@ async def test_x_is_a_no_op_off_swarm_and_keeps_the_state_for_swarm(key):
         mode = screen._mode
         await pilot.press("x")
         await pilot.pause()
-        assert screen._mode == mode and screen._throughput_expanded is False
-        await pilot.press("s")
-        await pilot.pause()
-        await pilot.pause()
-        assert _folded(_throughput_lines(pilot, screen)) is True
+        assert pilot.app.screen is screen and screen._mode == mode
 
 
-async def test_the_fold_survives_a_refresh_and_a_body_switch():
-    """In memory on the screen: a refresh repaints THROUGHPUT and keeps the
-    fold, and ``s`` -> ``a`` -> ``s`` comes back to it."""
-    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
-        screen = await _open(pilot, "s")
-        await pilot.press("x")
-        await pilot.pause()
-        assert _folded(_throughput_lines(pilot, screen)) is False
-        before = pilot.app.screen._data_manager.calls
-        await screen._do_refresh()
-        await pilot.pause()
-        assert pilot.app.screen._data_manager.calls > before
-        assert _folded(_throughput_lines(pilot, screen)) is False
-        await pilot.press("a")
-        await pilot.pause()
-        await pilot.press("s")
-        await pilot.pause()
-        await pilot.pause()
-        assert _folded(_throughput_lines(pilot, screen)) is False
-
-
-async def test_x_folds_with_focus_on_the_workflows_table_and_after_a_click_on_throughput():
-    """``DataTable`` binds no ``x`` (read, not assumed), so a focused
-    WORKFLOWS table lets the key reach the screen; THROUGHPUT has nothing
-    focusable, and a click on it leaves the key with the screen too."""
+async def test_x_opens_details_with_table_focus_and_after_a_throughput_click():
+    from maxpane_dashboard.screens.swarm_detail import ThroughputDetailScreen
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open(pilot, "s")
         table = screen.query_one(SurfSwarmWorkflows).query_one(DataTable)
         table.focus()
         await pilot.pause()
-        assert pilot.app.focused is table
         await pilot.press("x")
         await pilot.pause()
-        assert _folded(_throughput_lines(pilot, screen)) is False
+        assert isinstance(pilot.app.screen, ThroughputDetailScreen)
+        await pilot.press("escape")
+        await pilot.pause()
         await pilot.click(SurfSwarmThroughput)
-        await pilot.pause()
         await pilot.press("x")
         await pilot.pause()
-        assert _folded(_throughput_lines(pilot, screen)) is True
+        assert isinstance(pilot.app.screen, ThroughputDetailScreen)
 
 
-async def test_throughputs_worst_title_is_whole_at_the_swarm_pin_in_both_folds():
-    """The ``SURF_SWARM_FULL_LAYOUT_COLUMNS`` block's claim, composited: the
-    longest title THROUGHPUT writes -- an ``as of`` marker, ``stale`` and the
-    fold hint -- is whole at the SWARM pin collapsed and expanded, so the
-    hint that says ``x`` does something is never the part that is cut."""
-    from maxpane_dashboard.screens.surf import (
-        SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS,
-    )
+async def test_throughputs_worst_title_stays_whole_after_closing_details():
+    from maxpane_dashboard.screens.surf import SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS
     payload = dict(_frozen_payload(), swarm_as_of_hhmm="17:45", swarm_stale=True)
-    size = (SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS)
-    async with _surf_app(payload).run_test(size=size) as pilot:
+    async with _surf_app(payload).run_test(size=(SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS)) as pilot:
         screen = await _open(pilot, "s")
         assert _throughput_lines(pilot, screen)[0] == "THROUGHPUT · as of 17:45 · stale · x more"
-        await pilot.press("x")
+        await pilot.press("x", "space")
         await pilot.pause()
-        assert _throughput_lines(pilot, screen)[0] == "THROUGHPUT · as of 17:45 · stale · x less"
+        assert _throughput_lines(pilot, screen)[0] == "THROUGHPUT · as of 17:45 · stale · x more"
 
 
 async def test_a_typed_x_reaches_a_focused_record_filter_field(monkeypatch):
@@ -375,7 +311,7 @@ async def test_a_typed_x_reaches_a_focused_record_filter_field(monkeypatch):
         await pilot.pause()
         assert refused == [True], "the focused field never saw the typed x"
         assert pilot.app.focused is field and screen._mode == MODE_AGENT
-        assert screen._throughput_expanded is False
+        assert pilot.app.screen is screen
 
 
 async def test_x_is_not_priority_so_a_focused_widgets_own_x_binding_wins():
@@ -408,8 +344,8 @@ async def test_x_is_not_priority_so_a_focused_widgets_own_x_binding_wins():
         await pilot.press("x")
         await pilot.pause()
         assert probe.pressed == 1, "the focused widget never saw its own x"
-        assert screen._throughput_expanded is False
-        assert _folded(_throughput_lines(pilot, screen)) is True
+        assert pilot.app.screen is screen
+        assert _throughput_lines(pilot, screen)[0].endswith("x more")
 
 
 async def test_retired_roster_selection_is_gone():
@@ -703,18 +639,6 @@ async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_u
     assert "as of 04:02" not in hero + seat
     assert "⧉" not in seat and "attempts 201" not in seat
 
-async def test_captured_executing_note_is_visible_and_honestly_cut_at_swarm_pin():
-    from tests.screens.test_surf_swarm_layout import _v3_swarm_payload
-    from maxpane_dashboard.screens.surf import SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS
-    payload=_v3_swarm_payload()
-    assert len(payload['swarm_inflight_rows'])==1
-    assert payload['swarm_inflight_rows'][0]['job_id'].startswith('5a4dfb13')
-    async with _surf_app(payload).run_test(size=(SURF_SWARM_FULL_LAYOUT_COLUMNS,SURF_SWARM_FULL_LAYOUT_ROWS)) as pilot:
-        screen=await _open(pilot,'s')
-        text=_region_text(pilot.app,screen.query_one(SurfSwarmInFlight))
-    assert 'no online' in text and '…' in text and '‹' in text.splitlines()[0]
-
-
 @pytest.mark.parametrize("row_index", [0,1])
 async def test_board_first_click_saves_clicked_seat_once_and_opens_agent(monkeypatch,row_index):
     from maxpane_dashboard import config
@@ -797,30 +721,10 @@ async def test_board_sort_keys_cycle_all_columns_even_when_hidden_and_keep_hint(
         assert writes==[] and screen._mode==MODE_BOARD
         await pilot.resize_terminal(141,27);await pilot.pause()
         assert '#▼' in _region_text(pilot.app,table)
-        assert SurfScreen.KEY_HINTS=='[dim]l launchpad · 4 pl4 · s swm · a agt · b brd[/]'
+        assert SurfScreen.KEY_HINTS=='[dim]x more · 4 pl4 · s swm · a agt · b brd[/]'
         await pilot.press('escape','o','O');await pilot.pause()
         assert widget._sort_key=='rank' and widget._sort_reverse is True
         assert writes==[]
-
-
-@pytest.mark.parametrize('kind',['healthy','health-unavailable','services-unavailable'])
-async def test_polish_swarm_health_second_line_fits_existing_pin(kind):
-    from tests.screens.test_surf_swarm_layout import _capture_payload
-    from tests.screens.test_surf_screen import _css_clipped_lines
-    from tests.surf_swarm_fixtures import swarm_capture_v4
-    payload=_capture_payload()
-    payload['swarm_health_status']=sw.health_facts(swarm_capture_v4('health'))['health_status']
-    if kind=='health-unavailable':payload['swarm_health_status']=None
-    if kind=='services-unavailable':payload['swarm_services_up']=None
-    async with _surf_app(payload).run_test(size=(141,42)) as pilot:
-        screen=await _open(pilot,'s')
-        hero=screen.query_one(SurfSwarmHero)
-        text=_region_text(pilot.app,screen.query_one('#surf-swarm-hero-services'))
-        assert ('health unavailable' if kind=='health-unavailable' else 'health ok') in text
-        if kind!='services-unavailable':assert 'all services up' in text
-        assert hero.region.height==6
-        assert not _css_clipped_lines(pilot.app,hero)
-        assert '‹ taller' not in _screen_text(pilot.app).splitlines()[0]
 
 
 @pytest.mark.parametrize('live_state',['working','idle','paused',None])
