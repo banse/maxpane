@@ -940,16 +940,21 @@ isolated three causes:
     the test pins its zone (or derives the expected stamp from the fixture's epoch with the same
     local-time call), so it holds anywhere. **Minor, Tier 0.**
 
-89. **Under Textual 8.2.8 a drag copies one more cell.** `tests/test_select_to_copy.py::
-    test_releasing_a_drag_copies_the_selection` gets `hello world` for `LINE[:10]` and
-    `test_ctrl_c_after_a_drag_copies_the_same_way` gets `world ` for `LINE[6:11]`; both pass on 8.1.1.
-    `pyproject.toml` allows `textual>=0.80`, so a fresh `pip install maxpane` today gets 8.2.8 and
-    with it this behaviour. Not diagnosed: Textual's selection end may have become inclusive, or the
-    test's drag coordinates may encode 8.1.1. CI pins `textual==8.1.1`, the owner's venv where the suite is green (the repo records no Textual
-    version beside its pins, so CI cannot see an 8.2.x regression). Owner
-    decides: an upper bound on Textual in `pyproject.toml`, or a fix and a re-measure on 8.2.x
-    (layout pins included — only these two tests went red, but nothing was re-swept). **Important**
-    for users on a fresh install; Tier 1.
+89. **Under Textual 8.2.8 a drag copies one more cell — Textual's change, not ours.**
+    `tests/test_select_to_copy.py::test_releasing_a_drag_copies_the_selection` gets `hello world` for
+    `LINE[:10]` and `test_ctrl_c_after_a_drag_copies_the_same_way` gets `world ` for `LINE[6:11]`; both
+    pass on 8.1.1. **Diagnosed 2026-10-05:** Textual 8.2 rewrote screen selection (`SelectState`,
+    auto-scroll while dragging), and a selection inside one widget now ends *inclusive* of the cell
+    under the pointer: `Screen._watch__select_state` builds `Selection.from_offsets(start,
+    end_offset + (1, 0))` (8.2.8 `screen.py:2031`), where 8.1.1's `_watch__select_end` passed
+    `end_offset` unchanged (`screen.py:1808`). MaxPane's `CopyAddressMixin.on_text_selected` only
+    forwards `screen.get_selected_text()`, so it copies what Textual highlights in either version;
+    the two tests hard-code 8.1.1's exclusive end. The owner's own `maxpane` (pipx, Python 3.14)
+    already runs 8.2.8, and the 2026-10-05 Linux dry run ran the whole suite on 8.2.8 with only these
+    two (plus #88 and #90) red -- every layout sweep passed there. CI pins `textual==8.1.1`, the
+    owner's dev venv. Fix (Tier 0, test-only): assert the copy equals what the screen reports
+    selected after the drag and is the dragged prefix, so it holds on both; then drop the CI pin, or
+    move the dev venv to 8.2.8. **Minor** (was filed Important before the diagnosis).
 
 90. **Three tests assume a non-root user.** `tests/data/test_series_cache.py::test_a_read_only_directory_is_not_fatal`
     and `tests/screens/test_curator_screen.py::test_a_failed_export_never_leaves_a_stale_receipt` /
