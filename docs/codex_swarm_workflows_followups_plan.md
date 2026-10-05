@@ -399,6 +399,34 @@ and exclude `panels.py` and its subclasses. Expected candidates: `widgets/fwa/fw
 - what it paints for `None`, for `[]` and for a non-list;
 - what its manager passes when the read fails.
 
+**Inventory — 2026-10-05 (before WP4 fixes).**
+
+| Widget | None / empty list / non-list | Manager on failed read |
+|---|---|---|
+| `FWASparkline` | waiting / waiting / waiting, unless availability flag is false | cached history or `[]`, flag from truthiness; #96 |
+| `CuratorSparklines`, each row | waiting / waiting / waiting | retained cached series or `[]`; #97 |
+| `SurfMarket`, price and supply | waiting / waiting / waiting | retained cache or `[]`; #98 |
+| `SurfPool4Ratchet`, reserve beside healthy scalars | no spark / no spark / no spark | unknown network `None`; known network cached list, possibly empty |
+| `SurfPool4UBurn` | unavailable / quiet-window sentence / empty dict treated as quiet (uniterable input already unavailable) | unread flow `None`, successful empty flow `[]`, last-good rows retained |
+| Legacy Frenpet trends and velocity | missing histories collapsed to no-data/empty bars; malformed nonempty histories unchecked | cache-backed series; filed #99 outside the three prescribed dashboards |
+
+`pool4_vault.py` only mentions the helper in documentation; it draws no sparkline.
+Migrated Bakery, Base, OCM, Cattown, DOTA, Talismans and TTT classes inherit
+`SparklinePanel`; formatter-only matches (`_fmt`, SWARM fleet/sites/seat,
+DOTA hero) draw no sparkline and are excluded.
+
+**Landed — F85/FWA (Tier 1), 2026-10-05.**
+Commit: `fix(fwa): distinguish unavailable sparkline history` (same-commit title).
+Missing/non-list history paints yellow unavailable; empty lists retain waiting.
+Shared `panels.UNAVAILABLE` supplies the unavailable word/style. Live keyless
+200×48 shown: price chart and 100 candles render. Manager follow-ups #96–#98 and
+legacy widget follow-up #99 filed; their implementations are outside this fix.
+Red first: **3 failed / 1 passed**; focused green: **4 passed**.
+Whole widget/composing screen: **55 passed**; fast guards: **120 passed**;
+doc pins: **12 passed**. `scripts/mutate.py`: **KILLED m1**, named red
+`test_sparkline_failed_series_is_yellow_and_empty_still_waits[none]`
+(and `[non-list]`). Owner-run Tier 1 review remains pending.
+
 **Step 2: per dashboard, its own commit, in the order fwa, curator, surf.**
 - The widget's `None` or non-list paints yellow `unavailable`, reusing `panels.UNAVAILABLE` or
   `UNAVAILABLE_LINE` (never re-declared). `[]` keeps its empty sentence.

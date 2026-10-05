@@ -1010,3 +1010,36 @@ findings are grouped into #92–#95 below; Minor-only findings are filed, not fi
     **#95 CLOSED 2026-10-05** (same commit as #94). Replaced category lookup with the
     equivalent regex. Local 6 KB benchmark: 485.8 → 46.0 µs per flatten call
     (best of five repeats, 1,000 calls each); 581 scoped tests and 120 guards pass.
+
+## Sparkline follow-up inventory (2026-10-05)
+
+96. **FWA availability merges empty and failed price history.** `fwa_manager.py`
+    selects `candles or cache.get_series(...)` and publishes `spark_available=bool(history)`;
+    its error payload uses `[]` with `False`. The flag preserves an unavailable display
+    on failure, but also labels a genuinely empty successful history unavailable.
+    Preserve the read outcome separately from the list's truthiness. **Minor, Tier 1.**
+    Filed by WP4; manager behavior deliberately unchanged.
+
+97. **Curator failed history can still reach TRENDS as an empty list.**
+    `CuratorManager._empty_payload` seeds both series with `[]`; the merge uses cached
+    points only when nonempty. With a failed log read and no retained history the widget
+    cannot distinguish failure from a successful empty history. Preserve that distinction
+    at the manager boundary; keep last-good points on a later failure. **Important, Tier 1.**
+    Filed by WP4; manager behavior deliberately unchanged.
+
+98. **SURF MARKET failed history can still reach the widget as an empty list.**
+    `SurfManager` publishes cached `price_series` / `supply_series` and its error
+    payload seeds `[]`; a cold failed read therefore has the real-empty shape.
+    Preserve source-read state separately from retained history. RATCHET's network-specific
+    cache already returns `None` for an unknown network, `[]` for an empty known one.
+    **Important, Tier 1.** Filed by WP4; managers deliberately unchanged.
+
+99. **Legacy Frenpet sparklines remain outside the shared unavailable boundary.**
+    Inventory found `FPScoreTrends`, `FPPerfTrends`, `FPWalletTrends` and
+    `FPPerfVelocity`, outside WP4's prescribed FWA/curator/SURF sequence.
+    The first three fold `None`, `[]` and an empty non-list through `history or []`
+    to “no data”; nonempty malformed histories can fail tuple indexing.
+    Velocity defaults missing per-pet histories to an empty bar and missing velocity to
+    zero; its input is a dict of series. The managers supply cache histories, retaining
+    empty lists when none exist. Follow up per dashboard with composited failure/empty
+    tests and shared primitives. **Important, Tier 1 per dashboard.**

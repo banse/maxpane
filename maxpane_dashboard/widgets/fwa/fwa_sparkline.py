@@ -24,8 +24,8 @@ verbatim copies of the ``talismans/tal_sparkline.py`` versions (MEDI-36).
 The ``pad`` switch this widget needs for the degradation case described
 above lives in the shared ``build_sparkline`` and defaults to the house
 behaviour, so the other dashboards are unaffected.
-Anything shorter than two points renders ``waiting for data...``, and
-``spark_available is False`` renders an explicit unavailable state
+A list shorter than two points renders ``waiting for data...``; a missing
+or non-list history, or ``spark_available is False``, renders unavailable
 (PRD §9).
 
 Adapted to ``FWA_WIDGET_SIGNATURES["FWASparkline"]``.  Primitives only.
@@ -37,6 +37,7 @@ from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.widgets import Static
 
+from maxpane_dashboard.widgets.panels import UNAVAILABLE
 from maxpane_dashboard.widgets.sparkline_common import (
     SPARK_WIDTH as _SPARK_WIDTH,
     build_sparkline as _build_sparkline,
@@ -44,7 +45,7 @@ from maxpane_dashboard.widgets.sparkline_common import (
 )
 
 _WAITING = "[dim]waiting for data...[/]"
-_UNAVAILABLE = "[yellow]price feed unavailable[/]"
+_UNAVAILABLE = f"[yellow]price feed {UNAVAILABLE}[/]"
 _DASH = "--"
 _LABEL = "$FWA / USD "
 _PAD = " " * len(_LABEL)
@@ -168,7 +169,7 @@ class FWASparkline(Vertical):
         price_row = self.query_one("#fwa-spark-price", Static)
         meta_row = self.query_one("#fwa-spark-meta", Static)
 
-        if spark_available is False:
+        if spark_available is False or not isinstance(fwa_price_history, list):
             price_row.update(f"  [dim]{_LABEL}[/]  {_UNAVAILABLE}")
             meta_row.update(f"  [dim]{_PAD}[/]  [dim]no market data[/]")
             return

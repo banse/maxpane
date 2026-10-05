@@ -584,7 +584,7 @@ async def test_sparkline_no_args_and_all_none():
         widget.update_data(
             **{k: None for k in FWA_WIDGET_SIGNATURES["FWASparkline"]}
         )
-        assert "waiting for data" in _plain(widget, "#fwa-spark-price")
+        assert "unavailable" in _plain(widget, "#fwa-spark-price")
 
 
 async def test_sparkline_short_series_waiting():
@@ -826,3 +826,21 @@ def test_golden_fwa_hero_metrics_fmt_eth():
     """DASH marker, FOUR places by default, grouped; ``True`` is unknown."""
     from maxpane_dashboard.widgets.fwa import fwa_hero_metrics as mod
     assert [mod._fmt_eth(p) for p in _FMT_PROBES] == _HERO_FMT_ETH_GOLDEN
+
+
+@pytest.mark.parametrize("series", [None, [], {}], ids=["none", "empty", "non-list"])
+async def test_sparkline_failed_series_is_yellow_and_empty_still_waits(series):
+    widget = FWASparkline()
+    async with _Harness(widget).run_test(size=(100, 12)) as pilot:
+        widget.update_data(fwa_price_history=series, spark_available=True)
+        await pilot.pause()
+        rows = ["".join(seg.text for seg in strip)
+                for strip in pilot.app.screen._compositor.render_strips()]
+        text = "\n".join(rows)
+        if isinstance(series, list):
+            assert "waiting for data" in text and "unavailable" not in text
+        else:
+            assert "unavailable" in text and "waiting for data" not in text
+            y = next(y for y, row in enumerate(rows) if "unavailable" in row)
+            style = pilot.app.screen.get_style_at(rows[y].index("unavailable"), y)
+            assert style.color.get_truecolor() == (255, 255, 0)
