@@ -1475,7 +1475,6 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_scores_as_of_hhmm",  # str | None   -- SLOT_SWARM_SCORES' marker
     "swarm_stale",              # bool | None  -- the two markers drifted
     # ---- swarm v2 (WP0, 2026-09-21); the v1 keys they replaced retired in WP7, plan A2 ----
-    "swarm_queue_total",        # int | None   -- sum of every /health.pending* counter present
     "swarm_breaker",            # dict | None  -- {"tripped": bool, "detail": str | None}; None = could not look
     "swarm_skill_summary",      # dict | None  -- total, by_role, by_judge, requires_count
     "swarm_launch_summary",     # dict | None  -- by_status, by_kind, by_chain
@@ -1521,8 +1520,7 @@ SWARM_KEYS: tuple[str, ...] = (
 #: contract keys each ``update_data`` takes, verbatim, as keyword parameters. Exported
 #: so the screen test binds to this rather than to a local copy (bound in WP7).
 SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
-    "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_queue_total", "swarm_breaker", "swarm_services_up", "swarm_health_status"),
-    "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
+    "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows"),
     "SurfSwarmThroughput": ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale"),
     # WORKFLOWS took CAPABILITY's place on SWARM (2026-10-03, docs/surf_swarm_workflows_spec.md
     # §2); CAPABILITY's frozen signature moved to SWARM_PARKED_WIDGET_SIGNATURES below.
@@ -1647,7 +1645,9 @@ SWARM_ANSWER_ROW_CAP = 40
 #: ``GET /workflows?limit=`` page size: the newest WORKFLOWS window only (the default
 #: page is 100 rows / ~370 KB). An agreement test (docs/surf_swarm_workflows_spec.md
 #: WP4) binds it to ``SurfSwarmWorkflows.ROW_CAP``; data must never import its widget.
-SWARM_WORKFLOW_LIMIT = 12
+SWARM_WORKFLOW_PAGE_SIZE = 100
+SWARM_WORKFLOW_MAX_PAGES = 10
+SWARM_WORKFLOW_HISTORY_CAP = 1000
 
 #: Widgets whose module, class and test stay but which no body mounts: CAPABILITY was
 #: parked on 2026-10-03 when WORKFLOWS took its place on SWARM (spec §2), for a future
@@ -1655,6 +1655,7 @@ SWARM_WORKFLOW_LIMIT = 12
 #: exemption from this export, never from a hand-typed copy (wired in that spec's WP5:
 #: the surf screen, swarm-models, widget-contract and registration tests read it).
 SWARM_PARKED_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
+    "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
     "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),
 }
 

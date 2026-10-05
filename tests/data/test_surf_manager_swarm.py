@@ -206,12 +206,16 @@ class _FakeSwarm:
         self.sweep_order.append("sites")
         return None if self._fail_sites else list(swarm_capture_v2("sites")["sites"])
 
-    async def fetch_workflows(self, *, limit=None):
+    async def fetch_workflows(self, *, limit=None, before=None):
         await asyncio.sleep(0)
         self.calls["workflows"] += 1
         self.sweep_order.append("workflows")
         self.workflow_limits.append(limit)
         return None if self._fail_workflows else copy.deepcopy(self._workflows)
+
+    async def fetch_workflow_history(self):
+        rows = await self.fetch_workflows(limit=100)
+        return rows, rows is not None
 
     async def fetch_workers(self):
         await asyncio.sleep(0)
@@ -514,7 +518,7 @@ async def test_a_failed_jobs_read_publishes_none_not_empty(tmp_path):
                          return_exceptions=True)
     payload = await manager.fetch_and_compute()
     assert payload["swarm_inflight_rows"] is None
-    assert payload["swarm_queue_total"] is None
+    assert "swarm_queue_total" not in payload
     assert payload["swarm_breaker"] is None
     assert payload["swarm_as_of_hhmm"] is None
     await manager.close()
@@ -537,7 +541,7 @@ async def test_the_live_keys_carry_queue_total_breaker_and_inflight_rows(tmp_pat
     health = swarm_capture_v2("health")
     expected_total = sum(v for k, v in health.items() if k.startswith("pending"))
     _, payload = await _landed(tmp_path, _FakeSwarm())
-    assert payload["swarm_queue_total"] == expected_total == 45
+    assert "swarm_queue_total" not in payload
     assert payload["swarm_breaker"] == {"tripped": False, "detail": None}
     rows = payload["swarm_inflight_rows"]
     assert [r["job_id"][:8] for r in rows] == ["f046299c", "708ea465"]
@@ -1313,7 +1317,7 @@ async def test_the_swarm_keys_are_filled_from_the_slot(tmp_path):
     assert len(rows) == 2
     assert sorted(r["node_key"] is None for r in rows) == [False, True]
     assert payload["swarm_throughput"]["window_n"] == 100
-    assert payload["swarm_queue_total"] == 45          # health.json pendingFeedback
+    assert "swarm_queue_total" not in payload
     assert payload["swarm_as_of_hhmm"], "no marker published"
     await manager.close()
 
@@ -1959,7 +1963,7 @@ async def test_the_workflows_are_read_after_sites_and_land_behind_the_sweep_mark
         assert swarm.sweep_order == ["skills", "launches", "sites", "workflows"]
         assert swarm.calls["workflows"] == 1
         # The client's own default page size is the one asked for.
-        assert swarm.workflow_limits == [None]
+        assert swarm.workflow_limits == [100]
         served = swarm_capture_v6("workflows_limit12")["workflows"]
         stored = manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
         assert stored["workflows"] == served                  # the raw list, under "workflows"
@@ -2152,3 +2156,70 @@ async def test_persisted_non_list_routes_publish_none_but_empty_lists_survive(tm
                 assert keys[key.replace("_rows", "_summary")] is None
         finally:
             await manager.close()
+
+
+async def test_workflow_history_merges_newest_page_and_keeps_persisted_rows(tmp_path):
+    old = {"id": "older", "createdAt": "2026-09-01T00:00:00.000Z", "status": "blocked"}
+    fresh = {"id": "newer", "createdAt": "2026-10-01T00:00:00.000Z", "status": "completed"}
+    swarm = _FakeSwarm(workflows=[old, fresh])
+    manager = _manager(tmp_path, swarm)
+    try:
+        now = manager._clock()
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now)
+        swarm._workflows = [dict(fresh, status="cancelled")]
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now + 1800)
+        entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+        rows = manager._swarm_scores_keys(entry.payload, entry, None, now)["swarm_workflow_rows"]
+        assert [(row["workflow_id"], row["status"]) for row in rows] == [("newer", "cancelled"), ("older", "blocked")]
+        assert entry.payload["workflows_complete"] is True
+        swarm._fail_workflows = True
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now + 3600)
+        after = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+        assert after.payload["workflows"] == entry.payload["workflows"]
+    finally:
+        await manager.close()
+
+
+async def test_workflow_incomplete_backfill_retries_and_history_caps(tmp_path, monkeypatch):
+    monkeypatch.setattr(surf_manager_mod, "SWARM_WORKFLOW_HISTORY_CAP", 2)
+    swarm = _FakeSwarm(workflows=[])
+    manager = _manager(tmp_path, swarm)
+    calls = []
+    async def history():
+        calls.append(1)
+        return ([{"id": str(n), "createdAt": _stamp(V2_NOW + n)} for n in range(3)] + [{"id": "undated"}], len(calls) > 1)
+    swarm.fetch_workflow_history = history
+    try:
+        now = manager._clock()
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now)
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now + 1800)
+        entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+        assert [row["id"] for row in entry.payload["workflows"]] == ["2", "1"]
+        assert len(calls) == 2 and entry.payload["workflows_complete"] is True
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize("complete", [True, False, None])
+async def test_persisted_workflow_completion_selects_page_or_backfill(tmp_path, complete):
+    seed = _manager(tmp_path, _FakeSwarm())
+    row = {"id": "persisted", "createdAt": "2026-09-01T00:00:00.000Z"}
+    slot = {"workflows": [row]}
+    if complete is not None:
+        slot["workflows_complete"] = complete
+    seed.cache.store_last_good(SLOT_SWARM_SCORES, slot, ts=seed._clock())
+    seed.cache.save()
+    await seed.close()
+    swarm = _FakeSwarm(workflows=[])
+    backfills = []
+    async def history():
+        backfills.append(1)
+        return [], True
+    swarm.fetch_workflow_history = history
+    manager = _manager(tmp_path, swarm)
+    try:
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, manager._clock())
+        assert len(backfills) == (0 if complete is True else 1)
+        assert manager.cache.get_last_good(SLOT_SWARM_SCORES).payload["workflows"] == [row]
+    finally:
+        await manager.close()

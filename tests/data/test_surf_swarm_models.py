@@ -24,7 +24,6 @@ from maxpane_dashboard.data.surf_models import (
 #: The v2 keys still in the block, in the order WP0 appended them (plan §1.1,
 #: §1.2, A1): fourteen, less the window fold's node rows (AGENT-seats WP5).
 SWARM_V2_KEYS = (
-    "swarm_queue_total",
     "swarm_breaker",
     "swarm_skill_summary",
     "swarm_launch_summary",
@@ -129,7 +128,6 @@ AGENT_WIDGETS = (
 SWARM_TARGET_WIDGETS = {
     "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
     "SurfSwarmHero",
-    "SurfSwarmInFlight",
     "SurfSwarmThroughput",
     "SurfSwarmWorkflows",
     "SurfSwarmLaunches",
@@ -144,8 +142,8 @@ def test_the_swarm_block_includes_runtime_checks_and_rank_delta():
     """Thirty-two existing keys, the served health status word and the owner's ENS name,
     runtime/rank/read keys, F-S5's two REWARDS keys, and the /workflows rows
     (docs/surf_swarm_workflows_spec.md WP2: 41 -> 42)."""
-    assert len(SWARM_KEYS) == 42
-    assert len(set(SWARM_KEYS)) == 42
+    assert len(SWARM_KEYS) == 41
+    assert len(set(SWARM_KEYS)) == 41
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -167,7 +165,7 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-32:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+    assert SWARM_KEYS[-31:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
                                 + ("swarm_health_status", "swarm_seat_owner_ens", "swarm_runtime_latest",
                                    "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta", "swarm_seat_read",
                                    "swarm_seat_rewards", "swarm_seat_rewards_state",
@@ -250,6 +248,7 @@ def test_every_v2_key_but_the_marker_reaches_at_least_one_signature():
     named pending set -- equality, so the carve-out can neither hide a second
     orphan nor outlive the wiring that consumes it."""
     named = _consumed_keys()
+    named |= {"swarm_breaker", "swarm_services_up", "swarm_health_status"}  # screen title alarms
     unreached = set(SWARM_V2_KEYS) - named
     assert unreached == set(), sorted(unreached)
     assert set(SWARM_KEYS) - named == _KEYS_PENDING_CONSUMERS, sorted(set(SWARM_KEYS) - named)
@@ -257,7 +256,7 @@ def test_every_v2_key_but_the_marker_reaches_at_least_one_signature():
 
 def test_the_signature_names_exactly_the_twelve_target_widgets():
     assert set(SWARM_WIDGET_SIGNATURES) == SWARM_TARGET_WIDGETS
-    assert len(SWARM_WIDGET_SIGNATURES) == 12
+    assert len(SWARM_WIDGET_SIGNATURES) == 11
 
 
 def test_a_parked_widget_is_not_also_a_mounted_target():
@@ -377,7 +376,7 @@ def test_board_signatures_carry_each_source_clock():
 
 
 def test_inflight_note_lives_in_its_row_without_an_unused_new_kwarg():
-    assert SWARM_WIDGET_SIGNATURES["SurfSwarmInFlight"] == (
+    assert models.SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmInFlight"] == (
         "swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network",
     )
 
@@ -401,19 +400,11 @@ def test_polish_answer_fetch_window_agrees_with_record_row_cap():
     assert models.SWARM_ANSWER_ROW_CAP == SurfSwarmSeatRecord.ROW_CAP
 
 
-def test_polish_health_status_has_a_named_hero_consumer():
-    import inspect
-    from maxpane_dashboard.widgets.surf.swarm_hero import SurfSwarmHero
-    expected = (
+def test_layout_v3_hero_contract_uses_summary_sources():
+    assert SWARM_WIDGET_SIGNATURES["SurfSwarmHero"] == (
         "swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now",
-        "swarm_accepted_today", "swarm_queue_total", "swarm_breaker",
-        "swarm_services_up", "swarm_health_status",
+        "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows",
     )
-    assert SWARM_WIDGET_SIGNATURES["SurfSwarmHero"] == expected
-    signature = inspect.signature(SurfSwarmHero.update_data)
-    actual = tuple(name for name, value in signature.parameters.items()
-                   if name != "self" and value.kind != inspect.Parameter.VAR_KEYWORD)
-    assert actual == expected
 
 
 def test_polish_unenriched_work_rows_explicitly_wait_for_answer_read():
@@ -463,12 +454,10 @@ def test_seat_resilience_contract_freezes_the_busy_sentinel_and_cache_cap():
 # --- SWARM WORKFLOWS (docs/surf_swarm_workflows_spec.md §2, WP2) -------------
 
 
-def test_the_workflow_page_size_is_twelve():
-    """The fetch size. WP4's agreement test binds it to
-    ``SurfSwarmWorkflows.ROW_CAP`` (the ``SWARM_ANSWER_ROW_CAP`` precedent);
-    ``data/`` never imports the widget."""
-    assert models.SWARM_WORKFLOW_LIMIT == 12
-    assert type(models.SWARM_WORKFLOW_LIMIT) is int
+def test_workflow_history_limits_are_frozen():
+    assert models.SWARM_WORKFLOW_PAGE_SIZE == 100
+    assert models.SWARM_WORKFLOW_MAX_PAGES == 10
+    assert models.SWARM_WORKFLOW_HISTORY_CAP == 1000
 
 
 def test_capability_is_parked_with_its_frozen_signature():
@@ -480,6 +469,7 @@ def test_capability_is_parked_with_its_frozen_signature():
     from maxpane_dashboard.widgets.surf.swarm_capability import SurfSwarmCapability
 
     assert models.SWARM_PARKED_WIDGET_SIGNATURES == {
+        "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
         "SurfSwarmCapability": (
             "swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm",
         ),

@@ -194,7 +194,7 @@ class SurfSwarmWorkflows(SwarmTableBase):
     TITLE = "WORKFLOWS"
     TABLE_ID = "surf-swarm-workflows-table"
     #: Newest twelve: ``surf_models.SWARM_WORKFLOW_LIMIT``, bound by a test.
-    ROW_CAP = 12
+    ROW_CAP = 1000
     CURSOR_TYPE = "row"
 
     COLUMN_SPECS = _SPECS

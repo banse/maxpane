@@ -1,0 +1,20 @@
+{
+  "host": "https://api.imd.fun",
+  "note": "Fresh keyless workflow history capture for SWARM layout v3.",
+  "files": {
+    "workflows_page1": {
+      "url": "https://api.imd.fun/workflows?limit=100",
+      "captured_at": "2026-10-05T20:00:24.347329+00:00",
+      "http_status": 200,
+      "sha256": "d01489f0827349621294bc300ce204615023d979ca694be7b6457950f58d8ec4",
+      "bytes": 375050
+    },
+    "workflows_page2": {
+      "url": "https://api.imd.fun/workflows?limit=100&before=2026-09-26T21%3A43%3A40.902Z",
+      "captured_at": "2026-10-05T20:00:28.443498+00:00",
+      "http_status": 200,
+      "sha256": "9e111a264e8cd996af36f3e6713cf9385896a6714dc078c4328c6d29910f4f57",
+      "bytes": 60624
+    }
+  }
+}

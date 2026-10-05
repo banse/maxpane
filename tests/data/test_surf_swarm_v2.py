@@ -106,32 +106,6 @@ def test_every_v2_row_carries_exactly_its_contract_fields_in_order(
 # ---------------------------------------------------------------------------
 
 
-def test_queue_total_is_the_hand_sum_of_the_eight_pending_counters(health):
-    # health.json: pendingVerification 0, pendingAttestation 0,
-    # pendingDeployment 0, pendingDelivery 0, pendingFeedback 45,
-    # pendingOracle 0, pendingFuzz 0, pendingSites 0  ->  45.
-    assert sum(1 for k in health if k.startswith("pending")) == 8
-    assert fold.queue_total(health) == 45
-
-
-def test_queue_total_skips_non_int_counters_and_bools():
-    health = {"pendingA": 3, "pendingB": "7", "pendingC": None, "pendingD": True,
-              "pendingE": 2.5, "connectedDaemons": 99}
-    assert fold.queue_total(health) == 3
-
-
-def test_queue_total_is_none_when_nothing_could_be_summed():
-    assert fold.queue_total(None) is None
-    assert fold.queue_total([]) is None
-    assert fold.queue_total({"connectedDaemons": 3}) is None
-    # pending keys present but none an int: nothing was read -> None, not 0.
-    assert fold.queue_total({"pendingA": None, "pendingB": "x"}) is None
-
-
-def test_queue_total_reports_a_real_zero():
-    assert fold.queue_total({"pendingA": 0, "pendingB": 0}) == 0
-
-
 def test_breaker_three_way(health):
     # health.json: "deployBreaker": null  -> present and not tripped.
     assert health["deployBreaker"] is None

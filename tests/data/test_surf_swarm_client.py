@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from maxpane_dashboard.data.surf_models import SWARM_WORKFLOW_LIMIT
+from maxpane_dashboard.data.surf_models import SWARM_WORKFLOW_PAGE_SIZE
 from maxpane_dashboard.data.surf_swarm_client import SWARM_API, SwarmClient
 from tests.surf_swarm_fixtures import swarm_capture_v2, swarm_capture_v6, swarm_details_v2
 
@@ -886,8 +886,8 @@ async def test_workflows_sends_its_limit_as_a_parameter_never_in_the_path():
     assert [r.method for r in seen] == ["GET", "GET"]
     assert [r.url.path for r in seen] == ["/workflows", "/workflows"]
     # The default is the contract's page size, sent as a parameter.
-    assert dict(seen[0].url.params) == {"limit": str(SWARM_WORKFLOW_LIMIT)} == {"limit": "12"}
-    assert str(seen[0].url) == f"{SWARM_API}/workflows?limit=12"
+    assert dict(seen[0].url.params) == {"limit": str(SWARM_WORKFLOW_PAGE_SIZE)} == {"limit": "100"}
+    assert str(seen[0].url) == f"{SWARM_API}/workflows?limit=100"
     assert dict(seen[1].url.params) == {"limit": "100"}
     lowered = {k.lower() for k in seen[0].headers}
     assert not lowered & {"authorization", "x-api-key", "api-key", "x-token", "cookie"}
@@ -950,3 +950,62 @@ async def test_workflows_rotates_hosts_and_fails_whole_on_every_host():
 
     async with _client(lambda r: httpx.Response(500), inter_call_delay=0) as client:
         assert await client.fetch_workflows() is None
+
+
+# Layout v3 history: network is always an injected MockTransport.
+def _history_page(number):
+    import json
+    from pathlib import Path
+    return json.loads((Path(__file__).parents[1] / "fixtures/surf/swarm/v7" /
+                       f"workflows_page{number}.json").read_text())["workflows"]
+
+
+@pytest.mark.parametrize("before", ["../bad", "2026-10-01", "2026-99-01T00:00:00.000Z",
+                                    "2026-10-01T00:00:00+00:00", True, ""])
+async def test_workflow_cursor_is_refused_before_transport(before):
+    async with _client(_no_network, inter_call_delay=0) as client:
+        assert await client.fetch_workflows(before=before) is None
+
+
+async def test_workflow_history_pages_capture_dedupes_and_paces():
+    first, second = _history_page(1), _history_page(2)
+    requests, sleeps = [], []
+    async def sleep(delay):
+        sleeps.append(delay)
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"workflows": first if len(requests) == 1 else first[:1] + second})
+    async with _client(handler, sleep=sleep) as client:
+        rows, complete = await client.fetch_workflow_history()
+    assert complete and len(rows) == 138
+    assert rows[0] == first[0]
+    assert dict(requests[1].url.params) == {"limit": "100", "before": first[-1]["createdAt"]}
+    from maxpane_dashboard.data.surf_swarm_client import SWARM_INTER_CALL_DELAY
+    assert sleeps == [SWARM_INTER_CALL_DELAY] * 2
+
+
+@pytest.mark.parametrize("case", ["short", "empty", "stalled", "cap", "first_failure", "later_failure"])
+async def test_workflow_history_stop_and_failure_paths(case, monkeypatch, caplog):
+    from maxpane_dashboard.data import surf_swarm_client as module
+    monkeypatch.setattr(module, "SWARM_WORKFLOW_MAX_PAGES", 3 if case == "stalled" else 2)
+    page = _history_page(1)
+    calls = []
+    def handler(request):
+        calls.append(request)
+        if case == "first_failure" or (case == "later_failure" and len(calls) > 1):
+            raise httpx.ConnectError("offline", request=request)
+        if case == "short": rows = page[:1]
+        elif case == "empty": rows = []
+        elif case == "cap" and len(calls) > 1:
+            rows = [dict(row, id="older-"+row["id"], createdAt="2026-09-01T00:00:00.000Z") for row in page]
+        else: rows = page
+        return httpx.Response(200, json={"workflows": rows})
+    async with _client(handler, hosts=(SWARM_API,), inter_call_delay=0) as client:
+        rows, complete = await client.fetch_workflow_history()
+    if case == "first_failure": assert rows is None and not complete
+    elif case == "empty": assert rows == [] and complete
+    elif case == "short": assert rows == page[:1] and complete
+    else:
+        assert not complete and len(rows) == (200 if case == "cap" else 100)
+        assert len(calls) == 2
+    if case == "later_failure": assert "partial workflow history" in caplog.text

@@ -199,6 +199,7 @@ from maxpane_dashboard.data.surf_cache import (
 )
 from maxpane_dashboard.data.surf_client import SurfClient
 from maxpane_dashboard.data.surf_models import (
+    SWARM_WORKFLOW_PAGE_SIZE, SWARM_WORKFLOW_HISTORY_CAP,
     POOL4_BACKSTOP_STATES,
     POOL4_COUNTER_STATES,
     POOL4_DISCOVERY_SOURCES,
@@ -6302,14 +6303,25 @@ class SurfManager:
             lambda: client.fetch_launches(), "swarm fetch_launches"
         )
         sites = await self._guard(lambda: client.fetch_sites(), "swarm fetch_sites")
-        workflows = await self._guard(
-            lambda: client.fetch_workflows(), "swarm fetch_workflows"
-        )
+        prior = self.cache.get_last_good(SLOT_SWARM_SCORES)
+        old_slot = prior.payload if prior is not None and isinstance(prior.payload, dict) else {}
+        previous = old_slot.get("workflows")
+        complete = isinstance(previous, list) and old_slot.get("workflows_complete") is True
+        if complete:
+            workflows = await self._guard(
+                lambda: client.fetch_workflows(limit=SWARM_WORKFLOW_PAGE_SIZE), "swarm fetch_workflows")
+        else:
+            history = await self._guard(client.fetch_workflow_history, "swarm workflow history")
+            workflows, complete = history if history is not None else (None, False)
+        if isinstance(workflows, list):
+            workflows = sw.merge_workflow_history(previous, workflows, cap=SWARM_WORKFLOW_HISTORY_CAP)
+        elif isinstance(previous, list):
+            workflows = previous
 
         payload = {
             "jobs": jobs, "details": details,
             "skills": skills, "launches": launches, "sites": sites,
-            "workflows": workflows,
+            "workflows": workflows, "workflows_complete": complete,
         }
         self.cache.store_last_good(SLOT_SWARM_SCORES, payload, ts=now)
         self.cache.mark_fetched(TIER_SWARM_SCORES, now)
@@ -6359,7 +6371,6 @@ class SurfManager:
             # alike, and only here is it known which one happened -- a list
             # never read is ``None`` (CLAUDE.md "a failed read is None"), a
             # read list with no executing job is a real ``[]``.
-            "swarm_queue_total": sw.queue_total(health),
             "swarm_breaker": sw.breaker(health),
             "swarm_inflight_rows": (
                 sw.inflight_rows(jobs, _swarm_details_map(details), now_ts=now)

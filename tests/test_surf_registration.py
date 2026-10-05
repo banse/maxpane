@@ -1768,7 +1768,6 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     # AGENTS halves keep their needles in `_SWARM_ZERO_PROBES`.
     "swarm_working_now": _SWARM_BARE_COUNT,
     "swarm_accepted_today": _SWARM_BARE_COUNT,
-    "swarm_queue_total": _SWARM_BARE_COUNT,
     "swarm_seat_rank_delta": (
         "zero and None both omit the movement line; nonzero direction/color and "
         "zero omission are composited in test_rank_move_has_composited_direction_and_color"

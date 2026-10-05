@@ -45,7 +45,7 @@ __all__ = [
     "health_facts", "network_of",
     # swarm v2 (WP3)
     "breaker", "inflight_rows", "launch_rows", "merge_seen",
-    "queue_total", "parse_seat_token", "seat_rows",
+    "parse_seat_token", "seat_rows",
     "seen_entry", "seen_since_ts", "site_rows", "skill_rows",
     "throughput_facts",
     # SWARM WORKFLOWS (docs/surf_swarm_workflows_spec.md §2)
@@ -230,23 +230,6 @@ def _newest_first(rows: list[dict[str, Any]], field: str) -> list[dict[str, Any]
 
 
 # -- hero ------------------------------------------------------------------
-
-
-def queue_total(health: object) -> int | None:
-    """The sum of every ``/health.pending*`` counter that is an int.
-
-    An open set -- a counter the host adds tomorrow is counted the day it
-    appears.  ``None`` when health is not a mapping or no ``pending*`` key
-    carries an int: nothing was read, so no zero is claimed.
-    """
-    if not isinstance(health, Mapping):
-        return None
-    counters = [
-        _int(value) for key, value in health.items()
-        if isinstance(key, str) and key.startswith("pending")
-    ]
-    present = [c for c in counters if c is not None]
-    return sum(present) if present else None
 
 
 def breaker(health: object) -> dict[str, Any] | None:
@@ -451,6 +434,19 @@ def workflow_rows(workflows: object) -> list[dict[str, Any]]:
             "waiting_for_hosting": waiting if isinstance(waiting, bool) else None,
         })
     return _newest_first(rows, "created_ts")
+
+
+def merge_workflow_history(previous: object, fetched: list[dict], *, cap: int) -> list[dict]:
+    """Merge by decoded workflow id, fetched wins; newest first, unknown dates last."""
+    indexed = {}
+    for row in [*_mappings(previous), *_mappings(fetched)]:
+        identity = _str(row.get("id"))
+        if identity is not None:
+            indexed[identity] = row
+    unidentified = [row for row in _mappings(fetched) if _str(row.get("id")) is None]
+    rows = [*indexed.values(), *unidentified]
+    rows.sort(key=lambda row: (_ts(row.get("createdAt")) is None, -(_ts(row.get("createdAt")) or 0)))
+    return rows[:cap]
 
 
 # -- THROUGHPUT ------------------------------------------------------------

@@ -33,6 +33,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from types import MappingProxyType
 from typing import Any
 from uuid import UUID
@@ -40,7 +41,7 @@ from uuid import UUID
 import httpx
 
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient
-from maxpane_dashboard.data.surf_models import SWARM_WORKFLOW_LIMIT
+from maxpane_dashboard.data.surf_models import SWARM_WORKFLOW_PAGE_SIZE, SWARM_WORKFLOW_MAX_PAGES
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,16 @@ logger = logging.getLogger(__name__)
 #: Characters that would turn a job id into a second path segment, a query
 #: or a fragment.  Whitespace is refused beside them.
 _NOT_A_SEGMENT = frozenset("?/#")
+
+
+def _workflow_cursor(value: object) -> datetime | None:
+    if not isinstance(value, str) or re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z", value) is None:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def _is_path_segment(value: object) -> bool:
@@ -289,7 +300,7 @@ class SwarmClient(OwnedHttpClient):
     async def fetch_skills(self) -> list[dict[str, Any]] | None:
         return await self._list("/skills", "skills")
 
-    async def fetch_workflows(self, *, limit: int = SWARM_WORKFLOW_LIMIT) -> list[dict[str, Any]] | None:
+    async def fetch_workflows(self, *, limit: int = SWARM_WORKFLOW_PAGE_SIZE, before: str | None = None) -> list[dict[str, Any]] | None:
         """``GET /workflows`` -- the newest ``limit`` workflows, newest ``createdAt`` first.
 
         ``limit`` must be a strict ``int`` (not a ``bool``) in 1..100, else ``None``
@@ -300,7 +311,48 @@ class SwarmClient(OwnedHttpClient):
         if type(limit) is not int or not 1 <= limit <= 100:
             logger.debug("swarm fetch_workflows refused a limit outside 1..100: %r", limit)
             return None
-        return await self._list("/workflows", "workflows", params={"limit": str(limit)})
+        if before is not None and _workflow_cursor(before) is None:
+            return None
+        params = {"limit": str(limit)}
+        if before is not None:
+            params["before"] = before
+        return await self._list("/workflows", "workflows", params=params)
+
+    async def fetch_workflow_history(self) -> tuple[list[dict] | None, bool]:
+        """Bounded, newest-first backfill and whether the end was reached.
+
+        A later failure retains the pages already read. `_get` pays the configured
+        inter-call delay on every page. Only a short/empty page proves completion.
+        """
+        rows, seen = [], set()
+        before = None
+        for _ in range(SWARM_WORKFLOW_MAX_PAGES):
+            page = await self.fetch_workflows(limit=SWARM_WORKFLOW_PAGE_SIZE, before=before)
+            if page is None:
+                if before is not None:
+                    logger.warning("partial workflow history: later page failed")
+                return (rows if before is not None else None), False
+            cursor = page[-1].get("createdAt") if page and isinstance(page[-1], dict) else None
+            stamp = _workflow_cursor(cursor)
+            if before is not None and page and (stamp is None or stamp >= _workflow_cursor(before)):
+                logger.warning("partial workflow history: cursor did not advance")
+                return rows, False
+            for row in page:
+                if not isinstance(row, dict):
+                    continue
+                identity = row.get("id")
+                if isinstance(identity, str):
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                rows.append(row)
+            if len(page) < SWARM_WORKFLOW_PAGE_SIZE:
+                return rows, True
+            if stamp is None:
+                logger.warning("partial workflow history: invalid cursor")
+                return rows, False
+            before = cursor
+        return rows, False
 
     async def fetch_job(self, job_id: str) -> dict[str, Any] | None:
         """One job's detail, a fresh copy of :data:`SEAT_BUSY` when every host

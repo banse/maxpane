@@ -21,7 +21,7 @@ from textual.widgets import DataTable
 from maxpane_dashboard.data.surf_models import (
     SURF_ROW_KEYS,
     SWARM_WIDGET_SIGNATURES,
-    SWARM_WORKFLOW_LIMIT,
+    SWARM_WORKFLOW_HISTORY_CAP,
 )
 from maxpane_dashboard.data.surf_swarm import workflow_rows
 from maxpane_dashboard.widgets.address import COPY_GLYPH
@@ -103,7 +103,7 @@ def _strip_rows(app) -> list[str]:
 
 def test_the_row_cap_agrees_with_the_data_layers_page_limit():
     """The widget restates the producer's limit; this binds the copy."""
-    assert SurfSwarmWorkflows.ROW_CAP == SWARM_WORKFLOW_LIMIT == 12
+    assert SurfSwarmWorkflows.ROW_CAP == SWARM_WORKFLOW_HISTORY_CAP == 1000
 
 
 def test_the_hand_row_is_the_frozen_shape():
