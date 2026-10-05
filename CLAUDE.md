@@ -140,7 +140,7 @@ packages both named `tests` raised `ImportPathMismatchError`.
 
 The full suite runs only when the owner asks or right before a version tag, by the controller —
 never by an implementer or reviewer, never as a merge or push gate; cite the last green run.
-A docs-only edit still needs the tests that pin the doc (12 tests, ~15 s):
+A docs-only edit still needs the tests that pin the doc (13 tests, ~15 s):
 `.venv/bin/python -m pytest tests/test_surf_registration.py tests/test_curator_registration.py -k "claude_md or readme or the_docs_ or documented or terminal_layout_skill or spec_docs"`.
 Use `.venv/bin/python -m pytest`: the system `python3` lacks the deps,
 and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports green.
