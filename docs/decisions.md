@@ -1560,3 +1560,54 @@ The attempt correction adds ledger-produced submit, local-failure, cancellation 
 A gate exception or non-mapping reply schedules another read from the clock after that failure, with a delay of the smaller of five seconds and the current gate interval. A slow ping or gate timeout therefore cannot consume the retry delay. A broker refusal with code busy keeps the ordinary interval, and a mapping whose plane half is unavailable is a successful gate read for this scheduling decision. Broker unreachability still returns before gate scheduling. The deadline is consumed before awaiting the gate, preserving a phase or event deadline that arrives while the request is in flight.
 
 When a successful gate read reports a busy plane while a seat-class pause exists, that read bounds the next deadline by the pause end. This creates one refresh at each pause boundary, and a later successful busy read can bind a further extension. The retained last-good plane reason is never a scheduling trigger: if the boundary read fails, its retry follows the failure rule instead of running every cycle. No active pause means no additional boundary read. Broker implementation and fresh plan/apply gating are unchanged.
+
+### 2026-10-05 — PEPEPANE round 9 second fix: final review and verification
+
+All four implementation packages passed task review. The final whole-branch review of `3b8936c..5989a57` was approved with no new findings. Its 51 named checks passed with the documented sandbox listener skip; the ledger-to-current-attempt integration mutation failed at the newer attempt's lost node key and passed after exact byte restoration. Follow-up 66 records the sole task-review test-strength refinement; it requires no production change. Follow-ups 60–62 and the other previously unresolved items remain open; 63–65 record the owner's deferred review details.
+
+The implementation and baseline proofs are:
+
+| Item | Commit | Failing-before proof against the relevant original `3b8936c` code |
+|---|---|---|
+| 1, test isolation | `3b4cf3c` | `tests/test_network_guard.py::test_caught_external_connect_still_fails_at_teardown`; the original copied conftest lets the caught TEST-NET failure pass, so the outer expected-teardown assertion fails. The three surveyed fixtures each also fail under enforcement before their transport stubs. |
+| 2, closed outcomes | `f5fba15` | `tests/data/test_seat_round9fix_ledger.py::test_closed_unsubmitted_releases_pending_and_retains_owned_failure`; all six closure/read sequences fail with stale pending before the ledger edit. |
+| 3, stale standing | `7354cb3` | `tests/widgets/test_seat_round9fix_attempts.py::test_ledger_closed_dag_attempt_has_no_working_phantom_in_compositor`; all four terminal cases fail using exact historical manager, analytics and ledger modules. The historical run has nine behavior failures including the data and unknown-job cases. |
+| 4, submission stamps | `f5fba15` | `tests/data/test_seat_round9fix_ledger.py::test_missed_stored_exact_attempt_reconciles_without_duplicate_counts`; both ingest orders at the measured 73 ms lead and both inclusive boundaries fail with duplicate rows before the edit. |
+| 5, gate failures | `5989a57` | `tests/data/test_seat_round9fix2_gate.py::test_failed_gate_retries_five_seconds_after_failure`; the unchanged original gate function retains its full interval for exception and non-mapping cases, including a 75-second timeout. |
+| 6, pause boundary | `5989a57` | `tests/data/test_seat_round9fix2_gate.py::test_busy_gate_reads_at_pause_end_and_each_extension`; the unchanged original gate function misses the pause-end read. Failed recovery is separately pinned by `test_failed_pause_recovery_waits_five_seconds_despite_last_good_busy`. |
+
+Focused implementation checks passed 124 tests with one sandbox listener skip for item 1, 164 ledger/cache tests plus 34 consuming checks for items 2 and 4, 364 attempt/consumer tests for item 3, and 154 gate/manager/CONTROL tests for items 5 and 6. The supplied fixture-only t7c/t7d reproductions now retain failed timeout after reassignment; t2b's unnamed local failure produces no working row and its DAG submit keeps only the real tests-node attempt. No existing gate, CONTROL or attempt assertion changed. The timestamp parameter expansion and the time-ambiguity fixture's move from one to six seconds are the only changed existing outcome expectations; they are explained above. The three network fixes alter fixture setup only.
+
+The controller then ran the required final verification once on `5989a57`, keeping the tracked tree frozen and using only one pytest process at a time:
+
+| Final run | Result |
+|---|---|
+| Seat suite, complete original selection below | 2,040 passed, 2 skipped, 1 deselected in 538.01 seconds |
+| `tests/screens/test_dashboard_screen.py` | 27 passed in 3.09 seconds |
+| `tests/test_address_sweep_registry.py` | 9 passed in 0.42 seconds |
+| `tests/screens/test_address_icons_everywhere.py` | 46 passed in 47.43 seconds |
+| `tests/widgets/test_panels.py` | 170 passed in 5.62 seconds |
+| `tests/widgets/test_title_blank_row.py` | 69 passed in 5.99 seconds |
+| `tests/screens/test_refresh_guard.py` | 6 passed in 0.57 seconds |
+| Full MaxPane, four workers with loadfile and not-host selection | 12,875 passed, 3 skipped in 970.11 seconds |
+| Full sybilkit, four workers with loadfile and its source PYTHONPATH | 444 passed, 1 expected failure in 9.70 seconds |
+| Broker compileall | Exit zero; broker source bytes unchanged |
+
+Commands, with isolated HOME and unset NO_COLOR:
+
+```sh
+env -u NO_COLOR HOME=$(mktemp -d) PYTHONDONTWRITEBYTECODE=1 .venv-pepepane/bin/python -m pytest -p no:cacheprovider -q -m 'not host' tests/broker tests/data/test_seat_*.py tests/analytics/test_seat_*.py tests/widgets/test_seat_*.py tests/screens/test_seat_*.py tests/test_seat_*.py tests/test_select_to_copy.py
+env -u NO_COLOR HOME=$(mktemp -d) .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile -m 'not host' tests
+env -u NO_COLOR HOME=$(mktemp -d) PYTHONPATH=sybilkit/src .venv-pepepane/bin/python -m pytest -n 4 --dist loadfile sybilkit/sybilkit_tests
+.venv-pepepane/bin/python -m compileall -q imd_dashd
+```
+
+Each of the six individual files used `env -u NO_COLOR HOME=$(mktemp -d) PYTHONDONTWRITEBYTECODE=1 .venv-pepepane/bin/python -m pytest -p no:cacheprovider -q` followed by that table's path, sequentially. Ignored logging wrappers preserved the arguments and exit codes; they do not change pytest's selection or guard mode. The seat and MaxPane runs each report the existing pytest-asyncio fixture-loop-scope warning. Nothing was changed to suppress it.
+
+The final seat suite has an empty refused-host record at every guarded teardown. The full MaxPane run also has no unexpected refused-host error. This proves absence of refused attempts through the guarded in-process interfaces during test fixture lifetime, not behavior on an unrestricted-network machine. The sybilkit tree and spawned subprocesses remain outside this guard. The additional full-suite skip is the actual local-listener control under the sandbox; its separately authorized scoped run passed all thirteen guard tests.
+
+One auxiliary historical-ledger replay invoked pytest through `pytest.main` in the prescribed interpreter instead of the requested CLI spelling. It is supplementary evidence: the primary ledger failing-before run used the required CLI before any production edit, and every final verification above used that CLI. Invalid intermediate fixture-authoring and mutation-restoration runs were excluded from regression evidence; corrected mutations were inverted and whole-file bytes checked before the final green runs. No functional requirement was deferred by those tooling corrections.
+
+The protected-path diff remains empty, and no layout pin, shared base, broker source, redactor, unit or installer changed. Healthy gate cadence remains one read per minute on LIVE, four on CONTROL and one per poll interval during a flow (twelve per minute at the default five-second poll). During an API pause, those gate previews remain local-only, with the new one-time pause-boundary read; failed transport reads get the bounded recovery delay, while a broker busy refusal does not accelerate. The screen pin remains 131 columns by 40 rows.
+
+Finishing retains pepepane in this checkout with no push, merge, tag or deployment. Packaging uses the unchanged dependency seed, stages both supported native interpreter ABIs, and refreshes only the generated deployment lock and manifest after this verification record. The archive is renamed after that final manifest commit without rebuilding.
