@@ -33,6 +33,7 @@ its own docstring for why the order does not commute.
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from rich.markup import escape
 
@@ -43,6 +44,7 @@ __all__ = [
     "flatten",
     "safe_markup",
     "sanitize_cell",
+    "strip_controls",
     "strip_tags",
     "visible_len",
 ]
@@ -82,20 +84,25 @@ def visible_len(markup: str | None) -> int:
     return len(_MARKUP_TAG.sub("", markup or ""))
 
 
+def strip_controls(text: str) -> str:
+    """Drop C0/DEL/C1 controls except newline and tab; preserve Unicode formatters."""
+    return "".join(ch for ch in text if ch in "\n\t" or unicodedata.category(ch) != "Cc")
+
+
 def safe_markup(value: object) -> str:
     """Return ``value`` as a string that Rich will render literally.
 
     ``None`` becomes an empty string; everything else is coerced with
-    ``str()`` and then escaped so square brackets are shown rather than
+    ``str()``, stripped of controls, then escaped so square brackets are shown rather than
     parsed as markup tags.
     """
     if value is None:
         return ""
-    return escape(str(value))
+    return escape(strip_controls(str(value)))
 
 
 def flatten(value: object) -> str:
-    """Collapse embedded newlines/control whitespace to single spaces.
+    """Drop controls, then collapse remaining whitespace to single spaces.
 
     On-chain strings can contain raw newlines the same way an announce-
     channel post can, and this has to run before both :func:`strip_tags` and
@@ -109,7 +116,7 @@ def flatten(value: object) -> str:
     if value is None:
         return ""
     try:
-        text = str(value)
+        text = strip_controls(str(value))
     except Exception:
         return ""
     return " ".join(text.split())
@@ -125,7 +132,7 @@ def strip_tags(value: object) -> str:
     not the tag characters showing up on screen. Never raises: see
     :func:`flatten`.
     """
-    flat = flatten(value)
+    flat = strip_controls(flatten(value))
     stripped = TAG_LIKE.sub("", flat)
     return " ".join(stripped.split())
 
@@ -136,8 +143,8 @@ def sanitize_cell(value: object, width: int) -> str:
 
     The order matters and does not commute:
 
-    1. :func:`flatten` and :func:`strip_tags` remove hostile bracket-shaped
-       noise before anything else touches the string;
+    1. :func:`flatten` drops controls before collapsing whitespace, then
+       :func:`strip_tags` removes hostile bracket-shaped noise;
     2. :func:`~maxpane_dashboard.widgets.rowfit.clip` truncates the
        *already-stripped, still-unescaped* text to ``width`` **terminal
        cells** (``rich.cells.cell_len``, never ``len()``): a ticker, a coin

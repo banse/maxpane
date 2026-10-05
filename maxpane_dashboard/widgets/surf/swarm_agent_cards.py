@@ -12,7 +12,7 @@ from maxpane_dashboard.analytics.surf_swarm_signals import runtime_semver, runti
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.fmt import fmt_int
-from maxpane_dashboard.widgets.markup_safety import flatten
+from maxpane_dashboard.widgets.markup_safety import flatten, strip_controls
 from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
 from maxpane_dashboard.widgets.surf._fmt import (
     ANTI_POISONING_COLS,
@@ -181,9 +181,9 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         else:
             package = "claude-code" if runtime_id == "claude" else "codex"
             stamp = clocks.get(runtime_id) if isinstance(clocks, dict) else None
-            tooltip.append(f"latest {package} {newest} (npm, as of {flatten(stamp) or 'unavailable'})")
+            tooltip.append(strip_controls(f"latest {package} {newest} (npm, as of {flatten(stamp) or 'unavailable'})"))
         if isinstance(majority, (tuple, list)) and len(majority) == 3:
-            tooltip.append(f"\nfleet daemon {majority[0]} on {majority[1]}/{majority[2]} reporting workers")
+            tooltip.append(strip_controls(f"\nfleet daemon {majority[0]} on {majority[1]}/{majority[2]} reporting workers"))
         else:
             tooltip.append("\nno fleet majority")
         self.query_one(f"#{SEAT_BOX_IDS['runtime']}").tooltip = tooltip

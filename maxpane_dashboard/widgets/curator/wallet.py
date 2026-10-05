@@ -73,7 +73,7 @@ from maxpane_dashboard.widgets.curator._table import (
     tier_cost,
     title_with_hint,
 )
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import safe_markup, strip_controls
 
 __all__ = [
     "WALLET_TITLE",
@@ -572,7 +572,7 @@ class CuratorWalletAddress(_FactsPanel):
             label, parts = line[0], line[1]
             marker = line[2] if len(line) > 2 else GUTTER
             head = f"{label:<{LABEL_COLS}}{marker}"
-            value = parts[0] if parts else ""
+            value = strip_controls(parts[0]) if parts else ""
             is_addr = is_address(value)
             line_text = Text(head)
             if label and is_addr:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from rich.text import Text
 
+from maxpane_dashboard.widgets.markup_safety import strip_controls
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.ocm._chain import EXPLORER
@@ -32,8 +33,8 @@ def _event_to_text(event: dict) -> Text:
     ts = hhmm(event.get("timestamp", 0))
     address = event.get("actor_address", "")
     event_type = event.get("event_type", "")
-    token_id = event.get("token_id")
-    count = event.get("count", 0)
+    token_id = strip_controls(str(event.get("token_id")))
+    count = strip_controls(str(event.get("count", 0)))
 
     line = Text(f"  {ts}  ")
     addr = address_text(address, width=_ADDR_COLS, explorer=EXPLORER)
@@ -55,7 +56,8 @@ def _event_to_text(event: dict) -> Text:
         line.append_text(addr)
         line.append(f"  Unstaked {count} monster(s)")
     else:
-        line.append(f"{str(event_type).upper()}  ", style="dim")
+        event_type = strip_controls(str(event_type))
+        line.append(f"{event_type.upper()}  ", style="dim")
         line.append_text(addr)
         line.append(f"  {event_type}")
     return line

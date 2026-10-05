@@ -350,13 +350,16 @@ def test_is_explorer_click_only_for_linked_spans():
     assert not A.is_explorer_click(object())
 
 
-def test_the_helper_reaches_only_the_explorer_module_beyond_rich():
+def test_the_helper_reaches_only_pure_rendering_modules_beyond_rich():
     tree = ast.parse(pathlib.Path(A.__file__).read_text())
     modules = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module:
             modules.add(node.module)
-    assert {m for m in modules if m.startswith("maxpane_dashboard")} == {"maxpane_dashboard.widgets.explorer"}
+    assert {m for m in modules if m.startswith("maxpane_dashboard")} == {
+        "maxpane_dashboard.widgets.explorer",
+        "maxpane_dashboard.widgets.markup_safety",
+    }
 
 
 def test_a_forged_explorer_gets_no_link_and_never_a_crash():

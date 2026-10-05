@@ -96,7 +96,7 @@ from textual.widgets import RichLog, Static
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.rowfit import SHORT_HINT
 from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import safe_markup, strip_controls
 from maxpane_dashboard.widgets.surf._fmt import (
     EXPLORER,
     ANTI_POISONING_COLS,
@@ -413,7 +413,7 @@ def _row_fields(
         counterparty = row.get("counterparty")
         address = None
         if known:
-            who = str(counterparty or DASH)
+            who = strip_controls(str(counterparty or DASH))
         else:
             cp = counterparty.strip() if isinstance(counterparty, str) else counterparty
             address = cp if is_address(cp) else None

@@ -60,7 +60,7 @@ from maxpane_dashboard.widgets.address import (
     short_hex,
 )
 from maxpane_dashboard.widgets.fwa._chain import EXPLORER
-from maxpane_dashboard.widgets.markup_safety import visible_len as _visible_len
+from maxpane_dashboard.widgets.markup_safety import strip_controls, visible_len as _visible_len
 from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
 from textual.widgets import Static
 
@@ -225,9 +225,9 @@ def _fmt_drift(
     """
     if not sig or not isinstance(sig, dict):
         return ""
-    value = str(sig.get("value_str") or "").strip() or _DASH
+    value = strip_controls(str(sig.get("value_str") or "")).strip() or _DASH
     fg = _resolve_color(sig.get("color") or "dim", colors)
-    indicator = sig.get("indicator") or "●"
+    indicator = strip_controls(str(sig.get("indicator") or "●"))
 
     # Bytes32 first: once shortened it no longer contains an unbroken
     # 40-hex run, so the address pass below can never mistake it for one.

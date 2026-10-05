@@ -492,3 +492,11 @@ async def test_the_abbreviated_form_is_not_an_address_and_gets_no_icon():
     lines, icons, _links = await _address_probe([row], (width, 20))
     assert any(f"operator {ABBREVIATED};" in line for line in lines), lines
     assert icons == [] and COPY_GLYPH not in "\n".join(lines), icons
+
+
+async def test_failure_cell_drops_controls():
+    from tests.widgets.test_markup_safety import CONTROL_PAYLOAD, CONTROL_REMAINDER
+
+    output = await _workflows(swarm_workflow_rows=[_row(status="failed", failure=CONTROL_PAYLOAD)])
+    assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+    assert CONTROL_REMAINDER in output

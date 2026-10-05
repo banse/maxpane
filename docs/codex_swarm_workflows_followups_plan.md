@@ -165,6 +165,113 @@ all whole. Then the fast guard set, and the docpin command (step 4 edits a rules
 
 **Stop after WP1.** Commit, write the Landed block, and wait for the final review.
 
+**Landed — 2026-10-05 (WP1 only, Tier 2; final owner review pending).**
+
+Commit: `fix(widgets): strip terminal controls at widget boundaries`. This block belongs to
+that same commit; resolve its hash with
+`git log -1 --format=%h --grep='^fix(widgets): strip terminal controls at widget boundaries$'`.
+The handoff reports the resulting hash (a commit cannot embed its own hash).
+
+`strip_controls` removes all Unicode `Cc` except newline/tab and preserves `Cf`, including
+ZWJ and the owner-deferred bidi characters. `flatten`, `safe_markup`, `strip_tags`, and
+`sanitize_cell` now share that boundary. Layout pins remain unchanged. The rules file now requires the boundary for literal `Text` as well as markup.
+
+Literal-`Text` inventory (`rg -n "Text\\(|Text\\.assemble|append\\(" maxpane_dashboard/widgets`):
+
+| Sink | Disposition |
+|---|---|
+| `address._clean_label` → `address_text` labels/invalid-address fallback, `job_text` invalid-id fallback, `site_text` labels | Reuse `flatten` before fitting; copy glyph removal retained. |
+| `address.address_prose` | `strip_controls` before address matching and span construction. |
+| `address.hash_text` invalid-hash display | Strip display controls; link validation still uses the original input. |
+| Bakery `activity_feed._format_event`: title, description, linked bakery name | `strip_controls` before literal appends. |
+| Cattown `ct_activity_feed._catch_to_text`: species | `strip_controls`; fisher/name uses `address_text`. |
+| OCM `ocm_activity_feed._event_to_text`: token id, count, unknown event type | `strip_controls`; event-type dispatch still uses the original value. |
+| TTT `ttt_activity_feed._fmt_burn`: token id | `strip_controls`; symbol already uses `safe_markup`, actor uses `address_text`. |
+| FWA `fwa_activity_feed._token_label`: nonnumeric token label | `strip_controls` before fitting; collection/purchaser names already use `address_text`. |
+| FWA `fwa_signals._fmt_drift`: value and indicator | `strip_controls` before literal prose/address composition. |
+| FWA `fwa_settlement_table._render_crown`: rank prefix | `strip_controls` before measuring/fitting; holder already uses `address_text`. |
+| Curator `list_hero._wallet_title`, `_compact_filter_summary` → `_wallet_text` | `flatten` for ENS title; `strip_controls` for filter clauses before measuring. |
+| Curator `wallet.CuratorWalletAddress._render_view`: ENS/non-address facts | `strip_controls` before measuring/appending. |
+| SURF `activity._row_fields` → `_row_text`: known-counterparty label | `strip_controls` before the row budget; other counterparties already use `address_text`. |
+| SURF `signals._signal_detail` → `_signal_row_content`: detail containing an address | Reuse `flatten` before marking/fitting; the no-address path already uses `safe_markup`. |
+| AGENT `swarm_agent_cards._runtime_body`: latest-version and fleet-daemon tooltips | `strip_controls` on both literal tooltip lines. |
+| WORKFLOWS `_text_cell`: failure / first-sentence objective | Already calls `flatten` on both branches; inherits the fix, no duplicate sanitization. |
+| IN FLIGHT `_cell`: template, role/state, objective | Already calls `flatten`; note uses `sanitize_cell`. Inherits the fix. |
+| SURF feed `_row_text` / `_row_line_texts` | Served message/label already crosses `safe_markup` in `_item_lines` before Rich parsing; inherits the fix. |
+| SWARM hero breaker/health, throughput rollup names, AGENT identity/model/effort/node labels and model/node tooltips, FLEET mixed-value labels, LAUNCHES artifact names, RECORD filter labels/summary and oracle figures | Already cross `flatten`, `strip_tags`, `sanitize_cell`, or `short_model` (which uses the same helpers); inherit the fix. |
+| Other address-bearing feeds, hero cards, tables and Curator signal identities | Already use the shared address helpers above; inherit label/fallback protection. |
+| Remaining `Text` / append candidates | Constants, numeric/date formatters, validated seat ids/UUIDs/addresses, strict `source_clock` HH:MM, manager-generated clocks, allowlisted network words, already-parsed safe `Text`, or list-building rather than rendered text. No additional served-text bypass found. |
+
+Validation (Python 3.13.12, Textual 8.2.8; owner's dev Textual is 8.1.1):
+
+- Red first: 330 failures / 4 passes across the initial helper and render cases. The two
+  later address/hash-counterparty cases and two signal/rank cases also failed before their fixes.
+- Focused green: 334 passed (initial shapes); 336 passed (expanded sinks/tooltips);
+  334 passed (final focused controls plus updated import guard).
+- First whole-file run: 2,435 passed / 19 failed. Eighteen colour assertions saw greyscale
+  because this session exports `NO_COLOR=1`; one import guard needed the newly required
+  pure `markup_safety` dependency. The apparent layout-file failure passed all geometry
+  assertions and failed only colour; it reproduced serially and passed with `NO_COLOR` unset.
+  No layout sweep or pin failed. The final validation unsets `NO_COLOR` only for the test process.
+- Final whole-file validation: **2,545 passed** in 534.01 s (four workers, `worksteal`).
+- Fast guard set: **120 passed**, 11,667 deselected (`-m "guard and not mounts_app" tests`).
+- Doc pins: **12 passed** (`-m docpin tests/test_surf_registration.py tests/test_curator_registration.py`).
+- No full-suite run. No live stop is required for WP1 by §3.
+
+The final whole-file command (the initial command omitted `test_surf_widgets_a.py` and kept `NO_COLOR`):
+
+```bash
+env -u NO_COLOR HOME=$(mktemp -d) .venv/bin/python -m pytest -n 4 --dist worksteal \
+  tests/widgets/test_markup_safety.py \
+  tests/widgets/test_address.py \
+  tests/widgets/test_activity_feed_degradation.py \
+  tests/widgets/test_hidden_shared_address_icons.py \
+  tests/widgets/test_cattown_talismans_address_icons.py \
+  tests/widgets/test_curator_widgets.py \
+  tests/widgets/test_curator_address_icons.py \
+  tests/widgets/test_fwa_widgets_a.py \
+  tests/widgets/test_fwa_widgets_b.py \
+  tests/widgets/test_fwa_address_icons.py \
+  tests/widgets/test_surf_widgets_a.py \
+  tests/widgets/test_surf_widgets_b.py \
+  tests/widgets/test_surf_address_icons.py \
+  tests/widgets/test_surf_swarm_agent_cards.py \
+  tests/widgets/test_surf_swarm_workflows.py \
+  tests/widgets/test_surf_swarm_launches.py \
+  tests/widgets/test_surf_swarm_inflight.py \
+  tests/widgets/test_ttt_widgets.py \
+  tests/widgets/test_ttt_address_icons.py \
+  tests/widgets/test_base_address_icons.py \
+  tests/screens/test_surf_swarm_screen.py \
+  tests/screens/test_surf_swarm_layout.py \
+  tests/screens/test_surf_screen.py \
+  tests/screens/test_curator_screen.py \
+  tests/screens/test_fwa_screen.py \
+  tests/screens/test_base_terminal_screen.py \
+  tests/screens/test_dashboard_screen.py \
+  tests/screens/test_address_icons_everywhere.py
+```
+
+Required mutation verdicts from `scripts/mutate.py`:
+
+```text
+KILLED     flatten boundary  (maxpane_dashboard/widgets/markup_safety.py)
+KILLED     WORKFLOWS failure boundary  (maxpane_dashboard/widgets/surf/swarm_workflows.py)
+```
+
+The first removed `strip_controls` from `flatten`; named red tests:
+`test_markup_safety.py::test_helpers_drop_controls[\x1b-flatten]`,
+`test_markup_safety.py::test_flatten_static_drops_controls`, and
+`test_surf_swarm_launches.py::test_repo_cell_drops_controls_before_fitting`.
+The DataTable case includes C1 NEL between printable characters as well as the required OSC/CSI
+payload: it proves removal happens before whitespace folding, even though later helpers also
+strip controls. The second replaced WORKFLOWS' existing failure `flatten` call with raw `str`;
+`test_surf_swarm_workflows.py::test_failure_cell_drops_controls` failed. Both mutants restored
+byte-for-byte. The inventory corrects the brief's assumption that WORKFLOWS, IN FLIGHT and the
+SURF feed bypass all three helpers: they already used them.
+
+WP2–WP5 and the owner decisions remain untouched. Stop here for the owner's final review.
+
 ## 5. WP2 — F76: IN FLIGHT's prose addresses get the copy icon (Tier 1, surf only)
 
 **Defect.** IN FLIGHT renders a whole 0x address inside an objective or note as plain text, with

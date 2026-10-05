@@ -42,7 +42,7 @@ from textual.containers import Vertical
 from textual.widgets import DataTable, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text
 from maxpane_dashboard.widgets.fwa._chain import EXPLORER
-from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len as _visible_len
+from maxpane_dashboard.widgets.markup_safety import safe_markup, strip_controls, visible_len as _visible_len
 
 _DASH = "--"
 _EMDASH = "—"
@@ -672,7 +672,7 @@ class FWASettlementTable(Vertical):
             # column's existing display budget -- the column's declared
             # width does not grow for the icon (see the note above
             # ``_TIERS``).
-            prefix = f"{rank}. "
+            prefix = strip_controls(f"{rank}. ")
             if label_width - ICON_COLS - cell_len(prefix) < MIN_SHORT_COLS:
                 # Shed the rank prefix, never the icon: row order still
                 # carries the rank, a truncated icon carries nothing.

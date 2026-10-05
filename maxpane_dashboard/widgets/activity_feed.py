@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from rich.text import Text
 from textual.widgets import RichLog
 
+from maxpane_dashboard.widgets.markup_safety import strip_controls
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.panels import UNAVAILABLE_LINE, RichLogFeed
@@ -91,8 +92,8 @@ def _format_event(event: ActivityEvent) -> Text:
     ts = hhmm(getattr(event, "timestamp", None))
     who = _who_text(getattr(event, "launcher", None), width=_WHO_COLS)
 
-    title = str(getattr(event, "title", None) or "")
-    description = str(getattr(event, "description", None) or "")
+    title = strip_controls(str(getattr(event, "title", None) or ""))
+    description = strip_controls(str(getattr(event, "description", None) or ""))
     event_type = getattr(event, "type", None)
 
     line = Text()
@@ -104,7 +105,7 @@ def _format_event(event: ActivityEvent) -> Text:
         line.append(f" {title}", style="cyan")
     elif event_type == "rug":
         # Attack/boost — combine title (boost name) + description + linked bakery
-        target = str(getattr(event, "linked_bakery_name", None) or "")
+        target = strip_controls(str(getattr(event, "linked_bakery_name", None) or ""))
         if getattr(event, "success", None):
             desc = f"{title}: {description} {target}"
             line.append(f"{desc}  ")

@@ -32,6 +32,7 @@ from rich.cells import cell_len
 from rich.style import Style
 from rich.text import Text
 
+from maxpane_dashboard.widgets.markup_safety import flatten, strip_controls
 from maxpane_dashboard.widgets.explorer import (
     Explorer,
     is_job_id,
@@ -136,7 +137,7 @@ def _clean_label(value: object) -> str:
     :data:`COPY_GLYPH` is removed, so a name like ``"x ⧉"`` cannot paint a
     dead second icon beside the real one.
     """
-    return " ".join(value.replace(COPY_GLYPH, "").split())
+    return flatten(value.replace(COPY_GLYPH, ""))
 
 
 def _icon(address: str) -> tuple[str, Style]:
@@ -213,6 +214,7 @@ def address_prose(
     ``explorer`` links each address (the whole 42 characters, never the icon)
     to its page there; ``None`` renders exactly as before.
     """
+    text = strip_controls(text)
     out = Text(style=style)
     pos = 0
     for match in PROSE_ADDRESS_RE.finditer(text):
@@ -246,7 +248,7 @@ def hash_text(
     """
     if not isinstance(tx_hash, str) or not tx_hash:
         return Text("--", style=style)
-    shown = short_hex(tx_hash, width)
+    shown = strip_controls(short_hex(tx_hash, width))
     out = Text(shown, style=style)
     if explorer is not None and is_tx_hash(tx_hash):
         if (link := _link(explorer, "tx", tx_hash)) is not None:

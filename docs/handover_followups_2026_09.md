@@ -875,7 +875,11 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     objectives and failures, ENS names). Pre-existing and repo-wide; this branch adds no new path
     that bypasses the shared helpers. Fix it once in `markup_safety` (strip C0 except `\t\n`, plus
     DEL and C1) and pin it with a probe over `render_strips()`. **Important, Tier 2** (shared
-    `widgets/*.py`); the owner schedules it.
+    `widgets/*.py`). **CLOSED 2026-10-05 (WP1 commit, `fix(widgets): strip terminal controls at widget boundaries`).**
+    Shared control stripping plus the inventoried literal-Text boundaries remove C0/DEL/C1
+    except newline/tab, preserving ZWJ/bidi; composited regressions and both required mutants
+    prove the boundary. The same commit's sink inventory, validation counts and hash lookup
+    are in `docs/codex_swarm_workflows_followups_plan.md`, WP1 Landed; final owner review pending.
 
 81. **`tests/widgets/test_title_blank_row.py:284` passes `burn_history` to `TTTSparkline`, whose
     keyword is `burns_history`.** `update_data`'s `**_kwargs` swallows the typo, so the case renders

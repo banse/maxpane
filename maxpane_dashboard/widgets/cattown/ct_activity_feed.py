@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from rich.text import Text
 
+from maxpane_dashboard.widgets.markup_safety import strip_controls
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.cattown._chain import EXPLORER
 from maxpane_dashboard.widgets.fmt import hhmm
@@ -42,7 +43,7 @@ def _catch_to_text(catch: dict) -> Text:
         style="dim",
         explorer=EXPLORER,
     )
-    species = str(catch.get("species", "Unknown") or "Unknown")
+    species = strip_controls(str(catch.get("species", "Unknown") or "Unknown"))
     weight = catch.get("weight_kg", 0.0)
     event_type = catch.get("rarity", "fish")
 

@@ -51,7 +51,7 @@ from rich.text import Text
 
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.fmt import DASH, hhmm, safe_get
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import safe_markup, strip_controls
 from maxpane_dashboard.widgets.panels import RichLogFeed
 from maxpane_dashboard.widgets.ttt._chain import EXPLORER
 
@@ -93,7 +93,7 @@ def _wei_to_eth(wei) -> float | None:
 def _fmt_burn(event: dict, ts: str, sym: str) -> Text:
     actor = safe_get(event, "actor_address")
     token_id = safe_get(event, "token_id")
-    token_id_str = str(token_id) if token_id is not None else DASH
+    token_id_str = strip_controls(str(token_id)) if token_id is not None else DASH
     line = Text.from_markup(f"{ts}  [yellow]BURN [/]  {sym:>6}  by ")
     line.append_text(address_text(actor, width=_BURN_ACTOR_WIDTH, explorer=EXPLORER))
     line.append(f"   tokenId {token_id_str}")

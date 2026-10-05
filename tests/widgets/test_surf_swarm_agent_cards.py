@@ -534,3 +534,20 @@ async def test_gated_runtime_clears_previous_seat_tooltip(state, summary):
         cards.update_data(**_seat_kwargs(swarm_seat_state=state, swarm_seat_summary=summary))
         await pilot.pause()
         assert box.tooltip is None
+
+
+async def test_runtime_tooltip_drops_controls_on_compositor():
+    from textual.widgets import Static
+    from tests.widgets.test_markup_safety import CONTROL_PAYLOAD, CONTROL_REMAINDER
+
+    async with _Themed().run_test(size=(200, 20)) as pilot:
+        await pilot.app.mount(SurfSwarmSeatCards())
+        cards = pilot.app.query_one(SurfSwarmSeatCards)
+        cards.update_data(**_seat_kwargs(swarm_fleet_daemon=(CONTROL_PAYLOAD, 2, 3)))
+        tooltip = cards.query_one("#" + SEAT_BOX_IDS["runtime"]).tooltip
+        # Paint the actual tooltip Text without a wall-clock hover delay.
+        await pilot.app.mount(Static(tooltip))
+        await pilot.pause()
+        output = "\n".join(strip.text for strip in pilot.app.screen._compositor.render_strips())
+        assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+        assert CONTROL_REMAINDER in output

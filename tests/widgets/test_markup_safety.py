@@ -564,3 +564,130 @@ def test_visible_len_is_unchanged_by_the_tag_pattern_alias(markup, expected):
     unclosed bracket, a slash inside a tag or a nested bracket run.
     """
     assert visible_len(markup) == expected
+
+
+# WP1: controls are removed before whitespace folding, fitting or Rich parsing.
+CONTROL_PAYLOAD = "ok\x1b]0;PWNED\x07\x1b[31mred\x00\x9b"
+CONTROL_REMAINDER = "ok]0;PWNED[31mred"
+
+
+@pytest.mark.parametrize("helper", ["strip_controls", "flatten", "safe_markup", "strip_tags", "sanitize_cell"])
+@pytest.mark.parametrize("control", [chr(n) for n in (*range(32), *range(127, 160)) if n not in (9, 10)])
+def test_helpers_drop_controls(helper, control):
+    from maxpane_dashboard.widgets import markup_safety
+
+    fn = getattr(markup_safety, helper)
+    value = "a" + control + "b"
+    result = fn(value, 100) if helper == "sanitize_cell" else fn(value)
+    assert result == "ab"
+
+
+def test_strip_controls_keeps_newlines_tabs_and_format_characters():
+    from maxpane_dashboard.widgets import markup_safety
+
+    value = "海豚 👩\u200d💻\n\t\u202e\u2066"
+    assert markup_safety.strip_controls(value) == value
+
+
+@pytest.mark.parametrize("helper", [flatten, safe_markup, strip_tags, lambda s: sanitize_cell(s, 100)])
+def test_helpers_preserve_cjk_and_zwj(helper):
+    assert helper("海豚 👩\u200d💻") == "海豚 👩\u200d💻"
+
+
+async def test_flatten_static_drops_controls():
+    from textual.widgets import Static
+
+    async with _Harness(Static(Text(flatten(CONTROL_PAYLOAD + "A\x85B [/x]")))).run_test() as pilot:
+        await pilot.pause()
+        output = "\n".join(strip.text for strip in pilot.app.screen._compositor.render_strips())
+        assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+        assert CONTROL_REMAINDER + "AB [/x]" in output
+
+
+@pytest.mark.parametrize("sink", ["address-label", "address-prose", "hash-fallback", "surf-counterparty", "bakery", "cattown", "ocm", "ttt-burn", "fwa-token", "fwa-signal", "curator-title"])
+async def test_literal_text_sinks_drop_controls(sink):
+    from types import SimpleNamespace
+    from textual.widgets import Static
+    from maxpane_dashboard.widgets.address import address_prose, hash_text
+    from maxpane_dashboard.widgets.surf.activity import _row_text as surf_activity
+    from maxpane_dashboard.widgets.activity_feed import _event_to_text as bakery
+    from maxpane_dashboard.widgets.cattown.ct_activity_feed import _catch_to_text
+    from maxpane_dashboard.widgets.ocm.ocm_activity_feed import _event_to_text as ocm
+    from maxpane_dashboard.widgets.ttt.ttt_activity_feed import _fmt_burn
+    from maxpane_dashboard.widgets.fwa.fwa_activity_feed import _what_cell
+    from maxpane_dashboard.widgets.fwa.fwa_signals import _fmt_drift
+    from maxpane_dashboard.widgets.curator.list_hero import _wallet_text
+
+    payload = CONTROL_PAYLOAD
+    factories = {
+        "address-label": lambda: address_text(None, label=payload),
+        "address-prose": lambda: address_prose(payload),
+        "hash-fallback": lambda: hash_text(payload, 100),
+        "surf-counterparty": lambda: surf_activity({"counterparty_known": True, "counterparty": payload, "kind": "transfer", "value_eth": 1}, "full", 180, 10, True),
+        "bakery": lambda: bakery(SimpleNamespace(type="simple", title=payload)),
+        "cattown": lambda: _catch_to_text({"species": payload}),
+        "ocm": lambda: ocm({"event_type": payload}),
+        "ttt-burn": lambda: _fmt_burn({"token_id": payload}, "00:00", "TOK"),
+        "fwa-token": lambda: _what_cell({"token_id": payload}, 100),
+        "fwa-signal": lambda: _fmt_drift({"value_str": payload}, {}, 150),
+        "curator-title": lambda: _wallet_text({"you_ens": payload}, "full"),
+    }
+    async with _Harness(Static(factories[sink]())).run_test(size=(180, 12)) as pilot:
+        await pilot.pause()
+        output = "\n".join(strip.text for strip in pilot.app.screen._compositor.render_strips())
+        assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+        assert CONTROL_REMAINDER in output
+
+
+async def test_base_token_symbol_drops_controls():
+    from maxpane_dashboard.widgets.base.overview.bt_overview_leaderboard import BTOverviewLeaderboard
+    from tests.widgets.surf_compositing import composite_lines
+
+    output = "\n".join(await composite_lines(BTOverviewLeaderboard, (180, 12),
+        trending_tokens=[{"symbol": CONTROL_PAYLOAD}]))
+    assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+    assert "ok]0;PWNE…" in output  # the existing ten-cell label budget
+
+
+async def test_curator_wallet_facts_drop_controls():
+    from maxpane_dashboard.widgets.curator.wallet import CuratorWalletAddress
+    from tests.widgets.surf_compositing import composite_lines
+
+    output = "\n".join(await composite_lines(CuratorWalletAddress, (180, 12),
+        you_address="0x" + "12" * 20, you_ens=CONTROL_PAYLOAD))
+    assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+    assert CONTROL_REMAINDER in output
+
+
+async def test_surf_feed_row_drops_controls():
+    from textual.widgets import Static
+    from maxpane_dashboard.widgets.surf.feed import _row_text
+
+    row, _ = _row_text({"kind": "announce", "text": CONTROL_PAYLOAD}, 180)
+    async with _Harness(Static(row)).run_test(size=(180, 12)) as pilot:
+        await pilot.pause()
+        output = "\n".join(strip.text for strip in pilot.app.screen._compositor.render_strips())
+        assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+        assert CONTROL_REMAINDER in output
+
+
+async def test_surf_signal_with_address_drops_controls():
+    from textual.widgets import Static
+    from maxpane_dashboard.widgets.surf.signals import _signal_row_content
+
+    content = _signal_row_content("SIGNAL", "fired", CONTROL_PAYLOAD + " 0x" + "12" * 20, 0, 180)
+    async with _Harness(Static(content)).run_test(size=(180, 12)) as pilot:
+        await pilot.pause()
+        output = "\n".join(strip.text for strip in pilot.app.screen._compositor.render_strips())
+        assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+        assert CONTROL_REMAINDER in output
+
+
+async def test_fwa_crown_rank_drops_controls():
+    from maxpane_dashboard.widgets.fwa.fwa_settlement_table import FWASettlementTable
+    from tests.widgets.surf_compositing import composite_lines
+
+    output = "\n".join(await composite_lines(FWASettlementTable, (180, 20),
+        crown_history=[{"rank": "1\x1b\x00\x9b", "holder": "0x" + "12" * 20}], settle_available=True))
+    assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+    assert "1. " in output

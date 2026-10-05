@@ -97,7 +97,7 @@ from rich.text import Text
 from textual.content import Content
 
 from maxpane_dashboard.widgets.address import COPY_GLYPH
-from maxpane_dashboard.widgets.markup_safety import safe_markup, visible_len
+from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, visible_len
 from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
 from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH, fmt_age, EXPLORER
 from maxpane_dashboard.widgets.surf._icons import (
@@ -336,7 +336,7 @@ def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]
         return "", []
 
     # Newlines flattened first: an announce body is multi-line, a row is not.
-    flat = " ".join(str(detail or "").split())
+    flat = flatten(detail or "")
     if not flat:
         return "", []
 

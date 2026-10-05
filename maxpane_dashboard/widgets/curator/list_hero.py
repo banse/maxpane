@@ -23,7 +23,7 @@ from maxpane_dashboard.widgets.curator.hero import (
     LIST_EXPORT_SUBTITLE_TINY,
     WIDEN_HINT,
 )
-from maxpane_dashboard.widgets.markup_safety import visible_len
+from maxpane_dashboard.widgets.markup_safety import flatten, strip_controls, visible_len
 from maxpane_dashboard.widgets.rowfit import Ladder
 
 #: ``$success``/``$success-darken-2``, with a plain Rich colour as the
@@ -115,7 +115,7 @@ def _wallet_title(data: dict) -> str:
     ens = data.get("you_ens")
     if not isinstance(ens, str) or not ens.strip():
         return "YOUR WALLET"
-    return " ".join(ens.split())
+    return flatten(ens)
 
 
 def _rank(value) -> str:
@@ -145,7 +145,7 @@ def _compact_filter_summary(summary, tier: str, width: int = 0) -> str:
     if not isinstance(summary, (tuple, list)):
         return DASH
     clauses = [
-        clause.strip()
+        strip_controls(clause).strip()
         for clause in summary
         if isinstance(clause, str) and clause.strip()
     ]

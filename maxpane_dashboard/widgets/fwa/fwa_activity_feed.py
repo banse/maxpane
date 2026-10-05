@@ -43,7 +43,7 @@ from textual.containers import Vertical
 from textual.widgets import RichLog, Static
 from maxpane_dashboard.widgets.address import ICON_COLS, MIN_SHORT_COLS, address_text, is_address
 from maxpane_dashboard.widgets.fwa._chain import EXPLORER
-from maxpane_dashboard.widgets.markup_safety import safe_markup
+from maxpane_dashboard.widgets.markup_safety import safe_markup, strip_controls
 from maxpane_dashboard.widgets.rowfit import Ladder
 
 _DASH = "--"
@@ -180,7 +180,7 @@ def _token_label(value) -> str:
     try:
         return f" #{int(value)}"
     except (TypeError, ValueError):
-        s = str(value).strip()
+        s = strip_controls(str(value)).strip()
         return f" #{s}" if s else ""
 
 

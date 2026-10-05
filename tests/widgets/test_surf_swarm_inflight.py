@@ -356,3 +356,11 @@ async def test_failure_note_is_rendered_and_none_is_a_dash():
 async def test_a_fitting_literal_note_ellipsis_does_not_claim_loss():
     lines=await _lines(size=(180,12),swarm_inflight_rows=[_row(note='waiting…',note_kind='dispatch')])
     assert 'waiting…' in '\n'.join(lines) and '‹' not in lines[0]
+
+
+async def test_inflight_literal_cells_drop_controls():
+    from tests.widgets.test_markup_safety import CONTROL_PAYLOAD, CONTROL_REMAINDER
+
+    output = await _text(size=(180, 12), swarm_inflight_rows=[_row(template=CONTROL_PAYLOAD, objective=CONTROL_PAYLOAD)])
+    assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+    assert output.count(CONTROL_REMAINDER) == 2

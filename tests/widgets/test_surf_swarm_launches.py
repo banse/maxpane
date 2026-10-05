@@ -343,3 +343,11 @@ async def test_the_parked_reason_column_takes_every_spare_column():
                            swarm_scores_as_of_hhmm=AS_OF)
     assert "…" in narrow and "‹" in narrow, narrow
     assert reason in wide and "‹" not in wide, wide
+
+
+async def test_repo_cell_drops_controls_before_fitting():
+    from tests.widgets.test_markup_safety import CONTROL_PAYLOAD, CONTROL_REMAINDER
+
+    output = await _launches(swarm_launch_rows=[_launch(repo_url=CONTROL_PAYLOAD + "A\x85B")])
+    assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
+    assert CONTROL_REMAINDER + "AB" in output
