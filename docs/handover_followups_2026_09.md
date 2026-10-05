@@ -1047,3 +1047,41 @@ findings are grouped into #92–#95 below; Minor-only findings are filed, not fi
     zero; its input is a dict of series. The managers supply cache histories, retaining
     empty lists when none exist. Follow up per dashboard with composited failure/empty
     tests and shared primitives. **Important, Tier 1 per dashboard.**
+
+## WP1–WP4 review Minors (2026-10-05)
+
+The four WP2/WP4 reviews and the `df9272f` re-review are **Approved, 0 Critical /
+0 Important**. Minor-only findings are filed, not fixed, per `CLAUDE.md`.
+
+100. **`markup_safety.flatten` leaves double or edge spaces around a stripped lone control.**
+     `flatten("a \x1b b")` yields `'a  b'`. Fix: collapse again after stripping,
+     `" ".join(strip_controls(" ".join(text.split())).split())`, plus one regression case.
+     **Minor; Tier 1 when done**, as it touches shared `markup_safety.py`
+     (`df9272f` re-review N1).
+
+101. **TRENDS' docstring overstates the failed/empty distinction.**
+     `widgets/curator/sparklines.py:24`, "Failed and empty histories are distinct",
+     overstates current behavior: until #97 lands, a real failed read reaches TRENDS
+     as `[]` and paints "waiting for data...". Reword to "the widget distinguishes them;
+     the manager does not yet (#97)", or fix together with #97.
+     **Minor, Tier 0 when the file is next touched.**
+
+102. **The curator all-down test payload does not mirror the manager's series.**
+     `tests/screens/test_curator_screen.py:316`, `_all_none_payload`, claims to mirror
+     the manager's all-down payload, but `dict.fromkeys(CURATOR_KEYS)` sets
+     `volume_series` / `contributors_series` to `None` where `_blank_payload()` seeds
+     `[]`. Since `7deb9d6` this makes TRENDS paint "unavailable"; no assertion reads
+     that. Seed the series from `_blank_payload`, or say in the docstring that it
+     does not mirror it. **Minor, Tier 0.**
+
+103. **TRENDS has no composited case for a one-point series.**
+     The `len < 2` branch paints waiting; add one composited case. **Minor, Tier 0.**
+
+104. **F85's list gates narrow the previous iterable contract.**
+     The `isinstance(x, list)` gates in `fwa_sparkline`, curator `sparklines`, SURF
+     market `_spark`, `pool4_ratchet._reserve_spark` and `pool4u_burn.burn_points`
+     replace code that took any iterable. Every producer was traced to `list` or
+     `None`, so this is not live. A producer regressing to a tuple would silently
+     paint a healthy panel "unavailable", and no test pins either side. Decide:
+     a test pinning "tuple = contract violation", or accept `Sequence` (not `str`).
+     **Minor.**

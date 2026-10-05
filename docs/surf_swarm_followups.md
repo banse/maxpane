@@ -8,7 +8,7 @@ branch's working notes (`task-*-review.md`, `task-*-re-review*.md` under
 `.superpowers/sdd/2026-09-16-surf-swarm-body/`) live in a git-ignored workspace that is deleted
 when this plan finishes, so this file is the only place these survive.
 
-## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme; F16 (SWARM half), F23, F47, F51 and F54 resolved and F73–F85 filed 2026-10-04 by `feature/surf-swarm-workflows`
+## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme; F16 (SWARM half), F23, F47, F51 and F54 resolved and F73–F85 filed 2026-10-04 by `feature/surf-swarm-workflows`; F86–F87 filed 2026-10-05 by the WP2 review
 
 Swarm v2 (WP7, `docs/surf_swarm_v2_implementation_plan.md`) deleted `swarm_queue.py` and retired
 `swarm_queue_depths` with the other seven v1 keys, so F13 (the `depths or None` conflation behind
@@ -1147,3 +1147,13 @@ next touched, never as its own branch, except where an item is an owner decision
   existing sentences, and all five widget mutants are KILLED. Live 200×48 views shown;
   scoped runs: FWA 55, curator 668, SURF 538 passed. Upstream manager gaps and legacy
   Frenpet inventory findings are filed as handover #96–#99.
+
+## F86 — F87 — WP2 review Minors (2026-10-05)
+
+- **F86 — IN FLIGHT's docstring still says notes use strip-then-escape.**
+  `widgets/surf/swarm_inflight.py:10` is stale: since `ad2e058`, notes go
+  `strip_tags` → `fit_prose` → plain `Text`, the same literal contract as the other
+  cells, and nothing is parsed as markup. **Minor, Tier 0 when the file is next touched.**
+- **F87 — IN FLIGHT marks addresses twice in its note branch.**
+  `mark_addresses(clean_note)` runs inside `fit_prose` and again for `_note_clipped`.
+  Both give the same result; `fit_prose` could return its cut flag. **Minor, Tier 0.**

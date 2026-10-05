@@ -289,6 +289,8 @@ doc pins: **12 passed**. No full suite.
 `test_flatten_static_drops_controls`, and `test_repo_cell_drops_controls_before_fitting`.
 The mutant restored byte-for-byte. No layout pin changed.
 
+Re-review (`df9272f`) 2026-10-05: Approved, 0C/0I; Minor N1 filed as #100.
+
 ## 5. WP2 — F76: IN FLIGHT's prose addresses get the copy icon (Tier 1, surf only)
 
 **Defect.** IN FLIGHT renders a whole 0x address inside an objective or note as plain text, with
@@ -352,7 +354,7 @@ Fast guards: **120 passed**; doc pins: **12 passed**.
 `scripts/mutate.py`: **KILLED IN FLIGHT old prose cells**, reddening
 `test_prose_addresses_copy_without_links_and_drop_whole_when_tight` and
 `test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it[surf-wide]`.
-Owner-run Tier 1 review remains pending.
+Review (sonnet, Tier 1) 2026-10-05: Approved, 0C/0I; Minors filed as F86–F87.
 
 ## 6. WP3 — F80: LAUNCHES' `#` shows the whole launch number (Tier 0)
 
@@ -425,7 +427,8 @@ Red first: **3 failed / 1 passed**; focused green: **4 passed**.
 Whole widget/composing screen: **55 passed**; fast guards: **120 passed**;
 doc pins: **12 passed**. `scripts/mutate.py`: **KILLED m1**, named red
 `test_sparkline_failed_series_is_yellow_and_empty_still_waits[none]`
-(and `[non-list]`). Owner-run Tier 1 review remains pending.
+(and `[non-list]`).
+Review (sonnet, Tier 1) 2026-10-05: Approved, 0C/0I; Minors: none.
 
 **Landed — F85/curator (Tier 1), 2026-10-05.**
 Commit: `fix(curator): distinguish unavailable trend history` (same-commit title).
@@ -437,7 +440,8 @@ focused green: **6 passed**. Whole widget/composing screen: **668 passed**;
 fast guards: **120 passed**; doc pins: **12 passed**.
 `scripts/mutate.py`: **KILLED m1**, named red
 `test_failed_trend_series_is_yellow_and_empty_still_waits[volume_series-none]`;
-both rows' missing and non-list cases reddened. Owner-run Tier 1 review pending.
+both rows' missing and non-list cases reddened.
+Review (sonnet, Tier 1) 2026-10-05: Approved, 0C/0I; Minors filed as #101–#103.
 
 **Step 2: per dashboard, its own commit, in the order fwa, curator, surf.**
 - The widget's `None` or non-list paints yellow `unavailable`, reusing `panels.UNAVAILABLE` or
@@ -468,7 +472,7 @@ Whole three widget files plus default/pool4/pool4-market composing screens:
   `test_ratchet_failed_series_is_yellow_and_empty_has_no_spark[none]`.
 - **KILLED BURN failed flow as empty**:
   `test_burn_failed_series_is_yellow_and_empty_is_quiet[none]`.
-Owner-run Tier 1 review remains pending.
+Review (sonnet, Tier 1) 2026-10-05: Approved, 0C/0I; Minors filed as #104.
 
 ## 8. WP5 — the Tier 0 items (one commit each, any order)
 
@@ -601,8 +605,9 @@ Keyless live 200×48 preview shown before closure (`/tmp/followups-surf-s.svg`):
 normal footer `newest 12 · 7 blocked · 5 completed`; malformed input is covered
 by the composited regression.
 
-WP1–WP5 implementation is complete. The owner-run WP2 and WP4 Tier 1 reviews
-remain pending; the unrelated decisions in §9 remain outside this implementation.
+WP1–WP5 implementation is complete. The four WP2/WP4 Tier 1 reviews and the
+`df9272f` re-review are Approved, 0C/0I; Minors are filed above. The unrelated
+decisions in §9 remain outside this implementation.
 
 **Stop after WP5.** Report:
 - the branch head and the commit list;
