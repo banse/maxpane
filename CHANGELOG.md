@@ -207,3 +207,4 @@ that `git merge main` from upstream never conflicts here (spec §1 #7; `docs/dec
 - Clear fallback pending outcomes after a local attempt closes without submitting; retain owned node failures without inheriting another attempt's successful state.
 - Reconcile missed stored events using the measured API timestamp lead and a bounded clock window, preserving unique-attempt checks and rollback-compatible ledger storage.
 - Pair live local attempts before filtering stale standing rows, removing finished-attempt phantoms without stripping a newer attempt's node labels; retain ambiguous evidence.
+- Retry failed gate reads from the post-failure clock while preserving in-flight triggers, and refresh busy gate previews once at each API pause boundary without accelerating busy-broker or unavailable-plane reads.

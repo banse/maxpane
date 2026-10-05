@@ -1063,7 +1063,9 @@ class SeatManager:
         if now >= self._gate_due_at:
             # Consume before await: a phase/event arriving in flight keeps its newer deadline.
             self._gate_last_read_at = now
-            self._gate_due_at = now + self._gate_interval()
+            gate_interval = self._gate_interval()
+            gate_due_at = now + gate_interval
+            self._gate_due_at = gate_due_at
             reads.insert(1, ("gate", None, "gate"))
         for verb, args, key in reads:
             try:
@@ -1076,8 +1078,15 @@ class SeatManager:
                         raise ValueError("gate response unavailable")
                     data = {**data, "asOfUtc": sig.iso_z(float(self._clock())), "planeReason": "busy" if busy else None}
                     self._gate_last_good = data
+                    if busy:
+                        self._gate_due_at = min(self._gate_due_at, self._api.pause_until("seat"))
                 control[key] = data.get("lines") if key == "audit" and isinstance(data, Mapping) else data
             except Exception as exc:                 # noqa: BLE001
+                if key == "gate" and not (isinstance(exc, BrokerError) and exc.code == "busy"):
+                    retry_at = float(self._clock()) + min(5, gate_interval)
+                    # Replace only our consumed deadline; preserve any trigger arriving in flight.
+                    self._gate_due_at = (retry_at if self._gate_due_at == gate_due_at
+                                         else min(self._gate_due_at, retry_at))
                 problems.append(f"{verb}: {self._broker_reason(exc)}")
         self._land("broker", control, float(self._clock()))
         if problems:
