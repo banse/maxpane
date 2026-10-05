@@ -901,6 +901,7 @@ def test_suppression_5_no_500m_in_the_pool_claim():
     assert not hits, f"PRD §13: no 500M supply-placement literal: {hits}"
 
 
+@pytest.mark.mounts_app
 async def test_suppression_6_no_floor_dependent_figure_renders_without_coverage():
     """PRD §13 + §3: a floor-derived number always carries its coverage.
 
@@ -1287,6 +1288,7 @@ def test_no_wall_clock_dependence_in_the_analytics_or_test_layers():
     )
 
 
+@pytest.mark.mounts_app
 async def test_widget_renders_do_not_move_with_the_wall_clock(monkeypatch):
     """The same payload must render identically on either side of the stop.
 

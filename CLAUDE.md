@@ -139,19 +139,18 @@ packages both named `tests` raised `ImportPathMismatchError`.
   file per edit: `tests/screens/test_surf_screen.py` alone is ~8 min serial.
 - **Once, before the commit:** the touched test files and the composing screen/manager file whole,
   `HOME=$(mktemp -d) .venv/bin/python -m pytest -n 4 --dist worksteal <files>` (a file that goes
-  red only under worksteal: rerun it serially and file it), plus the fast guard list
-  `-m guard tests/analytics/test_range_filters.py tests/data/test_rpc_classify.py tests/data/test_rpc_shared.py
-  tests/test_address_rule.py tests/test_address_sweep_registry.py tests/test_fwa_guardrails.py
-  tests/widgets/test_bakery_widgets.py tests/widgets/test_filter_editor.py tests/widgets/test_panels.py`
-  (67 tests, ~6 s). Add `tests/test_surf_registration.py tests/test_curator_registration.py`
-  (~100 s, they mount the app) only when README, a SKILL.md, CLAUDE.md, `.claude/rules/`,
-  `BINDINGS`, a key or another registration surface changed. Not a bare `-m guard` over `tests/`:
-  it always pulls those two files in.
+  red only under worksteal: rerun it serially and file it), plus the fast guard set
+  `.venv/bin/python -m pytest -m "guard and not mounts_app" tests` (120 tests, ~15 s). Add
+  `-m mounts_app tests/test_surf_registration.py tests/test_curator_registration.py tests/test_fwa_guardrails.py`
+  (81 cases, ~80 s, each mounts the app) only when `BINDINGS`, a key or another registration
+  surface changed. Not a bare `-m guard`: it pulls those 81 in.
 
 The full suite runs only when the owner asks or right before a version tag, by the controller —
 never by an implementer or reviewer, never as a merge or push gate; cite the last green run.
-A docs-only edit still needs the tests that pin the doc (13 tests, ~15 s):
-`.venv/bin/python -m pytest tests/test_surf_registration.py tests/test_curator_registration.py -k "claude_md or readme or the_docs_ or documented or terminal_layout_skill or spec_docs"`.
+A docs-only edit still needs the tests that pin the doc (12 tests, ~15 s):
+`.venv/bin/python -m pytest -m docpin tests/test_surf_registration.py tests/test_curator_registration.py`.
+A new test that reads README, CLAUDE.md, a SKILL.md, `.claude/rules/` or `docs/` carries
+`@pytest.mark.docpin`; a guard test that mounts the app carries `@pytest.mark.mounts_app`.
 Use `.venv/bin/python -m pytest`: the system `python3` lacks the deps,
 and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports green.
 

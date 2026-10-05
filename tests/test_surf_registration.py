@@ -128,6 +128,7 @@ def test_surf_has_a_prefetch_manager() -> None:
     assert app._prefetch_manager("surf") is app._surf_manager
 
 
+@pytest.mark.mounts_app
 def test_quit_closes_the_surf_manager() -> None:
     """``q`` must await ``SurfManager.close()`` -- cache saved, client closed.
 
@@ -163,6 +164,7 @@ def test_quit_closes_the_surf_manager() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.mounts_app
 def test_launching_surf_installs_the_surf_screen() -> None:
     """``_launch_game('surf')`` must reach a SurfScreen, not the else-return.
 
@@ -189,6 +191,7 @@ def test_launching_surf_installs_the_surf_screen() -> None:
     asyncio.run(_run())
 
 
+@pytest.mark.mounts_app
 def test_launching_surf_twice_reuses_one_installed_screen() -> None:
     """The install is guarded, so ``m`` -> surf -> ``m`` -> surf leaks nothing."""
 
@@ -213,6 +216,7 @@ def test_surf_is_in_the_tab_cycle_exactly_once() -> None:
     assert MaxPaneApp._GAME_CYCLE.count("surf") == 1, MaxPaneApp._GAME_CYCLE
 
 
+@pytest.mark.mounts_app
 def test_tab_from_the_previous_game_reaches_surf() -> None:
     """The cycle is walked for real, not re-declared.
 
@@ -356,6 +360,7 @@ def test_the_cli_choices_are_exactly_the_menu(monkeypatch) -> None:
     assert seen["choices"] == [game_id for _key, game_id, *_ in GAMES]
 
 
+@pytest.mark.mounts_app
 def test_pressing_the_surf_key_opens_the_surf_dashboard() -> None:
     """The whole path: splash -> menu -> the key the row advertises.
 
@@ -385,6 +390,7 @@ def test_pressing_the_surf_key_opens_the_surf_dashboard() -> None:
     asyncio.run(_run())
 
 
+@pytest.mark.mounts_app
 def test_the_menu_lists_the_surf_row() -> None:
     """The row reaches the compositor -- not merely the GAMES list.
 
@@ -687,6 +693,7 @@ def test_the_middle_row_is_the_only_one_that_grows() -> None:
         assert rules["#bottom-row"]["height"] == "auto", name
 
 
+@pytest.mark.mounts_app
 def test_all_six_detectors_survive_the_real_stylesheet() -> None:
     """Composited proof, under ``minimal.tcss``, at the pinned width.
 
@@ -743,6 +750,7 @@ def test_all_six_detectors_survive_the_real_stylesheet() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.mounts_app
 def test_all_four_pool4_panels_survive_the_real_stylesheet() -> None:
     """Every ``p`` panel reaches the compositor through the REAL app.
 
@@ -838,6 +846,7 @@ def test_the_documented_width_covers_surf() -> None:
     )
 
 
+@pytest.mark.docpin
 def test_the_readme_quotes_the_documented_width() -> None:
     """The README's width table is prose around one number; pin them together."""
     from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
@@ -848,6 +857,7 @@ def test_the_readme_quotes_the_documented_width() -> None:
     )
 
 
+@pytest.mark.docpin
 def test_terminal_layout_skill_quotes_agent_dimensions_and_record_clearance() -> None:
     from maxpane_dashboard.screens.surf import (
         RECORD_NEVER_CLEARS_BELOW,
@@ -891,6 +901,8 @@ _DOCS_THAT_DOCUMENT_THE_WIDTH = (
 )
 
 
+@pytest.mark.docpin
+@pytest.mark.mounts_app
 def test_the_documented_width_is_not_promised_to_clear_every_post() -> None:
     """The width table says "nothing" of the *layout*, and must not overpromise.
 
@@ -962,6 +974,8 @@ def _readme_width_bands() -> list[tuple[tuple[int, ...], frozenset[str]]]:
     return bands
 
 
+@pytest.mark.docpin
+@pytest.mark.mounts_app
 def test_the_readme_width_table_names_the_panels_that_are_really_lit() -> None:
     """Every row of the table, rendered.  Nothing pinned the *contents* before.
 
@@ -1017,6 +1031,8 @@ _UNQUALIFIED_FREE_CLAIMS = (
 )
 
 
+@pytest.mark.docpin
+@pytest.mark.mounts_app
 def test_the_docs_describe_the_feed_regression_as_closed() -> None:
     """The 7:6 seam cost the feed a tier; lowering its own threshold fixed it.
 
@@ -1076,6 +1092,7 @@ def test_the_docs_describe_the_feed_regression_as_closed() -> None:
         )
 
 
+@pytest.mark.docpin
 def test_the_readme_does_not_send_a_laptop_after_a_smaller_font() -> None:
     """The forced font already clears the full layout; the README said it did not.
 
@@ -1126,6 +1143,7 @@ def test_the_readme_does_not_send_a_laptop_after_a_smaller_font() -> None:
 _LIVE_SPEC_DOCS = ("surf_PRD.md", "surf_implementation_plan.md")
 
 
+@pytest.mark.docpin
 def test_the_live_spec_docs_describe_no_key_the_screen_does_not_bind() -> None:
     """The PRD and the plan are read as current, so they must stay current.
 
@@ -1216,6 +1234,7 @@ def _offline_app(manager) -> MaxPaneApp:
     return app
 
 
+@pytest.mark.mounts_app
 @pytest.mark.parametrize("factory", [BoomManager, DeadSourcesManager])
 def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
     """Splash -> menu -> surf's key with its manager down: degraded, not dead."""
@@ -2281,6 +2300,7 @@ def test_no_surf_key_is_still_waiting_for_a_consumer():
     assert not set(_KEYS_PENDING_CONSUMERS) - waiting
 
 
+@pytest.mark.mounts_app
 def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
     """Every detector is on screen, none of them reads as a live number.
 
@@ -2585,6 +2605,7 @@ _POOL4_INTEGER_KEYS = frozenset({
 })
 
 
+@pytest.mark.mounts_app
 @pytest.mark.parametrize(
     "key,needle",
     sorted(_POOL4_ZERO_PROBES.items()),
@@ -2654,6 +2675,7 @@ def test_every_pool4_zero_needle_really_renders_when_its_key_is_zero(
     )
 
 
+@pytest.mark.mounts_app
 @pytest.mark.parametrize(
     "key",
     sorted(_POOL4_USER_ZERO_PROBES),
@@ -2739,6 +2761,7 @@ _NUMBER_WORDS = {
 }
 
 
+@pytest.mark.docpin
 def test_every_visible_dashboard_is_documented() -> None:
     """A dashboard nobody documented is a dashboard nobody finds.
 
@@ -2759,6 +2782,7 @@ def test_every_visible_dashboard_is_documented() -> None:
         )
 
 
+@pytest.mark.docpin
 def test_claude_md_counts_the_visible_dashboards() -> None:
     """The heading states a number; ``GAMES`` is that number.
 

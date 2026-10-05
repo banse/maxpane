@@ -56,4 +56,6 @@ markers = [
     "screen: composites a whole dashboard (everything under tests/screens)",
     "sweep: integer size sweep certifying a layout pin (a boundary set since 2026-09-19)",
     "guard: reads repo source or docs rather than exercising code",
+    "docpin: reads README, CLAUDE.md, a SKILL.md, .claude/rules/ or docs/ -- run after a docs edit",
+    "mounts_app: a guard test that mounts the Textual app (seconds, not milliseconds)",
 ]

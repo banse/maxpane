@@ -472,6 +472,7 @@ def test_the_prefetch_map_points_at_the_curator_manager() -> None:
     assert app._prefetch_manager(GAME_ID) is app._curator_manager
 
 
+@pytest.mark.mounts_app
 def test_quit_closes_the_curator_manager_exactly_once() -> None:
     """``q`` must await ``CuratorManager.close()`` -- client closed, cache saved.
 
@@ -507,6 +508,7 @@ def test_quit_closes_the_curator_manager_exactly_once() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.mounts_app
 def test_launching_curator_reaches_a_curator_screen() -> None:
     """Not the ``else: return`` at the bottom of ``_launch_game``.
 
@@ -526,6 +528,7 @@ def test_launching_curator_reaches_a_curator_screen() -> None:
     asyncio.run(_run())
 
 
+@pytest.mark.mounts_app
 def test_launching_curator_twice_reuses_one_installed_screen() -> None:
     """``is_screen_installed`` guards the install, so ``tab`` back and forth
     does not stack a second screen (and a second refresh timer) on every lap."""
@@ -544,6 +547,7 @@ def test_launching_curator_twice_reuses_one_installed_screen() -> None:
     asyncio.run(_run())
 
 
+@pytest.mark.mounts_app
 def test_the_installed_screen_is_told_which_wallet_to_watch() -> None:
     """The address reaches the screen, and by the route the wiring documents.
 
@@ -579,6 +583,7 @@ def test_curator_appears_in_the_tab_cycle_exactly_once() -> None:
     assert MaxPaneApp._GAME_CYCLE.count(GAME_ID) == 1
 
 
+@pytest.mark.mounts_app
 def test_tab_from_the_previous_cycle_entry_reaches_curator() -> None:
     """The previous entry is *read from the cycle*, never named.
 
@@ -638,6 +643,7 @@ def test_the_curator_row_is_not_wildly_wider_than_its_neighbours() -> None:
     )
 
 
+@pytest.mark.mounts_app
 def test_pressing_the_menu_key_opens_the_curator_screen() -> None:
     """The key is read out of ``GAMES``, so a renumber moves this test."""
     key, game_id, _name, _desc = _menu_row(GAME_ID)
@@ -660,6 +666,7 @@ def test_pressing_the_menu_key_opens_the_curator_screen() -> None:
     asyncio.run(_run())
 
 
+@pytest.mark.mounts_app
 def test_the_curator_row_reaches_the_compositor_on_one_line() -> None:
     """Key and name on the **same composited line**.
 
@@ -1032,6 +1039,7 @@ class _ThemedHarness(App):
         self.push_screen(self._curator_screen)
 
 
+@pytest.mark.mounts_app
 @pytest.mark.parametrize("theme_name", THEME_NAMES)
 def test_the_curator_screen_renders_under_every_registered_theme(theme_name: str) -> None:
     """PRD §10: no theme of its own in v1, so it has to work in all ten.
@@ -1103,6 +1111,7 @@ def test_the_app_wide_width_covers_the_curator_layout() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.docpin
 def test_claude_md_documents_the_curator_dashboard() -> None:
     """The table row, at the position ``GAMES`` gives it.
 
@@ -1121,6 +1130,7 @@ def test_claude_md_documents_the_curator_dashboard() -> None:
     assert "Ethereum" in row.group(1), "the curator row does not name its chain"
 
 
+@pytest.mark.docpin
 def test_the_readme_documents_the_curator_dashboard() -> None:
     """Both halves: the table names it, the usage block shows the flag."""
     _key, game_id, name, _desc = _menu_row(GAME_ID)
@@ -1134,6 +1144,7 @@ def test_the_readme_documents_the_curator_dashboard() -> None:
     )
 
 
+@pytest.mark.docpin
 def test_the_docs_record_the_measured_curator_width() -> None:
     """The terminal-layout skill's pin table states curator's own number.
 
