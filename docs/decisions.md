@@ -1501,3 +1501,9 @@ The controller ran the required final suites once on `16b936d`, using isolated H
 | `.venv-pepepane/bin/python -m compileall -q imd_dashd` | Exit zero; broker sources unchanged |
 
 The seat and MaxPane runs each report the existing pytest-asyncio fixture-loop-scope deprecation warning. No behavior or assertion was changed to suppress it. The original protected-path diff remains empty, and the root broker retains its exact bytes and identity 0.1.5. The screen remains 131 columns by 40 rows, with no pin or wider-tier exception change. The approved finishing choice keeps pepepane in this checkout; no push, merge, tag or deployment is performed. Packaging uses the committed dependency seed and both supported interpreter ABIs; only the generated lock and manifest may change after this record.
+
+### 2026-10-05 — PEPEPANE round 9 second fix: approved brief and evidence correction
+
+The owner's `2026-10-05-pepepane-round-9-fix-2-brief.md` is the sole plan for this Tier 2 correction of `3b8936c`. The design remains approved; no replacement spec or plan is written. Work stays on pepepane and finishing keeps the branch as-is. Root-broker and deployment implementation files remain byte-identical, with only the final generated lock and manifest refreshed.
+
+Independent verification corrected two limits of the previous report. Passing under the sandbox's network restriction did not prove that tests attempted no network access: the Mac first-signal refusal test reached the real standing fetch through its control harness. Also, `test_unknown_job_requires_usable_start_evidence_even_for_singleton` passes all 24 cases on `4ad6947`; it detects an intermediate implementation regression, not the original fix-3 defect. The main realistic two-attempt regression still provides fix 3's failing-before proof. This round measures refused in-process connection and resolution attempts explicitly before enforcing an empty record.
