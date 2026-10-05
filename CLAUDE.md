@@ -42,15 +42,18 @@ rule overrides its "take the heavier path" and its Bounded path maps to Tier 1.)
   contract key added. Design in chat, owner says yes. One implementer (or the
   session), TDD + mutation proof on the changed behaviour; tests as in Tests (+ layout test if a
   pin moved, + address sweep if an address cell changed). ONE reviewer pass (`sonnet`, which the
-  user settings run at effort `high`; reviewer contract below), at most ONE fix round + scoped
-  re-review; residuals go to the followups doc. No ledger or report files — the commit message is
+  user settings run at effort `high`; reviewer contract below), at most ONE fix round; a scoped
+  re-review only when the fix touched production code; a verdict with only Minor findings is filed,
+  not fixed. Residuals go to the followups doc. No ledger or report files — the commit message is
   the evidence. No suite.
 - **Tier 2 — architectural.** New dashboard, body, widget or contract key; any change to a shared
   `widgets/*.py`, `data/*_models.py`, an endpoint pool, or > 6 files / > 1
-  dashboard. Spec + plan in `docs/`; one implementer per work package; one task review per diff;
-  fix rounds capped at 2; final whole-branch review on the most capable model; ONE fix wave; ONE
-  scoped re-review; no full suite unless the owner asks or a version is tagged (Tests); followups
-  doc updated; no plan workspace left behind.
+  dashboard. Spec + plan in `docs/`; one implementer per work package; one task review per diff —
+  except when the plan sizes the whole change under ~1,000 production lines: then the packages get
+  no task review and the final review is the only one; fix rounds capped at 2; final whole-branch
+  review on the most capable model; ONE fix wave; ONE scoped re-review, only when the fix wave
+  touched production code; Minor-only findings are filed, not fixed; no full suite unless the
+  owner asks or a version is tagged (Tests); followups doc updated; no plan workspace left behind.
 - **Follow-ups.** A test-quality refinement ("coverage could be broader", derived threshold,
   single payload) is Minor: file it, do it as Tier 0 when its file is next touched, never its own
   branch or dispatch. A follow-ups branch is Tier 0 per item unless the item names a pin, a
