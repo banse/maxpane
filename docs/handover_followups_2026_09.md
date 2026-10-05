@@ -955,6 +955,10 @@ isolated three causes:
     owner's dev venv. Fix (Tier 0, test-only): assert the copy equals what the screen reports
     selected after the drag and is the dragged prefix, so it holds on both; then drop the CI pin, or
     move the dev venv to 8.2.8. **Minor** (was filed Important before the diagnosis).
+    **Done 2026-10-05:** both tests assert the copy is exactly `screen.get_selected_text()` and the
+    dragged span under either rule (`_dragged`); green on 8.1.1 and 8.2.8, and on both a handler
+    that never copies or copies one cell short is KILLED (`scripts/mutate.py`). CI's Textual pin is
+    dropped.
 
 90. **Three tests assume a non-root user.** `tests/data/test_series_cache.py::test_a_read_only_directory_is_not_fatal`
     and `tests/screens/test_curator_screen.py::test_a_failed_export_never_leaves_a_stale_receipt` /

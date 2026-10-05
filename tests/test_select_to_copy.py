@@ -50,6 +50,17 @@ def _recorder(monkeypatch, outcome: str = C.COPIED) -> list[str]:
     return recorded
 
 
+def _dragged(start: int, end: int) -> set[str]:
+    """What a drag from cell *start* to cell *end* selects in ``LINE``.
+
+    Textual 8.1 ended the selection before the cell under the pointer;
+    8.2 ends it on that cell (``end_offset + (1, 0)`` in
+    ``Screen._watch__select_state``) -- follow-up #89. The copy must be the
+    dragged span either way, and exactly what the screen says it selected.
+    """
+    return {LINE[start:end], LINE[start:end + 1]}
+
+
 async def _drag(pilot, start: int, end: int) -> None:
     await pilot.mouse_down("#s", offset=(start, 0))
     await pilot.hover("#s", offset=(end, 0))
@@ -63,7 +74,8 @@ async def test_releasing_a_drag_copies_the_selection(monkeypatch):
     app = _App()
     async with app.run_test(size=(60, 10)) as pilot:
         await _drag(pilot, 0, 10)
-        assert recorded == [LINE[:10]]
+        assert recorded == [app.screen.get_selected_text()], recorded
+        assert recorded[0] in _dragged(0, 10), recorded
         assert app.screen.query_one(StatusBar).message == "copied selection"
 
 
@@ -72,11 +84,13 @@ async def test_ctrl_c_after_a_drag_copies_the_same_way(monkeypatch):
     app = _App()
     async with app.run_test(size=(60, 10)) as pilot:
         await _drag(pilot, 6, 11)
+        selected = app.screen.get_selected_text()
+        assert selected in _dragged(6, 11), selected
         recorded.clear()
         await pilot.press("ctrl+c")
         await app.workers.wait_for_complete()
         await pilot.pause()
-        assert recorded == [LINE[6:11]]
+        assert recorded == [selected]
 
 
 async def test_a_click_without_a_drag_copies_nothing(monkeypatch):
