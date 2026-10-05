@@ -1112,6 +1112,9 @@ next touched, never as its own branch, except where an item is an owner decision
   M1). Mutant G (`repo_cols = _REPO_COLS` at every tier) painted `Identity-md/launch-58-buil` at
   138×35, cut with no `…`, and every selected test stayed green. Add one widget test: at the `tight`
   tier the composited repo cell ends in `…` and is at most `_TIGHT_REPO_COLS` wide.
+  **CLOSED 2026-10-05** (commit: `test(surf): cover the tight launch repository cell`).
+  The composited tight-tier repo ends in an ellipsis within its 26-cell budget;
+  forcing the full-tier formatter is KILLED.
 - **F82 — SWARM's column sweep moved to 35 rows instead of adding 35** (re-review M2).
   `_S_COLUMN_SWEEP_HEIGHT` (35) replaced 80 for SWARM's column checks, so no test asserts the whole
   body at (138, 80) on every payload. The expanded half of the 35-row sweep never composites

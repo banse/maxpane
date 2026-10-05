@@ -359,3 +359,19 @@ async def test_launch_numbers_are_plain_identifiers_and_overflow_is_marked():
         text = await _launches(swarm_launch_rows=[_launch(launch_number=number)])
         assert _data_lines(text)[0].split()[0] == shown, text
         assert ("‹" in text.splitlines()[0]) == (number == 12345), text
+
+
+async def test_tight_repo_cell_fits_its_column_with_a_visible_ellipsis():
+    from rich.cells import cell_len
+    from maxpane_dashboard.widgets.surf.swarm_launches import _TIGHT_REPO_COLS
+
+    async with _Probe().run_test(size=(_TIGHT, 20)) as pilot:
+        widget = pilot.app.query_one(SurfSwarmLaunches)
+        widget.update_data(swarm_launch_rows=[_launch()])
+        await pilot.pause()
+        assert widget._tier == "tight"
+        text = "\n".join("".join(seg.text for seg in strip)
+                         for strip in pilot.app.screen._compositor.render_strips())
+        repo = next(word for word in _data_lines(text)[0].split() if word.startswith("Identity-md/"))
+        assert repo.endswith("…"), repo
+        assert cell_len(repo) <= _TIGHT_REPO_COLS, repo

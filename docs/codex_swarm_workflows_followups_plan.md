@@ -553,6 +553,13 @@ fast guards: **120 passed**; doc pins: **12 passed**.
 `scripts/mutate.py`: **KILLED m1** (`max(TEXT_MIN_COLS, spare)` → `spare`);
 named red `test_text_floor_clips_below_the_tight_budget`.
 
+**Landed — F81 (Tier 0, test only), 2026-10-05.**
+Commit: `test(surf): cover the tight launch repository cell`.
+Focused: **1 passed**; whole widget/composing screen: **131 passed**;
+fast guards: **120 passed**; doc pins: **12 passed**.
+`scripts/mutate.py`: **KILLED m1** (always use `_REPO_COLS`);
+named red `test_tight_repo_cell_fits_its_column_with_a_visible_ellipsis`.
+
 **Stop after WP5.** Report:
 - the branch head and the commit list;
 - per item: its tier, the tests run with their counts, and the mutants with which test
