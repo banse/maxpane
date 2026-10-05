@@ -974,3 +974,32 @@ isolated three causes:
     `actions/setup-python@v5`, in `tests.yml` as in `publish.yml`). Small exposure in `tests.yml`
     (read-only token, no secrets); `publish.yml` holds the PyPI `id-token: write`, so pin that one
     first. **Minor, Tier 0** (step-6 review, 2026-10-05).
+
+## WP1 final review — control-character boundary (2026-10-05)
+
+WP1 (`1f26029`) was **Approved: 0 Critical, 0 Important, 5 Minor**. The supplied
+findings are grouped into #92–#95 below; Minor-only findings are filed, not fixed.
+
+92. **Reachable literal-text sinks lack a regression case.** Bakery
+    `widgets/activity_feed.py:96` (`description`) and `:108` (`linked_bakery_name`), and
+    curator `widgets/curator/list_hero.py:148` (filter clause, `"NFT " + collection.label`),
+    still pass every test when their control stripping is removed (reviewer,
+    `scripts/mutate.py`: **SURVIVED**). Fix: one render case for each reachable sink.
+    OCM `token_id`/`count`, the `fwa_signals` indicator and the AGENT "latest" tooltip
+    also survive, but cannot carry a control; no test is needed for those. **Minor, Tier 0.**
+
+93. **SURF feed sanitizes controls after address marking and fitting.**
+    `widgets/surf/feed.py:320,323`, `_message_of`, joins with `split()` instead of
+    `flatten`, so controls reach `mark_addresses` / `_cell_fit`: `"pay 0x\x00"` plus
+    40 hex characters displays the address without `⧉`. This is not a regression
+    (a ZWSP does the same). Fix: use `flatten` in `_message_of`. **Minor, Tier 0.**
+
+94. **`flatten` glues words separated by control whitespace.** Stripping controls
+    before splitting turns `"line one\rline two"` into `"line oneline two"`; CR, VT,
+    FF, NEL and `\x1c`–`\x1f` are affected. The brief prescribed this order, so this
+    is a brief defect requiring an owner decision. **Minor, Tier 0.**
+
+95. **Per-character Unicode category lookup slows control stripping.** Review
+    measurement for `flatten` on 6 KB: **444 µs**, versus **17.5 µs** before WP1.
+    The regex `[\x00-\x08\x0b-\x1f\x7f-\x9f]` matches exactly the controls to remove
+    (Cc except newline/tab) and measured **16.3 µs**. **Minor, Tier 0.**
