@@ -2124,3 +2124,31 @@ async def test_the_upgrade_sweep_does_not_defeat_the_failure_backoff(tmp_path):
         assert "workflows" not in manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
     finally:
         await manager.close()
+
+
+@pytest.mark.parametrize("route,key", [
+    pytest.param("skills", "swarm_skill_rows", id="skills"),
+    pytest.param("launches", "swarm_launch_rows", id="launches"),
+    pytest.param("sites", "swarm_site_rows", id="sites"),
+])
+async def test_persisted_non_list_routes_publish_none_but_empty_lists_survive(tmp_path, route, key):
+    from maxpane_dashboard.data.surf_cache import SurfCache
+
+    clock = FakeClock(NOW)
+    for stored in ({}, []):
+        path = str(tmp_path / f"{route}-{isinstance(stored, list)}.json")
+        writer = SurfCache(path=path, clock=clock)
+        slot = {"skills": [], "launches": [], "sites": [], "workflows": []}
+        slot[route] = stored
+        writer.store_last_good(SLOT_SWARM_SCORES, slot, ts=clock())
+        writer.save()
+        manager = _manager(tmp_path, _FakeSwarm(), cache=SurfCache(path=path, clock=clock), clock=clock)
+        try:
+            entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+            assert entry.payload[route] == stored
+            keys = manager._swarm_scores_keys(entry.payload, entry, None, clock())
+            assert keys[key] == ([] if isinstance(stored, list) else None)
+            if route in ("skills", "launches") and not isinstance(stored, list):
+                assert keys[key.replace("_rows", "_summary")] is None
+        finally:
+            await manager.close()

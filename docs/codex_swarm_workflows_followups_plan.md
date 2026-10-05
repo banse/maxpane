@@ -528,6 +528,15 @@ Kept deliberately; only the method docstring changed. Whole manager test file:
 **131 passed**; fast guards: **120 passed**; doc pins: **12 passed**.
 No mutation required for a comment-only change.
 
+**Landed — F75 (Tier 0), 2026-10-05.**
+Commit: `fix(surf): reject non-list persisted score routes`.
+Three list gates now match workflows. Tests write and reload real cache files
+for each route's dictionary and empty list, including failed summary suppression.
+Red first: **3 failed**; focused green: **3 passed**; whole manager file:
+**134 passed**; fast guards: **120 passed**; doc pins: **12 passed**.
+`scripts/mutate.py`: **KILLED m1**, named red
+`test_persisted_non_list_routes_publish_none_but_empty_lists_survive[skills]`.
+
 **Stop after WP5.** Report:
 - the branch head and the commit list;
 - per item: its tier, the tests run with their counts, and the mutants with which test

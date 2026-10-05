@@ -1074,6 +1074,9 @@ next touched, never as its own branch, except where an item is an owner decision
 - **F75 — `_swarm_scores_keys` gates skills, launches and sites on `is not None`.** A hand-edited
   non-list for any of them publishes `[]`, a real negative, instead of `None` (pre-existing; WP2
   review). Workflows gate on `isinstance(…, list)`; do the same for the other three.
+  **CLOSED 2026-10-05** (commit: `fix(surf): reject non-list persisted score routes`).
+  Skills, launches and sites now require lists; persisted dictionaries publish None,
+  while empty lists survive. The reverted skills gate is KILLED.
 - **F76 — IN FLIGHT's prose cells give an embedded 0x address no copy icon. IMPORTANT.** This breaks
   CLAUDE.md's address convention (pre-existing; WP4 review). The E2/E7 sweep misses it only because
   no seeded IN FLIGHT objective or note carries an address. Fix: route the cells through

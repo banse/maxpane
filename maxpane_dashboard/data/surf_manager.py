@@ -6417,8 +6417,8 @@ class SurfManager:
         # that route's own read failed (stored ``None`` by ``_pool_swarm_scores``,
         # or absent from a slot persisted before WP4) and lists otherwise --
         # the summaries fold the rows, never the raw payload.
-        skill_rows = sw.skill_rows(skills) if skills is not None else None
-        launch_rows = sw.launch_rows(launches) if launches is not None else None
+        skill_rows = sw.skill_rows(skills) if isinstance(skills, list) else None
+        launch_rows = sw.launch_rows(launches) if isinstance(launches, list) else None
 
         return {
             "swarm_scores_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
@@ -6429,7 +6429,7 @@ class SurfManager:
             "swarm_launch_summary": (
                 launch_summary(launch_rows) if launch_rows is not None else None
             ),
-            "swarm_site_rows": sw.site_rows(sites) if sites is not None else None,
+            "swarm_site_rows": sw.site_rows(sites) if isinstance(sites, list) else None,
             # GET /workflows (spec §2): None when that read failed, when the slot
             # predates it (no key: the upgrade rule makes the sweep due) or when a
             # persisted value is no list -- a hand-edited cache file is third-party
