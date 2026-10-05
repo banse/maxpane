@@ -165,7 +165,7 @@ all whole. Then the fast guard set, and the docpin command (step 4 edits a rules
 
 **Stop after WP1.** Commit, write the Landed block, and wait for the final review.
 
-**Landed — 2026-10-05 (WP1 only, Tier 2; final owner review pending).**
+**Landed — 2026-10-05 (WP1 only, Tier 2; owner review Approved: 0 Critical, 0 Important, 5 Minor).**
 
 Commit: `fix(widgets): strip terminal controls at widget boundaries`. This block belongs to
 that same commit; resolve its hash with
@@ -270,7 +270,24 @@ strip controls. The second replaced WORKFLOWS' existing failure `flatten` call w
 byte-for-byte. The inventory corrects the brief's assumption that WORKFLOWS, IN FLIGHT and the
 SURF feed bypass all three helpers: they already used them.
 
-WP2–WP5 and the owner decisions remain untouched. Stop here for the owner's final review.
+**Owner follow-up — 2026-10-05.** Review findings filed as #92–#95 in
+`ab4ccc2`; #92/#93 remain open. The owner approved continuing WP2–WP5 and explicitly
+superseded WP1 step 2: collapse whitespace before stripping remaining controls.
+This preserves word boundaries for CR/VT/FF/NEL and U+001C–U+001F; the earlier
+DataTable mutation-order expectation above is historical.
+
+**Landed — #94/#95 correction (Tier 2, shared widget).**
+Commit: `fix(widgets): preserve control whitespace and speed up stripping`.
+`strip_controls` uses the equivalent C0/DEL/C1 regex, preserving newline/tab and Cf.
+Local 6 KB flatten benchmark: 485.8 → 46.0 µs (best of five × 1,000 calls).
+Red first: 27 failed / 308 passed. Focused green: 335 passed.
+Whole touched/composing files: **581 passed**; fast guards: **120 passed**;
+doc pins: **12 passed**. No full suite.
+
+`scripts/mutate.py`: **KILLED whitespace order**; named red tests:
+`test_flatten_collapses_whitespace_before_stripping_controls`,
+`test_flatten_static_drops_controls`, and `test_repo_cell_drops_controls_before_fitting`.
+The mutant restored byte-for-byte. No layout pin changed.
 
 ## 5. WP2 — F76: IN FLIGHT's prose addresses get the copy icon (Tier 1, surf only)
 

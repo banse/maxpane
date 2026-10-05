@@ -350,4 +350,4 @@ async def test_repo_cell_drops_controls_before_fitting():
 
     output = await _launches(swarm_launch_rows=[_launch(repo_url=CONTROL_PAYLOAD + "A\x85B")])
     assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
-    assert CONTROL_REMAINDER + "AB" in output
+    assert CONTROL_REMAINDER + "A B" in output

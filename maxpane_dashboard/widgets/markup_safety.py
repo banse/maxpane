@@ -33,7 +33,6 @@ its own docstring for why the order does not commute.
 from __future__ import annotations
 
 import re
-import unicodedata
 
 from rich.markup import escape
 
@@ -84,9 +83,13 @@ def visible_len(markup: str | None) -> int:
     return len(_MARKUP_TAG.sub("", markup or ""))
 
 
+#: Unicode Cc is C0 + DEL + C1; newline and tab deliberately survive.
+_CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
 def strip_controls(text: str) -> str:
     """Drop C0/DEL/C1 controls except newline and tab; preserve Unicode formatters."""
-    return "".join(ch for ch in text if ch in "\n\t" or unicodedata.category(ch) != "Cc")
+    return _CONTROLS.sub("", text)
 
 
 def safe_markup(value: object) -> str:
@@ -102,7 +105,7 @@ def safe_markup(value: object) -> str:
 
 
 def flatten(value: object) -> str:
-    """Drop controls, then collapse remaining whitespace to single spaces.
+    """Collapse whitespace to single spaces, then drop remaining controls.
 
     On-chain strings can contain raw newlines the same way an announce-
     channel post can, and this has to run before both :func:`strip_tags` and
@@ -116,10 +119,10 @@ def flatten(value: object) -> str:
     if value is None:
         return ""
     try:
-        text = strip_controls(str(value))
+        text = str(value)
     except Exception:
         return ""
-    return " ".join(text.split())
+    return strip_controls(" ".join(text.split()))
 
 
 def strip_tags(value: object) -> str:
@@ -143,7 +146,7 @@ def sanitize_cell(value: object, width: int) -> str:
 
     The order matters and does not commute:
 
-    1. :func:`flatten` drops controls before collapsing whitespace, then
+    1. :func:`flatten` collapses whitespace before dropping controls, then
        :func:`strip_tags` removes hostile bracket-shaped noise;
     2. :func:`~maxpane_dashboard.widgets.rowfit.clip` truncates the
        *already-stripped, still-unescaped* text to ``width`` **terminal

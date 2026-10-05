@@ -998,8 +998,15 @@ findings are grouped into #92–#95 below; Minor-only findings are filed, not fi
     before splitting turns `"line one\rline two"` into `"line oneline two"`; CR, VT,
     FF, NEL and `\x1c`–`\x1f` are affected. The brief prescribed this order, so this
     is a brief defect requiring an owner decision. **Minor, Tier 0.**
+    **CLOSED 2026-10-05** (commit: `fix(widgets): preserve control whitespace and speed up stripping`).
+    Owner chose whitespace collapse before stripping; unit, Static and LAUNCHES render cases
+    pin the order, and reverting it is **KILLED** by all three via `scripts/mutate.py`.
 
 95. **Per-character Unicode category lookup slows control stripping.** Review
     measurement for `flatten` on 6 KB: **444 µs**, versus **17.5 µs** before WP1.
     The regex `[\x00-\x08\x0b-\x1f\x7f-\x9f]` matches exactly the controls to remove
     (Cc except newline/tab) and measured **16.3 µs**. **Minor, Tier 0.**
+
+    **#95 CLOSED 2026-10-05** (same commit as #94). Replaced category lookup with the
+    equivalent regex. Local 6 KB benchmark: 485.8 → 46.0 µs per flatten call
+    (best of five repeats, 1,000 calls each); 581 scoped tests and 120 guards pass.

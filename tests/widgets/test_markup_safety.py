@@ -566,7 +566,7 @@ def test_visible_len_is_unchanged_by_the_tag_pattern_alias(markup, expected):
     assert visible_len(markup) == expected
 
 
-# WP1: controls are removed before whitespace folding, fitting or Rich parsing.
+# Controls are removed before fitting/Rich parsing; flatten preserves word boundaries.
 CONTROL_PAYLOAD = "ok\x1b]0;PWNED\x07\x1b[31mred\x00\x9b"
 CONTROL_REMAINDER = "ok]0;PWNED[31mred"
 
@@ -579,7 +579,9 @@ def test_helpers_drop_controls(helper, control):
     fn = getattr(markup_safety, helper)
     value = "a" + control + "b"
     result = fn(value, 100) if helper == "sanitize_cell" else fn(value)
-    assert result == "ab"
+    whitespace = control in "\r\v\f\x85\x1c\x1d\x1e\x1f"
+    expected = "a b" if whitespace and helper in ("flatten", "strip_tags", "sanitize_cell") else "ab"
+    assert result == expected
 
 
 def test_strip_controls_keeps_newlines_tabs_and_format_characters():
@@ -601,7 +603,7 @@ async def test_flatten_static_drops_controls():
         await pilot.pause()
         output = "\n".join(strip.text for strip in pilot.app.screen._compositor.render_strips())
         assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
-        assert CONTROL_REMAINDER + "AB [/x]" in output
+        assert CONTROL_REMAINDER + "A B [/x]" in output
 
 
 @pytest.mark.parametrize("sink", ["address-label", "address-prose", "hash-fallback", "surf-counterparty", "bakery", "cattown", "ocm", "ttt-burn", "fwa-token", "fwa-signal", "curator-title"])
@@ -691,3 +693,9 @@ async def test_fwa_crown_rank_drops_controls():
         crown_history=[{"rank": "1\x1b\x00\x9b", "holder": "0x" + "12" * 20}], settle_available=True))
     assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
     assert "1. " in output
+
+
+def test_flatten_collapses_whitespace_before_stripping_controls():
+    assert flatten("line one\rline two\vline three\fline four\x85line five\x1cline six\x1dline seven\x1eline eight\x1fline nine\x00!") == (
+        "line one line two line three line four line five line six line seven line eight line nine!"
+    )
