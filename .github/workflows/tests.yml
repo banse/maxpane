@@ -5,11 +5,13 @@ name: Tests
 # needs a secret -- the suite never touches the network (CLAUDE.md hard
 # constraint 3), and the job's token is read-only.
 
+# By hand (Actions tab, or `gh workflow run tests.yml`) and on a version tag --
+# the two moments CLAUDE.md "Tests" names for a full run. A `v*` tag also
+# starts publish.yml, which does not wait for this job.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
+  push:
+    tags: ["v*"]
 
 permissions:
   contents: read
