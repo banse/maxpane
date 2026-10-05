@@ -1434,6 +1434,7 @@ _NON_NUMERIC_KEYS = frozenset(
         # `pool4_stakers_as_of_hhmm`: `swarm_scores_as_of_hhmm` is the
         # scores sweep's own, slower clock, not `swarm_as_of_hhmm`.
         "swarm_network", "swarm_as_of_hhmm", "swarm_scores_as_of_hhmm",
+        "swarm_workflows_as_of_hhmm",  # last successful workflows read, independent of the sweep
         # A tri-state bool, the same family as `pool4_backstop_centred` /
         # `pool4_can_drip`: the two markers drifting is a real fact with a
         # representable `False`, and `None` means the comparison has never

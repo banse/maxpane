@@ -8,7 +8,7 @@ branch's working notes (`task-*-review.md`, `task-*-re-review*.md` under
 `.superpowers/sdd/2026-09-16-surf-swarm-body/`) live in a git-ignored workspace that is deleted
 when this plan finishes, so this file is the only place these survive.
 
-## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme; F16 (SWARM half), F23, F47, F51 and F54 resolved and F73–F85 filed 2026-10-04 by `feature/surf-swarm-workflows`; F86–F87 filed 2026-10-05 by the WP2 review; layout v3 closes F55/F60/F73, resolves F84 except SKILLS, and parks IN FLIGHT 2026-10-05
+## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme; F16 (SWARM half), F23, F47, F51 and F54 resolved and F73–F85 filed 2026-10-04 by `feature/surf-swarm-workflows`; F86–F87 filed 2026-10-05 by the WP2 review; layout v3 closes F55/F60/F73, resolves F84 except SKILLS, and parks IN FLIGHT 2026-10-05; F88–F97 filed 2026-10-06 by the layout v3 final review (F97 corrected with I1)
 
 Swarm v2 (WP7, `docs/surf_swarm_v2_implementation_plan.md`) deleted `swarm_queue.py` and retired
 `swarm_queue_depths` with the other seven v1 keys, so F13 (the `depths or None` conflation behind
@@ -1171,3 +1171,47 @@ next touched, never as its own branch, except where an item is an owner decision
   Both give the same result; `fit_prose` could return its cut flag. **Minor, Tier 0.**
 
   **IN FLIGHT parked 2026-10-05; applies when it returns.**
+
+## F88 — F97 — SWARM layout v3 final review Minors (2026-10-06)
+
+Final review of `feature/swarm-layout-v3` at `9c821fd`: **Needs fixes, 0 Critical / 1 Important**.
+The one fix wave addresses I1 (WORKFLOWS' last-successful-read timestamp) and the explicitly
+requested failure-path history cap from review Minor 4. The findings below are **Minor** and
+filed without code changes; F97 records the spec correction required by I1.
+
+- **F88 — reaching the page cap keeps backfill running.**
+  `data/surf_swarm_client.py:329–355`: past 1,000 workflows, `workflows_complete` never becomes
+  True, so every sweep re-reads ten pages. **Minor, open.**
+- **F89 — partial history has no visible completeness warning.**
+  A later-page failure stores the pages read without saying on screen that history is partial;
+  the hero total can show, for example, 100. **Minor, open.**
+- **F90 — unread health is reported before the first read and for a missing status key.**
+  `screens/surf.py:2377`, `data/surf_swarm.py:120`: `⚠ health unavailable` appears on first paint
+  before the SWARM read lands. A `/health` response without a status key makes it permanent.
+  The owner approved the wording; this finding covers only cold start and the missing-key case.
+  **Minor, open.**
+- **F91 — compact title source counts engage earlier than necessary.**
+  The compact `⚠ N src` title is chosen using the full width including alarms. Around 150–199
+  columns with alarms lit, source names collapse even though they would fit. **Minor, open.**
+- **F92 — summary fitting can skip a larger count in favor of a smaller one.**
+  `widgets/surf/_swarm_summary.py:41–44`: `summary_body` skips a pair that does not fit but keeps
+  trying later pairs. A smaller count can appear while a larger one is missing. The word
+  tie-break is untested. **Minor, open.**
+- **F93 — removed assertions leave coverage gaps.**
+  WORKING's bold-green and dim `0 quiet` colors no longer have coverage (the mutant survived).
+  MEDI-38, a malformed count showing unavailable, has no replacement. The silent-loss loop in
+  `tests/screens/test_surf_swarm_layout.py` changed from `range` to `boundary_set` for AGENT too.
+  **Minor, open.**
+- **F94 — README still quotes the old status hint.**
+  `README.md:558–559` still says `l launchpad · …`. **Minor, open.**
+- **F95 — hero docstring and imports are stale.**
+  `widgets/surf/swarm_hero.py:87` still names QUEUE · BREAKER · SERVICES; `flatten`,
+  `sanitize_cell` and `clip` at :16/:18 are unused imports. **Minor, open.**
+- **F96 — ENS width lost its agreement with the label and suffix.**
+  `widgets/surf/swarm_sites.py:100` hand-types 33, formerly `_LABEL_COLS + len(_ENS_SUFFIX)`,
+  with no agreement test. **Minor, open.**
+- **F97 — A4's last-good sentence prescribed an insufficient shared clock.**
+  `docs/codex_swarm_layout_v3_plan.md` A4 said retained workflow history uses the existing
+  `as of` behavior, but the scores timestamp advances when sibling routes succeed.
+  **Minor spec defect; corrected 2026-10-06 with I1.** A dated correction now requires
+  WORKFLOWS' own successful-read timestamp and marker. This is part of the authorized I1 fix.

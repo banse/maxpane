@@ -6282,6 +6282,8 @@ class SurfManager:
         a cycle where this sweep read a perfectly good list. Paying to store
         this list a second time, on a 1800 s tier, buys a sweep whose rows
         and marker describe one moment (the seat keys read it, plan A1).
+        Retained workflow history has its own ``workflows_ts``: sibling
+        reads can succeed while that route keeps older last-good rows.
         """
         if TIER_SWARM_SCORES not in tiers:
             return {"ok": False, "payload": None}
@@ -6313,15 +6315,19 @@ class SurfManager:
         else:
             history = await self._guard(client.fetch_workflow_history, "swarm workflow history")
             workflows, complete = history if history is not None else (None, False)
+        workflows_ts = old_slot.get("workflows_ts")
+        if not sw._optional_stamp(workflows_ts):
+            workflows_ts = None
         if isinstance(workflows, list):
             workflows = sw.merge_workflow_history(previous, workflows, cap=SWARM_WORKFLOW_HISTORY_CAP)
+            workflows_ts = now
         elif isinstance(previous, list):
-            workflows = previous
+            workflows = sw.merge_workflow_history(previous, [], cap=SWARM_WORKFLOW_HISTORY_CAP)
 
         payload = {
             "jobs": jobs, "details": details,
             "skills": skills, "launches": launches, "sites": sites,
-            "workflows": workflows, "workflows_complete": complete,
+            "workflows": workflows, "workflows_complete": complete, "workflows_ts": workflows_ts,
         }
         self.cache.store_last_good(SLOT_SWARM_SCORES, payload, ts=now)
         self.cache.mark_fetched(TIER_SWARM_SCORES, now)
@@ -6419,6 +6425,15 @@ class SurfManager:
         launches = slot.get("launches") if slot else None
         sites = slot.get("sites") if slot else None
         workflows = slot.get("workflows") if slot else None
+        # This route can retain history while the rest of the sweep advances.
+        # Like BOARD's independent source clocks, its title keeps the read time.
+        workflows_ts = slot.get("workflows_ts") if slot else None
+        workflows_as_of = None
+        if workflows_ts is not None and sw._optional_stamp(workflows_ts):
+            try:
+                workflows_as_of = LastGood(None, workflows_ts).as_of_hhmm()
+            except (OverflowError, OSError, ValueError):
+                pass  # A finite persisted number may still be outside the clock's range.
 
         stale = None
         if entry is not None and live_entry is not None:
@@ -6433,6 +6448,7 @@ class SurfManager:
 
         return {
             "swarm_scores_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
+            "swarm_workflows_as_of_hhmm": workflows_as_of,
             "swarm_stale": stale,
             "swarm_skill_rows": skill_rows,
             "swarm_skill_summary": skill_summary(skill_rows) if skill_rows is not None else None,
@@ -6441,10 +6457,9 @@ class SurfManager:
                 launch_summary(launch_rows) if launch_rows is not None else None
             ),
             "swarm_site_rows": sw.site_rows(sites) if isinstance(sites, list) else None,
-            # GET /workflows (spec §2): None when that read failed, when the slot
-            # predates it (no key: the upgrade rule makes the sweep due) or when a
-            # persisted value is no list -- a hand-edited cache file is third-party
-            # input and must not pose as a real empty page. [] is a read, empty page.
+            # GET /workflows: None until successfully read, or for an invalid
+            # persisted list. Failed refreshes retain history behind its own
+            # successful-read marker. [] is a real read, empty page.
             "swarm_workflow_rows": (
                 sw.workflow_rows(workflows) if isinstance(workflows, list) else None
             ),

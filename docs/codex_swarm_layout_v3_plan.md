@@ -116,6 +116,12 @@ in SWARM mode only. Use the same ` · ` joiner as the degraded groups (`_render_
   - **Failure:** page 1 failing on a cold start publishes `None`. Page 1 failing with history
     persisted keeps last-good, under the existing `as of` behaviour. Never `[]`; see
     `docs/handover_followups_2026_09.md` #96–#98 for why.
+    **Correction 2026-10-06 (final review I1; spec defect F97):** WORKFLOWS carries its own
+    `as of`, published as `swarm_workflows_as_of_hhmm` from the slot's `workflows_ts`.
+    A successful workflows read sets that timestamp to `now`; a failed read carries the prior
+    finite numeric timestamp (or `None` when missing/invalid), even if other scores routes
+    succeed. The title retains that marker like the other independently clocked SWARM panels.
+    Retained history is capped by `SWARM_WORKFLOW_HISTORY_CAP` on failure too.
 - **Contract:**
   - `SWARM_WORKFLOW_LIMIT = 12` (`surf_models.py:1650`) and its agreement with
     `SurfSwarmWorkflows.ROW_CAP` (`tests/data/test_surf_swarm_models.py:470`,

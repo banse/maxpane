@@ -288,6 +288,7 @@ def _corpus_keys() -> dict:
         **swarm_agent_sources(token),
         "swarm_seat_as_of_hhmm": "00:08",
         "swarm_scores_as_of_hhmm": "00:08",
+        "swarm_workflows_as_of_hhmm": "00:08",
         "swarm_as_of_hhmm": "00:08",
         "swarm_stale": False,
         "swarm_network": "SEPOLIA",

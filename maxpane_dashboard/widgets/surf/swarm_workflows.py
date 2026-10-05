@@ -260,11 +260,11 @@ class SurfSwarmWorkflows(SwarmTableBase):
     def update_data(
         self,
         swarm_workflow_rows=None,
-        swarm_scores_as_of_hhmm=None,
+        swarm_workflows_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
         """Refresh retained history; summary counts live in the hero."""
-        self.store(swarm_workflow_rows, swarm_scores_as_of_hhmm, swarm_workflow_rows)
+        self.store(swarm_workflow_rows, swarm_workflows_as_of_hhmm, swarm_workflow_rows)
 
     def column_plan(self, tier: str, budget: int) -> tuple[tuple[str, str, int], ...]:
         """The text column takes every spare cell above its floor."""

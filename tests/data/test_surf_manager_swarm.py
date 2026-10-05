@@ -1984,6 +1984,7 @@ async def test_a_dead_workflows_route_leaves_only_its_key_none(tmp_path):
     try:
         assert payload["swarm_scores_as_of_hhmm"] is not None
         assert payload["swarm_workflow_rows"] is None
+        assert payload["swarm_workflows_as_of_hhmm"] is None
         assert payload["swarm_skill_rows"] and payload["swarm_launch_rows"]
         assert payload["swarm_site_rows"]
         stored = manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
@@ -2172,10 +2173,16 @@ async def test_workflow_history_merges_newest_page_and_keeps_persisted_rows(tmp_
         rows = manager._swarm_scores_keys(entry.payload, entry, None, now)["swarm_workflow_rows"]
         assert [(row["workflow_id"], row["status"]) for row in rows] == [("newer", "cancelled"), ("older", "blocked")]
         assert entry.payload["workflows_complete"] is True
+        assert entry.payload["workflows_ts"] == now + 1800
         swarm._fail_workflows = True
         await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now + 3600)
         after = manager.cache.get_last_good(SLOT_SWARM_SCORES)
         assert after.payload["workflows"] == entry.payload["workflows"]
+        assert after.ts == now + 3600
+        assert after.payload["workflows_ts"] == now + 1800
+        keys = manager._swarm_scores_keys(after.payload, after, None, now + 3600)
+        from maxpane_dashboard.data.surf_cache import LastGood
+        assert keys["swarm_workflows_as_of_hhmm"] == LastGood(None, now + 1800).as_of_hhmm()
     finally:
         await manager.close()
 
@@ -2221,5 +2228,36 @@ async def test_persisted_workflow_completion_selects_page_or_backfill(tmp_path, 
         await manager._pool_swarm_scores({TIER_SWARM_SCORES}, manager._clock())
         assert len(backfills) == (0 if complete is True else 1)
         assert manager.cache.get_last_good(SLOT_SWARM_SCORES).payload["workflows"] == [row]
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize("stamp", [None, "missing", "123", True, {}, float("nan"), float("inf"), -float("inf"), NOW])
+async def test_failed_workflow_read_carries_only_a_finite_timestamp_and_caps_history(tmp_path, monkeypatch, stamp):
+    from maxpane_dashboard.data.surf_cache import LastGood, SurfCache
+    monkeypatch.setattr(surf_manager_mod, "SWARM_WORKFLOW_HISTORY_CAP", 2)
+    manager = _manager(tmp_path, _FakeSwarm(fail_workflows=True))
+    now = manager._clock()
+    slot = {"workflows": [{"id": str(n), "createdAt": _stamp(now + n)} for n in range(3)],
+            "workflows_complete": True}
+    if stamp != "missing":
+        slot["workflows_ts"] = stamp
+    try:
+        manager.cache.store_last_good(SLOT_SWARM_SCORES, slot, ts=now)
+        # Decode validation must also hold before the next sweep replaces the slot.
+        entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+        keys = manager._swarm_scores_keys(entry.payload, entry, None, now)
+        expected = LastGood(None, NOW).as_of_hhmm() if stamp == NOW else None
+        assert keys["swarm_workflows_as_of_hhmm"] == expected
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now + 7200)
+        after = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+        assert after.payload["workflows_ts"] == (NOW if stamp == NOW else None)
+        assert [row["id"] for row in after.payload["workflows"]] == ["2", "1"]
+        manager.cache.save()
+        reloaded = SurfCache(path=tmp_path / "surf.json", clock=lambda: now + 7200)
+        reloaded.load()
+        restored = reloaded.get_last_good(SLOT_SWARM_SCORES)
+        assert restored.payload["workflows_ts"] == after.payload["workflows_ts"]
+        assert manager._swarm_scores_keys(restored.payload, restored, None, now + 7200)["swarm_workflows_as_of_hhmm"] == expected
     finally:
         await manager.close()

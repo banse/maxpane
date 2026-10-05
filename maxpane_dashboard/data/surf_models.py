@@ -1514,6 +1514,7 @@ SWARM_KEYS: tuple[str, ...] = (
     # SWARM WORKFLOWS (2026-10-03, docs/surf_swarm_workflows_spec.md §2): GET /workflows on the
     # scores sweep. None = the read failed or never happened; [] = a real empty page.
     "swarm_workflow_rows",      # list[dict] | None -- SURF_ROW_KEYS["swarm_workflow_rows"]
+    "swarm_workflows_as_of_hhmm", # str | None -- last successful /workflows read
 )
 
 #: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
@@ -1524,7 +1525,7 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmThroughput": ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale"),
     # WORKFLOWS took CAPABILITY's place on SWARM (2026-10-03, docs/surf_swarm_workflows_spec.md
     # §2); CAPABILITY's frozen signature moved to SWARM_PARKED_WIDGET_SIGNATURES below.
-    "SurfSwarmWorkflows": ("swarm_workflow_rows", "swarm_scores_as_of_hhmm"),
+    "SurfSwarmWorkflows": ("swarm_workflow_rows", "swarm_workflows_as_of_hhmm"),
     "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network"),
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).

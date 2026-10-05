@@ -141,7 +141,7 @@ def test_the_columns_are_the_specs_and_the_row_tuples_agree():
 async def test_the_captured_page_renders_twelve_rows_and_the_first_reads_as_by_hand():
     rows = _captured()
     assert len(rows) == 12
-    text = await _workflows(swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _workflows(swarm_workflow_rows=rows, swarm_workflows_as_of_hhmm=AS_OF)
     lines = _data_lines(text)
     assert len(lines) == 12, lines
     # Row one of the capture, read off the JSON by hand: blocked, created
@@ -166,7 +166,7 @@ async def test_the_captured_page_renders_twelve_rows_and_the_first_reads_as_by_h
 async def test_the_job_cells_link_their_jobs_on_the_imd_explorer_without_an_icon():
     async with _Probe().run_test(size=SIZE) as pilot:
         pilot.app.query_one(SurfSwarmWorkflows).update_data(
-            swarm_workflow_rows=[_row()], swarm_scores_as_of_hhmm=AS_OF)
+            swarm_workflow_rows=[_row()], swarm_workflows_as_of_hhmm=AS_OF)
         await pilot.pause()
         urls = {url for *_rest, url in link_targets(pilot.app) if url}
         icons = icon_targets(pilot.app)
@@ -185,7 +185,7 @@ async def test_a_failure_renders_literally_and_in_red_while_the_row_is_not_compl
             _row(status="blocked", failure=failure, objective="Hidden objective.")]
     async with _Probe().run_test(size=SIZE) as pilot:
         pilot.app.query_one(SurfSwarmWorkflows).update_data(
-            swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+            swarm_workflow_rows=rows, swarm_workflows_as_of_hhmm=AS_OF)
         await pilot.pause()
         lines = _strip_rows(pilot.app)
         y = next(i for i, line in enumerate(lines) if "[FAIL:" in line)
@@ -238,7 +238,7 @@ async def test_a_clipped_text_shows_its_ellipsis_and_does_not_light_widen():
     """Only a shed column lights ``‹ widen`` (IN FLIGHT's objective precedent)."""
     rows = [_row(status="blocked", failure="x" * 300)]
     text = await _workflows((FULL_WIDTH + GUTTER, 20), swarm_workflow_rows=rows,
-                            swarm_scores_as_of_hhmm=AS_OF)
+                            swarm_workflows_as_of_hhmm=AS_OF)
     line = _data_lines(text)[0]
     assert line.rstrip().endswith("x…"), line
     assert "‹" not in text, text
@@ -250,7 +250,7 @@ async def test_a_clipped_text_shows_its_ellipsis_and_does_not_light_widen():
 async def test_none_is_a_yellow_unavailable_with_no_footer():
     """The word is the table's only row, which is the cursor row; the
     cursor's own colour is Textual's, so it is switched off to read the cell's."""
-    for kwargs in ({}, {"swarm_workflow_rows": None, "swarm_scores_as_of_hhmm": None}):
+    for kwargs in ({}, {"swarm_workflow_rows": None, "swarm_workflows_as_of_hhmm": None}):
         async with _Probe().run_test(size=SIZE) as pilot:
             pilot.app.query_one(SurfSwarmWorkflows).update_data(**kwargs)
             pilot.app.query_one(DataTable).show_cursor = False
@@ -265,14 +265,14 @@ async def test_none_is_a_yellow_unavailable_with_no_footer():
 
 
 async def test_an_empty_list_says_no_workflows_with_no_footer():
-    text = await _workflows(swarm_workflow_rows=[], swarm_scores_as_of_hhmm=AS_OF)
+    text = await _workflows(swarm_workflow_rows=[], swarm_workflows_as_of_hhmm=AS_OF)
     assert "no workflows" in text and "unavailable" not in text, text
     assert "newest" not in text and "No data" not in text, text
 
 
 async def test_an_all_none_row_renders_dashes_without_raising():
     row = {key: None for key in ROW_KEYS}
-    lines = _data_lines(await _workflows(swarm_workflow_rows=[row], swarm_scores_as_of_hhmm=AS_OF))
+    lines = _data_lines(await _workflows(swarm_workflow_rows=[row], swarm_workflows_as_of_hhmm=AS_OF))
     assert len(lines) == 1, lines
     cells = lines[0].split()
     assert cells == ["--", "--", "--", "—", "--"], cells
@@ -280,7 +280,7 @@ async def test_an_all_none_row_renders_dashes_without_raising():
 
 async def test_the_thirteenth_row_is_shown():
     rows = [_row(objective=f"Workflow number {n:02d}.") for n in range(13, 0, -1)]
-    text = await _workflows((SIZE[0], 30), swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _workflows((SIZE[0], 30), swarm_workflow_rows=rows, swarm_workflows_as_of_hhmm=AS_OF)
     lines = _data_lines(text)
     assert len(lines) == 13, lines
     assert "Workflow number 13." in lines[0] and "Workflow number 01." in lines[-1], lines
@@ -300,7 +300,7 @@ async def test_status_is_escaped_and_coloured_on_the_raw_word():
             _row(status="[/x]completed", objective="Hostile row.")]
     async with _Probe().run_test(size=SIZE) as pilot:
         pilot.app.query_one(SurfSwarmWorkflows).update_data(
-            swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+            swarm_workflow_rows=rows, swarm_workflows_as_of_hhmm=AS_OF)
         await pilot.pause()
         lines = _strip_rows(pilot.app)
         theme = pilot.app.ansi_theme.ansi_colors
@@ -332,7 +332,7 @@ async def test_the_footer_counts_the_rows_it_was_handed_by_count_then_word():
     statuses = ["cancelled", "completed", "blocked", "completed", "executing",
                 "blocked", "cancelled", "completed"]
     rows = [_row(status=s, failure="") for s in statuses]
-    text = await _workflows(swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _workflows(swarm_workflow_rows=rows, swarm_workflows_as_of_hhmm=AS_OF)
     # 3 completed, then the 2/2 tie broken by word (blocked < cancelled), then 1.
     assert "newest" not in text, text
 
@@ -354,7 +354,7 @@ async def _measure(outer: int):
     """``(columns, max_scroll_x, text)`` at *outer* cells under the spec's CSS."""
     async with _Spec().run_test(size=(outer, 20)) as pilot:
         widget = pilot.app.query_one(SurfSwarmWorkflows)
-        widget.update_data(swarm_workflow_rows=_captured(), swarm_scores_as_of_hhmm=AS_OF)
+        widget.update_data(swarm_workflow_rows=_captured(), swarm_workflows_as_of_hhmm=AS_OF)
         await pilot.pause()
         table = pilot.app.query_one(DataTable)
         keys = [column.label.plain for column in table.columns.values()]
@@ -409,10 +409,10 @@ async def test_the_text_column_takes_every_spare_cell():
 
 
 async def test_the_title_carries_the_marker_only_when_it_is_real():
-    text = await _workflows(swarm_workflow_rows=[_row()], swarm_scores_as_of_hhmm=AS_OF)
+    text = await _workflows(swarm_workflow_rows=[_row()], swarm_workflows_as_of_hhmm=AS_OF)
     assert "WORKFLOWS · as of 04:06" in text, text
     for as_of in (None, ""):
-        text = await _workflows(swarm_workflow_rows=[_row()], swarm_scores_as_of_hhmm=as_of)
+        text = await _workflows(swarm_workflow_rows=[_row()], swarm_workflows_as_of_hhmm=as_of)
         assert "as of" not in text and "WORKFLOWS" in text, text
 
 
@@ -437,7 +437,7 @@ async def _address_probe(rows, size):
     """``(screen rows, icons, links)`` read off the compositor."""
     async with _Probe().run_test(size=size) as pilot:
         pilot.app.query_one(SurfSwarmWorkflows).update_data(
-            swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+            swarm_workflow_rows=rows, swarm_workflows_as_of_hhmm=AS_OF)
         await pilot.pause()
         return _strip_rows(pilot.app), icon_targets(pilot.app), link_targets(pilot.app)
 
@@ -506,7 +506,7 @@ async def test_red_failure_and_embedded_address_render_together_without_a_link()
     async with _Probe().run_test(size=SIZE) as pilot:
         pilot.app.query_one(SurfSwarmWorkflows).update_data(
             swarm_workflow_rows=[_row(status="blocked", failure=f"failure at {C0DE}")],
-            swarm_scores_as_of_hhmm=AS_OF)
+            swarm_workflows_as_of_hhmm=AS_OF)
         pilot.app.query_one(DataTable).show_cursor = False
         await pilot.pause()
         lines = _strip_rows(pilot.app)
@@ -538,7 +538,7 @@ async def test_text_floor_clips_below_the_tight_budget():
 
 async def test_unreadable_workflow_entry_renders_dashes_without_counting_a_status():
     rows = workflow_rows([{"bogus": 1}])
-    text = await _workflows(swarm_workflow_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _workflows(swarm_workflow_rows=rows, swarm_workflows_as_of_hhmm=AS_OF)
     lines = _data_lines(text)
     assert len(lines) == 1
     assert lines[0].split() == ["--", "--", "--", "—", "--"]

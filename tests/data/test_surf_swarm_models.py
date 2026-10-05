@@ -140,10 +140,10 @@ SWARM_TARGET_WIDGETS = {
 
 def test_the_swarm_block_includes_runtime_checks_and_rank_delta():
     """Thirty-two existing keys, the served health status word and the owner's ENS name,
-    runtime/rank/read keys, F-S5's two REWARDS keys, and the /workflows rows
-    (docs/surf_swarm_workflows_spec.md WP2: 41 -> 42)."""
-    assert len(SWARM_KEYS) == 41
-    assert len(set(SWARM_KEYS)) == 41
+    runtime/rank/read keys, F-S5's two REWARDS keys, the /workflows rows
+    and their independent successful-read marker (layout v3 final review I1)."""
+    assert len(SWARM_KEYS) == 42
+    assert len(set(SWARM_KEYS)) == 42
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -165,11 +165,11 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-31:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+    assert SWARM_KEYS[-32:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
                                 + ("swarm_health_status", "swarm_seat_owner_ens", "swarm_runtime_latest",
                                    "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta", "swarm_seat_read",
                                    "swarm_seat_rewards", "swarm_seat_rewards_state",
-                                   "swarm_workflow_rows"))
+                                   "swarm_workflow_rows", "swarm_workflows_as_of_hhmm"))
 
 
 def test_the_retired_keys_are_gone_and_the_ten_survivors_lead():
@@ -265,11 +265,10 @@ def test_a_parked_widget_is_not_also_a_mounted_target():
     assert not set(models.SWARM_PARKED_WIDGET_SIGNATURES) & set(SWARM_WIDGET_SIGNATURES)
 
 
-def test_workflows_reads_the_rows_and_the_scores_clock():
-    """Spec §2 "Wiring": WORKFLOWS takes CAPABILITY's place with exactly
-    the rows and LAUNCHES' clock."""
+def test_workflows_reads_the_rows_and_its_own_clock():
+    """Final review I1: retained workflows carry their own successful-read clock."""
     assert SWARM_WIDGET_SIGNATURES["SurfSwarmWorkflows"] == (
-        "swarm_workflow_rows", "swarm_scores_as_of_hhmm",
+        "swarm_workflow_rows", "swarm_workflows_as_of_hhmm",
     )
 
 

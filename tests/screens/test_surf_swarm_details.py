@@ -173,3 +173,57 @@ async def test_compact_swarm_title_keeps_every_alarm_at_the_existing_pin(down):
         rendered = Text.from_markup(_title_line(payload, row_hint=True, swarm=True,
                                                columns=screen.query_one('#title-bar').content_size.width)).plain
         assert title == rendered
+
+
+async def test_failed_workflows_keep_the_successful_as_of_in_the_composited_title(tmp_path):
+    import httpx
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SCORES, TIER_SWARM_SCORES, LastGood
+    from maxpane_dashboard.data.surf_swarm_client import SwarmClient
+    from tests.data.test_surf_manager_swarm import _manager, V2_NOW
+    from tests.surf_swarm_fixtures import swarm_capture_v2, swarm_capture_v6, swarm_details_v2
+
+    failed = False
+    calls = []
+    details = swarm_details_v2()
+    def transport(request):
+        path = request.url.path
+        calls.append(path)
+        if path == "/workflows":
+            if failed:
+                raise httpx.ConnectError("workflows down", request=request)
+            return httpx.Response(200, json=swarm_capture_v6("workflows_limit12"))
+        if path.startswith("/jobs/"):
+            detail = details.get(path.rsplit("/", 1)[-1])
+            return httpx.Response(200 if detail is not None else 404, json=detail or {})
+        assert path in ("/jobs", "/skills", "/launches", "/sites"), path
+        return httpx.Response(200, json=swarm_capture_v2(path[1:]))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as http:
+        manager = _manager(tmp_path, SwarmClient(http_client=http, inter_call_delay=0))
+        try:
+            await manager._pool_swarm_scores({TIER_SWARM_SCORES}, V2_NOW)
+            first = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+            first_keys = manager._swarm_scores_keys(first.payload, first, None, V2_NOW)
+            old_marker = LastGood(None, V2_NOW).as_of_hhmm()
+            async with _surf_app(_frozen_payload(**first_keys)).run_test(size=(200, 48)) as pilot:
+                screen = await _open(pilot)
+                panel = screen.query_one(SurfSwarmWorkflows)
+                assert f"WORKFLOWS · as of {old_marker}" in _region_text(pilot.app, panel)
+                failed = True
+                calls.clear()
+                later = V2_NOW + 7200
+                await manager._pool_swarm_scores({TIER_SWARM_SCORES}, later)
+                after = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+                assert after.ts == later and after.payload["workflows"] == first.payload["workflows"]
+                assert {"/jobs", "/skills", "/launches", "/sites", "/workflows"} <= set(calls)
+                keys = manager._swarm_scores_keys(after.payload, after, None, later)
+                assert keys["swarm_scores_as_of_hhmm"] != old_marker
+                assert keys["swarm_workflow_rows"] == first_keys["swarm_workflow_rows"]
+                screen._data_manager._payload = _frozen_payload(**keys)
+                await screen._do_refresh()
+                await pilot.pause()
+                title = _region_text(pilot.app, panel.query_one(".panel-title"))
+                assert f"WORKFLOWS · as of {old_marker}" in title, title
+                assert keys["swarm_scores_as_of_hhmm"] not in title
+        finally:
+            await manager.close()

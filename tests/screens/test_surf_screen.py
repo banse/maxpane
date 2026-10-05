@@ -1510,6 +1510,7 @@ def _sample_data() -> dict:
         # `swarm_as_of_hhmm`, the same argument `pool4_stakers_as_of_hhmm`
         # makes above.
         "swarm_scores_as_of_hhmm": "13:50",
+        "swarm_workflows_as_of_hhmm": "13:50",
         "swarm_stale": False,
         # -- swarm v2 (WP0, 2026-09-21): frozen ahead of their consumers ---
         #
