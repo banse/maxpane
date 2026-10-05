@@ -34,22 +34,23 @@ rule overrides its "take the heavier path" and its Bounded path maps to Tier 1.)
   `WIDGET_SIGNATURES`, a shared `widgets/*.py` module, an endpoint pool, a new
   dashboard/body/key. The session implements it itself: no brainstorm doc, dispatch, reviewer,
   ledger or report. One regression test if behaviour changed; mutation proof only where a rule
-  already demands it. Run the touched file's tests plus the screen test that composites it (for
-  a docs edit: the doc-pinning tests, see Tests); cite the last green suite. Commit. Time box: 30 min.
+  already demands it. Run the tests that could see the change (Tests: the touched behaviour while
+  editing, the touched and composing files once before the commit); cite the last green suite.
+  Commit. Time box: 30 min.
 - **Tier 1 — bounded change.** One dashboard, ≤ 6 files; may move one pin (re-sweep in situ,
   update its `#:` block) or change that dashboard's own data module; no shared widget, no
   contract key added. Design in chat, owner says yes. One implementer (or the
-  session), TDD + mutation proof on the changed behaviour; tests = touched files + composing
-  screen test (+ layout test if a pin moved, + address sweep if an address cell changed). ONE
-  reviewer pass (mid-tier model, reviewer contract below), at most ONE fix round + scoped
+  session), TDD + mutation proof on the changed behaviour; tests as in Tests (+ layout test if a
+  pin moved, + address sweep if an address cell changed). ONE reviewer pass (`sonnet`, which the
+  user settings run at effort `high`; reviewer contract below), at most ONE fix round + scoped
   re-review; residuals go to the followups doc. No ledger or report files — the commit message is
   the evidence. No suite.
 - **Tier 2 — architectural.** New dashboard, body, widget or contract key; any change to a shared
   `widgets/*.py`, `data/*_models.py`, an endpoint pool, or > 6 files / > 1
   dashboard. Spec + plan in `docs/`; one implementer per work package; one task review per diff;
   fix rounds capped at 2; final whole-branch review on the most capable model; ONE fix wave; ONE
-  scoped re-review; full suite once, by the controller, before merge; followups doc updated; no
-  plan workspace left behind.
+  scoped re-review; no full suite unless the owner asks or a version is tagged (Tests); followups
+  doc updated; no plan workspace left behind.
 - **Follow-ups.** A test-quality refinement ("coverage could be broader", derived threshold,
   single payload) is Minor: file it, do it as Tier 0 when its file is next touched, never its own
   branch or dispatch. A follow-ups branch is Tier 0 per item unless the item names a pin, a
@@ -121,11 +122,27 @@ as above (serial and `-n 4` passed the identical 8,551-test set on 2026-09-19: 2
 distributions collect in one command since `sybilkit/tests` became `sybilkit/sybilkit_tests` — two
 packages both named `tests` raised `ImportPathMismatchError`.
 
-**Run the tests that could see the change:** the touched module's test file plus the
-screen/manager test that consumes it. The full suite runs once, before merge or push, by the
-controller — never by an implementer or reviewer, never after every task; cite the last green run.
-A docs-only edit still needs the tests that pin the doc: `rg -n 'CLAUDE\.md|README\.md|SKILL\.md|rules/' tests/`
-and run every file it names. Use `.venv/bin/python -m pytest`: the system `python3` lacks the deps,
+**Run the tests that could see the change**, in two steps:
+
+- **While editing:** only the cases that exercise the touched behaviour — a node id or `-k` on the
+  touched module's test file and on the screen/manager test that consumes it. Never a whole screen
+  file per edit: `tests/screens/test_surf_screen.py` alone is ~8 min serial.
+- **Once, before the commit:** the touched test files and the composing screen/manager file whole,
+  `HOME=$(mktemp -d) .venv/bin/python -m pytest -n 4 --dist worksteal <files>` (a file that goes
+  red only under worksteal: rerun it serially and file it), plus the fast guard list
+  `tests/analytics/test_range_filters.py tests/data/test_rpc_classify.py tests/data/test_rpc_shared.py
+  tests/test_address_rule.py tests/test_address_sweep_registry.py tests/test_fwa_guardrails.py
+  tests/widgets/test_bakery_widgets.py tests/widgets/test_filter_editor.py tests/widgets/test_panels.py`
+  (67 tests, ~6 s). Add `tests/test_surf_registration.py tests/test_curator_registration.py`
+  (~100 s, they mount the app) only when README, a SKILL.md, CLAUDE.md, `.claude/rules/`,
+  `BINDINGS`, a key or another registration surface changed. Not `-m guard`: it always pulls
+  those two files in.
+
+The full suite runs only when the owner asks or right before a version tag, by the controller —
+never by an implementer or reviewer, never as a merge or push gate; cite the last green run.
+A docs-only edit still needs the tests that pin the doc (12 tests, ~15 s):
+`.venv/bin/python -m pytest tests/test_surf_registration.py tests/test_curator_registration.py -k "claude_md or readme or the_docs_ or documented or terminal_layout_skill or spec_docs"`.
+Use `.venv/bin/python -m pytest`: the system `python3` lacks the deps,
 and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports green.
 
 ## Conventions — each one is a bug that shipped; the reasoning is in `.claude/rules/`
