@@ -500,3 +500,22 @@ async def test_failure_cell_drops_controls():
     output = await _workflows(swarm_workflow_rows=[_row(status="failed", failure=CONTROL_PAYLOAD)])
     assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
     assert CONTROL_REMAINDER in output
+
+
+async def test_red_failure_and_embedded_address_render_together_without_a_link():
+    async with _Probe().run_test(size=SIZE) as pilot:
+        pilot.app.query_one(SurfSwarmWorkflows).update_data(
+            swarm_workflow_rows=[_row(status="blocked", failure=f"failure at {C0DE}")],
+            swarm_scores_as_of_hhmm=AS_OF)
+        pilot.app.query_one(DataTable).show_cursor = False
+        await pilot.pause()
+        lines = _strip_rows(pilot.app)
+        y = next(y for y, line in enumerate(lines) if "failure at" in line)
+        assert f"failure at {C0DE} {COPY_GLYPH}" in lines[y]
+        for word in ("failure at", C0DE):
+            colour = pilot.app.screen.get_style_at(lines[y].index(word), y).color
+            assert colour.get_truecolor() == pilot.app.ansi_theme.ansi_colors[1]
+        assert [(iy, address) for _, iy, address in icon_targets(pilot.app)] == [(y, C0DE)]
+        start = lines[y].index(C0DE)
+        assert not [t for t in link_targets(pilot.app)
+                    if t[1] == y and start <= t[0] < start + len(C0DE) + 2]

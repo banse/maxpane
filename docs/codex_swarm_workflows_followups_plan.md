@@ -537,6 +537,13 @@ Red first: **3 failed**; focused green: **3 passed**; whole manager file:
 `scripts/mutate.py`: **KILLED m1**, named red
 `test_persisted_non_list_routes_publish_none_but_empty_lists_survive[skills]`.
 
+**Landed — F77 (Tier 0, test only), 2026-10-05.**
+Commit: `test(surf): cover red failures with embedded addresses`.
+`test_red_failure_and_embedded_address_render_together_without_a_link` reads
+the failure and address colors, copy target and link absence from the compositor.
+Focused: **1 passed**; whole widget/composing screen: **132 passed**;
+fast guards: **120 passed**; doc pins: **12 passed**. No mutation mandated.
+
 **Stop after WP5.** Report:
 - the branch head and the commit list;
 - per item: its tier, the tests run with their counts, and the mutants with which test

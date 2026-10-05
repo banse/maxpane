@@ -1087,6 +1087,9 @@ next touched, never as its own branch, except where an item is an owner decision
   shown, 779 scoped tests pass and both widget/sweep tests kill the old-cell mutant.
 - **F77 — WORKFLOWS: no committed test combines a red failure with an embedded address** (WP4
   re-review). Add one case that composites the failure's colour and the icon together.
+  **CLOSED 2026-10-05** (commit: `test(surf): cover red failures with embedded addresses`).
+  One composited case checks red failure/address cells together with the copy icon
+  and absence of an explorer link.
 - **F78 — WORKFLOWS: the 20-cell text-column floor has no test.** The final review changed
   `max(TEXT_MIN_COLS, spare)` to `spare` in `swarm_workflows.py`, and
   `tests/widgets/test_surf_swarm_workflows.py` stayed green. The floor matters only under
