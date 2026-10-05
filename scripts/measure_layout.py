@@ -2,7 +2,9 @@
 
 A thin CLI over ``_render()`` in ``tests/screens/test_surf_swarm_layout.py`` -- the same
 composite, payloads and geometry checks the layout sweep certifies pins with, so a number read
-here is the number the test will see. Committed fixtures only: nothing touches the network.
+here is the number the test will see: ``s`` and ``a`` are judged as ``_assert_whole`` judges
+them, ``b`` by ``_assert_board_whole`` itself. Committed fixtures only: nothing touches the
+network.
 
     .venv/bin/python scripts/measure_layout.py s capture 136:140x35
     .venv/bin/python scripts/measure_layout.py s worst-s 138x30:36 --expanded
@@ -56,7 +58,10 @@ def parse_size(text: str) -> tuple[list[int], list[int]]:
 
 
 def problems(r: dict) -> list[str]:
-    """What keeps one measured composite from being whole; empty means whole."""
+    """What keeps one SWARM or AGENT composite from being whole; empty means whole.
+
+    ``_assert_whole``'s four checks plus the region overflow and ``‹ taller`` the sweeps also
+    assert. BOARD asks more of its LEADERBOARD: :func:`board_problems`."""
     out = []
     if not r["status_whole"]:
         out.append("status bar cropped")
@@ -74,13 +79,33 @@ def problems(r: dict) -> list[str]:
     return out
 
 
+def board_problems(r: dict, kind: str) -> list[str]:
+    """What keeps one BOARD composite of payload *kind* from being whole; empty means whole.
+
+    The verdict is ``_assert_board_whole``'s, called rather than restated: it excuses
+    LEADERBOARD's marker on ``worst`` and also requires LEADERBOARD's ``full`` tier, its twelve
+    columns and no clipped field beyond what *kind* allows. This only words the verdict."""
+    out = [p for p in problems(r) if not p.startswith("marked")]
+    try:
+        layout._assert_board_whole(r, kind)
+    except AssertionError:
+        lb = "SurfSwarmLeaderboard"
+        out.insert(0, f"not BOARD-whole: marked {sorted(r['marked_besides_exceptions'])}, "
+                      f"LEADERBOARD tier {r['tiers'].get(lb)}, "
+                      f"{len(r['columns'].get(lb, ()))} columns, "
+                      f"clipped fields {sorted(r['clipped_fields'].get(lb, ()))}")
+    return out
+
+
 async def measure(key: str, payload_name: str, sizes: list[tuple[int, int]], *,
                   expanded: bool = False) -> list[dict]:
     build = payloads()[payload_name]
     rows = []
     for size in sizes:
         r = await layout._render(build(), size, key, expanded=expanded)
-        rows.append({"size": size, "problems": problems(r), "widths": r["widths"],
+        found = (board_problems(r, payload_name.removeprefix("board-")) if key == "b"
+                 else problems(r))
+        rows.append({"size": size, "problems": found, "widths": r["widths"],
                      "heights": r["heights"], "tiers": r["tiers"]})
     return rows
 

@@ -13,7 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from maxpane_dashboard.screens.surf import SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS
+from maxpane_dashboard.screens.surf import (
+    SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS,
+    SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS,
+)
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "measure_layout.py"
 
@@ -42,6 +45,48 @@ async def test_the_swarm_row_pin_reads_as_the_first_whole_height() -> None:
     measured = await ml.measure("s", "capture", [(pin, rows - 1), (pin, rows)])
     assert measured[0]["problems"] == ["‹ taller lit"], measured[0]
     assert ml.whole_from(measured, 1) == rows
+
+
+#: A composite that ``problems()`` reads as whole: only the keys it reads.
+_WHOLE = {"status_whole": True, "marked_besides_exceptions": set(), "clipped": [],
+          "hidden": {"SurfSwarmLaunches": 0}, "overflow": [], "taller": False}
+
+
+@pytest.mark.parametrize("field,broken,word", [
+    ("status_whole", False, "status bar cropped"),
+    ("marked_besides_exceptions", {"SurfSwarmWorkflows"}, "marked"),
+    ("clipped", [("SurfSwarmSites", "a line")], "clipped"),
+    ("hidden", {"SurfSwarmLaunches": 3}, "hidden columns"),
+    ("overflow", [("SurfSwarmThroughput", 2)], "overflow"),
+    ("taller", True, "‹ taller lit"),
+])
+def test_problems_names_each_way_a_composite_breaks(field, broken, word) -> None:
+    """Each of ``problems()``'s six checks, alone (follow-up #83: four were unpinned)."""
+    assert ml.problems(_WHOLE) == []
+    found = ml.problems(dict(_WHOLE, **{field: broken}))
+    assert len(found) == 1 and found[0].startswith(word), found
+
+
+async def test_board_problems_judge_with_the_sweeps_board_check() -> None:
+    """BOARD's wholeness is ``_assert_board_whole``, not ``problems()`` (follow-up #82):
+    LEADERBOARD's marker is excused on ``worst`` only, and its tier, its twelve columns and
+    its clipped fields count. The worst payload at the BOARD pin is whole, as the pin test
+    says; one real composite, then the variants are built from it."""
+    size = (SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS)
+    [row] = await ml.measure("b", "board-worst", [size])
+    assert row["problems"] == [], row["problems"]
+
+    r = await ml.layout._render(ml.layout._board_payload("worst"), size, "b")
+    lb = "SurfSwarmLeaderboard"
+    marked = dict(r, marked_besides_exceptions={lb})
+    assert ml.board_problems(marked, "worst") == []
+    assert ml.board_problems(marked, "capture")
+    assert ml.board_problems(dict(r, tiers=dict(r["tiers"], **{lb: "compact"})), "worst")
+    assert ml.board_problems(dict(r, columns=dict(r["columns"], **{lb: r["columns"][lb][:-1]})), "worst")
+    clipped = dict(r, clipped_fields=dict(r["clipped_fields"], **{lb: {"runtime"}}))
+    assert ml.board_problems(clipped, "worst") == []
+    assert ml.board_problems(clipped, "capture")
+    assert ml.board_problems(dict(r, taller=True), "worst") == ["‹ taller lit"]
 
 
 def test_sizes_parse_as_inclusive_ranges() -> None:

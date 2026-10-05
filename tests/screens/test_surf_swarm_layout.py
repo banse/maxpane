@@ -587,62 +587,93 @@ async def _render(payload: dict | None, size: tuple[int, int], key: str, *,
     here rather than measuring the wrong state."""
     app = _surf_app(payload)
     async with app.run_test(size=size) as pilot:
-        await pilot.app.screen._do_refresh()
-        await pilot.pause()
-        await pilot.press(key)
-        await pilot.pause()
-        if expanded:
-            await pilot.press("x")
+        await _open_body(pilot, key, expanded)
+        return _measure(pilot, key, expanded)
+
+
+async def _walk(payload: dict | None, sizes: list[tuple[int, int]], key: str, *,
+                expanded: bool = False) -> list[dict]:
+    """``_render`` at each of *sizes*, in the order given, from ONE mounted app.
+
+    A fresh mount per size pays the app's start-up and first refresh every
+    time; a resize pays only the relayout. The two are interchangeable only
+    while a resize paints what a fresh mount at that size paints:
+    ``test_a_walk_measures_what_a_fresh_mount_measures`` binds that for the
+    order SWARM's width sweep walks in. A body whose resize leaves something
+    behind must not walk in that direction -- RECORD kept a two-row title
+    after a shrink until c668e54, so an AGENT walk would go up, not down."""
+    app = _surf_app(payload)
+    async with app.run_test(size=sizes[0]) as pilot:
+        await _open_body(pilot, key, expanded)
+        out = [_measure(pilot, key, expanded)]
+        for size in sizes[1:]:
+            await pilot.resize_terminal(*size)
             await pilot.pause()
+            out.append(_measure(pilot, key, expanded))
+    return out
+
+
+async def _open_body(pilot, key: str, expanded: bool) -> None:
+    await pilot.app.screen._do_refresh()
+    await pilot.pause()
+    await pilot.press(key)
+    await pilot.pause()
+    if expanded:
+        await pilot.press("x")
         await pilot.pause()
-        screen = pilot.app.screen
-        if key == "s":
-            fold = screen.query_one(SurfSwarmThroughput)._expanded
-            assert fold is expanded, ("THROUGHPUT's fold is not the state asked for", fold, expanded)
-        widgets = _widgets(screen, key)
-        marked = {name for name, w in widgets.items() if "‹" in _region_text(pilot.app, w)}
-        hidden = {}
-        hscroll = {}
-        for name, w in widgets.items():
-            tables = list(w.query(DataTable))
-            if tables:
-                hidden[name] = tables[0].max_scroll_x
-                hscroll[name] = tables[0].show_horizontal_scrollbar
-        clipped = [
-            (name, line)
-            for name, w in widgets.items()
-            for line in _css_clipped_lines(pilot.app, w)
-        ]
-        hero = screen.query_one(_HERO[key])
-        clipped += [(type(hero).__name__, line) for line in _css_clipped_lines(pilot.app, hero)]
-        scroll = {
-            cid: screen.query_one(f"#{cid}").show_vertical_scrollbar
-            for cid in set(_CONTAINER_OF[key].values())
-        }
-        top = screen.query_one(f"#{_TOP_ID[key]}")
-        from maxpane_dashboard.widgets.status_bar import StatusBar
-        bar = screen.query_one(StatusBar)
-        right = bar.query_one("#status-right")
-        line = _screen_text(pilot.app).split("\n")[bar.region.y]
-        status_whole = KEY_HINT_PHRASE in line and _status_bar_whole(pilot.app)
-        return {
-            "status_whole": status_whole,
-            "marked": marked,
-            "marked_besides_exceptions": marked - _EXCLUDED_FROM_WHOLE[key],
-            "tiers": {name: getattr(w, "_tier", None) for name, w in widgets.items()},
-            "widths": {name: w.size.width for name, w in widgets.items()},
-            "heights": {name: w.region.height for name, w in widgets.items()},
-            "hidden": hidden,
-            "hscroll": hscroll,
-            "columns": {name: tuple(str(c.label) for c in w.query_one(DataTable).columns.values()) for name,w in widgets.items() if list(w.query(DataTable))},
-            "clipped": clipped,
-            "overflow": _overflow(screen, key, widgets),
-            "taller": TALLER_HINT in _screen_text(pilot.app).split("\n")[0],
-            "scroll": scroll,
-            "top_height": top.region.height,
-            "top_floor": int(top.styles.min_height.value) if top.styles.min_height is not None else 0,
-            "clipped_fields": {name: set(getattr(w, "_clipped_fields", ())) for name,w in widgets.items()},
-        }
+    await pilot.pause()
+
+
+def _measure(pilot, key: str, expanded: bool) -> dict:
+    """Everything ``_render`` hands back, read off the body as it stands."""
+    screen = pilot.app.screen
+    if key == "s":
+        fold = screen.query_one(SurfSwarmThroughput)._expanded
+        assert fold is expanded, ("THROUGHPUT's fold is not the state asked for", fold, expanded)
+    widgets = _widgets(screen, key)
+    marked = {name for name, w in widgets.items() if "‹" in _region_text(pilot.app, w)}
+    hidden = {}
+    hscroll = {}
+    for name, w in widgets.items():
+        tables = list(w.query(DataTable))
+        if tables:
+            hidden[name] = tables[0].max_scroll_x
+            hscroll[name] = tables[0].show_horizontal_scrollbar
+    clipped = [
+        (name, line)
+        for name, w in widgets.items()
+        for line in _css_clipped_lines(pilot.app, w)
+    ]
+    hero = screen.query_one(_HERO[key])
+    clipped += [(type(hero).__name__, line) for line in _css_clipped_lines(pilot.app, hero)]
+    scroll = {
+        cid: screen.query_one(f"#{cid}").show_vertical_scrollbar
+        for cid in set(_CONTAINER_OF[key].values())
+    }
+    top = screen.query_one(f"#{_TOP_ID[key]}")
+    from maxpane_dashboard.widgets.status_bar import StatusBar
+    bar = screen.query_one(StatusBar)
+    right = bar.query_one("#status-right")
+    line = _screen_text(pilot.app).split("\n")[bar.region.y]
+    status_whole = KEY_HINT_PHRASE in line and _status_bar_whole(pilot.app)
+    return {
+        "status_whole": status_whole,
+        "marked": marked,
+        "marked_besides_exceptions": marked - _EXCLUDED_FROM_WHOLE[key],
+        "tiers": {name: getattr(w, "_tier", None) for name, w in widgets.items()},
+        "widths": {name: w.size.width for name, w in widgets.items()},
+        "heights": {name: w.region.height for name, w in widgets.items()},
+        "hidden": hidden,
+        "hscroll": hscroll,
+        "columns": {name: tuple(str(c.label) for c in w.query_one(DataTable).columns.values()) for name,w in widgets.items() if list(w.query(DataTable))},
+        "clipped": clipped,
+        "overflow": _overflow(screen, key, widgets),
+        "taller": TALLER_HINT in _screen_text(pilot.app).split("\n")[0],
+        "scroll": scroll,
+        "top_height": top.region.height,
+        "top_floor": int(top.styles.min_height.value) if top.styles.min_height is not None else 0,
+        "clipped_fields": {name: set(getattr(w, "_clipped_fields", ())) for name,w in widgets.items()},
+    }
 
 
 def _assert_whole(r: dict, where: str) -> None:
@@ -662,20 +693,23 @@ def _assert_whole(r: dict, where: str) -> None:
 _S_PAYLOADS = ("capture", "worst-s", "v3-s", "extra-states-s")
 _FOLDS = (False, True)
 
+#: SWARM's width sweep: per payload, the widths one mounted app is walked
+#: through in ascending order (``_walk``), both fold states each.
+_S_WIDTH_WALKS = {
+    "capture": boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 60, 159, *_S_THRESHOLDS),
+    **{name: boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 126, 156, *_S_THRESHOLDS)
+       for name in _S_PAYLOADS[1:]},
+}
+
 _WIDTH_SWEEP = (
-    [("s", "capture", w, x) for x in _FOLDS
-     for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 60, 159, *_S_THRESHOLDS)]
-    + [("s", name, w, x) for name in _S_PAYLOADS[1:] for x in _FOLDS
-       for w in boundary_set(SURF_SWARM_FULL_LAYOUT_COLUMNS, 126, 156, *_S_THRESHOLDS)]
-    + [("a", "capture", w, False) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
+    [("a", "capture", w, False) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
     + [("a", name, w, False) for name in ("capture420", "duplicates420")
        for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
     + [("a", "worst-a", w, False) for w in boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 60, 225, *_A_THRESHOLDS)]
 )
 
 
-@pytest.mark.parametrize("key,payload_name,width,expanded", _WIDTH_SWEEP)
-async def test_the_body_is_whole_from_its_pinned_width(key, payload_name, width, expanded) -> None:
+def _check_width(r: dict, key: str, payload_name: str, width: int, expanded: bool) -> None:
     """The sweep, both bodies (SWARM in both fold states). Whole means every
     panel but the named exceptions, no CSS-clipped line, no hidden column and
     no region past its container -- the region check applies to the
@@ -688,8 +722,6 @@ async def test_the_body_is_whole_from_its_pinned_width(key, payload_name, width,
     where LAUNCHES' own vertical scrollbar is actually live, so it is the
     height whose "below the pin, something marks" claim is true for every
     width this sweep bands (final review I1, 2026-10-04)."""
-    height = _S_COLUMN_SWEEP_HEIGHT if key == "s" else _COLUMN_SWEEP_HEIGHT
-    r = await _render(PAYLOADS[payload_name](), (width, height), key, expanded=expanded)
     where = f"{key}/{payload_name}{' expanded' if expanded else ''} at {width}"
     assert not r["overflow"], f"{where}: a panel's region extends past its container's: {r['overflow']}"
     if width >= _COLUMN_PIN[key]:
@@ -700,6 +732,39 @@ async def test_the_body_is_whole_from_its_pinned_width(key, payload_name, width,
         ), (
             f"{where}: nothing advertises the loss"
         )
+
+
+@pytest.mark.parametrize("key,payload_name,width,expanded", _WIDTH_SWEEP)
+async def test_the_body_is_whole_from_its_pinned_width(key, payload_name, width, expanded) -> None:
+    """AGENT's sweep, one fresh mount per width (``_check_width`` says what is checked)."""
+    height = _S_COLUMN_SWEEP_HEIGHT if key == "s" else _COLUMN_SWEEP_HEIGHT
+    r = await _render(PAYLOADS[payload_name](), (width, height), key, expanded=expanded)
+    _check_width(r, key, payload_name, width, expanded)
+
+
+@pytest.mark.parametrize("payload_name,expanded", [(n, x) for n in _S_PAYLOADS for x in _FOLDS])
+async def test_the_swarm_body_is_whole_from_its_pinned_width(payload_name, expanded) -> None:
+    """SWARM's sweep: the same checks, one app walked up through the widths."""
+    widths = _S_WIDTH_WALKS[payload_name]
+    results = await _walk(PAYLOADS[payload_name](), [(w, _S_COLUMN_SWEEP_HEIGHT) for w in widths],
+                          "s", expanded=expanded)
+    for width, r in zip(widths, results, strict=True):
+        _check_width(r, "s", payload_name, width, expanded)
+
+
+@pytest.mark.parametrize("expanded", _FOLDS)
+async def test_a_walk_measures_what_a_fresh_mount_measures(expanded) -> None:
+    """``_walk`` stands in for ``_render`` in SWARM's width sweep only while
+    the two hand back equal results. Checked on the capture at the band's
+    ends and either side of the pin, in the order the sweep walks; the whole
+    sweep was compared size by size, every payload and fold, when the walk
+    replaced it (2026-10-05)."""
+    pin = SURF_SWARM_FULL_LAYOUT_COLUMNS
+    sizes = [(w, _S_COLUMN_SWEEP_HEIGHT) for w in (60, pin - 1, pin, 159)]
+    walked = await _walk(PAYLOADS["capture"](), sizes, "s", expanded=expanded)
+    for size, r in zip(sizes, walked, strict=True):
+        fresh = await _render(PAYLOADS["capture"](), size, "s", expanded=expanded)
+        assert r == fresh, (size, {k: (r[k], fresh[k]) for k in r if r[k] != fresh[k]})
 
 
 _PIN_CASES = (

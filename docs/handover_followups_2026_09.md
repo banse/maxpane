@@ -892,11 +892,16 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     and could call a BOARD size whole that the sweep rejects. The docstring's "the number read here is the
     number the test will see" overstates it for `b`. Fix: reuse `_assert_board_whole` for `b` (catch the
     assertion) or narrow the docstring. **Minor, Tier 0.**
+    **Done 2026-10-05, with the SWARM size walk:** `measure_layout.board_problems(r, kind)` takes its
+    verdict from `_assert_board_whole` itself (called, not restated) and only words it; `measure()`
+    uses it for `b`. `board-worst` at the BOARD pin now reads whole, as the pin test says; pinned by
+    `test_board_problems_judge_with_the_sweeps_board_check`.
 
 83. **Four of `problems()`'s six checks are unpinned.** Mutating the `overflow`, `marked`, `clipped` or
     status-bar branch to `if False:` survives `tests/screens/test_measure_layout_script.py`; only `hidden`
     and `taller` are killed. Fix: one unit test on `problems()` over hand-built result dicts. **Minor,
-    Tier 0.**
+    Tier 0.** **Done 2026-10-05:** `test_problems_names_each_way_a_composite_breaks`, one case per
+    check; each of the six `if False:` mutants is killed by its own case (`scripts/mutate.py`).
 
 84. **`mutate.py`: worktree runs and the signal path.** `--root` changes only the cwd: no `PYTHONPATH`,
     and the default `--python` is the main `.venv`, so a run against a tree copy tests MAIN for anything
@@ -905,3 +910,18 @@ reddens at 131, 132 (both payloads), 133, 136, 137 — the same edge the full ra
     child left) but no committed test covers it, and a `--mutants` batch stops with a traceback on the
     first mutant that cannot be encoded (a lone surrogate), leaving later ones unrun (the file is
     restored). **Minor, Tier 0.**
+
+85. **The walk's agreement test covers the capture only.** `test_a_walk_measures_what_a_fresh_mount_measures`
+    (`tests/screens/test_surf_swarm_layout.py`) compares `_walk` with `_render` on `capture` at four
+    sizes; `worst-s` and `extra-states-s` carry the heaviest content and were compared only by the
+    one-off 104-size check of 2026-10-05 (0 differences). A Textual change that made a resize drift
+    on a heavier payload would reach SWARM's walked sweep unflagged. Fix: add `worst-s` to the
+    agreement test's parameters. **Minor, Tier 0** (step-5 review, 2026-10-05).
+
+86. **`board_problems` catches `AssertionError`.** Under `python -O`, `_assert_board_whole`'s asserts
+    vanish and every BOARD size reads whole. Nothing runs `scripts/measure_layout.py` that way; matters
+    only if the script is ever packaged. **Minor, Tier 0** (same review).
+
+87. **`docs/surf_swarm_polish_handover.md:460` names the old sweep.** SWARM's width sweep is
+    `test_the_swarm_body_is_whole_from_its_pinned_width` since 2026-10-05; the old name now runs AGENT
+    only. Historical row: a one-line note, not an edit of the row. **Minor, Tier 0** (same review).
