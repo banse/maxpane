@@ -183,3 +183,11 @@ The following remain follow-ups, not fixes in this round. Synthetic local reprod
 62. **Busy job-detail class couples oracle and other jobs.** Oracle and non-oracle jobs share the job-detail route class. A shed oracle job-detail request therefore pauses non-oracle detail reads that the verdict fallback needs. A later scheduling change should decide whether narrower pause classes are justified by actual API shedding behavior, preserving a pause floor for every trigger.
 
 All earlier unresolved follow-ups remain open, including the concurrency gate, shared redaction, host probe and installer items. This correction changes no root-broker implementation, control verb, unit, installer, chain read or live system.
+
+## 2026-10-05 — Round 9 second fix deferred review details
+
+63. **Pre-plan blocked state uses the displayed gate.** The TUI's preliminary BLOCKED check can use a preview up to the CONTROL cadence old. The broker evaluates its own fresh gate before planning and applying, so this does not bypass the write boundary. The owner leaves this behavior unchanged in the second fix.
+
+64. **Unknown-job attempt outside the matching window.** A local row whose job id is unknown and whose accept falls outside the plane-start window can remain alongside a plane row for the same real attempt. This rare ambiguity can count twice; broadening the join without evidence could instead hide another real attempt. The second fix retains the approved window and files this case for later measurement.
+
+65. **Busy-floor checks leave a small pre-deadline interval unobserved.** Three existing tests observe no read at 56 or 116 seconds, then advance to the original deadline so the API interval permits a read. They preserve the deadline checks but do not separately inspect the last few seconds before it. A future test-only refinement can cover those instants without granting an extra API cycle; no scheduling change is implied.

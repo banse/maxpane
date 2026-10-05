@@ -46,3 +46,80 @@ def _no_pepepane_env(monkeypatch):
 
     for name in [key for key in os.environ if key.startswith("PEPEPANE_")]:
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _forbid_external_network(request, monkeypatch):
+    """Refuse external I/O and fail even when a client catches the refusal.
+
+    MAXPANE_NETWORK_SURVEY_DIR explicitly selects a blocking, record-only survey.
+    Each process writes its own JSONL file, including the owning test's nodeid.
+    This in-process fixture cannot cover subprocesses or tests outside tests/.
+    """
+    import ipaddress
+    import json
+    import os
+    from pathlib import Path
+    import socket
+
+    if request.node.get_closest_marker("host"):
+        yield
+        return
+
+    for name in ("http_proxy", "https_proxy", "all_proxy", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NO_PROXY", "*")
+    monkeypatch.setenv("no_proxy", "*")
+    refused = set()
+    survey_dir = os.environ.get("MAXPANE_NETWORK_SURVEY_DIR")
+
+    class ExternalNetworkRefused(OSError):
+        pass
+
+    def is_local(host):
+        if host is None or host == "" or host == b"":
+            return True
+        if isinstance(host, bytes):
+            host = host.decode("ascii", errors="replace")
+        if host.lower() == "localhost":
+            return True
+        try:
+            return ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            return False
+
+    def check(host):
+        if is_local(host):
+            return
+        host = host.decode("ascii", errors="replace") if isinstance(host, bytes) else str(host)
+        refused.add(host)
+        if survey_dir:
+            directory = Path(survey_dir)
+            directory.mkdir(parents=True, exist_ok=True)
+            worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+            with (directory / f"{worker}-{os.getpid()}.jsonl").open("a", encoding="utf-8") as output:
+                output.write(json.dumps({"nodeid": request.node.nodeid, "host": host}) + "\n")
+                output.flush()
+                os.fsync(output.fileno())
+        raise ExternalNetworkRefused(f"external network attempt refused: {host}")
+
+    def guarded_connect(original):
+        def connect(client, address):
+            if client.family in (socket.AF_INET, socket.AF_INET6):
+                check(address[0])
+            return original(client, address)
+        return connect
+
+    def guarded_resolver(original, *, sockaddr=False):
+        def resolve(host, *args, **kwargs):
+            check(host[0] if sockaddr else host)
+            return original(host, *args, **kwargs)
+        return resolve
+
+    for name in ("connect", "connect_ex"):
+        monkeypatch.setattr(socket.socket, name, guarded_connect(getattr(socket.socket, name)))
+    for name in ("getaddrinfo", "gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo"):
+        monkeypatch.setattr(socket, name, guarded_resolver(getattr(socket, name), sockaddr=name == "getnameinfo"))
+    yield
+    if refused and not survey_dir:
+        pytest.fail("external network attempt(s): " + ", ".join(sorted(refused)), pytrace=False)

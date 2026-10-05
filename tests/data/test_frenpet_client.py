@@ -389,8 +389,14 @@ class TestFrenPetClientGetTrainingData:
 
 
 class TestFrenPetClientFetchSnapshot:
+    @pytest.fixture
+    def refused_http_transport(self):
+        def refuse(request):
+            raise httpx.ConnectError("network unavailable in snapshot test", request=request)
+        return httpx.MockTransport(refuse)
+
     @pytest.mark.asyncio
-    async def test_spectator_mode(self):
+    async def test_spectator_mode(self, refused_http_transport):
         """Without a wallet address, managed_pets should be empty."""
         now = int(time.time())
         future = now + 86400
@@ -407,7 +413,7 @@ class TestFrenPetClientFetchSnapshot:
                     win_qty=0, loss_qty=0, shrooms=0, name="Pet #2", owner=""),
         ]
 
-        async with FrenPetClient() as client:
+        async with httpx.AsyncClient(transport=refused_http_transport) as http, FrenPetClient(http_client=http) as client:
             # Mock: indexer returns pets, autopet API returns empty
             client.get_all_pets_from_indexer = lambda: pets
             client.get_autopet_pets = AsyncMock(return_value=[])
@@ -419,7 +425,7 @@ class TestFrenPetClientFetchSnapshot:
         assert len(snapshot.top_pets) == 2
 
     @pytest.mark.asyncio
-    async def test_with_wallet(self):
+    async def test_with_wallet(self, refused_http_transport):
         """With a wallet address, managed_pets should be populated."""
         now = int(time.time())
         future = now + 86400
@@ -433,7 +439,7 @@ class TestFrenPetClientFetchSnapshot:
         ]
         managed = [all_pets[0]]
 
-        async with FrenPetClient() as client:
+        async with httpx.AsyncClient(transport=refused_http_transport) as http, FrenPetClient(http_client=http) as client:
             client.get_all_pets_from_indexer = lambda: all_pets
             client.get_autopet_pets = AsyncMock(return_value=managed)
 

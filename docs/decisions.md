@@ -1507,3 +1507,21 @@ The seat and MaxPane runs each report the existing pytest-asyncio fixture-loop-s
 The owner's `2026-10-05-pepepane-round-9-fix-2-brief.md` is the sole plan for this Tier 2 correction of `3b8936c`. The design remains approved; no replacement spec or plan is written. Work stays on pepepane and finishing keeps the branch as-is. Root-broker and deployment implementation files remain byte-identical, with only the final generated lock and manifest refreshed.
 
 Independent verification corrected two limits of the previous report. Passing under the sandbox's network restriction did not prove that tests attempted no network access: the Mac first-signal refusal test reached the real standing fetch through its control harness. Also, `test_unknown_job_requires_usable_start_evidence_even_for_singleton` passes all 24 cases on `4ad6947`; it detects an intermediate implementation regression, not the original fix-3 defect. The main realistic two-attempt regression still provides fix 3's failing-before proof. This round measures refused in-process connection and resolution attempts explicitly before enforcing an empty record.
+
+### 2026-10-05 — PEPEPANE round 9 second fix: network survey and enforcement boundary
+
+The controller ran the complete MaxPane suite once with the new guard blocking external operations and recording refusals without failing teardown. The result was 12,799 passed, 3 skipped and the existing pytest-asyncio warning in 2,029.53 seconds. Its per-worker records contain exactly twelve refused attempts, from three tests:
+
+| Test | Refused host | Attempts |
+|---|---|---:|
+| `tests/screens/test_seat_control.py::test_real_broker_first_signal_refusal_never_polls_verify[mac]` | `api.imd.fun` | 6 |
+| `tests/data/test_frenpet_client.py::TestFrenPetClientFetchSnapshot::test_spectator_mode` | `mainnet.base.org` | 3 |
+| `tests/data/test_frenpet_client.py::TestFrenPetClientFetchSnapshot::test_with_wallet` | `mainnet.base.org` | 3 |
+
+All three tests were unchanged during the survey. The passing summary alone therefore did not establish isolation; the refusal records exposed the swallowed connection errors. The normal guard refuses non-local Internet-family connects and standard name resolution with an OSError subclass, records the attempted host, and fails teardown even when the caller catches the exception. Each test clears inherited proxy variables and sets both no-proxy forms to bypass system proxy discovery. Host-marked tests are exempt. Survey mode is explicitly selected by its output-directory variable and still blocks the attempted operation; ordinary runs enforce an empty record.
+
+This is an in-process test guard, not a host firewall. It does not govern `sybilkit/sybilkit_tests`, which is outside the tests tree, or subprocesses such as the footprint, deploy/bash and summariser tests. Import/collection-time operations and code deliberately replacing the patched socket functions are also outside its fixture lifetime or interception boundary. Final results can establish absence of refused attempts at the guarded interfaces, not unrestricted-network host behavior.
+
+Guard regressions run copied conftest code in pytester subprocesses. The sandbox permits the always-running local-host delegation checks but denies listener binding; that genuine-listener control reports one explicit environment skip. The authorized scoped run outside that restriction passed all thirteen guard tests, including temporary loopback and Unix listeners. The ordinary and survey-isolation scoped runs each passed twelve with that one skip. No external-refusal assertion is skipped or weakened for the sandbox.
+
+The three surveyed cases were then run with enforcement: all three test bodies passed and all three teardowns failed, proving that caught exceptions cannot conceal an attempted connection. The Mac case now stubs only the underlying standing-fetch function to raise OSError; its broker stays online and its gate arguments and refusal behavior are unchanged. The two FrenPet snapshot cases inject a lifecycle-managed HTTP mock transport that raises ConnectError, preserving the real reward-pool fallback. All three pass after those stubs with an empty refusal record. These are test setup changes; no existing result assertion is removed or relaxed.

@@ -200,3 +200,7 @@ that `git merge main` from upstream never conflicts here (spec §1 #7; `docs/dec
 - Root broker files and identity remain imd-dashd 0.1.5. The existing 131×40 screen minimum is retained. Deferred byte-budget, cached-redaction and busy-class concerns are recorded in the follow-ups document.
 - Ledger refreshes share their row snapshot and hydrate full text only for bounded JOB/RECORDS output. NODES retains all-history counts and coverage through structured queries; detached detail reads keep a stable candidate list per run.
 - CONTROL audit tests now exercise the real manager read path. The detail-popup timer proof detects suspended verification, and an open confirmation block is checked at the 131×40 screen size.
+
+## PEPEPANE round 9 second fix — 2026-10-05
+
+- Tests under `tests/` now refuse and record external connection and name-resolution attempts, failing teardown even when application code catches the error. The full blocking survey identified and isolated the Mac CONTROL test and two FrenPet snapshot tests. Subprocesses and the separate sybilkit suite remain outside this in-process guard.

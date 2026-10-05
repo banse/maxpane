@@ -998,6 +998,10 @@ async def test_real_broker_first_signal_refusal_never_polls_verify(tmp_path, mon
         pids = [64876, 64877]
     else:
         broker, _runner, _lines, clock = _local(tmp_path, offline=False)
+        def unavailable_standing(_url):
+            raise OSError("standing fetch unavailable in test")
+        monkeypatch.setattr("maxpane_dashboard.data.seat_broker_client._gate_mod.fetch_standing_running",
+                            unavailable_standing)
         rows = _container_procs()
         monkeypatch.setattr(broker, "_process_snapshot", lambda: rows)
         original_read = broker._read
