@@ -333,6 +333,27 @@ because no seeded IN FLIGHT objective or note carries an address.
    (§2).
 3. If anything reddens, stop and report.
 
+**Owner-approved exception — 2026-10-05.** All four payloads are whole at
+138–139×35 collapsed. Expanded, each shows only `‹ taller` there (F73);
+`capture` reproduces this on pre-WP2 `df9272f`. The owner approved continuing
+WP2–WP5 with that existing height limitation and every pin unchanged.
+Measured on Textual 8.2.8; the owner's dev version is 8.1.1.
+
+**Landed — F76 (Tier 1), 2026-10-05.**
+Commit: `fix(surf): add copy icons to in-flight prose` (same-commit title).
+Shared `fit_prose` preserves WORKFLOWS behavior; IN FLIGHT objectives remain
+literal, notes strip tags, and whole address/icon units copy without guessed links.
+The address sweep seeds both fields; its SWARM wide pass uses 400 columns to
+show both units, retaining the original 170-column pass and every layout pin.
+Live keyless SURF shown to the owner at **200×48**; owner approved continuing.
+Focused: **13 passed**; seeded SURF sweep: **1 passed**. Whole touched/composing
+files plus layout/address sweeps: **779 passed** (340.37 s, four workers).
+Fast guards: **120 passed**; doc pins: **12 passed**.
+`scripts/mutate.py`: **KILLED IN FLIGHT old prose cells**, reddening
+`test_prose_addresses_copy_without_links_and_drop_whole_when_tight` and
+`test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_that_opens_it[surf-wide]`.
+Owner-run Tier 1 review remains pending.
+
 ## 6. WP3 — F80: LAUNCHES' `#` shows the whole launch number (Tier 0)
 
 **Defect.** `swarm_launches.py:270` formats `launch_number` with `fmt_int`, which groups

@@ -72,7 +72,7 @@ from maxpane_dashboard.widgets.fmt import as_float
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.panels import LOADING
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, JOB_EXPLORER, mmdd_hhmm
-from maxpane_dashboard.widgets.surf._icons import keep_units, link_prose, mark_addresses, unmark
+from maxpane_dashboard.widgets.surf._icons import fit_prose
 from maxpane_dashboard.widgets.surf._swarm_table import (
     CELL_PADDING,
     SwarmTableBase,
@@ -185,12 +185,7 @@ def _text_cell(item: dict, width: int) -> Text:
         raw, style = failure, "red"
     else:
         raw, style = first_sentence(item.get("objective")) or DASH, ""
-    marked, _, spans = mark_addresses(raw)
-    cut = rowfit.cell_len(marked) > width
-    fitted = keep_units(marked, spans, rowfit.clip(marked, width))
-    if cut and not fitted:
-        fitted = "…"
-    return link_prose(Text(unmark(fitted), style=style), explorer=None)
+    return fit_prose(raw, width, style=style)
 
 
 class SurfSwarmWorkflows(SwarmTableBase):

@@ -30,8 +30,8 @@ Per case, across all of its views, four questions (PRD §7 E2):
 
 Each case is swept at :data:`SIZE` (170 columns) and again at each view's own
 layout pin, plus any ``extra_sizes`` it names (:func:`sizes_for`). Questions 1,
-2 and 5 are asked at every size; 3 and 4 only at 170, where every body has room
-for every unit it can shed at a pin.
+2 and 5 are asked at every size; 3 and 4 only on the wide pass (SWARM uses
+400 columns for IN FLIGHT prose; surf also retains the original 170 pass).
 
 An address-free case gets the opposite: no icon, no whole or shortened address,
 and no helper-using widget mounted at all.
@@ -62,7 +62,8 @@ SIZE = (170, 60)
 def sizes_for(case: SweepCase, kind: str) -> list[tuple[int, int]]:
     """The terminal each of ``case``'s views is swept at, in ``views`` order.
 
-    ``wide`` is :data:`SIZE` for every view. ``pin`` is each view's own layout
+    ``wide`` is :data:`SIZE`, except SWARM prose coverage at 400 columns.
+    ``pin`` is each view's own layout
     pin (``case.pins``; ``__main__.FULL_LAYOUT_COLUMNS`` when it names none),
     because 170 columns hides every defect that only exists where a panel is
     tight: an address budgeted below the window floor loses its icon at the
@@ -70,7 +71,11 @@ def sizes_for(case: SweepCase, kind: str) -> list[tuple[int, int]]:
     """
     count = len(case.views)
     if kind == "wide":
-        return [SIZE] * count
+        # IN FLIGHT shares the 4fr:5fr row and splits its remaining prose
+        # budget again. Its whole address+icon units need the wider SWARM
+        # view; surf also retains 170 in extra_sizes and its unchanged pins.
+        return [(400, SIZE[1]) if case.name == "surf" and view == ("s",) else SIZE
+                for view in case.views]
     if kind == "pin":
         pins = case.pins or ((FULL_LAYOUT_COLUMNS, None),)
         if len(pins) == 1:

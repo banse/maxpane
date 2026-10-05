@@ -27,8 +27,9 @@ from textual.widgets import RichLog, Static
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import DASH, fmt_age
-from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
+from maxpane_dashboard.widgets.markup_safety import flatten, strip_tags
 from maxpane_dashboard.widgets.panels import RichLogFeed
+from maxpane_dashboard.widgets.surf._icons import fit_prose, mark_addresses
 
 __all__ = [
     "COMPACT_WIDTH",
@@ -205,11 +206,15 @@ class SurfSwarmInFlight(RichLogFeed):
             line.append(rowfit.pad(pair, _ROLE_STATE_COLS), style="cyan")
         if self._objective_cols > 0:
             line.append(" " * _GAP)
-            line.append(rowfit.pad(_cell(event.get("objective"), self._objective_cols), self._objective_cols), style="dim")
+            cell = fit_prose(flatten(event.get("objective")) or DASH, self._objective_cols, style="dim")
+            cell.pad_right(max(self._objective_cols - cell.cell_len, 0))
+            line.append_text(cell)
         note = event.get("note")
         if self._note_cols > 0:
-            cell = Text.from_markup(sanitize_cell(note, self._note_cols)) if note else Text(DASH)
-            self._note_clipped |= rowfit.cell_len(strip_tags(flatten(note))) > self._note_cols
+            clean_note = strip_tags(note)
+            cell = fit_prose(clean_note, self._note_cols) if note else Text(DASH)
+            marked, _, _ = mark_addresses(clean_note)
+            self._note_clipped |= rowfit.cell_len(marked) > self._note_cols
             line.append(" " * _GAP)
             line.append_text(cell)
         elif note:

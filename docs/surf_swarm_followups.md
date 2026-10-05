@@ -1076,6 +1076,9 @@ next touched, never as its own branch, except where an item is an owner decision
   no seeded IN FLIGHT objective or note carries an address. Fix: route the cells through
   `widgets/surf/_icons.py` with `explorer=None`, as WORKFLOWS' text cell does (`032e6e7`), and seed
   the sweep.
+  **CLOSED 2026-10-05** (commit: `fix(surf): add copy icons to in-flight prose`).
+  Shared fitted prose now keeps whole copyable, unlinked address units; live 200×48
+  shown, 779 scoped tests pass and both widget/sweep tests kill the old-cell mutant.
 - **F77 — WORKFLOWS: no committed test combines a red failure with an embedded address** (WP4
   re-review). Add one case that composites the failure's colour and the icon together.
 - **F78 — WORKFLOWS: the 20-cell text-column floor has no test.** The final review changed

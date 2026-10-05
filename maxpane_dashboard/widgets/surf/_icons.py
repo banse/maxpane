@@ -38,6 +38,7 @@ from collections.abc import Iterable
 from rich.style import Style
 from rich.text import Text
 
+from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import (
     COPY_GLYPH,
     PROSE_ADDRESS_RE,
@@ -48,6 +49,7 @@ from maxpane_dashboard.widgets.explorer import Explorer
 
 __all__ = [
     "NBSP",
+    "fit_prose",
     "keep_units",
     "link_in_order",
     "link_prose",
@@ -209,3 +211,13 @@ def link_in_order(
             window = _SHOWN_BEFORE_RE.search(text.plain, 0, index)
             if window is not None and _shows(window.group(1), address):
                 text.stylize(shown, window.start(1), window.end(1))
+
+
+def fit_prose(text: str, cols: int, *, style: str | Style | None = None) -> Text:
+    """Fit cleaned prose, keeping each address and copy icon whole and unlinked."""
+    marked, _, spans = mark_addresses(text)
+    cut = rowfit.cell_len(marked) > cols
+    fitted = keep_units(marked, spans, rowfit.clip(marked, cols))
+    if cut and not fitted:
+        fitted = "…"
+    return link_prose(Text(unmark(fitted), style=style), explorer=None)

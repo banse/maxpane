@@ -364,3 +364,38 @@ async def test_inflight_literal_cells_drop_controls():
     output = await _text(size=(180, 12), swarm_inflight_rows=[_row(template=CONTROL_PAYLOAD, objective=CONTROL_PAYLOAD)])
     assert not any(c in output for c in ("\x1b", "\x00", "\x9b"))
     assert output.count(CONTROL_REMAINDER) == 2
+
+
+async def test_prose_addresses_copy_without_links_and_drop_whole_when_tight():
+    from maxpane_dashboard.widgets.address import COPY_GLYPH
+    from tests.widgets.address_probe import icon_targets, link_targets
+
+    objective_address = "0x" + "a1" * 20
+    note_address = "0x" + "b2" * 20
+
+    class _A(App):
+        def compose(self):
+            yield SurfSwarmInFlight()
+
+    async with _A().run_test(size=(240, 12)) as pilot:
+        panel = pilot.app.query_one(SurfSwarmInFlight)
+        panel.update_data(swarm_inflight_rows=[_row(
+            objective=f"[/x]pay {objective_address} now",
+            note=f"[/x]notify {note_address} now",
+        )])
+        await pilot.pause()
+        text = "\n".join("".join(s.text for s in strip)
+                         for strip in pilot.app.screen._compositor.render_strips())
+        assert f"[/x]pay {objective_address} {COPY_GLYPH} now" in text
+        assert f"notify {note_address} {COPY_GLYPH} now" in text
+        assert text.count("[/x]") == 1
+        assert {a for _, _, a in icon_targets(pilot.app)} == {objective_address, note_address}
+        assert link_targets(pilot.app) == []
+
+        await pilot.resize_terminal(TIGHT_WIDTH + CHROME_COLS, 12)
+        await pilot.pause()
+        text = "\n".join("".join(s.text for s in strip)
+                         for strip in pilot.app.screen._compositor.render_strips())
+        assert "[/x]pay…" in text and "notify…" in text
+        assert "0x" not in text and COPY_GLYPH not in text
+        assert icon_targets(pilot.app) == []

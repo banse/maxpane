@@ -141,6 +141,8 @@ _SEAT_OWNER = "0x7A11e2d9C4b3f8E6a5D1c0B9e8F7a6D5c4B3a2E1"
 #: the address is copyable and **unlinked** (``SweepCase.unlinked``), the one
 #: such address on surf.
 _SWARM_WORKFLOW = "0xc0DEc0DE7a5B6c8D9e0F1a2B3c4D5e6F7a8B9c0D"
+_SWARM_OBJECTIVE = "0x" + "a1" * 20
+_SWARM_NOTE = "0x" + "b2" * 20
 
 
 def _surf_payload() -> dict:
@@ -158,6 +160,9 @@ def _surf_payload() -> dict:
     launches[0] = {**launches[0], "artifacts": artifacts, "artifact_count": 1}
     payload["swarm_seat_summary"] = {**payload["swarm_seat_summary"], "owner": _SEAT_OWNER}
     payload["swarm_seat_work_rows"][2]["oracle_notes"] = _SURF_PROSE
+    inflight = payload["swarm_inflight_rows"]
+    inflight[0] = {**inflight[0], "objective": f"{_SWARM_OBJECTIVE} pay",
+                  "note": f"{_SWARM_NOTE} notify", "note_kind": "dispatch"}
     workflows = payload["swarm_workflow_rows"]
     blocked = next(i for i, row in enumerate(workflows) if row["status"] == "blocked")
     workflows[blocked] = {
@@ -185,9 +190,11 @@ SURF_SEEDED: tuple[str, ...] = (
     _SWARM_CONTRACT,                                # s: LAUNCHES artifact, shortened
     _SEAT_OWNER,                                    # a: SEAT RECORD owner, shortened
     _SWARM_WORKFLOW,                                # s: WORKFLOWS failure, whole, unlinked
+    _SWARM_OBJECTIVE,                               # s: IN FLIGHT objective, unlinked
+    _SWARM_NOTE,                                    # s: IN FLIGHT note, unlinked
 )
 #: Of those, the ones rendered with an icon and no link (``SweepCase.unlinked``).
-SURF_UNLINKED: tuple[str, ...] = (_SWARM_WORKFLOW,)
+SURF_UNLINKED: tuple[str, ...] = (_SWARM_WORKFLOW, _SWARM_OBJECTIVE, _SWARM_NOTE)
 
 
 # -- curator -------------------------------------------------------------------
@@ -657,6 +664,8 @@ CASES: tuple[SweepCase, ...] = (
         explorers=(ETHEREUM, SEPOLIA, BASE),
         rows_pick_explorer=True,
         unlinked=SURF_UNLINKED,
+        # Retain the original wide sweep when SWARM's prose coverage uses 400.
+        extra_sizes=((170, 60),),
         screen_class=SurfScreen,
         build=_surf_app,
         payload=_surf_payload,
