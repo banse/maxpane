@@ -1,5 +1,11 @@
 # Codex plan — SWARM WORKFLOWS follow-ups (written 2026-10-04; rules updated 2026-10-05)
 
+> **Do not use any superpowers skill** (brainstorming, writing-plans, executing-plans,
+> subagent-driven-development, test-driven-development, requesting-code-review, or any other
+> `superpowers:*` skill), even where a skill's own trigger says it must run. The superpowers
+> plugin is disabled for this project (`CLAUDE.md`, "Task triage"). This plan and `CLAUDE.md`
+> are the whole process.
+
 The SWARM WORKFLOWS programme (`docs/surf_swarm_workflows_spec.md`) merged and was pushed to
 `origin/main` at `1147b6d` on 2026-10-04. Its close filed **F73–F85** in
 `docs/surf_swarm_followups.md` and **#80–#81** in `docs/handover_followups_2026_09.md`. This plan
