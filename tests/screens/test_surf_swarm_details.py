@@ -99,7 +99,7 @@ async def test_swarm_alarms_only_appear_in_swarm(fields, alarm):
         assert alarm not in _region_text(pilot.app, screen.query_one('#title-bar'))
 
 
-async def test_swarm_layout_parks_exported_widgets_and_puts_workflows_below_launches():
+async def test_swarm_layout_parks_exported_widgets_and_puts_launches_below_workflows():
     from maxpane_dashboard.data.surf_models import SWARM_PARKED_WIDGET_SIGNATURES
     from maxpane_dashboard.widgets import surf as widgets
     async with _surf_app(_frozen_payload()).run_test(size=(200, 48)) as pilot:
@@ -110,9 +110,9 @@ async def test_swarm_layout_parks_exported_widgets_and_puts_workflows_below_laun
         throughput = screen.query_one(widgets.SurfSwarmThroughput).region
         workflows = screen.query_one(widgets.SurfSwarmWorkflows).region
         sites = screen.query_one(widgets.SurfSwarmSites).region
-        assert launches.y == throughput.y and launches.right <= throughput.x
-        assert launches.bottom <= workflows.y and workflows.bottom <= sites.y
-        assert workflows.width > launches.width
+        assert workflows.y == throughput.y and workflows.right <= throughput.x
+        assert workflows.bottom <= launches.y and launches.bottom <= sites.y
+        assert launches.width > workflows.width
         assert SurfScreen.KEY_HINTS == '[dim]x more · 4 pl4 · s swm · a agt · b brd[/]'
 
 

@@ -1,0 +1,214 @@
+"""Production launch screen behavior, entirely from the v8 capture."""
+import pytest
+from rich.text import Text
+from textual.containers import VerticalScroll
+from textual.widgets import DataTable
+
+from maxpane_dashboard.screens.surf import _title_line
+from maxpane_dashboard.widgets.surf import SurfSwarmLaunches
+from tests.screens.test_surf_screen import _frozen_payload, _region_text, _screen_text, _surf_app
+from tests.screens.test_surf_swarm_screen import _open
+from tests.surf_launch_fixtures import launch_event, launch_row
+from tests.widgets.address_probe import icon_targets, link_targets
+
+
+def fired(**overrides):
+    return dict(launch_event(), ts=1000., **overrides)
+
+
+@pytest.mark.parametrize('agent,swarm', [(False, False), (True, False), (False, True)])
+def test_launch_news_uses_typed_events_in_every_body_and_expires(agent, swarm):
+    payload = _frozen_payload(as_of=4599., swarm_launch_fired=[fired()], sig_swarm_detail='WRONG')
+    title = Text.from_markup(_title_line(payload, agent=agent, swarm=swarm)).plain
+    assert '▲ SWARM LAUNCH $ZTO #737' in title
+    assert 'WRONG' not in title
+    payload['as_of'] = 4600.
+    assert '▲' not in Text.from_markup(_title_line(payload, agent=agent, swarm=swarm)).plain
+
+
+def test_launch_news_multiple_literal_and_default_worst_case_fit():
+    from tests.screens.test_surf_screen import _worst_case_title_payload, WORST_CASE_TITLE_COLUMNS
+    payload = _worst_case_title_payload()
+    payload['swarm_launch_fired'] = [dict(fired(), ts=payload['as_of'], ticker='[red]X')]
+    wide = Text.from_markup(_title_line(payload, row_hint=True, columns=220)).plain
+    assert '▲ SWARM LAUNCH $[red]X #737' in wide
+    assert wide.index('LP owner changed') < wide.index('▲') < wide.index('⚠ activity')
+    narrow = Text.from_markup(_title_line(payload, row_hint=True, columns=143)).plain
+    assert len(narrow) <= WORST_CASE_TITLE_COLUMNS
+    assert '▲ SWARM LAUNCH #737' in narrow and '⚠ 8 src' in narrow
+    assert narrow.index('LP owner changed') < narrow.index('▲') < narrow.index('⚠ 8 src')
+    payload['swarm_launch_fired'].append(dict(fired(), ts=payload['as_of'], number=747))
+    assert '▲ 2 SWARM LAUNCHES' in Text.from_markup(_title_line(payload)).plain
+
+
+@pytest.mark.parametrize('opening', ['enter', 'click'])
+async def test_launch_popup_opens_literal_snapshot_without_fetching(opening):
+    from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen
+    row = launch_row(ticker='[red]X', token_name='[bold]Literal name', site_label='zto',
+                     site_ens_name='zto.site.identitymd.eth', site_link_method='named', site_link_trusted=True)
+    async with _surf_app(_frozen_payload(swarm_launch_rows=[row])).run_test(size=(150, 46)) as pilot:
+        screen = await _open(pilot)
+        table = screen.query_one(SurfSwarmLaunches).query_one(DataTable)
+        calls = screen._data_manager.calls
+        table.focus()
+        if opening == 'enter':
+            await pilot.press('enter')
+        else:
+            await pilot.click(table, offset=(2, 1))
+        await pilot.pause()
+        popup = pilot.app.screen
+        assert isinstance(popup, LaunchDetailScreen)
+        row['token_name'] = 'MUTATED'
+        scroll = popup.query_one(VerticalScroll)
+        seen, icons, links = '', set(), set()
+        while True:
+            seen += '\n' + _screen_text(pilot.app)
+            icons.update(a for _, _, a in icon_targets(pilot.app))
+            links.update(v[5] for v in link_targets(pilot.app))
+            if scroll.scroll_y >= scroll.max_scroll_y:
+                break
+            scroll.scroll_relative(y=10, animate=False)
+            await pilot.pause()
+        for word in ('$[red]X', '[bold]Literal name', 'PAIR', 'IMD', 'POOL FEE', '3000',
+                     'REQUESTER', 'POLICY VERSION', '26', 'K1', 'K2', 'K3', 'K4', 'K6', 'K7',
+                     'liquidity held by', '(factory, unverified)', 'named', 'trusted'):
+            assert word in seen, word
+        assert 'MUTATED' not in seen
+        assert not any(word in seen.lower() for word in ('locked', 'safe', 'audited'))
+        assert {a['address'] for a in row['artifacts']} <= icons
+        assert {f"https://etherscan.io/address/{a['address']}" for a in row['artifacts']} <= links
+        assert 'https://zto.sites.imd.fun/' in links
+        assert f"https://explorer.imd.fun/token/{row['token_address']}" in links
+        assert screen._data_manager.calls == calls
+        await pilot.press('escape')
+        await pilot.pause()
+        assert pilot.app.screen is screen
+
+
+@pytest.mark.parametrize('chain_id,base', [(8453, 'https://basescan.org'), (4663, 'https://robinhoodchain.blockscout.com')])
+async def test_launch_popup_chain_links_and_unknown_pair(chain_id, base):
+    from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen
+    row = launch_row(chain_id=chain_id, pair='0x'+'aa'*20)
+    async with _surf_app(_frozen_payload()).run_test(size=(150, 46)) as pilot:
+        await pilot.app.push_screen(LaunchDetailScreen(row))
+        await pilot.pause()
+        links = {v[5] for v in link_targets(pilot.app)}
+        assert {f"{base}/address/{a['address']}" for a in row['artifacts']} <= links
+        assert f"{base}/address/{row['pair']}" in links
+
+
+async def test_launch_popup_tokenless_uses_job_and_immutables_evidence():
+    from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen
+    for number in (734, 747):
+        row = launch_row(number)
+        async with _surf_app(_frozen_payload()).run_test(size=(150, 80)) as pilot:
+            await pilot.app.push_screen(LaunchDetailScreen(row))
+            await pilot.pause()
+            text = _screen_text(pilot.app)
+            links = {v[5] for v in link_targets(pilot.app)}
+            if number == 734:
+                assert 'K6 · na' in text
+                assert f"https://explorer.imd.fun/jobs/{row['job_id']}" in links
+            else:
+                assert 'pass (immutables)' in text and 'creation_offset: 740' in text
+
+
+@pytest.mark.parametrize('count,word', [(1, '⚠ launch #737 K3'), (2, '⚠ 2 launch checks')])
+def test_launch_mismatch_alarm_is_swarm_only(count, word):
+    row = launch_row(verdict={'state':'mismatch', 'failed':'K3', 'passed':3})
+    payload = _frozen_payload(swarm_launch_rows=[row]*count)
+    assert word in Text.from_markup(_title_line(payload, swarm=True)).plain
+    assert word not in Text.from_markup(_title_line(payload)).plain
+
+
+@pytest.mark.parametrize('chain_id', [8453, 4663])
+async def test_launch_popup_click_routes_copy_and_chain_explorer(chain_id):
+    from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen
+    row = launch_row(chain_id=chain_id)
+    app = _surf_app(_frozen_payload())
+    copied, opened = [], []
+    app.action_copy_address = lambda address: copied.append(address)
+    app.action_open_explorer = lambda explorer, kind, value: opened.append((explorer, kind, value))
+    async with app.run_test(size=(150, 46)) as pilot:
+        await app.push_screen(LaunchDetailScreen(row))
+        await pilot.pause()
+        address = row['artifacts'][0]['address']
+        x, y, _ = next(t for t in icon_targets(app) if t[2] == address)
+        await pilot.click(offset=(x, y))
+        await pilot.pause()
+        assert copied == [address]
+        x, y, explorer, kind, value, _ = next(t for t in link_targets(app) if t[4] == address)
+        await pilot.click(offset=(x, y))
+        await pilot.pause()
+        assert opened == [(explorer, kind, value)]
+        assert isinstance(app.screen, LaunchDetailScreen)
+
+
+@pytest.mark.parametrize('key', [None, 's', 'a', 'b', 'l', 'e', '4'])
+async def test_launch_title_is_literal_accent_news_in_composited_bodies(key):
+    payload = _frozen_payload()
+    payload['swarm_launch_fired'] = [dict(fired(), ts=payload['as_of'], ticker='[red]X')]
+    async with _surf_app(payload).run_test(size=(200, 48)) as pilot:
+        screen = pilot.app.screen
+        await screen._do_refresh()
+        if key:
+            await pilot.press(key)
+        await pilot.pause()
+        title = screen.query_one('#title-bar')
+        assert '▲ SWARM LAUNCH $[red]X #737' in _region_text(pilot.app, title)
+        from rich.color import Color
+        accent = Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+        segments = [seg for seg in screen._compositor.render_strips()[title.region.y] if '▲' in seg.text]
+        assert segments and all(seg.style.color.get_truecolor(pilot.app.ansi_theme) == accent for seg in segments)
+
+
+def test_launch_news_expires_while_the_signal_remains_fired():
+    from maxpane_dashboard.analytics.surf_signals import build_signals
+    event = launch_event()
+    _, base = build_signals({}, {'swarm_launch_events': {'events': [], 'ts': 1000.}}, 1000.)
+    _, base = build_signals(base, {'swarm_launch_events': {'events': [event], 'ts': 1001.}}, 1001.)
+    for now, visible in ((4600., True), (4601., False)):
+        signals, _ = build_signals(base, {'swarm_launch_events': None}, now)
+        assert signals['sig_swarm_state'] == 'fired'
+        payload = _frozen_payload(as_of=now, **signals)
+        assert ('▲ SWARM LAUNCH' in Text.from_markup(_title_line(payload)).plain) is visible
+
+
+@pytest.mark.parametrize('width', [129, 150])
+@pytest.mark.parametrize('news_count,mismatch_count', [(1, 1), (1, 2), (2, 1), (2, 2), (0, 1), (0, 2), (1, 0), (2, 0)])
+@pytest.mark.parametrize('health', ['abcdefghijkl', None])
+async def test_crowded_swarm_title_keeps_every_fact(width, news_count, mismatch_count, health):
+    from rich.color import Color
+    from tests.screens.test_surf_screen import _worst_case_title_payload
+    payload = _worst_case_title_payload()
+    payload.update(swarm_breaker={'tripped': True},
+                   swarm_services_up={'verifier': False, 'publisher': False, 'deployer': False},
+                   swarm_health_status=health,
+                   swarm_launch_fired=[dict(launch_event(), ts=payload['as_of'], ticker='[red]X')] * news_count,
+                   swarm_launch_rows=[launch_row(verdict={'state': 'mismatch', 'failed': 'K3', 'passed': 3})] * mismatch_count)
+    async with _surf_app(payload).run_test(size=(width, 30)) as pilot:
+        screen = await _open(pilot)
+        bar = screen.query_one('#title-bar')
+        painted = _region_text(pilot.app, bar).strip()
+        rendered = Text.from_markup(_title_line(payload, row_hint=True, swarm=True,
+                                               columns=bar.content_size.width)).plain
+        assert painted == rendered
+        assert Text(painted).cell_len <= bar.content_size.width
+        for word in ('IMD $0.71', 'par -2.7%', 'as of ', '‹ taller', 'LP changed',
+                     '⚠ 8 src', 'breaker open', '3 svc down', 'health '):
+            assert word in painted, (word, painted)
+        if mismatch_count:
+            assert ('launch #737 K3' if mismatch_count == 1 else '2 launch checks') in painted
+        if news_count:
+            assert '▲' in painted
+            assert ('#737' if news_count == 1 else '2') in painted
+            assert ('LAUNCHES' if news_count > 1 else 'LAUNCH') in painted
+            assert painted.index('LP changed') < painted.index('▲') < painted.index('⚠ 8 src')
+            accent = Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+            segments = [seg for seg in screen._compositor.render_strips()[bar.region.y] if '▲' in seg.text]
+            assert segments and all(seg.style.color.get_truecolor(pilot.app.ansi_theme) == accent for seg in segments)
+        else:
+            assert '▲' not in painted
+        shown_health = painted.split('health ', 1)[1].split(' ', 1)[0]
+        assert shown_health == (health or 'unavailable') or (
+            shown_health.endswith('…') and (health or 'unavailable').startswith(shown_health[:-1]))

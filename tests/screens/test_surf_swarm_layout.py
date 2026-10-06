@@ -183,9 +183,9 @@ _FLOOR_PANEL = {"s": "SurfSwarmThroughput"}
 _CONTAINER_OF = {
     "b": {SurfSwarmLeaderboard: BOARD_BODY_ID, SurfSwarmFleet: BOARD_BODY_ID},
     "s": {
-        SurfSwarmWorkflows: SWARM_BOTTOM_ID,
+        SurfSwarmWorkflows: SWARM_TOP_ID,
         SurfSwarmThroughput: SWARM_TOP_ID,
-        SurfSwarmLaunches: SWARM_TOP_ID,
+        SurfSwarmLaunches: SWARM_BOTTOM_ID,
         SurfSwarmSites: SWARM_BODY_ID,
     },
     "a": {
@@ -529,7 +529,50 @@ def _polish_agent_payload():
     return payload
 
 
+def _production_swarm_payload():
+    """v8 production rows plus explicit synthetic Base and RH examples; no live read."""
+    from tests.surf_launch_fixtures import fixture, launch_row
+    from maxpane_dashboard.analytics.surf_launch_sites import match_sites, site_job_facts
+    from maxpane_dashboard.analytics.surf_launch_checks import extract_facts
+    raw = fixture("launches_100")["launches"]
+    rows = sw.launch_rows(raw)
+    for number in (734, 737, 747):
+        rows = [launch_row(number) if row["launch_number"] == number else row for row in rows]
+    for chain, number, ticker, digit in ((8453, 800, "BASETEST", "b"), (4663, 801, "RHTEST", "c")):
+        row = launch_row(chain_id=chain, launch_number=number, ticker=ticker,
+                         launch_id=f"{number:08d}-0000-4000-8000-000000000000")
+        row["token_address"] = "0x" + digit * 40
+        for artifact in row["artifacts"]:
+            if artifact["role"] == "token":
+                artifact["address"] = row["token_address"]
+        rows.append(row)
+    sites = fixture("sites")["sites"]
+    site_rows = sw.site_rows(sites)
+    detail = fixture("launch_737")
+    facts = dict(extract_facts(detail), row=detail)
+    zto = next(site for site in sites if site["label"] == "zto")
+    links = match_sites([zto], {detail["id"]: facts},
+                       {zto["id"]: site_job_facts(fixture("job_zto_site"))}, [])
+    linked = next(row for row in rows if row["launch_number"] == 737)
+    linked.update(site_label=zto["label"], site_ens_name=zto["ensName"],
+                  site_link_method=links[zto["id"]]["method"], site_link_trusted=True)
+    for site in site_rows:
+        if site["label"] == zto["label"]:
+            site.update(production_link=True, link_trusted=True, launch_ticker="ZTO",
+                        launch_number=737, link_method="named")
+    captured = fixture("MANIFEST")["files"]["launches_100"]["captured_at"]
+    return _frozen_payload(
+        as_of=dt.datetime.fromisoformat(captured.replace("Z", "+00:00")).timestamp(),
+        swarm_launch_rows=rows, swarm_launch_summary=launch_summary(rows), swarm_site_rows=site_rows,
+        swarm_workflow_rows=sw.workflow_rows(fixture("workflows_100")["workflows"]),
+        swarm_agents_online=None, swarm_agents_enrolled=None, swarm_working_now=None,
+        swarm_accepted_today=None, swarm_throughput=None, swarm_health_status=None,
+        swarm_breaker=None, swarm_services_up=None, swarm_launch_fired=[],
+        swarm_launches_as_of_hhmm="00:38", swarm_workflows_as_of_hhmm="00:38")
+
+
 PAYLOADS = {
+    "production-s": _production_swarm_payload,
     "capture": _capture_payload,
     "capture420": _capture420_payload,
     "duplicates420": lambda: _capture420_payload("seat_420_duplicated_reviews"),

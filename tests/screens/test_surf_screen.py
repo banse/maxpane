@@ -693,6 +693,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
 #:   the retired LP box's ``owner ✓`` line was saying. The screen consuming a
 #:   key directly is the original meaning of this set.
 META_KEYS = frozenset({
+    "swarm_launch_fired",  # Typed launch news consumed by _title_line.
     "as_of", "degraded", "eth_usd",
     "swarm_breaker", "swarm_services_up", "swarm_health_status",
     "gate_open", "identities_written", "lp_liquidity",
@@ -800,8 +801,8 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
 #: key in ``SWARM_WIDGET_SIGNATURES``. CAPABILITY's own two keys are not
 #: parked here: its frozen signature still consumes them
 #: (:data:`_PARKED_KEYS`, read from the export).
-# WP1 freezes title events; WP4 installs their title consumer.
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset({"swarm_launch_fired"})
+# WP4 installs the typed launch title consumer.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z

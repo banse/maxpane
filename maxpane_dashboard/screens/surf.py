@@ -239,10 +239,10 @@ from maxpane_dashboard.widgets.surf._oracle_answer import valid_identity, joined
 from maxpane_dashboard.status_message import post_status_message
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.surf._swarm_summary import SERVICE_NAMES
-from maxpane_dashboard.screens.swarm_detail import ThroughputDetailScreen, WorkflowDetailScreen
+from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen, ThroughputDetailScreen, WorkflowDetailScreen
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
-from maxpane_dashboard.widgets.markup_safety import sanitize_cell
+from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 from maxpane_dashboard.widgets.surf.swarm_record_filter import (
@@ -2307,7 +2307,7 @@ def _fmt_hhmm(ts) -> str:
         return _EMDASH
 
 
-def _fmt_degraded(sources, *, compact: bool = False) -> str:
+def _fmt_degraded(sources, *, compact: bool = False, separator: str = " · ") -> str:
     """``· ⚠ logs, market`` — or an empty string when all is well.
 
     Only ``None``/``[]`` (or anything else falsy) genuinely mean "nothing is
@@ -2339,13 +2339,13 @@ def _fmt_degraded(sources, *, compact: bool = False) -> str:
         # Truthy but not iterable (an int, a float, ...) -- an unexpected
         # shape the manager never emits today, but "unreachable today" is
         # not a reason to fail toward looking healthy.
-        return " · ⚠ ?"
+        return separator + "⚠ ?"
 
     if not names:
-        return " · ⚠ ?"
+        return separator + "⚠ ?"
     if compact:
-        return f" · ⚠ {len(names)} src"
-    return " · ⚠ " + ", ".join(names)
+        return f"{separator}⚠ {len(names)} src"
+    return separator + "⚠ " + ", ".join(names)
 
 
 def _agent_title_head(data: dict) -> str:
@@ -2361,7 +2361,29 @@ def _agent_title_head(data: dict) -> str:
     return f"Identity.md AGENT #{'—' if token is None else token}"
 
 
-def _swarm_alarms(data: dict, *, compact: bool = False) -> str:
+def _launch_news(data: dict, *, ticker: bool = True, accent: str = "cyan",
+                 compact: bool = False, separator: str = " · ") -> str:
+    """News ages against the payload clock, independently of the FIRED row's TTL."""
+    now = data.get("as_of")
+    if not isinstance(now, (int, float)) or isinstance(now, bool):
+        return ""
+    events = data.get("swarm_launch_fired")
+    recent = [event for event in events if isinstance(event, dict)
+              and type(event.get("ts")) in (int, float)
+              and 0 <= now - event["ts"] < 3600
+              and type(event.get("number")) is int] if isinstance(events, list) else []
+    if not recent:
+        return ""
+    if len(recent) > 1:
+        word = f"▲ {len(recent)} {'' if compact else 'SWARM '}LAUNCHES"
+    else:
+        event = recent[0]
+        symbol = f" ${flatten(event['ticker'])}" if ticker and event.get('ticker') else ""
+        word = f"▲ {'' if compact else 'SWARM '}LAUNCH{symbol} #{event['number']}"
+    return f"{separator}[{accent}]{safe_markup(word)}[/]"
+
+
+def _swarm_alarm_words(data: dict, *, compact: bool = False, health_cols: int = 12) -> list[str]:
     parts = []
     breaker = data.get("swarm_breaker")
     if isinstance(breaker, dict) and breaker.get("tripped") is True:
@@ -2375,15 +2397,59 @@ def _swarm_alarms(data: dict, *, compact: bool = False) -> str:
             parts.append(f"{len(down)} {'svc' if compact else 'services'} down")
     health = data.get("swarm_health_status")
     if not isinstance(health, str) or not health.strip():
-        parts.append("health unavailable")
+        parts.append(f"health {sanitize_cell('unavailable', health_cols)}")
     elif health != "ok":
-        parts.append(f"health {sanitize_cell(health, 12)}")
+        parts.append(f"health {sanitize_cell(health, health_cols)}")
+    rows = data.get("swarm_launch_rows")
+    mismatches = [row for row in rows if isinstance(row, dict)
+                  and isinstance(row.get("verdict"), dict)
+                  and row["verdict"].get("state") == "mismatch"] if isinstance(rows, list) else []
+    if len(mismatches) == 1:
+        row = mismatches[0]
+        parts.append(f"launch #{row.get('launch_number')} {safe_markup(row['verdict'].get('failed'))}")
+    elif mismatches:
+        parts.append(f"{len(mismatches)} launch checks")
+    return parts
+
+
+def _swarm_alarms(data: dict, *, compact: bool = False) -> str:
+    parts = _swarm_alarm_words(data, compact=compact)
     joiner = " · " if compact else " · ⚠ "
     return " · [yellow]⚠ " + joiner.join(parts) + "[/]" if parts else ""
 
 
+def _tight_swarm_title(data: dict, *, row_hint: bool, columns: int, accent: str) -> str:
+    """Owner-approved last fallback: space separators, short news, windowed health.
+
+    Every alarm keeps its fact. Only the health value gives up cells, and
+    its ellipsis advertises that loss; ticker was shed by the earlier tier.
+    """
+    parts = [f"IMD {_fmt_usd(data.get('imd_price_usd'))}",
+             f"par {_fmt_signed_pct(data.get('parity_pct'))}",
+             f"as of {_fmt_hhmm(data.get('as_of'))}"]
+    if row_hint:
+        parts.append(f"[yellow]{TALLER_HINT}[/]")
+    if data.get("lp_owner_ok") is False:
+        parts.append("[yellow]⚠ LP changed[/]")
+    news = _launch_news(data, ticker=False, accent=accent, compact=True, separator="")
+    if news:
+        parts.append(news)
+    degraded = _fmt_degraded(data.get("degraded"), compact=True, separator="")
+    if degraded:
+        parts.append(degraded)
+    for health_cols in range(12, 0, -1):
+        alarms = _swarm_alarm_words(data, compact=True, health_cols=health_cols)
+        # The degraded warning already introduces this adjacent alarm group.
+        warning = "" if degraded else "⚠ "
+        tail = ["[yellow]" + warning + " ".join(alarms) + "[/]"] if alarms else []
+        line = " ".join(parts + tail)
+        if Text.from_markup(line).cell_len <= columns:
+            return line
+    return line
+
+
 def _title_line(data: dict, row_hint: bool = False, agent: bool = False,
-                swarm: bool = False, columns: int | None = None) -> str:
+                swarm: bool = False, columns: int | None = None, accent: str = "cyan") -> str:
     """Compose the meta row (PRD §4).
 
     ``agent`` -- the AGENT body is showing -- swaps the IMD price and parity
@@ -2447,9 +2513,9 @@ def _title_line(data: dict, row_hint: bool = False, agent: bool = False,
     """
     if agent:
         # Built from an int token or the em dash only: nothing to escape.
-        # ``ansi_green`` is the terminal's green, as RECORD's Rich ``green``
-        # cells paint; Textual markup's bare ``green`` is CSS #008000.
-        head = f"[ansi_green]{_agent_title_head(data)}[/]"
+        # The title is prebuilt Rich Text: Rich's green is the terminal's
+        # ANSI green, matching RECORD (not Textual markup's CSS green).
+        head = f"[green]{_agent_title_head(data)}[/]"
     else:
         head = (f"IMD {_fmt_usd(data.get('imd_price_usd'))} · "
                 f"parity {_fmt_signed_pct(data.get('parity_pct'))}")
@@ -2461,19 +2527,29 @@ def _title_line(data: dict, row_hint: bool = False, agent: bool = False,
     if data.get("lp_owner_ok") is False:
         line += " · [yellow]⚠ LP owner changed[/]"
 
-    if not agent:
-        line += _fmt_degraded(data.get("degraded"))
-    if swarm:
-        line += _swarm_alarms(data)
-        if columns is not None and Text.from_markup(line).cell_len > columns:
-            line = (f"IMD {_fmt_usd(data.get('imd_price_usd'))} · "
-                    f"par {_fmt_signed_pct(data.get('parity_pct'))} · as of {_fmt_hhmm(data.get('as_of'))}")
-            if row_hint:
-                line += f" · [yellow]{TALLER_HINT}[/]"
-            if data.get("lp_owner_ok") is False:
-                line += " · [yellow]⚠ LP changed[/]"
-            line += _fmt_degraded(data.get("degraded"), compact=True)
-            line += _swarm_alarms(data, compact=True)
+    prefix = line
+    news = _launch_news(data, accent=accent)
+    alarms = _swarm_alarms(data) if swarm else ""
+    degraded = _fmt_degraded(data.get("degraded")) if not agent else ""
+    line = prefix + news + degraded + alarms
+    if news and columns is not None and Text.from_markup(line).cell_len > columns:
+        news = _launch_news(data, ticker=False, accent=accent)
+        line = prefix + news + degraded + alarms
+        if Text.from_markup(line).cell_len > columns:
+            degraded = _fmt_degraded(data.get("degraded"), compact=True) if not agent else ""
+            line = prefix + news + degraded + alarms
+    if swarm and columns is not None and Text.from_markup(line).cell_len > columns:
+        line = (f"IMD {_fmt_usd(data.get('imd_price_usd'))} · "
+                f"par {_fmt_signed_pct(data.get('parity_pct'))} · as of {_fmt_hhmm(data.get('as_of'))}")
+        if row_hint:
+            line += f" · [yellow]{TALLER_HINT}[/]"
+        if data.get("lp_owner_ok") is False:
+            line += " · [yellow]⚠ LP changed[/]"
+        line += news
+        line += _fmt_degraded(data.get("degraded"), compact=True)
+        line += _swarm_alarms(data, compact=True)
+        if Text.from_markup(line).cell_len > columns:
+            line = _tight_swarm_title(data, row_hint=row_hint, columns=columns, accent=accent)
     return line
 
 
@@ -3179,7 +3255,7 @@ class SurfScreen(DashboardScreen):
         scrollbar-gutter: stable;
     }
     SurfScreen SurfSwarmWorkflows {
-        width: 100%;
+        width: 1fr;
         height: 1fr;
         min-height: 8;
         padding: 0 1;
@@ -3202,7 +3278,7 @@ class SurfScreen(DashboardScreen):
         padding: 0 1;
     }
     SurfScreen SurfSwarmLaunches {
-        width: 1fr;
+        width: 100%;
         height: 1fr;
         min-height: 8;
         padding: 0 1;
@@ -3466,10 +3542,10 @@ class SurfScreen(DashboardScreen):
         # other alternate body.
         with Vertical(id=SWARM_BODY_ID):
             with Horizontal(id=SWARM_TOP_ID):
-                yield SurfSwarmLaunches()
+                yield SurfSwarmWorkflows()
                 yield SurfSwarmThroughput()
             with Horizontal(id=SWARM_BOTTOM_ID):
-                yield SurfSwarmWorkflows()
+                yield SurfSwarmLaunches()
             yield SurfSwarmSites()
 
         # The `a` AGENT body: one seat-card row above a full-width RECORD -- see
@@ -3679,6 +3755,11 @@ class SurfScreen(DashboardScreen):
         event.stop()
         if self._mode == MODE_SWARM:
             await self.app.push_screen(WorkflowDetailScreen(event.row))
+
+    async def on_surf_swarm_launches_selected(self, event: SurfSwarmLaunches.Selected) -> None:
+        event.stop()
+        if self._mode == MODE_SWARM:
+            await self.app.push_screen(LaunchDetailScreen(event.row))
 
     def action_toggle_agent(self) -> None:
         """``a`` -- swap the dashboard body for one seat's AGENT panels.
@@ -4028,9 +4109,10 @@ class SurfScreen(DashboardScreen):
         else:
             line = _title_line(self._title_data, row_hint=cut, agent=self._mode == MODE_AGENT,
                                swarm=self._mode == MODE_SWARM,
-                               columns=self.query_one("#title-bar", Static).content_size.width)
+                               columns=self.query_one("#title-bar", Static).content_size.width,
+                               accent=self.app.get_css_variables().get("accent", "cyan"))
         try:
-            self.query_one("#title-bar", Static).update(line)
+            self.query_one("#title-bar", Static).update(Text.from_markup(line))
         except Exception as exc:  # noqa: BLE001 -- a title must never crash
             logger.debug("Failed to update title bar: %s", exc)
 
