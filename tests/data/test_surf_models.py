@@ -390,6 +390,9 @@ EXPECTED_KEYS = {
     "sig_hot_state",
     "sig_hot_detail",
     "sig_hot_age_s",
+    "sig_swarm_state", "sig_swarm_detail", "sig_swarm_age_s", "sig_swarm_chain_id",
+    "swarm_launch_fired",
+    "swarm_launches_as_of_hhmm",
     # ---- pool4 (docs/surf_pool4_contract.md §0.2/§0.3) ----------------------
     # 45 keys: 43 scalars plus the two list payloads. ``pool4_flow`` and
     # ``pool4_hatches`` are members here for the same reason ``feed_items`` and
@@ -528,7 +531,7 @@ EXPECTED_KEYS = {
     # Plan A2: the fourteen landed in WP0 so WP1-WP6a built against one
     # frozen contract; WP7 removed the eight pre-v2 keys §1 retired, with
     # their widgets. Same order as the module's tail.
-    "swarm_queue_total",
+    "swarm_workflows_as_of_hhmm",
     "swarm_breaker",
     "swarm_skill_summary",
     "swarm_launch_summary",
@@ -561,12 +564,12 @@ EXPECTED_KEYS = {
 def test_surf_keys_is_exactly_the_prd_contract() -> None:
     """The contract, stated once in prose above and once in code.
 
-    **201 = 83 + 71 + 5 + 42**: the 83 that shipped through v0.8.3, the ``p``
+    **207 = 88 + 71 + 5 + 43**: the 83 that shipped through v0.8.3, the ``p``
     body's ``POOL4_KEYS`` (62 at v0.8.4, 71 since the ``4`` body added the
     cross-venue price, the backstop band and the realised return), the
     staker sweep's own five in ``POOL4_STAKERS_KEYS`` (four until
     ``pool4_stakers_state`` joined them on 2026-09-12), and the ``s``/``a``
-    bodies' forty-two in ``SWARM_KEYS`` -- eighteen added 2026-09-16, plus
+    bodies' forty-three in ``SWARM_KEYS`` -- eighteen added 2026-09-16, plus
     the fourteen swarm v2 keys WP0 froze on 2026-09-21 ahead of their
     consumers (plan A2), less the eight of the eighteen WP7 retired with
     their widgets the same day (the block was 32 and this total 191 in
@@ -597,13 +600,13 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     )
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 201
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 207
     # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
-    assert len(SWARM_KEYS) == 42
-    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 83
+    assert len(SWARM_KEYS) == 43
+    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 88
 
 
 def test_every_signal_has_all_three_facets() -> None:
@@ -828,3 +831,34 @@ def test_launchpad_coin_row_keys_gain_both_mcap_fields() -> None:
     keys = SURF_ROW_KEYS["launchpad_coins"]
     assert "mcap_eth" in keys and "mcap_usd" in keys
     assert "price_eth" in keys
+
+
+def test_v8_launch_and_site_rows_freeze_launch_contract():
+    import json
+    from pathlib import Path
+    from maxpane_dashboard.data import surf_swarm
+    from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SURF_KEYS, SWARM_WIDGET_SIGNATURES
+    from maxpane_dashboard.analytics.surf_signals import READING_KEYS
+
+    v8 = Path(__file__).parents[1] / "fixtures/surf/swarm/v8"
+    launch_keys = {"launch_id", "job_id", "production", "ticker", "token_name", "token_address",
+                   "pair", "pool_fee", "requester", "policy_version", "site_label", "site_ens_name",
+                   "site_link_method", "site_link_trusted", "verdict", "checks"}
+    site_keys = {"launch_number", "launch_ticker", "production_link", "link_method", "link_trusted"}
+    assert launch_keys <= set(SURF_ROW_KEYS["swarm_launch_rows"])
+    assert site_keys <= set(SURF_ROW_KEYS["swarm_site_rows"])
+    launches = json.loads((v8 / "launches_100.json").read_text())["launches"]
+    for row in surf_swarm.launch_rows(launches):
+        assert set(row) == set(SURF_ROW_KEYS["swarm_launch_rows"])
+        original = next(item for item in launches if item["launchNumber"] == row["launch_number"])
+        assert row["launch_id"] == original["id"]
+        assert isinstance(row["production"], bool)
+    sites = json.loads((v8 / "sites.json").read_text())["sites"]
+    for row in surf_swarm.site_rows(sites):
+        assert set(row) == set(SURF_ROW_KEYS["swarm_site_rows"])
+        assert isinstance(row["production_link"], bool)
+    assert {"sig_swarm_state", "sig_swarm_detail", "sig_swarm_age_s", "sig_swarm_chain_id",
+            "swarm_launch_fired", "swarm_launches_as_of_hhmm"} <= set(SURF_KEYS)
+    assert "swarm_launch_events" in READING_KEYS
+    for widget in ("SurfSwarmLaunches", "SurfSwarmSites"):
+        assert "swarm_launches_as_of_hhmm" in SWARM_WIDGET_SIGNATURES[widget]

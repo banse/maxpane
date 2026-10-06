@@ -4211,6 +4211,10 @@ class SurfScreen(DashboardScreen):
                 sig_hot_state=data.get("sig_hot_state"),
                 sig_hot_detail=data.get("sig_hot_detail"),
                 sig_hot_age_s=data.get("sig_hot_age_s"),
+                sig_swarm_state=data.get("sig_swarm_state"),
+                sig_swarm_detail=data.get("sig_swarm_detail"),
+                sig_swarm_age_s=data.get("sig_swarm_age_s"),
+                sig_swarm_chain_id=data.get("sig_swarm_chain_id"),
             )
         except Exception as exc:
             logger.debug("Failed to update SurfSignals: %s", exc)

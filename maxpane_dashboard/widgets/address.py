@@ -20,7 +20,7 @@ hyperlink to that explorer's page (Cmd+click in the terminal) and carries the
 ``@click`` action ``explorer_action.ExplorerLinkMixin`` opens it with;
 :func:`hash_text` does the same for a transaction hash and :func:`job_text`
 for a swarm job id on the IMD explorer, :func:`site_text` for a swarm site's
-ENS name through eth.limo. With ``explorer=None``
+ENS name through sites.imd.fun. With ``explorer=None``
 every function renders exactly as it did before the links existed.
 """
 
@@ -45,7 +45,7 @@ from maxpane_dashboard.widgets.explorer import (
 
 __all__ = [
     "ADDRESS_RE", "COPY_GLYPH", "ICON_COLS", "MIN_SHORT_COLS", "PROSE_ADDRESS_RE",
-    "address_prose", "address_text", "copy_action", "hash_text", "is_address", "job_text", "site_text",
+    "address_prose", "address_text", "copy_action", "hash_text", "is_address", "job_text", "site_text", "token_text",
     "is_copy_click", "is_explorer_click", "parse_copy_action", "short_address",
     "short_hex",
 ]
@@ -280,25 +280,41 @@ def job_text(
     return out
 
 
+def token_text(
+    address: str | None,
+    *,
+    width: int | None = None,
+    style: str | Style = "",
+    explorer: Explorer | None = None,
+) -> Text:
+    """An address with its copy icon and the IMD token-page link."""
+    out = address_text(address, width=width, style=style)
+    if is_address(address) and explorer is not None:
+        if (link := _link(explorer, "token", address)) is not None:
+            out.stylize(link, 0, len(out.plain) - ICON_COLS)
+    return out
+
+
 def site_text(
     ens_name: object,
     width: int,
     *,
+    label: object = None,
     explorer: Explorer | None = None,
     style: str | Style = "",
 ) -> Text:
-    """A swarm site's ENS name fitted to *width*, as a ``Text``.
+    """Show the ENS name; link the row's bare label on sites.imd.fun.
 
-    No icon (a name is not an address). With ``explorer`` a whole
-    ``<label>.site.identitymd.eth`` name links the shown span to its eth.limo
-    page; anything else -- another name, a hostile string, a non-string --
-    renders fitted, cleaned and unlinked.
+    A missing label is derived only from the legacy ``.site.identitymd.eth``
+    suffix. Invalid explicit labels never become links. No API URL is used.
     """
     if not isinstance(ens_name, str) or not ens_name:
         return Text("--", style=style)
     out = Text(_fit(_clean_label(ens_name), width), style=style)
-    if explorer is not None and is_site(ens_name):
-        if (link := _link(explorer, "site", ens_name)) is not None:
+    if label is None and ens_name.endswith(".site.identitymd.eth"):
+        label = ens_name.removesuffix(".site.identitymd.eth")
+    if explorer is not None and is_site(label):
+        if (link := _link(explorer, "site", label)) is not None:
             out.stylize(link, 0, len(out.plain))
     return out
 

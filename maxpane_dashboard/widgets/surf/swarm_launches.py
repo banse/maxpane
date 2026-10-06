@@ -218,6 +218,7 @@ class SurfSwarmLaunches(SwarmTableBase):
         swarm_launch_summary=None,
         swarm_scores_as_of_hhmm=None,
         swarm_network=None,
+        swarm_launches_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
         """Refresh from the manager's flat dict. ``swarm_network`` is accepted

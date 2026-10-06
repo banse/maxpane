@@ -21,7 +21,7 @@ module, not as a second definition.
 The allowlist, restated
 ------------------------
 :data:`CHAIN_ID_WORDS` mirrors ``data/surf_swarm._NETWORKS`` (``{1:
-"MAINNET", 11155111: "SEPOLIA"}``), and the two are kept in agreement by
+"MAINNET", 11155111: "SEPOLIA", 8453: "BASE", 4663: "RH"}``), and the two are kept in agreement by
 :func:`test_the_chain_id_allowlist_agrees_with_data_surf_swarm` in
 ``tests/widgets/test_surf_swarm_chain.py`` -- the same redundancy-plus-
 agreement-test shape ``_pool4.NETWORK_WORDS``/``surf_models.POOL4_NETWORKS``
@@ -33,28 +33,26 @@ while the data layer already has a name for it), and a chain id invented
 here with no contract entry behind it breaks it too.
 
 :func:`chain_word` is an allowlist, not a pass-through, exactly like
-``_pool4.network_word`` (which it delegates to for the final validation
-step): an id outside :data:`CHAIN_ID_WORDS` -- ``None`` and ``bool``
+the closed pool4 vocabulary, but validates against its own map: an id
+outside :data:`CHAIN_ID_WORDS` -- ``None`` and ``bool``
 included -- renders the em dash rather than a guess. ``bool`` is excluded
 before the ``int`` check because ``True``/``False`` are ``int`` subclasses
 in Python and neither is a chain id.
 
 Purity
 ------
-Stdlib, plus this package's own ``_pool4.network_word``. No ``data/``, no
+Stdlib only. No ``data/``, no
 ``analytics/``, no ``textual``, no clock, no I/O.
 """
 
 from __future__ import annotations
 
-from maxpane_dashboard.widgets.surf._pool4 import network_word
-
 __all__ = ["CHAIN_COLS", "CHAIN_ID_WORDS", "chain_word"]
 
-#: Chain id -> the pre-resolved word ``_pool4.network_word`` validates.
+#: Chain id -> its allowlisted network word.
 #: Restated from ``data/surf_swarm._NETWORKS`` because a widget may not
 #: import ``data/``; kept honest by the agreement test named above.
-CHAIN_ID_WORDS = {1: "MAINNET", 11155111: "SEPOLIA"}
+CHAIN_ID_WORDS = {1: "MAINNET", 11155111: "SEPOLIA", 8453: "BASE", 4663: "RH"}
 
 #: Widest chain word this allowlist can print (``SEPOLIA``/``MAINNET``, 7
 #: cells); ``_pool4.NETWORK_UNKNOWN`` (the em dash) is one cell and pads out
@@ -71,5 +69,5 @@ def chain_word(chain_id: object) -> str:
     An allowlist, not a pass-through -- see the module docstring.
     """
     if isinstance(chain_id, int) and not isinstance(chain_id, bool):
-        return network_word(CHAIN_ID_WORDS.get(chain_id))
-    return network_word(None)
+        return CHAIN_ID_WORDS.get(chain_id, "—")
+    return "—"

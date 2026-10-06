@@ -440,6 +440,10 @@ class SurfSignals(Vertical):
         sig_hot_state=None,
         sig_hot_detail=None,
         sig_hot_age_s=None,
+        sig_swarm_state=None,
+        sig_swarm_detail=None,
+        sig_swarm_age_s=None,
+        sig_swarm_chain_id=None,
         **_kwargs,
     ) -> None:
         """Refresh the ten rows.  Kwargs are exactly the PRD §5 signal keys.

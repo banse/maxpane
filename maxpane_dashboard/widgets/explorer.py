@@ -13,13 +13,10 @@ fetches, signs or sends anything, and the app itself makes no request.
 Pure: ``re`` and ``dataclasses`` only. No Rich, no Textual, no I/O, no ``data/``.
 An unknown chain gets **no** link, never a guessed one (:func:`for_network`).
 
-One allowlisted explorer is not a chain's: :data:`IMD` opens a swarm job's
-page on ``explorer.imd.fun`` (owner, 2026-09-22, RECORD's job column), and
-:data:`SITES` opens a swarm site through the eth.limo gateway (owner,
-2026-09-23, SITES' ens column): only a ``<label>.site.identitymd.eth`` name,
-and only as ``https://<label>.site.identitymd.eth.limo/`` -- the label is
-the one part the value supplies. Each explorer names the kinds it serves, so a job link on etherscan, or an
-address on the IMD explorer, is refused like a malformed value.
+Two allowlisted explorers are not chains: :data:`IMD` opens swarm job and
+token pages on ``explorer.imd.fun``; :data:`SITES` opens a bare LDH label at
+``https://<label>.sites.imd.fun/``. Each explorer names the kinds it serves,
+so a job link on etherscan, or an address on IMD, is refused.
 
 :data:`ADDRESS_RE` restates ``widgets/address.ADDRESS_RE`` because this module
 sits below the address helper (which imports it) and may not import it back;
@@ -34,9 +31,9 @@ from dataclasses import dataclass
 
 __all__ = [
     "ADDRESS_RE", "BASE", "ETHEREUM", "EXPLORERS", "Explorer", "IMD", "JOB_ID_RE", "KINDS",
-    "SEPOLIA", "SITES", "SITE_RE", "TX_HASH_RE", "address_url", "for_chain_id", "for_network",
+    "ROBINHOOD", "SEPOLIA", "SITES", "SITE_RE", "TX_HASH_RE", "address_url", "for_chain_id", "for_network",
     "is_address", "is_job_id", "is_site", "is_tx_hash", "is_valid", "job_url", "open_action",
-    "parse_open_action", "site_url", "tx_url", "url_for",
+    "parse_open_action", "site_url", "token_url", "tx_url", "url_for",
 ]
 
 #: Matched with ``fullmatch``, never ``^…$`` (PRD §3.1 AMENDED): the value is
@@ -50,13 +47,11 @@ TX_HASH_RE = re.compile(r"0x[0-9a-fA-F]{64}")
 #: shape the swarm serves and the IMD explorer's ``/jobs/`` path takes.
 JOB_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
-#: A swarm site's ENS name: one lower-case LDH label (letters, digits, inner
-#: hyphens, at most 63) under ``site.identitymd.eth`` -- the shape every
-#: ``/sites`` name has had. Group 1 is the label, the only part a URL takes.
-SITE_RE = re.compile(r"([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\.site\.identitymd\.eth")
+#: One lower-case LDH label (letters, digits, inner hyphens, at most 63).
+SITE_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 #: The page kinds a link can open; each explorer serves a subset.
-KINDS = ("address", "tx", "job", "site")
+KINDS = ("address", "tx", "job", "site", "token")
 
 
 @dataclass(frozen=True)
@@ -71,14 +66,15 @@ class Explorer:
 ETHEREUM = Explorer("etherscan", "https://etherscan.io")
 BASE = Explorer("basescan", "https://basescan.org")
 SEPOLIA = Explorer("sepolia", "https://sepolia.etherscan.io")
-#: The IMD swarm's own explorer: job pages only, never a chain's address or tx.
-IMD = Explorer("imd", "https://explorer.imd.fun", ("job",))
-#: A swarm site's eth.limo gateway: site pages only. The base URL is the
+ROBINHOOD = Explorer("robinhood", "https://robinhoodchain.blockscout.com")
+#: The IMD swarm's own explorer: jobs and tokens, never a chain address or tx.
+IMD = Explorer("imd", "https://explorer.imd.fun", ("job", "token"))
+#: A swarm site's gateway: site pages only. The base URL is the
 #: suffix every link's host must end in; :func:`site_url` puts the label first.
-SITES = Explorer("sites", "https://site.identitymd.eth.limo", ("site",))
+SITES = Explorer("sites", "https://sites.imd.fun", ("site",))
 
 #: The allowlist every action round-trips through, by name.
-EXPLORERS: dict[str, Explorer] = {e.name: e for e in (ETHEREUM, BASE, SEPOLIA, IMD, SITES)}
+EXPLORERS: dict[str, Explorer] = {e.name: e for e in (ETHEREUM, BASE, SEPOLIA, ROBINHOOD, IMD, SITES)}
 
 #: Network words as surf spells them (``surf_models.POOL4_NETWORKS``,
 #: ``_swarm_chain.chain_word``): upper-case, exact. Case matters -- a word this
@@ -87,6 +83,7 @@ _NETWORKS: dict[str, Explorer] = {
     "MAINNET": ETHEREUM,
     "SEPOLIA": SEPOLIA,
     "BASE": BASE,
+    "RH": ROBINHOOD,
 }
 
 #: Chain ids as a swarm row carries them (``data/surf_swarm._NETWORKS``,
@@ -97,6 +94,7 @@ _CHAIN_IDS: dict[int, Explorer] = {
     1: ETHEREUM,
     11155111: SEPOLIA,
     8453: BASE,
+    4663: ROBINHOOD,
 }
 
 _ACTION_PREFIX = "app.open_explorer("
@@ -105,7 +103,7 @@ _ACTION_PREFIX = "app.open_explorer("
 #: allowlist checks *is* the inverse; ``tests/widgets/test_explorer.py``
 #: round-trips every explorer and kind through both functions to bind them.
 _ACTION_RE = re.compile(
-    r"app\.open_explorer\('([a-z]+)', '([a-z]+)', '(0x[0-9a-fA-F]+|[0-9a-f-]{36}|[a-z0-9.-]+)'\)")
+    r"app\.open_explorer\('([a-z]+)', '([a-z]+)', '(0x[0-9a-fA-F]+|[0-9a-f-]{36}|[a-z0-9-]+)'\)")
 
 
 def is_address(value: object) -> bool:
@@ -124,7 +122,7 @@ def is_job_id(value: object) -> bool:
 
 
 def is_site(value: object) -> bool:
-    """True only for a whole ``<label>.site.identitymd.eth`` name (:data:`SITE_RE`)."""
+    """True only for a bare lower-case LDH label (:data:`SITE_RE`)."""
     return isinstance(value, str) and SITE_RE.fullmatch(value) is not None
 
 
@@ -148,7 +146,7 @@ def for_chain_id(chain_id: object) -> Explorer | None:
 
 
 def _valid(kind: str, value: object) -> bool:
-    if kind == "address":
+    if kind in ("address", "token"):
         return is_address(value)
     if kind == "tx":
         return is_tx_hash(value)
@@ -203,15 +201,19 @@ def job_url(explorer: Explorer, job_id: str) -> str:
     return f"{_allowlisted(explorer).base_url}/jobs/{job_id}"
 
 
-def site_url(explorer: Explorer, ens_name: str) -> str:
-    """``https://<label>.site.identitymd.eth.limo/`` for a **validated** site
-    name; ``ValueError`` otherwise. The host is the allowlisted origin with
-    the validated label in front -- nothing else of the value reaches it."""
-    match = SITE_RE.fullmatch(ens_name) if isinstance(ens_name, str) else None
-    if match is None:
-        raise ValueError("not a site name")
-    scheme, _, host = _allowlisted(explorer).base_url.partition("://")
-    return f"{scheme}://{match.group(1)}.{host}/"
+def token_url(explorer: Explorer, address: str) -> str:
+    """An IMD token page for a validated address; ``ValueError`` otherwise."""
+    if not is_valid(explorer, "token", address):
+        raise ValueError("not a token this explorer serves")
+    return f"{explorer.base_url}/token/{address}"
+
+
+def site_url(explorer: Explorer, label: str) -> str:
+    """``https://<label>.sites.imd.fun/`` for a validated bare LDH label."""
+    if not is_valid(explorer, "site", label):
+        raise ValueError("not a site label this explorer serves")
+    scheme, _, host = explorer.base_url.partition("://")
+    return f"{scheme}://{label}.{host}/"
 
 
 def url_for(explorer: Explorer, kind: str, value: str) -> str:
@@ -224,6 +226,8 @@ def url_for(explorer: Explorer, kind: str, value: str) -> str:
         return tx_url(explorer, value)
     if kind == "site":
         return site_url(explorer, value)
+    if kind == "token":
+        return token_url(explorer, value)
     return job_url(explorer, value)
 
 

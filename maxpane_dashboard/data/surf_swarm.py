@@ -65,7 +65,7 @@ SEAT_SLOT_CAP = 6
 
 #: Chain ids this view knows how to name.  An allowlist, so an unknown chain
 #: renders the em dash rather than a guess (``_pool4.network_word``'s rule).
-_NETWORKS = {1: "MAINNET", 11155111: "SEPOLIA"}
+_NETWORKS = {1: "MAINNET", 11155111: "SEPOLIA", 8453: "BASE", 4663: "RH"}
 
 _SERVICES = {"verifier": "verifierUp", "publisher": "publisherUp",
              "deployer": "deployerUp"}
@@ -372,6 +372,22 @@ def launch_rows(launches: object) -> list[dict[str, Any]]:
         artifacts = [_artifact(a) for a in _mappings(launch.get("artifacts"))]
         count = _int(launch.get("artifactCount"))
         rows.append({
+            "launch_id": _str(launch.get("id")),
+            "job_id": None,
+            "production": False,  # enriched with facts by the launch tier
+            "ticker": None,
+            "token_name": None,
+            "token_address": None,
+            "pair": None,
+            "pool_fee": None,
+            "requester": None,
+            "policy_version": None,
+            "site_label": None,
+            "site_ens_name": None,
+            "site_link_method": None,
+            "site_link_trusted": None,
+            "verdict": None,
+            "checks": None,
             "launch_number": _int(launch.get("launchNumber")),
             "kind": _str(launch.get("kind")),
             "status": _str(launch.get("status")),
@@ -392,6 +408,11 @@ def site_rows(sites: object) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for site in _mappings(sites):
         rows.append({
+            "launch_number": None,
+            "launch_ticker": None,
+            "production_link": False,
+            "link_method": None,
+            "link_trusted": None,
             "label": _str(site.get("label")),
             "ens_name": _str(site.get("ensName")),
             "cid": _str(site.get("cid")),

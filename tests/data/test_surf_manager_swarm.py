@@ -1445,7 +1445,9 @@ async def test_board_keys_are_exact_before_finalization_and_survive_cold_start(t
     await _settle(manager)
     payload = await manager.fetch_and_compute()
     assert set(payload) == set(SURF_KEYS)
-    assert set(key for key in payload if key.startswith("swarm_")) == set(SWARM_KEYS)
+    assert set(key for key in payload if key.startswith("swarm_")) == (
+        set(SWARM_KEYS) | {"swarm_launch_fired"}  # signal output, independent of the swarm data folds
+    )
     assert payload["swarm_board_rows"] == sw.board_rows(manager.swarm_client.contributors, manager.swarm_client.workers)
     assert payload["swarm_fleet"] == sw.fleet(manager.swarm_client.workers)
     assert payload["swarm_seat_live"] == sw.seat_live(manager.swarm_client.workers, 420)

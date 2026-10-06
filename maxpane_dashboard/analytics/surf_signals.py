@@ -95,6 +95,7 @@ DETAIL_LIMIT = 48
 #: failed** — that is the only outage encoding.  Never ``0``, ``[]`` or
 #: ``False``, all of which are legitimate successful values here.
 READING_KEYS: tuple[str, ...] = (
+    "swarm_launch_events",  # production events + list read ts; None = failed read
     "announce_nonce",       # eth_getTransactionCount(ANNOUNCE) -- the feed number
     "channel_tx_count",     # Blockscout tx count for ANNOUNCE (posts AND replies)
     "announce_last_text",   # decoded body of the newest self-post

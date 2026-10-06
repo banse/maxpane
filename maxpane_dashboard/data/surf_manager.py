@@ -6449,6 +6449,7 @@ class SurfManager:
         return {
             "swarm_scores_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
             "swarm_workflows_as_of_hhmm": workflows_as_of,
+            "swarm_launches_as_of_hhmm": None,  # WP2 supplies the independent launch-tier marker
             "swarm_stale": stale,
             "swarm_skill_rows": skill_rows,
             "swarm_skill_summary": skill_summary(skill_rows) if skill_rows is not None else None,

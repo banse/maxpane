@@ -41,9 +41,9 @@ Cells
 -----
 ``label`` is coloured on the raw ``status`` word (``named``/``published``/
 ``live`` green, ``failed`` red, anything else plain). ``ens`` links the
-name to its eth.limo page (:func:`~maxpane_dashboard.widgets.address.site_text`
+name to its sites.imd.fun page (:func:`~maxpane_dashboard.widgets.address.site_text`
 on ``_fmt.SITE_EXPLORER``; owner, 2026-09-23) -- a
-``<label>.site.identitymd.eth`` name only, anything else plain. ``size``
+bare row label, falling back to the legacy ENS label when absent. ``size``
 is ``bytes`` compacted (``2.4M``, ``17.2K``; whole under 1,000 -- bytes are
 integers, and ``fmt_compact``'s ``584.0`` would say otherwise). ``cid`` is a
 head…tail window built here (:func:`_window_cid`) because a CID is base32,
@@ -205,6 +205,7 @@ class SurfSwarmSites(SwarmTableBase):
         self,
         swarm_site_rows=None,
         swarm_scores_as_of_hhmm=None,
+        swarm_launches_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
         """Refresh from the manager's flat dict (``SWARM_WIDGET_SIGNATURES``)."""
@@ -229,7 +230,7 @@ class SurfSwarmSites(SwarmTableBase):
         return {
             "label": label_cell,
             "job": job_text(item.get("job_id"), JOB_COLS, explorer=JOB_EXPLORER),
-            "ens": site_text(item.get("ens_name"), _ENS_COLS, explorer=SITE_EXPLORER),
+            "ens": site_text(item.get("ens_name"), _ENS_COLS, label=item.get("label"), explorer=SITE_EXPLORER),
             "size": _fmt_bytes(item.get("bytes")),
             "cid": safe_markup(_window_cid(item.get("cid"), CID_COLS)),
             # Mainnet, by measurement (module docstring); no chain field exists.

@@ -1515,6 +1515,7 @@ SWARM_KEYS: tuple[str, ...] = (
     # scores sweep. None = the read failed or never happened; [] = a real empty page.
     "swarm_workflow_rows",      # list[dict] | None -- SURF_ROW_KEYS["swarm_workflow_rows"]
     "swarm_workflows_as_of_hhmm", # str | None -- last successful /workflows read
+    "swarm_launches_as_of_hhmm", # str | None -- last successful launch-tier read
 )
 
 #: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
@@ -1526,8 +1527,8 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     # WORKFLOWS took CAPABILITY's place on SWARM (2026-10-03, docs/surf_swarm_workflows_spec.md
     # §2); CAPABILITY's frozen signature moved to SWARM_PARKED_WIDGET_SIGNATURES below.
     "SurfSwarmWorkflows": ("swarm_workflow_rows", "swarm_workflows_as_of_hhmm"),
-    "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network"),
-    "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm"),
+    "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network", "swarm_launches_as_of_hhmm"),
+    "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm", "swarm_launches_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
     "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta", "swarm_seat_rewards", "swarm_seat_rewards_state"),
     # Card rows two and three (2026-09-22), replacing SEAT and BY NODE.
@@ -1761,6 +1762,12 @@ SURF_KEYS: tuple[str, ...] = (
     "sig_burn_state",
     "sig_burn_detail",
     "sig_burn_age_s",
+    # SWARM LAUNCH: the chain is explicit; title events carry their own timestamps.
+    "sig_swarm_state",
+    "sig_swarm_detail",
+    "sig_swarm_age_s",
+    "sig_swarm_chain_id",
+    "swarm_launch_fired",
     # ---- hero ---------------------------------------------------------------
     # `hook_status` removed 2026-08-24 (fix round 12a): no widget ever
     # rendered it after the HOOK hero card was dropped. The attribution
@@ -2016,11 +2023,16 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "attempts", "accepted", "rejected", "pending",  # int | None, from /skills record
     ),
     "swarm_launch_rows": (
+        "launch_id", "job_id", "production", "ticker", "token_name", "token_address",
+        "pair", "pool_fee", "requester", "policy_version",
+        "site_label", "site_ens_name", "site_link_method", "site_link_trusted",
+        "verdict", "checks",
         "launch_number", "kind", "status", "chain_id", "repo_url", "commit",
         "parked_reason", "artifact_count", "created_ts", "updated_ts",
         "artifacts",    # list[dict(role, name, address, tx_hash, block_number)]
     ),
     "swarm_site_rows": (
+        "launch_number", "launch_ticker", "production_link", "link_method", "link_trusted",
         "label", "ens_name", "cid", "bytes", "status", "tx_hash",
         "block_number", "job_id",
         "superseded_by",  # str | None; read only by SITES' filter (a replaced build hides)

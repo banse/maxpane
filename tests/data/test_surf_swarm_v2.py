@@ -324,6 +324,8 @@ def test_site_rows_newest_updated_first(sites):
     # status named, blockNumber 26021387, failure null, supersededBy null.
     roll = next(r for r in rows if r["label"] == "roll")
     assert roll == {
+        "launch_number": None, "launch_ticker": None, "production_link": False,
+        "link_method": None, "link_trusted": None,
         "label": "roll", "ens_name": "roll.site.identitymd.eth",
         "cid": "bafybeig4xxfxbhkxsmautrga6yjuqcv76bctmkhj3f7ad2mqfeambtlp6q",
         "bytes": 2445908, "status": "named",

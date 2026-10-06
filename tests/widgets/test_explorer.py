@@ -8,6 +8,7 @@ parsed parts, never taken from the action text.
 from __future__ import annotations
 
 import ast
+import json
 import pathlib
 
 import pytest
@@ -20,18 +21,21 @@ TX = "0x" + "ab" * 32                   # 64 hex
 MIXED = "0x" + "AbCdEf0123" * 4
 JOB = "a2cf385f-8c95-46e1-b184-a8fe2f732edb"   # the owner's example, 2026-09-22
 CHAIN_EXPLORERS = [e for e in X.EXPLORERS.values() if e not in (X.IMD, X.SITES)]
-SITE = "mswap.site.identitymd.eth"
+V8 = pathlib.Path(__file__).parents[1] / "fixtures/surf/swarm/v8"
+SITE_ROW = next(s for s in json.loads((V8 / "sites.json").read_text())["sites"] if s["label"] == "zto")
+SITE = SITE_ROW["label"]
+TOKEN = next(a["address"] for row in json.loads((V8 / "launches_100.json").read_text())["launches"] if row["launchNumber"] == 737 for a in row["artifacts"] if a["role"] == "token")
 
 
-def test_the_five_explorers_their_origins_and_kinds():
+def test_the_six_explorers_their_origins_and_kinds():
     assert X.ETHEREUM == X.Explorer("etherscan", "https://etherscan.io", ("address", "tx"))
     assert X.BASE == X.Explorer("basescan", "https://basescan.org", ("address", "tx"))
     assert X.SEPOLIA == X.Explorer("sepolia", "https://sepolia.etherscan.io", ("address", "tx"))
-    assert X.IMD == X.Explorer("imd", "https://explorer.imd.fun", ("job",))
-    assert X.SITES == X.Explorer("sites", "https://site.identitymd.eth.limo", ("site",))
+    assert X.IMD == X.Explorer("imd", "https://explorer.imd.fun", ("job", "token"))
+    assert X.SITES == X.Explorer("sites", "https://sites.imd.fun", ("site",))
     assert X.EXPLORERS == {"etherscan": X.ETHEREUM, "basescan": X.BASE, "sepolia": X.SEPOLIA,
-                           "imd": X.IMD, "sites": X.SITES}
-    assert X.KINDS == ("address", "tx", "job", "site")
+                           "imd": X.IMD, "sites": X.SITES, "robinhood": X.ROBINHOOD}
+    assert X.KINDS == ("address", "tx", "job", "site", "token")
     assert all(set(e.kinds) <= set(X.KINDS) for e in X.EXPLORERS.values())
 
 
@@ -43,26 +47,33 @@ def test_a_job_links_to_the_imd_explorer_page_the_owner_named():
     assert X.parse_open_action(action) == (X.IMD, "job", JOB)
 
 
-def test_a_site_opens_its_eth_limo_page_the_owner_named():
-    """Owner 2026-09-23: mswap.site.identitymd.eth -> https://mswap.site.identitymd.eth.limo/"""
-    assert X.site_url(X.SITES, SITE) == "https://mswap.site.identitymd.eth.limo/"
-    assert X.url_for(X.SITES, "site", SITE) == X.site_url(X.SITES, SITE)
+def test_a_site_opens_its_imd_page():
+    assert X.site_url(X.SITES, SITE) == "https://zto.sites.imd.fun/"
     action = X.open_action(X.SITES, "site", SITE)
-    assert action == f"app.open_explorer('sites', 'site', {SITE!r})"
     assert X.parse_open_action(action) == (X.SITES, "site", SITE)
-    assert X.site_url(X.SITES, "site-7018907b.site.identitymd.eth") == (
-        "https://site-7018907b.site.identitymd.eth.limo/")
+    assert X.url_for(X.SITES, "site", SITE) == X.site_url(X.SITES, SITE)
 
 
-def test_a_site_is_one_lower_case_label_under_site_identitymd_eth():
-    assert X.is_site(SITE) and X.is_site("a.site.identitymd.eth") and X.is_site("x" * 63 + ".site.identitymd.eth")
-    for bad in (SITE.upper(), SITE + "\n", SITE + ".evil", "evil.com/" + SITE, "a.b.site.identitymd.eth",
-                "-a.site.identitymd.eth", "a-.site.identitymd.eth", "x" * 64 + ".site.identitymd.eth",
-                ".site.identitymd.eth", "site.identitymd.eth", "mswap.identitymd.eth",
-                "mswap.site.identitymd.eth.limo", "mswap@evil.site.identitymd.eth", None, 12, ""):
+def test_a_site_is_one_lower_case_ldh_label():
+    assert X.is_site(SITE) and X.is_site(SITE[:1]) and X.is_site(SITE[0] * 63)
+    for bad in (SITE.upper(), SITE + "\n", SITE + ".evil", "evil.com/" + SITE,
+                "-" + SITE, SITE + "-", SITE[0] * 64, SITE_ROW["ensName"],
+                SITE + "@evil", None, 12, "", [SITE]):
         assert not X.is_site(bad), repr(bad)
         with pytest.raises(ValueError):
             X.site_url(X.SITES, bad)
+
+
+def test_v8_token_kind_roundtrips_and_rejects_other_explorers():
+    assert X.token_url(X.IMD, TOKEN) == f"https://explorer.imd.fun/token/{TOKEN}"
+    assert X.url_for(X.IMD, "token", TOKEN) == X.token_url(X.IMD, TOKEN)
+    assert X.parse_open_action(X.open_action(X.IMD, "token", TOKEN)) == (X.IMD, "token", TOKEN)
+    for explorer in (*CHAIN_EXPLORERS, X.SITES):
+        assert not X.is_valid(explorer, "token", TOKEN)
+        assert X.parse_open_action(f"app.open_explorer('{explorer.name}', 'token', '{TOKEN}')") is None
+    for bad in (TOKEN + "\n", TOKEN[:-1], TOKEN + "'", None):
+        with pytest.raises(ValueError):
+            X.token_url(X.IMD, bad)
 
 
 def test_a_job_id_is_a_whole_canonical_lower_case_uuid():
@@ -152,18 +163,20 @@ def test_urls_refuse_an_invalid_value_rather_than_write_it():
         X.url_for(X.ETHEREUM, "nft", ADDR)
 
 
-def test_for_network_maps_the_three_words_and_nothing_else():
+def test_for_network_maps_the_four_words_and_nothing_else():
     assert X.for_network("MAINNET") is X.ETHEREUM
     assert X.for_network("SEPOLIA") is X.SEPOLIA
     assert X.for_network("BASE") is X.BASE
+    assert X.for_network("RH") is X.ROBINHOOD
     for unknown in (None, "", "mainnet", "Mainnet", " MAINNET", "POLYGON", "—", 1, ["MAINNET"], {}):
         assert X.for_network(unknown) is None, repr(unknown)
 
 
-def test_for_chain_id_maps_the_three_ids_and_nothing_else():
+def test_for_chain_id_maps_the_four_ids_and_nothing_else():
     assert X.for_chain_id(1) is X.ETHEREUM
     assert X.for_chain_id(11155111) is X.SEPOLIA
     assert X.for_chain_id(8453) is X.BASE
+    assert X.for_chain_id(4663) is X.ROBINHOOD
     for unknown in (None, "1", 1.0, True, False, 0, -1, 137, 10, [1], {}):
         assert X.for_chain_id(unknown) is None, repr(unknown)
 

@@ -40,6 +40,7 @@ CID = "bafybeig4xxfxbhkxsmautrga6yjuqcv76bctmkhsw6l5kb4qgw4dprla"  # 59 chars, t
 def _site(**over) -> dict:
     """One site row in the frozen ``swarm_site_rows`` shape (corpus values)."""
     row = dict(
+        launch_number=None, launch_ticker=None, production_link=False, link_method=None, link_trusted=None,
         label="roll", ens_name="roll.site.identitymd.eth", cid=CID, bytes=2_445_908,
         status="named", tx_hash=TX, block_number=26_021_387,
         job_id="115a2caa-323b-411a-bc39-e69977e85e34", superseded_by=None,
@@ -109,7 +110,7 @@ def test_the_row_tuples_agree_with_the_column_count():
 
 
 JOB_URL = "https://explorer.imd.fun/jobs/115a2caa-323b-411a-bc39-e69977e85e34"
-SITE_URL = "https://roll.site.identitymd.eth.limo/"
+SITE_URL = "https://roll.sites.imd.fun/"
 
 
 async def test_the_tx_links_on_etherscan_mainnet_with_no_icon():
@@ -157,11 +158,11 @@ async def test_size_is_compact_bytes_and_a_dash_when_unknown():
     assert "17.2K" in as_str, as_str
 
 
-async def test_the_ens_name_opens_its_eth_limo_site_with_no_icon():
+async def test_the_ens_name_opens_its_imd_site_with_no_icon():
     """Owner 2026-09-23: a click on ``mswap.site.identitymd.eth`` opens
-    ``https://mswap.site.identitymd.eth.limo/``."""
+    ``https://mswap.sites.imd.fun/``."""
     rows = [_site(label="mswap", ens_name="mswap.site.identitymd.eth", tx_hash=None)]
-    assert await _urls(rows) == [JOB_URL, "https://mswap.site.identitymd.eth.limo/"]
+    assert await _urls(rows) == [JOB_URL, "https://mswap.sites.imd.fun/"]
     text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
     assert "mswap.site.identitymd.eth" in text and COPY_GLYPH not in text, text
 
@@ -169,7 +170,7 @@ async def test_the_ens_name_opens_its_eth_limo_site_with_no_icon():
 async def test_a_name_outside_site_identitymd_eth_shows_but_never_links():
     for name in ("mswap.evil.eth", "a.b.site.identitymd.eth", "MSWAP.site.identitymd.eth",
                  "x.site.identitymd.eth[/x]"):
-        rows = [_site(ens_name=name, tx_hash=None)]
+        rows = [_site(label=None, ens_name=name, tx_hash=None)]
         assert await _urls(rows) == [JOB_URL], name
         text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
         assert _data_lines(text), (name, text)
@@ -320,3 +321,20 @@ async def test_sites_job_column_links_to_the_imd_job():
         panel.update_data(swarm_site_rows=[{"label": "a-label-of-thirty-two-characters!", "ens_name": "test.site.identitymd.eth", "job_id": job}])
         await pilot.pause()
         assert any(target[5].endswith("/jobs/" + job) for target in link_targets(pilot.app))
+
+
+async def test_v8_site_links_use_the_row_label_and_legacy_fallback():
+    import json
+    from pathlib import Path
+    sites = json.loads((Path(__file__).parents[1] / "fixtures/surf/swarm/v8/sites.json").read_text())["sites"]
+    zto = next(row for row in sites if row["label"] == "zto")
+    legacy = next(row for row in sites if row["label"] is None and row["ensName"])
+    for site in (zto, legacy):
+        # Superseded sites are normally filtered; show this derived current row
+        # to test the legacy-label link at the actual rendered cell boundary.
+        row = {"label": site["label"], "ens_name": site["ensName"], "status": "named",
+               "superseded_by": None, "job_id": None, "tx_hash": None}
+        label = site["label"] or site["ensName"].removesuffix(".site.identitymd.eth")
+        assert await _urls([row]) == [f"https://{label}.sites.imd.fun/"]
+        row["label"] = "new-" + label
+        assert await _urls([row]) == [f"https://new-{label}.sites.imd.fun/"]

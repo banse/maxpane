@@ -69,8 +69,8 @@ EXPLORER = ETHEREUM
 #: ``api.imd.fun`` the swarm tiers read. Not a chain explorer.
 JOB_EXPLORER = IMD
 
-#: Where a swarm site's ENS name links: its eth.limo gateway page,
-#: ``https://<label>.site.identitymd.eth.limo/`` (owner, 2026-09-23).
+#: Where a swarm site's ENS name links: its sites.imd.fun gateway page,
+#: ``https://<label>.sites.imd.fun/`` (owner, 2026-09-23).
 SITE_EXPLORER = SITES
 
 

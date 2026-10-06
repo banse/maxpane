@@ -22,6 +22,8 @@ Mutation-checked (2026-09-20):
 from __future__ import annotations
 
 import webbrowser
+import json
+from pathlib import Path
 
 import pytest
 from rich.text import Text
@@ -33,7 +35,7 @@ from maxpane_dashboard.app import MaxPaneApp
 from maxpane_dashboard.copy_action import CopyAddressMixin
 from maxpane_dashboard.explorer_action import ExplorerLinkMixin
 from maxpane_dashboard.widgets import explorer as X
-from maxpane_dashboard.widgets.address import COPY_GLYPH, address_text, hash_text, job_text, site_text
+from maxpane_dashboard.widgets.address import COPY_GLYPH, address_text, hash_text, job_text, site_text, token_text
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from tests.widgets.address_probe import CopyRecorder, LinkRecorder, icon_targets, link_targets
 
@@ -132,7 +134,7 @@ async def test_a_click_on_a_site_name_opens_its_eth_limo_page():
         assert [t[0] for t in cells] == list(range(4, 4 + len(SITE)))
         await pilot.click(offset=(cells[5][0], cells[5][1]))
         await pilot.pause()
-        assert app.opened == ["https://mswap.site.identitymd.eth.limo/"]
+        assert app.opened == ["https://mswap.sites.imd.fun/"]
         assert app.copied == []
         assert _message(app) == "opened sites"
 
@@ -140,7 +142,7 @@ async def test_a_click_on_a_site_name_opens_its_eth_limo_page():
 def test_site_text_fits_and_links_only_a_site_name():
     linked = site_text(SITE, 33, explorer=X.SITES)
     assert linked.plain == SITE and COPY_GLYPH not in linked.plain
-    assert {span.style.link for span in linked.spans} == {"https://mswap.site.identitymd.eth.limo/"}
+    assert {span.style.link for span in linked.spans} == {"https://mswap.sites.imd.fun/"}
     assert site_text(SITE, 10, explorer=X.SITES).plain == "mswap.sit…"
     assert site_text(SITE, 33).spans == [], "no explorer, no link"
     for bad in ("mswap.evil.eth", "a\nb.site.identitymd.eth", "MSWAP.site.identitymd.eth"):
@@ -299,3 +301,46 @@ def test_the_two_mixins_share_one_status_poster():
         assert "post_status_message" in names, module.__name__
         assert "StatusBar" not in names, f"{module.__name__} posts through status_message, not on its own"
     assert status_message.post_status_message is copy_action.post_status_message is EA.post_status_message
+
+
+V8 = Path(__file__).parent / "fixtures/surf/swarm/v8"
+
+
+def test_v8_site_label_precedes_ens_and_null_label_uses_legacy_name():
+    rows = json.loads((V8 / "sites.json").read_text())["sites"]
+    zto = next(row for row in rows if row["label"] == "zto")
+    legacy = [row for row in rows if row["label"] is None and row["ensName"]]
+    assert len(legacy) == 9
+    for row in [zto, *legacy]:
+        label = row["label"] or row["ensName"].removesuffix(".site.identitymd.eth")
+        out = site_text(row["ensName"], 80, label=row["label"], explorer=X.SITES)
+        assert out.plain == row["ensName"]
+        assert {span.style.link for span in out.spans} == {f"https://{label}.sites.imd.fun/"}
+    out = site_text(zto["ensName"], 80, label="new-" + zto["label"], explorer=X.SITES)
+    assert {span.style.link for span in out.spans} == {"https://new-zto.sites.imd.fun/"}
+    for label in ([], {}, 12, "-" + zto["label"], zto["label"] + ".evil"):
+        assert site_text(zto["ensName"], 80, label=label, explorer=X.SITES).spans == []
+    assert site_text(None, 80, label=None, explorer=X.SITES).spans == []
+
+
+class _V8TokenApp(LinkRecorder, CopyRecorder, ExplorerLinkMixin, App):
+    def compose(self):
+        rows = json.loads((V8 / "launches_100.json").read_text())["launches"]
+        self.token = next(a["address"] for row in rows if row["launchNumber"] == 737
+                          for a in row["artifacts"] if a["role"] == "token")
+        yield Static(token_text(self.token, width=42, explorer=X.IMD))
+        yield StatusBar()
+
+
+async def test_v8_token_click_opens_imd_and_icon_copies():
+    app = _V8TokenApp()
+    async with app.run_test(size=(80, 6)) as pilot:
+        await pilot.pause()
+        cells = [cell for cell in link_targets(app) if cell[3] == "token"]
+        assert len(cells) == 42
+        await pilot.click(offset=cells[0][:2])
+        assert app.opened == [f"https://explorer.imd.fun/token/{app.token}"]
+        [(x, y, address)] = icon_targets(app)
+        await pilot.click(offset=(x, y))
+        assert app.copied == [address] == [app.token]
+        assert len(app.opened) == 1

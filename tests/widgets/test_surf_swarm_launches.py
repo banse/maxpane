@@ -47,6 +47,10 @@ def _artifact(address=ADDR, name="MerkleDistributor") -> dict:
 def _launch(**over) -> dict:
     """One launch row in the frozen ``swarm_launch_rows`` shape (corpus values)."""
     row = dict(
+        launch_id=None, job_id=None, production=False, ticker=None, token_name=None,
+        token_address=None, pair=None, pool_fee=None, requester=None, policy_version=None,
+        site_label=None, site_ens_name=None, site_link_method=None, site_link_trusted=None,
+        verdict=None, checks=None,
         launch_number=62, kind="evm_project", status="live", chain_id=11155111,
         repo_url=REPO, commit="192743350ad9bd9b1b0be3f2522147fe142672f0",
         parked_reason=None, artifact_count=3, created_ts=1_758_400_000.0,

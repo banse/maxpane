@@ -314,6 +314,10 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "sig_hot_state": "sig_hot_state",
         "sig_hot_detail": "sig_hot_detail",
         "sig_hot_age_s": "sig_hot_age_s",
+        "sig_swarm_state": "sig_swarm_state",
+        "sig_swarm_detail": "sig_swarm_detail",
+        "sig_swarm_age_s": "sig_swarm_age_s",
+        "sig_swarm_chain_id": "sig_swarm_chain_id",
     },
     "SurfFeed": {
         "feed_items": "feed_items",
@@ -796,7 +800,8 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
 #: key in ``SWARM_WIDGET_SIGNATURES``. CAPABILITY's own two keys are not
 #: parked here: its frozen signature still consumes them
 #: (:data:`_PARKED_KEYS`, read from the export).
-_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset()
+# WP1 freezes title events; WP4 installs their title consumer.
+_KEYS_PENDING_CONSUMERS: frozenset[str] = frozenset({"swarm_launch_fired"})
 
 # -- fixed instants, all from tests/fixtures/surf/captures/ -------------
 _TS_POST_13 = 1_786_076_831   # announce nonce 13, 2026-08-07T04:27:11Z
@@ -1563,7 +1568,12 @@ def _sample_data() -> dict:
              "rejected": None, "pending": None},
         ],
         "swarm_launch_rows": [
-            {"launch_number": 12, "kind": "token", "status": "live",
+            {"launch_id": None, "job_id": None, "production": False,
+             "ticker": None, "token_name": None, "token_address": None,
+             "pair": None, "pool_fee": None, "requester": None, "policy_version": None,
+             "site_label": None, "site_ens_name": None, "site_link_method": None,
+             "site_link_trusted": None, "verdict": None, "checks": None,
+             "launch_number": 12, "kind": "token", "status": "live",
              "chain_id": 11_155_111,
              "repo_url": "https://github.com/example/curve-flow",
              "commit": "a1b2c3d", "parked_reason": None,
@@ -1575,7 +1585,12 @@ def _sample_data() -> dict:
                   "address": "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",
                   "tx_hash": "0x" + "33" * 32, "block_number": 8_950_001},
              ]},
-            {"launch_number": 11, "kind": "site", "status": "parked",
+            {"launch_id": None, "job_id": None, "production": False,
+             "ticker": None, "token_name": None, "token_address": None,
+             "pair": None, "pool_fee": None, "requester": None, "policy_version": None,
+             "site_label": None, "site_ens_name": None, "site_link_method": None,
+             "site_link_trusted": None, "verdict": None, "checks": None,
+             "launch_number": 11, "kind": "site", "status": "parked",
              "chain_id": None, "repo_url": None, "commit": "d4e5f6a",
              "parked_reason": "waiting on ENS owner",
              "artifact_count": 0,
@@ -1584,12 +1599,16 @@ def _sample_data() -> dict:
              "artifacts": []},
         ],
         "swarm_site_rows": [
-            {"label": "swarm status page", "ens_name": "swarm.surfsurf.eth",
+            {"launch_number": None, "launch_ticker": None, "production_link": False,
+             "link_method": None, "link_trusted": None,
+             "label": "swarm status page", "ens_name": "swarm.surfsurf.eth",
              "cid": "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi",
              "bytes": 48_120, "status": "published",
              "tx_hash": "0x" + "44" * 32, "block_number": 8_949_900,
              "job_id": "job-4381", "superseded_by": None},
-            {"label": "launch index", "ens_name": None, "cid": None,
+            {"launch_number": None, "launch_ticker": None, "production_link": False,
+             "link_method": None, "link_trusted": None,
+             "label": "launch index", "ens_name": None, "cid": None,
              "bytes": None, "status": "failed", "tx_hash": None,
              "block_number": None, "job_id": "job-4360",
              "superseded_by": "job-4381"},

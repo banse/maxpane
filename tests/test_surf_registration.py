@@ -1303,6 +1303,8 @@ _NON_NUMERIC_KEYS = frozenset(
         "sig_decoy_state", "sig_decoy_detail",
         "sig_burnready_state", "sig_burnready_detail",
         "sig_hot_state", "sig_hot_detail",
+        # WP1 contract freeze: strings/list, before WP3 detector and WP4 title consumers.
+        "sig_swarm_state", "sig_swarm_detail", "swarm_launch_fired", "swarm_launches_as_of_hhmm",
         # surf-launchpad-panels plan, Task 1: two more list[dict] payloads,
         # same reasoning as launchpad_coins/dev_activity above -- a list has
         # no numeric zero to confuse with a failed read.
@@ -1736,6 +1738,8 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     "sig_decoy_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_burnready_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_hot_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
+    "sig_swarm_age_s": "WP1 accepts the key; WP3 installs the detector; age is only shown when fired",
+    "sig_swarm_chain_id": "link routing metadata, not a displayed quantity; WP3 installs per-row explorer",
     # -- the `4` POOL4 MARKET body (2026-09-11) --------------------------
     #
     # NO exclusion: all nine of this body's numeric keys carry a needle.

@@ -31,6 +31,8 @@ def test_the_chain_id_allowlist_agrees_with_data_surf_swarm():
 def test_a_known_chain_id_resolves_its_word():
     assert chain_word(1) == "MAINNET"
     assert chain_word(11155111) == "SEPOLIA"
+    assert chain_word(8453) == "BASE"
+    assert chain_word(4663) == "RH"
 
 
 def test_an_unknown_or_missing_chain_id_renders_the_dash():
