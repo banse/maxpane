@@ -2467,6 +2467,12 @@ def coerce_launches_slot(value, *, now=None):
     out['policies_ts'] = stamp if type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0 and (now is None or stamp <= now + 300) else None
     if out['policies_ts'] is None:
         out['policies'] = None
+    refreshed = value.get('policies_refreshed_for')
+    out['policies_refreshed_for'] = {
+        key: version for key, version in (refreshed.items() if isinstance(refreshed, dict) else ())
+        if isinstance(key, str) and parse_job_id(key) == key
+        and (version is None or integer(version) is not None)}
+    out['policies_refreshed_for'] = dict(list(out['policies_refreshed_for'].items())[-LAUNCH_CACHE_CAP:])
     # A malformed link or memo invalidates both: the detached tier rebuilds them.
     links, inputs = value.get('site_links'), value.get('site_links_inputs')
     fields = {'launches_ts', 'sites_ts', 'facts_ts', 'workflows_ts'}
@@ -2501,6 +2507,9 @@ def coerce_launch_facts_slot(value):
         if row is None or row['id'] != key or not is_production(row):
             continue
         clean = {'row': row}
+        stamp = point.get('detail_failed_ts')
+        if type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0:
+            clean['detail_failed_ts'] = stamp
         if point.get('detail_version') is not None:
             version = point['detail_version']
             if not isinstance(version, list) or len(version) != 2 or any(not isinstance(x, str) for x in version):
@@ -2546,7 +2555,11 @@ def coerce_launch_facts_slot(value):
         except (TypeError, ValueError): continue
         launches[key] = clean
     for key, point in (value.get('sites', {}).items() if isinstance(value.get('sites'), dict) else []):
-        if not isinstance(key, str) or parse_job_id(key) != key or not isinstance(point, dict): continue
+        if not isinstance(key, str) or parse_job_id(key) != key: continue
+        if point is None:
+            sites[key] = None
+            continue
+        if not isinstance(point, dict): continue
         ids, addresses = point.get('project_jobs'), point.get('addresses')
         if not isinstance(ids, list) or any(parse_job_id(j) != j for j in ids): continue
         if not isinstance(addresses, list) or any(address(a) is None for a in addresses): continue
@@ -2570,11 +2583,12 @@ def _coerce_launch_checks(checks):
         'deploy_failure': 'bool', 'owner_is_factory': 'bool', 'owner': 'address', 'emitter': 'address',
         'tx_hash': 'hash', 'from': 'address', 'to': 'address', 'receipt_status': 'int',
         'name': 'text', 'address': 'address', 'expected_hash': 'hash', 'actual_hash': 'hash',
-        'creation_hash': 'hash', 'creation_offset': 'int',
+        'creation_hash': 'hash', 'creation_offset': 'int', 'state': 'contract_state', 'reason': 'text',
     }
     def scalar(key, val):
         if val is None: return None
         kind = scalar_fields[key]
+        if kind == 'contract_state' and val in ('pass', 'pass_immutables', 'fail', 'unknown', 'na'): return val
         if kind == 'int' and type(val) is int and val >= 0: return val
         if kind == 'bool' and type(val) is bool: return val
         if kind == 'address' and address(val): return address(val)
@@ -2585,7 +2599,7 @@ def _coerce_launch_checks(checks):
               'K4': ('failed_admission', 'deploy_failure'), 'K6': ('owner', 'emitter', 'owner_is_factory'),
               'K7': ('assurances_count',)}
     nested = {'transactions': ('tx_hash', 'from', 'to', 'receipt_status'),
-              'contracts': ('name', 'address', 'tx_hash', 'expected_hash', 'actual_hash', 'creation_hash', 'creation_offset')}
+              'contracts': ('name', 'address', 'tx_hash', 'expected_hash', 'actual_hash', 'creation_hash', 'creation_offset', 'state', 'reason')}
     try:
         for key, check in checks.items():
             if not isinstance(check, dict) or check.get('state') not in states[key] or not isinstance(check.get('evidence'), dict): return None

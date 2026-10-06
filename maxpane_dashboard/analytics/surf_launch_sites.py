@@ -5,7 +5,10 @@ from maxpane_dashboard.analytics.surf_launch_checks import address, mappings, is
 _OBJECTIVE_ADDRESS = re.compile(r'(?<![0-9a-fA-F])0x[0-9a-fA-F]{40}(?![0-9a-fA-F])', re.I)
 
 def site_job_facts(job):
-    project = job.get('project') or {}
+    project = job.get('project')
+    if project is not None and not isinstance(project, dict):
+        return None
+    project = project or {}
     objective = job.get('objective')
     return {
         'paid_by': address(job.get('paidBy')),
@@ -31,7 +34,7 @@ def match_sites(sites, launches, jobs, workflows):
             job_launches.get(workflow.get('contractsJobId'), ()))
     out = {}
     for site in sites:
-        job = jobs.get(site.get('id'), {})
+        job = jobs.get(site.get('id')) or {}
         candidates = {}
         for token in job.get('addresses', []):
             for launch_id in token_launches.get(token, ()):

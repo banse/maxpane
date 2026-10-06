@@ -5529,7 +5529,8 @@ class SurfManager:
             if isinstance(value, list):
                 slot[route], slot[route + '_ts'] = value, now
             else:
-                failed = True
+                failed |= route == 'launches'
+                logger.debug('SURF launch %s read failed; retaining last-good', route)
         slot = sw.coerce_launches_slot(slot, now=now)
         # Only a successful list advances rows; a failed list retains its version.
         for row in slot.get('launches') or []:
@@ -5543,7 +5544,9 @@ class SurfManager:
                 facts['launches'].pop(row['id'], None)
         points = sorted(facts['launches'].values(), key=lambda p: p['row']['launchNumber'], reverse=True)
         detail_budget = 3
-        for point in points:
+        detail_candidates = sorted(points, key=lambda p: (
+            'detail_failed_ts' in p, p.get('detail_failed_ts', 0), -p['row']['launchNumber']))
+        for point in detail_candidates:
             row = point['row']
             version = [row['status'], row.get('updatedAt')]
             if point.get('detail_version') == version or not detail_budget:
@@ -5551,11 +5554,14 @@ class SurfManager:
             detail_budget -= 1
             detail = await self._guard(lambda row=row: self.swarm_client.fetch_launch(row['id']), 'swarm launch detail')
             if not isinstance(detail, dict) or detail.get('id') != row['id']:
+                point['detail_failed_ts'] = now
                 continue
             try:
                 extracted = lc.extract_facts(detail)
             except (TypeError, AttributeError, ValueError):
+                point['detail_failed_ts'] = now
                 continue
+            point.pop('detail_failed_ts', None)
             point.update(extracted)
             point['detail_version'] = version
         # One state batch per chain, across all pending checks on that chain.
@@ -5584,22 +5590,32 @@ class SurfManager:
                     client = SwarmBaseClient() if chain == 8453 else SwarmRobinhoodClient()
                     self._launch_rpc_clients[chain] = client
             rpc[chain] = await self._guard(lambda client=client, request=request: client.fetch_launch_evidence(request['hashes'], request['addresses']), 'swarm launch RPC') or {}
+        refreshed_for = slot.setdefault('policies_refreshed_for', {})
         for point in pending:
             row, previous = point['row'], point.get('checks')
-            checks = lc.check_launch(row, point, slot.get('policies') or [], rpc.get(row['chainId'], {}), keccak=keccak256, previous=previous)
-            known = lc.policy_sets(slot.get('policies') or [], row['chainId'], point.get('policy_version'))[2]
-            if not refreshed_policy and (checks['K2']['state'] == 'fail' or not known):
-                refreshed_policy = True
-                policies = await self._guard(self.swarm_client.fetch_launch_policies, 'swarm refresh launch policies')
-                policy_read_ok = isinstance(policies, list)
-                if isinstance(policies, list):
-                    slot['policies'], slot['policies_ts'] = policies, now
-                    checks = lc.check_launch(row, point, policies, rpc.get(row['chainId'], {}), keccak=keccak256, previous=previous)
-                else:
-                    # A stale policy cannot convict a sender/factory mismatch.
-                    failed = True
-                    checks['K2'] = lc.result()
+            async def judge(policies):
+                # Detached tasks are single-flight; copies also isolate a cancelled worker.
+                return await asyncio.to_thread(lc.check_launch, copy.deepcopy(row), copy.deepcopy(point),
+                    copy.deepcopy(policies), copy.deepcopy(rpc.get(row['chainId'], {})),
+                    keccak=keccak256, previous=copy.deepcopy(previous))
+            checks = await judge(slot.get('policies') or [])
+            version = point.get('policy_version')
+            known = lc.policy_sets(slot.get('policies') or [], row['chainId'], version)[2]
+            new_failure = checks['K2']['state'] == 'fail' and (previous or {}).get('K2', {}).get('state', 'unknown') == 'unknown'
+            unknown_version = not known and (row['id'] not in refreshed_for or refreshed_for[row['id']] != version)
+            if new_failure or unknown_version:
+                refreshed_for[row['id']] = version
+                if not refreshed_policy:
+                    refreshed_policy = True
+                    policies = await self._guard(self.swarm_client.fetch_launch_policies, 'swarm refresh launch policies')
+                    policy_read_ok = isinstance(policies, list)
+                    if policy_read_ok:
+                        slot['policies'], slot['policies_ts'] = policies, now
+                        checks = await judge(policies)
+                    else:
+                        logger.debug('SURF launch policy refresh failed; retaining last-good')
             if refreshed_policy and not policy_read_ok and checks['K2']['state'] == 'fail':
+                # A stale policy cannot convict a sender/factory mismatch.
                 checks['K2'] = lc.result()
             point['checks'] = checks
         production_times = [sw._ts(p['row'].get('createdAt')) for p in points]

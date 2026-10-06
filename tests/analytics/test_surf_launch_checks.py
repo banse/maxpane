@@ -97,3 +97,83 @@ def test_completed_code_check_is_not_hashed_again():
         raise AssertionError('completed check repeated hashing')
     checks = lc.check_launch(row, facts, [], {}, keccak=forbidden, previous=previous)
     assert checks == previous
+
+def test_creation_candidates_are_abi_length_guarded():
+    row, rpc = evidence(747)
+    contract = lc.extract_facts(row)['attested'][0]
+    payload = next(iter(rpc['transactions'].values()))['input']
+    assert lc.creation_candidates(payload, contract['creationCodeBytes']) == [164, 196, 228, 740]
+
+
+def test_missing_artifact_is_na_and_passed_contract_never_rehashed():
+    row, rpc = evidence(747)
+    facts = lc.extract_facts(row)
+    absent = copy.deepcopy(facts['attested'][0]); absent['name'] = 'V2TwapSwap'
+    facts['attested'].append(absent)
+    checks = lc.check_launch(row, facts, fixture('launch_policies')['policies'], rpc, keccak=keccak256)
+    assert lc.verdict(row, checks)['state'] == 'swarm'
+    assert checks['K3']['evidence']['contracts'][1]['state'] == 'na'
+    assert checks['K3']['evidence']['contracts'][1]['reason'] == 'not deployed by this launch'
+    # A second deployed contract is temporarily unavailable. The first stays passed.
+    pending = copy.deepcopy(row['artifacts'][0]); pending['name'] = 'UnionCard'; pending['address'] = '0x'+'1'*40
+    row['artifacts'].append(pending)
+    facts['attested'].append({**absent, 'name': 'UnionCard'})
+    checks['K3']['state'] = 'unknown'
+    calls = []
+    def counted(value):
+        calls.append(value)
+        return keccak256(value)
+    retried = lc.check_launch(row, facts, fixture('launch_policies')['policies'], rpc, keccak=counted, previous=checks)
+    assert retried['K3']['state'] == 'unknown'
+    assert calls == []
+    rpc['codes'][pending['address']] = next(iter(rpc['codes'].values()))
+    completed = lc.check_launch(row, facts, fixture('launch_policies')['policies'], rpc, keccak=counted, previous=retried)
+    assert completed['K3']['state'] == 'pass_immutables'
+    assert len(calls) == 5  # one runtime hash plus four ABI candidates, only for UnionCard
+
+
+@pytest.mark.parametrize('foreign,chain,expected', [(True,1,'fail'),(False,8453,'pass')])
+def test_direct_creation_judges_sender_and_factory(foreign, chain, expected):
+    row, rpc = evidence(737); row['chainId'] = chain
+    tx = next(iter(rpc['transactions'].values())); tx['to'] = None
+    policies = fixture('launch_policies')['policies']
+    if chain == 8453:
+        policy = copy.deepcopy(next(p for p in policies if p['version'] == row['policyVersion'] and p['params']['chainId'] == 1))
+        policy['params']['chainId'] = chain; policy['params']['factory'] = None
+        policies = [policy]
+    if foreign: tx['from'] = '0x'+'1'*40
+    checks = lc.check_launch(row, lc.extract_facts(row), policies, rpc, keccak=keccak256)
+    assert checks['K2']['state'] == expected
+
+
+def test_k2_every_artifact_sender_and_receipt_must_pass():
+    row, rpc = evidence(737)
+    tx = copy.deepcopy(next(iter(rpc['transactions'].values()))); tx['hash'] = '0x'+'1'*64; tx['from'] = '0x'+'1'*40
+    row['artifacts'].append({**row['artifacts'][0], 'name': 'second', 'txHash': tx['hash']})
+    rpc['transactions'][tx['hash']] = tx
+    rpc['receipts'][tx['hash']] = copy.deepcopy(next(iter(rpc['receipts'].values())))
+    checks = lc.check_launch(row, lc.extract_facts(row), fixture('launch_policies')['policies'], rpc, keccak=keccak256)
+    assert checks['K2']['state'] == 'fail'
+    tx['from'] = next(iter(rpc['transactions'].values()))['from']
+    rpc['receipts'][tx['hash']]['status'] = '0x0'
+    checks = lc.check_launch(row, lc.extract_facts(row), fixture('launch_policies')['policies'], rpc, keccak=keccak256)
+    assert checks['K2']['state'] == 'fail'
+    rpc['receipts'][tx['hash']]['status'] = '0x1'
+    rpc['transactions'].pop(tx['hash'])
+    checks = lc.check_launch(row, lc.extract_facts(row), fixture('launch_policies')['policies'], rpc, keccak=keccak256)
+    assert checks['K2']['state'] == 'unknown'
+
+
+@pytest.mark.parametrize('field', ['owner', 'factory'])
+def test_zero_policy_address_never_becomes_authority(field):
+    row, rpc = evidence(737)
+    policies = fixture('launch_policies')['policies']
+    zero_policy = copy.deepcopy(next(p for p in policies if p['params'].get('chainId') == 1))
+    zero_policy['version'] = row['policyVersion']
+    zero_policy['params'][field] = lc.ZERO
+    policies.append(zero_policy)
+    wallets, factories, _ = lc.policy_sets(policies, 1, row['policyVersion'])
+    assert lc.ZERO not in wallets | factories
+    tx = next(iter(rpc['transactions'].values())); tx['from' if field == 'owner' else 'to'] = lc.ZERO
+    checks = lc.check_launch(row, lc.extract_facts(row), policies, rpc, keccak=keccak256)
+    assert checks['K2']['state'] == 'fail'

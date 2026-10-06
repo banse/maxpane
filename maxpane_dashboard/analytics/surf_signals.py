@@ -1416,6 +1416,9 @@ def _swarm_launch_state(base, read, now):
         numbers.update({row["launch_id"]: row["number"] for row in rows if row["launch_id"] in seen})
         for row in rows:
             key = row["launch_id"]
+            if key in fired:
+                fired[key].update({field: row.get(field) for field in (
+                    "ticker", "token_address", "verdict_state", "verdict_passed", "verdict_failed")})
             if row["status"] != "live" and key not in seen and key not in pending:
                 pending.append(key)
             if row["status"] != "live" or key in seen:

@@ -128,3 +128,18 @@ def test_swarm_corrupt_seen_and_floor_remain_failed_after_cache_roundtrip(tmp_pa
         assert signals['sig_swarm_state'] is None
         signals, _ = cycle(recovered, [launch_event(), launch_event(747)], NOW+1)
         assert signals['sig_swarm_state'] == 'fired'
+
+
+def test_fired_enrichment_keeps_original_clock_and_never_revives_expired():
+    _, base = cycle({}, [])
+    event = launch_event(ticker=None, token_address=None, verdict_state='partial', verdict_passed=1)
+    _, base = cycle(base, [event], NOW+1)
+    enriched = {**event, 'ticker': 'ZTO', 'token_address': launch_event()['token_address'], 'verdict_state': 'swarm', 'verdict_passed': 4}
+    signals, base = cycle(base, [enriched], NOW+61)
+    fired = signals['swarm_launch_fired'][0]
+    assert fired['ts'] == NOW+1
+    assert fired['ticker'] == 'ZTO' and fired['token_address'] == enriched['token_address']
+    assert fired['verdict_state'] == 'swarm' and fired['verdict_passed'] == 4
+    assert '✓' in signals['sig_swarm_detail']
+    signals, _ = cycle(base, [enriched], NOW+1+FIRED_TTL_S)
+    assert not signals['swarm_launch_fired']

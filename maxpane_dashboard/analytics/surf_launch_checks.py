@@ -87,15 +87,21 @@ def _hex(value):
 def _hash(value):
     return value.lower().removeprefix('0x') if isinstance(value, str) and HASH.fullmatch(value) else None
 
-def creation_match(tx_input, size, expected, keccak):
-    """ABI word offsets only; preambles first, exhaustive word scan second."""
+def creation_candidates(tx_input, size):
+    """ABI bytes values start on a word boundary after a plausible length word."""
     payload = _hex(tx_input)
-    wanted = _hash(expected)
-    if payload is None or wanted is None or type(size) is not int or not 0 < size <= len(payload):
+    if payload is None or type(size) is not int or not 0 < size <= len(payload):
+        return []
+    return [i for i in range(36, len(payload) - size + 1, 32)
+            if size <= int.from_bytes(payload[i-32:i], 'big') <= len(payload) - i]
+
+
+def creation_match(tx_input, size, expected, keccak):
+    """Hash only ABI bytes candidates, never every word of a large transaction."""
+    payload, wanted = _hex(tx_input), _hash(expected)
+    if wanted is None:
         return None
-    offsets = range(4, len(payload) - size + 1, 32)
-    preferred = [i for i in offsets if payload[i:i+1] == b'\x60' and payload[i+2:i+5] == b'\x60\x40\x52']
-    for i in preferred + [i for i in offsets if i not in preferred]:
+    for i in creation_candidates(tx_input, size):
         if keccak(payload[i:i + size]).hex() == wanted:
             return i
     return None
@@ -121,15 +127,25 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
             except ValueError:
                 pass
             state = 'unknown'
-            if known and wallets and sender and (not factories or to) and status is not None:
+            if known and wallets and sender and status is not None:
                 state = 'pass' if sender in wallets and (not factories or to in factories) and status == 1 else 'fail'
             states.append(state)
             tx_evidence.append({'tx_hash': tx_hash, 'from': sender, 'to': to, 'receipt_status': status})
         checks['K2'] = result('fail' if 'fail' in states else 'pass' if states and all(s == 'pass' for s in states) and len(hashes) == len({a.get('txHash') for a in artifacts}) else 'unknown', transactions=tx_evidence, policy_version=facts.get('policy_version'))
     if not previous or previous.get('K3', {}).get('state', 'unknown') == 'unknown':
         states, contract_evidence = [], []
+        old_contracts = {c.get('name'): c for c in (previous or {}).get('K3', {}).get('evidence', {}).get('contracts', [])}
         for contract in facts.get('attested', []):
             matches = [a for a in artifacts if a.get('name') == contract.get('name')]
+            old = old_contracts.get(contract.get('name'), {})
+            if old.get('state') in ('pass', 'pass_immutables', 'fail', 'na'):
+                states.append(old['state'])
+                contract_evidence.append(dict(old))
+                continue
+            if not matches:
+                states.append('na')
+                contract_evidence.append({'name': contract.get('name'), 'state': 'na', 'reason': 'not deployed by this launch'})
+                continue
             artifact = matches[0] if len(matches) == 1 else {}
             addr, tx_hash = address(artifact.get('address')), artifact.get('txHash')
             code = _hex(codes.get(addr))
@@ -144,7 +160,7 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
                     offset = creation_match(tx['input'], contract['creationCodeBytes'], contract['creationCodeHash'], keccak)
                     state = 'pass_immutables' if offset is not None else 'fail'
             states.append(state)
-            contract_evidence.append({'name': contract.get('name'), 'address': addr, 'tx_hash': tx_hash, 'expected_hash': expected, 'actual_hash': actual, 'creation_hash': _hash(contract.get('creationCodeHash')), 'creation_offset': offset})
+            contract_evidence.append({'state': state, 'name': contract.get('name'), 'address': addr, 'tx_hash': tx_hash, 'expected_hash': expected, 'actual_hash': actual, 'creation_hash': _hash(contract.get('creationCodeHash')), 'creation_offset': offset})
         checks['K3'] = result('fail' if 'fail' in states else 'unknown' if not states or 'unknown' in states else 'pass_immutables' if 'pass_immutables' in states else 'pass', contracts=contract_evidence)
     admission = facts.get('admission')
     failed = [x[0] for x in admission if x[1] != 'passed'] if isinstance(admission, list) else []

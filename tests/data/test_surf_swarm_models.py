@@ -85,11 +85,16 @@ SWARM_V2_ROW_SHAPES = {
         "requires", "inference", "attempts", "accepted", "rejected", "pending",
     ),
     "swarm_launch_rows": (
+        "launch_id", "job_id", "production", "ticker", "token_name", "token_address",
+        "pair", "pool_fee", "requester", "policy_version",
+        "site_label", "site_ens_name", "site_link_method", "site_link_trusted",
+        "verdict", "checks",
         "launch_number", "kind", "status", "chain_id", "repo_url", "commit",
         "parked_reason", "artifact_count", "created_ts", "updated_ts",
         "artifacts",
     ),
     "swarm_site_rows": (
+        "launch_number", "launch_ticker", "production_link", "link_method", "link_trusted",
         "label", "ens_name", "cid", "bytes", "status", "tx_hash",
         "block_number", "job_id", "superseded_by",
     ),
@@ -141,9 +146,9 @@ SWARM_TARGET_WIDGETS = {
 def test_the_swarm_block_includes_runtime_checks_and_rank_delta():
     """Thirty-two existing keys, the served health status word and the owner's ENS name,
     runtime/rank/read keys, F-S5's two REWARDS keys, the /workflows rows
-    and their independent successful-read marker (layout v3 final review I1)."""
-    assert len(SWARM_KEYS) == 42
-    assert len(set(SWARM_KEYS)) == 42
+    and their independent successful-read marker, plus the launches tier marker."""
+    assert len(SWARM_KEYS) == 43
+    assert len(set(SWARM_KEYS)) == 43
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -165,11 +170,11 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-32:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+    assert SWARM_KEYS[-33:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
                                 + ("swarm_health_status", "swarm_seat_owner_ens", "swarm_runtime_latest",
                                    "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta", "swarm_seat_read",
                                    "swarm_seat_rewards", "swarm_seat_rewards_state",
-                                   "swarm_workflow_rows", "swarm_workflows_as_of_hhmm"))
+                                   "swarm_workflow_rows", "swarm_workflows_as_of_hhmm", "swarm_launches_as_of_hhmm"))
 
 
 def test_the_retired_keys_are_gone_and_the_ten_survivors_lead():

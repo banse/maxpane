@@ -117,7 +117,9 @@ async def test_first_payload_keeps_pre_spawn_launch_snapshot(tmp_path):
     m=manager(tmp_path,swarm)
     try:
         first=await m.fetch_and_compute()
-        # Fake core calls suspend through gather; launch read lands during them.
+        assert first['swarm_launch_rows'] is None
+        # The worker may still be hashing; completion never changes this snapshot.
+        await m._swarm_launches_task
         assert m.cache.get_last_good(SLOT_SWARM_LAUNCHES) is not None
         assert first['swarm_launch_rows'] is None
         second=await m.fetch_and_compute()
@@ -225,3 +227,138 @@ async def test_site_links_invalidate_on_new_facts_with_unchanged_failed_route_cl
         assert next(iter(calls[1].values()))['ticker'] == 'ZTO'
     finally:
         await m.close()
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('version', [None, 999])
+async def test_unknown_policy_version_is_refreshed_once_and_persisted(tmp_path, version):
+    swarm = LaunchSwarm(); row = fixture('launch_737'); row['policyVersion'] = version; swarm.rows = [row]
+    async def detail(_): return copy.deepcopy(row)
+    swarm.fetch_launch = detail
+    m = manager(tmp_path, swarm)
+    try:
+        for i in range(3):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+61*i)
+        assert swarm.calls.count('policies') == 1
+        assert m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload['policies_refreshed_for'] == {row['id']: version}
+        m.cache.save(); m.cache.load()
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+183)
+        assert swarm.calls.count('policies') == 1
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_checks_are_threaded_and_persisted_failure_does_not_refresh_policies(tmp_path, monkeypatch):
+    import threading
+    from maxpane_dashboard.analytics import surf_launch_checks as lc
+    swarm = LaunchSwarm(); swarm.rows = [fixture('launch_737')]
+    m = manager(tmp_path, swarm)
+    calls = []; original = lc.check_launch; loop = threading.get_ident()
+    def check(*args, **kwargs):
+        calls.append(threading.get_ident())
+        return original(*args, **kwargs)
+    monkeypatch.setattr(lc, 'check_launch', check)
+    original_rpc = m.client.fetch_launch_evidence
+    async def wrong(*args):
+        out = await original_rpc(*args)
+        for tx in out['transactions'].values(): tx['from'] = '0x'+'1'*40
+        out['codes'] = {}  # keep K3 pending while K2 is permanently failed
+        return out
+    m.client.fetch_launch_evidence = wrong
+    m.cache.store_last_good(SLOT_SWARM_LAUNCHES, {'policies': fixture('launch_policies')['policies'], 'policies_ts': NOW}, ts=NOW)
+    try:
+        for i in range(3):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+61*i)
+        assert swarm.calls.count('policies') == 1
+        assert len(calls) == 4  # initial + refreshed policy, then two pending retries
+        assert all(thread != loop for thread in calls)
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K2']['state'] == 'fail'
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_failed_details_rotate_without_starving_lower_numbers(tmp_path):
+    swarm = LaunchSwarm()
+    swarm.rows = [row for row in swarm.rows if row['launchNumber'] in (754, 751, 747, 741, 737, 734)]
+    original = swarm.fetch_launch
+    async def detail(key):
+        row = next(row for row in swarm.rows if row['id'] == key)
+        if row['launchNumber'] == 741:
+            swarm.calls.append(('detail', key))
+            return {**fixture('launch_737'), **row}
+        return await original(key)
+    swarm.fetch_launch = detail
+    m = manager(tmp_path, swarm)
+    try:
+        for i in range(4):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+61*i)
+            if i == 1:
+                reached = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches']
+                assert {p['row']['launchNumber'] for p in reached.values() if p.get('detail_version')} >= {737, 741}
+        facts = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches']
+        assert {p['row']['launchNumber'] for p in facts.values() if p.get('detail_version')} >= {737, 741}
+        failed = [p for p in facts.values() if p['row']['launchNumber'] in (754,751)]
+        assert all(p['detail_failed_ts'] > NOW for p in failed)
+        m.cache.save(); m.cache.load()
+        assert all('detail_failed_ts' in p for p in m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'].values() if p['row']['launchNumber'] in (754,751))
+        recovered = next(row for row in swarm.rows if row['launchNumber'] == 754)
+        async def recover(key): return {**fixture('launch_737'), **recovered} if key == recovered['id'] else await detail(key)
+        swarm.fetch_launch = recover
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+244)
+        assert 'detail_failed_ts' not in m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'][recovered['id']]
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failed_route', ['sites', 'policies'])
+async def test_other_route_failure_does_not_back_off_launches(tmp_path, failed_route):
+    swarm = LaunchSwarm(); swarm.rows = [fixture('launch_737')]
+    m = manager(tmp_path, swarm)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        swarm.fail = {failed_route}
+        failed, fetched = [], []
+        m.cache.mark_failed = lambda tier, now: failed.append(tier)
+        m.cache.mark_fetched = lambda tier, now: fetched.append(tier)
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+1801)
+        assert failed == [] and fetched == [TIER_SWARM_LAUNCHES]
+        slot = m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
+        assert slot[failed_route+'_ts'] == NOW and slot['launches_ts'] == NOW+1801
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_malformed_site_project_is_read_once_and_none_persisted(tmp_path):
+    swarm = LaunchSwarm(); swarm.rows = [fixture('launch_737')]
+    sites = fixture('sites')['sites']; site = next(s for s in sites if s['label'] == 'zto')
+    async def fetch_sites(): return [site]
+    async def job(key):
+        swarm.calls.append(('site_job', key))
+        return {**fixture('job_zto_site'), 'project': ['bad']}
+    swarm.fetch_sites = fetch_sites; swarm.fetch_job = job
+    m = manager(tmp_path, swarm)
+    try:
+        for i in range(2): await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+61*i)
+        assert swarm.calls.count(('site_job', site['jobId'])) == 1
+        assert m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['sites'][site['id']] is None
+        m.cache.save(); m.cache.load()
+        assert m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['sites'][site['id']] is None
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_site_created_gate_cadence_and_newest_link(tmp_path):
+    from uuid import UUID
+    swarm = LaunchSwarm(); swarm.rows = [fixture('launch_737')]
+    sites = fixture('sites')['sites']; zto = next(s for s in sites if s['label'] == 'zto'); adam = next(s for s in sites if s['label'] == 'adam')
+    adam['createdAt'] = '2020-01-01T00:00:00Z'
+    newer = {**zto, 'id': str(UUID(int=100)), 'label': 'new-zto', 'createdAt': '2026-10-06T01:00:00Z'}
+    async def fetch_sites(): swarm.calls.append('sites'); return [adam, newer, zto]
+    swarm.fetch_sites = fetch_sites
+    m = manager(tmp_path, swarm)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+61)
+        assert ('site_job', adam['jobId']) not in swarm.calls
+        assert swarm.calls.count('sites') == 1
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['site_label'] == 'new-zto'
+    finally: await m.close()

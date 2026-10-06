@@ -94,3 +94,36 @@ def test_live_number_map_is_strict_bounded_and_not_shared(tmp_path):
         cache.set_baselines({'swarm_live_numbers': invalid}, now=101)
         cache.save(); cache.load()
         assert cache.get_baselines()['swarm_live_numbers'] is None
+
+
+def test_per_contract_progress_survives_cache_and_rejects_invalid_states(tmp_path):
+    from maxpane_dashboard.analytics import surf_launch_checks as lc
+    from maxpane_dashboard.data.keccak import keccak256
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_LAUNCH_FACTS
+    row, facts, checks = checked(747)
+    checks['K3']['state'] = 'unknown'
+    facts.update(row=row, checks=checks, detail_version=[row['status'],row['updatedAt']])
+    cache = SurfCache(path=str(tmp_path/'contracts.json'), clock=lambda: 101)
+    cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, {'launches':{row['id']:facts},'sites':{}}, ts=100); cache.save()
+    cache.load(slot_coercers={SLOT_SWARM_LAUNCH_FACTS: sw.coerce_launch_facts_slot})
+    restored = cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'][row['id']]
+    assert restored['checks']['K3']['evidence']['contracts'][0]['state'] == 'pass_immutables'
+    def forbidden(_): raise AssertionError('persisted passing contract rehashed')
+    again = lc.check_launch(row, restored, [], {}, keccak=forbidden, previous=restored['checks'])
+    assert again['K3']['state'] == 'pass_immutables'
+    for invalid in ('safe', 3, {'state':'pass'}):
+        facts['checks']['K3']['evidence']['contracts'][0]['state'] = invalid
+        assert sw.coerce_launch_facts_slot({'launches':{row['id']:facts}, 'sites':{}})['launches'] == {}
+
+
+def test_refresh_versions_and_failure_timestamps_are_strict_and_bounded():
+    launch = fixture('launch_737'); key = launch['id']
+    for version in (None, 99):
+        assert sw.coerce_launches_slot({'policies_refreshed_for': {key: version}})['policies_refreshed_for'] == {key:version}
+    for invalid in (True, -1, '99', {}):
+        assert sw.coerce_launches_slot({'policies_refreshed_for': {key: invalid}})['policies_refreshed_for'] == {}
+    ids = [str(uuid.UUID(int=i+1)) for i in range(600)]
+    assert len(sw.coerce_launches_slot({'policies_refreshed_for': dict.fromkeys(ids, None)})['policies_refreshed_for']) == 500
+    for stamp in (float('nan'), float('inf'), -1, True, 'now'):
+        clean = sw.coerce_launch_facts_slot({'launches':{key:{'row':launch,'detail_failed_ts':stamp}}, 'sites':{}})
+        assert 'detail_failed_ts' not in clean['launches'][key]
