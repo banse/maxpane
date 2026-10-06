@@ -1,0 +1,121 @@
+{
+ "admissionChecks": [
+  {
+   "detail": "8 node(s) accepted at 9665e84d",
+   "name": "provenance",
+   "status": "passed"
+  },
+  {
+   "detail": "8 accepted submission(s), no unresolved blocking findings",
+   "name": "findings",
+   "status": "passed"
+  },
+  {
+   "detail": "1 independent review(s)",
+   "name": "independent_review",
+   "status": "passed"
+  },
+  {
+   "detail": "1 contract(s) clean and reproducible",
+   "name": "bytecode",
+   "status": "passed"
+  },
+  {
+   "detail": "1 application contracts; no protocol token or pool",
+   "name": "manifest",
+   "status": "passed"
+  },
+  {
+   "detail": "invariants-11aebc2aca1e: Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 487.25\u00b5s (150.37\u00b5s CPU time)",
+   "name": "protected_invariants",
+   "status": "passed"
+  },
+  {
+   "detail": "policy explicitly selects no on-chain contributor rewards",
+   "name": "economics",
+   "status": "passed"
+  }
+ ],
+ "artifactCount": 1,
+ "artifacts": [
+  {
+   "address": "0x7c4dd52baa8352ba2d673739da456698e715451b",
+   "blockNumber": 26129110,
+   "creationCodeHash": "95c44ad9f6444517ef39b99afd1a5708826320a7dc6efc7a90a64ccd5c36975a",
+   "name": "Counter",
+   "role": "other",
+   "txHash": "0x51246a8812ba4876859a43367e6e5992e436cef87c46ed3c1c5c10715a84109a",
+   "verifiedAt": null
+  }
+ ],
+ "assurances": [],
+ "attestation": {
+  "contracts": [
+   {
+    "abiHash": "df90dfe5f2b6c80935a43d0400432a3587a613020a4380ad32981ead18042e87",
+    "creationCodeBytes": 235,
+    "creationCodeHash": "95c44ad9f6444517ef39b99afd1a5708826320a7dc6efc7a90a64ccd5c36975a",
+    "deployedCodeBytes": 209,
+    "deployedCodeHash": "452017cd4fa68e0a173ac5e17b896b2f69d8fb0599dea8e6aa92aa9699112362",
+    "metadataHash": "df3b7dbca7ea4fc5323e2d00f7a45d36cf0672bc894b2f231f43f5c9ddbe8339",
+    "name": "Counter",
+    "opcodes": {
+     "callcode": false,
+     "delegatecall": false,
+     "selfdestruct": false
+    },
+    "path": "src/Counter.sol"
+   }
+  ],
+  "manifest": {
+   "contracts": [
+    {
+     "constructorArgs": [],
+     "contract": "Counter"
+    }
+   ],
+   "kind": "evm_contracts",
+   "notes": "Contracts-only launch of a single application contract, Counter (src/Counter.sol), for Ethereum mainnet. No token, pool, reward distributor, ETH funding or initialization call. Counter has no constructor and takes no constructor arguments, so constructorArgs is empty and neither $owner nor any $contract reference is used. The contract has no owner, no admin functions, no fees and holds no funds: it has no payable function, receive or fallback. State is one uint256 count starting at zero. increment() is permissionless, adds one with checked arithmetic and emits Incremented(address indexed caller, uint256 newCount); count() reads the value. msg.sender in the constructor is the factory, which gains no privilege because the contract has no privileged role. These notes are explanatory only and are not deployment authority; the independent security review, attestation and deployment checks are separate steps."
+  },
+  "manifestError": null,
+  "toolchain": {
+   "bytecodeHash": "none",
+   "evmVersion": "cancun",
+   "forge": "forge Version: 1.8.3",
+   "optimizer": true,
+   "optimizerRuns": 200,
+   "solc": "0.8.26",
+   "viaIR": false
+  },
+  "treeHash": "46db2e848503dea241eef06bbe5213ff97ba1c7b",
+  "verifierKey": "68249df1f422fa72f61ca7f0ddaf9b62043959c5c134498441d5e552a9921782",
+  "verifierVersion": "0.1.0+f8d984f2"
+ },
+ "attestationFailure": null,
+ "attestationHash": "72ba0ab9e67704103ab689203d26997bbabe08e395b1f0970ccfed37beb59cbb",
+ "chainId": 1,
+ "createdAt": "2026-10-05T22:07:15.559Z",
+ "deployFailure": null,
+ "economics": null,
+ "id": "ed8f29a4-7f6e-4bd4-9c26-864645e90334",
+ "jobs": [
+  {
+   "attachedAt": "2026-10-05T22:07:15.559Z",
+   "id": "b2246df4-9856-41c0-b573-e6f0b67f5897",
+   "objective": "Counter: a minimal counter contract on Ethereum mainnet, contracts only, no token. A Counter contract holds a uint256 count starting at zero; increment() adds one and emits Incremented(address indexed caller, uint256 newCount); count() reads it. No owner, no admin functions, no fees, no funds held, no constructor arguments. Include a Foundry test suite covering increment, the event and many callers. An independent security review of the contract before deployment.",
+   "state": "completed"
+  }
+ ],
+ "kind": "evm_contracts",
+ "launchNumber": 734,
+ "manifestHash": "49cdea4e5c6a5372a0f5e6c7eec80007a52c14086607676c5e03812ba4367ded",
+ "merkleRoot": null,
+ "parkedReason": null,
+ "policyVersion": 27,
+ "poolFee": null,
+ "requester": null,
+ "sourceCommit": "9665e84d83282eaf0d121587d784bae233c6a177",
+ "sourceRepoUrl": "https://github.com/identity-md-launches/launch-734-counter-minimal-counter-contract",
+ "status": "live",
+ "updatedAt": "2026-10-05T22:19:00.837Z"
+}

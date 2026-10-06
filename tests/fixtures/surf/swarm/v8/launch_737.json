@@ -1,0 +1,157 @@
+{
+ "admissionChecks": [
+  {
+   "detail": "8 node(s) accepted at 620116f8",
+   "name": "provenance",
+   "status": "passed"
+  },
+  {
+   "detail": "8 accepted submission(s), no unresolved blocking findings",
+   "name": "findings",
+   "status": "passed"
+  },
+  {
+   "detail": "1 independent review(s)",
+   "name": "independent_review",
+   "status": "passed"
+  },
+  {
+   "detail": "1 contract(s) clean and reproducible",
+   "name": "bytecode",
+   "status": "passed"
+  },
+  {
+   "detail": "ZTO: 8800 bps to the pool at 2500000000000000000000 minor units of 0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7, 0 contracts",
+   "name": "manifest",
+   "status": "passed"
+  },
+  {
+   "detail": "invariants-c2c6d358e597: Suite result: ok. 8 passed; 0 failed; 0 skipped; finished in 12.38ms (2.74ms CPU time)",
+   "name": "protected_invariants",
+   "status": "passed"
+  },
+  {
+   "detail": "249 allocation(s), root 0x8b07e1b1",
+   "name": "economics",
+   "status": "passed"
+  }
+ ],
+ "artifactCount": 3,
+ "artifacts": [
+  {
+   "address": "0x69ca4b25b16e0aecf58e21e3f72887425bf70724",
+   "blockNumber": 26129224,
+   "creationCodeHash": "f1c21108732a73286b1030e87fbba14c806905275dde6fce012f2c0ca19e30b9",
+   "name": "MerkleDistributor",
+   "role": "distributor",
+   "txHash": "0x39c8e5c567e295c1eace7243a2d6eca7a64f1bfcc05a4d51b5f3192671427630",
+   "verifiedAt": null
+  },
+  {
+   "address": "0x784ff9a3ac5d88a30bfff6f7f2a270161fbe6000",
+   "blockNumber": 26129224,
+   "creationCodeHash": "0b3f249bc36eb41d4f5f7b8d4c132f9f3e77df94b8536f2e26d0f0e7d159a7ad",
+   "name": "PoolInitializationGuard",
+   "role": "hook",
+   "txHash": "0x39c8e5c567e295c1eace7243a2d6eca7a64f1bfcc05a4d51b5f3192671427630",
+   "verifiedAt": null
+  },
+  {
+   "address": "0xd782bdea4ef02a0bd391eb9089470c8080f0a68e",
+   "blockNumber": 26129224,
+   "creationCodeHash": "4ff49890091005891f7afd6ea1fefbc6653f4e83ddc7d94d255abeb13727a576",
+   "name": "ZeroToOne",
+   "role": "token",
+   "txHash": "0x39c8e5c567e295c1eace7243a2d6eca7a64f1bfcc05a4d51b5f3192671427630",
+   "verifiedAt": null
+  }
+ ],
+ "assurances": [],
+ "attestation": {
+  "contracts": [
+   {
+    "abiHash": "2e65b43c82d9fb2940e17503c1d4da9d6e28d5be9419fbe8e111a6bc41a1b7bc",
+    "creationCodeBytes": 1395,
+    "creationCodeHash": "4ff49890091005891f7afd6ea1fefbc6653f4e83ddc7d94d255abeb13727a576",
+    "deployedCodeBytes": 1287,
+    "deployedCodeHash": "24e03ed7d7d3d6dc010b9a9836e419a3eb4215383b463f4e6685b4816435f16d",
+    "metadataHash": "4bd1015f75553c40c39cec24fff3376f0c1a8530063fef69722913e614a9068d",
+    "name": "ZeroToOne",
+    "opcodes": {
+     "callcode": false,
+     "delegatecall": false,
+     "selfdestruct": false
+    },
+    "path": "src/ZeroToOne.sol"
+   }
+  ],
+  "manifest": {
+   "contracts": [],
+   "economics": {
+    "initialMarketCapWei": "2500000000000000000000",
+    "poolBps": 8800,
+    "remainderTo": "0x7b8c742f2e1eeb3fb2c10d72967fa6d4a22f0479"
+   },
+   "kind": "custom_token",
+   "notes": "ZeroToOne in src/ZeroToOne.sol is a plain ERC-20 community token. Its argument-free constructor mints all 1,000,000,000 ZTO with 18 decimals to msg.sender, the launch factory. Supply is fixed: there are no subsequent mint or burn functions, fees, owner powers, pause, blocklist, or upgrade functions. Transfers deliver the exact requested amount; transferFrom requires allowance. Transfers to the zero address and approvals of the zero address revert. No application contracts or initialization calls are required. The pool pairs ZTO with the specified IMD token at a 0.3% fee and tick spacing 60. initialPrice is provenance only: floor(sqrt(2500000000000000000000 / 1000000000000000000000000000) * 2^96), using ZTO as currency0 and IMD as currency1. The deployer derives the actual opening sqrtPriceX96 from economics.initialMarketCapWei and token.totalSupply using the deployed currencies' address order.",
+   "pool": {
+    "fee": 3000,
+    "initialPrice": "125270724187523965593206900",
+    "pairedCurrency": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+    "tickSpacing": 60
+   },
+   "token": {
+    "constructorArgs": [],
+    "contract": "ZeroToOne",
+    "decimals": 18,
+    "name": "Zero To One",
+    "symbol": "ZTO",
+    "totalSupply": "1000000000000000000000000000"
+   }
+  },
+  "manifestError": null,
+  "toolchain": {
+   "bytecodeHash": "none",
+   "evmVersion": "cancun",
+   "forge": "forge Version: 1.8.3",
+   "optimizer": true,
+   "optimizerRuns": 200,
+   "solc": "0.8.26",
+   "viaIR": false
+  },
+  "treeHash": "37a192a72b20fcb9dd710bc5bf99c332f6419dc9",
+  "verifierKey": "68249df1f422fa72f61ca7f0ddaf9b62043959c5c134498441d5e552a9921782",
+  "verifierVersion": "0.1.0+f8d984f2"
+ },
+ "attestationFailure": null,
+ "attestationHash": "f9667a1a18d60b2d532cb994d1b92ff8383007d250cc86f05dc082506f21abd9",
+ "chainId": 1,
+ "createdAt": "2026-10-05T22:41:13.629Z",
+ "deployFailure": null,
+ "economics": {
+  "initialMarketCapWei": "2500000000000000000000",
+  "poolBps": 8800,
+  "remainderTo": "0x7b8c742f2e1eeb3fb2c10d72967fa6d4a22f0479"
+ },
+ "id": "030c609a-ae99-4a2b-9950-2941535ab63d",
+ "jobs": [
+  {
+   "attachedAt": "2026-10-05T22:41:13.629Z",
+   "id": "334494af-01a8-4470-9cae-d420ee81da74",
+   "objective": "A custom token: Zero To One (ZTO).\nToken name: Zero To One\nToken symbol: ZTO\nToken supply: 1,000,000,000 with 18 decimals, all minted once to the deployer in the constructor.\nWhat it does: A plain community token. No fees, no minting after launch, no owner powers, no transfer rules.\nPool: 88%   Starting market cap: 2500 IMD   Rest of supply to: 0x7B8C742F2e1eEB3fB2C10d72967Fa6d4a22f0479",
+   "state": "completed"
+  }
+ ],
+ "kind": "custom_token",
+ "launchNumber": 737,
+ "manifestHash": "ef252ace0e3e3876dd54151aebc56af856e9c8b2bf5a4a77c14804bf6e6de53f",
+ "merkleRoot": "0x8b07e1b14c4d87778bb2469164cea474a78214f909c6aea94d8c70b2cd9ae6ea",
+ "parkedReason": null,
+ "policyVersion": 26,
+ "poolFee": 12500,
+ "requester": "0x7b8c742f2e1eeb3fb2c10d72967fa6d4a22f0479",
+ "sourceCommit": "620116f866163753e58ba57dde3f12b2dddb3c24",
+ "sourceRepoUrl": "https://github.com/identity-md-launches/launch-737-zero-to-one",
+ "status": "live",
+ "updatedAt": "2026-10-05T22:41:50.337Z"
+}

@@ -1,0 +1,162 @@
+{
+ "admissionChecks": [
+  {
+   "detail": "8 node(s) accepted at 6a0d6d17",
+   "name": "provenance",
+   "status": "passed"
+  },
+  {
+   "detail": "8 accepted submission(s), no unresolved blocking findings",
+   "name": "findings",
+   "status": "passed"
+  },
+  {
+   "detail": "1 independent review(s)",
+   "name": "independent_review",
+   "status": "passed"
+  },
+  {
+   "detail": "1 contract(s) clean and reproducible",
+   "name": "bytecode",
+   "status": "passed"
+  },
+  {
+   "detail": "ID: 8000 bps to the pool at 10000000000000000000 wei, 0 contracts",
+   "name": "manifest",
+   "status": "passed"
+  },
+  {
+   "detail": "invariants-c2c6d358e597: Suite result: ok. 8 passed; 0 failed; 0 skipped; finished in 31.47ms (8.08ms CPU time)",
+   "name": "protected_invariants",
+   "status": "passed"
+  },
+  {
+   "detail": "261 allocation(s), root 0x6fc82e2a",
+   "name": "economics",
+   "status": "passed"
+  }
+ ],
+ "artifactCount": 3,
+ "artifacts": [
+  {
+   "address": "0xde1cbe2801ab10162c31aa6dc278bed2b516dc3b",
+   "blockNumber": 26129732,
+   "creationCodeHash": "c27dc6b46a1dfcd5b9c4d560b4c7868b4e6322f551bdc9823b37cbad715282a6",
+   "name": "IdentityToken",
+   "role": "token",
+   "txHash": "0xb51f65e26ed16981d8c7832c2307d707fd1507b91a85629f5f757bfbf58a57a5",
+   "verifiedAt": null
+  },
+  {
+   "address": "0x41b2b165207a6d6f2d843eb93016222c5241a2e6",
+   "blockNumber": 26129732,
+   "creationCodeHash": "f1c21108732a73286b1030e87fbba14c806905275dde6fce012f2c0ca19e30b9",
+   "name": "MerkleDistributor",
+   "role": "distributor",
+   "txHash": "0xb51f65e26ed16981d8c7832c2307d707fd1507b91a85629f5f757bfbf58a57a5",
+   "verifiedAt": null
+  },
+  {
+   "address": "0x784ff9a3ac5d88a30bfff6f7f2a270161fbe6000",
+   "blockNumber": 26129732,
+   "creationCodeHash": "0b3f249bc36eb41d4f5f7b8d4c132f9f3e77df94b8536f2e26d0f0e7d159a7ad",
+   "name": "PoolInitializationGuard",
+   "role": "hook",
+   "txHash": "0xb51f65e26ed16981d8c7832c2307d707fd1507b91a85629f5f757bfbf58a57a5",
+   "verifiedAt": null
+  }
+ ],
+ "assurances": [],
+ "attestation": {
+  "contracts": [
+   {
+    "abiHash": "befa8767b6d8d8a33d0f980f2b66facccc20f8034b5761e999e30e1a574438d1",
+    "creationCodeBytes": 3927,
+    "creationCodeHash": "c27dc6b46a1dfcd5b9c4d560b4c7868b4e6322f551bdc9823b37cbad715282a6",
+    "deployedCodeBytes": 3394,
+    "deployedCodeHash": "1a14358f65b38a7801bf8ed8cbd8974f03ea25ea8f71c0c246d23fbae81fd1b9",
+    "metadataHash": "0040f9793d003a3185748877894b5764a8abf2e2655017566c63db1ae1ff6559",
+    "name": "IdentityToken",
+    "opcodes": {
+     "callcode": false,
+     "delegatecall": false,
+     "selfdestruct": false
+    },
+    "path": "src/IdentityToken.sol"
+   }
+  ],
+  "manifest": {
+   "contracts": [],
+   "economics": {
+    "initialMarketCapWei": "10000000000000000000",
+    "poolBps": 8000,
+    "remainderTo": "0x70bcbde387539d95ffe6d43edbf7c6aa2da87a09"
+   },
+   "kind": "custom_token",
+   "notes": "IdentityToken(address factory_, address poolManager_, uint64 launchNumber_, address feeRecipient_) mints 1,000,000,000 ID with 18 decimals once to msg.sender, the factory, in its constructor. The fourth argument is the requester's wallet, the same address as economics.remainderTo: it receives the 8% fee on ordinary transfers, rounded down and deducted from the transferred amount. Under a launch the constructor reverts on a zero fee recipient, because the deployer is the factory contract and could neither spend fees nor hand the role on. Transfers from or to the factory, the pool manager, the current fee recipient, or the distributor resolved through factory.distributorOf(launchNumber) at transfer time are fee-exempt, so the swarm's share, claims, the seed and swaps move whole. Only the current fee recipient can propose a new recipient, who must accept in a second step; nothing can mint, burn, pause, blacklist, freeze or move a holder's balance. There are no additional application contracts or initialization calls. Native ETH is currency0 and ID is currency1; initialPrice records sqrt(totalSupply / initialMarketCapWei) * 2^96. This price is provenance only; the deployer derives the opening price from the supplied economics and totalSupply.",
+   "pool": {
+    "fee": 3000,
+    "initialPrice": "792281625142643375935439503360000",
+    "pairedCurrency": "0x0000000000000000000000000000000000000000",
+    "tickSpacing": 60
+   },
+   "token": {
+    "constructorArgs": [
+     "$factory",
+     "$poolManager",
+     "$launchNumber",
+     "0x70bcbde387539d95ffe6d43edbf7c6aa2da87a09"
+    ],
+    "contract": "IdentityToken",
+    "decimals": 18,
+    "name": "Identity",
+    "symbol": "ID",
+    "totalSupply": "1000000000000000000000000000"
+   }
+  },
+  "manifestError": null,
+  "toolchain": {
+   "bytecodeHash": "none",
+   "evmVersion": "cancun",
+   "forge": "forge Version: 1.8.3",
+   "optimizer": true,
+   "optimizerRuns": 200,
+   "solc": "0.8.26",
+   "viaIR": false
+  },
+  "treeHash": "2a166ba322f8bf844e9247b15fa73224f808a007",
+  "verifierKey": "68249df1f422fa72f61ca7f0ddaf9b62043959c5c134498441d5e552a9921782",
+  "verifierVersion": "0.1.0+f8d984f2"
+ },
+ "attestationFailure": null,
+ "attestationHash": "8892a29b5df70ae8f62d92f9b21f409dfb08f940ac2e2cc67c9cb6c11b785287",
+ "chainId": 1,
+ "createdAt": "2026-10-06T00:23:44.573Z",
+ "deployFailure": null,
+ "economics": {
+  "initialMarketCapWei": "10000000000000000000",
+  "poolBps": 8000,
+  "remainderTo": "0x70bcbde387539d95ffe6d43edbf7c6aa2da87a09"
+ },
+ "id": "2dc5f08d-c901-4691-b7ca-8a7acd921569",
+ "jobs": [
+  {
+   "attachedAt": "2026-10-06T00:23:44.573Z",
+   "id": "6c2edf25-ed78-446b-97a0-e4e8aa9898ea",
+   "objective": "A custom token: Identity (ID).\nToken name: Identity\nToken symbol: ID\nToken supply: 1,000,000,000 with 18 decimals, all minted once to the deployer in the constructor.\nWhat it does: Pay 8% fee to the deployer",
+   "state": "completed"
+  }
+ ],
+ "kind": "custom_token",
+ "launchNumber": 747,
+ "manifestHash": "522c6803068992f081cf80525e6b82730bc25784251ada0a8f7a00839d1bf2bb",
+ "merkleRoot": "0x6fc82e2aa798afd03521d5a3ada80a89fa7ca92d3e34f7733c109d7c424551b3",
+ "parkedReason": null,
+ "policyVersion": 26,
+ "poolFee": 12500,
+ "requester": "0x70bcbde387539d95ffe6d43edbf7c6aa2da87a09",
+ "sourceCommit": "6a0d6d170ae20afb3478b0253bcd3657bf54f4d9",
+ "sourceRepoUrl": "https://github.com/identity-md-launches/launch-747-identity",
+ "status": "live",
+ "updatedAt": "2026-10-06T00:24:16.285Z"
+}

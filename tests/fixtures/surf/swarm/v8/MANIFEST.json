@@ -1,0 +1,217 @@
+{
+  "host": "https://api.imd.fun",
+  "note": "Captured 2026-10-06 for SWARM production launches (docs/codex_swarm_launches_plan.md). launches_100 is the app's read; launches_500 is every launch there is (limit clamps at 500) and carries the 10 abandoned chain-1 univ4_hook rows #9-#29 of August. launch_737 (custom_token, runtime hash matches), launch_747 (custom_token whose token has immutables: runtime hash differs, attested creation code is inside the deploy tx input) and launch_734 (evm_contracts, no token) are /launches/<uuid> bodies trimmed of rewardSnapshot/allocations/claims. rpc_* are Ethereum JSON-RPC answers from ethereum-rpc.publicnode.com for those launches' deploy tx, receipt and token/other runtime code. job_zto_site (site zto -> #737 by objective text, paidBy == requester) and job_adam_site (site adam -> Sepolia #713 by project) are /jobs/<uuid> bodies. sites is the fixed 100-row page (limit is ignored); workflows_100 contains genesis (frontendJobId 43d73a6c, contractsJobId 71a65ccf = Sepolia #732).",
+  "files": {
+    "launches_100": {
+      "url": "https://api.imd.fun/launches?limit=100",
+      "captured_at": "2026-10-06T00:37:59Z",
+      "http_status": 200,
+      "sha256": "167bfe9819de807ee31807556a2ae64ee28456afe84d516e8911fac7a2b926f0",
+      "bytes": 92866
+    },
+    "launches_500": {
+      "url": "https://api.imd.fun/launches?limit=500",
+      "captured_at": "2026-10-06T00:38:00Z",
+      "http_status": 200,
+      "sha256": "3665d807c45d679551a851dc7b1a2ffa732de43430692b279ccf411a2f38bd8e",
+      "bytes": 207086
+    },
+    "launch_policies": {
+      "url": "https://api.imd.fun/launch/policies",
+      "captured_at": "2026-10-06T00:38:00Z",
+      "http_status": 200,
+      "sha256": "c046f8e433b396f1b045e01868265ca296f2329e01c19cec5032c9f91d498a90",
+      "bytes": 24584
+    },
+    "sites": {
+      "url": "https://api.imd.fun/sites",
+      "captured_at": "2026-10-06T00:38:00Z",
+      "http_status": 200,
+      "sha256": "27b1f6ea94b86f309127c6d0d4d4dbb1921aafad1c1154d2d3a7e6db6f9d33c8",
+      "bytes": 75658
+    },
+    "workflows_100": {
+      "url": "https://api.imd.fun/workflows?limit=100",
+      "captured_at": "2026-10-06T00:38:01Z",
+      "http_status": 200,
+      "sha256": "2124d0d82a1280030cc1c5e70382a4de44714a4741a88aa2bb7d817b3915e19c",
+      "bytes": 372901
+    },
+    "launch_737": {
+      "url": "https://api.imd.fun/launches/030c609a-ae99-4a2b-9950-2941535ab63d",
+      "captured_at": "2026-10-06T00:38:01Z",
+      "http_status": 200,
+      "sha256": "e1007821052cf118c5f853d4442b60a026eff42835e96cb225f935ef39c3ccc1",
+      "bytes": 6115,
+      "note": "trimmed: removed ['rewardSnapshot', 'allocations', 'claims'] (original 223508 bytes); every other key verbatim"
+    },
+    "rpc_737_tx": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T00:38:01Z",
+      "http_status": 200,
+      "sha256": "db75d574a98bebd82269369d7efc77199163b6f40d5474b282ac2a33aa9cd3e5",
+      "bytes": 5991,
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getTransactionByHash",
+        "params": [
+          "0x39c8e5c567e295c1eace7243a2d6eca7a64f1bfcc05a4d51b5f3192671427630"
+        ]
+      }
+    },
+    "rpc_737_receipt": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T00:38:01Z",
+      "http_status": 200,
+      "sha256": "920dc63a7f40cae90157abde8db598102464f958e66f671675af9e8594997c17",
+      "bytes": 8649,
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getTransactionReceipt",
+        "params": [
+          "0x39c8e5c567e295c1eace7243a2d6eca7a64f1bfcc05a4d51b5f3192671427630"
+        ]
+      }
+    },
+    "rpc_737_code_token": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T00:38:01Z",
+      "http_status": 200,
+      "sha256": "98d90386f209905f8d8624a363632233e89fd3a2bd47d57fd9399a18b79c7bb5",
+      "bytes": 2612,
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getCode",
+        "params": [
+          "0xd782bdea4ef02a0bd391eb9089470c8080f0a68e",
+          "latest"
+        ]
+      }
+    },
+    "launch_747": {
+      "url": "https://api.imd.fun/launches/2dc5f08d-c901-4691-b7ca-8a7acd921569",
+      "captured_at": "2026-10-06T00:38:02Z",
+      "http_status": 200,
+      "sha256": "9d9d296b4dfd26c997d179f77f0694e1e48921385c4e5d9e2101ec719f385aaa",
+      "bytes": 6353,
+      "note": "trimmed: removed ['rewardSnapshot', 'allocations', 'claims'] (original 232576 bytes); every other key verbatim"
+    },
+    "rpc_747_tx": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T00:38:02Z",
+      "http_status": 200,
+      "sha256": "0cc4223f8002f388a755de11966e017d57a96aae3fa979ea9203f26d9be78554",
+      "bytes": 11561,
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getTransactionByHash",
+        "params": [
+          "0xb51f65e26ed16981d8c7832c2307d707fd1507b91a85629f5f757bfbf58a57a5"
+        ]
+      }
+    },
+    "rpc_747_receipt": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T00:38:02Z",
+      "http_status": 200,
+      "sha256": "7fdd67fa36e3d880c7939993a3311ade9dac4157491a29756110bd03a86e38e4",
+      "bytes": 9510,
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getTransactionReceipt",
+        "params": [
+          "0xb51f65e26ed16981d8c7832c2307d707fd1507b91a85629f5f757bfbf58a57a5"
+        ]
+      }
+    },
+    "rpc_747_code_token": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T00:38:02Z",
+      "http_status": 200,
+      "sha256": "49b35ca2c019ac53888f5db01282d4e9d02ca568fd5053fa2e7d14678ed86110",
+      "bytes": 6826,
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getCode",
+        "params": [
+          "0xde1cbe2801ab10162c31aa6dc278bed2b516dc3b",
+          "latest"
+        ]
+      }
+    },
+    "launch_734": {
+      "url": "https://api.imd.fun/launches/ed8f29a4-7f6e-4bd4-9c26-864645e90334",
+      "captured_at": "2026-10-06T00:38:02Z",
+      "http_status": 200,
+      "sha256": "72c1503d5a8d2b3d3e52e21b79f006b739782c976b7f312fd07b3b52c3ee4497",
+      "bytes": 4778,
+      "note": "trimmed: removed ['rewardSnapshot', 'allocations', 'claims'] (original 4322 bytes); every other key verbatim"
+    },
+    "rpc_734_tx": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T00:38:02Z",
+      "http_status": 200,
+      "sha256": "5c646e3ae93aea34123458e14429a9dd21e9e14665c1c1b905a5e71c4e7377c3",
+      "bytes": 3300,
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getTransactionByHash",
+        "params": [
+          "0x51246a8812ba4876859a43367e6e5992e436cef87c46ed3c1c5c10715a84109a"
+        ]
+      }
+    },
+    "rpc_734_receipt": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T00:38:02Z",
+      "http_status": 200,
+      "sha256": "a629df04f778d235dc287951c198604902042d7e247faa4ddd5eb08c2c2dd6e3",
+      "bytes": 3069,
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getTransactionReceipt",
+        "params": [
+          "0x51246a8812ba4876859a43367e6e5992e436cef87c46ed3c1c5c10715a84109a"
+        ]
+      }
+    },
+    "rpc_734_code_other": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T00:38:02Z",
+      "http_status": 200,
+      "sha256": "034a984df42b2bf5d6cbd2525cb90179651a874e8b0415f29f517259b071060b",
+      "bytes": 456,
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_getCode",
+        "params": [
+          "0x7c4dd52baa8352ba2d673739da456698e715451b",
+          "latest"
+        ]
+      }
+    },
+    "job_zto_site": {
+      "url": "https://api.imd.fun/jobs/0a1c7007-8ec8-47f4-8a43-48f4f623e4b2",
+      "captured_at": "2026-10-06T00:38:03Z",
+      "http_status": 200,
+      "sha256": "69613ef28bd925ba82f491e2a9f13c2669ec7041cecdec51776c36bbd75bfb4e",
+      "bytes": 7182
+    },
+    "job_adam_site": {
+      "url": "https://api.imd.fun/jobs/0fef589e-73d1-4e04-9e86-aca1ccb04180",
+      "captured_at": "2026-10-06T00:38:03Z",
+      "http_status": 200,
+      "sha256": "9cf98a63f423f8d049dc37b0c2d17e3051cffd24b659324448df98ecb545cdc6",
+      "bytes": 28955
+    }
+  }
+}
