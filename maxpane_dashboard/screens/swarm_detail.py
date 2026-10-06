@@ -70,7 +70,8 @@ class LaunchDetailScreen(RecordDetailScreen):
     def _evidence(self, value, prefix=''):
         if isinstance(value, dict):
             for key, item in value.items():
-                yield from self._evidence(item, f'{prefix}{flatten(key)}: ')
+                if key != 'rule_version' and item is not None:
+                    yield from self._evidence(item, f'{prefix}{flatten(key)}: ')
         elif isinstance(value, list):
             if not value:
                 yield self._literal(prefix + 'none')

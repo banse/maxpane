@@ -427,7 +427,8 @@ responses, with 500-entry caps. At most three production details and three eligi
 are read per cycle; never-tried details precede oldest failed attempts. Sepolia and abandoned
 launches are not enriched. Completed per-contract K3 evidence is reused; an attested contract
 without an artifact is not applicable. Checks and indexed site matching run off the UI thread,
-and links are memoized on launch, facts, sites and workflow timestamps. A previously unseen
+and links are memoized on a content hash of matching launch, site/job and workflow inputs;
+read clocks, ordering and unrelated evidence do not invalidate it. A previously unseen
 policy version or a newly judged wallet mismatch refreshes policies once before judgment; a
 failed refresh leaves the check unknown. The cycle snapshots rows/events before spawning work.
 
@@ -436,8 +437,11 @@ pin after leaving the newest API window. LAUNCHES keeps 12 production + 12 non-p
 number first within each; production is bold with `◆`, other rows dim with verdict `--`. MAINNET / BASE / RH /
 SEPOLIA are the chain words. The token column prefers role `token`, then `hook`, then the first
 artifact. Full columns add kind/repo; compact drops those and tight also sheds site/parked reason.
-K1–K4 produce provenance-only `✓ swarm`, `… n/4`, or `✗ Kx`; K3 accepts deployed-code equality
-or creation-code evidence (`pass (immutables)`). Only admitted launches without artifacts say
+K2 uses the chain-wide wallet set and factories declared by the launch's own kind; kinds with
+no declared factory are judged on sender and receipt status alone. K1–K4 produce provenance-only `✓ swarm`, `… n/4`, or `✗ Kx`; K3 accepts deployed-code equality
+or creation-code evidence (`pass (immutables)`). K3 requires at least one verified attested
+contract and a verified name match for every token/hook artifact; all-not-applicable and
+unmatched roles remain unknown. Only admitted launches without artifacts say
 `-- pending`; parked launches show a failed check or `-- parked`. K6/K7 are informational, never safety claims.
 Enter/click opens `LaunchDetailScreen`, a deep-copied snapshot with all artifacts, copy/explorer
 links, pair, fee, requester, policy, evidence, site and IMD token/job link. Selection messages

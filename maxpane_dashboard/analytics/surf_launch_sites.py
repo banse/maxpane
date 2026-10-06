@@ -1,4 +1,6 @@
 """Pure production-site joins; requester-written addresses need payer trust."""
+import hashlib
+import json
 import re
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.analytics.surf_launch_checks import address, mappings, is_production
@@ -16,6 +18,31 @@ def site_job_facts(job):
         'project_jobs': list(dict.fromkeys(v['jobId'] for v in mappings(project.get('versions')) if isinstance(v.get('jobId'), str)))[:100],
         'addresses': list(dict.fromkeys(x.lower() for x in _OBJECTIVE_ADDRESS.findall(objective if isinstance(objective, str) else '')))[:100],
     }
+
+def site_match_key(sites, launches, jobs, workflows):
+    """Hash only join semantics; read clocks, order and bytecode are irrelevant."""
+    launch_inputs = []
+    for launch_id, facts in launches.items():
+        row = facts.get('row', {})
+        if is_production(row):
+            tokens = {address(a.get('address')) for a in mappings(row.get('artifacts'))
+                      if a.get('role') == 'token' and address(a.get('address'))}
+            launch_inputs.append((launch_id, sorted(set(facts.get('job_ids', []))),
+                                  sorted(tokens), facts.get('requester')))
+    site_inputs = []
+    for site in sites:
+        job = jobs.get(site.get('id')) or {}
+        site_inputs.append((site.get('id'), site.get('jobId'), job.get('paid_by'),
+                            sorted(set(job.get('project_jobs', []))),
+                            sorted(set(job.get('addresses', [])))))
+    workflow_inputs = set()
+    for row in mappings(workflows):
+        frontend, contracts = parse_job_id(row.get('frontendJobId')), parse_job_id(row.get('contractsJobId'))
+        if frontend is not None and contracts is not None:
+            workflow_inputs.add((frontend, contracts))
+    inputs = (sorted(launch_inputs), sorted(site_inputs), sorted(workflow_inputs))
+    return hashlib.sha256(json.dumps(inputs, separators=(',', ':')).encode()).hexdigest()
+
 
 def match_sites(sites, launches, jobs, workflows):
     """Index joins once; ambiguity across any methods never chooses a launch."""

@@ -80,3 +80,37 @@ def test_fix2_workflow_index_ignores_invalid_job_identifiers():
     assert ls.match_sites([site], {launch['id']:facts}, {}, [flow]+malformed)==ls.match_sites([site], {launch['id']:facts}, {}, [flow])
     facts['job_ids']=['not-a-uuid']
     assert ls.match_sites([site], {launch['id']:facts}, {}, malformed)=={}
+
+
+def test_fix2_site_memo_tracks_matching_inputs_only():
+    launch = fixture('launch_737'); facts = dict(extract_facts(launch), row=launch)
+    site = next(s for s in fixture('sites')['sites'] if s['label'] == 'zto')
+    launches = {launch['id']: facts}; sites = [site]
+    jobs = {site['id']: ls.site_job_facts(fixture('job_zto_site'))}
+    workflows = fixture('workflows_100')['workflows']
+    original = ls.site_match_key(sites, launches, jobs, workflows)
+    assert len(original) == 64
+    noisy = copy.deepcopy(launches)
+    noisy[launch['id']].update(ticker='changed', checks={'K3': 'noise'}, detail_failed_ts=999)
+    noisy[launch['id']]['row']['updatedAt'] = 'later'
+    noisy[launch['id']]['job_ids'].reverse()
+    noisy[launch['id']]['row']['artifacts'].reverse()
+    assert ls.site_match_key(sites[::-1], noisy, jobs, workflows[::-1] + workflows) == original
+    assert ls.site_match_key(sites, launches, jobs, workflows + [{'frontendJobId': [1], 'contractsJobId': {}}]) == original
+    mutations = [
+        lambda s,l,j,w: l.update({site['id']: l.pop(launch['id'])}),
+        lambda s,l,j,w: l[launch['id']]['job_ids'].clear(),
+        lambda s,l,j,w: l[launch['id']]['row'].update(status='abandoned'),
+        lambda s,l,j,w: l[launch['id']]['row'].update(chainId=11155111),
+        lambda s,l,j,w: l[launch['id']].update(requester='0x'+'1'*40),
+        lambda s,l,j,w: next(a for a in l[launch['id']]['row']['artifacts'] if a['role']=='token').update(address='0x'+'1'*40),
+        lambda s,l,j,w: s[0].update(jobId=workflows[0]['contractsJobId']),
+        lambda s,l,j,w: s[0].update(id=launch['id']),
+        lambda s,l,j,w: j[site['id']].update(paid_by='0x'+'1'*40),
+        lambda s,l,j,w: j[site['id']]['project_jobs'].append(launch['id']),
+        lambda s,l,j,w: j[site['id']]['addresses'].clear(),
+        lambda s,l,j,w: w.append({'frontendJobId': site['jobId'], 'contractsJobId': launch['id']}),
+    ]
+    for mutate in mutations:
+        args = copy.deepcopy((sites, launches, jobs, workflows)); mutate(*args)
+        assert ls.site_match_key(*args) != original

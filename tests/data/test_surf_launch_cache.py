@@ -59,12 +59,12 @@ def test_route_data_without_valid_read_time_is_not_presented_as_read():
     assert slot['sites']==[] and slot['sites_ts']==100
 
 
-def test_launch_links_and_timestamp_memo_roundtrip_and_invalid_rejected(tmp_path):
+def test_launch_links_and_content_memo_roundtrip_and_invalid_rejected(tmp_path):
     from maxpane_dashboard.data.surf_cache import SLOT_SWARM_LAUNCHES
     launch = fixture('launch_737'); site = fixture('sites')['sites'][0]
     raw = {'launches': [launch], 'launches_ts': 100, 'sites': [site], 'sites_ts': 100,
            'site_links': {site['id']: {'launch_id': launch['id'], 'method': 'named', 'trusted': True}},
-           'site_links_inputs': {'launches_ts': 100, 'sites_ts': 100, 'facts_ts': 100, 'workflows_ts': None}}
+           'site_links_inputs': 'a'*64}
     clean = sw.coerce_launches_slot(raw, now=101)
     assert clean['site_links'] == raw['site_links']
     assert clean['site_links_inputs'] == raw['site_links_inputs']
@@ -75,11 +75,14 @@ def test_launch_links_and_timestamp_memo_roundtrip_and_invalid_rejected(tmp_path
     clean['site_links'][site['id']]['trusted'] = False
     assert raw['site_links'][site['id']]['trusted'] is True
     for field, invalid in [('site_links', {'bad': {'launch_id': launch['id'], 'method': 'named', 'trusted': True}}),
-                           ('site_links', {site['id']: {'launch_id': launch['id'], 'method': 'named', 'trusted': 1}}),
-                           ('site_links_inputs', {'launches_ts': float('nan')})]:
+                           ('site_links', {site['id']: {'launch_id': launch['id'], 'method': 'named', 'trusted': 1}})]:
         bad = dict(raw, **{field: invalid})
         result = sw.coerce_launches_slot(bad, now=101)
         assert result['site_links'] == {} and result['site_links_inputs'] is None
+    for legacy in ({'launches_ts':100,'sites_ts':100,'facts_ts':100,'workflows_ts':None}, None, 'bad', 'A'*64):
+        result = sw.coerce_launches_slot(dict(raw, site_links_inputs=legacy), now=101)
+        assert result['site_links'] == raw['site_links']
+        assert result['site_links_inputs'] is None
 
 
 def test_live_number_map_is_strict_bounded_and_not_shared(tmp_path):

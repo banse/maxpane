@@ -292,3 +292,38 @@ async def test_fix2_signal_reserves_number_chain_and_verdict_at_pin(ticker,verdi
         assert cell_len(line.strip())<=panel.size.width
         if ticker.startswith('Q'): assert '$Q[31mEVIL[/]R' in line
         else: assert '…' in line
+
+
+async def test_fix2_popup_omits_absent_evidence_and_internal_metadata():
+    from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen
+    row = launch_row()
+    row['checks']['K3']['evidence']['contracts'].append({
+        'name': 'Undeployed', 'state': 'na', 'reason': 'not deployed by this launch',
+        'address': None, 'tx_hash': None, 'expected_hash': None,
+        'actual_hash': None, 'creation_hash': None, 'creation_offset': None})
+    row['checks']['K3']['evidence']['contracts'][0].update(reason=None, creation_offset=0)
+    row['checks']['K3']['evidence']['fixture_false'] = False
+    async with _surf_app(_frozen_payload()).run_test(size=(150, 46)) as pilot:
+        await pilot.app.push_screen(LaunchDetailScreen(row)); await pilot.pause()
+        scroll = pilot.app.screen.query_one(VerticalScroll); seen = ''
+        while True:
+            seen += '\n' + _screen_text(pilot.app)
+            if scroll.scroll_y >= scroll.max_scroll_y: break
+            scroll.scroll_relative(y=10, animate=False); await pilot.pause()
+        assert 'not deployed by this launch' in seen
+        assert 'unavailable' not in seen and 'rule_version' not in seen
+        assert 'creation_offset: 0' in seen and 'fixture_false: False' in seen
+        assert 'PoolInitializationGuard' in seen
+
+
+@pytest.mark.parametrize('ticker', ['FOO #1', 'FOO #1 MAINNET ✓ ' + 'X'*120], ids=['number-in-ticker', 'spoofed-identity'])
+async def test_fix2_signal_reserves_final_launch_identity(ticker):
+    from maxpane_dashboard.widgets.surf.signals import SurfSignals
+    from tests.screens.test_surf_screen import _screen_at
+    row = launch_row(ticker=ticker)
+    payload = _frozen_payload(sig_swarm_state='fired', sig_swarm_age_s=60,
+        sig_swarm_chain_id=1, sig_swarm_detail=f'${ticker} #737 MAINNET ✗ K2 {row["token_address"]} +2')
+    async with _screen_at(143,46,payload) as (app,screen,pilot):
+        line = next(line for line in _region_text(app,screen.query_one(SurfSignals)).splitlines() if 'SWARM LAUNCH' in line)
+        assert '#737 MAINNET ✗ K2' in line
+        assert '0x' not in line and '+2' not in line and '\\' not in line

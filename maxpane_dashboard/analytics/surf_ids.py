@@ -10,4 +10,3 @@ def parse_job_id(value: object) -> str | None:
         return value if str(UUID(value)) == value else None
     except ValueError:
         return None
-

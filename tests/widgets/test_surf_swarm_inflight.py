@@ -21,7 +21,7 @@ import logging
 from textual.app import App
 from textual.widgets import RichLog
 
-from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_PARKED_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
 from maxpane_dashboard.widgets.surf.swarm_inflight import (
     COMPACT_WIDTH,
@@ -85,7 +85,7 @@ async def _text(size=SIZE, **kwargs) -> str:
 
 
 def test_update_data_takes_exactly_the_frozen_keys_in_order():
-    expected = SWARM_WIDGET_SIGNATURES["SurfSwarmInFlight"]
+    expected = SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmInFlight"]
     params = inspect.signature(SurfSwarmInFlight.update_data).parameters
     named = tuple(
         name for name, p in params.items()
@@ -103,7 +103,7 @@ async def test_no_args_renders_unavailable():
 
 
 async def test_every_key_none_renders_unavailable():
-    text = await _text(**{k: None for k in SWARM_WIDGET_SIGNATURES["SurfSwarmInFlight"]})
+    text = await _text(**{k: None for k in SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmInFlight"]})
     assert "unavailable" in text, text
 
 

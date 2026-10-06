@@ -223,7 +223,7 @@ async def test_site_links_invalidate_on_new_facts_with_unchanged_failed_route_cl
         after = m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
         assert len(calls) == 2
         assert after['launches_ts'] == before['launches_ts']
-        assert after['site_links_inputs']['facts_ts'] == NOW+61
+        assert after['site_links_inputs'] != before['site_links_inputs']
         assert next(iter(calls[1].values()))['ticker'] == 'ZTO'
     finally:
         await m.close()
@@ -377,7 +377,7 @@ async def test_fix2_bad_workflow_match_preserves_tier_and_links(tmp_path, monkey
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW)
         before=copy.deepcopy(m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload['site_links'])
         assert before
-        m.cache.store_last_good(SLOT_SWARM_SCORES, {'workflows':[{'frontendJobId':[1], 'contractsJobId':{}}], 'workflows_ts':NOW+1}, ts=NOW+1)
+        m.cache.store_last_good(SLOT_SWARM_SCORES, {'workflows':fixture('workflows_100')['workflows'] + [{'frontendJobId':[1], 'contractsJobId':{}}], 'workflows_ts':NOW+1}, ts=NOW+1)
         if explode:
             def broken(*args): raise RuntimeError('synthetic matcher failure')
             monkeypatch.setattr(ls, 'match_sites', broken)
@@ -437,3 +437,35 @@ async def test_fix2_legacy_cached_checks_rejudged_without_rereading_detail(tmp_p
             assert actual['checks']['K2']['state']==('unknown' if case=='policy_outage' else 'pass')
         assert actual['checks']['K3']['evidence']['contracts'][0]['state']==('na' if case=='renamed' else 'pass')
     finally: await restored.close()
+
+
+@pytest.mark.asyncio
+async def test_fix2_identical_successful_reads_reuse_site_match(tmp_path, monkeypatch):
+    from maxpane_dashboard.analytics import surf_launch_sites as ls
+    swarm = LaunchSwarm(); swarm.rows = [fixture('launch_737')]
+    async def sites(): return [s for s in fixture('sites')['sites'] if s['label']=='zto']
+    swarm.fetch_sites = sites
+    m = manager(tmp_path, swarm); calls = []; original = ls.match_sites
+    def match(*args):
+        calls.append(args)
+        return original(*args)
+    monkeypatch.setattr(ls, 'match_sites', match)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        before = m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+301)
+        after = m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
+        assert after['launches_ts'] > before['launches_ts']
+        assert after['sites_ts'] > before['sites_ts']
+        assert len(calls) == 1
+        assert after['site_links_inputs'] == before['site_links_inputs']
+        assert next(iter(after['site_links'].values()))['trusted'] is True
+        facts = copy.deepcopy(m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload)
+        facts['launches'][swarm.rows[0]['id']]['requester'] = '0x'+'1'*40
+        m.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, facts, ts=NOW+301)
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+362)
+        changed = m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
+        assert len(calls) == 2
+        assert next(iter(changed['site_links'].values()))['trusted'] is False
+    finally:
+        await m.close()

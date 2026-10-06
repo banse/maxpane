@@ -347,7 +347,7 @@ def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]
         return "", []
 
     if available and "SWARM LAUNCH" in head:
-        match = re.match(r"(\$.*?) (#[0-9]+ [A-Z?]+ (?:✗ K[234]|✓|… [0-4]/4|-- pending|-- parked|--))(.*)", flat)
+        match = re.match(r"(\$.*) (#[0-9]+ [A-Z?]+ (?:✗ K[234]|✓|… [0-4]/4|-- pending|-- parked|--))(.*)", flat)
         if match:
             budget = int(available) - visible_len(head) - SEPARATOR_COLS
             ticker, identity, rest = match.groups()

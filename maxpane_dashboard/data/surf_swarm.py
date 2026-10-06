@@ -2473,13 +2473,9 @@ def coerce_launches_slot(value, *, now=None):
         if isinstance(key, str) and parse_job_id(key) == key
         and (version is None or integer(version) is not None)}
     out['policies_refreshed_for'] = dict(list(out['policies_refreshed_for'].items())[-LAUNCH_CACHE_CAP:])
-    # A malformed link or memo invalidates both: the detached tier rebuilds them.
+    # Invalid/legacy memo keys force a rebuild without losing valid last-good links.
     links, inputs = value.get('site_links'), value.get('site_links_inputs')
-    fields = {'launches_ts', 'sites_ts', 'facts_ts', 'workflows_ts'}
-    valid = isinstance(inputs, dict) and set(inputs) == fields and all(
-        stamp is None or (type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0
-                          and (now is None or stamp <= now + 300)) for stamp in inputs.values())
-    valid = valid and isinstance(links, dict) and len(links) <= LAUNCH_CACHE_CAP
+    valid = isinstance(links, dict) and len(links) <= LAUNCH_CACHE_CAP
     clean_links = {}
     for key, link in (links.items() if isinstance(links, dict) else ()):
         if (not isinstance(key, str) or parse_job_id(key) != key or not isinstance(link, dict)
@@ -2490,7 +2486,7 @@ def coerce_launches_slot(value, *, now=None):
             break
         clean_links[key] = dict(link)
     out['site_links'] = clean_links if valid else {}
-    out['site_links_inputs'] = dict(inputs) if valid else None
+    out['site_links_inputs'] = inputs if valid and isinstance(inputs, str) and re.fullmatch(r'[0-9a-f]{64}', inputs) else None
     return out
 
 def coerce_launch_facts_slot(value):

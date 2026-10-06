@@ -5638,8 +5638,8 @@ class SurfManager:
         facts_entry = self.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS)
         facts_ts = now if facts != previous_facts or facts_entry is None else facts_entry.ts
         scores = self._launch_slot(SLOT_SWARM_SCORES, {})
-        inputs = {key: slot.get(key) for key in ('launches_ts', 'sites_ts')}
-        inputs.update(facts_ts=facts_ts, workflows_ts=scores.get('workflows_ts'))
+        inputs = ls.site_match_key(slot.get('sites') or [], facts['launches'],
+                                   facts['sites'], scores.get('workflows'))
         if slot.get('site_links_inputs') != inputs:
             try:
                 slot['site_links'] = await asyncio.to_thread(ls.match_sites, slot.get('sites') or [],
