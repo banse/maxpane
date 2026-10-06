@@ -390,7 +390,7 @@ EXPECTED_KEYS = {
     "sig_hot_state",
     "sig_hot_detail",
     "sig_hot_age_s",
-    "sig_swarm_state", "sig_swarm_detail", "sig_swarm_age_s", "sig_swarm_chain_id",
+    "sig_swarm_state", "sig_swarm_detail", "sig_swarm_age_s", "sig_swarm_chain_id", "sig_swarm_launch",
     "swarm_launch_fired",
     "swarm_launches_as_of_hhmm",
     # ---- pool4 (docs/surf_pool4_contract.md §0.2/§0.3) ----------------------
@@ -564,7 +564,7 @@ EXPECTED_KEYS = {
 def test_surf_keys_is_exactly_the_prd_contract() -> None:
     """The contract, stated once in prose above and once in code.
 
-    **207 = 88 + 71 + 5 + 43**: the 83 that shipped through v0.8.3, the ``p``
+    **208 = 89 + 71 + 5 + 43**: the 83 that shipped through v0.8.3, the ``p``
     body's ``POOL4_KEYS`` (62 at v0.8.4, 71 since the ``4`` body added the
     cross-venue price, the backstop band and the realised return), the
     staker sweep's own five in ``POOL4_STAKERS_KEYS`` (four until
@@ -600,13 +600,13 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     )
 
     assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 207
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 208
     # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
     assert len(SWARM_KEYS) == 43
-    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 88
+    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 89
 
 
 def test_every_signal_has_all_three_facets() -> None:
@@ -857,7 +857,7 @@ def test_v8_launch_and_site_rows_freeze_launch_contract():
     for row in surf_swarm.site_rows(sites):
         assert set(row) == set(SURF_ROW_KEYS["swarm_site_rows"])
         assert isinstance(row["production_link"], bool)
-    assert {"sig_swarm_state", "sig_swarm_detail", "sig_swarm_age_s", "sig_swarm_chain_id",
+    assert {"sig_swarm_state", "sig_swarm_detail", "sig_swarm_age_s", "sig_swarm_chain_id", "sig_swarm_launch",
             "swarm_launch_fired", "swarm_launches_as_of_hhmm"} <= set(SURF_KEYS)
     assert "swarm_launch_events" in READING_KEYS
     for widget in ("SurfSwarmLaunches", "SurfSwarmSites"):

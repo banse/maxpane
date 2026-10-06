@@ -1766,7 +1766,7 @@ SURF_KEYS: tuple[str, ...] = (
     "sig_swarm_state",
     "sig_swarm_detail",
     "sig_swarm_age_s",
-    "sig_swarm_chain_id",
+    "sig_swarm_chain_id", "sig_swarm_launch",
     "swarm_launch_fired",
     # ---- hero ---------------------------------------------------------------
     # `hook_status` removed 2026-08-24 (fix round 12a): no widget ever

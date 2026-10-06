@@ -1121,6 +1121,7 @@ class SurfManager:
         #: The in-flight detached swarm reads, or ``None``. Same contract as
         #: ``_pool4_task``/``_pool4_stakers_task``, one per tier.
         self._swarm_launches_task: Any = None
+        self._swarm_match_errors: set[type[Exception]] = set()
         self._swarm_launch_read_ok: bool | None = None
         self._launch_rpc_clients = dict(launch_rpc_clients or {})
         self._swarm_task: Any = None
@@ -5516,12 +5517,13 @@ class SurfManager:
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
         previous_facts = copy.deepcopy(facts)
-        # Pre-kind cached policy entries cannot judge factory provenance.
-        if any(not policy.get('kind') for policy in slot.get('policies') or []):
-            slot['policies_ts'] = None
+        # Migrate legacy cached policies once; live missing-kind entries keep their TTL.
+        legacy_policies = (slot.get('policies_schema') != 1
+                           and any(not policy.get('kind') for policy in slot.get('policies') or []))
+        slot['policies_schema'] = 1
         failed, refreshed_policy, policy_read_ok = False, False, True
         for route, cadence, method in (('launches', 0, 'fetch_launches'), ('sites', 300, 'fetch_sites'), ('policies', 1800, 'fetch_launch_policies')):
-            if cadence and slot.get(route + '_ts') is not None and now - slot[route + '_ts'] < cadence:
+            if cadence and not (route == 'policies' and legacy_policies) and slot.get(route + '_ts') is not None and now - slot[route + '_ts'] < cadence:
                 continue
             value = await self._guard(lambda method=method: getattr(self.swarm_client, method)(), 'swarm ' + method)
             if route == 'launches':
@@ -5658,9 +5660,12 @@ class SurfManager:
             try:
                 slot['site_links'] = await asyncio.to_thread(ls.match_sites, slot.get('sites') or [],
                                                             facts['launches'], facts['sites'], scores.get('workflows'))
-            except Exception:
-                logger.warning('SURF launch site match failed; retaining last-good links', exc_info=True)
+            except Exception as exc:
+                if type(exc) not in self._swarm_match_errors:
+                    logger.warning('SURF launch site match failed; retaining last-good links', exc_info=True)
+                    self._swarm_match_errors.add(type(exc))
             else:
+                self._swarm_match_errors.clear()
                 slot['site_links_inputs'] = inputs
         stamps = [slot.get(route + '_ts') for route in ('launches', 'sites', 'policies') if slot.get(route + '_ts') is not None]
         if stamps:
@@ -6767,6 +6772,7 @@ class SurfManager:
                 (signals or {}).get(f"sig_{name}_age_s")
             )
         out["sig_swarm_chain_id"] = (signals or {}).get("sig_swarm_chain_id")
+        out["sig_swarm_launch"] = (signals or {}).get("sig_swarm_launch")
         out["swarm_launch_fired"] = (signals or {}).get("swarm_launch_fired", [])
         targets: list[str] = []
         fired = advanced.get("fired") if isinstance(advanced, dict) else None

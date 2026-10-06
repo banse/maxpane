@@ -2463,6 +2463,7 @@ def coerce_launches_slot(value, *, now=None):
             'owners': {str(k)[:64]: a for k, v in (owners.items() if isinstance(owners, dict) else []) if (a := address(v))},
         }})
     out['policies'] = policies if isinstance(raw, list) else None
+    out['policies_schema'] = 1 if type(value.get('policies_schema')) is int and value['policies_schema'] == 1 else None
     stamp = value.get('policies_ts')
     out['policies_ts'] = stamp if type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0 and (now is None or stamp <= now + 300) else None
     if out['policies_ts'] is None:
@@ -2593,7 +2594,7 @@ def _coerce_launch_checks(checks):
         if kind == 'text' and isinstance(val, str): return val[:256]
         raise ValueError('malformed launch evidence')
     fields = {'K1': ('chain_id',), 'K2': ('policy_version', 'transactions', 'rule_version'), 'K3': ('contracts', 'unmatched_artifacts', 'rule_version'),
-              'K4': ('failed_admission', 'deploy_failure'), 'K6': ('owner', 'emitter', 'owner_is_factory'),
+              'K4': ('failed_admission', 'deploy_failure'), 'K6': ('owner', 'emitter', 'owner_is_factory', 'rule_version'),
               'K7': ('assurances_count',)}
     nested = {'transactions': ('tx_hash', 'from', 'to', 'receipt_status'),
               'contracts': ('name', 'address', 'tx_hash', 'expected_hash', 'actual_hash', 'creation_hash', 'creation_offset', 'state', 'reason')}
@@ -2614,7 +2615,7 @@ def _coerce_launch_checks(checks):
                     evidence[field] = scalar(field, val)
             state = check['state']
             # One-time rule migration keeps successful per-contract work and all facts.
-            if key in ('K2', 'K3') and evidence.get('rule_version') != 2:
+            if key in ('K2', 'K3', 'K6') and evidence.get('rule_version') != (2 if key == 'K3' else 3):
                 state = 'unknown'
             out[key] = {'state': state, 'evidence': evidence}
     except ValueError:

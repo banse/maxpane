@@ -143,3 +143,20 @@ def test_fired_enrichment_keeps_original_clock_and_never_revives_expired():
     assert '✓' in signals['sig_swarm_detail']
     signals, _ = cycle(base, [enriched], NOW+1+FIRED_TTL_S)
     assert not signals['swarm_launch_fired']
+
+
+def test_fix3_selected_launch_tracks_detector_watch_fired_and_unknown():
+    old = launch_event(747); watch = launch_event(737, status='admitted', ticker='字'*120)
+    _, base = cycle({}, [old])
+    old['status'] = 'admitted'  # Already seen; must not displace the actual WATCH.
+    signals, base = cycle(base, [old, watch], NOW+1)
+    assert signals['sig_swarm_launch']['launch_id'] == watch['launch_id']
+    assert signals['sig_swarm_launch']['number'] == 737
+    signals, _ = cycle(base, None, NOW+2)
+    assert signals['sig_swarm_launch'] is None
+    watch['status'] = 'live'
+    signals, base = cycle(base, [watch], NOW+3)
+    assert signals['sig_swarm_launch']['number'] == 737
+    assert signals['sig_swarm_launch']['extra_count'] == 0
+    signals, _ = cycle(base, [watch], NOW+FIRED_TTL_S+4)
+    assert signals['sig_swarm_launch'] is None

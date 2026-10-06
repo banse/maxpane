@@ -323,7 +323,7 @@ def _fmt_signal_row(label: str, state, detail, age_s, available=None) -> str:
     return f"{head} [dim]· {safe_markup(shown)}[/]"
 
 
-def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]:
+def _signal_detail(head: str, state, detail, available, *, launch=None) -> tuple[str, list[str]]:
     """The detail as painted, and the addresses its copy icons copy.
 
     ``("", [])`` when the row renders its head alone. The text is plain and
@@ -343,19 +343,48 @@ def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]
 
     # Newlines flattened first: an announce body is multi-line, a row is not.
     flat = flatten(detail or "")
-    if not flat:
+    if not flat and not isinstance(launch, dict):
         return "", []
 
-    if available and "SWARM LAUNCH" in head:
-        match = re.match(r"(\$.*) (#[0-9]+ [A-Z?]+ (?:✗ K[234]|✓|… [0-4]/4|-- pending|-- parked|--))(.*)", flat)
-        if match:
-            budget = int(available) - visible_len(head) - SEPARATOR_COLS
-            ticker, identity, rest = match.groups()
-            # The complete identity and verdict take priority over the ticker.
-            ticker = clip(ticker, max(0, budget - cell_len(identity) - 1))
-            flat = f"{ticker} {identity}".lstrip()
-            if cell_len(mark_addresses(flat + rest, ANTI_POISONING_COLS)[0]) <= budget:
+    if "SWARM LAUNCH" in head:
+        parts = None
+        if isinstance(launch, dict) and type(launch.get("number")) is int and state in ("watch", "fired"):
+            from maxpane_dashboard.analytics.surf_swarm_signals import launch_verdict_label
+            prefix = "deploying " if state == "watch" else ""
+            ticker = "$" + flatten(str(launch.get("ticker") or "--"))
+            identity = f"#{launch['number']}"
+            rest = ""
+            if state == "fired":
+                word = {1: "MAINNET", 8453: "BASE", 4663: "RH"}.get(launch.get("chain_id"), "--")
+                verdict = launch_verdict_label({"state": launch.get("verdict_state"),
+                    "passed": launch.get("verdict_passed"), "failed": launch.get("verdict_failed")})
+                identity += f" {word} {verdict.replace('✓ swarm', '✓')}"
+                address = launch.get("token_address")
+                if isinstance(address, str) and re.fullmatch(r"0x[0-9a-fA-F]{40}", address):
+                    rest += " " + address
+                count = launch.get("extra_count")
+                if type(count) is int and count > 0:
+                    rest += f" +{count}"
+            parts = prefix, ticker, identity, rest
+        else:
+            # Compatibility for callers with the original plain detail contract.
+            match = re.match(r"(deploying )?(\$.*) (#[0-9]+(?: (?:[A-Z?]+|--) (?:✗ K[234]|✓|… [0-4]/4|-- pending|-- parked|--))?)(.*)", flat)
+            if match:
+                parts = match.groups()
+        if parts:
+            prefix, ticker, identity, rest = parts
+            prefix = prefix or ""
+            budget = int(available) - visible_len(head) - SEPARATOR_COLS if available else None
+            if budget is not None:
+                ticker = clip(ticker, max(0, budget - cell_len(prefix + identity) - 1))
+            flat = prefix + f"{ticker} {identity}".lstrip()
+            if budget is None or cell_len(mark_addresses(flat + rest, ANTI_POISONING_COLS)[0]) <= budget:
                 flat += rest
+            else:
+                # The count survives on its own when the address is too wide.
+                count = re.search(r" \+[0-9]+$", rest)
+                if count and cell_len(flat + count[0]) <= budget:
+                    flat += count[0]
     marked, addresses, spans = mark_addresses(flat, ANTI_POISONING_COLS)
     if available:
         budget = int(available) - visible_len(head) - SEPARATOR_COLS
@@ -371,7 +400,7 @@ def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]
     return unmark(marked), addresses[: marked.count(COPY_GLYPH)]
 
 
-def _signal_row_content(label: str, state, detail, age_s, available=None, *, explorer=EXPLORER) -> Content | None:
+def _signal_row_content(label: str, state, detail, age_s, available=None, *, explorer=EXPLORER, launch=None) -> Content | None:
     """The row as ``Content`` with literal swarm prose and live copy icons.
 
     A non-swarm row without an icon keeps going to ``Static.update()`` as the markup
@@ -384,7 +413,7 @@ def _signal_row_content(label: str, state, detail, age_s, available=None, *, exp
     ``widgets/address.py``.
     """
     head = _head(label, state, age_s)
-    shown, addresses = _signal_detail(head, state, detail, available)
+    shown, addresses = _signal_detail(head, state, detail, available, launch=launch)
     if not addresses and label != "SWARM LAUNCH":
         return None
     text = Text(f" · {shown}" if shown else "", style="dim")
@@ -460,6 +489,7 @@ class SurfSignals(Vertical):
         sig_swarm_detail=None,
         sig_swarm_age_s=None,
         sig_swarm_chain_id=None,
+        sig_swarm_launch=None,
         **_kwargs,
     ) -> None:
         """Refresh the eleven rows.  Kwargs are exactly the PRD §5 signal keys.
@@ -505,6 +535,7 @@ class SurfSignals(Vertical):
             "sig_swarm_detail": sig_swarm_detail,
             "sig_swarm_age_s": sig_swarm_age_s,
             "sig_swarm_chain_id": sig_swarm_chain_id,
+            "sig_swarm_launch": sig_swarm_launch,
         }
         self._render_view()
 
@@ -568,6 +599,7 @@ class SurfSignals(Vertical):
                     payload.get(f"sig_{prefix}_detail"),
                     age_s,
                     available,
+                    launch=payload.get("sig_swarm_launch") if prefix == "swarm" else None,
                     explorer=for_chain_id(payload.get("sig_swarm_chain_id")) if prefix == "swarm" else EXPLORER,
                 )
                 row.update(content if content is not None else markup)

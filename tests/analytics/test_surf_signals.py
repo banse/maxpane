@@ -649,7 +649,7 @@ def test_output_keys_are_exactly_the_prd_contract():
         "post", "thread", "lp", "gate", "deploy", "bridge", "burn", "decoy",
         "burnready", "hot", "swarm",
     )
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 35
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 36
 
 
 def test_signal_output_keys_grew_to_thirty():
@@ -659,7 +659,7 @@ def test_signal_output_keys_grew_to_thirty():
     different matter and does have to be grown by hand; the manager logs and
     drops any key that is not in it, which is what caught NEW REPLY."""
     assert len(sig.SIGNAL_NAMES) == 11
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 35
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 36
 
 
 def test_quiet_refresh_leaves_post_ok():
@@ -2362,14 +2362,14 @@ def test_public_surface_is_the_frozen_one():
 
 def test_signal_output_keys_match_the_prd_naming():
     """PRD §5: ``sig_{name}_{state,detail,age_s}`` for all ten detectors."""
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 35
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 36
     assert sig.SIGNAL_OUTPUT_KEYS[:3] == ("sig_post_state", "sig_post_detail", "sig_post_age_s")
     assert set(sig.SIGNAL_OUTPUT_KEYS) == {
         f"sig_{name}_{field}"
         for name in ("post", "thread", "lp", "gate", "deploy", "bridge", "burn",
                      "decoy", "burnready", "hot", "swarm")
         for field in ("state", "detail", "age_s")
-    } | {"sig_swarm_chain_id", "swarm_launch_fired"}
+    } | {"sig_swarm_chain_id", "sig_swarm_launch", "swarm_launch_fired"}
 
 
 def test_every_state_value_is_one_of_the_four():

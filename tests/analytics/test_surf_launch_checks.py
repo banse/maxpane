@@ -66,8 +66,8 @@ def test_production_excludes_abandoned_and_sepolia():
 
 def test_policy_wallets_use_version_but_factories_do_not():
     policies = fixture('launch_policies')['policies']
-    wallets, factories, known = lc.policy_sets(policies, 1, 26)
-    assert known and '0xff03410d0fe5fa8f7f59f743de35e333d9857120' in factories
+    wallets, factories, known = lc.policy_sets(policies, 1, 26, 'evm_contracts')
+    assert not known and '0xff03410d0fe5fa8f7f59f743de35e333d9857120' in factories
     later = copy.deepcopy(policies[0]); later['version'] = 99; later['params']['owner'] = '0x' + '1' * 40
     assert '0x' + '1' * 40 not in lc.policy_sets(policies + [later], 1, 26)[0]
     assert not lc.policy_sets(policies, 1, 99)[2]
@@ -233,3 +233,28 @@ def test_fix3_shared_hook_coverage_depends_on_launch_kind(kind, expected, unmatc
     checks = lc.check_launch(row, lc.extract_facts(row), fixture('launch_policies')['policies'], rpc, keccak=keccak256)
     assert checks['K3']['state'] == expected
     assert checks['K3']['evidence']['unmatched_artifacts'] == unmatched
+
+
+def test_fix3_missing_kind_uses_sender_receipt_without_foreign_factories():
+    # #775 shape, derived from #737's captured transaction.
+    row, rpc = evidence(737)
+    row.update(kind=None, launchNumber=775)
+    next(iter(rpc['transactions'].values()))['to'] = '0x' + '2' * 40
+    checks = lc.check_launch(row, lc.extract_facts(row), fixture('launch_policies')['policies'], rpc, keccak=keccak256)
+    assert checks['K2']['state'] == 'pass'
+    assert lc.policy_sets(fixture('launch_policies')['policies'], 1, row['policyVersion'], None)[1] == set()
+
+
+def test_fix3_foreign_kind_version_and_liquidity_factory_are_not_authority():
+    row, rpc = evidence(737)
+    row.update(kind='univ4_hook', policyVersion=27)
+    policies = fixture('launch_policies')['policies']
+    assert lc.policy_sets(policies, 1, 27, 'univ4_hook')[2] is False
+    assert lc.check_launch(row, lc.extract_facts(row), policies, rpc, keccak=keccak256)['K2']['state'] == 'unknown'
+    row['policyVersion'] = 19
+    checks = lc.check_launch(row, lc.extract_facts(row), policies, rpc, keccak=keccak256)
+    owner = checks['K6']['evidence']['owner']
+    foreign = copy.deepcopy(next(p for p in policies if p['kind'] == 'evm_contracts'))
+    foreign['params']['factory'] = owner
+    checks = lc.check_launch(row, lc.extract_facts(row), policies+[foreign], rpc, keccak=keccak256)
+    assert checks['K6']['evidence']['owner_is_factory'] is False

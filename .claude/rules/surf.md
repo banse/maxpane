@@ -428,9 +428,11 @@ are read per cycle; never-tried details precede oldest failed attempts. Sepolia 
 launches are not enriched. Completed per-contract K3 evidence is reused; an attested contract
 without an artifact is not applicable. Checks and indexed site matching run off the UI thread,
 and links are memoized on a content hash of matching launch, site/job and workflow inputs;
-read clocks, ordering and unrelated evidence do not invalidate it. A previously unseen
+read clocks, ordering and unrelated evidence do not invalidate it. Failed matching retries unchanged
+inputs, logging once per exception type until a success resets the log guard. A previously unseen
 policy version or a newly judged wallet mismatch refreshes policies once before judgment; a
-failed refresh leaves the check unknown. The cycle snapshots rows/events before spawning work.
+failed refresh leaves the check unknown. A persisted policy-schema marker migrates legacy
+kindless cached policies once; live missing-kind policies retain the 1,800-second TTL. The cycle snapshots rows/events before spawning work.
 
 Production is chain 1/8453/4663, excluding abandoned. Retained production rows still count and
 pin after leaving the newest API window. LAUNCHES keeps 12 production + 12 non-production, newest
@@ -438,7 +440,9 @@ number first within each; production is bold with `◆`, other rows dim with ver
 SEPOLIA are the chain words. The token column prefers role `token`, then `hook`, then the first
 artifact. Full columns add kind/repo; compact drops those and tight also sheds site/parked reason.
 K2 uses the chain-wide wallet set and factories declared by the launch's own kind; kinds with
-no declared factory are judged on sender and receipt status alone. K1–K4 produce provenance-only `✓ swarm`, `… n/4`, or `✗ Kx`; K3 accepts deployed-code equality
+no declared factory, including an absent kind, are judged on sender and receipt status alone.
+A known policy version must match an explicit launch kind. K6 factory annotation uses that same
+kind. One-time K2/K6 rule migration retains completed K3 contracts. K1–K4 produce provenance-only `✓ swarm`, `… n/4`, or `✗ Kx`; K3 accepts deployed-code equality
 or creation-code evidence (`pass (immutables)`). K3 requires at least one verified attested
 contract and a verified name match for every token artifact, plus hook artifacts only for
 `univ4_hook` launches. The other kinds use the unattested shared hook. All-not-applicable and
@@ -453,7 +457,11 @@ SITES uses workflow/project/named matching; named matches require payer agreemen
 Conflicting matches produce no link. Trusted production sites pin first. Their clipped ticker suffix leaves at least four cells for
 label text; untrusted suffixes alone are dim. LAUNCHES/SITES use the launch tier marker, not the scores clock.
 
-`SWARM LAUNCH` is detector eleven; signal detail carries its own chain explorer. Persisted
+`SWARM LAUNCH` is detector eleven; signal detail carries its own chain explorer.
+`sig_swarm_launch` carries the exact detector-selected WATCH/FIRED launch (and FIRED
+`extra_count`), or None for OK/DEAD. Its structured fields reserve the launch number and
+verdict ahead of ticker text; address is shed before the extra-launch count. The original
+plain detail string remains available to older callers. Persisted
 `swarm_live_seen`, its UUID-to-number map and pending IDs cap at 500.
 `swarm_launch_evicted_floor` records the highest actually evicted number to prevent replay;
 first sightings below an observed high number still fire. Fired facts retain ages through restart

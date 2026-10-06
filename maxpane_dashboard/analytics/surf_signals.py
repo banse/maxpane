@@ -1407,6 +1407,7 @@ def _swarm_launch_state(base, read, now):
                      swarm_launch_evicted_floor=max((row["number"] for row in live[:-_SWARM_CAP]), default=0))
     det = _dead("launches unavailable")
     chain = None
+    selected = None
     if rows is not None and not corrupt:
         seeded = seen is not None
         seen = seen or []
@@ -1440,6 +1441,7 @@ def _swarm_launch_state(base, read, now):
             ticker = str(watch.get("ticker") or "--")[:128]
             det = _watch(f"deploying ${ticker} #{watch['number']}")
             chain = watch["chain_id"]
+            selected = deepcopy(watch)
         else:
             det = _ok("no new swarm launch")
     if rows is not None or "swarm_launch_fired" in base:
@@ -1448,6 +1450,7 @@ def _swarm_launch_state(base, read, now):
                     key=lambda entry: (entry["ts"], entry.get("number") or 0), reverse=True)
     if active and not corrupt:
         newest = active[0]
+        selected = {**deepcopy(newest), "extra_count": len(active)-1}
         ticker = str(newest.get("ticker") or "--")[:128]
         word = {1: "MAINNET", 8453: "BASE", 4663: "RH"}.get(newest.get("chain_id"), "--")
         verdict = launch_verdict_label({"state": newest.get("verdict_state"),
@@ -1462,7 +1465,7 @@ def _swarm_launch_state(base, read, now):
             detail += f" +{len(active)-1}"
         det = _fired(detail, newest["ts"])
         chain = newest.get("chain_id")
-    return det, state, active, chain
+    return det, state, active, chain, selected
 
 
 def _detect_swarm(base, read, now):
@@ -1495,7 +1498,7 @@ SIGNAL_OUTPUT_KEYS: tuple[str, ...] = tuple(
     f"sig_{name}_{field}"
     for name in SIGNAL_NAMES
     for field in ("state", "detail", "age_s")
-) + ("sig_swarm_chain_id", "swarm_launch_fired")
+) + ("sig_swarm_chain_id", "sig_swarm_launch", "swarm_launch_fired")
 
 
 # ---------------------------------------------------------------------------
@@ -1668,7 +1671,7 @@ def build_signals(
     # baseline from.
     read = {**read, "hot_leader": _hot_leader_name(read, now)}
 
-    swarm_det, swarm_state, swarm_fired, swarm_chain = _swarm_launch_state(base, read, now)
+    swarm_det, swarm_state, swarm_fired, swarm_chain, swarm_selected = _swarm_launch_state(base, read, now)
     read["_swarm_det"] = swarm_det
     fired = _fired_store(base)
     fired.pop("swarm", None)
@@ -1679,7 +1682,7 @@ def build_signals(
         if name == "swarm":
             signals.update(sig_swarm_state=det.state, sig_swarm_detail=det.detail,
                            sig_swarm_age_s=now-det.fired_ts if det.fired_ts is not None else None,
-                           sig_swarm_chain_id=swarm_chain, swarm_launch_fired=swarm_fired)
+                           sig_swarm_chain_id=swarm_chain, sig_swarm_launch=swarm_selected, swarm_launch_fired=swarm_fired)
             continue
         if det.fired_ts is not None or det.state == STATE_FIRED:
             event_ts = det.fired_ts if det.fired_ts is not None else now

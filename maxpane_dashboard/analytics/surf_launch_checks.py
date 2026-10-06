@@ -65,7 +65,7 @@ def policy_sets(policies, chain_id, version, kind=None):
         same_kind = kind is None or policy.get('kind') == kind
         known |= same_kind and version is not None and pv == version
         factory = address(params.get('factory'))
-        if same_kind and factory and factory != ZERO:
+        if kind is not None and same_kind and factory and factory != ZERO:
             factories.add(factory)
         if pv is None or version is None or pv > version:
             continue
@@ -132,7 +132,7 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
                 state = 'pass' if sender in wallets and (not factories or to in factories) and status == 1 else 'fail'
             states.append(state)
             tx_evidence.append({'tx_hash': tx_hash, 'from': sender, 'to': to, 'receipt_status': status})
-        checks['K2'] = result('fail' if 'fail' in states else 'pass' if states and all(s == 'pass' for s in states) and len(hashes) == len({a.get('txHash') for a in artifacts}) else 'unknown', transactions=tx_evidence, policy_version=facts.get('policy_version'), rule_version=2)
+        checks['K2'] = result('fail' if 'fail' in states else 'pass' if states and all(s == 'pass' for s in states) and len(hashes) == len({a.get('txHash') for a in artifacts}) else 'unknown', transactions=tx_evidence, policy_version=facts.get('policy_version'), rule_version=3)
     if not previous or previous.get('K3', {}).get('state', 'unknown') == 'unknown':
         states, contract_evidence = [], []
         old_contracts = {c.get('name'): c for c in (previous or {}).get('K3', {}).get('evidence', {}).get('contracts', [])}
@@ -174,7 +174,7 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
         state = 'fail' if row.get('status') == 'parked' or failed else 'unknown'
     checks['K4'] = result(state, failed_admission=failed, deploy_failure=facts.get('deploy_failure'))
     if not previous or previous.get('K6', {}).get('state', 'unknown') == 'unknown':
-        checks['K6'] = result('na' if row.get('kind') == 'evm_contracts' else 'unknown')
+        checks['K6'] = result('na' if row.get('kind') == 'evm_contracts' else 'unknown', rule_version=3)
         topic = '0x' + keccak(b'ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)').hex()
         if row.get('kind') != 'evm_contracts':
             for receipt in (receipts.get(tx_hash) for tx_hash in hashes):
@@ -182,7 +182,7 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
                     topics = log.get('topics')
                     if isinstance(topics, list) and len(topics) >= 3 and topics[0] == topic and _hash(topics[2]):
                         owner = address('0x' + topics[2][-40:])
-                        checks['K6'] = result('info', owner=owner, emitter=address(log.get('address')), owner_is_factory=(owner in policy_sets(policies, row.get('chainId'), facts.get('policy_version'))[1] if known else None))
+                        checks['K6'] = result('info', owner=owner, emitter=address(log.get('address')), owner_is_factory=(owner in factories if known else None), rule_version=3)
                         break
     checks['K7'] = result('info', assurances_count=facts.get('assurances_count'))
     if previous:

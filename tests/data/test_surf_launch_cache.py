@@ -160,3 +160,10 @@ def test_fix3_coverage_retry_timestamp_rejects_invalid(stamp):
     point = {'row': row, 'k3_retry_ts': stamp}
     clean = sw.coerce_launch_facts_slot({'launches': {row['id']: point}, 'sites': {}})
     assert 'k3_retry_ts' not in clean['launches'][row['id']]
+
+
+def test_fix3_policy_schema_marker_is_strict_and_persisted():
+    from maxpane_dashboard.data.surf_swarm import coerce_launches_slot
+    for value in (None, True, 1.0, '1', 2, -1):
+        assert coerce_launches_slot({'policies_schema':value})['policies_schema'] is None
+    assert coerce_launches_slot({'policies_schema':1})['policies_schema'] == 1

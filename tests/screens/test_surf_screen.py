@@ -318,6 +318,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "sig_swarm_detail": "sig_swarm_detail",
         "sig_swarm_age_s": "sig_swarm_age_s",
         "sig_swarm_chain_id": "sig_swarm_chain_id",
+        "sig_swarm_launch": "sig_swarm_launch",
     },
     "SurfFeed": {
         "feed_items": "feed_items",

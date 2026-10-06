@@ -158,6 +158,7 @@ def test_v8_signal_reading_uses_passed_snapshot_and_publishes_chain(tmp_path):
     m.cache.set_baselines(baseline,now=NOW)
     result=m._signal_keys(reading,NOW+10)
     assert result['sig_swarm_chain_id']==8453
+    assert result['sig_swarm_launch']['launch_id']==event['launch_id']
     assert result['swarm_launch_fired'][0]['launch_id']==event['launch_id']
     assert result['sig_swarm_state']=='fired'
 
@@ -419,6 +420,7 @@ async def test_fix2_legacy_cached_checks_rejudged_without_rereading_detail(tmp_p
                 contract.update(state='na', reason='not deployed by this launch')
         cached=m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
         for policy in cached['policies']: policy.pop('kind')
+        cached.pop('policies_schema', None)
         # The old algorithm already tried a policy refresh for this version.
         cached['policies_refreshed_for']={row['id']:row['policyVersion']}
         m.cache.save()
@@ -596,4 +598,133 @@ async def test_fix3_future_coverage_retry_timestamp_does_not_stall(tmp_path):
         actual = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'][row['id']]
         assert actual['k3_retry_ts'] == NOW + 60
         assert actual['checks']['K3']['state'] == 'unknown'
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_fix3_live_kindless_policies_keep_ttl_and_schema_across_restart(tmp_path):
+    swarm = LaunchSwarm(); row = fixture('launch_737'); row['kind'] = None; swarm.rows = [row]
+    async def detail(_): return copy.deepcopy(row)
+    swarm.fetch_launch = detail
+    original = swarm.fetch_launch_policies
+    async def policies():
+        values = await original()
+        for policy in values: policy.pop('kind', None)
+        return values
+    swarm.fetch_launch_policies = policies
+    m = manager(tmp_path, swarm)
+    try:
+        for cycle in range(6):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + cycle*61)
+        assert swarm.calls.count('policies') == 1
+        m.cache.save()
+    finally: await m.close()
+    m = SurfManager(clock=FakeClock(NOW+400), cache_path=str(tmp_path/'cache.json'), client=RPC(), pool4_client=FakePool4Client(), swarm_client=swarm)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+400)
+        assert swarm.calls.count('policies') == 1
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_fix3_foreign_kind_version_forces_manager_policy_refresh(tmp_path):
+    swarm = LaunchSwarm(); row = fixture('launch_737'); row.update(kind='univ4_hook', policyVersion=27); swarm.rows = [row]
+    async def detail(_): return copy.deepcopy(row)
+    swarm.fetch_launch = detail
+    m = manager(tmp_path, swarm)
+    try:
+        m.cache.store_last_good(SLOT_SWARM_LAUNCHES, {'policies':fixture('launch_policies')['policies'], 'policies_ts':NOW, 'policies_schema':1}, ts=NOW)
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+61)
+        assert swarm.calls.count('policies') == 1
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K2']['state'] == 'unknown'
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_fix3_failed_match_retries_unchanged_inputs_and_dedupes_until_success(tmp_path, monkeypatch, caplog):
+    import logging
+    from maxpane_dashboard.analytics import surf_launch_sites as ls
+    swarm = LaunchSwarm(); swarm.rows = [fixture('launch_737')]
+    async def sites(): return [s for s in fixture('sites')['sites'] if s['label']=='zto']
+    swarm.fetch_sites = sites
+    original = ls.match_sites; calls = []; failure = [RuntimeError]
+    def match(*args):
+        calls.append(ls.site_match_key(*args))
+        if failure[0]: raise failure[0]('synthetic failure')
+        return original(*args)
+    monkeypatch.setattr(ls, 'match_sites', match)
+    m = manager(tmp_path, swarm)
+    try:
+        with caplog.at_level(logging.WARNING):
+            for cycle in range(3): await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+cycle*61)
+            assert len(calls) == 3 and len(set(calls)) == 1
+            logs = lambda: [r for r in caplog.records if 'site match failed' in r.message]
+            assert len(logs()) == 1
+            failure[0] = ValueError
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+183)
+            assert len(logs()) == 2
+            failure[0] = RuntimeError
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+244)
+            assert len(logs()) == 2
+            failure[0] = None
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+305)
+            assert m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload['site_links_inputs']
+            m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload['site_links_inputs'] = None
+            failure[0] = RuntimeError
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+366)
+            assert len(logs()) == 3
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failed', [False, True])
+async def test_fix3_legacy_policy_migration_runs_once_without_erasing_last_good(tmp_path, failed):
+    swarm = LaunchSwarm(); row = fixture('launch_737'); row['kind'] = None; swarm.rows = [row]
+    async def detail(_): return copy.deepcopy(row)
+    swarm.fetch_launch = detail
+    old = fixture('launch_policies')['policies']
+    for policy in old: policy.pop('kind', None)
+    async def policies():
+        swarm.calls.append('policies')
+        return None if failed else copy.deepcopy(old)
+    swarm.fetch_launch_policies = policies
+    m = manager(tmp_path, swarm)
+    try:
+        m.cache.store_last_good(SLOT_SWARM_LAUNCHES, {'policies':old, 'policies_ts':NOW}, ts=NOW)
+        for cycle in range(1, 7): await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+cycle*61)
+        assert swarm.calls.count('policies') == 1
+        slot = m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
+        assert slot['policies'] and slot['policies_schema'] == 1
+        assert slot['policies_ts'] == (NOW if failed else NOW+61)
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K2']['state'] == 'pass'
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_fix3_cached_pooled_checks_rejudged_once_preserving_k3(tmp_path):
+    swarm = LaunchSwarm(); row = fixture('launch_737'); row['kind'] = None; swarm.rows = [row]
+    async def detail(_): return copy.deepcopy(row)
+    swarm.fetch_launch = detail
+    m = manager(tmp_path, swarm)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        point = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'][row['id']]
+        k3 = copy.deepcopy(point['checks']['K3'])
+        point['checks']['K2']['state'] = 'fail'
+        point['checks']['K2']['evidence']['rule_version'] = 2
+        point['checks']['K6']['evidence'].update(owner_is_factory=True, rule_version=2)
+        m.cache.save()
+    finally: await m.close()
+    m = manager(tmp_path, swarm); calls = []
+    original = m.client.fetch_launch_evidence
+    async def rpc(hashes, addresses):
+        calls.append((hashes, addresses)); return await original(hashes, addresses)
+    m.client.fetch_launch_evidence = rpc
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+61)
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+122)
+        checks = m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']
+        assert checks['K2']['state'] == 'pass' and checks['K6']['evidence']['owner_is_factory'] is False
+        assert checks['K3'] == k3
+        assert len(calls) == 1 and calls[0][1] == []
     finally: await m.close()

@@ -71,9 +71,11 @@ async def test_launch_popup_opens_literal_snapshot_without_fetching(opening):
             await pilot.pause()
         for word in ('$[red]X', '[bold]Literal name', 'PAIR', 'IMD', 'POOL FEE', '3000',
                      'REQUESTER', 'POLICY VERSION', '26', 'K1', 'K2', 'K3', 'K4', 'K6', 'K7',
-                     'liquidity held by', '(factory, unverified)', 'named', 'trusted'):
+                     'liquidity held by', '(unverified)', 'named', 'trusted'):
             assert word in seen, word
         assert 'MUTATED' not in seen
+        assert row['checks']['K6']['evidence']['owner_is_factory'] is False
+        assert '(factory, unverified)' not in seen
         assert not any(word in seen.lower() for word in ('locked', 'safe', 'audited'))
         assert {a['address'] for a in row['artifacts']} <= icons
         assert {f"https://etherscan.io/address/{a['address']}" for a in row['artifacts']} <= links
@@ -326,4 +328,40 @@ async def test_fix2_signal_reserves_final_launch_identity(ticker):
     async with _screen_at(143,46,payload) as (app,screen,pilot):
         line = next(line for line in _region_text(app,screen.query_one(SurfSignals)).splitlines() if 'SWARM LAUNCH' in line)
         assert '#737 MAINNET ✗ K2' in line
-        assert '0x' not in line and '+2' not in line and '\\' not in line
+        assert '0x' not in line and '\\' not in line
+        assert ('+2' in line) is (ticker == 'FOO #1')
+
+
+@pytest.mark.parametrize('state,ticker,chain', [('watch','字'*120,1), ('watch','FOO #1 MAINNET ✓ '+'X'*120,1), ('fired','字'*120,None), ('fired','ZTO',1)], ids=['watch-wide','watch-spoof','fired-unknown-chain','fired-count'])
+async def test_fix3_structured_signal_identity_and_count_at_pin(state, ticker, chain):
+    from rich.cells import cell_len
+    from maxpane_dashboard.widgets.surf.signals import SurfSignals
+    from tests.screens.test_surf_screen import _screen_at
+    from tests.surf_launch_fixtures import launch_event
+    selected = launch_event(737, ticker=ticker)
+    selected.update(chain_id=chain, verdict_state='mismatch', verdict_failed='K2', extra_count=2)
+    payload = _frozen_payload(sig_swarm_state=state, sig_swarm_age_s=60,
+        sig_swarm_chain_id=chain, sig_swarm_detail='untrusted stale #999', sig_swarm_launch=selected)
+    async with _screen_at(143,46,payload) as (app,screen,pilot):
+        panel = screen.query_one(SurfSignals)
+        line = next(line for line in _region_text(app,panel).splitlines() if 'SWARM LAUNCH' in line)
+        assert '#737' in line and '#999' not in line and '0x' not in line and '⧉' not in line
+        assert cell_len(line.strip()) <= panel.size.width
+        if state == 'watch': assert 'deploying' in line
+        else: assert ('#737 -- ✗ K2' if chain is None else '#737 MAINNET ✗ K2') in line
+        if ticker == 'ZTO': assert '+2' in line
+
+
+@pytest.mark.parametrize('state,detail,identity', [
+    ('watch', 'deploying $'+'X'*120+' #737', 'deploying'),
+    ('fired', '$'+'X'*120+' #737 -- ✗ K2', '#737 -- ✗ K2'),
+    ('fired', '$ZTO #737 MAINNET ✓ '+launch_row()['token_address']+' +2', '+2'),
+], ids=['watch', 'unknown-chain', 'count'])
+async def test_fix3_legacy_signal_detail_keeps_identity_and_count(state, detail, identity):
+    from maxpane_dashboard.widgets.surf.signals import SurfSignals
+    from tests.screens.test_surf_screen import _screen_at
+    payload = _frozen_payload(sig_swarm_state=state, sig_swarm_detail=detail, sig_swarm_age_s=60)
+    async with _screen_at(143,46,payload) as (app,screen,pilot):
+        line = next(line for line in _region_text(app,screen.query_one(SurfSignals)).splitlines() if 'SWARM LAUNCH' in line)
+        assert '#737' in line and identity in line
+        assert '0x' not in line and '⧉' not in line
