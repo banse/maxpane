@@ -177,3 +177,11 @@ def test_zero_policy_address_never_becomes_authority(field):
     tx = next(iter(rpc['transactions'].values())); tx['from' if field == 'owner' else 'to'] = lc.ZERO
     checks = lc.check_launch(row, lc.extract_facts(row), policies, rpc, keccak=keccak256)
     assert checks['K2']['state'] == 'fail'
+
+@pytest.mark.parametrize('status,k4,want', [('parked','fail','✗ K4'),('parked','unknown','-- parked'),('admitted','fail','-- pending')])
+def test_fix1_parked_and_admitted_verdict_precedence(status,k4,want):
+    from maxpane_dashboard.analytics.surf_swarm_signals import launch_verdict_label
+    row=fixture('launch_737'); row.update(status=status,artifacts=[])
+    checks={k: {'state':'unknown'} for k in ('K1','K2','K3','K4')}
+    checks['K4']['state']=k4
+    assert launch_verdict_label(lc.verdict(row,checks))==want

@@ -125,8 +125,8 @@ class _SiteApp(LinkRecorder, CopyRecorder, ExplorerLinkMixin, App):
         yield StatusBar()
 
 
-async def test_a_click_on_a_site_name_opens_its_eth_limo_page():
-    """Owner, 2026-09-23: SITES' ens cell opens https://<label>.site.identitymd.eth.limo/."""
+async def test_a_click_on_a_site_name_opens_its_sites_imd_fun_page():
+    """Owner, 2026-09-23: SITES' ens cell opens https://<label>.sites.imd.fun/."""
     app = _SiteApp()
     async with app.run_test(size=(80, 6)) as pilot:
         await pilot.pause()

@@ -99,12 +99,18 @@ class LaunchDetailScreen(RecordDetailScreen):
             yield from self.section('IMD TOKEN PAGE', token_text(row['token_address'], explorer=IMD))
         else:
             yield from self.section('JOB', job_text(row.get('job_id'), 36, explorer=JOB_EXPLORER))
-        yield from self.section('SITE', site_text(row.get('site_ens_name'), 80,
-            label=row.get('site_label'), explorer=SITES), self._literal(
-            f"{row.get('site_link_method') or 'unavailable'} · "
-            f"{'trusted' if row.get('site_link_trusted') is True else 'untrusted' if row.get('site_link_trusted') is False else 'unavailable'}"))
+        if row.get('site_ens_name') or row.get('site_label'):
+            yield from self.section('SITE', site_text(row.get('site_ens_name'), 80,
+                label=row.get('site_label'), explorer=SITES), self._literal(
+                f"{row.get('site_link_method') or 'unavailable'} · "
+                f"{'trusted' if row.get('site_link_trusted') is True else 'untrusted' if row.get('site_link_trusted') is False else 'unavailable'}"))
+        else:
+            yield from self.section('SITE', Text('none' if row.get('production') is True else '--'))
         checks = row.get('checks') or {}
         for key in ('K1', 'K2', 'K3', 'K4', 'K6', 'K7'):
+            if row.get('production') is not True:
+                yield from self.section(f'{key} · --')
+                continue
             check = checks.get(key) or {}
             evidence = check.get('evidence') or {}
             contents = list(self._evidence(evidence))
@@ -118,5 +124,7 @@ class LaunchDetailScreen(RecordDetailScreen):
             yield from self.section(f"{key} · {state}", *contents)
 
     def _title(self):
-        self.query_one('.record-detail-title', Static).update(
-            self._literal(f"LAUNCH #{self.row.get('launch_number') or '—'} · {chain_word(self.row.get('chain_id'))}"))
+        title = self.query_one('.record-detail-title', Static)
+        title.update(Text.from_markup(sanitize_cell(
+            f"LAUNCH #{self.row.get('launch_number') or '—'} · {chain_word(self.row.get('chain_id'))}",
+            title.size.width), style='bold'))

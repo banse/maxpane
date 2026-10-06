@@ -1,7 +1,8 @@
-"""The nine-detector panel for the surf dashboard (PRD §3, grown by v4).
+"""The eleven-detector panel for the surf dashboard (PRD §3, grown by v4).
 
 One row per detector: NEW POST · LP MOVE · GATE OPEN · NEW DEPLOY ·
-BRIDGE STAGE · BURN · DECOY POOL · BURN READY · HOT COIN.  Each row renders
+BRIDGE STAGE · BURN · DECOY POOL · BURN READY · HOT COIN · NEW REPLY ·
+SWARM LAUNCH. Each row renders
 ``state · age · one-line detail`` with the state always spelled in words:
 
 * ``fired`` -- ``▶ NEW POST FIRED 2h ago · detail`` in loud bold ``$error``.
@@ -75,10 +76,10 @@ confident and green straight through an outage.  Here, a row whose state is
 away.  ``_fold`` is the predicate; ``_visible_rows`` is its pure, testable
 surface, decoupled from age/detail formatting.
 
-Row budget: title + spacer + up to nine rows, minus whatever folds into the
+Row budget: title + spacer + up to eleven rows, minus whatever folds into the
 one quiet line.  The panel breathes: roughly 6 lines on a calm day (a few
 detectors keep their own line, the rest summarize into one ``quiet`` line)
-up to 11 when everything fires (title + spacer + all nine rows, nothing to
+up to 13 when everything fires (title + spacer + all eleven rows, nothing to
 fold).
 
 Primitives only -- this module imports nothing from the data layer.
@@ -176,15 +177,15 @@ def _cut_detail(text: str, budget: int) -> str:
     Returns ``""`` when nothing but the number would have survived; the caller
     renders the head alone rather than a bare ``…``.
     """
-    if len(text) <= budget:
+    if cell_len(text) <= budget:
         return text
-    kept = text[: budget - 1]
-    if kept and kept[-1] in _NUMBER_CHARS and text[budget - 1] in _NUMBER_CHARS:
+    kept = clip(text, budget)[:-1]
+    if kept and kept[-1] in _NUMBER_CHARS and text[len(kept)] in _NUMBER_CHARS:
         kept = kept.rstrip(_NUMBER_CHARS)
     kept = kept.rstrip()
     return f"{kept}…" if kept else ""
 
-#: The ten detector labels, PRD §3 spelling (v4-grown, plus NEW REPLY),
+#: The eleven detector labels, PRD §3 spelling (v4-grown, plus NEW REPLY),
 #: in PRD §3 order.
 #: **Interface**: the screen tests and the app-level acceptance tests assert
 #: these exact strings reach the compositor -- import this tuple, never
@@ -221,7 +222,7 @@ _ROW_KEYS = (
     ("swarm", "#surf-sig-swarm"),
 )
 
-#: (payload prefix, row label, child id) for the ten detectors, in PRD order.
+#: (payload prefix, row label, child id) for the eleven detectors, in PRD order.
 _ROWS = tuple(
     (prefix, label, selector)
     for (prefix, selector), label in zip(_ROW_KEYS, DETECTOR_LABELS)
@@ -370,9 +371,9 @@ def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]
 
 
 def _signal_row_content(label: str, state, detail, age_s, available=None, *, explorer=EXPLORER) -> Content | None:
-    """The row as ``Content`` with its copy icons live; ``None`` when it has none.
+    """The row as ``Content`` with literal swarm prose and live copy icons.
 
-    A row without an icon keeps going to ``Static.update()`` as the markup
+    A non-swarm row without an icon keeps going to ``Static.update()`` as the markup
     string :func:`_fmt_signal_row` returns, unchanged. A row *with* one cannot:
     a markup string carries no click action. The head is still parsed from
     markup by Textual -- it is this module's own trusted text, and its
@@ -383,15 +384,15 @@ def _signal_row_content(label: str, state, detail, age_s, available=None, *, exp
     """
     head = _head(label, state, age_s)
     shown, addresses = _signal_detail(head, state, detail, available)
-    if not addresses:
+    if not addresses and label != "SWARM LAUNCH":
         return None
-    text = Text(f" · {shown}", style="dim")
+    text = Text(f" · {shown}" if shown else "", style="dim")
     link_in_order([text], addresses, explorer)
     return Content.from_markup(head) + Content.from_rich_text(text)
 
 
 class SurfSignals(Vertical):
-    """Detector panel with up to nine rows, collapsing quiet ones."""
+    """Detector panel with up to eleven rows, collapsing quiet ones."""
 
     DEFAULT_CSS = """
     SurfSignals > .surf-signals-title {
@@ -417,7 +418,7 @@ class SurfSignals(Vertical):
         yield Static("", classes="surf-signals-body", id="surf-sig-spacer")
         for _, _, selector in _ROWS:
             yield Static("", classes="surf-signals-body", id=selector.lstrip("#"))
-        # The one collapsed-``ok`` summary line, positioned after all nine
+        # The one collapsed-``ok`` summary line, positioned after all eleven
         # detector slots so it always reads as "and everything else" rather
         # than displacing whichever detectors happen to keep their own line.
         yield Static("", classes="surf-signals-body", id="surf-sig-quiet")
@@ -460,7 +461,7 @@ class SurfSignals(Vertical):
         sig_swarm_chain_id=None,
         **_kwargs,
     ) -> None:
-        """Refresh the ten rows.  Kwargs are exactly the PRD §5 signal keys.
+        """Refresh the eleven rows.  Kwargs are exactly the PRD §5 signal keys.
 
         The keyword list is explicit rather than ``**kwargs``-only, which is
         what makes a missing row a *silent* row: an unnamed key falls into

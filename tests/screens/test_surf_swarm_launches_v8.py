@@ -232,3 +232,44 @@ async def test_default_rail_all_eleven_detectors_has_honest_height_boundary(heig
         if height >= 43:
             visible = _visible_panel(app, screen.query_one(SurfSignals), rail)
             assert all(label in visible for label in DETECTOR_LABELS)
+
+@pytest.mark.parametrize('ticker',['ZTO','字'*60,'Q[31mEVIL[/]R'])
+async def test_fix1_default_pin_swarm_detail_literal_fits_and_sheds_address(ticker):
+    from rich.cells import cell_len
+    from maxpane_dashboard.widgets.surf.signals import SurfSignals
+    from tests.screens.test_surf_screen import _screen_at
+    row=launch_row(ticker=ticker)
+    payload=_frozen_payload(sig_swarm_state='fired',sig_swarm_age_s=60,sig_swarm_chain_id=1,
+        sig_swarm_detail=f'${ticker} #737 MAINNET ✓ {row["token_address"]}')
+    async with _screen_at(143,46,payload) as (app,screen,pilot):
+        panel=screen.query_one(SurfSignals)
+        text=_region_text(app,panel)
+        line=next(line for line in text.splitlines() if 'SWARM LAUNCH' in line)
+        assert '#737' in line and '\\' not in line and '0x' not in line and '⧉' not in line
+        assert cell_len(line.strip())<=panel.size.width
+        if ticker.startswith('Q'):
+            assert '$Q[31mEVIL[/]R' in line
+
+@pytest.mark.parametrize('production,chain_id',[(True,1),(False,11155111)])
+async def test_fix1_launch_popup_missing_site_nonproduction_checks_and_title(production,chain_id):
+    from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen
+    row=launch_row(production=production,chain_id=chain_id,site_label=None,site_ens_name=None)
+    async with _surf_app(_frozen_payload()).run_test(size=(150,100)) as pilot:
+        await pilot.app.push_screen(LaunchDetailScreen(row)); await pilot.pause()
+        popup=pilot.app.screen
+        text=_screen_text(pilot.app)
+        if production:
+            site_lines=text.split('SITE',1)[1].split('K1',1)[0]
+            assert 'none' in site_lines and 'unavailable' not in site_lines
+            assert 'unavailable · unavailable' not in text
+        else:
+            for key in ('K1','K2','K3','K4','K6','K7'):
+                assert f'{key} · --' in text
+            assert 'unknown' not in text
+        title=popup.query_one('.record-detail-title')
+        segments=[seg for strip in popup._compositor.render_strips()[title.region.y:title.region.bottom] for seg in strip if 'LAUNCH #' in seg.text]
+        assert segments and all(seg.style.bold for seg in segments)
+        title.styles.width=15; await pilot.pause(); popup._title(); await pilot.pause()
+        painted=_region_text(pilot.app,title).strip()
+        assert painted.endswith('…') and Text(painted).cell_len<=15
+        assert title.render().cell_length<=15

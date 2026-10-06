@@ -157,3 +157,64 @@ async def test_v8_launch_copy_and_explorer_clicks_do_not_select():
         assert url=='https://zto.sites.imd.fun/'
         await pilot.click(offset=(x,y)); await pilot.pause()
         assert app.opened==(explorer,kind,value) and app.selected is None
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('chain_id,status', [(None,'live'),(987654,'live'),(1,'abandoned')])
+async def test_fix1_nonproduction_rows_render_without_production_verdict(chain_id,status):
+    row=launch_row(production=False,chain_id=chain_id,status=status)
+    panel=SurfSwarmLaunches(); panel.update_data(swarm_launch_rows=[row])
+    assert panel._payload['rows']==[row]
+    cells=panel.build_cells(row)
+    assert cells['verdict'].plain=='--' and cells['verdict'].style=='dim'
+    text='\n'.join(await composite_lines(SurfSwarmLaunches,(190,20),swarm_launch_rows=[row]))
+    assert '737' in text and 'No data' not in text and '◆' not in text and '✓ swarm' not in text
+
+@pytest.mark.parametrize('ticker,kind,want',[('ZTO','evm_project','$ZTO'),(None,'token','#737'),('ZTO','evm_contracts','--')])
+def test_fix1_admitted_ticker_does_not_require_artifact(ticker,kind,want):
+    row=launch_row(status='admitted',artifacts=[],ticker=ticker,kind=kind)
+    assert SurfSwarmLaunches().build_cells(row)['ticker'].plain==want
+
+@pytest.mark.parametrize('trusted',[False,True])
+@pytest.mark.parametrize('ticker',['X'*40,'字'*40])
+def test_fix1_site_long_ticker_keeps_label_floor_and_status_colour(trusted,ticker):
+    from rich.cells import cell_len
+    from rich.console import Console
+    row=next(r for r in site_rows(fixture('sites')['sites']) if r['label']=='zto')
+    row.update(label='alpha-site',launch_ticker=ticker,production_link=True,link_trusted=trusted)
+    cell=SurfSwarmSites().build_cells(row)['label']
+    label=cell.plain.removeprefix('◆ ').split(' · ')[0]
+    assert label.startswith('alp') and cell_len(label)>=4 and cell_len(cell.plain)<=32 and cell.plain.endswith('…')
+    if not trusted:
+        console=Console()
+        assert cell.get_style_at_offset(console,0).color.name=='green'
+        assert not cell.get_style_at_offset(console,0).dim
+        assert cell.get_style_at_offset(console,cell.plain.index(' · ')).dim
+
+@pytest.mark.asyncio
+async def test_fix1_launch_site_ens_fallback_links():
+    row=launch_row(site_label=None,site_ens_name='zto.site.identitymd.eth')
+    class Harness(App):
+        def compose(self): yield SurfSwarmLaunches()
+    app=Harness()
+    async with app.run_test(size=(190,20)) as pilot:
+        app.query_one(SurfSwarmLaunches).update_data(swarm_launch_rows=[row]); await pilot.pause()
+        assert any(t[5]=='https://zto.sites.imd.fun/' for t in link_targets(app))
+
+
+def test_fix1_signal_cuts_wide_cells_without_bisecting_number():
+    from rich.cells import cell_len
+    from maxpane_dashboard.widgets.surf.signals import _cut_detail
+    row=launch_row(ticker='字'*8)
+    detail=f'${row["ticker"]} #{row["launch_number"]} MAINNET'
+    for budget in range(1,cell_len(detail)):
+        shown=_cut_detail(detail,budget)
+        assert cell_len(shown)<=budget
+        assert '#7…' not in shown and '#73…' not in shown
+
+
+@pytest.mark.asyncio
+async def test_fix1_long_site_ticker_composites_inside_label_column():
+    row=next(r for r in site_rows(fixture('sites')['sites']) if r['label']=='zto')
+    row.update(label='alpha-site',launch_ticker='X'*40,production_link=True,link_trusted=True)
+    text='\n'.join(await composite_lines(SurfSwarmSites,(150,15),swarm_site_rows=[row]))
+    assert '◆ alp… · $' in text and 'zto.site.identitymd.eth' in text

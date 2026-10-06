@@ -225,8 +225,10 @@ class SurfSwarmSites(SwarmTableBase):
         suffix = f" · ${ticker}" if ticker else ""
         prefix = "◆ " if trusted else ""
         label = strip_tags(item.get("label")) or DASH
-        label_cell = Text(prefix + rowfit.clip(label, max(0, _LABEL_CELL_COLS - cell_len(prefix + suffix))) + suffix,
-                          style="bold" if trusted else "dim" if ticker else _STATUS_COLOURS.get(item.get("status"), ""))
+        suffix = rowfit.clip(suffix, _LABEL_CELL_COLS - cell_len(prefix) - 4)
+        label_cell = Text(prefix + rowfit.clip(label, _LABEL_CELL_COLS - cell_len(prefix + suffix)),
+                          style="bold" if trusted else _STATUS_COLOURS.get(item.get("status"), ""))
+        label_cell.append(suffix, style="bold" if trusted else "dim")
 
         return {
             "label": label_cell,

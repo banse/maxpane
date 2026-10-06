@@ -2557,8 +2557,8 @@ SurfScreen #surf-swarm-top {
     scrollbar-gutter: stable;
 }
 
-/* WORKFLOWS took CAPABILITY's place (2026-10-03): no max-width -- its
- * objective / failure column takes every spare cell of the row. */
+/* Production launches layout: WORKFLOWS shares the top row with THROUGHPUT;
+ * its objective / failure column takes every spare cell. */
 SurfSwarmWorkflows {
     width: 1fr;
     height: 1fr;
@@ -2602,7 +2602,7 @@ SurfSwarmInFlight {
     padding: 0 1;
 }
 
-/* Layout v3: LAUNCHES now takes the rest of the top row beside THROUGHPUT.
+/* Production launches layout: LAUNCHES spans the full middle row.
  * The old 4:5 IN FLIGHT split above is historical; that widget is parked. */
 SurfSwarmLaunches {
     width: 100%;

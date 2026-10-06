@@ -235,4 +235,4 @@ def launch_verdict_label(verdict):
     if state in ("mismatch", "failed"):
         failed = verdict.get("failed")
         return f"✗ {failed if failed in ('K2', 'K3', 'K4') else 'K4'}"
-    return "-- pending" if state == "not_deployed" else "--"
+    return "-- pending" if state == "not_deployed" else "-- parked" if state == "parked" else "--"

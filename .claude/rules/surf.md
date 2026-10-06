@@ -173,7 +173,7 @@ row or the read; an all-host `503 busy` stops the fan-out at that id, stores not
 tier off in both tiers -- `SurfManager._swarm_details`, F-S3 -- and the live tier also puts its
 list gate back). The slow tier (`TIER_SWARM_SCORES`) sweeps the newest `SWARM_SWEEP_CAP` details
 plus `/skills` and `/workflows` (`?limit=SWARM_WORKFLOW_PAGE_SIZE`) on its own
-clock and feeds WORKFLOWS, LAUNCHES, SITES and the internal seat-selection fold; `/skills` is still
+clock and feeds WORKFLOWS and the internal seat-selection fold; `/skills` is still
 read and folded for the parked CAPABILITY (below), which no body mounts; `swarm_throughput` is folded off the **live** slot because its widget shows
 the live marker (two clocks never meet behind one `as of`). A third slot, `SLOT_SWARM_JOBS_SEEN`,
 is a map of every job either tier has read (pruned by age and cap, stored only when it changed so
@@ -420,34 +420,39 @@ yellow unavailable. All three popups use the `RecordDetailScreen` frame: scrolla
 Space/Escape or its X to close, no network await while opening.
 
 **Production launches:** `TIER_SWARM_LAUNCHES` runs detached/single-flight at 60 seconds,
-120-second failure backoff. Launches read the newest 100 every cycle; sites refresh every 300
+120-second launches-route failure backoff. Launches read the newest 100 every cycle; sites refresh every 300
 seconds and policies every 1,800. `SLOT_SWARM_LAUNCHES` preserves each route and successful-read
 clock independently. `SLOT_SWARM_LAUNCH_FACTS` retains bounded extracted facts, not huge detail
 responses, with 500-entry caps. At most three production details and three eligible site jobs
-are read per cycle; Sepolia and abandoned launches are not enriched. Completed checks are reused.
-A newer policy version or a would-be wallet mismatch refreshes policies before judgment; a
+are read per cycle; never-tried details precede oldest failed attempts. Sepolia and abandoned
+launches are not enriched. Completed per-contract K3 evidence is reused; an attested contract
+without an artifact is not applicable. Checks and indexed site matching run off the UI thread,
+and links are memoized on launch, facts, sites and workflow timestamps. A previously unseen
+policy version or a newly judged wallet mismatch refreshes policies once before judgment; a
 failed refresh leaves the check unknown. The cycle snapshots rows/events before spawning work.
 
 Production is chain 1/8453/4663, excluding abandoned. Retained production rows still count and
-pin after leaving the newest API window. LAUNCHES keeps 12 production + 12 Sepolia, newest
-number first within each; production is bold with `◆`, Sepolia dim. MAINNET / BASE / RH /
+pin after leaving the newest API window. LAUNCHES keeps 12 production + 12 non-production, newest
+number first within each; production is bold with `◆`, other rows dim with verdict `--`. MAINNET / BASE / RH /
 SEPOLIA are the chain words. The token column prefers role `token`, then `hook`, then the first
 artifact. Full columns add kind/repo; compact drops those and tight also sheds site/parked reason.
 K1–K4 produce provenance-only `✓ swarm`, `… n/4`, or `✗ Kx`; K3 accepts deployed-code equality
-or creation-code evidence (`pass (immutables)`). K6/K7 are informational, never safety claims.
+or creation-code evidence (`pass (immutables)`). Only admitted launches without artifacts say
+`-- pending`; parked launches show a failed check or `-- parked`. K6/K7 are informational, never safety claims.
 Enter/click opens `LaunchDetailScreen`, a deep-copied snapshot with all artifacts, copy/explorer
 links, pair, fee, requester, policy, evidence, site and IMD token/job link. Selection messages
 are declared in each selectable subclass; BOARD keeps its own Enter routing.
 
 SITES uses workflow/project/named matching; named matches require payer agreement to highlight.
-Conflicts remain untrusted. Trusted production sites pin first and retain their ticker before
-label text. LAUNCHES/SITES use the launch tier marker, not the scores clock.
+Conflicting matches produce no link. Trusted production sites pin first. Their clipped ticker suffix leaves at least four cells for
+label text; untrusted suffixes alone are dim. LAUNCHES/SITES use the launch tier marker, not the scores clock.
 
 `SWARM LAUNCH` is detector eleven; signal detail carries its own chain explorer. Persisted
-`swarm_live_seen` and pending IDs cap at 500, with a high-water number preventing replay after
-eviction; fired facts retain ages and metadata through restart. Initial reads seed silently,
-failed reads do not fire, and an observed non-live launch may later fire below the high-water
-number. Typed fired events drive all-body title news, never parsed detail text.
+`swarm_live_seen`, its UUID-to-number map and pending IDs cap at 500.
+`swarm_launch_evicted_floor` records the highest actually evicted number to prevent replay;
+first sightings below an observed high number still fire. Fired facts retain ages through restart
+and refresh their ticker/token/verdict metadata on later reads. Initial reads seed silently;
+failed or corrupt persisted reads do not fire. Typed fired events drive all-body title news, never parsed detail text.
 
 **WORKFLOWS history:** cold or incomplete caches backfill pages of 100, at most 10 pages, using
 strict UTC `createdAt` cursors, an advancing-cursor guard and the existing inter-call delay.

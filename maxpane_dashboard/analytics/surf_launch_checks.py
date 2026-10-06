@@ -189,7 +189,10 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
 def verdict(row, checks):
     passed = sum(checks.get(k, {}).get('state') in ('pass', 'pass_immutables') for k in ('K1', 'K2', 'K3', 'K4'))
     failed = next((k for k in ('K2', 'K3', 'K4') if checks.get(k, {}).get('state') == 'fail'), None)
-    state = 'not_deployed' if not row.get('artifacts') else 'mismatch' if failed in ('K2', 'K3') else 'failed' if failed else 'swarm' if passed == 4 else 'partial'
+    state = ('not_deployed' if row.get('status') == 'admitted' and not row.get('artifacts')
+             else 'mismatch' if failed in ('K2', 'K3') else 'failed' if failed
+             else 'parked' if row.get('status') == 'parked'
+             else 'swarm' if passed == 4 else 'partial')
     return {'state': state, 'passed': passed, 'failed': failed}
 
 

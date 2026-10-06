@@ -34,7 +34,7 @@ What the base adds to ``TableLeaderboard``
   - a table with :attr:`EMPTY_LINE` unset (CAPABILITY, LAUNCHES, SITES) lays
     ``unavailable`` (yellow) or its tier-trimmed ``EMPTY_ROW`` word into the
     first *visible* column wide enough to show it whole -- LAUNCHES' first
-    column is ``#`` at 4 cells and a ``DataTable`` would cut the word to
+    column is ``#`` at 6 cells and a ``DataTable`` would cut the word to
     ``unav`` in silence -- and ``No data`` is painted only when there are no
     rows *and* no footer (the base rule, ``rules/widgets.md``);
   - a table with :attr:`EMPTY_LINE` set (RECORD, BY NODE) keeps its

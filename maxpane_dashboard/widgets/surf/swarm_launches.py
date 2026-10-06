@@ -36,6 +36,9 @@ __all__ = [
 
 # Rendered cell budgets, excluding DataTable's two padding cells per column.
 _NUMBER_COLS = 6
+_TICKER_COLS = 11  # A3.2: compact symbol or launch-number fallback.
+_SITE_COLS = 16  # A3.2: linked site label, clipped before its table boundary.
+_VERDICT_COLS = 10  # A3.2: the longest verdict, "-- pending".
 _KIND_COLS = 13
 _STATUS_COLS = 9
 _REPO_COLS = 24
@@ -49,12 +52,12 @@ _TIGHT_REPO_COLS = _REPO_COLS
 
 _SPECS = (
     ("number", "#", _NUMBER_COLS),
-    ("ticker", "ticker", 11),
+    ("ticker", "ticker", _TICKER_COLS),
     ("status", "status", _STATUS_COLS),
     ("chain", "chain", CHAIN_COLS),
     ("token", "token", _ARTIFACTS_COLS),
-    ("site", "site", 16),
-    ("verdict", "verdict", 10),
+    ("site", "site", _SITE_COLS),
+    ("verdict", "verdict", _VERDICT_COLS),
     ("kind", "kind", _KIND_COLS),
     ("repo", "repo", _REPO_COLS),
     ("parked", "parked reason", PARKED_MIN_COLS),
@@ -112,7 +115,7 @@ class SurfSwarmLaunches(SwarmTableBase):
 
     TITLE = "LAUNCHES"
     TABLE_ID = "surf-swarm-launches-table"
-    #: Twelve production rows followed by twelve Sepolia rows, each newest first.
+    #: Twelve production rows followed by twelve non-production rows, each newest first.
     ROW_CAP = 24
     SELECTABLE = True
 
@@ -144,8 +147,8 @@ class SurfSwarmLaunches(SwarmTableBase):
             ordered = sorted((r for r in swarm_launch_rows if isinstance(r, dict)),
                              key=lambda r: r.get("launch_number") if type(r.get("launch_number")) is int else -1, reverse=True)
             production = [r for r in ordered if r.get("production") is True][:12]
-            sepolia = [r for r in ordered if r.get("production") is not True and r.get("chain_id") == 11155111][:12]
-            swarm_launch_rows = production + sepolia
+            other = [r for r in ordered if r.get("production") is not True][:12]
+            swarm_launch_rows = production + other
         self.store(swarm_launch_rows, swarm_launches_as_of_hhmm, swarm_launch_summary)
 
     def column_plan(self, tier: str, budget: int) -> tuple[tuple[str, str, int], ...]:
@@ -197,7 +200,7 @@ class SurfSwarmLaunches(SwarmTableBase):
         if cell_len(number_text) > _NUMBER_COLS:
             self._clipped = True
         ticker = DASH
-        if production and any(isinstance(a, dict) and a.get("role") == "token" for a in item.get("artifacts") or []):
+        if production and item.get("kind") != "evm_contracts":
             ticker = "$" + flatten(item["ticker"]) if item.get("ticker") else f"#{number}"
         cells = {
             "number": rowfit.clip(number_text, _NUMBER_COLS),
@@ -206,12 +209,12 @@ class SurfSwarmLaunches(SwarmTableBase):
             "chain": sanitize_cell(chain_word(item.get("chain_id")), CHAIN_COLS),
             "repo": _repo_label(item.get("repo_url"), repo_cols),
             "token": _artifacts_cell(item, addr_cols),
-            "ticker": Text(rowfit.clip(ticker, 11)),
-            "site": site_text(item.get("site_label"), 16, label=item.get("site_label"), explorer=SITE_EXPLORER)
-                    if item.get("site_label") else Text(DASH),
-            "verdict": Text(launch_verdict_label(item.get("verdict")), style={
+            "ticker": Text(rowfit.clip(ticker, _TICKER_COLS)),
+            "site": site_text(item.get("site_ens_name") or item.get("site_label"), _SITE_COLS, label=item.get("site_label"), explorer=SITE_EXPLORER)
+                    if item.get("site_label") or item.get("site_ens_name") else Text(DASH),
+            "verdict": Text(rowfit.clip(launch_verdict_label(item.get("verdict")) if production else DASH, _VERDICT_COLS), style={
                 "swarm": "green", "mismatch": "red", "failed": "red",
-            }.get((item.get("verdict") or {}).get("state"), "dim")),
+            }.get((item.get("verdict") or {}).get("state"), "dim") if production else "dim"),
             "parked": sanitize_cell(reason, parked_cols),
         }
 
