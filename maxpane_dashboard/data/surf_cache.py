@@ -52,6 +52,8 @@ import bisect
 import json
 import logging
 import math
+import copy
+from uuid import UUID
 import os
 import time
 from collections import deque
@@ -109,6 +111,7 @@ TIER_POOL4_STAKERS = "pool4_stakers"
 #: The swarm's live read: ``/health`` every run, the job list only when a
 #: counter moved, details for the jobs still moving.  60 s because the swarm
 #: moves a few times an hour and the host is someone else's.
+TIER_SWARM_LAUNCHES = "swarm_launches"
 TIER_SWARM = "swarm"
 #: The full 62-detail sweep behind the scores and the throughput numbers.
 #: 188 KB, 25 s measured — half-hourly, never on the live path.
@@ -127,11 +130,12 @@ TIER_SWARM_BOARD = "swarm_board"
 TIER_SWARM_RUNTIME_LATEST = "swarm_runtime_latest"
 
 TIERS: tuple[str, ...] = (
-    TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
+    TIER_SWARM_LAUNCHES, TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
     TIER_POOL4_STAKERS, TIER_SWARM, TIER_SWARM_SCORES, TIER_SWARM_SEAT, TIER_SWARM_BOARD, TIER_SWARM_RUNTIME_LATEST,
 )
 
 TIER_TTL_SECONDS: dict[str, float] = {
+    TIER_SWARM_LAUNCHES: 60.0,
     TIER_FAST: 0.0,       # every refresh — see the module docstring
     TIER_MEDIUM: 90.0,    # PRD §5 says 60-120 s
     TIER_SLOW: 420.0,     # PRD §5 says 5-10 min
@@ -146,6 +150,7 @@ TIER_TTL_SECONDS: dict[str, float] = {
 }
 
 TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
+    TIER_SWARM_LAUNCHES: 120.0,
     TIER_FAST: 15.0,
     TIER_MEDIUM: 60.0,
     TIER_SLOW: 120.0,
@@ -173,8 +178,10 @@ SLOT_ACTIVITY = "activity"    # Blockscout dev tx pages
 SLOT_LAUNCHPAD = "launchpad"  # factory/hook/executor getters + log aggregates
 SLOT_POOL4 = "pool4"          # discovery + hook/vault/dripper getters + flow logs
 SLOT_POOL4_STAKERS = "pool4_stakers"  # the sIMD Transfer fold's last-good
+SLOT_SWARM_LAUNCHES = "swarm_launches"
+SLOT_SWARM_LAUNCH_FACTS = "swarm_launch_facts"
 SLOT_SWARM = "swarm"                  # health + jobs + the unfinished details
-SLOT_SWARM_SCORES = "swarm_scores"    # the full sweep: scores, launches, sites
+SLOT_SWARM_SCORES = "swarm_scores"    # jobs, details, skills and workflow history
 SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across list windows
 SLOT_SWARM_SEAT = "swarm_seat"        # {seats: token -> {state, seat, read_ts}}
 SLOT_SWARM_SEAT_RANK = "swarm_seat_rank"  # token -> last rank and previous rank
@@ -188,6 +195,7 @@ SLOT_SWARM_JOB_DETAIL = "swarm_job_detail"  # job UUID -> bounded popup job fact
 SLOT_SWARM_ANSWERS = "swarm_answers"  # job UUID -> submission hash -> extracted answer entry
 
 SLOTS: tuple[str, ...] = (
+    SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS,
     SLOT_CHAIN,
     SLOT_CHANNEL,
     SLOT_MARKET,
@@ -1000,6 +1008,20 @@ class SurfCache:
         horizon = now + CLOCK_SKEW_TOLERANCE_SECONDS
         for key, value in raw.items():
             name = str(key)
+            if name in ("swarm_live_seen", "swarm_launch_pending"):
+                # Missing/invalid baseline is a failed read, never an empty seed.
+                if isinstance(value, list) and all(_launch_uuid(v) for v in value):
+                    out[name] = list(dict.fromkeys(value))[-500:]
+                elif dropped is not None:
+                    dropped[0] += 1
+                continue
+            if name == "swarm_launch_high_water":
+                if type(value) is int and value >= 0:
+                    out[name] = value
+                continue
+            if name == "swarm_launch_fired":
+                out[name] = _launch_fired(value, horizon)
+                continue
             if name == BASELINE_FIRED_KEY:
                 out[name] = self._sanitise_fired(value, horizon, dropped=dropped)
                 continue
@@ -1037,7 +1059,7 @@ class SurfCache:
                 name: (dict(entry) if isinstance(entry, dict) else entry)
                 for name, entry in fired.items()
             }
-        return out
+        return copy.deepcopy(out)
 
     def set_baselines(self, baselines: Mapping[str, Any], *, now: float | None = None) -> None:
         """Replace the baselines wholesale with ``build_signals``' advanced set.
@@ -1213,7 +1235,7 @@ class SurfCache:
                             "read_ts": entry.ts,
                         }}}, ts=entry.ts)
                         self._dirty = True
-                    if slot in (SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS):
+                    if slot in (SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS, SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:
@@ -1430,3 +1452,35 @@ __all__ = [
     "TIER_TTL_SECONDS",
     "pool4_reserve_series_name",
 ]
+
+
+def _launch_uuid(value):
+    try:
+        return isinstance(value, str) and str(UUID(value)) == value
+    except (ValueError, TypeError, AttributeError):
+        return False
+
+
+def _launch_fired(value, horizon):
+    """Narrow A4 fired metadata, including verdict detail needed after restart."""
+    out = {}
+    if not isinstance(value, Mapping):
+        return out
+    for key, point in value.items():
+        if not _launch_uuid(key) or not isinstance(point, Mapping): continue
+        stamp, number, chain = point.get('ts'), point.get('number'), point.get('chain_id')
+        if type(stamp) not in (int, float) or not math.isfinite(stamp) or not 0 < stamp <= horizon: continue
+        if type(number) is not int or number < 0 or type(chain) is not int or chain not in (1, 8453, 4663): continue
+        ticker, token = point.get('ticker'), point.get('token_address')
+        if ticker is not None and not isinstance(ticker, str): continue
+        if token is not None and (not isinstance(token, str) or len(token) != 42 or not token.startswith('0x') or any(c not in '0123456789abcdefABCDEF' for c in token[2:])): continue
+        state = point.get('verdict_state')
+        if state not in (None, 'swarm', 'partial', 'mismatch', 'failed', 'not_deployed'): continue
+        passed, failed = point.get('verdict_passed'), point.get('verdict_failed')
+        if passed is not None and (type(passed) is not int or not 0 <= passed <= 4): continue
+        if failed not in (None, 'K2', 'K3', 'K4'): continue
+        out[key] = {'ts': float(stamp), 'number': number, 'chain_id': chain,
+                    'ticker': ticker[:256] if ticker is not None else None,
+                    'token_address': token.lower() if token else None, 'verdict_state': state,
+                    'verdict_passed': passed, 'verdict_failed': failed}
+    return dict(sorted(out.items(), key=lambda x: x[1]['ts'])[-500:])

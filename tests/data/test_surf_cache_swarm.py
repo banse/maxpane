@@ -55,7 +55,7 @@ def test_the_jobs_seen_slot_is_registered_so_it_restores():
     assert SLOT_SWARM_JOBS_SEEN in SLOTS
     # SLOT_SWARM_JOB_DETAIL adds bounded popup job facts, independently of jobs-seen;
     # SLOT_SWARM_SEAT_REWARDS (F-S5) the selected seat's IMD rewards.
-    assert len(SLOTS) == 22
+    assert len(SLOTS) == 24
 
 
 def test_a_seen_map_round_trips_through_save_and_load(tmp_path):

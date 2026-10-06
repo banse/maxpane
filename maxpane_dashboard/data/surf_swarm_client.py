@@ -292,7 +292,15 @@ class SwarmClient(OwnedHttpClient):
         return await self._list("/jobs", "jobs")
 
     async def fetch_launches(self) -> list[dict[str, Any]] | None:
-        return await self._list("/launches", "launches")
+        return await self._list("/launches", "launches", params={"limit": "100"})
+
+    async def fetch_launch(self, launch_id: str) -> dict[str, Any] | None:
+        if parse_job_id(launch_id) is None:
+            return None
+        return await self._dict(f"/launches/{launch_id}")
+
+    async def fetch_launch_policies(self) -> list[dict[str, Any]] | None:
+        return await self._list("/launch/policies", "policies")
 
     async def fetch_sites(self) -> list[dict[str, Any]] | None:
         return await self._list("/sites", "sites")

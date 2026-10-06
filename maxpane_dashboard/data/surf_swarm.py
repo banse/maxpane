@@ -361,7 +361,7 @@ def _artifact(artifact: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def launch_rows(launches: object) -> list[dict[str, Any]]:
-    """``swarm_launch_rows`` off ``/launches``, newest ``createdAt`` first.
+    """``swarm_launch_rows`` off ``/launches``, highest ``launchNumber`` first.
 
     ``artifacts`` is ``list[dict(role, name, address, tx_hash, block_number)]``;
     ``artifact_count`` is the host's field when it is an int, else the
@@ -400,7 +400,7 @@ def launch_rows(launches: object) -> list[dict[str, Any]]:
             "updated_ts": _ts(launch.get("updatedAt")),
             "artifacts": artifacts,
         })
-    return _newest_first(rows, "created_ts")
+    return sorted(rows, key=lambda r: r["launch_number"] if r["launch_number"] is not None else -1, reverse=True)
 
 
 def site_rows(sites: object) -> list[dict[str, Any]]:
@@ -2411,3 +2411,179 @@ def coerce_rank_slot(payload: object) -> dict | None:
             continue
         clean[token] = {"rank":rank, "prev":prev}
     return clean
+
+# Production launches: bounded extracted slots, never launch-detail bodies.
+LAUNCH_CACHE_CAP = 500
+_LAUNCH_ROW_FIELDS = ('id', 'launchNumber', 'kind', 'status', 'chainId', 'sourceRepoUrl',
+                      'sourceCommit', 'parkedReason', 'artifactCount', 'createdAt', 'updatedAt')
+_SITE_FIELDS = ('id', 'jobId', 'label', 'ensName', 'cid', 'bytes', 'status', 'txHash',
+                'blockNumber', 'createdAt', 'updatedAt', 'supersededBy')
+
+def _launch_list_row(value):
+    from maxpane_dashboard.analytics.surf_launch_checks import mappings, address
+    if not isinstance(value, dict) or not isinstance(value.get('id'), str) or parse_job_id(value.get('id')) != value.get('id'):
+        return None
+    if _int(value.get('launchNumber')) is None or _int(value.get('chainId')) is None or not isinstance(value.get('status'), str):
+        return None
+    out = {k: (v[:2048] if isinstance(v := value.get(k), str) else v if v is None or type(v) is int else None) for k in _LAUNCH_ROW_FIELDS}
+    out['artifacts'] = [{
+        'role': (_str(a.get('role')) or '')[:256], 'name': (_str(a.get('name')) or '')[:256],
+        'address': address(a.get('address')), 'txHash': a.get('txHash') if isinstance(a.get('txHash'), str) and re.fullmatch(r'0x[0-9a-fA-F]{64}', a['txHash']) else None,
+        'blockNumber': _int(a.get('blockNumber')),
+    } for a in mappings(value.get('artifacts'))[:64]]
+    return out
+
+def _launch_site_row(value):
+    if not isinstance(value, dict) or not isinstance(value.get('id'), str) or parse_job_id(value.get('id')) != value.get('id') or not isinstance(value.get('jobId'), str) or parse_job_id(value.get('jobId')) != value.get('jobId'):
+        return None
+    return {k: (v[:2048] if isinstance(v := value.get(k), str) else v if v is None or type(v) is int else None) for k in _SITE_FIELDS}
+
+def coerce_launches_slot(value, *, now=None):
+    """Validate every list row and each independent source timestamp."""
+    from maxpane_dashboard.analytics.surf_launch_checks import mappings, address, integer
+    if not isinstance(value, dict):
+        return None
+    out = {}
+    for key, coerce, cap in (('launches', _launch_list_row, 100), ('sites', _launch_site_row, 500)):
+        raw = value.get(key)
+        out[key] = [c for row in raw if (c := coerce(row)) is not None][:cap] if isinstance(raw, list) else None
+        stamp = value.get(key + '_ts')
+        out[key + '_ts'] = stamp if type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0 and (now is None or stamp <= now + 300) else None
+        if out[key + '_ts'] is None:
+            out[key] = None
+    raw = value.get('policies')
+    policies = []
+    for policy in mappings(raw)[:500]:
+        params = policy.get('params')
+        if not isinstance(params, dict) or integer(policy.get('version')) is None or integer(params.get('chainId')) is None:
+            continue
+        owners = params.get('owners')
+        policies.append({'version': policy['version'], 'params': {
+            'chainId': params['chainId'], 'owner': address(params.get('owner')), 'factory': address(params.get('factory')),
+            'owners': {str(k)[:64]: a for k, v in (owners.items() if isinstance(owners, dict) else []) if (a := address(v))},
+        }})
+    out['policies'] = policies if isinstance(raw, list) else None
+    stamp = value.get('policies_ts')
+    out['policies_ts'] = stamp if type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0 and (now is None or stamp <= now + 300) else None
+    if out['policies_ts'] is None:
+        out['policies'] = None
+    return out
+
+def coerce_launch_facts_slot(value):
+    """Each launch/site entry is validated and rebuilt; unknown fields vanish."""
+    from copy import deepcopy
+    from maxpane_dashboard.analytics.surf_launch_checks import address, is_production
+    if not isinstance(value, dict):
+        return None
+    launches, sites = {}, {}
+    for key, point in (value.get('launches', {}).items() if isinstance(value.get('launches'), dict) else []):
+        if not isinstance(key, str) or parse_job_id(key) != key or not isinstance(point, dict):
+            continue
+        row = _launch_list_row(point.get('row'))
+        if row is None or row['id'] != key or not is_production(row):
+            continue
+        clean = {'row': row}
+        if point.get('detail_version') is not None:
+            version = point['detail_version']
+            if not isinstance(version, list) or len(version) != 2 or any(not isinstance(x, str) for x in version):
+                continue
+            clean['detail_version'] = [s[:256] for s in version]
+            valid = True
+            for field in ('ticker', 'token_name', 'pair'):
+                val = point.get(field)
+                if val is not None and not isinstance(val, str): valid = False
+                clean[field] = val[:256] if isinstance(val, str) else None
+            for field in ('pool_fee', 'policy_version', 'assurances_count'):
+                val = point.get(field)
+                if val is not None and (type(val) is not int or val < 0): valid = False
+                clean[field] = val
+            clean['requester'] = address(point.get('requester'))
+            if point.get('requester') is not None and clean['requester'] is None: valid = False
+            clean['deploy_failure'] = point.get('deploy_failure')
+            if type(clean['deploy_failure']) is not bool: valid = False
+            admission = point.get('admission')
+            if admission is not None and (not isinstance(admission, list) or any(not isinstance(a, list) or len(a) != 2 or any(v is not None and not isinstance(v, str) for v in a) for a in admission)): valid = False
+            clean['admission'] = deepcopy(admission)
+            ids = point.get('job_ids', [])
+            if not isinstance(ids, list) or any(parse_job_id(j) != j for j in ids): valid = False
+            clean['job_ids'] = ids[:64] if isinstance(ids, list) else []
+            attested = point.get('attested', [])
+            if not isinstance(attested, list): valid = False
+            clean['attested'] = []
+            for a in attested if isinstance(attested, list) else []:
+                if not isinstance(a, dict) or not isinstance(a.get('name'), str): valid = False; break
+                if any(a.get(k) is not None and (not isinstance(a[k], str) or not re.fullmatch(r'(?:0x)?[0-9a-fA-F]{64}', a[k])) for k in ('deployedCodeHash', 'creationCodeHash')): valid = False
+                size = a.get('creationCodeBytes')
+                if size is not None and (type(size) is not int or not 0 < size <= 100000): valid = False
+                clean['attested'].append({k: a.get(k) for k in ('name', 'deployedCodeHash', 'creationCodeHash', 'creationCodeBytes')})
+            if not valid: continue
+        checks = point.get('checks')
+        if checks is not None:
+            if not isinstance(checks, dict) or set(checks) != {'K1', 'K2', 'K3', 'K4', 'K6', 'K7'}: continue
+            if any(not isinstance(c, dict) or c.get('state') not in ('pass', 'pass_immutables', 'fail', 'unknown', 'info', 'na') or not isinstance(c.get('evidence'), dict) for c in checks.values()): continue
+            clean['checks'] = _coerce_launch_checks(checks)
+            if clean['checks'] is None: continue
+        try:
+            if len(json.dumps(clean, allow_nan=False)) > 24000: continue
+        except (TypeError, ValueError): continue
+        launches[key] = clean
+    for key, point in (value.get('sites', {}).items() if isinstance(value.get('sites'), dict) else []):
+        if not isinstance(key, str) or parse_job_id(key) != key or not isinstance(point, dict): continue
+        ids, addresses = point.get('project_jobs'), point.get('addresses')
+        if not isinstance(ids, list) or any(parse_job_id(j) != j for j in ids): continue
+        if not isinstance(addresses, list) or any(address(a) is None for a in addresses): continue
+        paid = address(point.get('paid_by'))
+        if point.get('paid_by') is not None and paid is None: continue
+        sites[key] = {'paid_by': paid, 'project_jobs': ids[:100], 'addresses': [a.lower() for a in addresses[:100]]}
+    launches = dict(sorted(launches.items(), key=lambda item: item[1]['row']['launchNumber'], reverse=True)[:LAUNCH_CACHE_CAP])
+    return {'launches': launches, 'sites': dict(list(sites.items())[-LAUNCH_CACHE_CAP:])}
+
+
+def _coerce_launch_checks(checks):
+    """Rebuild evidence by type, so hand-edited popup facts cannot become code."""
+    from maxpane_dashboard.analytics.surf_launch_checks import address
+    states = {'K1': ('pass', 'unknown'), 'K2': ('pass', 'fail', 'unknown'),
+              'K3': ('pass', 'pass_immutables', 'fail', 'unknown'), 'K4': ('pass', 'fail', 'unknown'),
+              'K6': ('info', 'na', 'unknown'), 'K7': ('info', 'unknown')}
+    if not isinstance(checks, dict) or set(checks) != set(states): return None
+    out = {}
+    scalar_fields = {
+        'chain_id': 'int', 'policy_version': 'int', 'assurances_count': 'int',
+        'deploy_failure': 'bool', 'owner_is_factory': 'bool', 'owner': 'address', 'emitter': 'address',
+        'tx_hash': 'hash', 'from': 'address', 'to': 'address', 'receipt_status': 'int',
+        'name': 'text', 'address': 'address', 'expected_hash': 'hash', 'actual_hash': 'hash',
+        'creation_hash': 'hash', 'creation_offset': 'int',
+    }
+    def scalar(key, val):
+        if val is None: return None
+        kind = scalar_fields[key]
+        if kind == 'int' and type(val) is int and val >= 0: return val
+        if kind == 'bool' and type(val) is bool: return val
+        if kind == 'address' and address(val): return address(val)
+        if kind == 'hash' and isinstance(val, str) and re.fullmatch(r'(?:0x)?[0-9a-fA-F]{64}', val): return val.lower()
+        if kind == 'text' and isinstance(val, str): return val[:256]
+        raise ValueError('malformed launch evidence')
+    fields = {'K1': ('chain_id',), 'K2': ('policy_version', 'transactions'), 'K3': ('contracts',),
+              'K4': ('failed_admission', 'deploy_failure'), 'K6': ('owner', 'emitter', 'owner_is_factory'),
+              'K7': ('assurances_count',)}
+    nested = {'transactions': ('tx_hash', 'from', 'to', 'receipt_status'),
+              'contracts': ('name', 'address', 'tx_hash', 'expected_hash', 'actual_hash', 'creation_hash', 'creation_offset')}
+    try:
+        for key, check in checks.items():
+            if not isinstance(check, dict) or check.get('state') not in states[key] or not isinstance(check.get('evidence'), dict): return None
+            evidence = {}
+            for field in fields[key]:
+                if field not in check['evidence']: continue
+                val = check['evidence'][field]
+                if field in nested:
+                    if not isinstance(val, list) or len(val) > 64 or any(not isinstance(v, dict) for v in val): return None
+                    evidence[field] = [{k: scalar(k, v.get(k)) for k in nested[field]} for v in val]
+                elif field == 'failed_admission':
+                    if not isinstance(val, list) or len(val) > 64 or any(v is not None and not isinstance(v, str) for v in val): return None
+                    evidence[field] = [v[:256] if v is not None else None for v in val]
+                else:
+                    evidence[field] = scalar(field, val)
+            out[key] = {'state': check['state'], 'evidence': evidence}
+    except ValueError:
+        return None
+    return out

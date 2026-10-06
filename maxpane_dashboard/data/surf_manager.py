@@ -112,6 +112,7 @@ because a silent truncation of the dev/ops tx pages is indistinguishable from
 from __future__ import annotations
 
 import asyncio
+import copy
 import dataclasses
 import logging
 import math
@@ -143,6 +144,11 @@ from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data import surf_pool4_market as mk
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
+from maxpane_dashboard.analytics import surf_launch_checks as lc, surf_launch_sites as ls
+from maxpane_dashboard.data.keccak import keccak256
+from maxpane_dashboard.data.surf_launch_base_client import SwarmBaseClient
+from maxpane_dashboard.data.surf_launch_rh_client import SwarmRobinhoodClient
+from maxpane_dashboard.data.surf_cache import TIER_SWARM_LAUNCHES, SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS
 from maxpane_dashboard.data.surf_addresses import (
     ANNOUNCE,
     BURN_EXECUTOR_V1,
@@ -1037,6 +1043,7 @@ class SurfManager:
         pool4_client: Any = None,
         swarm_client: Any = None,
         npm_client: Any = None,
+        launch_rpc_clients: Any = None,
         seat: str | int | None = None,
     ) -> None:
         self.poll_interval = poll_interval
@@ -1113,6 +1120,9 @@ class SurfManager:
         self._pool4_price_reads = 0
         #: The in-flight detached swarm reads, or ``None``. Same contract as
         #: ``_pool4_task``/``_pool4_stakers_task``, one per tier.
+        self._swarm_launches_task: Any = None
+        self._swarm_launch_read_ok: bool | None = None
+        self._launch_rpc_clients = dict(launch_rpc_clients or {})
         self._swarm_task: Any = None
         self._swarm_scores_task: Any = None
         self._swarm_board_task: Any = None
@@ -1162,6 +1172,8 @@ class SurfManager:
 
         try:
             self.cache.load(slot_coercers={
+                SLOT_SWARM_LAUNCHES: lambda value: sw.coerce_launches_slot(value, now=self._clock()),
+                SLOT_SWARM_LAUNCH_FACTS: sw.coerce_launch_facts_slot,
                 SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
                 SLOT_SWARM_SEAT_RANK: sw.coerce_rank_slot,
                 SLOT_SWARM_SEAT_REWARDS: lambda value: sw.coerce_rewards_slot(value, now=self._clock()),
@@ -1224,6 +1236,9 @@ class SurfManager:
         await self._cancel_launchpad()
         await self._cancel_pool4()
         await self._cancel_pool4_stakers()
+        await self._cancel_swarm_launches()
+        for launch_client in self._launch_rpc_clients.values():
+            await launch_client.close()
         await self._cancel_swarm()
         await self._cancel_swarm_scores()
         await self._cancel_swarm_board()
@@ -5461,6 +5476,205 @@ class SurfManager:
 
     # -- the swarm control plane: independent tiers and source clocks --------
 
+    def _spawn_swarm_launches(self, tiers, now):
+        if TIER_SWARM_LAUNCHES not in tiers:
+            return None
+        if self._swarm_launches_task is not None and not self._swarm_launches_task.done():
+            return self._swarm_launches_task
+        self._swarm_launches_task = asyncio.ensure_future(self._swarm_launches_detached(tiers, now))
+        return self._swarm_launches_task
+
+    async def _swarm_launches_detached(self, tiers, now):
+        try:
+            await self._pool_swarm_launches(tiers, now)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._swarm_launch_read_ok = False
+            self.cache.mark_failed(TIER_SWARM_LAUNCHES, now)
+            logger.debug('SURF launch tier failed: %s', exc)
+
+    async def _cancel_swarm_launches(self):
+        task, self._swarm_launches_task = self._swarm_launches_task, None
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    def _launch_slot(self, name, default):
+        entry = self.cache.get_last_good(name)
+        return copy.deepcopy(entry.payload) if entry is not None and isinstance(entry.payload, dict) else default
+
+    async def _pool_swarm_launches(self, tiers, now):
+        """Detached 60s tier, with independent route clocks and bounded enrichment."""
+        if TIER_SWARM_LAUNCHES not in tiers:
+            return
+        slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
+        facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
+        failed, refreshed_policy, policy_read_ok = False, False, True
+        for route, cadence, method in (('launches', 0, 'fetch_launches'), ('sites', 300, 'fetch_sites'), ('policies', 1800, 'fetch_launch_policies')):
+            if cadence and slot.get(route + '_ts') is not None and now - slot[route + '_ts'] < cadence:
+                continue
+            value = await self._guard(lambda method=method: getattr(self.swarm_client, method)(), 'swarm ' + method)
+            if route == 'launches':
+                self._swarm_launch_read_ok = isinstance(value, list)
+            if route == 'policies':
+                refreshed_policy = True
+                policy_read_ok = isinstance(value, list)
+            if isinstance(value, list):
+                slot[route], slot[route + '_ts'] = value, now
+            else:
+                failed = True
+        slot = sw.coerce_launches_slot(slot, now=now)
+        # Only a successful list advances rows; a failed list retains its version.
+        for row in slot.get('launches') or []:
+            if lc.is_production(row):
+                point = facts['launches'].setdefault(row['id'], {})
+                version = [row['status'], row.get('updatedAt')]
+                if point.get('detail_version') != version:
+                    point.pop('checks', None)
+                point['row'] = row
+            else:
+                facts['launches'].pop(row['id'], None)
+        points = sorted(facts['launches'].values(), key=lambda p: p['row']['launchNumber'], reverse=True)
+        detail_budget = 3
+        for point in points:
+            row = point['row']
+            version = [row['status'], row.get('updatedAt')]
+            if point.get('detail_version') == version or not detail_budget:
+                continue
+            detail_budget -= 1
+            detail = await self._guard(lambda row=row: self.swarm_client.fetch_launch(row['id']), 'swarm launch detail')
+            if not isinstance(detail, dict) or detail.get('id') != row['id']:
+                continue
+            try:
+                extracted = lc.extract_facts(detail)
+            except (TypeError, AttributeError, ValueError):
+                continue
+            point.update(extracted)
+            point['detail_version'] = version
+        # One state batch per chain, across all pending checks on that chain.
+        pending, requests = [], {}
+        for point in points:
+            if point.get('detail_version') != [point['row']['status'], point['row'].get('updatedAt')]:
+                continue
+            previous = point.get('checks') or {}
+            if previous and all(c['state'] != 'unknown' for c in previous.values()):
+                continue
+            pending.append(point)
+            bucket = requests.setdefault(point['row']['chainId'], {'hashes': [], 'addresses': []})
+            needs_tx = any(previous.get(k, {}).get('state', 'unknown') == 'unknown' for k in ('K2', 'K3', 'K6'))
+            for artifact in point['row'].get('artifacts', []):
+                if needs_tx and artifact.get('txHash'):
+                    bucket['hashes'].append(artifact['txHash'])
+                if previous.get('K3', {}).get('state', 'unknown') == 'unknown' and any(a.get('name') == artifact.get('name') for a in point.get('attested', [])) and artifact.get('address'):
+                    bucket['addresses'].append(artifact['address'])
+        rpc = {}
+        for chain, request in requests.items():
+            if chain == 1:
+                client = self.client
+            else:
+                client = self._launch_rpc_clients.get(chain)
+                if client is None:
+                    client = SwarmBaseClient() if chain == 8453 else SwarmRobinhoodClient()
+                    self._launch_rpc_clients[chain] = client
+            rpc[chain] = await self._guard(lambda client=client, request=request: client.fetch_launch_evidence(request['hashes'], request['addresses']), 'swarm launch RPC') or {}
+        for point in pending:
+            row, previous = point['row'], point.get('checks')
+            checks = lc.check_launch(row, point, slot.get('policies') or [], rpc.get(row['chainId'], {}), keccak=keccak256, previous=previous)
+            known = lc.policy_sets(slot.get('policies') or [], row['chainId'], point.get('policy_version'))[2]
+            if not refreshed_policy and (checks['K2']['state'] == 'fail' or not known):
+                refreshed_policy = True
+                policies = await self._guard(self.swarm_client.fetch_launch_policies, 'swarm refresh launch policies')
+                policy_read_ok = isinstance(policies, list)
+                if isinstance(policies, list):
+                    slot['policies'], slot['policies_ts'] = policies, now
+                    checks = lc.check_launch(row, point, policies, rpc.get(row['chainId'], {}), keccak=keccak256, previous=previous)
+                else:
+                    # A stale policy cannot convict a sender/factory mismatch.
+                    failed = True
+                    checks['K2'] = lc.result()
+            if refreshed_policy and not policy_read_ok and checks['K2']['state'] == 'fail':
+                checks['K2'] = lc.result()
+            point['checks'] = checks
+        production_times = [sw._ts(p['row'].get('createdAt')) for p in points]
+        earliest = min((ts for ts in production_times if ts is not None), default=None)
+        site_budget = 3
+        for site in sorted(slot.get('sites') or [], key=lambda s: s.get('createdAt') or '', reverse=True):
+            if not site_budget:
+                break
+            created = sw._ts(site.get('createdAt'))
+            if site['id'] in facts['sites'] or earliest is None or created is None or created < earliest:
+                continue
+            site_budget -= 1
+            job = await self._guard(lambda site=site: self.swarm_client.fetch_job(site['jobId']), 'swarm site job')
+            if isinstance(job, dict) and job.get('id') == site['jobId']:
+                facts['sites'][site['id']] = ls.site_job_facts(job)
+        stamps = [slot.get(route + '_ts') for route in ('launches', 'sites', 'policies') if slot.get(route + '_ts') is not None]
+        if stamps:
+            self.cache.store_last_good(SLOT_SWARM_LAUNCHES, sw.coerce_launches_slot(slot, now=now), ts=max(stamps))
+        if facts['launches'] or facts['sites'] or self._swarm_launch_read_ok:
+            self.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, sw.coerce_launch_facts_slot(facts), ts=slot.get('launches_ts') or now)
+        (self.cache.mark_failed if failed else self.cache.mark_fetched)(TIER_SWARM_LAUNCHES, now)
+
+    def _swarm_launch_keys(self):
+        slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
+        facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
+        scores = self._launch_slot(SLOT_SWARM_SCORES, {})
+        points = facts['launches']
+        raw = {r['id']: r for r in slot.get('launches') or []}
+        raw.update({key: p['row'] for key, p in points.items()})
+        rows = sw.launch_rows(list(raw.values())) if slot.get('launches') is not None else None
+        links = ls.match_sites(slot.get('sites') or [], points, facts['sites'], scores.get('workflows'))
+        linked_sites = {}
+        for site in sorted(slot.get('sites') or [], key=lambda s: s.get('createdAt') or ''):
+            link = links.get(site['id'])
+            if link:
+                linked_sites[link['launch_id']] = (site, link)
+        for row in rows or []:
+            point = points.get(row['launch_id'])
+            if point is None:
+                continue
+            row['production'] = True
+            row.update({key: point.get(key) for key in ('ticker', 'token_name', 'pair', 'pool_fee', 'requester', 'policy_version')})
+            row['token_address'] = next((a['address'] for a in row['artifacts'] if a['role'] == 'token'), None)
+            row['job_id'] = next(iter(point.get('job_ids', [])), None)
+            row['checks'] = point.get('checks') or {k: lc.result('pass' if k == 'K1' else 'unknown') for k in ('K1', 'K2', 'K3', 'K4', 'K6', 'K7')}
+            row['verdict'] = lc.verdict(point['row'], row['checks'])
+            if row['launch_id'] in linked_sites:
+                site, link = linked_sites[row['launch_id']]
+                row.update(site_label=site.get('label'), site_ens_name=site.get('ensName'), site_link_method=link['method'], site_link_trusted=link['trusted'])
+        sites = sw.site_rows(slot['sites']) if isinstance(slot.get('sites'), list) else None
+        raw_sites = {s['jobId']: s for s in slot.get('sites') or []}
+        for site in sites or []:
+            raw_site = raw_sites.get(site['job_id'])
+            link = links.get(raw_site['id']) if raw_site else None
+            if link:
+                point = points[link['launch_id']]
+                site.update(launch_number=point['row']['launchNumber'], launch_ticker=point.get('ticker'), production_link=True, link_method=link['method'], link_trusted=link['trusted'])
+        # Both panels share a marker: show the older successfully read route.
+        stamps = [slot[k] for k in ('launches_ts', 'sites_ts') if slot.get(k) is not None]
+        return {'swarm_launch_rows': rows, 'swarm_launch_summary': launch_summary(rows) if rows is not None else None,
+                'swarm_site_rows': sites, 'swarm_launches_as_of_hhmm': LastGood(None, min(stamps)).as_of_hhmm() if stamps else None}
+
+    def _swarm_launch_events(self):
+        """A4 reading envelope; route failure is None even while panels retain rows."""
+        slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
+        if self._swarm_launch_read_ok is not True or slot.get('launches_ts') is None:
+            return None
+        current = {r['id'] for r in slot.get('launches') or []}
+        events = []
+        for row in self._swarm_launch_keys()['swarm_launch_rows'] or []:
+            if not row['production'] or row['launch_id'] not in current:
+                continue
+            verdict = row['verdict'] or {}
+            events.append({'launch_id': row['launch_id'], 'number': row['launch_number'], 'status': row['status'],
+                           'ticker': row['ticker'], 'chain_id': row['chain_id'], 'token_address': row['token_address'],
+                           'verdict_state': verdict.get('state'), 'verdict_passed': verdict.get('passed'), 'verdict_failed': verdict.get('failed')})
+        return {'events': events, 'ts': slot['launches_ts']}
+
     def _spawn_swarm(self, tiers: set[str], now: float) -> Any:
         """Start the live swarm read **detached**; never wait for it.
 
@@ -6237,53 +6451,12 @@ class SurfManager:
         return index, False
 
     async def _pool_swarm_scores(self, tiers: set[str], now: float) -> dict[str, Any]:
-        """The sweep: the newest details, ``/skills``, ``/launches``, ``/sites``, ``/workflows``.
+        """Refresh jobs, detail, skills and workflow history on the slow clock.
 
-        **Swarm v2 (WP4).** The detail sweep is bounded to the newest
-        :data:`SWARM_SWEEP_CAP` jobs by ``createdAt`` (plan R-F) and folded
-        into :data:`SLOT_SWARM_JOBS_SEEN` too, so a seat's record for a job
-        the live tier never saw executing still enters the slot -- and the
-        slot, not this sweep, carries the record of jobs past the cap.
-        **Partial success is a success** (plan R-B): the tier fails only
-        when ``/jobs`` is ``None`` or a detail host is busy (F-S3,
-        :meth:`_swarm_details` -- then ``skills``/``launches``/``sites``/
-        ``workflows`` are not asked either); each of ``skills``/``launches``/
-        ``sites``/``workflows`` is stored as ``None`` when its own read failed,
-        and
-        :meth:`_swarm_scores_keys` publishes ``None`` for that route's keys
-        while the others land behind the marker. The paragraphs below are
-        Task 5's and still hold.
-
-        **Never touches** :data:`SLOT_SWARM` or the live tier's counters —
-        it reads its own copy of the job list on its own, much slower tier,
-        so a live-tier outage can never starve this sweep of job ids and a
-        sweep failure can never touch the live slot's marker.
-
-        Unlike :meth:`_pool_swarm` this asks for **every** job's detail
-        (the newest :data:`SWARM_SWEEP_CAP`), not just the executing ones:
-        the AGENT body's ROSTER (:func:`sw.seat_rows`) folds verdicts off
-        completed jobs too. (RECORD reads the seat's lifetime ``/seats``
-        record since the /seats plan, not this sweep.)
-
-        ``/workflows`` (``docs/surf_swarm_workflows_spec.md`` §2) is asked last,
-        after ``/sites``, guarded on its own: its failure never fails the tier
-        or nulls another route, and theirs never null it.
-
-        Stores ``{"jobs", "details", "skills", "launches", "sites", "workflows"}``
-        -- **including**
-        its own copy of the job list, fix round 1 finding 4 (reversing the
-        first version, which reused the live slot's jobs instead). That
-        reuse was wrong two ways at once: the retired JUST SHIPPED fold
-        merged deliveries read off the *live* slot with launches/sites read
-        off *this* slot and sorted the union to a top 12, so the panel could
-        show a top-12 that never existed at any single moment on the host --
-        wrong rows, not merely fewer -- and a live-tier ``/health`` outage
-        would have silently blanked every fold that needed ``jobs`` even on
-        a cycle where this sweep read a perfectly good list. Paying to store
-        this list a second time, on a 1800 s tier, buys a sweep whose rows
-        and marker describe one moment (the seat keys read it, plan A1).
-        Retained workflow history has its own ``workflows_ts``: sibling
-        reads can succeed while that route keeps older last-good rows.
+        Jobs and details are a single sweep; a failure preserves its last-good
+        slot. Skills may be unavailable independently. Workflow history retains
+        its own successful-read timestamp. Launches and sites belong exclusively
+        to the detached launch tier and never borrow this sweep's clock.
         """
         if TIER_SWARM_SCORES not in tiers:
             return {"ok": False, "payload": None}
@@ -6301,10 +6474,6 @@ class SurfManager:
             return {"ok": False, "payload": None}
 
         skills = await self._guard(lambda: client.fetch_skills(), "swarm fetch_skills")
-        launches = await self._guard(
-            lambda: client.fetch_launches(), "swarm fetch_launches"
-        )
-        sites = await self._guard(lambda: client.fetch_sites(), "swarm fetch_sites")
         prior = self.cache.get_last_good(SLOT_SWARM_SCORES)
         old_slot = prior.payload if prior is not None and isinstance(prior.payload, dict) else {}
         previous = old_slot.get("workflows")
@@ -6326,7 +6495,7 @@ class SurfManager:
 
         payload = {
             "jobs": jobs, "details": details,
-            "skills": skills, "launches": launches, "sites": sites,
+            "skills": skills,
             "workflows": workflows, "workflows_complete": complete, "workflows_ts": workflows_ts,
         }
         self.cache.store_last_good(SLOT_SWARM_SCORES, payload, ts=now)
@@ -6422,8 +6591,6 @@ class SurfManager:
         other.
         """
         skills = slot.get("skills") if slot else None
-        launches = slot.get("launches") if slot else None
-        sites = slot.get("sites") if slot else None
         workflows = slot.get("workflows") if slot else None
         # This route can retain history while the rest of the sweep advances.
         # Like BOARD's independent source clocks, its title keeps the read time.
@@ -6444,20 +6611,13 @@ class SurfManager:
         # or absent from a slot persisted before WP4) and lists otherwise --
         # the summaries fold the rows, never the raw payload.
         skill_rows = sw.skill_rows(skills) if isinstance(skills, list) else None
-        launch_rows = sw.launch_rows(launches) if isinstance(launches, list) else None
 
         return {
             "swarm_scores_as_of_hhmm": entry.as_of_hhmm() if entry is not None else None,
             "swarm_workflows_as_of_hhmm": workflows_as_of,
-            "swarm_launches_as_of_hhmm": None,  # WP2 supplies the independent launch-tier marker
             "swarm_stale": stale,
             "swarm_skill_rows": skill_rows,
             "swarm_skill_summary": skill_summary(skill_rows) if skill_rows is not None else None,
-            "swarm_launch_rows": launch_rows,
-            "swarm_launch_summary": (
-                launch_summary(launch_rows) if launch_rows is not None else None
-            ),
-            "swarm_site_rows": sw.site_rows(sites) if isinstance(sites, list) else None,
             # GET /workflows: None until successfully read, or for an invalid
             # persisted list. Failed refreshes retain history behind its own
             # successful-read marker. [] is a real read, empty page.
@@ -6654,6 +6814,9 @@ class SurfManager:
             if swarm_entry is not None and isinstance(swarm_entry.payload, dict)
             else {}
         )
+        launch_keys = self._swarm_launch_keys()
+        launch_events = self._swarm_launch_events()  # A4 uses this pre-spawn snapshot.
+        self._spawn_swarm_launches(tiers, now)
         self._spawn_swarm(tiers, now)
 
         # The pool4 slot is captured here for ``launchpad_entry``'s reason and
@@ -6994,6 +7157,7 @@ class SurfManager:
         # widget shows this tier's marker; ``completed_24h`` comes off the
         # seen map).
         data.update(self._swarm_keys(swarm_slot, swarm_entry, now, seen))
+        data.update(launch_keys)
         # The sweep's own keys, off its own slot -- this sweep persists its
         # own copy of the job list rather than reusing the live tier's (fix
         # round 1 finding 4; see ``_swarm_scores_keys``'s own docstring for

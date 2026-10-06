@@ -2877,6 +2877,8 @@ def _public_fetchers() -> list[str]:
             # `tests/data/test_surf_client_rewards.py::test_a_total_outage_is_none`,
             # its "no zero for a failed read" by the bound/sender/balance cases there.
             "fetch_seat_rewards",
+            # Required tx/address batches; tested by test_surf_launch_clients.
+            "fetch_launch_evidence",
         )
     )
 

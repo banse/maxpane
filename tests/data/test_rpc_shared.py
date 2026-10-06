@@ -39,6 +39,8 @@ import pytest
 
 from maxpane_dashboard.data import (
     base_client,
+    surf_launch_base_client,
+    surf_launch_rh_client,
     cattown_client,
     curator_nft_holders,
     dota_client,
@@ -66,6 +68,8 @@ from maxpane_dashboard.data import (
 #: and ``curator_nft_holders`` was never scanned at all. A new module that
 #: talks to a chain belongs in this dict on the day it lands.
 ALL_CLIENTS = {
+    surf_launch_base_client: "SwarmBaseClient",
+    surf_launch_rh_client: "SwarmRobinhoodClient",
     base_client: "BaseChainClient",
     cattown_client: "CatTownClient",
     curator_nft_holders: "NftHolderClient",
@@ -84,6 +88,8 @@ ALL_CLIENTS = {
 #: ``_post`` and its error policy is the kind classifier
 #: ``_classify_rpc_error``, which Branch 10's P4 keeps local.
 RPC_CLIENTS = [
+    surf_launch_base_client,
+    surf_launch_rh_client,
     cattown_client,
     fwa_client,
     ocm_client,
@@ -93,7 +99,8 @@ RPC_CLIENTS = [
 
 #: Everything that builds a JSON-RPC envelope, whatever it calls the method
 #: that sends it. Wider than :data:`RPC_CLIENTS` on purpose.
-JSONRPC_MODULES = [*RPC_CLIENTS, curator_nft_holders, fwa_logs]
+# Robinhood shares the Base batch-envelope transport; neither does ABI calls.
+JSONRPC_MODULES = [m for m in RPC_CLIENTS if m is not surf_launch_rh_client] + [curator_nft_holders, fwa_logs]
 
 #: Private names each client binds by importing from ``evm_abi``, mapped to
 #: the shared function they must resolve to. A client is free not to need a
@@ -220,7 +227,7 @@ def test_the_codec_is_actually_reached_by_the_clients() -> None:
             for alias, shared in CODEC_ALIASES.items()
             if getattr(module, alias, None) is shared
         }
-        if module in RPC_CLIENTS:
+        if module in RPC_CLIENTS and module not in (surf_launch_base_client, surf_launch_rh_client):
             assert len(bound) >= 2, (
                 f"{module.__name__} is an on-chain client that binds almost "
                 "none of the shared codec -- did it grow a private copy?"
@@ -383,6 +390,8 @@ _P4_LOCAL_TABLES = {
 #: reach each of them; a pair that vanishes from ``seen`` means the binding
 #: was deleted, renamed or moved somewhere the guard cannot read.
 _BOUND_TABLES_TODAY = {
+    ("surf_launch_base_client.py", "_ENDPOINT_LIMITATION_PATTERNS"),
+    ("surf_launch_rh_client.py", "_ENDPOINT_LIMITATION_PATTERNS"),
     ("ttt_client.py", "_ENDPOINT_LIMITATION_PATTERNS"),
     ("curator_client.py", "_ENDPOINT_LIMITATION_PATTERNS"),
     ("curator_client.py", "_RANGE_LIMITATION_PATTERNS"),

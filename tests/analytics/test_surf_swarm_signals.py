@@ -163,26 +163,19 @@ def _launch(status, kind, chain):
 
 
 def test_launch_summary_rolls_up_status_kind_and_chain():
-    rows = [
-        _launch("live", "evm_project", 11155111),
-        _launch("live", "evm_project", 1),
-        _launch("parked", "evm_project", 11155111),
-        _launch("abandoned", "site", None),
-    ]
+    from tests.analytics.test_surf_launch_checks import fixture
+    from maxpane_dashboard.analytics.surf_launch_checks import is_production
+    from maxpane_dashboard.data.surf_swarm import launch_rows
+    raw = fixture('launches_500')['launches']
+    rows = launch_rows(raw)
+    production = {r['id'] for r in raw if is_production(r)}
+    for row in rows:
+        row['production'] = row['launch_id'] in production
     out = sig.launch_summary(rows)
-    assert out["by_status"] == [
-        {"status": "live", "count": 2},
-        {"status": "abandoned", "count": 1},
-        {"status": "parked", "count": 1},
-    ]
-    assert out["by_kind"] == [
-        {"kind": "evm_project", "count": 3}, {"kind": "site", "count": 1},
-    ]
-    # by_chain is keyed chain_id; a None chain is a failed read, not a chain.
-    assert out["by_chain"] == [
-        {"chain_id": 11155111, "count": 2}, {"chain_id": 1, "count": 1},
-    ]
-    assert tuple(out) == ("by_status", "by_kind", "by_chain")
+    assert out['by_status'] == [{'status': 'live', 'count': 9}]
+    assert out['by_kind'] == [{'kind': 'custom_token', 'count': 8}, {'kind': 'evm_contracts', 'count': 1}]
+    assert out['by_chain'] == [{'chain_id': 1, 'count': 9}]
+    assert tuple(out) == ('by_status', 'by_kind', 'by_chain')
 
 
 # ---------------------------------------------------------------------------

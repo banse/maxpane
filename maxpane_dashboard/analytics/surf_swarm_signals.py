@@ -99,7 +99,7 @@ def skill_summary(skill_rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 
 def launch_summary(launch_rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """``{"by_status", "by_kind", "by_chain"}`` off ``swarm_launch_rows``."""
-    rows = [r for r in launch_rows if isinstance(r, Mapping)]
+    rows = [r for r in launch_rows if isinstance(r, Mapping) and r.get("production") is True]
     return {
         "by_status": count_by((r.get("status") for r in rows), "status"),
         "by_kind": count_by((r.get("kind") for r in rows), "kind"),

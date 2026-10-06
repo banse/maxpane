@@ -80,7 +80,7 @@ def test_tier_ttls_match_the_prd(tmp_path):
     c = _cache(tmp_path, clock)
 
     assert TIERS == (
-        TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
+        "swarm_launches", TIER_FAST, TIER_MEDIUM, TIER_SLOW, TIER_LAUNCHPAD, TIER_POOL4,
         TIER_POOL4_STAKERS, "swarm", "swarm_scores", "swarm_seat", "swarm_board", "swarm_runtime_latest",
     )
     assert TIER_TTL_SECONDS[TIER_FAST] == 0.0
@@ -234,7 +234,7 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     # (SLOT_SWARM_ORACLE_INDEX) are also independent last-good slots.
     # Selected-job detail (SLOT_SWARM_JOB_DETAIL) is a separate popup slot.
     # The selected seat's IMD rewards (SLOT_SWARM_SEAT_REWARDS, F-S5, 2026-10-02).
-    assert len(SLOTS) == 22
+    assert len(SLOTS) == 24
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):

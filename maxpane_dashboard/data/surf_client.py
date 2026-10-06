@@ -1327,6 +1327,12 @@ class SurfClient(OwnedHttpClient):
                         await asyncio.sleep(self._backoff_seconds[attempt])
         raise RuntimeError(f"all state endpoints failed: {last_err}")
 
+    async def fetch_launch_evidence(self, tx_hashes, addresses):
+        """Public, batched read-only launch transaction, receipt and code evidence."""
+        from maxpane_dashboard.analytics.surf_launch_checks import evidence_calls, evidence_results
+        keys, calls = evidence_calls(tx_hashes, addresses)
+        return evidence_results(keys, await self._rpc_state_batch(calls) if calls else [])
+
     async def _rpc_state_batch(
         self, calls: list[tuple[str, list]]
     ) -> list[Any] | None:

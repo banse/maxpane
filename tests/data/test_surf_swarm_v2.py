@@ -277,8 +277,8 @@ def test_skill_rows_coerce_requires_and_checks_and_skip_garbage():
 def test_launch_rows_newest_first_with_five_field_artifacts(launches):
     rows = fold.launch_rows(launches)
     assert len(rows) == 30  # launches.json count 30
-    stamps = [r["created_ts"] for r in rows]
-    assert stamps == sorted(stamps, reverse=True)
+    numbers = [r["launch_number"] for r in rows]
+    assert numbers == sorted(numbers, reverse=True)
     # launches.json[0]: launchNumber 62, kind evm_project, status live,
     # chainId 11155111, artifactCount 3, three artifacts.
     row = next(r for r in rows if r["launch_number"] == 62)

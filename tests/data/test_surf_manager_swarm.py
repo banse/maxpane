@@ -630,7 +630,7 @@ async def test_a_dead_skills_route_leaves_only_its_keys_none(tmp_path):
     assert isinstance(payload["swarm_launch_rows"], list) and payload["swarm_launch_rows"]
     assert isinstance(payload["swarm_site_rows"], list) and payload["swarm_site_rows"]
     assert payload["swarm_seat_selected"] is not None
-    assert payload["swarm_launch_summary"]["by_status"]
+    assert payload["swarm_launch_summary"]["by_status"] == []  # v2 holds no production launches
     assert payload["swarm_agents_online"] == 28 and payload["swarm_as_of_hhmm"] is not None
 
 
@@ -649,7 +649,7 @@ async def test_the_slow_keys_land_from_the_sweep(tmp_path):
     assert len(payload["swarm_skill_rows"]) == 30
     assert payload["swarm_skill_summary"]["total"] == 30
     assert len(payload["swarm_launch_rows"]) == 30
-    assert sum(r["count"] for r in payload["swarm_launch_summary"]["by_kind"]) == 30
+    assert sum(r["count"] for r in payload["swarm_launch_summary"]["by_kind"]) == 0
     assert len(payload["swarm_site_rows"]) == 6
     assert payload["swarm_stale"] is False
     # ``swarm_throughput`` is §1.3's dict off the LIVE tier's own list since
@@ -678,9 +678,8 @@ async def test_the_sweep_publishes_whole_rows_even_with_no_live_slot(tmp_path):
     keys = manager._swarm_scores_keys(
         scores_entry.payload, scores_entry, None, manager._clock()
     )
-    assert keys["swarm_launch_rows"] and keys["swarm_site_rows"], (
-        "no launch/site rows with a whole sweep slot"
-    )
+    assert "swarm_launch_rows" not in keys and "swarm_site_rows" not in keys
+    assert manager._swarm_launch_keys()['swarm_launch_rows'] is None
     assert "swarm_throughput" not in keys
     # WP7 retired the v1 keys this method used to emit off the same slot.
     assert "swarm_shipped_rows" not in keys and "swarm_score_rows" not in keys
@@ -1334,6 +1333,7 @@ async def test_the_swarm_folds_emit_exactly_the_swarm_block(tmp_path):
     seen = _seen(manager)
     assert live is not None and scores is not None
     parts = [
+        manager._swarm_launch_keys(),
         manager._runtime_keys(manager._clock()),
         manager._swarm_keys(live.payload, live, manager._clock(), seen),
         manager._swarm_scores_keys(scores.payload, scores, live, manager._clock()),
@@ -1962,7 +1962,8 @@ async def test_the_workflows_are_read_after_sites_and_land_behind_the_sweep_mark
     swarm = _FakeSwarm()
     manager, payload = await _landed(tmp_path, swarm)
     try:
-        assert swarm.sweep_order == ["skills", "launches", "sites", "workflows"]
+        assert [r for r in swarm.sweep_order if r not in ("launches", "sites")] == ["skills", "workflows"]
+        assert swarm.sweep_order.count("launches") == swarm.sweep_order.count("sites") == 1
         assert swarm.calls["workflows"] == 1
         # The client's own default page size is the one asked for.
         assert swarm.workflow_limits == [100]
@@ -2147,13 +2148,15 @@ async def test_persisted_non_list_routes_publish_none_but_empty_lists_survive(tm
         writer = SurfCache(path=path, clock=clock)
         slot = {"skills": [], "launches": [], "sites": [], "workflows": []}
         slot[route] = stored
-        writer.store_last_good(SLOT_SWARM_SCORES, slot, ts=clock())
+        slot_name = SLOT_SWARM_SCORES if route == "skills" else "swarm_launches"
+        slot.update(launches_ts=clock(), sites_ts=clock())
+        writer.store_last_good(slot_name, slot, ts=clock())
         writer.save()
         manager = _manager(tmp_path, _FakeSwarm(), cache=SurfCache(path=path, clock=clock), clock=clock)
         try:
-            entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
-            assert entry.payload[route] == stored
-            keys = manager._swarm_scores_keys(entry.payload, entry, None, clock())
+            entry = manager.cache.get_last_good(slot_name)
+            assert entry.payload[route] == (stored if route == "skills" or isinstance(stored, list) else None)
+            keys = manager._swarm_scores_keys(entry.payload, entry, None, clock()) if route == "skills" else manager._swarm_launch_keys()
             assert keys[key] == ([] if isinstance(stored, list) else None)
             if route in ("skills", "launches") and not isinstance(stored, list):
                 assert keys[key.replace("_rows", "_summary")] is None
