@@ -182,3 +182,26 @@ def test_legacy_manifest_fee_is_removed_but_initialize_fee_survives_reload():
     assert actual['pool_fee'] == 12500 and actual['pool_initialize'] == facts['pool_initialize']
     facts['pool_initialize']['emitter'] = 'bad'
     assert sw.coerce_launch_facts_slot(slot)['launches'][row['id']]['pool_fee'] is None
+
+
+def test_liquidity_cache_retains_good_siblings_and_migrates_empty_admission():
+    from tests.analytics.test_surf_launch_liquidity import live_fixture
+    from maxpane_dashboard.analytics import surf_launch_liquidity as ll
+    row,pool,answers,decimals=live_fixture(737)
+    _,facts,checks=checked()
+    facts.update(row=row,checks=checks,detail_version=[row['status'],row['updatedAt']],pool_inputs=pool,
+                 pool_decimals=decimals,liquidity=ll.liquidity_result(row,pool,[answers[i] for i in range(3)],decimals,[],{},now=100))
+    def clean(point):
+        return sw.coerce_launch_facts_slot({'launches':{row['id']:point},'sites':{}})['launches'][row['id']]
+    assert clean(facts)['pool_inputs']==pool
+    assert clean(facts)['liquidity']==facts['liquidity']
+    bad=copy.deepcopy(facts); bad['liquidity']['share']=1.5
+    restored=clean(bad)
+    assert 'liquidity' not in restored and restored['pool_inputs']==pool and restored['checks']==sw._coerce_launch_checks(checks)
+    bad=copy.deepcopy(facts); bad['pool_inputs']['tick_lower']=False
+    restored=clean(bad)
+    assert 'pool_inputs' not in restored and restored['liquidity']==facts['liquidity']
+    bad=copy.deepcopy(facts); bad['admission']=[]
+    assert clean(bad)['checks']['K4']['state']=='unknown'
+    bad=copy.deepcopy(facts); key=next(iter(decimals)); bad['pool_decimals'][key]=True
+    assert clean(bad)['pool_decimals']=={k:v for k,v in decimals.items() if k!=key}

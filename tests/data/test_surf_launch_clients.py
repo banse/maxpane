@@ -43,3 +43,23 @@ async def test_chain_launch_rpc_batches_reads_and_rotates(cls):
         out = await client.fetch_launch_evidence(list(rpc['transactions']), list(rpc['codes']))
         assert out == rpc
         assert len(posted) == 2 and len(posted[0]) == 3
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('cls', [SwarmBaseClient, SwarmRobinhoodClient, SurfClient])
+async def test_pool_storage_batch_keeps_independent_missing_items(cls):
+    from tests.analytics.test_surf_launch_liquidity import live_fixture
+    from maxpane_dashboard.analytics import surf_launch_liquidity as ll
+    from maxpane_dashboard.data.keccak import keccak256
+    _,pool,answers,_=live_fixture(791 if cls is SwarmRobinhoodClient else 737)
+    calls=ll.state_calls(pool,keccak=keccak256)
+    posted=[]
+    def respond(request):
+        batch=json.loads(request.content); posted.append(batch)
+        return httpx.Response(200,json=list(reversed([
+            dict(jsonrpc='2.0',id=c['id'],**({'error':{'code':-32000,'message':'execution reverted'}} if i==1 else {'result':answers[i]}))
+            for i,c in enumerate(batch)])))
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        client=cls(http_client=http,inter_call_delay=0) if cls is SurfClient else cls(http_client=http)
+        assert await client.fetch_launch_pool_state(calls)==[answers[0],None,answers[2]]
+        assert [[c['method'],c['params']] for c in posted[0]]==[[method,params] for method,params in calls]

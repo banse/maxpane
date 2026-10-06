@@ -2495,7 +2495,7 @@ def coerce_launch_facts_slot(value):
     """Each launch/site entry is validated and rebuilt; unknown fields vanish."""
     from copy import deepcopy
     from maxpane_dashboard.analytics.surf_launch_checks import address, is_production
-    from maxpane_dashboard.analytics.surf_launch_liquidity import coerce_initialize
+    from maxpane_dashboard.analytics.surf_launch_liquidity import coerce_initialize, coerce_pool_inputs, coerce_liquidity, coerce_decimals
     if not isinstance(value, dict):
         return None
     launches, sites = {}, {}
@@ -2506,7 +2506,7 @@ def coerce_launch_facts_slot(value):
         if row is None or row['id'] != key or not is_production(row):
             continue
         clean = {'row': row}
-        for field in ('detail_failed_ts', 'k3_retry_ts'):
+        for field in ('detail_failed_ts', 'detail_attempt_ts', 'k3_retry_ts', 'pool_attempt_ts', 'liquidity_attempt_ts'):
             stamp = point.get(field)
             if type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0:
                 clean[field] = stamp
@@ -2551,6 +2551,17 @@ def coerce_launch_facts_slot(value):
             clean['pool_initialize'] = initialize
         else:
             initialize = None
+        pool = coerce_pool_inputs(point.get('pool_inputs'))
+        if pool and (pool.get('state') == 'na' or (pool['tx_hash'] in hashes and len(tokens) == 1
+                and next(iter(tokens)) in (pool['currency0'], pool['currency1']))):
+            clean['pool_inputs'] = pool
+            if pool.get('state') != 'na':
+                initialize = coerce_initialize(pool)
+                clean['pool_initialize'] = initialize
+        decimals = coerce_decimals(point.get('pool_decimals'))
+        if decimals: clean['pool_decimals'] = decimals
+        liquidity = coerce_liquidity(point.get('liquidity'))
+        if liquidity is not None: clean['liquidity'] = liquidity
         # Old caches contain manifest fees: never present them as receipt evidence.
         clean['pool_fee'] = initialize['pool_fee'] if initialize else None
         checks = point.get('checks')
@@ -2559,6 +2570,8 @@ def coerce_launch_facts_slot(value):
             if any(not isinstance(c, dict) or c.get('state') not in ('pass', 'pass_immutables', 'fail', 'unknown', 'info', 'na') or not isinstance(c.get('evidence'), dict) for c in checks.values()): continue
             clean['checks'] = _coerce_launch_checks(checks)
             if clean['checks'] is None: continue
+            if not clean.get('admission') and clean['checks']['K4']['state'] == 'pass':
+                clean['checks']['K4']['state'] = 'unknown'
         try:
             if len(json.dumps(clean, allow_nan=False)) > 24000: continue
         except (TypeError, ValueError): continue
@@ -2589,7 +2602,7 @@ def _coerce_launch_checks(checks):
     out = {}
     scalar_fields = {
         'chain_id': 'int', 'policy_version': 'int', 'assurances_count': 'int', 'rule_version': 'int',
-        'deploy_failure': 'bool', 'owner_is_factory': 'bool', 'owner': 'address', 'emitter': 'address',
+        'deploy_failure': 'bool', 'policy_pending': 'bool', 'owner_is_factory': 'bool', 'owner': 'address', 'emitter': 'address',
         'tx_hash': 'hash', 'from': 'address', 'to': 'address', 'receipt_status': 'int',
         'name': 'text', 'address': 'address', 'expected_hash': 'hash', 'actual_hash': 'hash',
         'creation_hash': 'hash', 'creation_offset': 'int', 'state': 'contract_state', 'reason': 'text',
@@ -2604,7 +2617,7 @@ def _coerce_launch_checks(checks):
         if kind == 'hash' and isinstance(val, str) and re.fullmatch(r'(?:0x)?[0-9a-fA-F]{64}', val): return val.lower()
         if kind == 'text' and isinstance(val, str): return val[:256]
         raise ValueError('malformed launch evidence')
-    fields = {'K1': ('chain_id',), 'K2': ('policy_version', 'transactions', 'rule_version'), 'K3': ('contracts', 'unmatched_artifacts', 'rule_version'),
+    fields = {'K1': ('chain_id',), 'K2': ('policy_version', 'transactions', 'rule_version', 'policy_pending'), 'K3': ('contracts', 'unmatched_artifacts', 'rule_version'),
               'K4': ('failed_admission', 'deploy_failure'), 'K6': ('owner', 'emitter', 'owner_is_factory', 'rule_version'),
               'K7': ('assurances_count',)}
     nested = {'transactions': ('tx_hash', 'from', 'to', 'receipt_status'),

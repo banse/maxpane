@@ -27,6 +27,8 @@ class LaunchSwarm:
         return next((fixture(name) for name in ('job_zto_site','job_adam_site') if fixture(name)['id'] == key), None)
     async def close(self): pass
 class RPC(FakeSurfClient):
+    async def fetch_launch_pool_state(self, calls):
+        return None
     async def fetch_launch_evidence(self, hashes, addresses):
         out = {'transactions':{},'receipts':{},'codes':{}}
         for n in (734,737,747):
@@ -692,9 +694,9 @@ async def test_fix3_legacy_policy_migration_runs_once_without_erasing_last_good(
     try:
         m.cache.store_last_good(SLOT_SWARM_LAUNCHES, {'policies':old, 'policies_ts':NOW}, ts=NOW)
         for cycle in range(1, 7): await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+cycle*61)
-        assert swarm.calls.count('policies') == 1
+        assert swarm.calls.count('policies') == (6 if failed else 1)
         slot = m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
-        assert slot['policies'] and slot['policies_schema'] == 1
+        assert slot['policies'] and slot['policies_schema'] == (None if failed else 1)
         assert slot['policies_ts'] == (NOW if failed else NOW+61)
         assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K2']['state'] == 'pass'
     finally: await m.close()
@@ -724,7 +726,7 @@ async def test_fix3_cached_pooled_checks_rejudged_once_preserving_k3(tmp_path):
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+61)
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+122)
         checks = m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']
-        assert checks['K2']['state'] == 'pass' and checks['K6']['evidence']['owner_is_factory'] is False
+        assert checks['K2']['state'] == 'pass' and checks['K6']['evidence']['owner_is_factory'] is None
         assert checks['K3'] == k3
         assert len(calls) == 1 and calls[0][1] == []
     finally: await m.close()
@@ -752,3 +754,63 @@ async def test_initialize_fee_and_liquidity_contract_reach_snapshot(tmp_path):
             await restored.close()
     finally:
         await m.close()
+
+
+@pytest.mark.asyncio
+async def test_empty_admission_same_version_retries_after_1800_seconds(tmp_path):
+    swarm=LaunchSwarm(); row=fixture('launch_737'); row.update(status='parked',admissionChecks=[])
+    swarm.rows=[row]
+    async def detail(key):
+        swarm.calls.append(('detail',key)); return copy.deepcopy(row)
+    swarm.fetch_launch=detail
+    m=manager(tmp_path,swarm)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW)
+        point=m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'][row['id']]
+        assert point['checks']['K4']['state']=='unknown'
+        row['admissionChecks']=[{'name':'findings','status':'failed'}]
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+1799)
+        assert len([c for c in swarm.calls if isinstance(c,tuple) and c[0]=='detail'])==1
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+1801)
+        shown=m._swarm_launch_keys()['swarm_launch_rows'][0]
+        assert shown['checks']['K4']['state']=='fail' and shown['verdict']['failed']=='K4'
+        assert len([c for c in swarm.calls if isinstance(c,tuple) and c[0]=='detail'])==2
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_unknown_policy_waits_without_tx_and_rejudges_on_policy_refresh(tmp_path):
+    swarm=LaunchSwarm(); swarm.rows=[fixture('launch_737')]
+    original=swarm.fetch_launch_policies
+    async def absent(): swarm.calls.append('policies'); return []
+    swarm.fetch_launch_policies=absent
+    m=manager(tmp_path,swarm); rpc_calls=[]; rpc_original=m.client.fetch_launch_evidence
+    async def tracked(*args): rpc_calls.append(args); return await rpc_original(*args)
+    m.client.fetch_launch_evidence=tracked
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW)
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K2']['state']=='unknown'
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+61)
+        assert len(rpc_calls)==1
+        swarm.fetch_launch_policies=original
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+1801)
+        assert len(rpc_calls)==1
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K2']['state']=='pass'
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_legacy_policy_marker_waits_for_success(tmp_path):
+    swarm=LaunchSwarm(); swarm.rows=[]; swarm.fail={'policies'}
+    m=manager(tmp_path,swarm)
+    policies=fixture('launch_policies')['policies']
+    for p in policies: p.pop('kind',None)
+    m.cache.store_last_good(SLOT_SWARM_LAUNCHES, {'policies':policies,'policies_ts':NOW},ts=NOW)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+61)
+        assert m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload['policies_schema'] is None
+        swarm.fail=set()
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+122)
+        assert m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload['policies_schema']==1
+        assert swarm.calls.count('policies')==2
+    finally: await m.close()

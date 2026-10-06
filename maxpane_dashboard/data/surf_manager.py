@@ -5521,7 +5521,6 @@ class SurfManager:
         # Migrate legacy cached policies once; live missing-kind entries keep their TTL.
         legacy_policies = (slot.get('policies_schema') != 1
                            and any(not policy.get('kind') for policy in slot.get('policies') or []))
-        slot['policies_schema'] = 1
         failed, refreshed_policy, policy_read_ok = False, False, True
         for route, cadence, method in (('launches', 0, 'fetch_launches'), ('sites', 300, 'fetch_sites'), ('policies', 1800, 'fetch_launch_policies')):
             if cadence and not (route == 'policies' and legacy_policies) and slot.get(route + '_ts') is not None and now - slot[route + '_ts'] < cadence:
@@ -5534,6 +5533,7 @@ class SurfManager:
                 policy_read_ok = isinstance(value, list)
             if isinstance(value, list):
                 slot[route], slot[route + '_ts'] = value, now
+                if route == 'policies': slot['policies_schema'] = 1
             else:
                 failed |= route == 'launches'
                 logger.debug('SURF launch %s read failed; retaining last-good', route)
@@ -5556,9 +5556,14 @@ class SurfManager:
         for point in detail_candidates:
             row = point['row']
             version = [row['status'], row.get('updatedAt')]
-            if point.get('detail_version') == version or not detail_budget:
+            retry_admission = (row['status'] in ('parked', 'admitted')
+                and (not point.get('admission') or point.get('checks', {}).get('K4', {}).get('state') == 'unknown')
+                and (point.get('detail_attempt_ts') is None or point['detail_attempt_ts'] > now
+                     or now - point['detail_attempt_ts'] >= 1800))
+            if (point.get('detail_version') == version and not retry_admission) or not detail_budget:
                 continue
             detail_budget -= 1
+            point['detail_attempt_ts'] = now
             detail = await self._guard(lambda row=row: self.swarm_client.fetch_launch(row['id']), 'swarm launch detail')
             if not isinstance(detail, dict) or detail.get('id') != row['id']:
                 point['detail_failed_ts'] = now
@@ -5577,6 +5582,13 @@ class SurfManager:
             if point.get('detail_version') != [point['row']['status'], point['row'].get('updatedAt')]:
                 continue
             previous = point.get('checks') or {}
+            if previous.get('K6', {}).get('state') == 'info':
+                _, factories, known = lc.policy_sets(slot.get('policies') or [], point['row']['chainId'],
+                                                     point.get('policy_version'), point['row'].get('kind'))
+                held = previous['K6']['evidence']
+                held['owner_is_factory'] = held.get('owner') in factories if known and factories else None
+            if not point.get('admission') and previous.get('K4', {}).get('state') == 'pass':
+                previous['K4']['state'] = 'unknown'
             if previous and all(c['state'] != 'unknown' for c in previous.values()):
                 continue
             contracts = previous.get('K3', {}).get('evidence', {}).get('contracts')
@@ -5592,7 +5604,9 @@ class SurfManager:
             if k3_needs_rpc:
                 point['k3_retry_ts'] = now
             bucket = requests.setdefault(point['row']['chainId'], {'hashes': [], 'addresses': []})
-            needs_tx = k3_needs_rpc or any(previous.get(k, {}).get('state', 'unknown') == 'unknown' for k in ('K2', 'K6'))
+            k2_needs_tx = (previous.get('K2', {}).get('state', 'unknown') == 'unknown'
+                           and not previous.get('K2', {}).get('evidence', {}).get('policy_pending'))
+            needs_tx = k3_needs_rpc or k2_needs_tx or previous.get('K6', {}).get('state', 'unknown') == 'unknown'
             for artifact in point['row'].get('artifacts', []):
                 if needs_tx and artifact.get('txHash'):
                     bucket['hashes'].append(artifact['txHash'])
@@ -5602,13 +5616,7 @@ class SurfManager:
         for chain, request in requests.items():
             if not request['hashes'] and not request['addresses']:
                 continue
-            if chain == 1:
-                client = self.client
-            else:
-                client = self._launch_rpc_clients.get(chain)
-                if client is None:
-                    client = SwarmBaseClient() if chain == 8453 else SwarmRobinhoodClient()
-                    self._launch_rpc_clients[chain] = client
+            client = self._launch_rpc_client(chain)
             rpc[chain] = await self._guard(lambda client=client, request=request: client.fetch_launch_evidence(request['hashes'], request['addresses']), 'swarm launch RPC') or {}
         refreshed_for = slot.setdefault('policies_refreshed_for', {})
         for point in pending:
@@ -5635,6 +5643,7 @@ class SurfManager:
                     policy_read_ok = isinstance(policies, list)
                     if policy_read_ok:
                         slot['policies'], slot['policies_ts'] = policies, now
+                        slot['policies_schema'] = 1
                         checks = await judge(policies)
                     else:
                         logger.debug('SURF launch policy refresh failed; retaining last-good')
@@ -5642,6 +5651,7 @@ class SurfManager:
                 # A stale policy cannot convict a sender/factory mismatch.
                 checks['K2'] = lc.result()
             point['checks'] = checks
+        await self._refresh_launch_liquidity(points, rpc, slot.get('policies') or [], now)
         production_times = [sw._ts(p['row'].get('createdAt')) for p in points]
         earliest = min((ts for ts in production_times if ts is not None), default=None)
         site_budget = 3
@@ -5679,6 +5689,91 @@ class SurfManager:
             self.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, sw.coerce_launch_facts_slot(facts), ts=facts_ts)
         (self.cache.mark_failed if failed else self.cache.mark_fetched)(TIER_SWARM_LAUNCHES, now)
 
+    def _launch_rpc_client(self, chain):
+        if chain == 1:
+            return self.client
+        client = self._launch_rpc_clients.get(chain)
+        if client is None:
+            client = SwarmBaseClient() if chain == 8453 else SwarmRobinhoodClient()
+            self._launch_rpc_clients[chain] = client
+        return client
+
+    async def _refresh_launch_liquidity(self, points, rpc, policies, now):
+        """Independent K8 market cadence; no result can invalidate provenance."""
+        def due(point, field):
+            stamp = point.get(field)
+            if field == 'liquidity_attempt_ts' and stamp is None:
+                stamp = point.get('liquidity', {}).get('read_ts')
+            return stamp is None or stamp > now or now - stamp >= 300
+
+        # Bootstrap settled legacy caches in bounded batches. Provenance receipts
+        # already fetched this cycle are free to reuse; absent reads stay unknown.
+        missing = []
+        for point in points:
+            if point.get('pool_inputs') is not None:
+                continue
+            pool = ll.pool_inputs(point['row'], rpc.get(point['row']['chainId'], {}).get('receipts', {}))
+            if pool is not None:
+                point['pool_inputs'] = pool
+            elif point['row']['chainId'] in rpc:
+                point['pool_attempt_ts'] = now  # the provenance batch already tried these receipts
+            elif point['row'].get('artifacts') and due(point, 'pool_attempt_ts'):
+                missing.append(point)
+        bootstrap = sorted(missing, key=lambda p: (p.get('pool_attempt_ts', 0), -p['row']['launchNumber']))[:10]
+        requests = {}
+        for point in bootstrap:
+            point['pool_attempt_ts'] = now
+            hashes = requests.setdefault(point['row']['chainId'], [])
+            hashes.extend(a['txHash'] for a in point['row']['artifacts'] if a.get('txHash'))
+        for chain, hashes in requests.items():
+            client = self._launch_rpc_client(chain)
+            evidence = await self._guard(lambda: client.fetch_launch_evidence(hashes, []), 'swarm pool receipt bootstrap') or {}
+            for point in bootstrap:
+                if point['row']['chainId'] != chain: continue
+                pool = ll.pool_inputs(point['row'], evidence.get('receipts', {}))
+                if pool is not None: point['pool_inputs'] = pool
+        eligible = []
+        for point in points:
+            pool = point.get('pool_inputs')
+            if pool is None: continue
+            if pool.get('state') == 'na':
+                point['liquidity'] = ll.empty_liquidity('na')
+                continue
+            point['pool_initialize'] = ll.coerce_initialize(pool)
+            point['pool_fee'] = pool['pool_fee']
+            if due(point, 'liquidity_attempt_ts'):
+                eligible.append(point)
+        chosen = sorted(eligible, key=lambda p: (p.get('liquidity', {}).get('read_ts') or 0,
+                        p.get('liquidity_attempt_ts', 0), -p['row']['launchNumber']))[:10]
+        batches = {}
+        for point in chosen:
+            point['liquidity_attempt_ts'] = now
+            batch = batches.setdefault(point['row']['chainId'], {'calls': [], 'points': [], 'decimals': {}})
+            offset = len(batch['calls'])
+            batch['calls'].extend(ll.state_calls(point['pool_inputs'], keccak=keccak256))
+            batch['points'].append((point, offset))
+        for chain, batch in batches.items():
+            for point, _ in batch['points']:
+                pool = point['pool_inputs']
+                for currency in (pool['currency0'], pool['currency1']):
+                    if currency == lc.ZERO or currency in point.get('pool_decimals', {}) or currency in batch['decimals']: continue
+                    batch['decimals'][currency] = len(batch['calls'])
+                    batch['calls'].append(('eth_call', [{'to': currency, 'data': '0x313ce567'}, 'latest']))
+            client = self._launch_rpc_client(chain)
+            values = await self._guard(lambda: client.fetch_launch_pool_state(batch['calls']), 'swarm pool liquidity')
+            if not isinstance(values, list): continue
+            values = values + [None] * max(0, len(batch['calls']) - len(values))
+            for point, offset in batch['points']:
+                decimals = point.setdefault('pool_decimals', {})
+                for currency, index in batch['decimals'].items():
+                    value = ll.decimals_result(values[index])
+                    if value is not None and currency in (point['pool_inputs']['currency0'], point['pool_inputs']['currency1']):
+                        decimals[currency] = value
+                result = ll.liquidity_result(point['row'], point['pool_inputs'], values[offset:offset+3],
+                    decimals, policies, point.get('checks') or {}, now=now)
+                if result is not None:
+                    point['liquidity'] = result
+
     def _swarm_launch_keys(self):
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
@@ -5701,7 +5796,7 @@ class SurfManager:
             row['token_address'] = next((a['address'] for a in row['artifacts'] if a['role'] == 'token'), None)
             row['job_id'] = next(iter(point.get('job_ids', [])), None)
             row['checks'] = point.get('checks') or {k: lc.result('pass' if k == 'K1' else 'unknown') for k in ('K1', 'K2', 'K3', 'K4', 'K6', 'K7')}
-            row['liquidity'] = ll.empty_liquidity()
+            row['liquidity'] = copy.deepcopy(point.get('liquidity')) or ll.empty_liquidity()
             row['checks'] = dict(row['checks'], K8=dict(row['liquidity']))
             row['verdict'] = lc.verdict(point['row'], row['checks'])
             if row['launch_id'] in linked_sites:

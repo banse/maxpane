@@ -257,4 +257,25 @@ def test_fix3_foreign_kind_version_and_liquidity_factory_are_not_authority():
     foreign = copy.deepcopy(next(p for p in policies if p['kind'] == 'evm_contracts'))
     foreign['params']['factory'] = owner
     checks = lc.check_launch(row, lc.extract_facts(row), policies+[foreign], rpc, keccak=keccak256)
-    assert checks['K6']['evidence']['owner_is_factory'] is False
+    assert checks['K6']['evidence']['owner_is_factory'] is None
+
+
+def test_empty_admission_is_unknown_even_with_cached_pass():
+    row, rpc = evidence(737)
+    facts=lc.extract_facts(row); facts['admission']=[]
+    previous=checked()[2]
+    checks=lc.check_launch(row,facts,fixture('launch_policies')['policies'],rpc,keccak=keccak256,previous=previous)
+    assert checks['K4']['state']=='unknown'
+
+
+def test_complete_receipts_without_modify_are_na_and_policy_only_reuses_evidence():
+    row,rpc=evidence(737)
+    for receipt in rpc['receipts'].values(): receipt['logs']=[]
+    facts=lc.extract_facts(row)
+    checks=lc.check_launch(row,facts,[],rpc,keccak=keccak256)
+    assert checks['K6']['state']=='na'
+    assert checks['K2']['state']=='unknown'
+    assert checks['K2']['evidence']['policy_pending'] is True
+    later=lc.check_launch(row,facts,fixture('launch_policies')['policies'],{},keccak=keccak256,previous=checks)
+    assert later['K2']['state']=='pass'
+    assert lc.check_launch(row,facts,[],{},keccak=keccak256)['K6']['state']=='unknown'

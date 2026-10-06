@@ -19,7 +19,7 @@ async def read_batch(client, urls, calls, fragments):
             body = response.json()
             if not isinstance(body, list): continue
             # Limitations belong to the provider; retry the whole batch elsewhere.
-            if any(isinstance(item, dict) and item.get('error') and looks_like_endpoint_limitation(item['error'], fragments=fragments) for item in body): continue
+            if any(isinstance(item, dict) and item.get('error') and looks_like_endpoint_limitation(item['error'], fragments=fragments, check_codes=False) for item in body): continue
             by_id = {item.get('id'): item.get('result') if not item.get('error') else None for item in body if isinstance(item, dict)}
             return [by_id.get(i + 1) for i in range(len(calls))]
         except (httpx.HTTPError, ValueError, OSError):
@@ -34,6 +34,10 @@ class SwarmBaseClient(OwnedHttpClient):
 
     async def _rpc(self, calls):
         return await read_batch(self._client, self._rpcs, calls, _ENDPOINT_LIMITATION_PATTERNS)
+
+    async def fetch_launch_pool_state(self, calls):
+        """Read v4 storage and decimals through the existing state endpoint pool."""
+        return await self._rpc(calls) if calls else []
 
     async def fetch_launch_evidence(self, tx_hashes, addresses):
         keys, calls = evidence_calls(tx_hashes, addresses)

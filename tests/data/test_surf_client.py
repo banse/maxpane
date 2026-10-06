@@ -2879,6 +2879,7 @@ def _public_fetchers() -> list[str]:
             "fetch_seat_rewards",
             # Required tx/address batches; tested by test_surf_launch_clients.
             "fetch_launch_evidence",
+            "fetch_launch_pool_state",
         )
     )
 

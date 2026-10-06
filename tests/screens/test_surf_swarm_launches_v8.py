@@ -74,7 +74,7 @@ async def test_launch_popup_opens_literal_snapshot_without_fetching(opening):
                      'liquidity held by', '(unverified)', 'named', 'trusted'):
             assert word in seen, word
         assert 'MUTATED' not in seen
-        assert row['checks']['K6']['evidence']['owner_is_factory'] is False
+        assert row['checks']['K6']['evidence']['owner_is_factory'] is None
         assert '(factory, unverified)' not in seen
         assert not any(word in seen.lower() for word in ('locked', 'safe', 'audited'))
         assert {a['address'] for a in row['artifacts']} <= icons

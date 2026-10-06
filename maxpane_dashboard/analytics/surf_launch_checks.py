@@ -117,6 +117,8 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
     hashes = list(dict.fromkeys(a.get('txHash') for a in artifacts if isinstance(a.get('txHash'), str)))
     if not previous or previous.get('K2', {}).get('state', 'unknown') == 'unknown':
         tx_evidence, states = [], []
+        old_evidence = (previous or {}).get('K2', {}).get('evidence', {})
+        retained = {t['tx_hash']: t for t in old_evidence.get('transactions', [])} if old_evidence.get('policy_pending') else {}
         for tx_hash in hashes:
             tx, receipt = txs.get(tx_hash), receipts.get(tx_hash)
             sender = address(tx.get('from')) if isinstance(tx, Mapping) else None
@@ -127,12 +129,17 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
                 status = int(value, 16) if isinstance(value, str) else None
             except ValueError:
                 pass
+            if tx_hash in retained and tx is None and receipt is None:
+                old = retained[tx_hash]
+                sender, to, status = old.get('from'), old.get('to'), old.get('receipt_status')
             state = 'unknown'
             if known and wallets and sender and status is not None:
                 state = 'pass' if sender in wallets and (not factories or to in factories) and status == 1 else 'fail'
             states.append(state)
             tx_evidence.append({'tx_hash': tx_hash, 'from': sender, 'to': to, 'receipt_status': status})
-        checks['K2'] = result('fail' if 'fail' in states else 'pass' if states and all(s == 'pass' for s in states) and len(hashes) == len({a.get('txHash') for a in artifacts}) else 'unknown', transactions=tx_evidence, policy_version=facts.get('policy_version'), rule_version=3)
+        checks['K2'] = result('fail' if 'fail' in states else 'pass' if states and all(s == 'pass' for s in states) and len(hashes) == len({a.get('txHash') for a in artifacts}) else 'unknown', transactions=tx_evidence, policy_version=facts.get('policy_version'), rule_version=3,
+            policy_pending=bool(not known and hashes and all(t['from'] and t['receipt_status'] is not None for t in tx_evidence)
+                                and len(hashes) == len({a.get('txHash') for a in artifacts})))
     if not previous or previous.get('K3', {}).get('state', 'unknown') == 'unknown':
         states, contract_evidence = [], []
         old_contracts = {c.get('name'): c for c in (previous or {}).get('K3', {}).get('evidence', {}).get('contracts', [])}
@@ -169,7 +176,7 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
         checks['K3'] = result('fail' if 'fail' in states else 'unknown' if incomplete else 'pass_immutables' if 'pass_immutables' in states else 'pass', contracts=contract_evidence, unmatched_artifacts=unmatched, rule_version=2)
     admission = facts.get('admission')
     failed = [x[0] for x in admission if x[1] != 'passed'] if isinstance(admission, list) else []
-    state = 'fail' if failed else 'pass' if admission is not None else 'unknown'
+    state = 'fail' if failed else 'pass' if admission else 'unknown'
     if facts.get('deploy_failure') and row.get('status') != 'live':
         state = 'fail' if row.get('status') == 'parked' or failed else 'unknown'
     checks['K4'] = result(state, failed_admission=failed, deploy_failure=facts.get('deploy_failure'))
@@ -177,17 +184,23 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
         checks['K6'] = result('na' if row.get('kind') == 'evm_contracts' else 'unknown', rule_version=3)
         topic = '0x' + keccak(b'ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)').hex()
         if row.get('kind') != 'evm_contracts':
+            complete = bool(hashes) and all(isinstance(receipts.get(h), Mapping) and isinstance(receipts[h].get('logs'), list)
+                and all(isinstance(log, Mapping) and isinstance(log.get('topics'), list) for log in receipts[h]['logs']) for h in hashes)
+            has_modify = any(log.get('topics', [])[:1] == [topic] for h in hashes
+                for log in mappings(receipts.get(h, {}).get('logs') if isinstance(receipts.get(h), Mapping) else None))
+            if complete and not has_modify:
+                checks['K6'] = result('na', rule_version=3)
             for receipt in (receipts.get(tx_hash) for tx_hash in hashes):
                 for log in mappings(receipt.get('logs') if isinstance(receipt, Mapping) else None):
                     topics = log.get('topics')
                     if isinstance(topics, list) and len(topics) >= 3 and topics[0] == topic and _hash(topics[2]):
                         owner = address('0x' + topics[2][-40:])
-                        checks['K6'] = result('info', owner=owner, emitter=address(log.get('address')), owner_is_factory=(owner in factories if known else None), rule_version=3)
+                        checks['K6'] = result('info', owner=owner, emitter=address(log.get('address')), owner_is_factory=(owner in factories if known and factories else None), rule_version=3)
                         break
     checks['K7'] = result('info', assurances_count=facts.get('assurances_count'))
     if previous:
         for key, value in previous.items():
-            if key in checks and value.get('state') != 'unknown':
+            if key in checks and value.get('state') != 'unknown' and not (key == 'K4' and not admission):
                 checks[key] = value
     return checks
 

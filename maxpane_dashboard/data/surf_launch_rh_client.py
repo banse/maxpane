@@ -17,6 +17,10 @@ class SwarmRobinhoodClient(OwnedHttpClient):
     async def _rpc(self, calls):
         return await read_batch(self._client, self._rpcs, calls, _ENDPOINT_LIMITATION_PATTERNS)
 
+    async def fetch_launch_pool_state(self, calls):
+        """Read v4 storage and decimals through the existing state endpoint pool."""
+        return await self._rpc(calls) if calls else []
+
     async def fetch_launch_evidence(self, tx_hashes, addresses):
         keys, calls = evidence_calls(tx_hashes, addresses)
         return evidence_results(keys, await self._rpc(calls))
