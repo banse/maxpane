@@ -4,7 +4,7 @@ Mounted full-width at the foot of the ``s`` body since WP7
 (``minimal.tcss``); a new file that imported nothing from the old
 ``swarm_shipped.py`` WP7 deleted.
 
-Columns ``label · ens · size · cid · tx · job`` on
+Columns ``label · site · size · cid · tx · job`` on
 :class:`~maxpane_dashboard.widgets.surf._swarm_table.SwarmTableBase`
 (the tier machinery the three WP6 tables share; see that module).
 
@@ -40,8 +40,8 @@ negatives, but different ones.
 Cells
 -----
 ``label`` is coloured on the raw ``status`` word (``named``/``published``/
-``live`` green, ``failed`` red, anything else plain). ``ens`` links the
-name to its sites.imd.fun page (:func:`~maxpane_dashboard.widgets.address.site_text`
+``live`` green, ``failed`` red, anything else plain). ``site`` links the
+host to its sites.imd.fun page (:func:`~maxpane_dashboard.widgets.address.site_text`
 on ``_fmt.SITE_EXPLORER``; owner, 2026-09-23) -- a
 bare row label, falling back to the legacy ENS label when absent. ``size``
 is ``bytes`` compacted (``2.4M``, ``17.2K``; whole under 1,000 -- bytes are
@@ -97,7 +97,7 @@ _ENS_SUFFIX = ".site.identitymd.eth"
 #: label (``site-7018907b.site.identitymd.eth``). The brief budgeted 28 off a
 #: ``roll``-shaped name; the corpus's own widest row would have clipped at
 #: 28, so the column is sized to the state the data is normally in.
-_ENS_COLS = 33                              # 33
+_SITE_COLS = 33                              # 33
 #: ``size``: ``999.9K`` is the widest compact form under a megabyte; the
 #: corpus runs 584 B – 2.5 MB.
 _SIZE_COLS = 6
@@ -112,7 +112,7 @@ JOB_COLS = 8
 
 _SPECS = (
     ("label", "label", _LABEL_CELL_COLS),
-    ("ens", "ens", _ENS_COLS),
+    ("site", "site", _SITE_COLS),
     ("size", "size", _SIZE_COLS),
     ("cid", "cid", CID_COLS),
     ("tx", "tx", TX_COLS),
@@ -180,7 +180,7 @@ def _fmt_bytes(value) -> str:
 
 
 class SurfSwarmSites(SwarmTableBase):
-    """SITES -- ``label · ens · size · cid · tx``."""
+    """SITES -- ``label · site · size · cid · tx``."""
 
     TITLE = "SITES"
     TABLE_ID = "surf-swarm-sites-table"
@@ -233,7 +233,7 @@ class SurfSwarmSites(SwarmTableBase):
         return {
             "label": label_cell,
             "job": job_text(item.get("job_id"), JOB_COLS, explorer=JOB_EXPLORER),
-            "ens": site_text(item.get("ens_name"), _ENS_COLS, label=item.get("label"), explorer=SITE_EXPLORER),
+            "site": site_text(item.get("ens_name"), _SITE_COLS, label=item.get("label"), explorer=SITE_EXPLORER, display="host"),
             "size": _fmt_bytes(item.get("bytes")),
             "cid": safe_markup(_window_cid(item.get("cid"), CID_COLS)),
             # Mainnet, by measurement (module docstring); no chain field exists.

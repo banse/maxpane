@@ -69,7 +69,7 @@ async def test_launch_popup_opens_literal_snapshot_without_fetching(opening):
                 break
             scroll.scroll_relative(y=10, animate=False)
             await pilot.pause()
-        for word in ('$[red]X', '[bold]Literal name', 'PAIR', 'IMD', 'POOL FEE', '12500',
+        for word in ('$[red]X', '[bold]Literal name', 'PAIR', 'IMD', 'POOL FEE', '1.25%',
                      'REQUESTER', 'POLICY VERSION', '26', 'K1', 'K2', 'K3', 'K4', 'K6', 'K7',
                      'liquidity held by', '(unverified)', 'named', 'trusted'):
             assert word in seen, word

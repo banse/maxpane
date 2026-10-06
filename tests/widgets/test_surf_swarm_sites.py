@@ -55,7 +55,7 @@ async def _sites(size=SIZE, **kwargs) -> str:
 
 def _data_lines(text: str) -> list[str]:
     lines = text.split("\n")
-    header = next(i for i, line in enumerate(lines) if "label" in line and "ens" in line)
+    header = next(i for i, line in enumerate(lines) if "label" in line and "site" in line)
     return [line for line in lines[header + 1:] if line.strip()]
 
 
@@ -164,7 +164,7 @@ async def test_the_ens_name_opens_its_imd_site_with_no_icon():
     rows = [_site(label="mswap", ens_name="mswap.site.identitymd.eth", tx_hash=None)]
     assert await _urls(rows) == [JOB_URL, "https://mswap.sites.imd.fun/"]
     text = await _sites(swarm_site_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
-    assert "mswap.site.identitymd.eth" in text and COPY_GLYPH not in text, text
+    assert "mswap.sites.imd.fun" in text and COPY_GLYPH not in text, text
 
 
 async def test_a_name_outside_site_identitymd_eth_shows_but_never_links():
@@ -292,7 +292,7 @@ async def test_compact_sheds_size_and_tight_sheds_cid_while_ens_and_tx_survive()
     assert "cid" not in tight.split("\n")[2] and window not in tight, tight
     assert "‹" in tight
     for text in (full, compact, tight):
-        assert "roll.site.identitymd.eth" in text and TX[: 2 + 8] in text, text
+        assert "roll.sites.imd.fun" in text and TX[: 2 + 8] in text, text
 
 
 async def test_the_full_tier_hides_no_column_at_its_own_threshold():
@@ -305,7 +305,7 @@ async def test_the_full_tier_hides_no_column_at_its_own_threshold():
         assert len(table.columns) == 6
         text = "\n".join("".join(seg.text for seg in strip)
                          for strip in pilot.app.screen._compositor.render_strips())
-        assert re.search(r"label\s+ens\s+size\s+cid\s+tx", text), text
+        assert re.search(r"label\s+site\s+size\s+cid\s+tx", text), text
         assert "‹" not in text
 
 
@@ -338,3 +338,14 @@ async def test_v8_site_links_use_the_row_label_and_legacy_fallback():
         assert await _urls([row]) == [f"https://{label}.sites.imd.fun/"]
         row["label"] = "new-" + label
         assert await _urls([row]) == [f"https://new-{label}.sites.imd.fun/"]
+
+
+async def test_v2_site_host_and_legacy_fallback_are_visible_and_linked():
+    rows=[_site(label='win',ens_name='win.site.identitymd.eth'),
+          _site(label=None,ens_name='fallback.site.identitymd.eth'),
+          _site(label='a'*40,ens_name='old.site.identitymd.eth')]
+    text=await _sites((150,15),swarm_site_rows=rows)
+    assert 'win.sites.imd.fun' in text and 'fallback.sites.imd.fun' in text
+    assert '.site.identitymd.eth' not in text
+    assert '…'+'.sites.imd.fun' in text
+    assert {u for u in await _urls(rows) if ".sites.imd.fun/" in u}=={'https://win.sites.imd.fun/','https://fallback.sites.imd.fun/','https://'+'a'*40+'.sites.imd.fun/'}

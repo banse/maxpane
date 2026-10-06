@@ -11,6 +11,20 @@ from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell
 from maxpane_dashboard.widgets.surf._fmt import JOB_EXPLORER, mmdd_hhmm
 from maxpane_dashboard.widgets.surf._icons import link_prose, mark_addresses, unmark
 from maxpane_dashboard.widgets.surf.swarm_throughput import throughput_detail_blocks
+from maxpane_dashboard.widgets.surf._launch_liquidity import amount, fee_percent
+from maxpane_dashboard.widgets.surf.swarm_latest import launch_age
+from maxpane_dashboard.widgets.fmt import hhmm
+
+CHECK_DESCRIPTIONS = {
+    "K1": "a launch row on a production chain",
+    "K2": "deployed by the swarm's launch wallet",
+    "K3": "deployed code matches the swarm's attested build",
+    "K4": "passed the swarm's admission checks",
+    "K6": "who holds the pool liquidity",
+    "K7": "outside audits or bounties on record",
+    "K8": "pool liquidity: paired amount, range, lock",
+}
+
 
 
 def _prose(value) -> Text:
@@ -62,6 +76,11 @@ class LaunchDetailScreen(RecordDetailScreen):
     """The selected launch's cached provenance evidence, without a new read."""
     TITLE_WORD = 'LAUNCH'
     ID_PREFIX = 'launch-detail'
+    DEFAULT_CSS = '''
+    LaunchDetailScreen .launch-check-heading {
+        height: 1; text-wrap: nowrap; text-overflow: ellipsis;
+    }
+    '''
 
     def _literal(self, value):
         marked, _, _ = mark_addresses(flatten(value))
@@ -88,7 +107,7 @@ class LaunchDetailScreen(RecordDetailScreen):
         yield from self.section('STATUS / VERDICT', self._literal(
             f"{row.get('status') or '—'} · {launch_verdict_label(row.get('verdict'))}"))
         yield from self.section('PAIR', self._literal(row.get('pair')))
-        yield from self.section('POOL FEE', self._literal(row.get('pool_fee')))
+        yield from self.section('POOL FEE', Text(fee_percent(row.get('pool_fee'))))
         yield from self.section('REQUESTER', address_text(row.get('requester'), explorer=explorer))
         yield from self.section('POLICY VERSION', self._literal(row.get('policy_version')))
         artifacts = row.get('artifacts') or []
@@ -108,9 +127,13 @@ class LaunchDetailScreen(RecordDetailScreen):
         else:
             yield from self.section('SITE', Text('none' if row.get('production') is True else '--'))
         checks = row.get('checks') or {}
-        for key in ('K1', 'K2', 'K3', 'K4', 'K6', 'K7'):
+        for key in ('K1', 'K2', 'K3', 'K4', 'K6', 'K7', 'K8'):
             if row.get('production') is not True:
-                yield from self.section(f'{key} · --')
+                yield from self._check_section(key, '--')
+                continue
+            if key == 'K8':
+                liquidity = row.get('liquidity') or checks.get(key) or {}
+                yield from self._check_section(key, liquidity.get('state') or 'unknown', *self._liquidity(liquidity))
                 continue
             check = checks.get(key) or {}
             evidence = check.get('evidence') or {}
@@ -122,7 +145,44 @@ class LaunchDetailScreen(RecordDetailScreen):
                 if evidence.get('emitter'):
                     contents.append(Text.assemble('emitter: ', address_text(evidence['emitter'], explorer=explorer)))
             state = 'pass (immutables)' if check.get('state') == 'pass_immutables' else flatten(check.get('state') or 'unknown')
-            yield from self.section(f"{key} · {state}", *contents)
+            yield from self._check_section(key, state, *contents)
+
+    def _check_section(self, key, state, *contents):
+        heading = Text(f'{key} · {flatten(state)}', style='bold')
+        heading.append(' — '+CHECK_DESCRIPTIONS[key], style='dim not bold')
+        yield Static(heading, id='launch-check-'+key,
+                     classes='record-detail-heading launch-check-heading')
+        for content in contents:
+            yield Static(content)
+
+    def _liquidity(self, value):
+        if value.get('state') in (None, 'unknown', 'na'):
+            return
+        ticker = flatten(self.row.get('ticker')) or '--'
+        yield self._literal(f"paired {amount(value.get('paired_amount'))} {flatten(value.get('paired_symbol'))} · "
+                           f"token {amount(value.get('token_amount'))} {ticker} · {value.get('range_state') or '--'}")
+        yield Text(f"pool fee {fee_percent(value.get('pool_fee'))} · tick {value.get('tick')} "
+                   f"in [{value.get('tick_lower')}, {value.get('tick_upper')}]")
+        lock = value.get('lock')
+        if lock == 'withdrawn':
+            line = Text(f"liquidity withdrawn {amount(value.get('withdrawn_pct'))}% · owner ", style='red')
+        elif lock == 'burned':
+            line = Text('liquidity burned · owner ')
+        else:
+            line = Text('liquidity locked in factory ' if value.get('owner_is_factory') is True
+                        else 'liquidity held by ')
+        line.append_text(address_text(value.get('owner'), width=17, explorer=for_chain_id(self.row.get('chain_id'))))
+        if lock == 'locked':
+            line.append(' (unverified) · never withdrawn')
+        yield line
+        share = value.get('share')
+        if isinstance(share, (int, float)) and not isinstance(share, bool):
+            yield Text(f'launch position {share*100:g}% of active liquidity')
+        stamp = value.get('read_ts')
+        if stamp is not None:
+            age = launch_age(stamp, self.row.get("as_of"))
+            suffix = f" · {age} ago" if age != "--" else ""
+            yield Text(f"as of {hhmm(stamp)}{suffix}", style="dim")
 
     def _title(self):
         title = self.query_one('.record-detail-title', Static)

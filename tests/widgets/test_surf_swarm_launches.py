@@ -50,7 +50,7 @@ def _launch(**over) -> dict:
         launch_id=None, job_id=None, production=False, ticker=None, token_name=None,
         token_address=None, pair=None, pool_fee=None, requester=None, policy_version=None,
         site_label=None, site_ens_name=None, site_link_method=None, site_link_trusted=None,
-        verdict=None, checks=None,
+        verdict=None, checks=None, liquidity=None,
         launch_number=62, kind="evm_project", status="live", chain_id=11155111,
         repo_url=REPO, commit="192743350ad9bd9b1b0be3f2522147fe142672f0",
         parked_reason=None, artifact_count=3, created_ts=1_758_400_000.0,
@@ -125,7 +125,7 @@ async def test_an_empty_list_is_a_real_negative_and_differs_from_none():
 
 def test_the_row_tuples_agree_with_the_column_count():
     width = len(SurfSwarmLaunches.COLUMNS)
-    assert width == len(SurfSwarmLaunches.COLUMN_SPECS) == 10
+    assert width == len(SurfSwarmLaunches.COLUMN_SPECS) == 11
     assert len(SurfSwarmLaunches.EMPTY_ROW) == width
     assert len(SurfSwarmLaunches.LOADING_ROW) == width
     assert SurfSwarmLaunches.ROW_CAP == 24
@@ -294,7 +294,7 @@ async def test_no_summary_means_no_footer():
 # -- tiers ---------------------------------------------------------------------------------
 
 _FULL = FULL_WIDTH + GUTTER + 5
-_COMPACT = FULL_WIDTH + GUTTER - 1
+_COMPACT = FULL_WIDTH - 14 + GUTTER - 1
 _TIGHT = COMPACT_WIDTH + GUTTER - 1
 
 
@@ -335,10 +335,10 @@ async def test_the_full_tier_hides_no_column_at_its_own_threshold():
         await pilot.pause()
         table = pilot.app.query_one(DataTable)
         assert table.max_scroll_x == 0
-        assert len(table.columns) == 10
+        assert len(table.columns) == 11
         text = "\n".join("".join(seg.text for seg in strip)
                          for strip in pilot.app.screen._compositor.render_strips())
-        assert re.search(r"#\s+ticker\s+status\s+chain\s+token\s+site\s+verdict\s+kind\s+repo\s+parked reason", text), text
+        assert re.search(r"#\s+ticker\s+status\s+chain\s+token\s+site\s+verdict\s+liq\s+kind\s+repo\s+parked reason", text), text
         assert "‹" not in text
 
 

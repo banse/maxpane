@@ -18,9 +18,9 @@ def test_v8_launch_tiers_and_pin_production_before_newer_sepolia():
     kept=panel._payload['rows']
     assert [r['launch_number'] for r in kept] == list(range(712,700,-1))+list(range(1012,1000,-1))
     assert panel._payload['as_of']=='03:04'
-    assert tuple(k for k,l,w in panel.column_plan('full',200)) == ('number','ticker','status','chain','token','site','verdict','kind','repo','parked')
+    assert tuple(k for k,l,w in panel.column_plan('full',200)) == ('number','ticker','status','chain','token','site','verdict','liq','kind','repo','parked')
     assert tuple(k for k,l,w in panel.column_plan('compact',200)) == ('number','ticker','status','chain','token','site','verdict','parked')
-    assert tuple(k for k,l,w in panel.column_plan('tight',100)) == ('number','ticker','status','chain','token','verdict')
+    assert tuple(k for k,l,w in panel.column_plan('tight',100)) == ('number','ticker','status','chain','token','verdict','liq')
 
 
 @pytest.mark.asyncio
@@ -217,4 +217,4 @@ async def test_fix1_long_site_ticker_composites_inside_label_column():
     row=next(r for r in site_rows(fixture('sites')['sites']) if r['label']=='zto')
     row.update(label='alpha-site',launch_ticker='X'*40,production_link=True,link_trusted=True)
     text='\n'.join(await composite_lines(SurfSwarmSites,(150,15),swarm_site_rows=[row]))
-    assert '◆ alp… · $' in text and 'zto.site.identitymd.eth' in text
+    assert '◆ alp… · $' in text and 'alpha-site.sites.imd.fun' in text
