@@ -8,7 +8,7 @@ branch's working notes (`task-*-review.md`, `task-*-re-review*.md` under
 `.superpowers/sdd/2026-09-16-surf-swarm-body/`) live in a git-ignored workspace that is deleted
 when this plan finishes, so this file is the only place these survive.
 
-## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme; F16 (SWARM half), F23, F47, F51 and F54 resolved and F73–F85 filed 2026-10-04 by `feature/surf-swarm-workflows`; F86–F87 filed 2026-10-05 by the WP2 review; layout v3 closes F55/F60/F73, resolves F84 except SKILLS, and parks IN FLIGHT 2026-10-05; F88–F97 filed 2026-10-06 by the layout v3 final review (F97 corrected with I1)
+## Status — all ten resolved, 2026-09-17; F13 and F14 closed by removal, 2026-09-21; F16–F25 filed 2026-09-21 (F16 AGENT closed; SWARM remains an owner decision); F20 closed, F26 closed by removal, F24 reworded and F27–F38 filed 2026-09-21 by the `/seats` programme; F16 (SWARM half), F23, F47, F51 and F54 resolved and F73–F85 filed 2026-10-04 by `feature/surf-swarm-workflows`; F86–F87 filed 2026-10-05 by the WP2 review; layout v3 closes F55/F60/F73, resolves F84 except SKILLS, and parks IN FLIGHT 2026-10-05; F88–F97 filed 2026-10-06 by the layout v3 final review (F97 corrected with I1); F98–F99 filed 2026-10-06 by the I1 scoped re-review (parked by the owner)
 
 Swarm v2 (WP7, `docs/surf_swarm_v2_implementation_plan.md`) deleted `swarm_queue.py` and retired
 `swarm_queue_depths` with the other seven v1 keys, so F13 (the `depths or None` conflation behind
@@ -1215,3 +1215,27 @@ filed without code changes; F97 records the spec correction required by I1.
   `as of` behavior, but the scores timestamp advances when sibling routes succeed.
   **Minor spec defect; corrected 2026-10-06 with I1.** A dated correction now requires
   WORKFLOWS' own successful-read timestamp and marker. This is part of the authorized I1 fix.
+
+## F98 — F99 — I1 scoped re-review (2026-10-06, `090c378`; parked by the owner)
+
+The scoped re-review verdicted I1 ADDRESSED. Its findings below are filed, not fixed, because the
+branch's one fix wave was spent. The owner merged `090c378` and parked them for later.
+
+- **F98 — the persisted `workflows_ts` is not range-checked.**
+  `data/surf_manager.py:6318–6320` (carry-forward) and `:6430–6434` (publish) accept any finite
+  non-bool number via `sw._optional_stamp`.
+  - A hand-edited cache, or a clock step backwards, can store a future value. That publishes the
+    sweep's own HH:MM over old rows (stale presented as live) and is carried forward on every
+    failed sweep.
+  - `0` and negatives publish invented times (`01:00`, `00:59`).
+  - Precedent: `LastGood.from_dict` (`data/surf_cache.py:324–343`) refuses `ts <= 0` and
+    `ts > now + CLOCK_SKEW_TOLERANCE_SECONDS`.
+  - Fix (Tier 0): accept `workflows_ts` only when it is above 0 and no later than the slot
+    entry's own `ts`. Add a regression case for a future, a zero and a negative stamp, and prove
+    it with `scripts/mutate.py`.
+  **Important, parked by the owner 2026-10-06.**
+- **F99 — a slot saved before `090c378` shows its rows with no `as of`.**
+  Main's and `9c821fd`'s slots carry `workflows` but no `workflows_ts`. Until a successful
+  `/workflows` read sets one, WORKFLOWS lists the retained rows unmarked. That can last as long as
+  the route stays dead; before layout v3 the same case showed unavailable. Self-heals on the
+  first successful read. **Minor, open.**
