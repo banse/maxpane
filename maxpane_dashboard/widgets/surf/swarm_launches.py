@@ -69,7 +69,8 @@ _ALL = tuple(key for key, _l, _w in _SPECS)
 _ROOMY = tuple(key for key in _ALL if key != "liq")
 _COMPACT = tuple(key for key in _ALL if key not in ("kind", "repo", "liq"))
 _TIGHT = tuple(key for key in _COMPACT if key not in ("parked", "site"))
-# full: 132 cells + 20 padding = 152; compact: 95 + 16 = 111;
+# full: 144 cells + 22 padding = 166; roomy: 132 + 20 = 152;
+# compact: 95 + 16 = 111;
 # tight: 60 + 12 = 72 (token shrinks from 23 to 17).
 FULL_WIDTH = table_cols(w for k, _l, w in _SPECS)
 COMPACT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _COMPACT)

@@ -116,3 +116,44 @@ async def test_robinhood_pool_uses_chain_client_and_no_pool_never_reads(tmp_path
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+301)
         assert len(batches)==1 and m._swarm_launch_keys()['swarm_launch_rows'][0]['liquidity']['state']=='na'
     finally: await m.close()
+
+
+@pytest.mark.parametrize('failed_evidence', [None, {}], ids=['failed-batch', 'missing-receipt'])
+async def test_legacy_bootstrap_is_not_starved_by_another_launch_on_same_chain(tmp_path, failed_evidence):
+    m = manager(tmp_path)
+    _, answers, decimals = seed(m, pool=False)
+    legacy = m.swarm_client.rows[0]
+    pending, _, _ = checked(747)
+    m.swarm_client.rows.append(pending)
+    legacy_hashes = {a['txHash'] for a in legacy['artifacts']}
+    pending_hashes = {a['txHash'] for a in pending['artifacts']}
+    original = m.client.fetch_launch_evidence
+    requests = []
+    batches, _ = responder(m, answers, decimals)
+
+    async def evidence(hashes, addresses):
+        requests.append(set(hashes))
+        if set(hashes) == pending_hashes:
+            return copy.deepcopy(failed_evidence)
+        return await original(hashes, addresses)
+
+    m.client.fetch_launch_evidence = evidence
+    try:
+        for delta in (0, 61, 299, 300, 602):
+            before = len(requests)
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + delta)
+            # The unread launch is attempted once, never duplicated by K8.
+            # The settled launch still gets its own one-time receipt bootstrap.
+            assert requests[before:] == [pending_hashes] + ([legacy_hashes] if delta == 0 else [])
+            points = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches']
+            assert points[pending['id']]['pool_attempt_ts'] == NOW + delta
+            assert 'pool_inputs' not in points[pending['id']]
+            result = points[legacy['id']]['liquidity']
+            assert result['paired_amount'] == pytest.approx(4726.591141)
+            assert result['read_ts'] == NOW + (delta if delta >= 300 else 0)
+            shown = next(row for row in m._swarm_launch_keys()['swarm_launch_rows']
+                         if row['launch_id'] == legacy['id'])
+            assert shown['pool_fee'] == 12500 and shown['checks']['K8'] == result
+        assert len(batches) == 3, 'market reads retain their independent 300-second cadence'
+    finally:
+        await m.close()

@@ -35,7 +35,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `l` | MODE_LAUNCHPAD | LAUNCHPAD COINS over LAUNCHPAD ACTIVITY left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail | `SurfHero` stays |
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
-| `s` | MODE_SWARM | WORKFLOWS beside THROUGHPUT; LAUNCHES and SITES full-width; `x` opens throughput details | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / LAUNCHES / WORKFLOWS / SITES |
+| `s` | MODE_SWARM | WORKFLOWS beside LATEST LAUNCHES; LAUNCHES and SITES full-width; `x` opens the newest production launch | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / LAUNCHES / WORKFLOWS / SITES |
 | `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED JOBS / WORK / REWARDS / RANK / STATUS |
 | `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
 
@@ -174,7 +174,7 @@ tier off in both tiers -- `SurfManager._swarm_details`, F-S3 -- and the live tie
 list gate back). The slow tier (`TIER_SWARM_SCORES`) sweeps the newest `SWARM_SWEEP_CAP` details
 plus `/skills` and `/workflows` (`?limit=SWARM_WORKFLOW_PAGE_SIZE`) on its own
 clock and feeds WORKFLOWS and the internal seat-selection fold; `/skills` is still
-read and folded for the parked CAPABILITY (below), which no body mounts; `swarm_throughput` is folded off the **live** slot because its widget shows
+read and folded for the parked CAPABILITY (below), which no body mounts; `swarm_throughput` is folded off the **live** slot because its parked widget retains
 the live marker (two clocks never meet behind one `as of`). A third slot, `SLOT_SWARM_JOBS_SEEN`,
 is a map of every job either tier has read (pruned by age and cap, stored only when it changed so
 the 60 s tick does not rewrite the cache file for nothing): it is the sole source of `completed_24h`
@@ -393,9 +393,11 @@ chain id and nothing joins a workflow to a launch) -- the icon sweep's `SweepCas
 that seeded address and asserts it copies and links nowhere. WORKFLOWS' text is a pre-built
 `Text` rendered literally (IN FLIGHT's objective precedent), flattened, cut with `…` without
 lighting `‹ widen`, and an address is kept whole with its icon or dropped whole. SITES renders content hashes only and is a named exemption in
-the icon sweep; its label and ENS columns link to `https://<label>.sites.imd.fun/`
+the icon sweep; its label and `site` columns link to `https://<label>.sites.imd.fun/`
 through `address.site_text` (explorer `SITES`, kind `site`). Prefer the API label, use the legacy
-ENS-derived label only as fallback, never `site.url`. Rows without either valid name have no link;
+ENS-derived label only as fallback, never `site.url`. The `site` column displays the host,
+not the retained ENS name; clip the label part before `.sites.imd.fun`, preserving that suffix.
+Rows without either valid name show `--` and have no link;
 superseded or unnamed rows are omitted -- a feed that leaves nothing reads
 `No current site`, an empty feed `No data` (F68). `swarm_site_rows` keeps `superseded_by` for that
 filter only; `failure` left the contract (F69), and the label column is one label wide (F67). RECORD's job id is not an address: it links the IMD explorer (not a chain)
@@ -405,19 +407,26 @@ visible `…` (accepted, `docs/decisions.md`).
 **The explorer's own inference headline is deliberately absent**: no public route serves that
 number, so this view shows none of it — absent, never estimated.
 
-**Production launches layout** (`docs/codex_swarm_launches_plan.md`, owner-approved live at
-150×46 on 2026-10-06; 200×48 also measured offline): WORKFLOWS beside THROUGHPUT; full-width
-LAUNCHES; full-width SITES. The hero's last
-three cards show their totals and descending whole status/count pairs that fit the measured box.
-SITES and its hero count share `is_current_site`; superseded or unnamed builds are excluded.
-LAUNCHES and WORKFLOWS keep one blank footer row. SITES' label is 32 cells plus its layout pad,
-and the final job column uses `job_text(..., explorer=JOB_EXPLORER)`.
+**Production launches layout (v2):** WORKFLOWS beside
+LATEST LAUNCHES; full-width LAUNCHES; full-width SITES. The owner approved the offline v9/v8
+fixture render at 150×46 on 2026-10-06; this was not a new live-network measurement. The existing
+SWARM pin holds, measured offline across all five layout payloads. The hero's last three cards
+show totals and descending whole status/count pairs that fit the box. SITES and its hero count
+share `is_current_site`; superseded or unnamed builds are excluded. LAUNCHES and WORKFLOWS keep
+one blank footer row. SITES gives one row of its height to a bottom margin, leaving a blank line
+above status at the pin. Its label is 32 cells plus layout pad, and its job column uses
+`job_text(..., explorer=JOB_EXPLORER)`. Screen and minimal-theme CSS stay identical.
 
-**`x` opens `ThroughputDetailScreen`** from a deepcopy of the last payload. The short panel always
-shows `x more`; there is no inline expansion or persisted fold. The binding stays non-priority,
-so a focused widget's own binding wins and Input keeps typed text. Missing detail blocks show
-yellow unavailable. All three popups use the `RecordDetailScreen` frame: scrollable content,
-Space/Escape or its X to close, no network await while opening.
+**LATEST LAUNCHES** shows the five newest production launches by `createdAt` descending, with
+launch number descending as the tiebreak. It uses the launch tier marker and ages against the
+snapshot's `as_of`; Sepolia never appears. Narrow widths shed age, then chain, preserving number
+and verdict. A successful empty read says `no production launch yet`; an unread list says
+`unavailable`. Enter/click opens that row; **`x` opens the top row's `LaunchDetailScreen`**, or
+nothing when no row exists. The hint remains `x more`. The binding stays non-priority so a
+focused widget's own binding wins and Input keeps typed text. Snapshot popups use the
+`RecordDetailScreen` frame: scrollable content, Space/Escape or X to close, with no network await
+while opening. THROUGHPUT is parked in `SWARM_PARKED_WIDGET_SIGNATURES`; its module, popup,
+data, clocks and tests remain, as with IN FLIGHT and CAPABILITY.
 
 **Production launches:** `TIER_SWARM_LAUNCHES` runs detached/single-flight at 60 seconds,
 120-second launches-route failure backoff. Launches read the newest 100 every cycle; sites refresh every 300
@@ -432,26 +441,60 @@ read clocks, ordering and unrelated evidence do not invalidate it. Failed matchi
 inputs, logging once per exception type until a success resets the log guard. A previously unseen
 policy version or a newly judged wallet mismatch refreshes policies once before judgment; a
 failed refresh leaves the check unknown. A persisted policy-schema marker migrates legacy
-kindless cached policies once; live missing-kind policies retain the 1,800-second TTL. The cycle snapshots rows/events before spawning work.
+kindless cached policies only after a successful policies read; live missing-kind policies
+retain the 1,800-second TTL. K2 unknown solely because its policy version is unknown waits for
+that refresh, then rejudges retained transaction evidence without fetching transactions again.
+The cycle snapshots rows/events before spawning work.
 
 Production is chain 1/8453/4663, excluding abandoned. Retained production rows still count and
 pin after leaving the newest API window. LAUNCHES keeps 12 production + 12 non-production, newest
 number first within each; production is bold with `◆`, other rows dim with verdict `--`. MAINNET / BASE / RH /
 SEPOLIA are the chain words. The token column prefers role `token`, then `hook`, then the first
-artifact. Full columns add kind/repo; compact drops those and tight also sheds site/parked reason.
+artifact. Full columns include kind/repo and `liq` after verdict; roomy drops `liq` before
+compact drops kind/repo. Tight also sheds site/parked reason, and may restore `liq` only when
+there is room after ticker and verdict. Tier onsets live in the measured pin comment.
 K2 uses the chain-wide wallet set and factories declared by the launch's own kind; kinds with
 no declared factory, including an absent kind, are judged on sender and receipt status alone.
 A known policy version must match an explicit launch kind. K6 factory annotation uses that same
-kind. One-time K2/K6 rule migration retains completed K3 contracts. K1–K4 produce provenance-only `✓ swarm`, `… n/4`, or `✗ Kx`; K3 accepts deployed-code equality
+kind; an absent kind or no declared factory leaves `owner_is_factory` unknown. Complete receipts
+without a ModifyLiquidity log make K6 not applicable. One-time K2/K6 rule migration retains completed K3 contracts. K1–K4 produce provenance-only `✓ swarm`, `… n/4`, or `✗ Kx`; K3 accepts deployed-code equality
 or creation-code evidence (`pass (immutables)`). K3 requires at least one verified attested
 contract and a verified name match for every token artifact, plus hook artifacts only for
 `univ4_hook` launches. The other kinds use the unattested shared hook. All-not-applicable and
 unmatched required roles remain unknown. Once every per-contract check is terminal, a coverage
 gap retries RPC at most once per 1,800 seconds; a status/updatedAt change resets that back-off. Only admitted launches without artifacts say
-`-- pending`; parked launches show a failed check or `-- parked`. K6/K7 are informational, never safety claims.
+`-- pending`; parked launches show a failed check or `-- parked`. Empty admission is K4 unknown,
+including legacy cached passes. Parked/admitted launches with unknown K4 retry their detail
+after 1,800 seconds even without a version change, within the three-detail budget. K6/K7/K8 are
+informational, never safety claims; K8 never contributes to the K1–K4 provenance verdict.
 Enter/click opens `LaunchDetailScreen`, a deep-copied snapshot with all artifacts, copy/explorer
-links, pair, fee, requester, policy, evidence, site and IMD token/job link. Selection messages
+links, pair, fee, requester, policy, evidence, site and IMD token/job link. Each check heading
+adds a dim plain-language description; narrow widths clip the description before the state.
+Sepolia keeps the descriptions with `--` states. Selection messages
 are declared in each selectable subclass; BOARD keeps its own Enter routing.
+
+**K8 liquidity** joins a unique token-matching Initialize event to ModifyLiquidity by emitter
+and pool ID in the deploy receipts. That emitter supplies the PoolManager address; owner comes
+from `topics[2]`. Signed packed ticks and the salt participate in the position storage key.
+Pool fee comes only from Initialize, displayed as a percentage (12500 → 1.25%, 3000 → 0.3%);
+missing evidence is `--`, never the manifest fee. No pool is `na`; a missing or ambiguous read
+is unknown. Both paired and token decimals are read and cached; only native ETH defaults to 18.
+
+The independent K8 clock batches three state reads per pool, oldest eligible first, at most ten
+launches per cycle and once per 300 seconds. Settled legacy facts bootstrap missing receipts
+in bounded batches. A provenance batch suppresses bootstrap only for launch receipts it actually
+requested, never for every launch on that chain. Immutable pool inputs, validated decimals and
+the last result persist in the facts slot. Failed state reads retain the successful result's `read_ts`; a separate attempt
+clock backs off failures. The popup shows that result's age against the snapshot clock.
+
+`liquidity` and `checks.K8` share the exact `SWARM_LIQUIDITY_KEYS` shape; Sepolia liquidity is
+None. The popup shows paired/token amounts, tick range, fee, owner with explorer/copy actions,
+lock and share of active liquidity. Factory holdings are `in factory (unverified)`, never
+burned; only zero/dead owners are burned. A position below its deployed liquidity is withdrawn,
+with the removed percentage (zero remaining is 100%). Shares cannot exceed 100%. K8 warns for
+withdrawal, an edge price (`at limit`), or token-only positions older than one hour. The `liq`
+cell shows compact paired amount, dim `one-sided`, yellow `no liq`, red `withdrawn`, `--` for
+not applicable, or `…` before a read. None of these market states changes provenance.
 
 SITES uses workflow/project/named matching; named matches require payer agreement to highlight.
 Conflicting matches produce no link. Trusted production sites pin first. Their clipped ticker suffix leaves at least four cells for
@@ -492,17 +535,17 @@ SURF heading; price, parity, `as of`, LP warning, taller marker and every alarm 
 launch news for 60 minutes; the detector remains FIRED for 24 hours. Crowded SWARM titles may
 use `▲ LAUNCH #n`, tighter separators and shortened health text (owner approved 2026-10-06). KEY_HINTS begins `x more`; `l` stays bound, unlisted like `e`.
 
-CAPABILITY and IN FLIGHT are parked, with their modules, tests and reads retained. Every mounted /
-consumed exemption comes from `SWARM_PARKED_WIDGET_SIGNATURES`. Neither has a current body pin.
-SWARM's pins now measure 129×35: SITES and the full status bar bind the width; THROUGHPUT's nine
-lines and the two eight-line table floors bind height. LAUNCHES is the content exception,
-`LAUNCHES_NEVER_CLEARS_BELOW` 157 on capture (production parked reasons can still mark), with no
-hidden columns from 77 at 35 rows, or 75 on the 80-row capture without its table vertical
-scrollbar. WORKFLOWS compact/full start at 109/119,
-LAUNCHES at 116/157, SITES at 121/129; these enter the boundary sets. All eleven active default
-detector rows require 43 rows at 143 columns; the mixed fixture needs 39.
-AGENT's 139×25 pin and RECORD's content exception are unchanged. The original grids remain
-historical in `docs/decisions.md` and the appended pin blocks in `screens/surf.py`.
+CAPABILITY, IN FLIGHT and THROUGHPUT are parked, with modules, tests and reads retained. Every
+mounted/consumed exemption comes from `SWARM_PARKED_WIDGET_SIGNATURES`; no current body pin
+certifies a parked widget. SWARM's width still binds on SITES and the full status bar. Height
+retains the nine-line top floor, the eight-line LAUNCHES floor and seven-line SITES floor plus
+its blank bottom margin. LAUNCHES is the content exception: full now includes liquidity; roomy
+sheds it before compact drops kind/repo. The measured onsets, no-hidden-column boundaries and
+all three body pins remain beside their constants in `screens/surf.py` and enter the boundary
+sets in `test_surf_swarm_layout.py`. The offline five-payload sweep preserved SWARM, AGENT and
+BOARD pins; the owner approved the 150×46 fixture layout. The original grids remain historical
+in `docs/decisions.md` and the appended pin blocks. All eleven active default detector rows
+require 43 rows at 143 columns; the mixed fixture needs 39.
 
 **Polish answer reads** (`docs/surf_swarm_polish_handover.md`): RECORD renders
 `when · job · node · state · model · took · tok · panel · answer`; objective remains

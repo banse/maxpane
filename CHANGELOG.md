@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Surfboard SWARM launches v2: LATEST LAUNCHES replaces the parked THROUGHPUT panel, showing
+  the five newest production launches by creation time; click/Enter opens a row and `x` opens
+  the newest. SITES shows linked `.sites.imd.fun` hosts and leaves a blank line above status.
+  Launch details explain every check and add K8 pool amounts, range, owner, withdrawal and
+  active-liquidity share; LAUNCHES shows a compact `liq` column when space permits. Pool fees
+  come from receipt Initialize events and display as percentages. Liquidity refreshes retain
+  last-good timestamps on failure and never change the provenance verdict. Empty admission
+  checks remain unknown and retry even without a version change. The SWARM pin remains 129×35;
+  the owner approved the offline fixture layout at 150×46.
+
 - Surfboard production launches: WORKFLOWS beside THROUGHPUT, full-width LAUNCHES and SITES;
   pinned production rows, per-chain token links, provenance checks and snapshot details.
   Trusted sites link at sites.imd.fun. A persisted SWARM LAUNCH detector announces new live

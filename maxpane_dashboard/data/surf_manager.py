@@ -5651,7 +5651,8 @@ class SurfManager:
                 # A stale policy cannot convict a sender/factory mismatch.
                 checks['K2'] = lc.result()
             point['checks'] = checks
-        await self._refresh_launch_liquidity(points, rpc, slot.get('policies') or [], now)
+        await self._refresh_launch_liquidity(points, rpc, slot.get('policies') or [], now,
+            receipt_attempts={chain: set(request['hashes']) for chain, request in requests.items()})
         production_times = [sw._ts(p['row'].get('createdAt')) for p in points]
         earliest = min((ts for ts in production_times if ts is not None), default=None)
         site_budget = 3
@@ -5698,7 +5699,7 @@ class SurfManager:
             self._launch_rpc_clients[chain] = client
         return client
 
-    async def _refresh_launch_liquidity(self, points, rpc, policies, now):
+    async def _refresh_launch_liquidity(self, points, rpc, policies, now, *, receipt_attempts):
         """Independent K8 market cadence; no result can invalidate provenance."""
         def due(point, field):
             stamp = point.get(field)
@@ -5712,10 +5713,11 @@ class SurfManager:
         for point in points:
             if point.get('pool_inputs') is not None:
                 continue
+            hashes = {a['txHash'] for a in point['row'].get('artifacts', []) if a.get('txHash')}
             pool = ll.pool_inputs(point['row'], rpc.get(point['row']['chainId'], {}).get('receipts', {}))
             if pool is not None:
                 point['pool_inputs'] = pool
-            elif point['row']['chainId'] in rpc:
+            elif hashes and hashes <= receipt_attempts.get(point['row']['chainId'], set()):
                 point['pool_attempt_ts'] = now  # the provenance batch already tried these receipts
             elif point['row'].get('artifacts') and due(point, 'pool_attempt_ts'):
                 missing.append(point)

@@ -1698,7 +1698,8 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: The default title remains 143. News fits by shedding ticker then source
 #: names; crowded SWARM titles use the owner-approved LAUNCH label, tighter
 #: separators and shortened health text, retaining the launch number.
-#: Launches v2 WP4 (2026-10-06), offline before the owner live gate:
+#: Launches v2 (2026-10-06), measured offline; owner approved the 150x46
+#: fixture render after WP4 (not a fresh live-network measurement):
 #: scripts/measure_layout.py rechecked capture/production-s/worst-s/v3-s/
 #: extra-states-s at 128/129/130 columns. SITES and status still bind 129.
 #: LATEST LAUNCHES replaces THROUGHPUT with the same 46-column cap.
@@ -1795,7 +1796,8 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
 #: five SWARM payloads. The top floor stays 9; LATEST uses 7 populated or
 #: 8 empty-state lines. SITES gives one row to a bottom margin (floor 8 -> 7),
 #: preserving 35 while painting a blank row above status. LAUNCHES stays 8.
-#: AGENT 139x25 and BOARD 141x33 rechecked unchanged. Live approval pending.
+#: AGENT 139x25 and BOARD 141x33 rechecked unchanged. The owner approved
+#: the offline 150x46 fixture render after WP4; no live-network remeasurement.
 SURF_SWARM_FULL_LAYOUT_ROWS = 35
 
 #: AGENT full-layout width, re-swept 2026-09-24: 139 (unchanged).
@@ -2634,7 +2636,7 @@ class SurfScreen(DashboardScreen):
         # `priority` like curator's, so it applies from a focused field;
         # the editor's only text fields take numbers. A no-op elsewhere.
         Binding("f", "toggle_record_filter", "Filter", show=False, priority=True),
-        # `x` opens cached THROUGHPUT details on SWARM (layout v3); a no-op on every
+        # `x` opens the newest production launch snapshot on SWARM; a no-op on every
         # other body. Free on this screen, in the app (`q t tab m`) and in
         # `DataTable`'s and `Input`'s own bindings -- read, not assumed.
         # **Not** `priority`: the focused widget and its ancestors get the
