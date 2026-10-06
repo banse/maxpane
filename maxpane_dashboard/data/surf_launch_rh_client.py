@@ -2,7 +2,7 @@
 import httpx
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient
 from maxpane_dashboard.data.rpc_classify import ETH_ENDPOINT_LIMITATION_FRAGMENTS
-from maxpane_dashboard.data.surf_launch_base_client import read_batch
+from maxpane_dashboard.data.surf_launch_base_client import read_batch, read_launch_receipts
 from maxpane_dashboard.analytics.surf_launch_checks import evidence_calls, evidence_results
 
 ROBINHOOD_LAUNCH_RPCS = ('https://rpc.mainnet.chain.robinhood.com', 'https://robinhood-rpc.publicnode.com')
@@ -20,6 +20,9 @@ class SwarmRobinhoodClient(OwnedHttpClient):
     async def fetch_launch_pool_state(self, calls):
         """Read v4 storage and decimals through the existing state endpoint pool."""
         return await self._rpc(calls) if calls else []
+
+    async def fetch_launch_receipts(self, tx_hashes):
+        return await read_launch_receipts(self._rpc, tx_hashes)
 
     async def fetch_launch_evidence(self, tx_hashes, addresses):
         keys, calls = evidence_calls(tx_hashes, addresses)

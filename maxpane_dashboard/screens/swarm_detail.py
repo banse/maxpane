@@ -173,7 +173,9 @@ class LaunchDetailScreen(RecordDetailScreen):
                         else 'liquidity held by ')
         line.append_text(address_text(value.get('owner'), width=17, explorer=for_chain_id(self.row.get('chain_id'))))
         if lock == 'locked':
-            line.append(' (unverified) · never withdrawn')
+            if value.get('owner_is_factory') is True:
+                line.append(' (unverified)')
+            line.append(' · never withdrawn (L = deployed L)')
         yield line
         share = value.get('share')
         if isinstance(share, (int, float)) and not isinstance(share, bool):

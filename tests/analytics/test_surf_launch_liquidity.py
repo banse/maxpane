@@ -183,3 +183,49 @@ def test_one_sided_range_hour_boundary_and_missing_decimals_are_honest():
     baseline=ll.liquidity_result(row,pool,[answers[i] for i in range(3)],decimals,[],{},now=created+3601)
     assert scaled['token_amount']==pytest.approx(baseline['token_amount']*1e6)
     assert scaled['paired_amount']==baseline['paired_amount']
+
+
+def ambiguous_receipts(kind):
+    row, receipts = pool_fixture(737)
+    logs = next(iter(receipts.values()))['logs']
+    topic = ll.INITIALIZE_TOPIC if kind == 'initialize' else ll.MODIFY_TOPIC
+    duplicate = copy.deepcopy(next(log for log in logs if log['topics'][0] == topic))
+    if kind == 'initialize':
+        duplicate['topics'][1] = '0x' + '1' * 64
+    else:
+        duplicate['data'] = duplicate['data'][:-64] + '1' * 64
+    logs.append(duplicate)
+    return row, receipts
+
+
+@pytest.mark.parametrize('kind', ['initialize', 'modify'])
+def test_complete_ambiguous_pool_evidence_is_terminal_but_unknown(kind):
+    row, receipts = ambiguous_receipts(kind)
+    assert ll.pool_inputs(row, receipts) == {'state': 'ambiguous'}
+    assert ll.coerce_pool_inputs({'state': 'ambiguous'}) == {'state': 'ambiguous'}
+    for bad in ({'state': 'ambiguous', 'extra': True}, {'state': True}, {'state': 'unknown'}):
+        assert ll.coerce_pool_inputs(bad) is None
+    row['artifacts'].append(dict(row['artifacts'][0], txHash='0x' + '2' * 64))
+    assert ll.pool_inputs(row, receipts) is None, 'an incomplete receipt set remains retriable'
+
+
+def test_tick_upper_is_exclusive_and_outside_range_has_no_share():
+    row, pool, answers, decimals = live_fixture(737)
+    for tick in (pool['tick_upper'] - 1, pool['tick_upper'], pool['tick_lower'] - 1):
+        sqrt_price = int(1.0001 ** (tick / 2) * 2**96)
+        word = ((tick & (2**24 - 1)) << 160) | sqrt_price
+        values = ['0x' + word.to_bytes(32, 'big').hex(), answers[1], answers[2]]
+        result = ll.liquidity_result(row, pool, values, decimals, [], {}, now=1791300000)
+        if tick == pool['tick_upper'] - 1:
+            assert result['range_state'] == 'in range' and result['share'] == pytest.approx(1)
+        else:
+            assert result['range_state'] != 'in range' and result['share'] is None
+
+
+def test_ambiguous_cache_marker_never_exposes_a_stale_liquidity_result():
+    row, pool, answers, decimals = live_fixture(737)
+    result = ll.liquidity_result(row, pool, [answers[i] for i in range(3)], decimals, [], {}, now=1791300000)
+    point = {'row':row, 'pool_inputs':{'state':'ambiguous'}, 'liquidity':result}
+    clean = sw.coerce_launch_facts_slot({'launches':{row['id']:point}, 'sites':{}})['launches'][row['id']]
+    assert clean['pool_inputs'] == {'state':'ambiguous'}
+    assert clean['liquidity'] == ll.empty_liquidity()

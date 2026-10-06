@@ -2495,7 +2495,7 @@ def coerce_launch_facts_slot(value):
     """Each launch/site entry is validated and rebuilt; unknown fields vanish."""
     from copy import deepcopy
     from maxpane_dashboard.analytics.surf_launch_checks import address, is_production
-    from maxpane_dashboard.analytics.surf_launch_liquidity import coerce_initialize, coerce_pool_inputs, coerce_liquidity, coerce_decimals
+    from maxpane_dashboard.analytics.surf_launch_liquidity import coerce_initialize, coerce_pool_inputs, coerce_liquidity, coerce_decimals, empty_liquidity
     if not isinstance(value, dict):
         return None
     launches, sites = {}, {}
@@ -2552,15 +2552,17 @@ def coerce_launch_facts_slot(value):
         else:
             initialize = None
         pool = coerce_pool_inputs(point.get('pool_inputs'))
-        if pool and (pool.get('state') == 'na' or (pool['tx_hash'] in hashes and len(tokens) == 1
+        if pool and (pool.get('state') in ('na', 'ambiguous') or (pool['tx_hash'] in hashes and len(tokens) == 1
                 and next(iter(tokens)) in (pool['currency0'], pool['currency1']))):
             clean['pool_inputs'] = pool
-            if pool.get('state') != 'na':
+            if pool.get('state') not in ('na', 'ambiguous'):
                 initialize = coerce_initialize(pool)
                 clean['pool_initialize'] = initialize
         decimals = coerce_decimals(point.get('pool_decimals'))
         if decimals: clean['pool_decimals'] = decimals
         liquidity = coerce_liquidity(point.get('liquidity'))
+        if pool == {'state': 'ambiguous'}:
+            liquidity = empty_liquidity()
         if liquidity is not None: clean['liquidity'] = liquidity
         # Old caches contain manifest fees: never present them as receipt evidence.
         clean['pool_fee'] = initialize['pool_fee'] if initialize else None

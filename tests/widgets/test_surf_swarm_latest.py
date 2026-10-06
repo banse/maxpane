@@ -103,3 +103,32 @@ async def test_latest_age_uses_snapshot_clock_and_literal_symbol(seconds,word):
     row=launch_row(ticker='[red]X')
     text='\n'.join(await composite_lines(SurfSwarmLatestLaunches,(46,12),swarm_launch_rows=[row],as_of=row['created_ts']+seconds))
     assert '$[red]X' in text and word in text and '\\' not in text
+
+
+async def test_latest_caps_more_than_five_production_launches():
+    from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
+    rows = [dict(launch_row(), launch_number=737+i, created_ts=1000+i) for i in range(7)]
+    class Probe(App):
+        def compose(self): yield SurfSwarmLatestLaunches()
+    async with Probe().run_test(size=(46, 14)) as pilot:
+        panel = pilot.app.query_one(SurfSwarmLatestLaunches)
+        panel.update_data(swarm_launch_rows=rows, as_of=2000)
+        await pilot.pause()
+        text = '\n'.join(s.text for s in pilot.app.screen._compositor.render_strips())
+        assert len(panel._payload['rows']) == panel.query_one(DataTable).row_count == 5
+        assert all(f'#{number}' in text for number in range(739, 744))
+        assert '#738' not in text and '#737' not in text
+
+
+@pytest.mark.parametrize('width', [20, 28, 32, 33, 46])
+@pytest.mark.parametrize('rows,word', [(None, 'unavailable'), ([], 'no production launch yet'),
+                                     ([launch_row()], '#737')])
+async def test_latest_title_and_first_content_row(width, rows, word):
+    from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
+    lines = await composite_lines(SurfSwarmLatestLaunches, (width, 14),
+        swarm_launch_rows=rows, swarm_launches_as_of_hhmm='14:16')
+    assert 'LATEST LAUNCHES' in lines[0]
+    assert not lines[1].strip()
+    assert (word if width >= 28 else word[:12]) in lines[2]
+    if width < 31:
+        assert '…' in lines[0]

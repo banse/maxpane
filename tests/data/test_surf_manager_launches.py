@@ -27,6 +27,12 @@ class LaunchSwarm:
         return next((fixture(name) for name in ('job_zto_site','job_adam_site') if fixture(name)['id'] == key), None)
     async def close(self): pass
 class RPC(FakeSurfClient):
+    async def fetch_launch_receipts(self, hashes):
+        out = {}
+        for n in (734, 737, 747):
+            _, rpc = evidence(n)
+            out.update({k:v for k,v in rpc['receipts'].items() if k in hashes})
+        return out
     async def fetch_launch_pool_state(self, calls):
         return None
     async def fetch_launch_evidence(self, hashes, addresses):
@@ -814,3 +820,23 @@ async def test_legacy_policy_marker_waits_for_success(tmp_path):
         assert m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload['policies_schema']==1
         assert swarm.calls.count('policies')==2
     finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_empty_admission_deploy_failure_does_not_retry_settled_k4(tmp_path):
+    swarm = LaunchSwarm()
+    row = fixture('launch_737')
+    row.update(status='parked', admissionChecks=[], deployFailure={'reason':'deployment failed'})
+    swarm.rows = [row]
+    async def detail(key):
+        swarm.calls.append(('detail', key))
+        return copy.deepcopy(row)
+    swarm.fetch_launch = detail
+    m = manager(tmp_path, swarm)
+    try:
+        for delta in (0, 1801, 3602):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + delta)
+            assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K4']['state'] == 'fail'
+        assert sum(isinstance(c, tuple) and c[0] == 'detail' for c in swarm.calls) == 1
+    finally:
+        await m.close()

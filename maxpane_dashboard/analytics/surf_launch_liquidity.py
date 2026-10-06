@@ -79,14 +79,10 @@ def coerce_initialize(value):
     return out
 
 
-def pool_initialize(row, receipts):
-    """Identify one token pool in its deploy receipts; ambiguous evidence is unknown.
-
-    The Initialize emitter is the PoolManager identity for subsequent reads.
-    No manifest fee or guessed per-chain PoolManager address is trusted.
-    """
+def _pool_initializes(row, receipts):
+    """Collect distinct valid token pools from the launch's deploy receipts."""
     tokens = {address(a.get('address')) for a in mappings(row.get('artifacts')) if a.get('role') == 'token'} - {None}
-    if len(tokens) != 1 or not isinstance(receipts, Mapping): return None
+    if len(tokens) != 1 or not isinstance(receipts, Mapping): return []
     token = next(iter(tokens))
     hashes = {a.get('txHash') for a in mappings(row.get('artifacts')) if isinstance(a.get('txHash'), str)}
     found = []
@@ -116,6 +112,12 @@ def pool_initialize(row, receipts):
             })
             if candidate and token in (candidate['currency0'], candidate['currency1']) and candidate not in found:
                 found.append(candidate)
+    return found
+
+
+def pool_initialize(row, receipts):
+    """One receipt-proven PoolManager and fee; ambiguous pools stay unknown."""
+    found = _pool_initializes(row, receipts)
     return found[0] if len(found) == 1 else None
 
 
@@ -124,8 +126,8 @@ MODIFY_TOPIC = '0xf208f4912782fd25c7f114ca3723a2d5dd6f3bcc3ac8db5af63baa85f711d5
 
 def coerce_pool_inputs(value):
     """Immutable receipt evidence, independently validated from market results."""
-    if value == {'state': 'na'}:
-        return {'state': 'na'}
+    if isinstance(value, dict) and set(value) == {'state'} and value['state'] in ('na', 'ambiguous'):
+        return dict(value)
     out = coerce_initialize(value)
     if out is None: return None
     out['owner'] = address(value.get('owner'))
@@ -148,7 +150,10 @@ def pool_inputs(row, receipts):
     if any(not isinstance(receipts.get(h), Mapping) or not isinstance(receipts[h].get('logs'), list)
            or any(not isinstance(log, Mapping) or not isinstance(log.get('topics'), list) for log in receipts[h]['logs']) for h in hashes):
         return None
-    initialize = pool_initialize(row, receipts)
+    initializes = _pool_initializes(row, receipts)
+    if len(initializes) > 1:
+        return {'state': 'ambiguous'}
+    initialize = initializes[0] if initializes else None
     if initialize is None:
         # A malformed or ambiguous Initialize cannot prove there is no pool.
         seen = any(log.get('topics', [None])[:1] == [INITIALIZE_TOPIC]
@@ -169,7 +174,9 @@ def pool_inputs(row, receipts):
             tick_upper=int.from_bytes(raw[32:64], 'big', signed=True),
             initial_liquidity=int.from_bytes(raw[64:96], 'big', signed=True), salt='0x'+raw[96:].hex()))
         if candidate is not None and candidate not in found: found.append(candidate)
-    return found[0] if len(found) == 1 else None
+    if len(found) > 1:
+        return {'state': 'ambiguous'}
+    return found[0] if found else None
 
 
 def state_calls(pool, *, keccak):

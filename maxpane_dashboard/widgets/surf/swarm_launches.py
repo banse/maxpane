@@ -160,7 +160,8 @@ class SurfSwarmLaunches(SwarmTableBase):
         """Elastic reason; tight keeps ticker/verdict and narrows the token."""
         plan = []
         keep = self.TIER_COLUMNS[tier]
-        if tier == "tight" and budget >= TIGHT_WIDTH + 14:
+        tier_width = dict(self.LADDER.steps)[tier]
+        if tier != "full" and budget >= tier_width + 14:
             keep = (*keep, "liq")
         fixed = [w for k, _l, w in _SPECS if k in keep and k != "parked"]
         if tier == "tight":

@@ -5557,6 +5557,7 @@ class SurfManager:
             row = point['row']
             version = [row['status'], row.get('updatedAt')]
             retry_admission = (row['status'] in ('parked', 'admitted')
+                and point.get('checks', {}).get('K4', {}).get('state') != 'fail'
                 and (not point.get('admission') or point.get('checks', {}).get('K4', {}).get('state') == 'unknown')
                 and (point.get('detail_attempt_ts') is None or point['detail_attempt_ts'] > now
                      or now - point['detail_attempt_ts'] >= 1800))
@@ -5709,14 +5710,32 @@ class SurfManager:
 
         # Bootstrap settled legacy caches in bounded batches. Provenance receipts
         # already fetched this cycle are free to reuse; absent reads stay unknown.
+        def retain_pool(point, receipts):
+            pool = ll.pool_inputs(point['row'], receipts)
+            if pool is not None:
+                point['pool_inputs'] = pool
+                initialize = ll.pool_initialize(point['row'], receipts)
+                if initialize is not None:
+                    point['pool_initialize'] = initialize
+                    point['pool_fee'] = initialize['pool_fee']
+                else:
+                    point.pop('pool_initialize', None)
+                    point['pool_fee'] = None
+            return pool
+
         missing = []
         for point in points:
+            if not point['row'].get('artifacts'):
+                point.pop('pool_inputs', None)
+                state = 'na' if point['row']['status'] in ('parked', 'abandoned') else 'unknown'
+                point['liquidity'] = ll.empty_liquidity(state)
+                continue
             if point.get('pool_inputs') is not None:
                 continue
             hashes = {a['txHash'] for a in point['row'].get('artifacts', []) if a.get('txHash')}
-            pool = ll.pool_inputs(point['row'], rpc.get(point['row']['chainId'], {}).get('receipts', {}))
+            pool = retain_pool(point, rpc.get(point['row']['chainId'], {}).get('receipts', {}))
             if pool is not None:
-                point['pool_inputs'] = pool
+                continue
             elif hashes and hashes <= receipt_attempts.get(point['row']['chainId'], set()):
                 point['pool_attempt_ts'] = now  # the provenance batch already tried these receipts
             elif point['row'].get('artifacts') and due(point, 'pool_attempt_ts'):
@@ -5729,17 +5748,16 @@ class SurfManager:
             hashes.extend(a['txHash'] for a in point['row']['artifacts'] if a.get('txHash'))
         for chain, hashes in requests.items():
             client = self._launch_rpc_client(chain)
-            evidence = await self._guard(lambda: client.fetch_launch_evidence(hashes, []), 'swarm pool receipt bootstrap') or {}
+            receipts = await self._guard(lambda: client.fetch_launch_receipts(hashes), 'swarm pool receipt bootstrap') or {}
             for point in bootstrap:
                 if point['row']['chainId'] != chain: continue
-                pool = ll.pool_inputs(point['row'], evidence.get('receipts', {}))
-                if pool is not None: point['pool_inputs'] = pool
+                retain_pool(point, receipts)
         eligible = []
         for point in points:
             pool = point.get('pool_inputs')
             if pool is None: continue
-            if pool.get('state') == 'na':
-                point['liquidity'] = ll.empty_liquidity('na')
+            if pool.get('state') in ('na', 'ambiguous'):
+                point['liquidity'] = ll.empty_liquidity('na' if pool['state'] == 'na' else 'unknown')
                 continue
             point['pool_initialize'] = ll.coerce_initialize(pool)
             point['pool_fee'] = pool['pool_fee']
@@ -5790,6 +5808,8 @@ class SurfManager:
             if link:
                 linked_sites[link['launch_id']] = (site, link)
         for row in rows or []:
+            if row['chain_id'] in (1, 8453, 4663) and row['status'] in ('parked', 'abandoned') and not row['artifacts']:
+                row['liquidity'] = ll.empty_liquidity('na')
             point = points.get(row['launch_id'])
             if point is None:
                 continue

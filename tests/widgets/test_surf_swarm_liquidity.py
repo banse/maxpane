@@ -47,12 +47,18 @@ async def test_withdrawn_liquidity_is_red_and_keeps_swarm_verdict():
         assert 'withdrawn' in text and '✓ swarm' in text
         segments=[seg for strip in strips for seg in strip if 'withdrawn' in seg.text]
         assert segments and all(seg.style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[1] for seg in segments)
+        verdicts = [seg for strip in strips for seg in strip if '✓ swarm' in seg.text]
+        assert verdicts and all(seg.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
+                                for seg in verdicts)
 
 
 def test_liquidity_tier_priority_and_degraded_cells():
     panel=SurfSwarmLaunches()
     assert 'liq' in [k for k,l,w in panel.column_plan('full',210)]
     assert 'liq' not in [k for k,l,w in panel.column_plan('compact',120)]
+    for tier, budget in [('compact',125), ('compact',138), ('roomy',166)]:
+        keys = [k for k,l,w in panel.column_plan(tier,budget)]
+        assert keys[keys.index('verdict')+1] == 'liq'
     assert 'liq' in [k for k,l,w in panel.column_plan('tight',100)]
     assert 'liq' not in [k for k,l,w in panel.column_plan('tight',72)]
     for row,word in [(liquid_row(state='unknown'),'…'),(liquid_row(state='na'),'--'),
@@ -76,7 +82,7 @@ async def test_popup_descriptions_fee_and_k8_evidence(number,fee,amount):
         for word in ('a launch row on a production chain',"deployed by the swarm's launch wallet",
                      "deployed code matches the swarm's attested build", "passed the swarm's admission checks",
                      'who holds the pool liquidity','outside audits or bounties on record',
-                     'pool liquidity: paired amount, range, lock',fee,amount,'never withdrawn',
+                     'pool liquidity: paired amount, range, lock',fee,amount,'never withdrawn (L = deployed L)',
                      'in factory','(unverified)','as of','10m ago'):
             assert word in seen,(word,seen)
         assert row['liquidity']['owner'] in icons and 'burned' not in seen
@@ -117,3 +123,18 @@ async def test_liquidity_sheds_before_repository_in_mounted_ladder():
     header=next(line for line in text.splitlines() if 'ticker' in line)
     assert 'repo' in header and 'liq' not in header
     assert 'launch-737' in text
+
+
+@pytest.mark.parametrize('factory', [False, None])
+async def test_nonfactory_lock_does_not_claim_unverified_contract(factory):
+    class Probe(App): pass
+    row = liquid_row(owner_is_factory=factory)
+    async with Probe().run_test(size=(110, 40)) as pilot:
+        await pilot.app.push_screen(LaunchDetailScreen(row))
+        await pilot.pause()
+        pilot.app.screen.query_one(VerticalScroll).scroll_end(animate=False)
+        await pilot.pause()
+        text = '\n'.join(s.text for s in pilot.app.screen._compositor.render_strips())
+        line = next(line for line in text.splitlines() if 'never withdrawn' in line)
+        assert 'held by' in line and '(unverified)' not in line
+        assert '(L = deployed L)' in line

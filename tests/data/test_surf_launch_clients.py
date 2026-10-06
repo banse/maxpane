@@ -63,3 +63,21 @@ async def test_pool_storage_batch_keeps_independent_missing_items(cls):
         client=cls(http_client=http,inter_call_delay=0) if cls is SurfClient else cls(http_client=http)
         assert await client.fetch_launch_pool_state(calls)==[answers[0],None,answers[2]]
         assert [[c['method'],c['params']] for c in posted[0]]==[[method,params] for method,params in calls]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('cls', [SwarmBaseClient, SwarmRobinhoodClient, SurfClient])
+async def test_receipt_bootstrap_batches_only_valid_deduplicated_receipts(cls):
+    _, rpc = evidence(737)
+    hashes = list(rpc['receipts'])
+    missing = '0x' + '2' * 64
+    posted = []
+    def respond(request):
+        batch = json.loads(request.content)
+        posted.append(batch)
+        assert all(call['method'] == 'eth_getTransactionReceipt' for call in batch)
+        return httpx.Response(200, json=[dict(jsonrpc='2.0', id=call['id'], result=rpc['receipts'].get(call['params'][0])) for call in reversed(batch)])
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        client = cls(http_client=http, inter_call_delay=0) if cls is SurfClient else cls(http_client=http)
+        assert await client.fetch_launch_receipts(hashes + hashes + [missing, 'bad']) == dict(rpc['receipts'], **{missing:None})
+        assert len(posted) == 1 and len(posted[0]) == 2

@@ -33,6 +33,8 @@ one-line bottom margin; both tables scroll internally. The owner approved the of
 render at 150×46 on 2026-10-06; no new live-network measurement is claimed. The five-payload
 boundary sweep preserves 129×35. LAUNCHES compact/roomy/full start at 116/157/171; tight can
 show liquidity from 91, and the capture clears at 171 while longer parked reasons may mark.
+Compact restores liquidity from 130, including 143 and 150; roomy spends that room on
+kind/repo from 157 until full restores liquidity at 171.
 WORKFLOWS remains 109/119. SERVICES left the hero; F55 is closed by removal. Compact title
 alarms retain every alarm at the SWARM pin without changing the default title's 143 boundary.
 

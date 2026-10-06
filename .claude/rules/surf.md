@@ -452,7 +452,9 @@ number first within each; production is bold with `◆`, other rows dim with ver
 SEPOLIA are the chain words. The token column prefers role `token`, then `hook`, then the first
 artifact. Full columns include kind/repo and `liq` after verdict; roomy drops `liq` before
 compact drops kind/repo. Tight also sheds site/parked reason, and may restore `liq` only when
-there is room after ticker and verdict. Tier onsets live in the measured pin comment.
+there is room after ticker and verdict. Every reduced tier restores `liq` when its minimum
+budget has fourteen spare cells; compact therefore shows it at the owner's width.
+Tier onsets live in the measured pin comment.
 K2 uses the chain-wide wallet set and factories declared by the launch's own kind; kinds with
 no declared factory, including an absent kind, are judged on sender and receipt status alone.
 A known policy version must match an explicit launch kind. K6 factory annotation uses that same

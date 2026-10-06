@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Surfboard SWARM: keep pool liquidity visible at 143 and 150 columns, place LATEST LAUNCHES'
+  empty state directly below its single-line title, and clarify liquidity ownership details.
+  Stop retrying terminal ambiguous pool evidence and definite admission failures; bootstrap
+  missing pool evidence with receipt-only reads.
+
 - Surfboard SWARM launches v2: LATEST LAUNCHES replaces the parked THROUGHPUT panel, showing
   the five newest production launches by creation time; click/Enter opens a row and `x` opens
   the newest. SITES shows linked `.sites.imd.fun` hosts and leaves a blank line above status.

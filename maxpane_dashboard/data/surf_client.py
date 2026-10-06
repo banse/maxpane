@@ -1331,6 +1331,10 @@ class SurfClient(OwnedHttpClient):
         """Read v4 storage and decimals through the existing state endpoint pool."""
         return await self._rpc_state_batch(calls) if calls else []
 
+    async def fetch_launch_receipts(self, tx_hashes):
+        from maxpane_dashboard.data.surf_launch_base_client import read_launch_receipts
+        return await read_launch_receipts(self._rpc_state_batch, tx_hashes)
+
     async def fetch_launch_evidence(self, tx_hashes, addresses):
         """Public, batched read-only launch transaction, receipt and code evidence."""
         from maxpane_dashboard.analytics.surf_launch_checks import evidence_calls, evidence_results

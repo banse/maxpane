@@ -1706,6 +1706,10 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: LAUNCHES full and capture-marker-clear move 157 -> 171 for liquidity;
 #: roomy starts 157, compact 116; no hidden column remains 77 at 35 rows
 #: and 75 at 80 rows. WORKFLOWS 109/119 and SITES 121/129 are unchanged.
+#: V2 fix1: measured compact liquidity returns at 130 (absent at 129),
+#: including the owner's 143x46 and 150x46. It yields to kind/repo at the
+#: roomy onset 157 and returns with full at 171; tight still has it from 91.
+#: Rechecked 129x35 and transition neighbours with scripts/measure_layout.py.
 SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
@@ -1794,7 +1798,7 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
 #: the owner's actual 150x46 live look was approved before this hardening.
 #: Launches v2 WP4: re-measured offline at 129x34/35 and 150x46 on all
 #: five SWARM payloads. The top floor stays 9; LATEST uses 7 populated or
-#: 8 empty-state lines. SITES gives one row to a bottom margin (floor 8 -> 7),
+#: 3 empty-state lines after v2 fix1. SITES gives one row to a bottom margin (floor 8 -> 7),
 #: preserving 35 while painting a blank row above status. LAUNCHES stays 8.
 #: AGENT 139x25 and BOARD 141x33 rechecked unchanged. The owner approved
 #: the offline 150x46 fixture render after WP4; no live-network remeasurement.

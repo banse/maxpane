@@ -72,9 +72,9 @@ async def test_liquidity_cap_cadence_oldest_first_and_last_good(tmp_path):
 async def test_legacy_pool_bootstrap_is_bounded_and_decimals_retry_independently(tmp_path):
     m=manager(tmp_path); _,answers,decimals=seed(m,12,pool=False)
     batches,fail=responder(m,answers,decimals); fail.add(31) # second decimal in first ten-pool batch
-    original=m.client.fetch_launch_evidence; requests=[]
-    async def evidence(hashes,addresses): requests.append((hashes,addresses)); return await original(hashes,addresses)
-    m.client.fetch_launch_evidence=evidence
+    original=m.client.fetch_launch_receipts; requests=[]
+    async def receipts(hashes): requests.append(hashes); return await original(hashes)
+    m.client.fetch_launch_receipts=receipts
     try:
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW)
         points=m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches']
@@ -138,6 +138,11 @@ async def test_legacy_bootstrap_is_not_starved_by_another_launch_on_same_chain(t
         return await original(hashes, addresses)
 
     m.client.fetch_launch_evidence = evidence
+    original_receipts = m.client.fetch_launch_receipts
+    async def receipts(hashes):
+        requests.append(set(hashes))
+        return await original_receipts(hashes)
+    m.client.fetch_launch_receipts = receipts
     try:
         for delta in (0, 61, 299, 300, 602):
             before = len(requests)
@@ -155,5 +160,113 @@ async def test_legacy_bootstrap_is_not_starved_by_another_launch_on_same_chain(t
                          if row['launch_id'] == legacy['id'])
             assert shown['pool_fee'] == 12500 and shown['checks']['K8'] == result
         assert len(batches) == 3, 'market reads retain their independent 300-second cadence'
+    finally:
+        await m.close()
+
+
+@pytest.mark.parametrize('status,state', [('parked','na'), ('abandoned','na'), ('admitted','unknown')])
+async def test_no_artifacts_liquidity_distinguishes_parked_from_admitted(tmp_path, status, state):
+    m = manager(tmp_path)
+    seed(m)
+    points = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches']
+    point = next(iter(points.values()))
+    point.pop('pool_inputs')
+    point['row'].update(status=status, artifacts=[])
+    point['detail_version'] = [status, point['row']['updatedAt']]
+    m.swarm_client.rows = [point['row']]
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['liquidity'] == ll.empty_liquidity(state)
+    finally:
+        await m.close()
+
+
+async def test_native_eth_pool_775_reads_no_zero_address_decimals_and_returns_k8(tmp_path):
+    m = manager(tmp_path)
+    seed(m)
+    point = next(iter(m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'].values()))
+    row, pool, answers, decimals = live_fixture(775)
+    point.update(row=row, pool_inputs=pool, detail_version=[row['status'],row['updatedAt']])
+    m.swarm_client.rows = [row]
+    m.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, sw.coerce_launch_facts_slot({'launches':{row['id']:point},'sites':{}}), ts=NOW-1)
+    decimals.pop(lc.ZERO)
+    batches, _ = responder(m, answers, decimals)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        calls = [params[0]['to'] for _,params in batches[0] if params[0]['data'] == '0x313ce567']
+        assert calls == [pool['currency1']] and lc.ZERO not in calls
+        shown = m._swarm_launch_keys()['swarm_launch_rows'][0]['liquidity']
+        assert shown['paired_symbol'] == 'ETH' and shown['paired_amount'] == pytest.approx(14.2330796)
+        assert shown['read_ts'] == NOW and shown['state'] == 'info'
+    finally:
+        await m.close()
+
+
+async def test_fifteen_due_pools_choose_ten_distinct_oldest_result_timestamps(tmp_path):
+    m = manager(tmp_path)
+    _, answers, decimals = seed(m, 15)
+    points = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches']
+    for i, point in enumerate(points.values()):
+        point['liquidity'] = dict(ll.empty_liquidity(), read_ts=NOW - 600 + i)
+    expected = set(list(points)[:10])
+    batches, _ = responder(m, answers, decimals)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        refreshed = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches']
+        assert {key for key,p in refreshed.items() if p['liquidity']['read_ts'] == NOW} == expected
+        assert len(batches) == 1 and len(batches[0]) == 32
+    finally:
+        await m.close()
+
+
+@pytest.mark.parametrize('kind', ['initialize', 'modify'])
+async def test_ambiguous_receipts_persist_unknown_without_repeat_bootstrap(tmp_path, kind):
+    from tests.analytics.test_surf_launch_liquidity import ambiguous_receipts
+    m = manager(tmp_path)
+    seed(m, pool=False)
+    _, receipts = ambiguous_receipts(kind)
+    calls = []
+    async def fetch_receipts(hashes):
+        calls.append(hashes)
+        return copy.deepcopy(receipts)
+    async def forbidden(*args):
+        raise AssertionError('settled K8 bootstrap needs receipts only')
+    m.client.fetch_launch_receipts = fetch_receipts
+    m.client.fetch_launch_evidence = forbidden
+    try:
+        for delta in (0, 301, 602):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + delta)
+            point = next(iter(m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'].values()))
+            assert point['pool_inputs'] == {'state':'ambiguous'}
+            assert m._swarm_launch_keys()['swarm_launch_rows'][0]['liquidity'] == ll.empty_liquidity()
+            assert point['pool_fee'] == (12500 if kind == 'modify' else None)
+        assert len(calls) == 1
+    finally:
+        await m.close()
+
+
+@pytest.mark.parametrize('failure', ['missing', 'malformed'])
+async def test_incomplete_or_malformed_receipts_retry_after_bootstrap_backoff(tmp_path, failure):
+    from tests.analytics.test_surf_launch_liquidity import pool_fixture
+    m = manager(tmp_path)
+    seed(m, pool=False)
+    _, receipts = pool_fixture(737)
+    if failure == 'missing':
+        receipts = {}
+    else:
+        log = next(log for log in next(iter(receipts.values()))['logs'] if log['topics'][0] == ll.MODIFY_TOPIC)
+        log['data'] = '0x01'
+    calls = []
+    async def fetch(hashes):
+        calls.append(hashes)
+        return copy.deepcopy(receipts)
+    m.client.fetch_launch_receipts = fetch
+    try:
+        for delta in (0, 61, 299, 300):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + delta)
+            point = next(iter(m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'].values()))
+            assert 'pool_inputs' not in point
+            assert m._swarm_launch_keys()['swarm_launch_rows'][0]['liquidity'] == ll.empty_liquidity()
+            assert len(calls) == (2 if delta == 300 else 1)
     finally:
         await m.close()

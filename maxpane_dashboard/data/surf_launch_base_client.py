@@ -26,6 +26,14 @@ async def read_batch(client, urls, calls, fragments):
             continue
     return None
 
+async def read_launch_receipts(read, tx_hashes):
+    """Reuse the bounded evidence plan, sending only its receipt calls."""
+    keys, calls = evidence_calls(tx_hashes, [])
+    receipts = [(key, call) for key, call in zip(keys, calls) if key[0] == 'receipts']
+    results = await read([call for _, call in receipts]) if receipts else []
+    return None if results is None else {key[1]: result for (key, _), result in zip(receipts, results)}
+
+
 class SwarmBaseClient(OwnedHttpClient):
     def __init__(self, *, http_client=None, rpcs=BASE_LAUNCH_RPCS):
         self._client = http_client or httpx.AsyncClient(timeout=10, follow_redirects=False)
@@ -38,6 +46,9 @@ class SwarmBaseClient(OwnedHttpClient):
     async def fetch_launch_pool_state(self, calls):
         """Read v4 storage and decimals through the existing state endpoint pool."""
         return await self._rpc(calls) if calls else []
+
+    async def fetch_launch_receipts(self, tx_hashes):
+        return await read_launch_receipts(self._rpc, tx_hashes)
 
     async def fetch_launch_evidence(self, tx_hashes, addresses):
         keys, calls = evidence_calls(tx_hashes, addresses)

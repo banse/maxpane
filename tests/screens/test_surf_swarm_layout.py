@@ -128,7 +128,7 @@ _S_THRESHOLDS = (
     93,           # LATEST LAUNCHES fixed-width plateau
     101, 103,     # SITES no hidden columns at 80/35 rows
     109, 119,     # WORKFLOWS compact/full in the shared top row
-    91, 116, 157, 171,  # LAUNCHES tight liquidity/compact/roomy/full
+    91, 116, 130, 157, 171,  # LAUNCHES tight liq/compact/compact liq/roomy/full
     121, 129,     # SITES compact/full; status bar whole from 129
 )
 _A_THRESHOLDS = (
@@ -667,8 +667,9 @@ def _measure(pilot, key: str) -> dict:
     for name, w in widgets.items():
         tables = list(w.query(DataTable))
         if tables:
-            hidden[name] = tables[0].max_scroll_x
-            hscroll[name] = tables[0].show_horizontal_scrollbar
+            # A deliberately hidden empty table has no on-screen columns to lose.
+            hidden[name] = tables[0].max_scroll_x if tables[0].display else 0
+            hscroll[name] = tables[0].show_horizontal_scrollbar if tables[0].display else False
     clipped = [
         (name, line)
         for name, w in widgets.items()

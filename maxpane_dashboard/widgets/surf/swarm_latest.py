@@ -56,6 +56,17 @@ class SurfSwarmLatestLaunches(SwarmTableBase):
     def column_plan(self, tier, budget):
         return (('launch', '', max(budget-2, 1)),)
 
+    def _render_title(self, as_of):
+        title = self.TITLE
+        if rowfit.has_marker(as_of):
+            title += f' · as of {rowfit.clip(as_of, 5)}'
+        self.write('.panel-title', Text(rowfit.clip(title, max(self.size.width-2, 0))))
+
+    def _repaint(self):
+        super()._repaint()
+        if self.is_mounted:
+            self.query_one(DataTable).display = bool((self._payload or {}).get('rows'))
+
     def update_data(self, swarm_launch_rows=None, swarm_launches_as_of_hhmm=None,
                     as_of=None, **_kwargs):
         rows = None
@@ -63,7 +74,7 @@ class SurfSwarmLatestLaunches(SwarmTableBase):
             rows = sorted((deepcopy(r) for r in swarm_launch_rows
                            if isinstance(r, dict) and r.get('production') is True),
                           key=lambda r: (as_float(r.get('created_ts')) or 0,
-                                         as_float(r.get('launch_number')) or 0), reverse=True)[:5]
+                                         as_float(r.get('launch_number')) or 0), reverse=True)[:self.ROW_CAP]
             for row in rows:
                 row['as_of'] = as_of
         self.store(rows, swarm_launches_as_of_hhmm)

@@ -47,6 +47,19 @@ async def test_x_without_production_launch_is_noop(rows):
         assert pilot.app.screen is screen
 
 
+@pytest.mark.parametrize('width', [129, 130, 143, 150, 156, 157, 170, 171])
+async def test_launches_liquidity_at_owner_widths(width):
+    from tests.widgets.test_surf_swarm_liquidity import liquid_row
+    payload = _production_swarm_payload()
+    payload['swarm_launch_rows'] = [liquid_row()]
+    async with _surf_app(payload).run_test(size=(width, 46)) as pilot:
+        screen = await _open(pilot)
+        launches = screen.query_one(SurfSwarmLaunches)
+        shown = 'liq' in launches._keys
+        assert shown == (130 <= width < 157 or width >= 171)
+        assert '4.7K IMD' in _screen_text(pilot.app) if shown else '4.7K IMD' not in _screen_text(pilot.app)
+
+
 @pytest.mark.parametrize('size', [(129, 35), (130, 36), (143, 35), (150, 46), (200, 48)])
 async def test_sites_has_blank_composited_row_above_status(size):
     async with _surf_app(_production_swarm_payload()).run_test(size=size) as pilot:
