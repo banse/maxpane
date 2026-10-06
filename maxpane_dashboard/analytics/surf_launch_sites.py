@@ -14,28 +14,35 @@ def site_job_facts(job):
     }
 
 def match_sites(sites, launches, jobs, workflows):
-    """Return unique first-method matches; ambiguity never chooses a launch."""
+    """Index joins once; ambiguity across any methods never chooses a launch."""
+    job_launches, token_launches, frontend_jobs = {}, {}, {}
+    for launch_id, facts in launches.items():
+        row = facts.get('row', {})
+        if not is_production(row):
+            continue
+        for job_id in facts.get('job_ids', []):
+            job_launches.setdefault(job_id, set()).add(launch_id)
+        for artifact in mappings(row.get('artifacts')):
+            token = address(artifact.get('address'))
+            if artifact.get('role') == 'token' and token:
+                token_launches.setdefault(token, set()).add(launch_id)
+    for workflow in mappings(workflows):
+        frontend_jobs.setdefault(workflow.get('frontendJobId'), set()).update(
+            job_launches.get(workflow.get('contractsJobId'), ()))
     out = {}
     for site in sites:
-        candidates = []
         job = jobs.get(site.get('id'), {})
-        for launch_id, facts in launches.items():
-            row = facts.get('row', {})
-            if not is_production(row):
-                continue
-            ids = set(facts.get('job_ids', []))
-            method, trusted = None, True
-            if any(w.get('frontendJobId') == site.get('jobId') and w.get('contractsJobId') in ids for w in mappings(workflows)):
-                method = 'workflow'
-            elif ids.intersection(job.get('project_jobs', [])):
-                method = 'project'
-            else:
-                tokens = [address(a.get('address')) for a in mappings(row.get('artifacts')) if a.get('role') == 'token']
-                if any(t and t in job.get('addresses', []) for t in tokens):
-                    method = 'named'
-                    trusted = bool(facts.get('requester') and job.get('paid_by') == facts['requester'])
-            if method:
-                candidates.append({'launch_id': launch_id, 'method': method, 'trusted': trusted})
+        candidates = {}
+        for token in job.get('addresses', []):
+            for launch_id in token_launches.get(token, ()):
+                requester = launches[launch_id].get('requester')
+                candidates[launch_id] = {'launch_id': launch_id, 'method': 'named',
+                                        'trusted': bool(requester and job.get('paid_by') == requester)}
+        for job_id in job.get('project_jobs', []):
+            for launch_id in job_launches.get(job_id, ()):
+                candidates[launch_id] = {'launch_id': launch_id, 'method': 'project', 'trusted': True}
+        for launch_id in frontend_jobs.get(site.get('jobId'), ()):
+            candidates[launch_id] = {'launch_id': launch_id, 'method': 'workflow', 'trusted': True}
         if len(candidates) == 1:
-            out[site['id']] = candidates[0]
+            out[site['id']] = next(iter(candidates.values()))
     return out

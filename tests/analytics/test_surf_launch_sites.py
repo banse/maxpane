@@ -38,3 +38,32 @@ def test_v8_unrelated_genesis_and_adam_do_not_claim_a_production_launch():
     adam = next(s for s in sites if s['label'] == 'adam')
     jobs = {adam['id']: ls.site_job_facts(fixture('job_adam_site'))}
     assert ls.match_sites(sites, {launch['id']: facts}, jobs, fixture('workflows_100')['workflows']) == {}
+
+
+def test_site_matching_500_launches_100_sites_1000_workflows_under_50ms():
+    from time import perf_counter
+    from uuid import UUID
+    row = fixture('launch_737')
+    base = dict(extract_facts(row), row=row)
+    launches = {str(UUID(int=i+1)): dict(base, job_ids=[str(UUID(int=i+1001))]) for i in range(500)}
+    template = fixture('sites')['sites'][0]
+    sites = [dict(template, id=str(UUID(int=i+2001)), jobId=str(UUID(int=i+3001))) for i in range(100)]
+    workflows = [dict(frontendJobId=str(UUID(int=i+3001)), contractsJobId=str(UUID(int=i+1001))) for i in range(1000)]
+    start = perf_counter()
+    links = ls.match_sites(sites, launches, {}, workflows)
+    elapsed = perf_counter() - start
+    assert len(links) == 100
+    assert elapsed < .05, f'{elapsed:.6f}s'
+
+
+def test_workflow_and_project_matches_to_different_launches_remain_ambiguous():
+    from uuid import UUID
+    row = fixture('launch_737')
+    first = dict(extract_facts(row), row=row)
+    second = copy.deepcopy(first)
+    job_id = str(UUID(int=1234))
+    second['job_ids'] = [job_id]
+    site = fixture('sites')['sites'][0]
+    workflows = [{'frontendJobId': site['jobId'], 'contractsJobId': first['job_ids'][0]}]
+    jobs = {site['id']: {'project_jobs': [job_id]}}
+    assert ls.match_sites([site], {row['id']: first, str(UUID(int=4321)): second}, jobs, workflows) == {}

@@ -52,7 +52,7 @@ async def test_launch_cycle_budgets_clocks_last_good_and_production_history(tmp_
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+301)
         new=m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
         assert new['launches_ts']==old['launches_ts'] and new['sites_ts']==NOW+301
-        assert m._swarm_launch_events() is None
+        assert m._swarm_launch_events(keys['swarm_launch_rows']) is None
         m.swarm_client.fail=set(); m.swarm_client.rows=[]
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+602)
         retained = m._swarm_launch_keys()
@@ -157,3 +157,71 @@ def test_v8_signal_reading_uses_passed_snapshot_and_publishes_chain(tmp_path):
     assert result['sig_swarm_chain_id']==8453
     assert result['swarm_launch_fired'][0]['launch_id']==event['launch_id']
     assert result['sig_swarm_state']=='fired'
+
+
+@pytest.mark.asyncio
+async def test_site_match_is_detached_memoized_and_refresh_reuses_launch_rows(tmp_path, monkeypatch):
+    import threading
+    from maxpane_dashboard.analytics import surf_launch_sites as ls
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SCORES
+    m = manager(tmp_path)
+    original = ls.match_sites
+    matches = []
+    loop_thread = threading.get_ident()
+    def match(*args):
+        matches.append(threading.get_ident())
+        return original(*args)
+    monkeypatch.setattr(ls, 'match_sites', match)
+    try:
+        await m.fetch_and_compute()
+        if m._swarm_launches_task:
+            await m._swarm_launches_task
+        assert len(matches) == 1
+        assert matches[0] != loop_thread
+        keys = m._swarm_launch_keys()
+        assert len(matches) == 1
+        snapshot = copy.deepcopy(keys)
+        monkeypatch.setattr(m, '_swarm_launch_keys', lambda: pytest.fail('event rebuilt launch rows'))
+        m._swarm_launch_events(keys['swarm_launch_rows'])
+        assert keys == snapshot
+        # Route failures leave timestamps and facts unchanged: cached links stay reusable.
+        m.swarm_client.fail = {'launches', 'sites', 'policies'}
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        assert len(matches) == 1
+        m.cache.store_last_good(SLOT_SWARM_SCORES, {'workflows': fixture('workflows_100')['workflows'], 'workflows_ts': NOW+1}, ts=NOW+1)
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+1)
+        assert len(matches) == 2
+    finally:
+        await m.close()
+
+
+@pytest.mark.asyncio
+async def test_site_links_invalidate_on_new_facts_with_unchanged_failed_route_clock(tmp_path, monkeypatch):
+    from maxpane_dashboard.analytics import surf_launch_sites as ls
+    swarm = LaunchSwarm(); swarm.rows = [fixture('launch_737')]
+    original_detail = swarm.fetch_launch
+    async def unavailable(_):
+        return None
+    swarm.fetch_launch = unavailable
+    m = manager(tmp_path, swarm)
+    calls = []
+    original_match = ls.match_sites
+    def match(*args):
+        calls.append(copy.deepcopy(args[1]))
+        return original_match(*args)
+    monkeypatch.setattr(ls, 'match_sites', match)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        before = m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
+        assert len(calls) == 1
+        assert not next(iter(calls[0].values())).get('detail_version')
+        swarm.fetch_launch = original_detail
+        swarm.fail = {'launches'}
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+61)
+        after = m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
+        assert len(calls) == 2
+        assert after['launches_ts'] == before['launches_ts']
+        assert after['site_links_inputs']['facts_ts'] == NOW+61
+        assert next(iter(calls[1].values()))['ticker'] == 'ZTO'
+    finally:
+        await m.close()

@@ -5515,6 +5515,7 @@ class SurfManager:
             return
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
+        previous_facts = copy.deepcopy(facts)
         failed, refreshed_policy, policy_read_ok = False, False, True
         for route, cadence, method in (('launches', 0, 'fetch_launches'), ('sites', 300, 'fetch_sites'), ('policies', 1800, 'fetch_launch_policies')):
             if cadence and slot.get(route + '_ts') is not None and now - slot[route + '_ts'] < cadence:
@@ -5614,22 +5615,31 @@ class SurfManager:
             job = await self._guard(lambda site=site: self.swarm_client.fetch_job(site['jobId']), 'swarm site job')
             if isinstance(job, dict) and job.get('id') == site['jobId']:
                 facts['sites'][site['id']] = ls.site_job_facts(job)
+        facts = sw.coerce_launch_facts_slot(facts)
+        facts_entry = self.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS)
+        facts_ts = now if facts != previous_facts or facts_entry is None else facts_entry.ts
+        scores = self._launch_slot(SLOT_SWARM_SCORES, {})
+        inputs = {key: slot.get(key) for key in ('launches_ts', 'sites_ts')}
+        inputs.update(facts_ts=facts_ts, workflows_ts=scores.get('workflows_ts'))
+        if slot.get('site_links_inputs') != inputs:
+            slot['site_links'] = await asyncio.to_thread(ls.match_sites, slot.get('sites') or [],
+                                                        facts['launches'], facts['sites'], scores.get('workflows'))
+            slot['site_links_inputs'] = inputs
         stamps = [slot.get(route + '_ts') for route in ('launches', 'sites', 'policies') if slot.get(route + '_ts') is not None]
         if stamps:
             self.cache.store_last_good(SLOT_SWARM_LAUNCHES, sw.coerce_launches_slot(slot, now=now), ts=max(stamps))
         if facts['launches'] or facts['sites'] or self._swarm_launch_read_ok:
-            self.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, sw.coerce_launch_facts_slot(facts), ts=slot.get('launches_ts') or now)
+            self.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, sw.coerce_launch_facts_slot(facts), ts=facts_ts)
         (self.cache.mark_failed if failed else self.cache.mark_fetched)(TIER_SWARM_LAUNCHES, now)
 
     def _swarm_launch_keys(self):
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
-        scores = self._launch_slot(SLOT_SWARM_SCORES, {})
         points = facts['launches']
         raw = {r['id']: r for r in slot.get('launches') or []}
         raw.update({key: p['row'] for key, p in points.items()})
         rows = sw.launch_rows(list(raw.values())) if slot.get('launches') is not None else None
-        links = ls.match_sites(slot.get('sites') or [], points, facts['sites'], scores.get('workflows'))
+        links = slot.get('site_links') or {}
         linked_sites = {}
         for site in sorted(slot.get('sites') or [], key=lambda s: s.get('createdAt') or ''):
             link = links.get(site['id'])
@@ -5653,7 +5663,7 @@ class SurfManager:
         for site in sites or []:
             raw_site = raw_sites.get(site['job_id'])
             link = links.get(raw_site['id']) if raw_site else None
-            if link:
+            if link and link['launch_id'] in points:
                 point = points[link['launch_id']]
                 site.update(launch_number=point['row']['launchNumber'], launch_ticker=point.get('ticker'), production_link=True, link_method=link['method'], link_trusted=link['trusted'])
         # Both panels share a marker: show the older successfully read route.
@@ -5661,14 +5671,14 @@ class SurfManager:
         return {'swarm_launch_rows': rows, 'swarm_launch_summary': launch_summary(rows) if rows is not None else None,
                 'swarm_site_rows': sites, 'swarm_launches_as_of_hhmm': LastGood(None, min(stamps)).as_of_hhmm() if stamps else None}
 
-    def _swarm_launch_events(self):
+    def _swarm_launch_events(self, rows):
         """A4 reading envelope; route failure is None even while panels retain rows."""
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         if self._swarm_launch_read_ok is not True or slot.get('launches_ts') is None:
             return None
         current = {r['id'] for r in slot.get('launches') or []}
         events = []
-        for row in self._swarm_launch_keys()['swarm_launch_rows'] or []:
+        for row in rows or []:
             if not row['production'] or row['launch_id'] not in current:
                 continue
             verdict = row['verdict'] or {}
@@ -6819,7 +6829,7 @@ class SurfManager:
             else {}
         )
         launch_keys = self._swarm_launch_keys()
-        launch_events = self._swarm_launch_events()  # A4 uses this pre-spawn snapshot.
+        launch_events = self._swarm_launch_events(launch_keys['swarm_launch_rows'])  # A4 uses this pre-spawn snapshot.
         self._spawn_swarm_launches(tiers, now)
         self._spawn_swarm(tiers, now)
 

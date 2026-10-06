@@ -57,3 +57,40 @@ def test_route_data_without_valid_read_time_is_not_presented_as_read():
     slot=sw.coerce_launches_slot(raw,now=101)
     assert slot['launches'] is None and slot['launches_ts'] is None
     assert slot['sites']==[] and slot['sites_ts']==100
+
+
+def test_launch_links_and_timestamp_memo_roundtrip_and_invalid_rejected(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_LAUNCHES
+    launch = fixture('launch_737'); site = fixture('sites')['sites'][0]
+    raw = {'launches': [launch], 'launches_ts': 100, 'sites': [site], 'sites_ts': 100,
+           'site_links': {site['id']: {'launch_id': launch['id'], 'method': 'named', 'trusted': True}},
+           'site_links_inputs': {'launches_ts': 100, 'sites_ts': 100, 'facts_ts': 100, 'workflows_ts': None}}
+    clean = sw.coerce_launches_slot(raw, now=101)
+    assert clean['site_links'] == raw['site_links']
+    assert clean['site_links_inputs'] == raw['site_links_inputs']
+    cache = SurfCache(path=str(tmp_path/'links.json'), clock=lambda: 101)
+    cache.store_last_good(SLOT_SWARM_LAUNCHES, clean, ts=100); cache.save()
+    cache.load(slot_coercers={SLOT_SWARM_LAUNCHES: lambda value: sw.coerce_launches_slot(value, now=101)})
+    assert cache.get_last_good(SLOT_SWARM_LAUNCHES).payload == clean
+    clean['site_links'][site['id']]['trusted'] = False
+    assert raw['site_links'][site['id']]['trusted'] is True
+    for field, invalid in [('site_links', {'bad': {'launch_id': launch['id'], 'method': 'named', 'trusted': True}}),
+                           ('site_links', {site['id']: {'launch_id': launch['id'], 'method': 'named', 'trusted': 1}}),
+                           ('site_links_inputs', {'launches_ts': float('nan')})]:
+        bad = dict(raw, **{field: invalid})
+        result = sw.coerce_launches_slot(bad, now=101)
+        assert result['site_links'] == {} and result['site_links_inputs'] is None
+
+
+def test_live_number_map_is_strict_bounded_and_not_shared(tmp_path):
+    ids = [str(uuid.UUID(int=i+1)) for i in range(600)]
+    cache = SurfCache(path=str(tmp_path/'numbers.json'), clock=lambda: 101)
+    cache.set_baselines({'swarm_live_numbers': dict(zip(ids, range(600)))}, now=101)
+    numbers = cache.get_baselines()['swarm_live_numbers']
+    assert numbers == dict(zip(ids[100:], range(100, 600)))
+    numbers[ids[-1]] = 0
+    assert cache.get_baselines()['swarm_live_numbers'][ids[-1]] == 599
+    for invalid in ([], {'bad': 737}, {ids[0]: True}, {ids[0]: -1}, {ids[0]: '737'}):
+        cache.set_baselines({'swarm_live_numbers': invalid}, now=101)
+        cache.save(); cache.load()
+        assert cache.get_baselines()['swarm_live_numbers'] is None

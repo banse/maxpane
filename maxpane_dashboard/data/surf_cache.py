@@ -1012,12 +1012,19 @@ class SurfCache:
                 # Missing/invalid baseline is a failed read, never an empty seed.
                 if isinstance(value, list) and all(_launch_uuid(v) for v in value):
                     out[name] = list(dict.fromkeys(value))[-500:]
-                elif dropped is not None:
-                    dropped[0] += 1
+                else:
+                    out[name] = None
+                    if dropped is not None:
+                        dropped[0] += 1
                 continue
             if name == "swarm_launch_high_water":
-                if type(value) is int and value >= 0:
-                    out[name] = value
+                continue  # Legacy maximum observed number was never an eviction floor.
+            if name == "swarm_launch_evicted_floor":
+                out[name] = value if type(value) is int and value >= 0 else None
+                continue
+            if name == "swarm_live_numbers":
+                valid = isinstance(value, dict) and all(_launch_uuid(k) and type(n) is int and n >= 0 for k, n in value.items())
+                out[name] = dict(list(value.items())[-500:]) if valid else None
                 continue
             if name == "swarm_launch_fired":
                 out[name] = _launch_fired(value, horizon)

@@ -1342,10 +1342,10 @@ def _detect_hot_coin(base: dict, read: dict, now: float) -> _Det:
 
 
 # Launch IDs are not transactions: retain every transition, including a launch
-# admitted before the newest observed number. The watermark remembers evicted
-# live history; the bounded pending list preserves delayed admitted transitions.
+# admitted before the newest observed number. The floor records only actually
+# evicted launch numbers; pending IDs preserve delayed non-live transitions.
 _SWARM_CAP = 500
-_SWARM_KEYS = ("swarm_live_seen", "swarm_launch_pending", "swarm_launch_high_water", "swarm_launch_fired")
+_SWARM_KEYS = ("swarm_live_seen", "swarm_launch_pending", "swarm_live_numbers", "swarm_launch_evicted_floor", "swarm_launch_fired")
 
 
 def _launch_uuid(value):
@@ -1391,29 +1391,47 @@ def _swarm_launch_state(base, read, now):
     rows = _launch_events(read.get("swarm_launch_events"), now)
     seen = _launch_ids(base.get("swarm_live_seen"))
     pending = _launch_ids(base.get("swarm_launch_pending", []))
-    corrupt = ("swarm_live_seen" in base and seen is None) or pending is None
+    floor = base.get("swarm_launch_evicted_floor", 0)
+    numbers = base.get("swarm_live_numbers", {})
+    corrupt = (("swarm_live_seen" in base and seen is None) or pending is None
+               or type(floor) is not int or floor < 0
+               or not isinstance(numbers, dict)
+               or any(_launch_uuid(key) is None or type(n) is not int or n < 0
+                      for key, n in (numbers.items() if isinstance(numbers, dict) else ())))
+    # A valid reading repairs the failed baseline, but this read still says DEAD.
+    if rows is not None and corrupt:
+        live = [row for row in rows if row["status"] == "live"]
+        state.update(swarm_live_seen=[row["launch_id"] for row in live[-_SWARM_CAP:]],
+                     swarm_live_numbers={row["launch_id"]: row["number"] for row in live[-_SWARM_CAP:]},
+                     swarm_launch_pending=[row["launch_id"] for row in rows if row["status"] != "live"][-_SWARM_CAP:],
+                     swarm_launch_evicted_floor=max((row["number"] for row in live[:-_SWARM_CAP]), default=0))
     det = _dead("launches unavailable")
     chain = None
     if rows is not None and not corrupt:
         seeded = seen is not None
         seen = seen or []
         pending = pending or []
-        high = base.get("swarm_launch_high_water", 0)
-        high = high if type(high) is int and high >= 0 else 0
+        numbers = dict(numbers)
+        # Old baselines have UUIDs but no numbers: hydrate those still visible.
+        numbers.update({row["launch_id"]: row["number"] for row in rows if row["launch_id"] in seen})
         for row in rows:
             key = row["launch_id"]
             if row["status"] != "live" and key not in seen and key not in pending:
                 pending.append(key)
             if row["status"] != "live" or key in seen:
                 continue
-            if seeded and (row["number"] > high or key in pending):
+            if seeded and (row["number"] > floor or key in pending):
                 fired[key] = {"ts": now, **{field: row.get(field) for field in (
                     "number", "ticker", "chain_id", "token_address", "verdict_state", "verdict_passed", "verdict_failed")}}
             seen.append(key)
+            numbers[key] = row["number"]
             if key in pending:
                 pending.remove(key)
-        state.update(swarm_live_seen=seen[-_SWARM_CAP:], swarm_launch_pending=pending[-_SWARM_CAP:],
-                     swarm_launch_high_water=max([high, *(r["number"] for r in rows)]))
+        floor = max([floor, *(numbers[key] for key in seen[:-_SWARM_CAP] if key in numbers)])
+        seen = seen[-_SWARM_CAP:]
+        state.update(swarm_live_seen=seen, swarm_launch_pending=pending[-_SWARM_CAP:],
+                     swarm_live_numbers={key: numbers[key] for key in seen if key in numbers},
+                     swarm_launch_evicted_floor=floor)
         watch = next((r for r in reversed(rows) if r["status"] == "admitted" and r["launch_id"] not in seen), None)
         if watch:
             ticker = str(watch.get("ticker") or "--")[:128]
@@ -1425,7 +1443,7 @@ def _swarm_launch_state(base, read, now):
         state["swarm_launch_fired"] = fired
     active = sorted(({"launch_id": key, **deepcopy(entry)} for key, entry in fired.items()),
                     key=lambda entry: (entry["ts"], entry.get("number") or 0), reverse=True)
-    if active:
+    if active and not corrupt:
         newest = active[0]
         ticker = str(newest.get("ticker") or "--")[:128]
         word = {1: "MAINNET", 8453: "BASE", 4663: "RH"}.get(newest.get("chain_id"), "--")
@@ -1561,7 +1579,7 @@ def _advance(baselines: dict, readings: dict) -> dict:
     pair with ``("", 0.0)`` — "the window was read and held nothing" — which is
     what lets the next event fire; an outage (``None``) leaves the pair alone.
     """
-    out = {key: value for key, value in baselines.items() if key != "fired" and key not in _SWARM_KEYS}
+    out = {key: value for key, value in baselines.items() if key not in ("fired", "swarm_launch_high_water") and key not in _SWARM_KEYS}
 
     for key in BASELINE_SCALARS:
         value = readings.get(key)

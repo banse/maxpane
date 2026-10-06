@@ -76,3 +76,55 @@ def test_swarm_non_live_production_transition_below_highwater_fires():
     result, _=cycle(base,[pending],NOW+1)
     assert result['sig_swarm_state']=='fired'
     assert '#737' in result['sig_swarm_detail']
+
+
+def test_swarm_lower_number_first_seen_live_fires_and_two_out_of_order_fire():
+    high = launch_event(number=751)
+    _, base = cycle({}, [high])
+    lower = launch_event(747)
+    other = launch_event(734)
+    signals, advanced = cycle(base, [high, lower, other], NOW+1)
+    assert {r['number'] for r in signals['swarm_launch_fired']} == {734, 747}
+    assert advanced['swarm_launch_evicted_floor'] == 0
+
+
+def test_swarm_eviction_floor_uses_evicted_numbers_not_observation_high(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SurfCache
+    rows = [launch_event(launch_id=str(UUID(int=i+1)), number=1000+i) for i in range(500)]
+    _, base = cycle({}, rows)
+    late = launch_event(747)
+    _, base = cycle(base, [late], NOW+1)
+    assert base['swarm_launch_evicted_floor'] == 1000
+    assert base['swarm_live_numbers'][late['launch_id']] == 747
+    cache = SurfCache(path=str(tmp_path/'floor.json'), clock=lambda: NOW+2)
+    cache.set_baselines(base, now=NOW+2); cache.save()
+    cache.load()
+    restored = cache.get_baselines()
+    assert restored['swarm_launch_evicted_floor'] == 1000
+    assert restored['swarm_live_numbers'] == base['swarm_live_numbers']
+    assert restored['swarm_live_seen'] == base['swarm_live_seen']
+    _, restored = cycle(restored, [launch_event(734)], NOW+3)
+    assert restored['swarm_launch_evicted_floor'] == 1001
+
+
+def test_swarm_legacy_highwater_does_not_become_an_eviction_floor():
+    high = launch_event(number=751)
+    base = {'swarm_live_seen': [high['launch_id']], 'swarm_launch_high_water': 751}
+    signals, advanced = cycle(base, [high, launch_event(747)], NOW+1)
+    assert signals['sig_swarm_state'] == 'fired'
+    assert advanced['swarm_launch_evicted_floor'] == 0
+    assert 'swarm_launch_high_water' not in advanced
+
+
+def test_swarm_corrupt_seen_and_floor_remain_failed_after_cache_roundtrip(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SurfCache
+    for key, invalid in [('swarm_live_seen', ['bad']), ('swarm_launch_evicted_floor', -1),
+                         ('swarm_launch_evicted_floor', True), ('swarm_launch_evicted_floor', '751')]:
+        cache = SurfCache(path=str(tmp_path/'corrupt.json'), clock=lambda: NOW)
+        cache.set_baselines({key: invalid}, now=NOW); cache.save()
+        cache.load()
+        assert cache.get_baselines()[key] is None
+        signals, recovered = cycle(cache.get_baselines(), [launch_event()])
+        assert signals['sig_swarm_state'] is None
+        signals, _ = cycle(recovered, [launch_event(), launch_event(747)], NOW+1)
+        assert signals['sig_swarm_state'] == 'fired'
