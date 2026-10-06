@@ -2518,7 +2518,7 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             import maxpane_dashboard.widgets.surf as surf_widgets
             from maxpane_dashboard.data.surf_models import SWARM_PARKED_WIDGET_SIGNATURES
 
-            for cls in (surf_widgets.SurfSwarmWorkflows, surf_widgets.SurfSwarmThroughput,
+            for cls in (surf_widgets.SurfSwarmWorkflows, surf_widgets.SurfSwarmLatestLaunches,
                         surf_widgets.SurfSwarmInFlight, surf_widgets.SurfSwarmLaunches,
                         surf_widgets.SurfSwarmSites):
                 if cls.__name__ not in SWARM_PARKED_WIDGET_SIGNATURES:

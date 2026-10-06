@@ -239,7 +239,7 @@ from maxpane_dashboard.widgets.surf._oracle_answer import valid_identity, joined
 from maxpane_dashboard.status_message import post_status_message
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.surf._swarm_summary import SERVICE_NAMES
-from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen, ThroughputDetailScreen, WorkflowDetailScreen
+from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen, WorkflowDetailScreen
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
 from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell
@@ -278,7 +278,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
     SurfSwarmSites,
-    SurfSwarmThroughput,
+    SurfSwarmLatestLaunches,
     SurfSwarmWorkflows,
 )
 
@@ -1698,6 +1698,13 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: The default title remains 143. News fits by shedding ticker then source
 #: names; crowded SWARM titles use the owner-approved LAUNCH label, tighter
 #: separators and shortened health text, retaining the launch number.
+#: Launches v2 WP4 (2026-10-06), offline before the owner live gate:
+#: scripts/measure_layout.py rechecked capture/production-s/worst-s/v3-s/
+#: extra-states-s at 128/129/130 columns. SITES and status still bind 129.
+#: LATEST LAUNCHES replaces THROUGHPUT with the same 46-column cap.
+#: LAUNCHES full and capture-marker-clear move 157 -> 171 for liquidity;
+#: roomy starts 157, compact 116; no hidden column remains 77 at 35 rows
+#: and 75 at 80 rows. WORKFLOWS 109/119 and SITES 121/129 are unchanged.
 SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
@@ -1784,6 +1791,11 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
 #: top row keeps THROUGHPUT's nine-line floor; LAUNCHES and SITES retain
 #: eight-line floors. Fixture renders at 150x46 and 200x48 are whole;
 #: the owner's actual 150x46 live look was approved before this hardening.
+#: Launches v2 WP4: re-measured offline at 129x34/35 and 150x46 on all
+#: five SWARM payloads. The top floor stays 9; LATEST uses 7 populated or
+#: 8 empty-state lines. SITES gives one row to a bottom margin (floor 8 -> 7),
+#: preserving 35 while painting a blank row above status. LAUNCHES stays 8.
+#: AGENT 139x25 and BOARD 141x33 rechecked unchanged. Live approval pending.
 SURF_SWARM_FULL_LAYOUT_ROWS = 35
 
 #: AGENT full-layout width, re-swept 2026-09-24: 139 (unchanged).
@@ -2227,7 +2239,7 @@ _SWARM_PANELS = (
     SurfSwarmLeaderboard,
     SurfSwarmFleet,
     SurfSwarmHero,
-    SurfSwarmThroughput,
+    SurfSwarmLatestLaunches,
     SurfSwarmWorkflows,
     SurfSwarmLaunches,
     SurfSwarmSites,
@@ -3281,7 +3293,7 @@ class SurfScreen(DashboardScreen):
         min-height: 8;
         padding: 0 1;
     }
-    SurfScreen SurfSwarmThroughput {
+    SurfScreen SurfSwarmLatestLaunches {
         width: 1fr;
         max-width: 46;
         height: auto;
@@ -3307,7 +3319,8 @@ class SurfScreen(DashboardScreen):
     SurfScreen SurfSwarmSites {
         width: 100%;
         height: 1fr;
-        min-height: 8;
+        min-height: 7;
+        margin: 0 0 1 0;
         padding: 0 1;
     }
     SurfScreen #surf-agent-body {
@@ -3564,7 +3577,7 @@ class SurfScreen(DashboardScreen):
         with Vertical(id=SWARM_BODY_ID):
             with Horizontal(id=SWARM_TOP_ID):
                 yield SurfSwarmWorkflows()
-                yield SurfSwarmThroughput()
+                yield SurfSwarmLatestLaunches()
             with Horizontal(id=SWARM_BOTTOM_ID):
                 yield SurfSwarmLaunches()
             yield SurfSwarmSites()
@@ -3767,10 +3780,11 @@ class SurfScreen(DashboardScreen):
         self._show_mode()
 
     async def action_toggle_throughput(self) -> None:
-        """Open the cached throughput details in SWARM mode."""
+        """Open the latest production launch snapshot in SWARM mode."""
         if self._mode == MODE_SWARM:
-            await self.app.push_screen(ThroughputDetailScreen(
-                (self._title_data or {}).get("swarm_throughput")))
+            row = self.query_one(SurfSwarmLatestLaunches).top_row()
+            if row is not None:
+                await self.app.push_screen(LaunchDetailScreen(row))
 
     async def on_surf_swarm_workflows_selected(self, event: SurfSwarmWorkflows.Selected) -> None:
         event.stop()
@@ -3778,6 +3792,12 @@ class SurfScreen(DashboardScreen):
             await self.app.push_screen(WorkflowDetailScreen(event.row))
 
     async def on_surf_swarm_launches_selected(self, event: SurfSwarmLaunches.Selected) -> None:
+        event.stop()
+        if self._mode == MODE_SWARM:
+            row = dict(event.row, as_of=(self._title_data or {}).get("as_of"))
+            await self.app.push_screen(LaunchDetailScreen(row))
+
+    async def on_surf_swarm_latest_launches_selected(self, event: SurfSwarmLatestLaunches.Selected) -> None:
         event.stop()
         if self._mode == MODE_SWARM:
             await self.app.push_screen(LaunchDetailScreen(event.row))

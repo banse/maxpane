@@ -2544,10 +2544,8 @@ SurfScreen #surf-swarm-body {
     scrollbar-gutter: stable;
 }
 
-/* Layout v3 (2026-10-05): the floor is THROUGHPUT's nine short-form lines (title, blank, window,
- * gap, three durations, gap, completed 24h) -- the screen opens it
- * short; `x` opens a separate popup. The floor equals content, bound by the
- * layout test (`screens/surf.SURF_SWARM_FULL_LAYOUT_ROWS`). */
+/* Launches v2: preserve the nine-row top floor. LATEST LAUNCHES paints
+ * five rows below its title and blank separator; empty state also fits. */
 SurfScreen #surf-swarm-top {
     height: 1fr;
     min-height: 9;
@@ -2557,7 +2555,7 @@ SurfScreen #surf-swarm-top {
     scrollbar-gutter: stable;
 }
 
-/* Production launches layout: WORKFLOWS shares the top row with THROUGHPUT;
+/* Production launches layout: WORKFLOWS shares the top row with LATEST LAUNCHES;
  * its objective / failure column takes every spare cell. */
 SurfSwarmWorkflows {
     width: 1fr;
@@ -2566,12 +2564,9 @@ SurfSwarmWorkflows {
     padding: 0 1;
 }
 
-/* THROUGHPUT plateaus at 46 outer (44 content + padding 2) from 93 columns
- * up: its widest fixed line, `completed 24h  counting since HH:MM`, is 40 of
- * the 44 cells (with the old `accumulating` it was 44 and wrapped onto a
- * tenth line); its title's fold hint is never clipped; its two blocks clip
- * to it. */
-SurfSwarmThroughput {
+/* LATEST LAUNCHES retains THROUGHPUT's 46-column outer cap, with 44
+ * content cells and two padding cells. Age then chain shed at narrow widths. */
+SurfSwarmLatestLaunches {
     width: 1fr;
     max-width: 46;
     height: auto;
@@ -2615,7 +2610,8 @@ SurfSwarmLaunches {
 SurfSwarmSites {
     width: 100%;
     height: 1fr;
-    min-height: 8;
+    min-height: 7;
+    margin: 0 0 1 0;
     padding: 0 1;
 }
 

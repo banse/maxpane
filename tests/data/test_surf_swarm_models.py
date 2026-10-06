@@ -133,7 +133,7 @@ AGENT_WIDGETS = (
 SWARM_TARGET_WIDGETS = {
     "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
     "SurfSwarmHero",
-    "SurfSwarmThroughput",
+    "SurfSwarmLatestLaunches",
     "SurfSwarmWorkflows",
     "SurfSwarmLaunches",
     "SurfSwarmSites",
@@ -216,7 +216,7 @@ def test_every_signature_key_is_a_swarm_key():
     not a contract key would be a widget reading a value nothing emits."""
     for widget, kwargs in SWARM_WIDGET_SIGNATURES.items():
         for key in kwargs:
-            assert key in SWARM_KEYS, f"{widget} takes {key!r}, not a SWARM_KEYS entry"
+            assert key in (*SWARM_KEYS, "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
 
 
 def test_every_signature_kwarg_is_unique_within_its_widget():
@@ -473,6 +473,7 @@ def test_capability_is_parked_with_its_frozen_signature():
     from maxpane_dashboard.widgets.surf.swarm_capability import SurfSwarmCapability
 
     assert models.SWARM_PARKED_WIDGET_SIGNATURES == {
+        "SurfSwarmThroughput": ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale"),
         "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
         "SurfSwarmCapability": (
             "swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm",
@@ -480,7 +481,7 @@ def test_capability_is_parked_with_its_frozen_signature():
     }
     for widget, kwargs in models.SWARM_PARKED_WIDGET_SIGNATURES.items():
         for key in kwargs:
-            assert key in SWARM_KEYS, f"{widget} takes {key!r}, not a SWARM_KEYS entry"
+            assert key in (*SWARM_KEYS, "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
     signature = inspect.signature(SurfSwarmCapability.update_data)
     actual = tuple(name for name, value in signature.parameters.items()
                    if name != "self" and value.kind != inspect.Parameter.VAR_KEYWORD)

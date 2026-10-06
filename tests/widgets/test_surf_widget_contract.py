@@ -78,6 +78,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmSeatRecord,
     SurfSwarmSites,
     SurfSwarmThroughput,
+    SurfSwarmLatestLaunches,
     SurfSwarmWorkflows,
 )
 
@@ -220,7 +221,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # took CAPABILITY's place on SWARM on 2026-10-03; CAPABILITY is
         # parked (mounted nowhere) and still exported, so it stays in the
         # strict check against its parked signature (below).
-        SurfSwarmHero, SurfSwarmInFlight, SurfSwarmThroughput,
+        SurfSwarmHero, SurfSwarmInFlight, SurfSwarmThroughput, SurfSwarmLatestLaunches,
         SurfSwarmWorkflows, SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
         SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet,
     SurfSwarmAgentHero, SurfSwarmSeatCards,

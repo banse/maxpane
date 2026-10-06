@@ -1,8 +1,8 @@
 """The ``s`` SWARM body and the ``a`` AGENT body: modes, keys, bodies, hero swap.
 
-Layout v3 (2026-10-05): ``s`` shows the hero above LAUNCHES | THROUGHPUT,
+Launches v2: ``s`` shows WORKFLOWS | LATEST LAUNCHES above LAUNCHES,
 then full-width WORKFLOWS and SITES. IN FLIGHT and CAPABILITY are parked.
-``x`` opens throughput details; workflow rows open their snapshot popup.
+``x`` opens the latest launch; workflow rows open their snapshot popup.
 ``a`` shows the agent hero over one seat-card row and full-width RECORD. The
 record filter editor takes RECORD's place while open; the hero and cards stay.
 Geometry is ``test_surf_swarm_layout.py``'s; this file is composition and behaviour.
@@ -37,7 +37,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmAgentHero, SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet, SurfSwarmHero, SurfSwarmInFlight,
     SurfSwarmLaunches,
     SurfSwarmSeatRecord, SurfSwarmSeatCards, SurfSwarmSites,
-    SurfSwarmThroughput, SurfSwarmWorkflows,
+    SurfSwarmLatestLaunches, SurfSwarmWorkflows,
 )
 from maxpane_dashboard.data.surf_models import SWARM_PARKED_WIDGET_SIGNATURES
 from maxpane_dashboard.data import surf_swarm as sw
@@ -50,7 +50,7 @@ from tests.screens.test_surf_screen import (
 from tests.surf_swarm_fixtures import swarm_seat_capture
 
 _SIZE = (150, 45)
-_S_PANELS = tuple(cls for cls in (SurfSwarmWorkflows, SurfSwarmThroughput, SurfSwarmInFlight,
+_S_PANELS = tuple(cls for cls in (SurfSwarmWorkflows, SurfSwarmLatestLaunches, SurfSwarmInFlight,
              SurfSwarmLaunches, SurfSwarmSites) if cls.__name__ not in SWARM_PARKED_WIDGET_SIGNATURES)
 _A_PANELS = (SurfSwarmSeatCards, SurfSwarmSeatRecord)
 _BODIES = {"s": (SWARM_BODY_ID, _S_PANELS, SurfSwarmHero),
@@ -145,7 +145,9 @@ _TITLED = [(k, c) for k, (_id, panels, _h) in _BODIES.items() for c in panels
 async def test_every_swarm_panel_paints_a_blank_row_under_its_title(key, cls):
     """RECORD is the one exception, and it is asserted, not skipped: the owner
     removed its blank row for the AGENT body only (2026-09-22)."""
-    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
+    from tests.surf_launch_fixtures import launch_row
+    payload = _frozen_payload(swarm_launch_rows=[launch_row()])
+    async with _surf_app(payload).run_test(size=_SIZE) as pilot:
         screen = await _open(pilot, key)
         panel = next(iter(screen.query_one(f"#{_BODIES[key][0]}").query(cls)))
         rows = _region_text(pilot.app, panel).split("\n")
@@ -232,13 +234,7 @@ async def test_the_bindings_include_board_agent_and_seat_selection():
     assert hasattr(SurfScreen, "action_toggle_agent")
 
 
-# -- THROUGHPUT's fold, ``x`` (docs/surf_swarm_workflows_spec.md §1) ------------------
-
-
-def _throughput_lines(pilot, screen) -> list[str]:
-    """THROUGHPUT's composited rows, stripped, blank rows dropped."""
-    panel = screen.query_one(f"#{SWARM_BODY_ID}").query_one(SurfSwarmThroughput)
-    return [row.strip() for row in _region_text(pilot.app, panel).split("\n") if row.strip()]
+# -- SWARM latest-launch shortcut ------------------------------------------------
 
 
 @pytest.mark.parametrize("key", [None, "l", "e", "4", "a", "b"])
@@ -254,35 +250,6 @@ async def test_x_is_a_no_op_off_swarm(key):
         await pilot.press("x")
         await pilot.pause()
         assert pilot.app.screen is screen and screen._mode == mode
-
-
-async def test_x_opens_details_with_table_focus_and_after_a_throughput_click():
-    from maxpane_dashboard.screens.swarm_detail import ThroughputDetailScreen
-    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
-        screen = await _open(pilot, "s")
-        table = screen.query_one(SurfSwarmWorkflows).query_one(DataTable)
-        table.focus()
-        await pilot.pause()
-        await pilot.press("x")
-        await pilot.pause()
-        assert isinstance(pilot.app.screen, ThroughputDetailScreen)
-        await pilot.press("escape")
-        await pilot.pause()
-        await pilot.click(SurfSwarmThroughput)
-        await pilot.press("x")
-        await pilot.pause()
-        assert isinstance(pilot.app.screen, ThroughputDetailScreen)
-
-
-async def test_throughputs_worst_title_stays_whole_after_closing_details():
-    from maxpane_dashboard.screens.surf import SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS
-    payload = dict(_frozen_payload(), swarm_as_of_hhmm="17:45", swarm_stale=True)
-    async with _surf_app(payload).run_test(size=(SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS)) as pilot:
-        screen = await _open(pilot, "s")
-        assert _throughput_lines(pilot, screen)[0] == "THROUGHPUT · as of 17:45 · stale · x more"
-        await pilot.press("x", "space")
-        await pilot.pause()
-        assert _throughput_lines(pilot, screen)[0] == "THROUGHPUT · as of 17:45 · stale · x more"
 
 
 async def test_a_typed_x_reaches_a_focused_record_filter_field(monkeypatch):
@@ -318,7 +285,7 @@ async def test_x_is_not_priority_so_a_focused_widgets_own_x_binding_wins():
     ancestors get the key before the screen does. A focused widget with an
     ``x`` binding of its own (and no ``check_consume_key`` claim) is the
     case that tells the flag apart -- with ``priority=True`` the screen
-    would fold THROUGHPUT and that widget would never see the key."""
+    would open a launch popup and that widget would never see the key."""
     from textual.binding import Binding
     from textual.widget import Widget
 
@@ -344,7 +311,7 @@ async def test_x_is_not_priority_so_a_focused_widgets_own_x_binding_wins():
         await pilot.pause()
         assert probe.pressed == 1, "the focused widget never saw its own x"
         assert pilot.app.screen is screen
-        assert _throughput_lines(pilot, screen)[0].endswith("x more")
+        assert "x more" in _screen_text(pilot.app)
 
 
 async def test_retired_roster_selection_is_gone():
@@ -1251,7 +1218,7 @@ _SWARM_CSS_SELECTORS = (
     f"#{AGENT_BODY_ID}",
     "SurfSwarmHero", "SurfSwarmHero > SurfSwarmHeroBox",
     "SurfSwarmAgentHero", "SurfSwarmAgentHero > SurfSwarmAgentHeroBox",
-    "SurfSwarmWorkflows", "SurfSwarmThroughput", "SurfSwarmInFlight",
+    "SurfSwarmWorkflows", "SurfSwarmLatestLaunches", "SurfSwarmInFlight",
     "SurfSwarmLaunches", "SurfSwarmSites",
     "SurfSwarmAgentCards", "SurfSwarmAgentCards > SurfSwarmAgentCard", "SurfSwarmSeatRecord",
     # The AGENT column grid: one weight per column, stated per card id.

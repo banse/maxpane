@@ -135,6 +135,7 @@ from .swarm_launches import SurfSwarmLaunches
 from .swarm_seat_record import SurfSwarmSeatRecord
 from .swarm_sites import SurfSwarmSites
 from .swarm_throughput import SurfSwarmThroughput
+from .swarm_latest import SurfSwarmLatestLaunches
 from .swarm_workflows import SurfSwarmWorkflows
 
 __all__ = [
@@ -174,6 +175,7 @@ __all__ = [
     "SurfSwarmSeatCards",
     "SurfSwarmSites",
     "SurfSwarmThroughput",
+    "SurfSwarmLatestLaunches",
     "SurfSwarmWorkflows",
     "TITLE",
     "UNAVAILABLE_LINE",

@@ -12,7 +12,7 @@ import inspect
 from rich.cells import cell_len
 from textual.app import App
 
-from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import SWARM_PARKED_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.surf.swarm_throughput import (
     ACCUMULATING_WORD,
@@ -63,7 +63,7 @@ def _without(*keys) -> dict:
 
 
 def test_update_data_takes_exactly_the_frozen_keys_in_order():
-    expected = SWARM_WIDGET_SIGNATURES["SurfSwarmThroughput"]
+    expected = SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmThroughput"]
     params = inspect.signature(SurfSwarmThroughput.update_data).parameters
     named = tuple(
         name for name, p in params.items()
@@ -82,7 +82,7 @@ async def test_no_args_renders_every_row_unavailable_and_never_loading():
 
 
 async def test_every_key_none_renders_unavailable():
-    text = await _text(**{k: None for k in SWARM_WIDGET_SIGNATURES["SurfSwarmThroughput"]})
+    text = await _text(**{k: None for k in SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmThroughput"]})
     assert text.count("unavailable") == 5, text
 
 

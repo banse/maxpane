@@ -1521,9 +1521,12 @@ SWARM_KEYS: tuple[str, ...] = (
 #: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
 #: contract keys each ``update_data`` takes, verbatim, as keyword parameters. Exported
 #: so the screen test binds to this rather than to a local copy (bound in WP7).
+SWARM_LATEST_LAUNCHES_SIGNATURE = ("swarm_launch_rows", "swarm_launches_as_of_hhmm", "as_of")
+SWARM_THROUGHPUT_SIGNATURE = ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale")
+
 SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows"),
-    "SurfSwarmThroughput": ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale"),
+    "SurfSwarmLatestLaunches": SWARM_LATEST_LAUNCHES_SIGNATURE,
     # WORKFLOWS took CAPABILITY's place on SWARM (2026-10-03, docs/surf_swarm_workflows_spec.md
     # §2); CAPABILITY's frozen signature moved to SWARM_PARKED_WIDGET_SIGNATURES below.
     "SurfSwarmWorkflows": ("swarm_workflow_rows", "swarm_workflows_as_of_hhmm"),
@@ -1661,9 +1664,6 @@ SWARM_WORKFLOW_HISTORY_CAP = 1000
 #: exemption from this export, never from a hand-typed copy (wired in that spec's WP5:
 #: the surf screen, swarm-models, widget-contract and registration tests read it).
 #: 2026-10-05: IN FLIGHT joins CAPABILITY; its jobs read and tests remain.
-# Frozen for the WP4 mount switch; active/parked maps still describe today's screen.
-SWARM_LATEST_LAUNCHES_SIGNATURE = ("swarm_launch_rows", "swarm_launches_as_of_hhmm", "as_of")
-SWARM_THROUGHPUT_SIGNATURE = ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale")
 SWARM_LIQUIDITY_KEYS = (
     "state", "range_state", "paired_symbol", "paired_amount", "token_amount", "pool_fee",
     "tick", "tick_lower", "tick_upper", "owner", "owner_is_factory", "lock",
@@ -1671,6 +1671,7 @@ SWARM_LIQUIDITY_KEYS = (
 )
 
 SWARM_PARKED_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
+    "SurfSwarmThroughput": SWARM_THROUGHPUT_SIGNATURE,
     "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
     "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),
 }

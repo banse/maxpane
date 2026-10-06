@@ -54,7 +54,7 @@ async def test_throughput_popup_uses_snapshot_and_space_closes():
     async with _surf_app(_frozen_payload(swarm_throughput=tp)).run_test(size=(200, 48)) as pilot:
         screen = await _open(pilot)
         before = screen._data_manager.calls
-        await pilot.press('x')
+        await pilot.app.push_screen(ThroughputDetailScreen(tp))
         await pilot.pause()
         assert isinstance(pilot.app.screen, ThroughputDetailScreen)
         tp['states'][0]['state'] = 'CHANGED'
@@ -71,9 +71,10 @@ async def test_throughput_popup_uses_snapshot_and_space_closes():
 
 @pytest.mark.parametrize('value', [None, {}, {'states': None, 'cancel_reasons': None}])
 async def test_throughput_missing_blocks_are_yellow_unavailable(value):
+    from maxpane_dashboard.screens.swarm_detail import ThroughputDetailScreen
     async with _surf_app(_frozen_payload(swarm_throughput=value)).run_test(size=(200, 48)) as pilot:
         await _open(pilot)
-        await pilot.press('x')
+        await pilot.app.push_screen(ThroughputDetailScreen(value))
         await pilot.pause()
         matches = [seg for strip in pilot.app.screen._compositor.render_strips()
                    for seg in strip if 'unavailable' in seg.text]
@@ -107,7 +108,7 @@ async def test_swarm_layout_parks_exported_widgets_and_puts_launches_below_workf
         for name in SWARM_PARKED_WIDGET_SIGNATURES:
             assert not list(screen.query(getattr(widgets, name)))
         launches = screen.query_one(widgets.SurfSwarmLaunches).region
-        throughput = screen.query_one(widgets.SurfSwarmThroughput).region
+        throughput = screen.query_one(widgets.SurfSwarmLatestLaunches).region
         workflows = screen.query_one(widgets.SurfSwarmWorkflows).region
         sites = screen.query_one(widgets.SurfSwarmSites).region
         assert workflows.y == throughput.y and workflows.right <= throughput.x

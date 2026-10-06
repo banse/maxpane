@@ -85,7 +85,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
     SurfSwarmSites,
-    SurfSwarmThroughput,
+    SurfSwarmLatestLaunches,
     SurfSwarmWorkflows,
 )
 from tests.screens._sweeps import boundary_set
@@ -116,19 +116,19 @@ MEASURED_SWARM_ROWS = 35
 MEASURED_AGENT_COLUMNS = 139
 MEASURED_AGENT_ROWS = 25
 
-#: Full-width LAUNCHES clears the capture's marker at 157. The production
+#: Full-width LAUNCHES clears the capture's marker at 171 (157 before liq). The production
 #: payload may keep marking a parked reason; that is content, not a hidden column.
-LAUNCHES_NEVER_CLEARS_BELOW = 157
+LAUNCHES_NEVER_CLEARS_BELOW = 171
 #: Measured at 35 rows; without vertical scrolling at 80 rows the onset is 75.
 LAUNCHES_HIDES_NO_COLUMN_FROM = 77
 
 #: Every measured edge enters the width boundary set.
 _S_THRESHOLDS = (
     75, 77,       # LAUNCHES no hidden columns at 80/35 rows
-    93,           # THROUGHPUT fixed-width plateau
+    93,           # LATEST LAUNCHES fixed-width plateau
     101, 103,     # SITES no hidden columns at 80/35 rows
     109, 119,     # WORKFLOWS compact/full in the shared top row
-    116, 157,     # LAUNCHES compact/full
+    91, 116, 157, 171,  # LAUNCHES tight liquidity/compact/roomy/full
     121, 129,     # SITES compact/full; status bar whole from 129
 )
 _A_THRESHOLDS = (
@@ -169,7 +169,7 @@ _HERO = {"s": SurfSwarmHero, "a": SurfSwarmAgentHero, "b": SurfSwarmBoardHero}
 #: (2026-09-22): the cards are fixed-height, so only the body can scroll.
 _TOP_ID = {"s": SWARM_TOP_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
 #: The `height: auto` panel whose fixed line count is its row's floor.
-_FLOOR_PANEL = {"s": "SurfSwarmThroughput"}
+_FLOOR_PANEL = {"s": "SurfSwarmLatestLaunches"}
 
 #: Each panel's own direct container, named rather than derived so a
 #: restructure that moves a panel fails loudly here. SITES and RECORD are
@@ -178,7 +178,7 @@ _CONTAINER_OF = {
     "b": {SurfSwarmLeaderboard: BOARD_BODY_ID, SurfSwarmFleet: BOARD_BODY_ID},
     "s": {
         SurfSwarmWorkflows: SWARM_TOP_ID,
-        SurfSwarmThroughput: SWARM_TOP_ID,
+        SurfSwarmLatestLaunches: SWARM_TOP_ID,
         SurfSwarmLaunches: SWARM_BOTTOM_ID,
         SurfSwarmSites: SWARM_BODY_ID,
     },
@@ -958,16 +958,16 @@ async def test_the_row_pin_holds_at_the_column_pin_too(key) -> None:
 
 
 @pytest.mark.parametrize("key", sorted(_FLOOR_PANEL))
-async def test_the_top_row_floor_is_its_auto_height_panels_own_lines(key) -> None:
-    """The top floor equals the nine-line short throughput panel at the row pin, regardless of popup state vocabulary."""
+async def test_the_top_row_floor_fits_all_latest_launches_states(key) -> None:
+    """The retained nine-line floor contains all five launch rows or the empty state."""
     for payload_name in _S_PAYLOADS:
         at = await _render(PAYLOADS[payload_name](), (_COLUMN_PIN[key], _ROW_PIN[key]), key)
         floor = at["top_floor"]
-        assert at["heights"][_FLOOR_PANEL[key]] == floor == at["top_height"], (
+        assert at["heights"][_FLOOR_PANEL[key]] <= floor == at["top_height"] == 9, (
             payload_name, at["heights"][_FLOOR_PANEL[key]], floor, at["top_height"],
         )
     short = await _render(PAYLOADS[_WORST[key]](), (_COLUMN_PIN[key], 20), key)
-    assert short["heights"][_FLOOR_PANEL[key]] == floor, short["heights"]
+    assert short["heights"][_FLOOR_PANEL[key]] <= floor, short["heights"]
     assert not short["scroll"][_TOP_ID[key]], "the floored top row is scrolling inside itself"
 
 
@@ -989,7 +989,7 @@ async def test_no_height_loses_a_row_of_either_body_in_silence(key, payload_name
         )
         if key == "s" and not scrolling:
             # Nothing scrolls, so THROUGHPUT must be painting every line it has.
-            assert r["heights"]["SurfSwarmThroughput"] <= r["top_height"], (rows, r["heights"])
+            assert r["heights"]["SurfSwarmLatestLaunches"] <= r["top_height"], (rows, r["heights"])
 
 
 # ---------------------------------------------------------------------------
@@ -1326,7 +1326,7 @@ async def test_the_swarm_body_is_whole_at_eighty_rows(payload_name):
     _check_width(r, "s", payload_name, width)
 
 
-@pytest.mark.parametrize("width,tier", [(115, "tight"), (116, "compact"), (156, "compact"), (157, "full")])
+@pytest.mark.parametrize("width,tier", [(115, "tight"), (116, "compact"), (156, "compact"), (157, "roomy"), (170, "roomy"), (171, "full")])
 async def test_v8_production_launch_tiers_are_measured_in_full_width_row(width, tier):
     r = await _render(_production_swarm_payload(), (width, 35), "s")
     assert r["tiers"]["SurfSwarmLaunches"] == tier
