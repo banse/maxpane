@@ -2663,6 +2663,7 @@ class SurfManager:
         launchpad_slot: dict[str, Any] | None = None,
         launchpad_ts: float | None = None,
         state: Any = None,
+        swarm_launch_events: dict | None = None,
     ) -> dict[str, Any]:
         """This cycle's values for the nine detectors, keyed by ``READING_KEYS``
         plus the five Task 7 will need that ``READING_KEYS`` does not name yet.
@@ -2723,6 +2724,7 @@ class SurfManager:
         # collapsing that here would erase the distinction before it gets there.
         feed_items = list(channel.get("items") or ()) if channel else None
         read: dict[str, Any] = dict.fromkeys(READING_KEYS)
+        read["swarm_launch_events"] = swarm_launch_events
 
         # -- fast tier: three nonces, every refresh, the whole early edge -----
         read["announce_nonce"] = data.get("feed_nonce")
@@ -6717,6 +6719,8 @@ class SurfManager:
             out[f"sig_{name}_age_s"] = _opt_float(
                 (signals or {}).get(f"sig_{name}_age_s")
             )
+        out["sig_swarm_chain_id"] = (signals or {}).get("sig_swarm_chain_id")
+        out["swarm_launch_fired"] = (signals or {}).get("swarm_launch_fired", [])
         targets: list[str] = []
         fired = advanced.get("fired") if isinstance(advanced, dict) else None
         for name in ("post", "thread"):
@@ -7198,6 +7202,7 @@ class SurfManager:
                     launchpad_entry.ts if launchpad_entry is not None else None
                 ),
                 state=state,
+                swarm_launch_events=launch_events,
             ),
             now,
         )

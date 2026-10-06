@@ -139,3 +139,19 @@ async def test_policy_version_newer_than_cache_refreshes_before_judgment(tmp_pat
         assert swarm.calls.count('policies')==1
         assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K2']['state']=='pass'
     finally: await m.close()
+
+
+def test_v8_signal_reading_uses_passed_snapshot_and_publishes_chain(tmp_path):
+    from tests.surf_launch_fixtures import launch_event
+    from maxpane_dashboard.analytics.surf_signals import build_signals
+    m=manager(tmp_path)
+    event=launch_event(chain_id=8453)
+    envelope={'events':[event], 'ts':NOW}
+    reading=m._readings({},None,{},[],swarm_launch_events=envelope)
+    assert reading['swarm_launch_events'] is envelope
+    _, baseline=build_signals({}, {'swarm_launch_events':{'events':[], 'ts':NOW}}, NOW)
+    m.cache.set_baselines(baseline,now=NOW)
+    result=m._signal_keys(reading,NOW+10)
+    assert result['sig_swarm_chain_id']==8453
+    assert result['swarm_launch_fired'][0]['launch_id']==event['launch_id']
+    assert result['sig_swarm_state']=='fired'

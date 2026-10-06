@@ -679,7 +679,9 @@ async def test_joined_visible_addresses_are_whole_linked_for_known_chain_only(ch
         await pilot.pause()
         assert any(target[2]==address for target in icon_targets(pilot.app))
         links=[target for target in link_targets(pilot.app) if target[4]==address]
-        assert bool(links) is (chain==1)
+        assert bool(links) is (chain in (1,4663))
+        if chain==4663:
+            assert all(t[5].startswith("https://robinhoodchain.blockscout.com/") for t in links)
         lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
         assert address+' ⧉' in '\n'.join(lines)
     tight='\n'.join(await _record((110,12),swarm_seat_work_rows=[row]))

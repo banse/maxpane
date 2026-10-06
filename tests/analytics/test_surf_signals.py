@@ -647,9 +647,9 @@ def test_output_keys_are_exactly_the_prd_contract():
     # the payload prefix.
     assert sig.SIGNAL_NAMES == (
         "post", "thread", "lp", "gate", "deploy", "bridge", "burn", "decoy",
-        "burnready", "hot",
+        "burnready", "hot", "swarm",
     )
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 30
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 35
 
 
 def test_signal_output_keys_grew_to_thirty():
@@ -658,8 +658,8 @@ def test_signal_output_keys_grew_to_thirty():
     step inside this module. ``SURF_KEYS`` in ``data/surf_models.py`` is a
     different matter and does have to be grown by hand; the manager logs and
     drops any key that is not in it, which is what caught NEW REPLY."""
-    assert len(sig.SIGNAL_NAMES) == 10
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 30
+    assert len(sig.SIGNAL_NAMES) == 11
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 35
 
 
 def test_quiet_refresh_leaves_post_ok():
@@ -1958,6 +1958,17 @@ MATRIX: tuple[tuple[str, str, dict, dict, str], ...] = (
 )
 
 
+from tests.surf_launch_fixtures import launch_event
+_SWARM_EVENT = launch_event()
+MATRIX += (
+    ("swarm", "ok", {}, {"swarm_launch_events": {"events": [], "ts": NOW}}, "no new swarm launch"),
+    ("swarm", "watch", {}, {"swarm_launch_events": {"events": [launch_event(status="admitted")], "ts": NOW}}, "deploying $ZTO #737"),
+    ("swarm", "fired", {"swarm_live_seen": []}, {"swarm_launch_events": {"events": [_SWARM_EVENT], "ts": NOW}},
+     f"$ZTO #737 MAINNET ✓ {_SWARM_EVENT['token_address']}"),
+    ("swarm", None, {}, {"swarm_launch_events": None}, "launches unavailable"),
+)
+
+
 @pytest.mark.parametrize(
     "name,expected_state,base_overrides,overrides,expected_detail",
     MATRIX,
@@ -2319,6 +2330,7 @@ def test_the_only_data_imports_are_the_three_documented_boundary_modules():
 
     imports = [line for line in _MODULE_SOURCE.splitlines() if line.startswith("from maxpane")]
     assert imports == [
+        "from maxpane_dashboard.analytics.surf_swarm_signals import launch_verdict_label",
         "from maxpane_dashboard.analytics.surf_launchpad import HOT_MAX_AGE_S, hot_coin_threshold",
         "from maxpane_dashboard.data.surf_addresses import ANNOUNCE, DEV_WALLET, OPS_WALLET",
         "from maxpane_dashboard.data.surf_models import CHANNEL_KINDS",
@@ -2350,14 +2362,14 @@ def test_public_surface_is_the_frozen_one():
 
 def test_signal_output_keys_match_the_prd_naming():
     """PRD §5: ``sig_{name}_{state,detail,age_s}`` for all ten detectors."""
-    assert len(sig.SIGNAL_OUTPUT_KEYS) == 30
+    assert len(sig.SIGNAL_OUTPUT_KEYS) == 35
     assert sig.SIGNAL_OUTPUT_KEYS[:3] == ("sig_post_state", "sig_post_detail", "sig_post_age_s")
     assert set(sig.SIGNAL_OUTPUT_KEYS) == {
         f"sig_{name}_{field}"
         for name in ("post", "thread", "lp", "gate", "deploy", "bridge", "burn",
-                     "decoy", "burnready", "hot")
+                     "decoy", "burnready", "hot", "swarm")
         for field in ("state", "detail", "age_s")
-    }
+    } | {"sig_swarm_chain_id", "swarm_launch_fired"}
 
 
 def test_every_state_value_is_one_of_the_four():
@@ -2382,7 +2394,10 @@ def test_details_fit_the_signals_panel():
         out, _ = sig.build_signals(_baseline(**base_overrides), _readings(**overrides), NOW)
         for key, value in out.items():
             if key.endswith("_detail"):
-                assert len(value) <= 55, (key, len(value), value)
+                # A4 retains full addresses for copy/link actions; the panel
+                # spends 17 window cells plus its two-cell copy icon.
+                shown = re.sub(r"0x[0-9a-fA-F]{40}", "0x12345678…123456 ⧉", value)
+                assert len(shown) <= 55, (key, len(shown), value)
 
 
 # ---------------------------------------------------------------------------

@@ -31,7 +31,7 @@ SIG = SWARM_WIDGET_SIGNATURES["SurfSwarmLaunches"]
 ROW_KEYS = SURF_ROW_KEYS["swarm_launch_rows"]
 GUTTER = SurfSwarmLaunches.GUTTER_COLS
 
-SIZE = (140, 24)
+SIZE = (180, 24)
 AS_OF = "04:06"
 ADDR = "0x" + "81" * 20
 ADDR2 = "0x" + "73" * 20
@@ -75,7 +75,7 @@ async def _launches(size=SIZE, **kwargs) -> str:
 
 def _data_lines(text: str) -> list[str]:
     lines = text.split("\n")
-    header = next(i for i, line in enumerate(lines) if "status" in line and "repo" in line)
+    header = next(i for i, line in enumerate(lines) if "status" in line and "ticker" in line)
     return [line for line in lines[header + 1:] if line.strip()]
 
 
@@ -88,7 +88,7 @@ async def _probe(rows, size=SIZE, **extra):
     """``(text, icons, link urls)`` read off the compositor for *rows*."""
     async with _Probe().run_test(size=size) as pilot:
         widget = pilot.app.query_one(SurfSwarmLaunches)
-        widget.update_data(swarm_launch_rows=rows, swarm_scores_as_of_hhmm=AS_OF, **extra)
+        widget.update_data(swarm_launch_rows=rows, swarm_launches_as_of_hhmm=AS_OF, **extra)
         await pilot.pause()
         text = "\n".join("".join(seg.text for seg in strip)
                          for strip in pilot.app.screen._compositor.render_strips())
@@ -119,16 +119,16 @@ async def test_no_args_and_all_none_render_unavailable_not_no_data():
 
 
 async def test_an_empty_list_is_a_real_negative_and_differs_from_none():
-    text = await _launches(swarm_launch_rows=[], swarm_scores_as_of_hhmm=AS_OF)
+    text = await _launches(swarm_launch_rows=[], swarm_launches_as_of_hhmm=AS_OF)
     assert "No data" in text and "unavailable" not in text, text
 
 
 def test_the_row_tuples_agree_with_the_column_count():
     width = len(SurfSwarmLaunches.COLUMNS)
-    assert width == len(SurfSwarmLaunches.COLUMN_SPECS) == 7
+    assert width == len(SurfSwarmLaunches.COLUMN_SPECS) == 10
     assert len(SurfSwarmLaunches.EMPTY_ROW) == width
     assert len(SurfSwarmLaunches.LOADING_ROW) == width
-    assert SurfSwarmLaunches.ROW_CAP == 12
+    assert SurfSwarmLaunches.ROW_CAP == 24
 
 
 # -- artifacts: one icon per row, linked to the row's own chain (R-C, E7) -----------
@@ -148,10 +148,10 @@ async def test_the_copy_icon_appears_once_per_row_with_artifacts():
 async def test_five_artifacts_show_the_first_and_plus_four():
     arts = [_artifact(), _artifact(ADDR2), _artifact(ADDR2), _artifact(ADDR2), _artifact(ADDR2)]
     text = await _launches(swarm_launch_rows=[_launch(artifacts=arts, artifact_count=5)],
-                           swarm_scores_as_of_hhmm=AS_OF)
+                           swarm_launches_as_of_hhmm=AS_OF)
     assert f"{COPY_GLYPH} +4" in text, text
     one = await _launches(swarm_launch_rows=[_launch(artifacts=[_artifact()], artifact_count=1)],
-                          swarm_scores_as_of_hhmm=AS_OF)
+                          swarm_launches_as_of_hhmm=AS_OF)
     assert "+" not in _data_lines(one)[0], one
 
 
@@ -161,13 +161,13 @@ async def test_a_sepolia_row_links_its_address_on_sepolia_etherscan():
 
 
 async def test_a_mainnet_row_links_on_etherscan():
-    _text, _icons, urls = await _probe([_launch(chain_id=1)])
+    _text, _icons, urls = await _probe([_launch(chain_id=1, production=True)])
     assert urls == [f"https://etherscan.io/address/{ADDR}"], urls
 
 
 async def test_an_unknown_or_missing_chain_links_nothing_but_keeps_the_icon():
     for chain_id in (None, 999_999_999, "1"):
-        text, icons, urls = await _probe([_launch(chain_id=chain_id)])
+        text, icons, urls = await _probe([_launch(chain_id=chain_id, production=True)])
         assert urls == [], (chain_id, urls)
         assert len(icons) == 1, (chain_id, icons)
         assert "—" in _data_lines(text)[0], text
@@ -184,32 +184,32 @@ async def test_an_artifact_with_an_invalid_address_shows_its_name_with_no_icon()
 
 
 async def test_the_chain_word_is_per_row_and_the_network_kwarg_is_not_painted():
-    rows = [_launch(chain_id=11155111), _launch(launch_number=3, chain_id=1)]
-    text = await _launches(swarm_launch_rows=rows, swarm_scores_as_of_hhmm=AS_OF,
+    rows = [_launch(chain_id=11155111), _launch(launch_number=3, chain_id=1, production=True)]
+    text = await _launches(swarm_launch_rows=rows, swarm_launches_as_of_hhmm=AS_OF,
                            swarm_network="BASE")
     first, second = _data_lines(text)[:2]
-    assert "SEPOLIA" in first and "MAINNET" in second
+    assert "MAINNET" in first and "SEPOLIA" in second
     assert "BASE" not in text
 
 
 async def test_repo_is_owner_slash_name_for_github_and_unmangled_otherwise():
     rows = [_launch(), _launch(launch_number=2, repo_url="https://gitlab.com/o/r"),
             _launch(launch_number=1, repo_url="https://github.com.evil.example/o/r")]
-    text = await _launches(swarm_launch_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _launches(swarm_launch_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
     first, second, third = _data_lines(text)[:3]
-    assert "Identity-md/launch-62-build" in first and "https://" not in first, first
+    assert "Identity-md/launch-62-b…" in first and "https://" not in first, first
     assert "https://gitlab.com/o/r" in second, second
-    assert "https://github.com.evil.ex" in third, third
+    assert "https://github.com.evil…" in third, third
 
 
 async def test_status_is_escaped_and_coloured_on_the_raw_word():
     # Row 0 is the focused table's cursor row and paints in the cursor style,
     # so the two probed rows sit below it.
-    rows = [_launch(launch_number=3, status="[/x]parked"), _launch(launch_number=2, status="live"),
+    rows = [_launch(launch_number=3, status="[/x]parked", production=True), _launch(launch_number=2, status="live", production=True),
             _launch(launch_number=1, status="abandoned")]
     async with _Probe().run_test(size=SIZE) as pilot:
         widget = pilot.app.query_one(SurfSwarmLaunches)
-        widget.update_data(swarm_launch_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+        widget.update_data(swarm_launch_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
         rows_text = ["".join(seg.text for seg in strip) for strip in strips]
@@ -224,7 +224,7 @@ async def test_status_is_escaped_and_coloured_on_the_raw_word():
         green = pilot.app.ansi_theme.ansi_colors[2]
         plain = pilot.app.screen.get_style_at(rows_text[y_gone].index("evm_project"), y_gone)
         assert live_style.color is not None and live_style.color.get_truecolor() == green, live_style
-        assert gone_style.color != plain.color, (gone_style, plain)
+        assert gone_style.color == plain.color, (gone_style, plain)  # Sepolia is dim across the entire row.
         assert gone_style.color.get_truecolor() != green
         assert "[/x]" not in "\n".join(rows_text) and "parked" in "\n".join(rows_text)
 
@@ -232,7 +232,7 @@ async def test_status_is_escaped_and_coloured_on_the_raw_word():
 async def test_a_hostile_parked_reason_renders_without_raising():
     rows = [_launch(status="parked", parked_reason="manifest: [[x]/y] broken"),
             _launch(launch_number=2, status="parked", parked_reason="stuck[reason")]
-    text = await _launches(swarm_launch_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _launches(swarm_launch_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
     first, second = _data_lines(text)[:2]
     assert "manifest:" in first and "broken" in first and "[/x]" not in text, first
     assert "stuck[reason" in second, second
@@ -242,10 +242,10 @@ async def test_a_clipped_parked_reason_lights_the_title_hint_at_the_full_tier():
     """The plan says the reason wraps; a base-rendered ``DataTable`` row is one
     line, so the cell is clipped with ``…`` and the title says so."""
     short = await _launches(swarm_launch_rows=[_launch(status="parked", parked_reason="no token")],
-                            swarm_scores_as_of_hhmm=AS_OF)
+                            swarm_launches_as_of_hhmm=AS_OF)
     assert "no token" in short and "‹" not in short, short
     long = await _launches(swarm_launch_rows=[_launch(status="parked", parked_reason="x" * 197)],
-                           swarm_scores_as_of_hhmm=AS_OF)
+                           swarm_launches_as_of_hhmm=AS_OF)
     assert "…" in long and "‹" in long, long
 
 
@@ -254,13 +254,13 @@ async def test_a_non_dict_row_is_skipped_and_the_cap_holds():
     a gap, so a junk item inside the cap costs one line and never raises."""
     clean = [_launch(launch_number=n) for n in range(20, 0, -1)]
     lines = _data_lines(await _launches((SIZE[0], 40), swarm_launch_rows=clean,
-                                        swarm_scores_as_of_hhmm=AS_OF))
+                                        swarm_launches_as_of_hhmm=AS_OF))
     assert len(lines) == 12, len(lines)
     assert lines[0].lstrip().startswith("20") and lines[-1].lstrip().startswith("9")
     lines = _data_lines(await _launches((SIZE[0], 40), swarm_launch_rows=[42] + clean,
-                                        swarm_scores_as_of_hhmm=AS_OF))
-    assert len(lines) == 11, len(lines)
-    assert lines[0].lstrip().startswith("20") and lines[-1].lstrip().startswith("10")
+                                        swarm_launches_as_of_hhmm=AS_OF))
+    assert len(lines) == 12, len(lines)
+    assert lines[0].lstrip().startswith("20") and lines[-1].lstrip().startswith("9")
 
 
 # -- title and footer ------------------------------------------------------------------
@@ -268,9 +268,9 @@ async def test_a_non_dict_row_is_skipped_and_the_cap_holds():
 
 async def test_the_title_carries_the_marker_only_when_it_is_real():
     assert f"LAUNCHES · as of {AS_OF}" in await _launches(swarm_launch_rows=[_launch()],
-                                                         swarm_scores_as_of_hhmm=AS_OF)
+                                                         swarm_launches_as_of_hhmm=AS_OF)
     for as_of in (None, ""):
-        text = await _launches(swarm_launch_rows=[_launch()], swarm_scores_as_of_hhmm=as_of)
+        text = await _launches(swarm_launch_rows=[_launch()], swarm_launches_as_of_hhmm=as_of)
         assert "as of" not in text and "LAUNCHES" in text
 
 
@@ -287,7 +287,7 @@ async def test_the_launch_footer_keeps_a_blank_row():
 
 
 async def test_no_summary_means_no_footer():
-    text = await _launches(swarm_launch_rows=[_launch()], swarm_scores_as_of_hhmm=AS_OF)
+    text = await _launches(swarm_launch_rows=[_launch()], swarm_launches_as_of_hhmm=AS_OF)
     assert "launches" not in text, text
 
 
@@ -307,9 +307,9 @@ def test_the_derived_tier_widths_land_inside_their_tiers():
 
 async def test_compact_sheds_kind_and_tight_sheds_the_reason_and_narrows_the_address():
     row = [_launch(status="parked", parked_reason="no token")]
-    full = await _launches((_FULL, 20), swarm_launch_rows=row, swarm_scores_as_of_hhmm=AS_OF)
-    compact = await _launches((_COMPACT, 20), swarm_launch_rows=row, swarm_scores_as_of_hhmm=AS_OF)
-    tight = await _launches((_TIGHT, 20), swarm_launch_rows=row, swarm_scores_as_of_hhmm=AS_OF)
+    full = await _launches((_FULL, 20), swarm_launch_rows=row, swarm_launches_as_of_hhmm=AS_OF)
+    compact = await _launches((_COMPACT, 20), swarm_launch_rows=row, swarm_launches_as_of_hhmm=AS_OF)
+    tight = await _launches((_TIGHT, 20), swarm_launch_rows=row, swarm_launches_as_of_hhmm=AS_OF)
 
     head = ADDR[: 2 + 8]           # the 17-cell window keeps 0x + 8 hex
     tight_head = ADDR[: 2 + 4] + "…"  # the 11-cell window keeps 0x + 4 hex
@@ -325,29 +325,29 @@ async def test_compact_sheds_kind_and_tight_sheds_the_reason_and_narrows_the_add
     assert head not in tight and tight_head in tight, tight
     assert COPY_GLYPH in tight and "‹" in tight
     for text in (full, compact, tight):
-        assert "SEPOLIA" in text and "Identity-md/" in text, text
+        assert "SEPOLIA" in text and "ticker" in text and "verdict" in text, text
 
 
 async def test_the_full_tier_hides_no_column_at_its_own_threshold():
     async with _Probe().run_test(size=(FULL_WIDTH + GUTTER, 20)) as pilot:
         widget = pilot.app.query_one(SurfSwarmLaunches)
-        widget.update_data(swarm_launch_rows=[_launch()], swarm_scores_as_of_hhmm=AS_OF)
+        widget.update_data(swarm_launch_rows=[_launch()], swarm_launches_as_of_hhmm=AS_OF)
         await pilot.pause()
         table = pilot.app.query_one(DataTable)
         assert table.max_scroll_x == 0
-        assert len(table.columns) == 7
+        assert len(table.columns) == 10
         text = "\n".join("".join(seg.text for seg in strip)
                          for strip in pilot.app.screen._compositor.render_strips())
-        assert re.search(r"#\s+kind\s+status\s+chain\s+repo\s+artifacts\s+parked reason", text), text
+        assert re.search(r"#\s+ticker\s+status\s+chain\s+token\s+site\s+verdict\s+kind\s+repo\s+parked reason", text), text
         assert "‹" not in text
 
 
 async def test_the_parked_reason_column_takes_every_spare_column():
     reason = "y" * 60
     narrow = await _launches((FULL_WIDTH + GUTTER, 20), swarm_launch_rows=[_launch(parked_reason=reason)],
-                             swarm_scores_as_of_hhmm=AS_OF)
+                             swarm_launches_as_of_hhmm=AS_OF)
     wide = await _launches((FULL_WIDTH + GUTTER + 60, 20), swarm_launch_rows=[_launch(parked_reason=reason)],
-                           swarm_scores_as_of_hhmm=AS_OF)
+                           swarm_launches_as_of_hhmm=AS_OF)
     assert "…" in narrow and "‹" in narrow, narrow
     assert reason in wide and "‹" not in wide, wide
 
@@ -361,24 +361,19 @@ async def test_repo_cell_drops_controls_before_fitting():
 
 
 async def test_launch_numbers_are_plain_identifiers_and_overflow_is_marked():
-    for number, shown in ((62, "62"), (1000, "1000"), (9999, "9999"), (12345, "123…"),
+    for number, shown in ((62, "62"), (1000, "1000"), (9999, "9999"), (1234567, "12345…"),
                           (None, "--"), (True, "--"), ("1000", "--")):
         text = await _launches(swarm_launch_rows=[_launch(launch_number=number)])
         assert _data_lines(text)[0].split()[0] == shown, text
-        assert ("‹" in text.splitlines()[0]) == (number == 12345), text
+        assert ("‹" in text.splitlines()[0]) == (number == 1234567), text
 
 
-async def test_tight_repo_cell_fits_its_column_with_a_visible_ellipsis():
-    from rich.cells import cell_len
-    from maxpane_dashboard.widgets.surf.swarm_launches import _TIGHT_REPO_COLS
-
+async def test_tight_sheds_repo_but_keeps_ticker_and_verdict():
     async with _Probe().run_test(size=(_TIGHT, 20)) as pilot:
         widget = pilot.app.query_one(SurfSwarmLaunches)
         widget.update_data(swarm_launch_rows=[_launch()])
         await pilot.pause()
         assert widget._tier == "tight"
-        text = "\n".join("".join(seg.text for seg in strip)
-                         for strip in pilot.app.screen._compositor.render_strips())
-        repo = next(word for word in _data_lines(text)[0].split() if word.startswith("Identity-md/"))
-        assert repo.endswith("…"), repo
-        assert cell_len(repo) <= _TIGHT_REPO_COLS, repo
+        text = "\n".join(strip.text for strip in pilot.app.screen._compositor.render_strips())
+        assert "Identity-md/" not in text and "repo" not in text
+        assert "ticker" in text and "verdict" in text

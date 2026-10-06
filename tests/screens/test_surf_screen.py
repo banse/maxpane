@@ -2978,7 +2978,7 @@ _MARKET_FIELDS = ("$0.7074", "vol 24h", "parity", "price ", "supply")
 #: quiet line renders last, after every detector slot, and so is always the
 #: first thing scrolled off -- the role BURN's own row used to play.
 _DETECTORS = ("NEW POST", "BRIDGE STAGE", "DECOY POOL", "BURN READY",
-              "HOT COIN", "5 quiet")
+              "HOT COIN", "SWARM LAUNCH", "5 quiet")
 
 #: The activity rows the sweep payload produces, once the dust row is dropped.
 #: Composited fragments, unique to that panel.
@@ -3025,7 +3025,12 @@ _ACTIVITY_ROWS = ("0x61CC704c…73f14E", "NFPM", "OFT endpoint")
 #: taller child of the bottom row now, and has been since it grew back past
 #: the market. A row taken off the market buys this screen nothing until the
 #: two are level again.
-FIRST_WHOLE_HEIGHT = 38
+#: **38 -> 39 on 2026-10-06**, WP3's eleventh detector: this mixed fixture
+#: leaves SWARM LAUNCH unknown, so it retains its own line. At 143x38 the
+#: rail scrolls and the title says taller; 143x39 and 143x40 clear both, with
+#: every required row composited. This is the mixed-payload test measurement,
+#: not a production pin or an all-detectors-active claim.
+FIRST_WHOLE_HEIGHT = 39
 
 
 def _visible_panel(app, widget, clip) -> str:

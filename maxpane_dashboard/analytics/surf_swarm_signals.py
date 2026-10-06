@@ -220,3 +220,19 @@ def daemon_differs(seat_daemon: object, majority: object) -> bool | None:
             or len(majority) != 3 or _semver(majority[0]) is None):
         return None
     return seat_daemon != majority[0]
+
+
+def launch_verdict_label(verdict):
+    """Shared table/signal wording: attested origin, never a safety claim."""
+    if not isinstance(verdict, dict):
+        return "--"
+    state = verdict.get("state")
+    if state == "swarm":
+        return "✓ swarm"
+    if state == "partial":
+        passed = verdict.get("passed")
+        return f"… {passed if type(passed) is int and 0 <= passed <= 4 else 0}/4"
+    if state in ("mismatch", "failed"):
+        failed = verdict.get("failed")
+        return f"✗ {failed if failed in ('K2', 'K3', 'K4') else 'K4'}"
+    return "-- pending" if state == "not_deployed" else "--"

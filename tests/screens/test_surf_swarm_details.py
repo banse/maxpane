@@ -215,7 +215,8 @@ async def test_failed_workflows_keep_the_successful_as_of_in_the_composited_titl
                 await manager._pool_swarm_scores({TIER_SWARM_SCORES}, later)
                 after = manager.cache.get_last_good(SLOT_SWARM_SCORES)
                 assert after.ts == later and after.payload["workflows"] == first.payload["workflows"]
-                assert {"/jobs", "/skills", "/launches", "/sites", "/workflows"} <= set(calls)
+                assert {"/jobs", "/skills", "/workflows"} <= set(calls)
+                assert not {"/launches", "/sites"} & set(calls)
                 keys = manager._swarm_scores_keys(after.payload, after, None, later)
                 assert keys["swarm_scores_as_of_hhmm"] != old_marker
                 assert keys["swarm_workflow_rows"] == first_keys["swarm_workflow_rows"]

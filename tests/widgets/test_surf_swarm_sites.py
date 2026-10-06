@@ -67,7 +67,7 @@ class _Probe(App):
 async def _urls(rows, size=SIZE) -> list[str]:
     async with _Probe().run_test(size=size) as pilot:
         widget = pilot.app.query_one(SurfSwarmSites)
-        widget.update_data(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+        widget.update_data(swarm_site_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
         await pilot.pause()
         return sorted({url for _x, _y, _n, _k, _v, url in link_targets(pilot.app) if url})
 
@@ -94,7 +94,7 @@ async def test_no_args_and_all_none_render_unavailable_not_no_data():
 
 
 async def test_an_empty_list_is_a_real_negative_and_differs_from_none():
-    text = await _sites(swarm_site_rows=[], swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites(swarm_site_rows=[], swarm_launches_as_of_hhmm=AS_OF)
     assert "No data" in text and "unavailable" not in text, text
 
 
@@ -115,7 +115,7 @@ SITE_URL = "https://roll.sites.imd.fun/"
 
 async def test_the_tx_links_on_etherscan_mainnet_with_no_icon():
     assert await _urls([_site()]) == [f"https://etherscan.io/tx/{TX}", JOB_URL, SITE_URL]
-    text = await _sites(swarm_site_rows=[_site()], swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites(swarm_site_rows=[_site()], swarm_launches_as_of_hhmm=AS_OF)
     assert COPY_GLYPH not in text, "a hash is outside the copy rule"
     assert TX[: 2 + 8] in text, text
 
@@ -123,12 +123,12 @@ async def test_the_tx_links_on_etherscan_mainnet_with_no_icon():
 async def test_a_value_that_is_not_a_tx_hash_renders_plain_and_unlinked():
     assert await _urls([_site(tx_hash="0x" + "9d" * 20)]) == [JOB_URL, SITE_URL]
     assert await _urls([_site(tx_hash=None)]) == [JOB_URL, SITE_URL]
-    text = await _sites(swarm_site_rows=[_site(tx_hash=None)], swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites(swarm_site_rows=[_site(tx_hash=None)], swarm_launches_as_of_hhmm=AS_OF)
     assert re.search(r"--\s+115a2caa$", _data_lines(text)[0].rstrip()), text
 
 
 async def test_the_cid_window_keeps_its_head_and_its_tail():
-    text = await _sites(swarm_site_rows=[_site()], swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites(swarm_site_rows=[_site()], swarm_launches_as_of_hhmm=AS_OF)
     line = _data_lines(text)[0]
     window = _window_cid(CID, CID_COLS)
     assert window in line, (window, line)
@@ -150,7 +150,7 @@ def test_window_cid_is_cell_measured_and_degrades_to_a_dash():
 async def test_size_is_compact_bytes_and_a_dash_when_unknown():
     rows = [_site(bytes=2_445_908), _site(label="tiny", bytes=584), _site(label="none", bytes=None),
             _site(label="str", bytes="17211")]
-    text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites(swarm_site_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
     big, tiny, none, as_str = _data_lines(text)[:4]
     assert "2.4M" in big, big
     assert " 584 " in tiny and "584.0" not in tiny, tiny
@@ -163,7 +163,7 @@ async def test_the_ens_name_opens_its_imd_site_with_no_icon():
     ``https://mswap.sites.imd.fun/``."""
     rows = [_site(label="mswap", ens_name="mswap.site.identitymd.eth", tx_hash=None)]
     assert await _urls(rows) == [JOB_URL, "https://mswap.sites.imd.fun/"]
-    text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites(swarm_site_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
     assert "mswap.site.identitymd.eth" in text and COPY_GLYPH not in text, text
 
 
@@ -172,7 +172,7 @@ async def test_a_name_outside_site_identitymd_eth_shows_but_never_links():
                  "x.site.identitymd.eth[/x]"):
         rows = [_site(label=None, ens_name=name, tx_hash=None)]
         assert await _urls(rows) == [JOB_URL], name
-        text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+        text = await _sites(swarm_site_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
         assert _data_lines(text), (name, text)
 
 
@@ -185,7 +185,7 @@ async def test_replaced_and_nameless_rows_are_left_out():
             _site(label="old", status="superseded"),
             _site(label=None, ens_name=None, status="queued", tx_hash=None),
             _site(label="cmns", ens_name="cmns.site.identitymd.eth")]
-    text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites(swarm_site_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
     lines = _data_lines(text)
     assert len(lines) == 2 and "work" in lines[0] and "cmns" in lines[1], lines
     assert "→" not in text and "old" not in text, text
@@ -194,7 +194,7 @@ async def test_replaced_and_nameless_rows_are_left_out():
 async def test_a_list_that_filters_to_nothing_says_so_not_no_data():
     """F68: rows arrived and all were left out -- not an empty feed."""
     rows = [_site(ens_name=None, status="queued"), _site(superseded_by="x")]
-    text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites(swarm_site_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
     assert "No current site" in text and "No data" not in text, text
     assert "unavailable" not in text.lower(), text
 
@@ -203,9 +203,9 @@ async def test_an_empty_feed_after_an_all_hidden_one_is_no_data_again():
     """The all-hidden word is this poll's, never carried into the next."""
     async with _Probe().run_test(size=SIZE) as pilot:
         widget = pilot.app.query_one(SurfSwarmSites)
-        widget.update_data(swarm_site_rows=[_site(ens_name=None)], swarm_scores_as_of_hhmm=AS_OF)
+        widget.update_data(swarm_site_rows=[_site(ens_name=None)], swarm_launches_as_of_hhmm=AS_OF)
         await pilot.pause()
-        widget.update_data(swarm_site_rows=[], swarm_scores_as_of_hhmm=AS_OF)
+        widget.update_data(swarm_site_rows=[], swarm_launches_as_of_hhmm=AS_OF)
         await pilot.pause()
         text = "\n".join("".join(seg.text for seg in strip)
                          for strip in pilot.app.screen._compositor.render_strips())
@@ -219,7 +219,7 @@ async def test_the_label_is_coloured_on_the_raw_status_and_escaped():
             _site(label="gone", status="failed", ens_name="gone.site.identitymd.eth")]
     async with _Probe().run_test(size=SIZE) as pilot:
         widget = pilot.app.query_one(SurfSwarmSites)
-        widget.update_data(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+        widget.update_data(swarm_site_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
         rows_text = ["".join(seg.text for seg in strip) for strip in strips]
@@ -239,7 +239,7 @@ async def test_the_panel_claims_no_reachability():
     """PRD §3: SITES shows what was published, never whether it answers."""
     rows = [_site(), _site(label="gone", status="failed", ens_name=None),
             _site(label="old", status="superseded", superseded_by="roll")]
-    text = await _sites(swarm_site_rows=rows, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites(swarm_site_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
     assert re.search(r"\b(up|down|online|offline)\b", text, re.I) is None, text
 
 
@@ -247,12 +247,12 @@ async def test_a_non_dict_row_is_skipped_and_the_cap_holds():
     """A non-dict is left out with the hidden rows, before the cap, so junk
     and hidden rows never cost one of the ten lines and never raise."""
     clean = [_site(label=f"s{n:02d}") for n in range(15)]
-    text = await _sites((SIZE[0], 30), swarm_site_rows=clean, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites((SIZE[0], 30), swarm_site_rows=clean, swarm_launches_as_of_hhmm=AS_OF)
     lines = _data_lines(text)
     assert len(lines) == 10, len(lines)
     assert "s00" in lines[0] and "s09" in lines[-1] and "s10" not in text
     junk = [42, _site(label="gone", ens_name=None), _site(label="old", superseded_by="s00")]
-    text = await _sites((SIZE[0], 30), swarm_site_rows=junk + clean, swarm_scores_as_of_hhmm=AS_OF)
+    text = await _sites((SIZE[0], 30), swarm_site_rows=junk + clean, swarm_launches_as_of_hhmm=AS_OF)
     lines = _data_lines(text)
     assert len(lines) == 10, len(lines)
     assert "s00" in lines[0] and "s09" in lines[-1] and "s10" not in text
@@ -260,9 +260,9 @@ async def test_a_non_dict_row_is_skipped_and_the_cap_holds():
 
 async def test_the_title_carries_the_marker_only_when_it_is_real():
     assert f"SITES · as of {AS_OF}" in await _sites(swarm_site_rows=[_site()],
-                                                   swarm_scores_as_of_hhmm=AS_OF)
+                                                   swarm_launches_as_of_hhmm=AS_OF)
     for as_of in (None, ""):
-        text = await _sites(swarm_site_rows=[_site()], swarm_scores_as_of_hhmm=as_of)
+        text = await _sites(swarm_site_rows=[_site()], swarm_launches_as_of_hhmm=as_of)
         assert "as of" not in text and "SITES" in text
 
 
@@ -281,9 +281,9 @@ def test_the_derived_tier_widths_land_inside_their_tiers():
 
 async def test_compact_sheds_size_and_tight_sheds_cid_while_ens_and_tx_survive():
     row = [_site()]
-    full = await _sites((_FULL, 12), swarm_site_rows=row, swarm_scores_as_of_hhmm=AS_OF)
-    compact = await _sites((_COMPACT, 12), swarm_site_rows=row, swarm_scores_as_of_hhmm=AS_OF)
-    tight = await _sites((_TIGHT, 12), swarm_site_rows=row, swarm_scores_as_of_hhmm=AS_OF)
+    full = await _sites((_FULL, 12), swarm_site_rows=row, swarm_launches_as_of_hhmm=AS_OF)
+    compact = await _sites((_COMPACT, 12), swarm_site_rows=row, swarm_launches_as_of_hhmm=AS_OF)
+    tight = await _sites((_TIGHT, 12), swarm_site_rows=row, swarm_launches_as_of_hhmm=AS_OF)
     window = _window_cid(CID, CID_COLS)
 
     assert "size" in full and "2.4M" in full and window in full and "‹" not in full, full
@@ -298,7 +298,7 @@ async def test_compact_sheds_size_and_tight_sheds_cid_while_ens_and_tx_survive()
 async def test_the_full_tier_hides_no_column_at_its_own_threshold():
     async with _Probe().run_test(size=(FULL_WIDTH + GUTTER, 12)) as pilot:
         widget = pilot.app.query_one(SurfSwarmSites)
-        widget.update_data(swarm_site_rows=[_site()], swarm_scores_as_of_hhmm=AS_OF)
+        widget.update_data(swarm_site_rows=[_site()], swarm_launches_as_of_hhmm=AS_OF)
         await pilot.pause()
         table = pilot.app.query_one(DataTable)
         assert table.max_scroll_x == 0

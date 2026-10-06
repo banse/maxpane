@@ -672,7 +672,7 @@ def test_every_signal_key_is_a_named_parameter_of_update_data():
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_OUTPUT_KEYS
 
     named = set(inspect.signature(SurfSignals.update_data).parameters)
-    missing = [key for key in SIGNAL_OUTPUT_KEYS if key not in named]
+    missing = [key for key in SIGNAL_OUTPUT_KEYS if key != "swarm_launch_fired" and key not in named]
     assert not missing, f"swallowed by **_kwargs, rendered as unknown: {missing}"
 
 
@@ -686,7 +686,7 @@ async def test_detector_labels_are_the_ten():
     """
     assert DETECTOR_LABELS == (
         "NEW POST", "NEW REPLY", "LP MOVE", "GATE OPEN", "NEW DEPLOY",
-        "BRIDGE STAGE", "BURN", "DECOY POOL", "BURN READY", "HOT COIN",
+        "BRIDGE STAGE", "BURN", "DECOY POOL", "BURN READY", "HOT COIN", "SWARM LAUNCH",
     )
 
 

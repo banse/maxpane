@@ -66,6 +66,9 @@ only. No ``data/``, no ``analytics/``, no clock, no I/O.
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
+from textual.message import Message
+from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -111,6 +114,20 @@ def table_cols(widths) -> int:
     table costs one more gap than the row -- the ``trailing`` term.
     """
     return rowfit.row_cols(widths, trailing=CELL_PADDING)
+
+
+class _SelectableTable(DataTable):
+    async def _on_click(self, event):
+        event.prevent_default()
+        if is_copy_click(event) or is_explorer_click(event):
+            await self.app.run_action(event.style.meta["@click"])
+            event.stop()
+            return
+        row = event.style.meta.get("row")
+        if isinstance(row, int) and 0 <= row < self.row_count:
+            self.move_cursor(row=row)
+            self._post_selected_message()
+            event.stop()
 
 
 class SwarmTableBase(TableLeaderboard):
@@ -179,6 +196,7 @@ class SwarmTableBase(TableLeaderboard):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._payload: dict | None = None
+        self._selection_rows: list[dict | None] = []
         self._tier: str = self.LADDER.steps[0][0]
         #: The keys of the columns currently on the table, in table order.
         self._keys: tuple[str, ...] = tuple(key for key, _l, _w in self.COLUMN_SPECS)
@@ -190,10 +208,35 @@ class SwarmTableBase(TableLeaderboard):
         #: title hint reads it.
         self._clipped = False
 
+    SELECTABLE = False
+
+    class Selected(Message):
+        def __init__(self, row):
+            super().__init__()
+            self.row = deepcopy(row)
+
+    def render_table(self, rows, *, footer=None):
+        self._selection_rows = []
+        super().render_table(rows, footer=footer)
+
+    def on_data_table_row_selected(self, event):
+        if not self.SELECTABLE:
+            return
+        event.stop()
+        if event.row_key not in event.data_table.rows:
+            return
+        index = event.data_table.get_row_index(event.row_key)
+        rows = getattr(self, "_selection_rows", [])
+        if index < len(rows) and rows[index] is not None:
+            self.post_message(self.Selected(rows[index]))
+
     # -- lifecycle ----------------------------------------------------------
 
     def compose_body(self) -> ComposeResult:
-        yield from super().compose_body()
+        if self.SELECTABLE:
+            yield _SelectableTable(id=self.TABLE_ID)
+        else:
+            yield from super().compose_body()
         yield Static("", id=self.footer_id, classes=self.FOOTER_CLASS)
 
     @property
@@ -350,6 +393,12 @@ class SwarmTableBase(TableLeaderboard):
         return self._cells({self._keys[0] if self._keys else None: word})
 
     def build_row(self, index: int, item) -> tuple | None:
+        cells = self._build_row(item)
+        if self.SELECTABLE and cells is not None:
+            self._selection_rows.append(deepcopy(item) if isinstance(item, dict) else None)
+        return cells
+
+    def _build_row(self, item) -> tuple | None:
         if item is UNAVAILABLE_ITEM:
             return self._degraded_row(UNAVAILABLE)
         if item is _EMPTY_ITEM:

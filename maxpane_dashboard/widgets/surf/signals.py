@@ -94,11 +94,14 @@ from textual.css.query import QueryError
 from textual.widgets import Static
 
 from rich.text import Text
+from maxpane_dashboard.widgets.explorer import for_chain_id
 from textual.content import Content
 
 from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, visible_len
-from maxpane_dashboard.widgets.rowfit import WIDEN_HINT
+from maxpane_dashboard.widgets.rowfit import WIDEN_HINT, clip
+from rich.cells import cell_len
+import re
 from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH, fmt_age, EXPLORER
 from maxpane_dashboard.widgets.surf._icons import (
     keep_units,
@@ -200,6 +203,7 @@ DETECTOR_LABELS = (
     "DECOY POOL",
     "BURN READY",
     "HOT COIN",
+    "SWARM LAUNCH",
 )
 
 #: payload prefix + child id per detector, aligned 1:1 with DETECTOR_LABELS.
@@ -214,6 +218,7 @@ _ROW_KEYS = (
     ("decoy", "#surf-sig-decoy"),
     ("burnready", "#surf-sig-burnready"),
     ("hot", "#surf-sig-hot"),
+    ("swarm", "#surf-sig-swarm"),
 )
 
 #: (payload prefix, row label, child id) for the ten detectors, in PRD order.
@@ -340,6 +345,15 @@ def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]
     if not flat:
         return "", []
 
+    if available and "SWARM LAUNCH" in head:
+        match = re.match(r"(\$.*?) (#[0-9]+)(.*)", flat)
+        if match:
+            budget = int(available) - visible_len(head) - SEPARATOR_COLS
+            ticker, number, rest = match.groups()
+            # Reserve the identifier before spending any room on an unbounded
+            # symbol. The normal right-side shedding still removes +n/address.
+            ticker = clip(ticker, max(1, budget - cell_len(number) - 2))
+            flat = f"{ticker} {number}{rest}"
     marked, addresses, spans = mark_addresses(flat, ANTI_POISONING_COLS)
     if available:
         budget = int(available) - visible_len(head) - SEPARATOR_COLS
@@ -355,7 +369,7 @@ def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]
     return unmark(marked), addresses[: marked.count(COPY_GLYPH)]
 
 
-def _signal_row_content(label: str, state, detail, age_s, available=None) -> Content | None:
+def _signal_row_content(label: str, state, detail, age_s, available=None, *, explorer=EXPLORER) -> Content | None:
     """The row as ``Content`` with its copy icons live; ``None`` when it has none.
 
     A row without an icon keeps going to ``Static.update()`` as the markup
@@ -372,7 +386,7 @@ def _signal_row_content(label: str, state, detail, age_s, available=None) -> Con
     if not addresses:
         return None
     text = Text(f" · {shown}", style="dim")
-    link_in_order([text], addresses, EXPLORER)
+    link_in_order([text], addresses, explorer)
     return Content.from_markup(head) + Content.from_rich_text(text)
 
 
@@ -485,6 +499,10 @@ class SurfSignals(Vertical):
             "sig_hot_state": sig_hot_state,
             "sig_hot_detail": sig_hot_detail,
             "sig_hot_age_s": sig_hot_age_s,
+            "sig_swarm_state": sig_swarm_state,
+            "sig_swarm_detail": sig_swarm_detail,
+            "sig_swarm_age_s": sig_swarm_age_s,
+            "sig_swarm_chain_id": sig_swarm_chain_id,
         }
         self._render_view()
 
@@ -548,6 +566,7 @@ class SurfSignals(Vertical):
                     payload.get(f"sig_{prefix}_detail"),
                     age_s,
                     available,
+                    explorer=for_chain_id(payload.get("sig_swarm_chain_id")) if prefix == "swarm" else EXPLORER,
                 )
                 row.update(content if content is not None else markup)
             except Exception as exc:

@@ -62,7 +62,7 @@ from rich.text import Text
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import hash_text, site_text
 from maxpane_dashboard.widgets.fmt import as_float, fmt_int
-from maxpane_dashboard.widgets.markup_safety import safe_markup, sanitize_cell, strip_tags
+from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.panels import LOADING
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 from maxpane_dashboard.widgets.surf._fmt import DASH, EXPLORER, SITE_EXPLORER, JOB_EXPLORER
@@ -216,16 +216,17 @@ class SurfSwarmSites(SwarmTableBase):
             shown = [row for row in swarm_site_rows if is_current_site(row)]
             if swarm_site_rows and not shown:
                 self.EMPTY_ROW = self.ALL_HIDDEN_ROW
-            swarm_site_rows = shown
-        self.store(swarm_site_rows, swarm_scores_as_of_hhmm)
+            swarm_site_rows = sorted(shown, key=lambda r: not (r.get("production_link") and r.get("link_trusted")))
+        self.store(swarm_site_rows, swarm_launches_as_of_hhmm)
 
     def build_cells(self, item: dict) -> dict[str, str | Text]:
-        raw_status = item.get("status")
+        trusted = bool(item.get("production_link") and item.get("link_trusted"))
+        ticker = flatten(item.get("launch_ticker"))
+        suffix = f" · ${ticker}" if ticker else ""
+        prefix = "◆ " if trusted else ""
         label = strip_tags(item.get("label")) or DASH
-        label_cell = sanitize_cell(label, _LABEL_CELL_COLS)
-        colour = _STATUS_COLOURS.get(raw_status) if isinstance(raw_status, str) else None
-        if colour:
-            label_cell = f"[{colour}]{label_cell}[/]"
+        label_cell = Text(prefix + rowfit.clip(label, max(0, _LABEL_CELL_COLS - cell_len(prefix + suffix))) + suffix,
+                          style="bold" if trusted else "dim" if ticker else _STATUS_COLOURS.get(item.get("status"), ""))
 
         return {
             "label": label_cell,

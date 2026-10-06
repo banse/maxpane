@@ -50,6 +50,9 @@ Pattern: ``maxpane_dashboard/analytics/fwa_signals.py``.
 from __future__ import annotations
 
 import math
+from copy import deepcopy
+from uuid import UUID
+from maxpane_dashboard.analytics.surf_swarm_signals import launch_verdict_label
 import re
 from typing import Any, NamedTuple
 
@@ -1338,6 +1341,113 @@ def _detect_hot_coin(base: dict, read: dict, now: float) -> _Det:
     return _ok(f"busiest {count} swaps · below {threshold}")
 
 
+# Launch IDs are not transactions: retain every transition, including a launch
+# admitted before the newest observed number. The watermark remembers evicted
+# live history; the bounded pending list preserves delayed admitted transitions.
+_SWARM_CAP = 500
+_SWARM_KEYS = ("swarm_live_seen", "swarm_launch_pending", "swarm_launch_high_water", "swarm_launch_fired")
+
+
+def _launch_uuid(value):
+    try:
+        return str(UUID(value)) if isinstance(value, str) and str(UUID(value)) == value else None
+    except (ValueError, AttributeError):
+        return None
+
+
+def _launch_ids(value):
+    if not isinstance(value, list) or any(_launch_uuid(x) is None for x in value):
+        return None
+    return list(dict.fromkeys(value))[-_SWARM_CAP:]
+
+
+def _launch_events(value, now):
+    if not isinstance(value, dict) or not isinstance(value.get("events"), list):
+        return None
+    ts = _as_float(value.get("ts"))
+    if ts is None or ts > now:
+        return None
+    rows = value["events"]
+    for row in rows:
+        if (not isinstance(row, dict) or _launch_uuid(row.get("launch_id")) is None
+                or type(row.get("number")) is not int or row["number"] < 0
+                or type(row.get("chain_id")) is not int or row["chain_id"] not in (1, 8453, 4663)
+                or not isinstance(row.get("status"), str) or not row["status"]
+                or row["status"] == "abandoned"):
+            return None
+    return sorted(rows, key=lambda row: row["number"])
+
+
+def _swarm_launch_state(base, read, now):
+    state = {key: deepcopy(base[key]) for key in _SWARM_KEYS if key in base}
+    raw_fired = base.get("swarm_launch_fired")
+    fired = {}
+    for key, entry in (raw_fired.items() if isinstance(raw_fired, dict) else ()):
+        if not isinstance(entry, dict) or _launch_uuid(key) is None:
+            continue
+        ts = _as_float(entry.get("ts"))
+        if ts is not None and 0 <= now - ts < FIRED_TTL_S:
+            fired[key] = deepcopy(entry)
+    rows = _launch_events(read.get("swarm_launch_events"), now)
+    seen = _launch_ids(base.get("swarm_live_seen"))
+    pending = _launch_ids(base.get("swarm_launch_pending", []))
+    corrupt = ("swarm_live_seen" in base and seen is None) or pending is None
+    det = _dead("launches unavailable")
+    chain = None
+    if rows is not None and not corrupt:
+        seeded = seen is not None
+        seen = seen or []
+        pending = pending or []
+        high = base.get("swarm_launch_high_water", 0)
+        high = high if type(high) is int and high >= 0 else 0
+        for row in rows:
+            key = row["launch_id"]
+            if row["status"] != "live" and key not in seen and key not in pending:
+                pending.append(key)
+            if row["status"] != "live" or key in seen:
+                continue
+            if seeded and (row["number"] > high or key in pending):
+                fired[key] = {"ts": now, **{field: row.get(field) for field in (
+                    "number", "ticker", "chain_id", "token_address", "verdict_state", "verdict_passed", "verdict_failed")}}
+            seen.append(key)
+            if key in pending:
+                pending.remove(key)
+        state.update(swarm_live_seen=seen[-_SWARM_CAP:], swarm_launch_pending=pending[-_SWARM_CAP:],
+                     swarm_launch_high_water=max([high, *(r["number"] for r in rows)]))
+        watch = next((r for r in reversed(rows) if r["status"] == "admitted" and r["launch_id"] not in seen), None)
+        if watch:
+            ticker = str(watch.get("ticker") or "--")[:128]
+            det = _watch(f"deploying ${ticker} #{watch['number']}")
+            chain = watch["chain_id"]
+        else:
+            det = _ok("no new swarm launch")
+    if rows is not None or "swarm_launch_fired" in base:
+        state["swarm_launch_fired"] = fired
+    active = sorted(({"launch_id": key, **deepcopy(entry)} for key, entry in fired.items()),
+                    key=lambda entry: (entry["ts"], entry.get("number") or 0), reverse=True)
+    if active:
+        newest = active[0]
+        ticker = str(newest.get("ticker") or "--")[:128]
+        word = {1: "MAINNET", 8453: "BASE", 4663: "RH"}.get(newest.get("chain_id"), "--")
+        verdict = launch_verdict_label({"state": newest.get("verdict_state"),
+            "passed": newest.get("verdict_passed"), "failed": newest.get("verdict_failed")})
+        if verdict == "✓ swarm":
+            verdict = "✓"
+        detail = f"${ticker} #{newest.get('number')} {word} {verdict}"
+        address = newest.get("token_address")
+        if isinstance(address, str) and _DETAIL_ADDRESS_RE.fullmatch(address):
+            detail += f" {address}"
+        if len(active) > 1:
+            detail += f" +{len(active)-1}"
+        det = _fired(detail, newest["ts"])
+        chain = newest.get("chain_id")
+    return det, state, active, chain
+
+
+def _detect_swarm(base, read, now):
+    return read["_swarm_det"]
+
+
 # --- registry --------------------------------------------------------------
 
 #: ``(name, detector)`` in render order.  :data:`SIGNAL_NAMES` and
@@ -1354,6 +1464,7 @@ _DETECTORS: tuple[tuple[str, Any], ...] = (
     ("decoy", _detect_decoy),
     ("burnready", _detect_burn_ready),
     ("hot", _detect_hot_coin),
+    ("swarm", _detect_swarm),
 )
 
 SIGNAL_NAMES: tuple[str, ...] = tuple(name for name, _ in _DETECTORS)
@@ -1363,7 +1474,7 @@ SIGNAL_OUTPUT_KEYS: tuple[str, ...] = tuple(
     f"sig_{name}_{field}"
     for name in SIGNAL_NAMES
     for field in ("state", "detail", "age_s")
-)
+) + ("sig_swarm_chain_id", "swarm_launch_fired")
 
 
 # ---------------------------------------------------------------------------
@@ -1450,7 +1561,7 @@ def _advance(baselines: dict, readings: dict) -> dict:
     pair with ``("", 0.0)`` — "the window was read and held nothing" — which is
     what lets the next event fire; an outage (``None``) leaves the pair alone.
     """
-    out = {key: value for key, value in baselines.items() if key != "fired"}
+    out = {key: value for key, value in baselines.items() if key != "fired" and key not in _SWARM_KEYS}
 
     for key in BASELINE_SCALARS:
         value = readings.get(key)
@@ -1536,11 +1647,19 @@ def build_signals(
     # baseline from.
     read = {**read, "hot_leader": _hot_leader_name(read, now)}
 
+    swarm_det, swarm_state, swarm_fired, swarm_chain = _swarm_launch_state(base, read, now)
+    read["_swarm_det"] = swarm_det
     fired = _fired_store(base)
+    fired.pop("swarm", None)
     signals: dict[str, Any] = {}
 
     for name, detect in _DETECTORS:
         det = detect(base, read, now)
+        if name == "swarm":
+            signals.update(sig_swarm_state=det.state, sig_swarm_detail=det.detail,
+                           sig_swarm_age_s=now-det.fired_ts if det.fired_ts is not None else None,
+                           sig_swarm_chain_id=swarm_chain, swarm_launch_fired=swarm_fired)
+            continue
         if det.fired_ts is not None or det.state == STATE_FIRED:
             event_ts = det.fired_ts if det.fired_ts is not None else now
             entry = {"ts": min(float(event_ts), now), "detail": _cap_detail(det.detail)}
@@ -1570,5 +1689,6 @@ def build_signals(
         signals[f"sig_{name}_age_s"] = None if entry is None else max(0.0, now - entry["ts"])
 
     advanced = _advance(base, read)
+    advanced.update(swarm_state)
     advanced["fired"] = {name: dict(entry) for name, entry in fired.items()}
     return signals, advanced
