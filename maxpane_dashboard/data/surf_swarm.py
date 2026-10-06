@@ -2458,7 +2458,7 @@ def coerce_launches_slot(value, *, now=None):
         if not isinstance(params, dict) or integer(policy.get('version')) is None or integer(params.get('chainId')) is None:
             continue
         owners = params.get('owners')
-        policies.append({'version': policy['version'], 'params': {
+        policies.append({'version': policy['version'], 'kind': policy.get('kind') if isinstance(policy.get('kind'), str) else None, 'params': {
             'chainId': params['chainId'], 'owner': address(params.get('owner')), 'factory': address(params.get('factory')),
             'owners': {str(k)[:64]: a for k, v in (owners.items() if isinstance(owners, dict) else []) if (a := address(v))},
         }})
@@ -2579,7 +2579,7 @@ def _coerce_launch_checks(checks):
     if not isinstance(checks, dict) or set(checks) != set(states): return None
     out = {}
     scalar_fields = {
-        'chain_id': 'int', 'policy_version': 'int', 'assurances_count': 'int',
+        'chain_id': 'int', 'policy_version': 'int', 'assurances_count': 'int', 'rule_version': 'int',
         'deploy_failure': 'bool', 'owner_is_factory': 'bool', 'owner': 'address', 'emitter': 'address',
         'tx_hash': 'hash', 'from': 'address', 'to': 'address', 'receipt_status': 'int',
         'name': 'text', 'address': 'address', 'expected_hash': 'hash', 'actual_hash': 'hash',
@@ -2595,7 +2595,7 @@ def _coerce_launch_checks(checks):
         if kind == 'hash' and isinstance(val, str) and re.fullmatch(r'(?:0x)?[0-9a-fA-F]{64}', val): return val.lower()
         if kind == 'text' and isinstance(val, str): return val[:256]
         raise ValueError('malformed launch evidence')
-    fields = {'K1': ('chain_id',), 'K2': ('policy_version', 'transactions'), 'K3': ('contracts',),
+    fields = {'K1': ('chain_id',), 'K2': ('policy_version', 'transactions', 'rule_version'), 'K3': ('contracts', 'unmatched_artifacts', 'rule_version'),
               'K4': ('failed_admission', 'deploy_failure'), 'K6': ('owner', 'emitter', 'owner_is_factory'),
               'K7': ('assurances_count',)}
     nested = {'transactions': ('tx_hash', 'from', 'to', 'receipt_status'),
@@ -2610,12 +2610,16 @@ def _coerce_launch_checks(checks):
                 if field in nested:
                     if not isinstance(val, list) or len(val) > 64 or any(not isinstance(v, dict) for v in val): return None
                     evidence[field] = [{k: scalar(k, v.get(k)) for k in nested[field]} for v in val]
-                elif field == 'failed_admission':
+                elif field in ('failed_admission', 'unmatched_artifacts'):
                     if not isinstance(val, list) or len(val) > 64 or any(v is not None and not isinstance(v, str) for v in val): return None
                     evidence[field] = [v[:256] if v is not None else None for v in val]
                 else:
                     evidence[field] = scalar(field, val)
-            out[key] = {'state': check['state'], 'evidence': evidence}
+            state = check['state']
+            # One-time rule migration keeps successful per-contract work and all facts.
+            if key in ('K2', 'K3') and evidence.get('rule_version') != 2:
+                state = 'unknown'
+            out[key] = {'state': state, 'evidence': evidence}
     except ValueError:
         return None
     return out

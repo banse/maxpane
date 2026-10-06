@@ -130,7 +130,7 @@ async def test_v8_swarm_signal_sheds_long_ticker_before_launch_number():
     text='\n'.join(await composite_lines(SurfSignals,(53,20),sig_swarm_state='fired',
         sig_swarm_age_s=60,sig_swarm_chain_id=1,
         sig_swarm_detail=f'${row["ticker"]} #737 MAINNET ✓ {row["token_address"]} +3'))
-    assert '#737' in text and '$LONG' in text
+    assert '#737 MAINNET ✓' in text and '$L…' in text
     assert row['token_address'] not in text
 
 

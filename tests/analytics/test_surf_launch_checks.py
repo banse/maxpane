@@ -24,8 +24,13 @@ def checked(number=737, **kwargs):
 @pytest.mark.parametrize('number', [734, 737, 747])
 def test_v8_attestation_checks(number):
     row, facts, checks = checked(number)
-    assert lc.verdict(row, checks) == {'state': 'swarm', 'passed': 4, 'failed': None}
-    assert checks['K3']['state'] == ('pass_immutables' if number == 747 else 'pass')
+    # v8 omits the attestation for its hook-role PoolInitializationGuard.
+    expected = 'swarm' if number == 734 else 'partial'
+    assert lc.verdict(row, checks) == {'state': expected, 'passed': 4 if number == 734 else 3, 'failed': None}
+    assert checks['K3']['state'] == ('pass' if number == 734 else 'unknown')
+    if number != 734:
+        assert checks['K3']['evidence']['unmatched_artifacts'] == ['PoolInitializationGuard']
+        assert checks['K3']['evidence']['contracts'][0]['state'] == ('pass_immutables' if number == 747 else 'pass')
     if number == 734:
         assert facts['ticker'] is None
         assert checks['K3']['evidence']['contracts'][0]['name'] == 'Counter'
@@ -107,6 +112,9 @@ def test_creation_candidates_are_abi_length_guarded():
 
 def test_missing_artifact_is_na_and_passed_contract_never_rehashed():
     row, rpc = evidence(747)
+    # #763-shaped: one matched deployment and an unattached V2TwapSwap attestation.
+    row['launchNumber'] = 763
+    row['artifacts'] = [a for a in row['artifacts'] if a['role'] != 'hook']
     facts = lc.extract_facts(row)
     absent = copy.deepcopy(facts['attested'][0]); absent['name'] = 'V2TwapSwap'
     facts['attested'].append(absent)
@@ -167,6 +175,8 @@ def test_k2_every_artifact_sender_and_receipt_must_pass():
 @pytest.mark.parametrize('field', ['owner', 'factory'])
 def test_zero_policy_address_never_becomes_authority(field):
     row, rpc = evidence(737)
+    # A factory authority exists only for evm_contracts.
+    if field == 'factory': row.update(kind='evm_contracts', policyVersion=27)
     policies = fixture('launch_policies')['policies']
     zero_policy = copy.deepcopy(next(p for p in policies if p['params'].get('chainId') == 1))
     zero_policy['version'] = row['policyVersion']
@@ -185,3 +195,30 @@ def test_fix1_parked_and_admitted_verdict_precedence(status,k4,want):
     checks={k: {'state':'unknown'} for k in ('K1','K2','K3','K4')}
     checks['K4']['state']=k4
     assert launch_verdict_label(lc.verdict(row,checks))==want
+
+@pytest.mark.parametrize('kind,version,expected', [('univ4_hook',19,'pass'),('custom_token',26,'pass'),('evm_contracts',27,'fail')])
+def test_fix2_factories_belong_to_launch_kind(kind, version, expected):
+    row, rpc = evidence(737)
+    row.update(kind=kind, policyVersion=version)
+    tx = next(iter(rpc['transactions'].values()))
+    tx['to'] = '0x' + '2' * 40
+    checks = lc.check_launch(row, lc.extract_facts(row), fixture('launch_policies')['policies'], rpc, keccak=keccak256)
+    assert checks['K2']['state'] == expected
+    assert checks['K2']['evidence']['transactions'][0]['to'] == tx['to']
+
+@pytest.mark.parametrize('shape', ['empty', 'renamed', 'unattested_hook'])
+def test_fix2_k3_needs_matched_code_and_covers_role_artifacts(shape):
+    row, rpc = evidence(737)
+    facts = lc.extract_facts(row)
+    if shape == 'empty':
+        row['artifacts'] = []
+    elif shape == 'renamed':
+        for artifact in row['artifacts']: artifact['name'] += '_renamed'
+    else:
+        row['artifacts'].append({**row['artifacts'][-1], 'role':'hook', 'name':'UnattestedHook'})
+    checks = lc.check_launch(row, facts, fixture('launch_policies')['policies'], rpc, keccak=keccak256)
+    assert checks['K3']['state'] == 'unknown'
+    assert lc.verdict(row, checks)['state'] != 'swarm'
+    if shape != 'empty':
+        unmatched = [a['name'] for a in row['artifacts'] if a['role'] in ('token','hook') and a['name'] not in {c['name'] for c in facts['attested']}]
+        assert checks['K3']['evidence']['unmatched_artifacts'] == unmatched

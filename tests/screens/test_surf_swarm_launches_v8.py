@@ -110,7 +110,9 @@ async def test_launch_popup_tokenless_uses_job_and_immutables_evidence():
                 assert 'K6 · na' in text
                 assert f"https://explorer.imd.fun/jobs/{row['job_id']}" in links
             else:
-                assert 'pass (immutables)' in text and 'creation_offset: 740' in text
+                # Token creation code is verified, but v8 omits its hook attestation.
+                assert 'K3 · unknown' in text and 'state: pass_immutables' in text
+                assert 'creation_offset: 740' in text
 
 
 @pytest.mark.parametrize('count,word', [(1, '⚠ launch #737 K3'), (2, '⚠ 2 launch checks')])
@@ -273,3 +275,20 @@ async def test_fix1_launch_popup_missing_site_nonproduction_checks_and_title(pro
         painted=_region_text(pilot.app,title).strip()
         assert painted.endswith('…') and Text(painted).cell_len<=15
         assert title.render().cell_length<=15
+
+@pytest.mark.parametrize('ticker,verdict',[('X'*120,'✗ K2'),('字'*60,'✓'),('Q[31mEVIL[/]R','✓')],ids=['long-ascii','wide','literal'])
+async def test_fix2_signal_reserves_number_chain_and_verdict_at_pin(ticker,verdict):
+    from rich.cells import cell_len
+    from maxpane_dashboard.widgets.surf.signals import SurfSignals
+    from tests.screens.test_surf_screen import _screen_at
+    row=launch_row(ticker=ticker)
+    payload=_frozen_payload(sig_swarm_state='fired',sig_swarm_age_s=60,sig_swarm_chain_id=1,
+        sig_swarm_detail=f'${ticker} #737 MAINNET {verdict} {row["token_address"]} +2')
+    async with _screen_at(143,46,payload) as (app,screen,pilot):
+        panel=screen.query_one(SurfSignals)
+        line=next(line for line in _region_text(app,panel).splitlines() if 'SWARM LAUNCH' in line)
+        assert f'#737 MAINNET {verdict}' in line
+        assert '\\' not in line and '0x' not in line and '⧉' not in line and '+2' not in line
+        assert cell_len(line.strip())<=panel.size.width
+        if ticker.startswith('Q'): assert '$Q[31mEVIL[/]R' in line
+        else: assert '…' in line

@@ -347,14 +347,15 @@ def _signal_detail(head: str, state, detail, available) -> tuple[str, list[str]]
         return "", []
 
     if available and "SWARM LAUNCH" in head:
-        match = re.match(r"(\$.*?) (#[0-9]+)(.*)", flat)
+        match = re.match(r"(\$.*?) (#[0-9]+ [A-Z?]+ (?:✗ K[234]|✓|… [0-4]/4|-- pending|-- parked|--))(.*)", flat)
         if match:
             budget = int(available) - visible_len(head) - SEPARATOR_COLS
-            ticker, number, rest = match.groups()
-            # Reserve the identifier before spending any room on an unbounded
-            # symbol. The normal right-side shedding still removes +n/address.
-            ticker = clip(ticker, max(1, budget - cell_len(number) - 2))
-            flat = f"{ticker} {number}{rest}"
+            ticker, identity, rest = match.groups()
+            # The complete identity and verdict take priority over the ticker.
+            ticker = clip(ticker, max(0, budget - cell_len(identity) - 1))
+            flat = f"{ticker} {identity}".lstrip()
+            if cell_len(mark_addresses(flat + rest, ANTI_POISONING_COLS)[0]) <= budget:
+                flat += rest
     marked, addresses, spans = mark_addresses(flat, ANTI_POISONING_COLS)
     if available:
         budget = int(available) - visible_len(head) - SEPARATOR_COLS

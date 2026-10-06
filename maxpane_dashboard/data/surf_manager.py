@@ -5516,6 +5516,9 @@ class SurfManager:
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
         previous_facts = copy.deepcopy(facts)
+        # Pre-kind cached policy entries cannot judge factory provenance.
+        if any(not policy.get('kind') for policy in slot.get('policies') or []):
+            slot['policies_ts'] = None
         failed, refreshed_policy, policy_read_ok = False, False, True
         for route, cadence, method in (('launches', 0, 'fetch_launches'), ('sites', 300, 'fetch_sites'), ('policies', 1800, 'fetch_launch_policies')):
             if cadence and slot.get(route + '_ts') is not None and now - slot[route + '_ts'] < cadence:
@@ -5600,7 +5603,7 @@ class SurfManager:
                     keccak=keccak256, previous=copy.deepcopy(previous))
             checks = await judge(slot.get('policies') or [])
             version = point.get('policy_version')
-            known = lc.policy_sets(slot.get('policies') or [], row['chainId'], version)[2]
+            known = lc.policy_sets(slot.get('policies') or [], row['chainId'], version, row.get('kind'))[2]
             new_failure = checks['K2']['state'] == 'fail' and (previous or {}).get('K2', {}).get('state', 'unknown') == 'unknown'
             unknown_version = not known and (row['id'] not in refreshed_for or refreshed_for[row['id']] != version)
             if new_failure or unknown_version:
@@ -5638,9 +5641,13 @@ class SurfManager:
         inputs = {key: slot.get(key) for key in ('launches_ts', 'sites_ts')}
         inputs.update(facts_ts=facts_ts, workflows_ts=scores.get('workflows_ts'))
         if slot.get('site_links_inputs') != inputs:
-            slot['site_links'] = await asyncio.to_thread(ls.match_sites, slot.get('sites') or [],
-                                                        facts['launches'], facts['sites'], scores.get('workflows'))
-            slot['site_links_inputs'] = inputs
+            try:
+                slot['site_links'] = await asyncio.to_thread(ls.match_sites, slot.get('sites') or [],
+                                                            facts['launches'], facts['sites'], scores.get('workflows'))
+            except Exception:
+                logger.warning('SURF launch site match failed; retaining last-good links', exc_info=True)
+            else:
+                slot['site_links_inputs'] = inputs
         stamps = [slot.get(route + '_ts') for route in ('launches', 'sites', 'policies') if slot.get(route + '_ts') is not None]
         if stamps:
             self.cache.store_last_good(SLOT_SWARM_LAUNCHES, sw.coerce_launches_slot(slot, now=now), ts=max(stamps))

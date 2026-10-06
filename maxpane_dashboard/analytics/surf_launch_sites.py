@@ -1,5 +1,6 @@
 """Pure production-site joins; requester-written addresses need payer trust."""
 import re
+from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.analytics.surf_launch_checks import address, mappings, is_production
 
 _OBJECTIVE_ADDRESS = re.compile(r'(?<![0-9a-fA-F])0x[0-9a-fA-F]{40}(?![0-9a-fA-F])', re.I)
@@ -30,8 +31,10 @@ def match_sites(sites, launches, jobs, workflows):
             if artifact.get('role') == 'token' and token:
                 token_launches.setdefault(token, set()).add(launch_id)
     for workflow in mappings(workflows):
-        frontend_jobs.setdefault(workflow.get('frontendJobId'), set()).update(
-            job_launches.get(workflow.get('contractsJobId'), ()))
+        frontend = parse_job_id(workflow.get('frontendJobId'))
+        contracts = parse_job_id(workflow.get('contractsJobId'))
+        if frontend is not None and contracts is not None:
+            frontend_jobs.setdefault(frontend, set()).update(job_launches.get(contracts, ()))
     out = {}
     for site in sites:
         job = jobs.get(site.get('id')) or {}

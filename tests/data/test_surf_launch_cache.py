@@ -110,7 +110,9 @@ def test_per_contract_progress_survives_cache_and_rejects_invalid_states(tmp_pat
     assert restored['checks']['K3']['evidence']['contracts'][0]['state'] == 'pass_immutables'
     def forbidden(_): raise AssertionError('persisted passing contract rehashed')
     again = lc.check_launch(row, restored, [], {}, keccak=forbidden, previous=restored['checks'])
-    assert again['K3']['state'] == 'pass_immutables'
+    # The persisted token match survives; v8's unattested hook stays unknown.
+    assert again['K3']['state'] == 'unknown'
+    assert again['K3']['evidence']['contracts'][0]['state'] == 'pass_immutables'
     for invalid in ('safe', 3, {'state':'pass'}):
         facts['checks']['K3']['evidence']['contracts'][0]['state'] = invalid
         assert sw.coerce_launch_facts_slot({'launches':{row['id']:facts}, 'sites':{}})['launches'] == {}
@@ -127,3 +129,22 @@ def test_refresh_versions_and_failure_timestamps_are_strict_and_bounded():
     for stamp in (float('nan'), float('inf'), -1, True, 'now'):
         clean = sw.coerce_launch_facts_slot({'launches':{key:{'row':launch,'detail_failed_ts':stamp}}, 'sites':{}})
         assert 'detail_failed_ts' not in clean['launches'][key]
+
+
+def test_fix2_policy_kind_and_unmatched_artifact_evidence_survive_cache(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS
+    from maxpane_dashboard.analytics import surf_launch_checks as lc
+    from maxpane_dashboard.data.keccak import keccak256
+    row,facts,_=checked()
+    row['artifacts']=[{**a,'name':a['name']+'_renamed'} for a in row['artifacts']]
+    checks=lc.check_launch(row,facts,fixture('launch_policies')['policies'],{},keccak=keccak256)
+    facts.update(row=row,checks=checks,detail_version=[row['status'],row['updatedAt']])
+    cache=SurfCache(path=str(tmp_path/'cache.json'),clock=lambda:101)
+    cache.store_last_good(SLOT_SWARM_LAUNCHES, {'policies':fixture('launch_policies')['policies'],'policies_ts':100},ts=100)
+    cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, {'launches':{row['id']:facts},'sites':{}},ts=100)
+    cache.save(); cache.load(slot_coercers={SLOT_SWARM_LAUNCHES:sw.coerce_launches_slot,SLOT_SWARM_LAUNCH_FACTS:sw.coerce_launch_facts_slot})
+    assert {p['kind'] for p in cache.get_last_good(SLOT_SWARM_LAUNCHES).payload['policies']}=={p['kind'] for p in fixture('launch_policies')['policies']}
+    persisted=cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'][row['id']]['checks']['K3']
+    assert persisted['state']=='unknown'
+    assert persisted['evidence']['unmatched_artifacts']==checks['K3']['evidence']['unmatched_artifacts']
+    assert persisted['evidence']['rule_version']==2

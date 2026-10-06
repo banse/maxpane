@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from types import MappingProxyType
 from typing import Any
-from uuid import UUID
+from maxpane_dashboard.analytics.surf_ids import parse_job_id
 
 import httpx
 
@@ -67,14 +67,6 @@ def _is_path_segment(value: object) -> bool:
         return False
     return not any(ch in _NOT_A_SEGMENT or ch.isspace() for ch in value)
 
-def parse_job_id(value: object) -> str | None:
-    """A canonical UUID path component, shared with answer cache validation."""
-    if not isinstance(value, str):
-        return None
-    try:
-        return value if str(UUID(value)) == value else None
-    except ValueError:
-        return None
 
 
 __all__ = [

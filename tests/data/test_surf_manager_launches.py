@@ -67,7 +67,7 @@ async def test_details_read_once_then_on_version_change_and_unknown_retries(tmp_
     try:
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW)
         row=m._swarm_launch_keys()['swarm_launch_rows'][0]
-        assert row['verdict']['state']=='swarm' and row['ticker']=='ZTO'
+        assert row['verdict']['state']=='partial' and row['ticker']=='ZTO'
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+61)
         assert len([x for x in swarm.calls if isinstance(x,tuple) and x[0]=='detail'])==1
         swarm.rows[0]['updatedAt']='2026-10-06T01:00:00Z'
@@ -362,3 +362,78 @@ async def test_site_created_gate_cadence_and_newest_link(tmp_path):
         assert swarm.calls.count('sites') == 1
         assert m._swarm_launch_keys()['swarm_launch_rows'][0]['site_label'] == 'new-zto'
     finally: await m.close()
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('explode', [False, True])
+async def test_fix2_bad_workflow_match_preserves_tier_and_links(tmp_path, monkeypatch, caplog, explode):
+    import logging
+    from maxpane_dashboard.analytics import surf_launch_sites as ls
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SCORES
+    swarm=LaunchSwarm(); swarm.rows=[fixture('launch_737')]
+    async def sites(): return [s for s in fixture('sites')['sites'] if s['label']=='zto']
+    swarm.fetch_sites=sites
+    m=manager(tmp_path,swarm)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW)
+        before=copy.deepcopy(m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload['site_links'])
+        assert before
+        m.cache.store_last_good(SLOT_SWARM_SCORES, {'workflows':[{'frontendJobId':[1], 'contractsJobId':{}}], 'workflows_ts':NOW+1}, ts=NOW+1)
+        if explode:
+            def broken(*args): raise RuntimeError('synthetic matcher failure')
+            monkeypatch.setattr(ls, 'match_sites', broken)
+        with caplog.at_level(logging.WARNING):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+61)
+        assert m._swarm_launch_read_ok is True
+        after=m.cache.get_last_good(SLOT_SWARM_LAUNCHES)
+        assert after.ts == NOW+61 and after.payload['site_links'] == before
+        assert m._swarm_launch_events(m._swarm_launch_keys()['swarm_launch_rows']) is not None
+        assert len([x for x in swarm.calls if isinstance(x,tuple) and x[0]=='detail']) == 1
+        if explode:
+            assert len([r for r in caplog.records if 'site match failed' in r.message]) == 1
+    finally: await m.close()
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('case', ['hook', 'renamed', 'policy_outage'])
+async def test_fix2_legacy_cached_checks_rejudged_without_rereading_detail(tmp_path, case):
+    from maxpane_dashboard.analytics import surf_launch_checks as lc
+    swarm=LaunchSwarm(); row=fixture('launch_737')
+    if case in ('hook','policy_outage'): row.update(kind='univ4_hook', policyVersion=19)
+    swarm.rows=[row]
+    async def detail(_): return copy.deepcopy(row)
+    swarm.fetch_launch=detail
+    m=manager(tmp_path,swarm)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW)
+        entry=m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS)
+        point=entry.payload['launches'][row['id']]
+        if case == 'renamed':
+            for artifact in row['artifacts']: artifact['name'] += '_renamed'
+            point['row']=copy.deepcopy(row)
+        point['checks']['K2']['state']='fail' if case != 'renamed' else 'pass'
+        point['checks']['K3']['state']='pass'
+        for key in ('K2','K3'): point['checks'][key]['evidence'].pop('rule_version')
+        # A vacuous legacy K3 verdict retained only na contracts.
+        if case == 'renamed':
+            for contract in point['checks']['K3']['evidence']['contracts']:
+                contract.update(state='na', reason='not deployed by this launch')
+        cached=m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload
+        for policy in cached['policies']: policy.pop('kind')
+        # The old algorithm already tried a policy refresh for this version.
+        cached['policies_refreshed_for']={row['id']:row['policyVersion']}
+        m.cache.save()
+    finally: await m.close()
+    swarm.calls=[]
+    if case=='policy_outage': swarm.fail={'policies'}
+    restored=manager(tmp_path,swarm)
+    try:
+        await restored._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+61)
+        actual=restored._swarm_launch_keys()['swarm_launch_rows'][0]
+        assert not [c for c in swarm.calls if isinstance(c,tuple) and c[0]=='detail']
+        assert swarm.calls.count('policies')==1
+        if case=='renamed':
+            assert actual['checks']['K3']['state']=='unknown'
+            assert actual['verdict']['state']!='swarm'
+        else:
+            assert actual['checks']['K2']['state']==('unknown' if case=='policy_outage' else 'pass')
+        assert actual['checks']['K3']['evidence']['contracts'][0]['state']==('na' if case=='renamed' else 'pass')
+    finally: await restored.close()

@@ -54,17 +54,18 @@ def extract_facts(detail):
         'attested': [{k: (integer(x.get(k)) if k == 'creationCodeBytes' else text(x.get(k))) for k in ('name', 'deployedCodeHash', 'creationCodeHash', 'creationCodeBytes')} for x in mappings(attestation.get('contracts'))][:64],
     }
 
-def policy_sets(policies, chain_id, version):
-    """Wallet history stops at the launch version; factory history does not."""
+def policy_sets(policies, chain_id, version, kind=None):
+    """Wallets are chain-wide through version; factories belong to this kind."""
     wallets, factories, known = set(), set(), False
     for policy in mappings(policies):
         params = policy.get('params')
         if not isinstance(params, Mapping) or params.get('chainId') != chain_id:
             continue
         pv = integer(policy.get('version'))
-        known |= version is not None and pv == version
+        same_kind = kind is None or policy.get('kind') == kind
+        known |= same_kind and version is not None and pv == version
         factory = address(params.get('factory'))
-        if factory and factory != ZERO:
+        if same_kind and factory and factory != ZERO:
             factories.add(factory)
         if pv is None or version is None or pv > version:
             continue
@@ -112,7 +113,7 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
     checks['K1'] = result('pass' if is_production(row) else 'unknown', chain_id=row.get('chainId'))
     artifacts = mappings(row.get('artifacts'))
     txs, receipts, codes = (rpc.get(key, {}) for key in ('transactions', 'receipts', 'codes'))
-    wallets, factories, known = policy_sets(policies, row.get('chainId'), facts.get('policy_version'))
+    wallets, factories, known = policy_sets(policies, row.get('chainId'), facts.get('policy_version'), row.get('kind'))
     hashes = list(dict.fromkeys(a.get('txHash') for a in artifacts if isinstance(a.get('txHash'), str)))
     if not previous or previous.get('K2', {}).get('state', 'unknown') == 'unknown':
         tx_evidence, states = [], []
@@ -131,7 +132,7 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
                 state = 'pass' if sender in wallets and (not factories or to in factories) and status == 1 else 'fail'
             states.append(state)
             tx_evidence.append({'tx_hash': tx_hash, 'from': sender, 'to': to, 'receipt_status': status})
-        checks['K2'] = result('fail' if 'fail' in states else 'pass' if states and all(s == 'pass' for s in states) and len(hashes) == len({a.get('txHash') for a in artifacts}) else 'unknown', transactions=tx_evidence, policy_version=facts.get('policy_version'))
+        checks['K2'] = result('fail' if 'fail' in states else 'pass' if states and all(s == 'pass' for s in states) and len(hashes) == len({a.get('txHash') for a in artifacts}) else 'unknown', transactions=tx_evidence, policy_version=facts.get('policy_version'), rule_version=2)
     if not previous or previous.get('K3', {}).get('state', 'unknown') == 'unknown':
         states, contract_evidence = [], []
         old_contracts = {c.get('name'): c for c in (previous or {}).get('K3', {}).get('evidence', {}).get('contracts', [])}
@@ -161,7 +162,10 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
                     state = 'pass_immutables' if offset is not None else 'fail'
             states.append(state)
             contract_evidence.append({'state': state, 'name': contract.get('name'), 'address': addr, 'tx_hash': tx_hash, 'expected_hash': expected, 'actual_hash': actual, 'creation_hash': _hash(contract.get('creationCodeHash')), 'creation_offset': offset})
-        checks['K3'] = result('fail' if 'fail' in states else 'unknown' if not states or 'unknown' in states else 'pass_immutables' if 'pass_immutables' in states else 'pass', contracts=contract_evidence)
+        matched_names = {c['name'] for c in contract_evidence if c.get('state') in ('pass', 'pass_immutables')}
+        unmatched = [a.get('name') for a in artifacts if a.get('role') in ('token', 'hook') and a.get('name') not in matched_names]
+        incomplete = not matched_names or 'unknown' in states or bool(unmatched)
+        checks['K3'] = result('fail' if 'fail' in states else 'unknown' if incomplete else 'pass_immutables' if 'pass_immutables' in states else 'pass', contracts=contract_evidence, unmatched_artifacts=unmatched, rule_version=2)
     admission = facts.get('admission')
     failed = [x[0] for x in admission if x[1] != 'passed'] if isinstance(admission, list) else []
     state = 'fail' if failed else 'pass' if admission is not None else 'unknown'
@@ -177,7 +181,7 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
                     topics = log.get('topics')
                     if isinstance(topics, list) and len(topics) >= 3 and topics[0] == topic and _hash(topics[2]):
                         owner = address('0x' + topics[2][-40:])
-                        checks['K6'] = result('info', owner=owner, emitter=address(log.get('address')), owner_is_factory=(owner in factories if known else None))
+                        checks['K6'] = result('info', owner=owner, emitter=address(log.get('address')), owner_is_factory=(owner in policy_sets(policies, row.get('chainId'), facts.get('policy_version'))[1] if known else None))
                         break
     checks['K7'] = result('info', assurances_count=facts.get('assurances_count'))
     if previous:

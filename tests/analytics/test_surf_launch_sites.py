@@ -67,3 +67,16 @@ def test_workflow_and_project_matches_to_different_launches_remain_ambiguous():
     workflows = [{'frontendJobId': site['jobId'], 'contractsJobId': first['job_ids'][0]}]
     jobs = {site['id']: {'project_jobs': [job_id]}}
     assert ls.match_sites([site], {row['id']: first, str(UUID(int=4321)): second}, jobs, workflows) == {}
+
+
+def test_fix2_workflow_index_ignores_invalid_job_identifiers():
+    launch=fixture('launch_737'); facts=dict(extract_facts(launch), row=launch)
+    site=next(s for s in fixture('sites')['sites'] if s['label']=='genesis')
+    flow=next(w for w in fixture('workflows_100')['workflows'] if w.get('frontendJobId')==site['jobId'])
+    facts['job_ids']=[flow['contractsJobId']]
+    malformed=[{'frontendJobId':[1],'contractsJobId':{}},
+               {'frontendJobId':site['jobId'],'contractsJobId':'not-a-uuid'},
+               {'frontendJobId':None,'contractsJobId':flow['contractsJobId']}]
+    assert ls.match_sites([site], {launch['id']:facts}, {}, [flow]+malformed)==ls.match_sites([site], {launch['id']:facts}, {}, [flow])
+    facts['job_ids']=['not-a-uuid']
+    assert ls.match_sites([site], {launch['id']:facts}, {}, malformed)=={}
