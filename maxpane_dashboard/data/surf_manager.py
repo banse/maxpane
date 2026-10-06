@@ -144,7 +144,8 @@ from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data import surf_pool4_market as mk
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
-from maxpane_dashboard.analytics import surf_launch_checks as lc, surf_launch_sites as ls
+from maxpane_dashboard.analytics import surf_launch_checks as lc
+from maxpane_dashboard.analytics import surf_launch_liquidity as ll, surf_launch_sites as ls
 from maxpane_dashboard.data.keccak import keccak256
 from maxpane_dashboard.data.surf_launch_base_client import SwarmBaseClient
 from maxpane_dashboard.data.surf_launch_rh_client import SwarmRobinhoodClient
@@ -5612,6 +5613,10 @@ class SurfManager:
         refreshed_for = slot.setdefault('policies_refreshed_for', {})
         for point in pending:
             row, previous = point['row'], point.get('checks')
+            initialize = ll.pool_initialize(row, rpc.get(row['chainId'], {}).get('receipts', {}))
+            if initialize is not None:
+                point['pool_initialize'] = initialize
+                point['pool_fee'] = initialize['pool_fee']
             async def judge(policies):
                 # Detached tasks are single-flight; copies also isolate a cancelled worker.
                 return await asyncio.to_thread(lc.check_launch, copy.deepcopy(row), copy.deepcopy(point),
@@ -5696,6 +5701,8 @@ class SurfManager:
             row['token_address'] = next((a['address'] for a in row['artifacts'] if a['role'] == 'token'), None)
             row['job_id'] = next(iter(point.get('job_ids', [])), None)
             row['checks'] = point.get('checks') or {k: lc.result('pass' if k == 'K1' else 'unknown') for k in ('K1', 'K2', 'K3', 'K4', 'K6', 'K7')}
+            row['liquidity'] = ll.empty_liquidity()
+            row['checks'] = dict(row['checks'], K8=dict(row['liquidity']))
             row['verdict'] = lc.verdict(point['row'], row['checks'])
             if row['launch_id'] in linked_sites:
                 site, link = linked_sites[row['launch_id']]

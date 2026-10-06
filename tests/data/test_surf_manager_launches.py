@@ -728,3 +728,27 @@ async def test_fix3_cached_pooled_checks_rejudged_once_preserving_k3(tmp_path):
         assert checks['K3'] == k3
         assert len(calls) == 1 and calls[0][1] == []
     finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_initialize_fee_and_liquidity_contract_reach_snapshot(tmp_path):
+    m = manager(tmp_path)
+    m.swarm_client.rows = [fixture('launch_737'), next(r for r in fixture('launches_100')['launches'] if r['chainId'] == 11155111)]
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        rows = m._swarm_launch_keys()['swarm_launch_rows']
+        production = next(r for r in rows if r['production'])
+        sepolia = next(r for r in rows if not r['production'])
+        assert production['pool_fee'] == 12500
+        assert production['liquidity']['state'] == 'unknown'
+        assert production['checks']['K8'] == production['liquidity']
+        assert sepolia['liquidity'] is None
+        m.cache.save()
+        restored = manager(tmp_path)
+        try:
+            row = next(r for r in restored._swarm_launch_keys()['swarm_launch_rows'] if r['production'])
+            assert row['pool_fee'] == 12500
+        finally:
+            await restored.close()
+    finally:
+        await m.close()

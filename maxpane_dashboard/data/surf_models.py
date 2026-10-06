@@ -1661,6 +1661,15 @@ SWARM_WORKFLOW_HISTORY_CAP = 1000
 #: exemption from this export, never from a hand-typed copy (wired in that spec's WP5:
 #: the surf screen, swarm-models, widget-contract and registration tests read it).
 #: 2026-10-05: IN FLIGHT joins CAPABILITY; its jobs read and tests remain.
+# Frozen for the WP4 mount switch; active/parked maps still describe today's screen.
+SWARM_LATEST_LAUNCHES_SIGNATURE = ("swarm_launch_rows", "swarm_launches_as_of_hhmm", "as_of")
+SWARM_THROUGHPUT_SIGNATURE = ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale")
+SWARM_LIQUIDITY_KEYS = (
+    "state", "range_state", "paired_symbol", "paired_amount", "token_amount", "pool_fee",
+    "tick", "tick_lower", "tick_upper", "owner", "owner_is_factory", "lock",
+    "withdrawn_pct", "share", "read_ts",
+)
+
 SWARM_PARKED_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
     "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),
@@ -2026,7 +2035,7 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "launch_id", "job_id", "production", "ticker", "token_name", "token_address",
         "pair", "pool_fee", "requester", "policy_version",
         "site_label", "site_ens_name", "site_link_method", "site_link_trusted",
-        "verdict", "checks",
+        "verdict", "checks", "liquidity",
         "launch_number", "kind", "status", "chain_id", "repo_url", "commit",
         "parked_reason", "artifact_count", "created_ts", "updated_ts",
         "artifacts",    # list[dict(role, name, address, tx_hash, block_number)]

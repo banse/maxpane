@@ -34,9 +34,9 @@ def test_v8_attestation_checks(number):
     if number == 747:
         assert checks['K3']['evidence']['contracts'][0]['creation_offset'] == 740
 
-def test_v8_pool_fee_is_manifest_fee():
+def test_v8_detail_does_not_claim_manifest_fee_is_live():
     _, facts, _ = checked()
-    assert facts['pool_fee'] == 3000
+    assert facts['pool_fee'] is None
     assert facts['pair'] == 'IMD'
     assert not {'rewardSnapshot', 'allocations', 'claims'} & facts.keys()
 

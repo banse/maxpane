@@ -359,6 +359,7 @@ def test_the_helper_reaches_only_pure_rendering_modules_beyond_rich():
     assert {m for m in modules if m.startswith("maxpane_dashboard")} == {
         "maxpane_dashboard.widgets.explorer",
         "maxpane_dashboard.widgets.markup_safety",
+        "maxpane_dashboard.widgets.rowfit",
     }
 
 

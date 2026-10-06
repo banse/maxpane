@@ -167,3 +167,18 @@ def test_fix3_policy_schema_marker_is_strict_and_persisted():
     for value in (None, True, 1.0, '1', 2, -1):
         assert coerce_launches_slot({'policies_schema':value})['policies_schema'] is None
     assert coerce_launches_slot({'policies_schema':1})['policies_schema'] == 1
+
+
+def test_legacy_manifest_fee_is_removed_but_initialize_fee_survives_reload():
+    from maxpane_dashboard.analytics import surf_launch_liquidity as ll
+    from tests.analytics.test_surf_launch_liquidity import pool_fixture
+    row, receipts = pool_fixture(737)
+    _, facts, checks = checked()
+    facts.update(row=row, checks=checks, detail_version=[row['status'], row['updatedAt']], pool_fee=3000)
+    slot = {'launches': {row['id']: facts}, 'sites': {}}
+    assert sw.coerce_launch_facts_slot(slot)['launches'][row['id']]['pool_fee'] is None
+    facts['pool_initialize'] = ll.pool_initialize(row, receipts)
+    actual = sw.coerce_launch_facts_slot(slot)['launches'][row['id']]
+    assert actual['pool_fee'] == 12500 and actual['pool_initialize'] == facts['pool_initialize']
+    facts['pool_initialize']['emitter'] = 'bad'
+    assert sw.coerce_launch_facts_slot(slot)['launches'][row['id']]['pool_fee'] is None

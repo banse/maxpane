@@ -88,7 +88,7 @@ SWARM_V2_ROW_SHAPES = {
         "launch_id", "job_id", "production", "ticker", "token_name", "token_address",
         "pair", "pool_fee", "requester", "policy_version",
         "site_label", "site_ens_name", "site_link_method", "site_link_trusted",
-        "verdict", "checks",
+        "verdict", "checks", "liquidity",
         "launch_number", "kind", "status", "chain_id", "repo_url", "commit",
         "parked_reason", "artifact_count", "created_ts", "updated_ts",
         "artifacts",

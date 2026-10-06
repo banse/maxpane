@@ -45,7 +45,7 @@ def extract_facts(detail):
         pair = currency  # The popup's address helper owns shortening, copy and explorer links.
     return {
         'ticker': text(token.get('symbol')), 'token_name': text(token.get('name')),
-        'pair': pair, 'pool_fee': integer(pool.get('fee')),
+        'pair': pair, 'pool_fee': None,  # Only a deploy receipt's Initialize supplies the fee.
         'requester': address(detail.get('requester')), 'policy_version': integer(detail.get('policyVersion')),
         'admission': [[text(x.get('name')), text(x.get('status'))] for x in mappings(detail.get('admissionChecks'))][:64] if isinstance(detail.get('admissionChecks'), list) else None,
         'deploy_failure': detail.get('deployFailure') is not None,

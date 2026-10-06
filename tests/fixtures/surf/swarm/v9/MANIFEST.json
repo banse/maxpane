@@ -1,0 +1,325 @@
+{
+  "host": "https://api.imd.fun",
+  "note": "Captured 2026-10-06 for SWARM launches round 2 (docs/codex_swarm_launches_v2_plan.md): K8 liquidity reads (PoolManager extsload of slot0 / pool liquidity / the deploy position, plus currency decimals) for #737 (custom_token, IMD pair, in range), #747 (custom_token, ETH pair, price at the max tick: no active liquidity), #775 (univ4_hook, factory 0x12c63b58, ETH pair, in range) and #791 (Robinhood, IMD pair). #737 and #747 receipts are in v8; #775 and #791 receipts are here. launches_100 / sites / launch_policies are the current pages (LATEST LAUNCHES, the SITES site column).",
+  "files": {
+    "launches_100": {
+      "url": "https://api.imd.fun/launches?limit=100",
+      "captured_at": "2026-10-06T12:48:07Z",
+      "http_status": 200,
+      "sha256": "0065c50698a539a4d05cf6d03ca0db2b98eb393c09bf137c418dc041d56c6aed",
+      "bytes": 92560
+    },
+    "sites": {
+      "url": "https://api.imd.fun/sites",
+      "captured_at": "2026-10-06T12:48:07Z",
+      "http_status": 200,
+      "sha256": "50730a420e43d219cc961d5e48c6ab3be7a8619e35000d2742a0699df82127c3",
+      "bytes": 75605
+    },
+    "launch_policies": {
+      "url": "https://api.imd.fun/launch/policies",
+      "captured_at": "2026-10-06T12:48:08Z",
+      "http_status": 200,
+      "sha256": "1aa472e02d79f98add4ad26a460ff3ace89ed2f7796f021b969602b2bdfbc54a",
+      "bytes": 25051
+    },
+    "launch_775": {
+      "url": "https://api.imd.fun/launches/d6efcda2-d35b-40c0-aef0-6c089a180773",
+      "captured_at": "2026-10-06T12:48:10Z",
+      "http_status": 200,
+      "sha256": "a4b7d8d725567e5ba6bc1db1dc8f0ee6b1aa2d851772d47f5074bcaf8d12c733",
+      "bytes": 12243,
+      "note": "trimmed: removed ['rewardSnapshot', 'allocations', 'claims'] (original 239661 bytes)"
+    },
+    "launch_791": {
+      "url": "https://api.imd.fun/launches/8418ae03-2cfd-438f-8c12-00ff3b7f6095",
+      "captured_at": "2026-10-06T12:48:10Z",
+      "http_status": 200,
+      "sha256": "24767537d93c0dcf464572baed6600a04b9d6e39bd59462c8f6b15e67cd9accd",
+      "bytes": 5643,
+      "note": "trimmed: removed ['rewardSnapshot', 'allocations', 'claims'] (original 244413 bytes)"
+    },
+    "rpc_737_pool_state": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T12:48:11Z",
+      "http_status": 200,
+      "sha256": "c243f8c4d9709069aa8300f29f9390ef130ecc9b100a176763b032c28b124f09",
+      "bytes": 518,
+      "request": [
+        {
+          "jsonrpc": "2.0",
+          "id": 0,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+              "data": "0x1e2eaeaf85763e16f60121d4266264cb693cca4d6bdb9e98ff9cc3d698d892d90342971b"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+              "data": "0x1e2eaeaf85763e16f60121d4266264cb693cca4d6bdb9e98ff9cc3d698d892d90342971e"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+              "data": "0x1e2eaeafb9008046e70797c63cd97e9d4d05b1dc9ca321499d9fee44c811308eef2d4442"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 10,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+              "data": "0x313ce567"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 11,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0xd782bdea4ef02a0bd391eb9089470c8080f0a68e",
+              "data": "0x313ce567"
+            },
+            "latest"
+          ]
+        }
+      ],
+      "note": "PoolManager 0x000000000004444c5dc75cb358380d2e3de08a90 extsload ids 0=slot0 (stateSlot=keccak(poolId,6)), 1=liquidity (stateSlot+3), 2=position (keccak(keccak(owner,tickLower,tickUpper,salt), stateSlot+6)); ids 10/11 = decimals() of currency0 0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7 / currency1 0xd782bdea4ef02a0bd391eb9089470c8080f0a68e (absent for native ETH). Position from the deploy ModifyLiquidity: owner 0xff03410d0fe5fa8f7f59f743de35e333d9857120 ticks [-887220,128940] salt 0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "rpc_747_pool_state": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T12:48:12Z",
+      "http_status": 200,
+      "sha256": "aa48b51f303a8ae2f5a93651a2eff43a4daea61ad409f39dc5054972ca605165",
+      "bytes": 414,
+      "request": [
+        {
+          "jsonrpc": "2.0",
+          "id": 0,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+              "data": "0x1e2eaeaf8e7a7a7cd88fd3f13bb2588420621ced9557d1feae98541225e2f735d3b2bccc"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+              "data": "0x1e2eaeaf8e7a7a7cd88fd3f13bb2588420621ced9557d1feae98541225e2f735d3b2bccf"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+              "data": "0x1e2eaeaf84d261f2a2944dd2c1bb56acf2939281bcaace78f8f8437573d0c468b2d45cb0"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 11,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0xde1cbe2801ab10162c31aa6dc278bed2b516dc3b",
+              "data": "0x313ce567"
+            },
+            "latest"
+          ]
+        }
+      ],
+      "note": "PoolManager 0x000000000004444c5dc75cb358380d2e3de08a90 extsload ids 0=slot0 (stateSlot=keccak(poolId,6)), 1=liquidity (stateSlot+3), 2=position (keccak(keccak(owner,tickLower,tickUpper,salt), stateSlot+6)); ids 10/11 = decimals() of currency0 0x0000000000000000000000000000000000000000 / currency1 0xde1cbe2801ab10162c31aa6dc278bed2b516dc3b (absent for native ETH). Position from the deploy ModifyLiquidity: owner 0xff03410d0fe5fa8f7f59f743de35e333d9857120 ticks [-887220,184200] salt 0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "rpc_775_receipt": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T12:48:13Z",
+      "http_status": 200,
+      "sha256": "f873e0b4db54adf45e7dbd6927c506e528195c933d8c940584d99fcc09f7ec7d",
+      "bytes": 8868,
+      "request": {
+        "method": "eth_getTransactionReceipt",
+        "params": [
+          "0x9eeabe6776c0747c37a4d3646083abd04d21a023fdfdbe325d33c52aa5011ad2"
+        ]
+      }
+    },
+    "rpc_775_pool_state": {
+      "url": "https://ethereum-rpc.publicnode.com",
+      "captured_at": "2026-10-06T12:48:13Z",
+      "http_status": 200,
+      "sha256": "9f993e14396c576b8c85ea881e4bc36c7e854d25bf58752361d252950501a728",
+      "bytes": 414,
+      "request": [
+        {
+          "jsonrpc": "2.0",
+          "id": 0,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+              "data": "0x1e2eaeafa0681b115a9a972e5809560acd51613f32f7a7bb96d65d3c227500a2010aa650"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+              "data": "0x1e2eaeafa0681b115a9a972e5809560acd51613f32f7a7bb96d65d3c227500a2010aa653"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x000000000004444c5dc75cb358380d2e3de08a90",
+              "data": "0x1e2eaeaf54f4621ce8ea571bb089d0c2fb8549270cffbe1faa225ac5426a39ca5ba62f61"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 11,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x4543e6b511a9a7a75b56607e27997c987ea05878",
+              "data": "0x313ce567"
+            },
+            "latest"
+          ]
+        }
+      ],
+      "note": "PoolManager 0x000000000004444c5dc75cb358380d2e3de08a90 extsload ids 0=slot0 (stateSlot=keccak(poolId,6)), 1=liquidity (stateSlot+3), 2=position (keccak(keccak(owner,tickLower,tickUpper,salt), stateSlot+6)); ids 10/11 = decimals() of currency0 0x0000000000000000000000000000000000000000 / currency1 0x4543e6b511a9a7a75b56607e27997c987ea05878 (absent for native ETH). Position from the deploy ModifyLiquidity: owner 0x12c63b581d07093f6126bc02263c58f7eadaa96f ticks [-887220,184200] salt 0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "rpc_791_receipt": {
+      "url": "https://rpc.mainnet.chain.robinhood.com",
+      "captured_at": "2026-10-06T12:48:14Z",
+      "http_status": 200,
+      "sha256": "8086f7658f775ac280a077dbdca335abe905fbb6fbec2abedef9256e93a81da8",
+      "bytes": 8830,
+      "request": {
+        "method": "eth_getTransactionReceipt",
+        "params": [
+          "0x917a9f1647403ff5677c365a9c9060120f3ab569233e37519b4d73f3f7892f62"
+        ]
+      }
+    },
+    "rpc_791_pool_state": {
+      "url": "https://rpc.mainnet.chain.robinhood.com",
+      "captured_at": "2026-10-06T12:48:15Z",
+      "http_status": 200,
+      "sha256": "db4b98e9f86a4255d78756f04aca588533bc797024b09aabd9be43fd4ec24055",
+      "bytes": 519,
+      "request": [
+        {
+          "jsonrpc": "2.0",
+          "id": 0,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+              "data": "0x1e2eaeafbfe901f413c0f4b213ec3d980388f7f79f3b7a68ef10b232507d4d236defba94"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+              "data": "0x1e2eaeafbfe901f413c0f4b213ec3d980388f7f79f3b7a68ef10b232507d4d236defba97"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+              "data": "0x1e2eaeafc296d3f1574d3758cb95ba1418cf2de5794e10f43f41b6fa81dba967d6643336"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 10,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+              "data": "0x313ce567"
+            },
+            "latest"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 11,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0x73cbf9aaf60bcfa816a703872e5d6e4563eb65bb",
+              "data": "0x313ce567"
+            },
+            "latest"
+          ]
+        }
+      ],
+      "note": "PoolManager 0x8366a39cc670b4001a1121b8f6a443a643e40951 extsload ids 0=slot0 (stateSlot=keccak(poolId,6)), 1=liquidity (stateSlot+3), 2=position (keccak(keccak(owner,tickLower,tickUpper,salt), stateSlot+6)); ids 10/11 = decimals() of currency0 0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127 / currency1 0x73cbf9aaf60bcfa816a703872e5d6e4563eb65bb (absent for native ETH). Position from the deploy ModifyLiquidity: owner 0x9c9d2fcb75c2c132c0ac0c42df3819a42347265e ticks [-887220,128940] salt 0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+}

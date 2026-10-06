@@ -344,3 +344,40 @@ async def test_v8_token_click_opens_imd_and_icon_copies():
         await pilot.click(offset=(x, y))
         assert app.copied == [address] == [app.token]
         assert len(app.opened) == 1
+
+
+def test_v9_site_host_mode_preserves_suffix_and_label_precedence():
+    rows = json.loads((V8.parent / 'v9/sites.json').read_text())['sites']
+    win = next(row for row in rows if row['label'] == 'win')
+    out = site_text(win['ensName'], 33, label=win['label'], explorer=X.SITES, display='host')
+    assert out.plain == 'win.sites.imd.fun'
+    assert {span.style.link for span in out.spans} == {'https://win.sites.imd.fun/'}
+    legacy = next(row for row in rows if row['label'] is None and row['ensName'])
+    label = legacy['ensName'].removesuffix('.site.identitymd.eth')
+    assert site_text(legacy['ensName'], 100, explorer=X.SITES, display='host').plain == label + '.sites.imd.fun'
+    out = site_text(None, 33, label='a' * 50, explorer=X.SITES, display='host')
+    assert out.plain == 'a' * 18 + '…' + '.sites.imd.fun'
+    assert {span.style.link for span in out.spans} == {'https://' + 'a' * 50 + '.sites.imd.fun/'}
+    for bad in (None, [], 'x.evil', '字', 'win\n', '[red]win'):
+        out = site_text(None, 33, label=bad, explorer=X.SITES, display='host')
+        assert out.plain == '--' and out.spans == []
+
+
+class _HostSiteApp(LinkRecorder, CopyRecorder, ExplorerLinkMixin, App):
+    def compose(self):
+        row = next(row for row in json.loads((V8.parent / 'v9/sites.json').read_text())['sites'] if row['label'] == 'win')
+        yield Static(site_text(row['ensName'], 33, label=row['label'], explorer=X.SITES, display='host'))
+        yield StatusBar()
+
+
+async def test_v9_site_host_is_composited_and_click_opens_site():
+    app = _HostSiteApp()
+    async with app.run_test(size=(35, 6)) as pilot:
+        await pilot.pause()
+        painted = '\n'.join(strip.text for strip in app.screen._compositor.render_strips())
+        assert 'win.sites.imd.fun' in painted and 'identitymd.eth' not in painted
+        cells = [t for t in link_targets(app) if t[3] == 'site']
+        assert len(cells) == len('win.sites.imd.fun')
+        await pilot.click(offset=(cells[3][0], cells[3][1]))
+        await pilot.pause()
+        assert app.opened == ['https://win.sites.imd.fun/']

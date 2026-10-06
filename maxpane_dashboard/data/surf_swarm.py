@@ -388,6 +388,7 @@ def launch_rows(launches: object) -> list[dict[str, Any]]:
             "site_link_trusted": None,
             "verdict": None,
             "checks": None,
+            "liquidity": None,
             "launch_number": _int(launch.get("launchNumber")),
             "kind": _str(launch.get("kind")),
             "status": _str(launch.get("status")),
@@ -2494,6 +2495,7 @@ def coerce_launch_facts_slot(value):
     """Each launch/site entry is validated and rebuilt; unknown fields vanish."""
     from copy import deepcopy
     from maxpane_dashboard.analytics.surf_launch_checks import address, is_production
+    from maxpane_dashboard.analytics.surf_launch_liquidity import coerce_initialize
     if not isinstance(value, dict):
         return None
     launches, sites = {}, {}
@@ -2518,7 +2520,7 @@ def coerce_launch_facts_slot(value):
                 val = point.get(field)
                 if val is not None and not isinstance(val, str): valid = False
                 clean[field] = val[:256] if isinstance(val, str) else None
-            for field in ('pool_fee', 'policy_version', 'assurances_count'):
+            for field in ('policy_version', 'assurances_count'):
                 val = point.get(field)
                 if val is not None and (type(val) is not int or val < 0): valid = False
                 clean[field] = val
@@ -2542,6 +2544,15 @@ def coerce_launch_facts_slot(value):
                 if size is not None and (type(size) is not int or not 0 < size <= 100000): valid = False
                 clean['attested'].append({k: a.get(k) for k in ('name', 'deployedCodeHash', 'creationCodeHash', 'creationCodeBytes')})
             if not valid: continue
+        initialize = coerce_initialize(point.get('pool_initialize'))
+        tokens = {address(a.get('address')) for a in row['artifacts'] if a.get('role') == 'token'}
+        hashes = {a.get('txHash') for a in row['artifacts']}
+        if initialize and initialize['tx_hash'] in hashes and len(tokens) == 1 and next(iter(tokens)) in (initialize['currency0'], initialize['currency1']):
+            clean['pool_initialize'] = initialize
+        else:
+            initialize = None
+        # Old caches contain manifest fees: never present them as receipt evidence.
+        clean['pool_fee'] = initialize['pool_fee'] if initialize else None
         checks = point.get('checks')
         if checks is not None:
             if not isinstance(checks, dict) or set(checks) != {'K1', 'K2', 'K3', 'K4', 'K6', 'K7'}: continue

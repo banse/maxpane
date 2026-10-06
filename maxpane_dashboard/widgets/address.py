@@ -29,6 +29,8 @@ from __future__ import annotations
 import re
 
 from rich.cells import cell_len
+
+from maxpane_dashboard.widgets.rowfit import clip
 from rich.style import Style
 from rich.text import Text
 
@@ -302,17 +304,25 @@ def site_text(
     label: object = None,
     explorer: Explorer | None = None,
     style: str | Style = "",
+    display: str = "ens",
 ) -> Text:
-    """Show the ENS name; link the row's bare label on sites.imd.fun.
+    """Show the legacy ENS name or opt into its host; both link the bare label.
 
-    A missing label is derived only from the legacy ``.site.identitymd.eth``
-    suffix. Invalid explicit labels never become links. No API URL is used.
+    Host mode fits the label first so the complete ``.sites.imd.fun`` suffix
+    survives. Invalid explicit labels never become links or derived hosts.
     """
-    if not isinstance(ens_name, str) or not ens_name:
-        return Text("--", style=style)
-    out = Text(_fit(_clean_label(ens_name), width), style=style)
-    if label is None and ens_name.endswith(".site.identitymd.eth"):
+    if label is None and isinstance(ens_name, str) and ens_name.endswith(".site.identitymd.eth"):
         label = ens_name.removesuffix(".site.identitymd.eth")
+    if display == "host":
+        suffix = ".sites.imd.fun"
+        if not is_site(label) or width <= len(suffix):
+            return Text("--", style=style)
+        shown = clip(label, width - len(suffix)) + suffix
+    else:
+        if not isinstance(ens_name, str) or not ens_name:
+            return Text("--", style=style)
+        shown = _fit(_clean_label(ens_name), width)
+    out = Text(shown, style=style)
     if explorer is not None and is_site(label):
         if (link := _link(explorer, "site", label)) is not None:
             out.stylize(link, 0, len(out.plain))

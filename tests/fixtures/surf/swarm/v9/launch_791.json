@@ -1,0 +1,157 @@
+{
+ "admissionChecks": [
+  {
+   "detail": "8 node(s) accepted at 69d99209",
+   "name": "provenance",
+   "status": "passed"
+  },
+  {
+   "detail": "8 accepted submission(s), no unresolved blocking findings",
+   "name": "findings",
+   "status": "passed"
+  },
+  {
+   "detail": "1 independent review(s)",
+   "name": "independent_review",
+   "status": "passed"
+  },
+  {
+   "detail": "1 contract(s) clean and reproducible",
+   "name": "bytecode",
+   "status": "passed"
+  },
+  {
+   "detail": "SLABS: 8800 bps to the pool at 2500000000000000000000 minor units of 0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127, 0 contracts",
+   "name": "manifest",
+   "status": "passed"
+  },
+  {
+   "detail": "invariants-c2c6d358e597: Suite result: ok. 8 passed; 0 failed; 0 skipped; finished in 11.20ms (2.36ms CPU time)",
+   "name": "protected_invariants",
+   "status": "passed"
+  },
+  {
+   "detail": "280 allocation(s), root 0x3064992f",
+   "name": "economics",
+   "status": "passed"
+  }
+ ],
+ "artifactCount": 3,
+ "artifacts": [
+  {
+   "address": "0x966b8915a100d4eb489fb08eb12ae4e0417078f8",
+   "blockNumber": 81587249,
+   "creationCodeHash": "f1c21108732a73286b1030e87fbba14c806905275dde6fce012f2c0ca19e30b9",
+   "name": "MerkleDistributor",
+   "role": "distributor",
+   "txHash": "0x917a9f1647403ff5677c365a9c9060120f3ab569233e37519b4d73f3f7892f62",
+   "verifiedAt": null
+  },
+  {
+   "address": "0x19bec7c2e1b2aadaf67b259744751a9960d66000",
+   "blockNumber": 81587249,
+   "creationCodeHash": "0b3f249bc36eb41d4f5f7b8d4c132f9f3e77df94b8536f2e26d0f0e7d159a7ad",
+   "name": "PoolInitializationGuard",
+   "role": "hook",
+   "txHash": "0x917a9f1647403ff5677c365a9c9060120f3ab569233e37519b4d73f3f7892f62",
+   "verifiedAt": null
+  },
+  {
+   "address": "0x73cbf9aaf60bcfa816a703872e5d6e4563eb65bb",
+   "blockNumber": 81587249,
+   "creationCodeHash": "9b9810e0eb5496bac2dcc9569b0abaecf3d79844e7deaa42e22e69dcbaf9c7c3",
+   "name": "Slabs",
+   "role": "token",
+   "txHash": "0x917a9f1647403ff5677c365a9c9060120f3ab569233e37519b4d73f3f7892f62",
+   "verifiedAt": null
+  }
+ ],
+ "assurances": [],
+ "attestation": {
+  "contracts": [
+   {
+    "abiHash": "b48adcbf1a0e9b355d85120282552da2aa95ef6406529af056dbad779f13dccb",
+    "creationCodeBytes": 2719,
+    "creationCodeHash": "9b9810e0eb5496bac2dcc9569b0abaecf3d79844e7deaa42e22e69dcbaf9c7c3",
+    "deployedCodeBytes": 1814,
+    "deployedCodeHash": "5a12a2ef630bbeb8880f7bcb3d9ed63f2808ab5faabfad6d5ac92b863ce8c213",
+    "metadataHash": "06cffc8b067d1fe23744100de32f134f00b556f8f3fcdfe3e7cba4f0aa67d69b",
+    "name": "Slabs",
+    "opcodes": {
+     "callcode": false,
+     "delegatecall": false,
+     "selfdestruct": false
+    },
+    "path": "src/Slabs.sol"
+   }
+  ],
+  "manifest": {
+   "contracts": [],
+   "economics": {
+    "initialMarketCapWei": "2500000000000000000000",
+    "poolBps": 8800,
+    "remainderTo": "0x249b317bd3f437c3f6834909dc167fc6aa73dd66"
+   },
+   "kind": "custom_token",
+   "notes": "Slabs (src/Slabs.sol) is a fixed-supply ERC-20 with 18 decimals and no transfer fee. Its argument-free constructor mints all 1,000,000,000 SLABS to msg.sender once. It has no external mint, burn, administrative or upgrade functions. No application contracts or initialization calls are required. The pool uses the requested paired token with a 0.3% fee and tick spacing 60. initialPrice is provenance only: floor(sqrt(initialMarketCapWei / totalSupply) * 2^96), expressed with SLABS as currency0 and the paired token as currency1. The deployer derives the actual opening price from the supplied economics and totalSupply, accounting for currency ordering.",
+   "pool": {
+    "fee": 3000,
+    "initialPrice": "125270724187523965593206900",
+    "pairedCurrency": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+    "tickSpacing": 60
+   },
+   "token": {
+    "constructorArgs": [],
+    "contract": "Slabs",
+    "decimals": 18,
+    "name": "Slabs",
+    "symbol": "SLABS",
+    "totalSupply": "1000000000000000000000000000"
+   }
+  },
+  "manifestError": null,
+  "toolchain": {
+   "bytecodeHash": "none",
+   "evmVersion": "paris",
+   "forge": "forge Version: 1.8.3",
+   "optimizer": true,
+   "optimizerRuns": 200,
+   "solc": "0.8.26",
+   "viaIR": false
+  },
+  "treeHash": "8b362adf206aa3ef3645fb2d851b1b5a1546d616",
+  "verifierKey": "68249df1f422fa72f61ca7f0ddaf9b62043959c5c134498441d5e552a9921782",
+  "verifierVersion": "0.1.0+e6140b7a"
+ },
+ "attestationFailure": null,
+ "attestationHash": "4caa6f0f4e20853e3ae86866c6bf666edb7526c5991f88c2b16071fe8e3ebcb4",
+ "chainId": 4663,
+ "createdAt": "2026-10-06T11:15:00.863Z",
+ "deployFailure": null,
+ "economics": {
+  "initialMarketCapWei": "2500000000000000000000",
+  "poolBps": 8800,
+  "remainderTo": "0x249b317bd3f437c3f6834909dc167fc6aa73dd66"
+ },
+ "id": "8418ae03-2cfd-438f-8c12-00ff3b7f6095",
+ "jobs": [
+  {
+   "attachedAt": "2026-10-06T11:15:00.863Z",
+   "id": "70562b18-43c0-475f-8144-cfb92ed66a0a",
+   "objective": "A custom token: Slabs (SLABS).\nToken name: Slabs\nToken symbol: SLABS\nToken supply: 1,000,000,000 with 18 decimals, all minted once to the deployer in the constructor.\n\nTransfer rules: No fee",
+   "state": "completed"
+  }
+ ],
+ "kind": "custom_token",
+ "launchNumber": 791,
+ "manifestHash": "9af2d435f63ff85fc52e7a4d00829680bd69555942550a9972d3b3392a638e02",
+ "merkleRoot": "0x3064992fd66a6fdc7fc509779bf649c77a035f5de60abd2018fe6aeec3aad217",
+ "parkedReason": null,
+ "policyVersion": 20,
+ "poolFee": 12500,
+ "requester": "0x249b317bd3f437c3f6834909dc167fc6aa73dd66",
+ "sourceCommit": "69d992096bc74871b892d366391be4b04c5d34f2",
+ "sourceRepoUrl": "https://github.com/identity-md-launches/launch-791-slabs",
+ "status": "live",
+ "updatedAt": "2026-10-06T11:15:24.771Z"
+}
