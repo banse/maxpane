@@ -1,3 +1,4 @@
+import pytest
 import copy
 import uuid
 from tests.analytics.test_surf_launch_checks import fixture, checked
@@ -113,8 +114,8 @@ def test_per_contract_progress_survives_cache_and_rejects_invalid_states(tmp_pat
     assert restored['checks']['K3']['evidence']['contracts'][0]['state'] == 'pass_immutables'
     def forbidden(_): raise AssertionError('persisted passing contract rehashed')
     again = lc.check_launch(row, restored, [], {}, keccak=forbidden, previous=restored['checks'])
-    # The persisted token match survives; v8's unattested hook stays unknown.
-    assert again['K3']['state'] == 'unknown'
+    # The persisted token match settles coverage without hashing the shared hook.
+    assert again['K3']['state'] == 'pass_immutables'
     assert again['K3']['evidence']['contracts'][0]['state'] == 'pass_immutables'
     for invalid in ('safe', 3, {'state':'pass'}):
         facts['checks']['K3']['evidence']['contracts'][0]['state'] = invalid
@@ -151,3 +152,11 @@ def test_fix2_policy_kind_and_unmatched_artifact_evidence_survive_cache(tmp_path
     assert persisted['state']=='unknown'
     assert persisted['evidence']['unmatched_artifacts']==checks['K3']['evidence']['unmatched_artifacts']
     assert persisted['evidence']['rule_version']==2
+
+
+@pytest.mark.parametrize('stamp', [True, '123', -1, 0, float('nan'), float('inf')])
+def test_fix3_coverage_retry_timestamp_rejects_invalid(stamp):
+    row = fixture('launch_737')
+    point = {'row': row, 'k3_retry_ts': stamp}
+    clean = sw.coerce_launch_facts_slot({'launches': {row['id']: point}, 'sites': {}})
+    assert 'k3_retry_ts' not in clean['launches'][row['id']]

@@ -2503,9 +2503,10 @@ def coerce_launch_facts_slot(value):
         if row is None or row['id'] != key or not is_production(row):
             continue
         clean = {'row': row}
-        stamp = point.get('detail_failed_ts')
-        if type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0:
-            clean['detail_failed_ts'] = stamp
+        for field in ('detail_failed_ts', 'k3_retry_ts'):
+            stamp = point.get(field)
+            if type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0:
+                clean[field] = stamp
         if point.get('detail_version') is not None:
             version = point['detail_version']
             if not isinstance(version, list) or len(version) != 2 or any(not isinstance(x, str) for x in version):

@@ -110,8 +110,8 @@ async def test_launch_popup_tokenless_uses_job_and_immutables_evidence():
                 assert 'K6 · na' in text
                 assert f"https://explorer.imd.fun/jobs/{row['job_id']}" in links
             else:
-                # Token creation code is verified, but v8 omits its hook attestation.
-                assert 'K3 · unknown' in text and 'state: pass_immutables' in text
+                # The shared hook needs no attestation; creation code proves the token.
+                assert 'K3 · pass (immutables)' in text and 'state: pass_immutables' in text
                 assert 'creation_offset: 740' in text
 
 

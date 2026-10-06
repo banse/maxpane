@@ -5,6 +5,7 @@ from tests.analytics.test_surf_launch_checks import fixture, evidence
 from tests.data.test_surf_manager import FakeClock, FakeSurfClient
 from tests.data.test_surf_manager_pool4 import FakePool4Client
 from maxpane_dashboard.data.surf_manager import SurfManager
+from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data.surf_cache import TIER_SWARM_LAUNCHES, SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS
 
 NOW = 1791247200.
@@ -67,7 +68,7 @@ async def test_details_read_once_then_on_version_change_and_unknown_retries(tmp_
     try:
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW)
         row=m._swarm_launch_keys()['swarm_launch_rows'][0]
-        assert row['verdict']['state']=='partial' and row['ticker']=='ZTO'
+        assert row['verdict']['state']=='swarm' and row['ticker']=='ZTO'
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+61)
         assert len([x for x in swarm.calls if isinstance(x,tuple) and x[0]=='detail'])==1
         swarm.rows[0]['updatedAt']='2026-10-06T01:00:00Z'
@@ -469,3 +470,130 @@ async def test_fix2_identical_successful_reads_reuse_site_match(tmp_path, monkey
         assert next(iter(changed['site_links'].values()))['trusted'] is False
     finally:
         await m.close()
+
+
+@pytest.mark.asyncio
+async def test_fix3_coverage_rpc_once_then_backoff_and_facts_change(tmp_path):
+    swarm = LaunchSwarm()
+    row = fixture('launch_737')
+    for artifact in row['artifacts']:
+        if artifact['role'] == 'token': artifact['name'] += '_renamed'
+    swarm.rows = [row]
+    async def detail(_): return copy.deepcopy(row)
+    swarm.fetch_launch = detail
+    m = manager(tmp_path, swarm)
+    calls = []
+    original = m.client.fetch_launch_evidence
+    async def counted(hashes, addresses):
+        calls.append((list(hashes), list(addresses)))
+        return await original(hashes, addresses)
+    m.client.fetch_launch_evidence = counted
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        assert len(calls) == 1 and calls[0][0]
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K3']['state'] == 'unknown'
+        for cycle in range(1, 6):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + cycle * 60)
+        assert len(calls) == 1
+        m.cache.save(); m.cache.load(slot_coercers={SLOT_SWARM_LAUNCH_FACTS: sw.coerce_launch_facts_slot})
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + 1799)
+        assert len(calls) == 1
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + 1800)
+        assert len(calls) == 2
+        row['updatedAt'] = '2026-10-06T01:00:00Z'
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + 1860)
+        assert len(calls) == 3
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('unresolved', ['K2', 'K6'])
+async def test_fix3_coverage_backoff_keeps_other_rpc_checks_live(tmp_path, unresolved):
+    swarm = LaunchSwarm(); row = fixture('launch_737')
+    row.update(kind='univ4_hook', policyVersion=19)
+    swarm.rows = [row]
+    async def detail(_): return copy.deepcopy(row)
+    swarm.fetch_launch = detail
+    m = manager(tmp_path, swarm)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        point = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'][row['id']]
+        assert point['checks']['K3']['state'] == 'unknown'
+        point['checks'][unresolved]['state'] = 'unknown'
+        calls = []; original = m.client.fetch_launch_evidence
+        async def counted(hashes, addresses):
+            calls.append((list(hashes), list(addresses)))
+            return await original(hashes, addresses)
+        m.client.fetch_launch_evidence = counted
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + 60)
+        assert len(calls) == 1 and calls[0][0] and not calls[0][1]
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks'][unresolved]['state'] != 'unknown'
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_fix3_old_shared_hook_unknown_settles_on_first_cycle(tmp_path, monkeypatch):
+    from maxpane_dashboard.analytics import surf_launch_checks as lc
+    swarm = LaunchSwarm(); swarm.rows = [fixture('launch_747')]
+    m = manager(tmp_path, swarm)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        point = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'][swarm.rows[0]['id']]
+        point['checks']['K3']['state'] = 'unknown'
+        point['checks']['K3']['evidence']['unmatched_artifacts'] = ['PoolInitializationGuard']
+        point.pop('k3_retry_ts', None)  # the pre-G2 cache has no retry timestamp
+        m.cache.save(); m.cache.load(slot_coercers={SLOT_SWARM_LAUNCH_FACTS: sw.coerce_launch_facts_slot})
+        def forbidden(*_): raise AssertionError('terminal token creation evidence was hashed again')
+        monkeypatch.setattr(lc, 'creation_match', forbidden)
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + 60)
+        actual = m._swarm_launch_keys()['swarm_launch_rows'][0]
+        assert actual['checks']['K3']['state'] == 'pass_immutables'
+        assert actual['checks']['K3']['evidence']['unmatched_artifacts'] == []
+        assert actual['verdict']['state'] == 'swarm'
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_fix3_unresolved_contract_still_retries_rpc(tmp_path):
+    swarm = LaunchSwarm(); swarm.rows = [fixture('launch_737')]
+    m = manager(tmp_path, swarm)
+    calls = []; original = m.client.fetch_launch_evidence
+    async def unavailable(hashes, addresses):
+        calls.append((list(hashes), list(addresses)))
+        rpc = await original(hashes, addresses)
+        if len(calls) == 1: rpc['codes'] = {}
+        return rpc
+    m.client.fetch_launch_evidence = unavailable
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K3']['state'] == 'unknown'
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + 60)
+        assert len(calls) == 2 and calls[-1][1]
+        assert m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K3']['state'] == 'pass'
+    finally: await m.close()
+
+
+@pytest.mark.asyncio
+async def test_fix3_future_coverage_retry_timestamp_does_not_stall(tmp_path):
+    swarm = LaunchSwarm(); row = fixture('launch_737')
+    for artifact in row['artifacts']:
+        if artifact['role'] == 'token': artifact['name'] += '_renamed'
+    swarm.rows = [row]
+    async def detail(_): return copy.deepcopy(row)
+    swarm.fetch_launch = detail
+    m = manager(tmp_path, swarm)
+    calls = []; original = m.client.fetch_launch_evidence
+    async def counted(hashes, addresses):
+        calls.append((list(hashes), list(addresses)))
+        return await original(hashes, addresses)
+    m.client.fetch_launch_evidence = counted
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        point = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'][row['id']]
+        point['k3_retry_ts'] = NOW + 1000000
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + 60)
+        assert len(calls) == 2
+        actual = m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'][row['id']]
+        assert actual['k3_retry_ts'] == NOW + 60
+        assert actual['checks']['K3']['state'] == 'unknown'
+    finally: await m.close()

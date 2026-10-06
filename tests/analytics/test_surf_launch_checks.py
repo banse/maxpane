@@ -24,13 +24,9 @@ def checked(number=737, **kwargs):
 @pytest.mark.parametrize('number', [734, 737, 747])
 def test_v8_attestation_checks(number):
     row, facts, checks = checked(number)
-    # v8 omits the attestation for its hook-role PoolInitializationGuard.
-    expected = 'swarm' if number == 734 else 'partial'
-    assert lc.verdict(row, checks) == {'state': expected, 'passed': 4 if number == 734 else 3, 'failed': None}
-    assert checks['K3']['state'] == ('pass' if number == 734 else 'unknown')
-    if number != 734:
-        assert checks['K3']['evidence']['unmatched_artifacts'] == ['PoolInitializationGuard']
-        assert checks['K3']['evidence']['contracts'][0]['state'] == ('pass_immutables' if number == 747 else 'pass')
+    assert lc.verdict(row, checks) == {'state': 'swarm', 'passed': 4, 'failed': None}
+    assert checks['K3']['state'] == ('pass_immutables' if number == 747 else 'pass')
+    assert checks['K3']['evidence']['unmatched_artifacts'] == []
     if number == 734:
         assert facts['ticker'] is None
         assert checks['K3']['evidence']['contracts'][0]['name'] == 'Counter'
@@ -215,10 +211,25 @@ def test_fix2_k3_needs_matched_code_and_covers_role_artifacts(shape):
     elif shape == 'renamed':
         for artifact in row['artifacts']: artifact['name'] += '_renamed'
     else:
+        row['kind'] = 'univ4_hook'
         row['artifacts'].append({**row['artifacts'][-1], 'role':'hook', 'name':'UnattestedHook'})
     checks = lc.check_launch(row, facts, fixture('launch_policies')['policies'], rpc, keccak=keccak256)
     assert checks['K3']['state'] == 'unknown'
     assert lc.verdict(row, checks)['state'] != 'swarm'
     if shape != 'empty':
-        unmatched = [a['name'] for a in row['artifacts'] if a['role'] in ('token','hook') and a['name'] not in {c['name'] for c in facts['attested']}]
+        roles = ('token', 'hook') if shape == 'unattested_hook' else ('token',)
+        unmatched = [a['name'] for a in row['artifacts'] if a['role'] in roles and a['name'] not in {c['name'] for c in facts['attested']}]
         assert checks['K3']['evidence']['unmatched_artifacts'] == unmatched
+
+
+@pytest.mark.parametrize('kind,expected,unmatched', [
+    ('custom_token', 'pass', []),
+    ('evm_project', 'pass', []),
+    ('univ4_hook', 'unknown', ['PoolInitializationGuard']),
+])
+def test_fix3_shared_hook_coverage_depends_on_launch_kind(kind, expected, unmatched):
+    row, rpc = evidence(737)
+    row['kind'] = kind
+    checks = lc.check_launch(row, lc.extract_facts(row), fixture('launch_policies')['policies'], rpc, keccak=keccak256)
+    assert checks['K3']['state'] == expected
+    assert checks['K3']['evidence']['unmatched_artifacts'] == unmatched

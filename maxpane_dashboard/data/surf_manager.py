@@ -5542,6 +5542,7 @@ class SurfManager:
                 version = [row['status'], row.get('updatedAt')]
                 if point.get('detail_version') != version:
                     point.pop('checks', None)
+                    point.pop('k3_retry_ts', None)
                 point['row'] = row
             else:
                 facts['launches'].pop(row['id'], None)
@@ -5575,16 +5576,29 @@ class SurfManager:
             previous = point.get('checks') or {}
             if previous and all(c['state'] != 'unknown' for c in previous.values()):
                 continue
+            contracts = previous.get('K3', {}).get('evidence', {}).get('contracts')
+            coverage_only = (previous.get('K3', {}).get('state') == 'unknown'
+                             and isinstance(contracts, list)
+                             and all(c.get('state') in ('pass', 'pass_immutables', 'fail', 'na') for c in contracts))
+            k3_needs_rpc = (previous.get('K3', {}).get('state', 'unknown') == 'unknown'
+                            and (not coverage_only or point.get('k3_retry_ts') is None
+                                 or point['k3_retry_ts'] > now or now - point['k3_retry_ts'] >= 1800))
+            if coverage_only and not k3_needs_rpc and all(c['state'] != 'unknown' for k, c in previous.items() if k != 'K3'):
+                continue
             pending.append(point)
+            if k3_needs_rpc:
+                point['k3_retry_ts'] = now
             bucket = requests.setdefault(point['row']['chainId'], {'hashes': [], 'addresses': []})
-            needs_tx = any(previous.get(k, {}).get('state', 'unknown') == 'unknown' for k in ('K2', 'K3', 'K6'))
+            needs_tx = k3_needs_rpc or any(previous.get(k, {}).get('state', 'unknown') == 'unknown' for k in ('K2', 'K6'))
             for artifact in point['row'].get('artifacts', []):
                 if needs_tx and artifact.get('txHash'):
                     bucket['hashes'].append(artifact['txHash'])
-                if previous.get('K3', {}).get('state', 'unknown') == 'unknown' and any(a.get('name') == artifact.get('name') for a in point.get('attested', [])) and artifact.get('address'):
+                if k3_needs_rpc and any(a.get('name') == artifact.get('name') for a in point.get('attested', [])) and artifact.get('address'):
                     bucket['addresses'].append(artifact['address'])
         rpc = {}
         for chain, request in requests.items():
+            if not request['hashes'] and not request['addresses']:
+                continue
             if chain == 1:
                 client = self.client
             else:

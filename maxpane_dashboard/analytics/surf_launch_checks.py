@@ -163,7 +163,8 @@ def check_launch(row, facts, policies, rpc, *, keccak, previous=None):
             states.append(state)
             contract_evidence.append({'state': state, 'name': contract.get('name'), 'address': addr, 'tx_hash': tx_hash, 'expected_hash': expected, 'actual_hash': actual, 'creation_hash': _hash(contract.get('creationCodeHash')), 'creation_offset': offset})
         matched_names = {c['name'] for c in contract_evidence if c.get('state') in ('pass', 'pass_immutables')}
-        unmatched = [a.get('name') for a in artifacts if a.get('role') in ('token', 'hook') and a.get('name') not in matched_names]
+        roles = ('token', 'hook') if row.get('kind') == 'univ4_hook' else ('token',)
+        unmatched = [a.get('name') for a in artifacts if a.get('role') in roles and a.get('name') not in matched_names]
         incomplete = not matched_names or 'unknown' in states or bool(unmatched)
         checks['K3'] = result('fail' if 'fail' in states else 'unknown' if incomplete else 'pass_immutables' if 'pass_immutables' in states else 'pass', contracts=contract_evidence, unmatched_artifacts=unmatched, rule_version=2)
     admission = facts.get('admission')

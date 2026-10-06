@@ -440,8 +440,10 @@ artifact. Full columns add kind/repo; compact drops those and tight also sheds s
 K2 uses the chain-wide wallet set and factories declared by the launch's own kind; kinds with
 no declared factory are judged on sender and receipt status alone. K1–K4 produce provenance-only `✓ swarm`, `… n/4`, or `✗ Kx`; K3 accepts deployed-code equality
 or creation-code evidence (`pass (immutables)`). K3 requires at least one verified attested
-contract and a verified name match for every token/hook artifact; all-not-applicable and
-unmatched roles remain unknown. Only admitted launches without artifacts say
+contract and a verified name match for every token artifact, plus hook artifacts only for
+`univ4_hook` launches. The other kinds use the unattested shared hook. All-not-applicable and
+unmatched required roles remain unknown. Once every per-contract check is terminal, a coverage
+gap retries RPC at most once per 1,800 seconds; a status/updatedAt change resets that back-off. Only admitted launches without artifacts say
 `-- pending`; parked launches show a failed check or `-- parked`. K6/K7 are informational, never safety claims.
 Enter/click opens `LaunchDetailScreen`, a deep-copied snapshot with all artifacts, copy/explorer
 links, pair, fee, requester, policy, evidence, site and IMD token/job link. Selection messages
