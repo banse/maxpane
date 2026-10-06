@@ -1239,3 +1239,25 @@ branch's one fix wave was spent. The owner merged `090c378` and parked them for 
   `/workflows` read sets one, WORKFLOWS lists the retained rows unmarked. That can last as long as
   the route stays dead; before layout v3 the same case showed unavailable. Self-heals on the
   first successful read. **Minor, open.**
+
+
+## Production launches handoff — 2026-10-06
+
+`feature/swarm-launches` implements `docs/codex_swarm_launches_plan.md`. The owner approved
+its live 150×46 SWARM layout before WP5; 200×48 was also measured using committed v8 fixtures.
+The separate launch tier warms at up to three production detail reads and three eligible site
+job reads per cycle. Missing tickers and partial `… n/4` verdicts during warmup are expected;
+an unavailable RPC or policy remains unknown, so repeated polling does not promise completion.
+Base/RH evidence and links were tested with fixture-derived chain swaps, not live probes.
+
+No new production defect was found during WP5's hardening. F98/F99 above remain outside this
+branch's scope; the owner's earlier parked decisions are unchanged. Final whole-branch review
+belongs to the Claude Code controller. Per-WP reviews were waived by the owner.
+
+Measured SWARM pin remains 129×35: SITES/status bind width, and the nine-line throughput floor
+plus two eight-line table floors bind height. LAUNCHES has no hidden columns from 77 at 35 rows
+(75 on the 80-row capture without a table vertical scrollbar), compact/full at 116/157. Capture clears its marker at 157; long production
+parked reasons may still mark. WORKFLOWS compact/full starts at 109/119. The broad address sweep
+now seeds production MAINNET/Base/RH tokens; WORKFLOWS' unlinked failure address sets its own
+seed-completeness width of 144. That width is not a layout pin. At the unchanged default
+143-column width, eleven active detector rows need 43 rows; the mixed fixture needs 39.

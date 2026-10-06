@@ -68,6 +68,10 @@ def test_v8_trusted_site_pins_and_ticker_kept_before_label():
     cell=panel.build_cells(row)['label']
     assert '◆' in cell.plain and cell.plain.endswith(' · $ZTO')
     assert cell.style=='bold'
+    # A named address match with a different payer must lose the highlight.
+    row['link_trusted'] = False
+    cell = panel.build_cells(row)['label']
+    assert '◆' not in cell.plain and cell.style != 'bold'
 
 
 @pytest.mark.asyncio

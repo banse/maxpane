@@ -50,7 +50,7 @@ from maxpane_dashboard.screens.surf import (
 )
 from maxpane_dashboard.screens.talismans import TalismansScreen
 from maxpane_dashboard.screens.ttt import TTTScreen
-from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA
+from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA, ROBINHOOD
 from tests.address_sweep.case import SweepCase
 from tests.screens import test_curator_screen as _curator
 from tests.screens import test_frenpet_screens as _frenpet
@@ -117,14 +117,15 @@ _SURF_DEPLOY = "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD"
 #: A launchpad coin creator that appears nowhere else on screen, so the COINS
 #: table's CREATOR cell is the only place that can give it an icon.
 _SURF_CREATOR = "0xC0ffee254729296a45a3885639AC7E10F9d54979"
-#: A swarm launch artifact's contract address (LAUNCHES, ``s``; swarm v2,
-#: WP7). The ``artifacts`` column is a fixed-width table column
+#: Production token addresses (LAUNCHES, ``s``), derived from v8. The ``token`` column is a fixed-width table column
 #: (``swarm_launches.ADDR_COLS`` = 17 at ``full``/``compact``,
 #: ``TIGHT_ADDR_COLS`` = 11 at ``tight``, always below a 42-cell address),
 #: so this cell renders the anti-poisoning window shape, never the whole
 #: address, at every terminal size. Linked per row through
-#: ``for_chain_id(chain_id)`` -- the seeded launch is a Sepolia one.
+#: ``for_chain_id(chain_id)`` -- seeds cover MAINNET, Base and RH.
 _SWARM_CONTRACT = "0x5b7A2f80cCe8b8f930c60D33c8fb0FA1234abCDe"
+_SWARM_BASE = "0x" + "ab" * 20
+_SWARM_RH = "0x" + "cd" * 20
 #: The selected seat's owner on the AGENT body's SEAT RECORD panel (``a``;
 #: ``docs/surf_agent_seats_spec.md`` D5). ``/seats`` serves no chain for the
 #: owner, so it links the package ``EXPLORER`` -- mainnet, the case's own
@@ -153,9 +154,13 @@ def _surf_payload() -> dict:
     payload["sig_deploy_detail"] = f"new contract {_SURF_DEPLOY}"
     coins = payload["launchpad_coins"]
     coins[1] = {**coins[1], "creator": _SURF_CREATOR}
-    launches = payload["swarm_launch_rows"]
-    artifacts = [{**launches[0]["artifacts"][0], "address": _SWARM_CONTRACT}]
-    launches[0] = {**launches[0], "artifacts": artifacts, "artifact_count": 1}
+    from tests.surf_launch_fixtures import launch_row
+    payload["swarm_launch_rows"] = []
+    for chain, address in ((1, _SWARM_CONTRACT), (8453, _SWARM_BASE), (4663, _SWARM_RH)):
+        row = launch_row(chain_id=chain)
+        token = next(a for a in row["artifacts"] if a["role"] == "token")
+        row.update(artifacts=[dict(token, address=address)], token_address=address, artifact_count=1)
+        payload["swarm_launch_rows"].append(row)
     payload["swarm_seat_summary"] = {**payload["swarm_seat_summary"], "owner": _SEAT_OWNER}
     payload["swarm_seat_work_rows"][2]["oracle_notes"] = _SURF_PROSE
     workflows = payload["swarm_workflow_rows"]
@@ -182,7 +187,7 @@ SURF_SEEDED: tuple[str, ...] = (
     "0xc6c965bd164c483e87d0b550671798e9a3602840",  # p: THE SPLIT hook, shortened
     "0x200E710aCAA6A93bbc77146026328C40F1d60fB1",  # p: HATCHES owner row, shortened
     "0xf53c0a4E4b0F77D1a3Bc4d8e3F2a1B0c9D8e3364",  # 4: STAKERS rank 1, whole/near-whole
-    _SWARM_CONTRACT,                                # s: LAUNCHES artifact, shortened
+    _SWARM_CONTRACT, _SWARM_BASE, _SWARM_RH,          # s: production token rows, per-chain
     _SEAT_OWNER,                                    # a: SEAT RECORD owner, shortened
     _SWARM_WORKFLOW,                                # s: WORKFLOWS failure, whole, unlinked
 )
@@ -654,7 +659,8 @@ CASES: tuple[SweepCase, ...] = (
         # WORKFLOWS (``s``) prints an address out of a failure text with its
         # icon and no link: ``/workflows`` serves no chain (``unlinked``).
         explorer=ETHEREUM,
-        explorers=(ETHEREUM, SEPOLIA, BASE),
+        explorers=(ETHEREUM, SEPOLIA, BASE, ROBINHOOD),
+        explorer_for={_SWARM_CONTRACT.lower(): ETHEREUM, _SWARM_BASE: BASE, _SWARM_RH: ROBINHOOD},
         rows_pick_explorer=True,
         unlinked=SURF_UNLINKED,
         # Retain 170 beside the narrower measured SWARM seed-completeness pass.

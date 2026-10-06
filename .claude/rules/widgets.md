@@ -63,14 +63,14 @@ window rule (8/6 at 17 cells) is surf's anti-poisoning form.
 
 **And a link to its chain's explorer** (Branch 4 of the refactor programme, both work packages
 landed 2026-09-20). `widgets/explorer.py` is the one module that
-names an explorer (`ETHEREUM`, `BASE`, `SEPOLIA`, and `IMD` -- the swarm's own site, whose one
-kind is `job`, linked by `address.job_text` for a canonical lowercase UUID -- and `SITES`, the
-eth.limo gateway, whose one kind is `site`, linked by `address.site_text` for a whole
-`<label>.site.identitymd.eth` name, the label the only part the URL takes; each `Explorer` names
-the `kinds` it serves and `is_valid` checks kind and value together; `for_network(word)` for surf's per-row network
-words and `for_chain_id(id)` for a swarm row's `chain_id`, `None` for anything unknown — never a
-guess), builds a URL (`address_url`, `tx_url`) and
-writes or reads the action `app.open_explorer(name, kind, value)`. Pass `explorer=` to
+names an explorer (`ETHEREUM`, `BASE`, `SEPOLIA`, `ROBINHOOD` for chain 4663 at
+`robinhoodchain.blockscout.com`, and `IMD` for canonical UUID `job` links and address-valued
+`token` links via `address.job_text` / `token_text`; `SITES` serves the `site` kind at
+`https://<label>.sites.imd.fun/`). `address.site_text` prefers the bare API label and accepts the
+legacy `<label>.site.identitymd.eth` name as fallback; never use `site.url`. Each `Explorer`
+names its accepted `kinds`; `is_valid` checks kind and value together. `for_network(word)` serves per-row network
+words; `for_chain_id(id)` handles a swarm row's `chain_id`, returning `None` for anything unknown.
+The module builds URLs (`address_url`, `tx_url`) and writes or reads the action `app.open_explorer(name, kind, value)`. Pass `explorer=` to
 `address_text` / `address_prose` / `hash_text` (and surf's `_icons.link_prose` / `link_in_order`)
 at **every** site. **One declaration per dashboard package:** `EXPLORER = ETHEREUM` (or `BASE`)
 bound once in `widgets/<game>/_chain.py` — in `_fmt.py` where the package has one (surf, curator)

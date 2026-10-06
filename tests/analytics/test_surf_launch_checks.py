@@ -28,6 +28,7 @@ def test_v8_attestation_checks(number):
     assert checks['K3']['state'] == ('pass_immutables' if number == 747 else 'pass')
     if number == 734:
         assert facts['ticker'] is None
+        assert checks['K3']['evidence']['contracts'][0]['name'] == 'Counter'
         assert checks['K6']['state'] == 'na'
     if number == 747:
         assert checks['K3']['evidence']['contracts'][0]['creation_offset'] == 740

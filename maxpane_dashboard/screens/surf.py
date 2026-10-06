@@ -1682,6 +1682,22 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: The owner authorized a compact title source count and shortened labels,
 #: retaining price, parity, freshness and every alarm. Missing health now
 #: says unavailable: the manager does not add a SWARM degraded group.
+#: 2026-10-06, production launches (owner live approval at 150x46):
+#: WORKFLOWS now shares the top row with THROUGHPUT; LAUNCHES spans the
+#: middle. scripts/measure_layout.py measured production-s at widths 60–160
+#: and 35 rows. SITES and status still bind 129 (both lose at 128); the
+#: full LAUNCHES table starts at 157, compact at 116, with no hidden column
+#: from 77 at 35 rows, or 75 on the 80-row capture without a table vertical
+#: scrollbar. Capture's marker clears at 157;
+#: production may still mark a long parked reason, an explicit content
+#: exception rather than a hidden column. WORKFLOWS compact/full move to
+#: 109/119. SITES remains compact/full 121/129, no hidden columns from 103
+#: at 35 rows. These onsets enter the boundary sets. No pin was raised.
+#: The address sweep's seed-completeness width is independently 144:
+#: WORKFLOWS' copyable failure address binds, not the full-width token cell.
+#: The default title remains 143. News fits by shedding ticker then source
+#: names; crowded SWARM titles use the owner-approved LAUNCH label, tighter
+#: separators and shortened health text, retaining the launch number.
 SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
@@ -1763,6 +1779,11 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
 #: The middle WORKFLOWS row and bottom SITES keep their eight-line floors.
 #: Owner-approved live 200x48 regions: LAUNCHES 152x12, THROUGHPUT 46x9,
 #: WORKFLOWS 199x13, SITES 199x13; their tables scroll internally.
+#: 2026-10-06: re-confirmed on production-s and worst-s at 129x34/35/36.
+#: The body scrolls and says taller at 34; 35 and 36 clear. The swapped
+#: top row keeps THROUGHPUT's nine-line floor; LAUNCHES and SITES retain
+#: eight-line floors. Fixture renders at 150x46 and 200x48 are whole;
+#: the owner's actual 150x46 live look was approved before this hardening.
 SURF_SWARM_FULL_LAYOUT_ROWS = 35
 
 #: AGENT full-layout width, re-swept 2026-09-24: 139 (unchanged).

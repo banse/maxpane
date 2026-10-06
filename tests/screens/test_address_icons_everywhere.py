@@ -58,12 +58,11 @@ from tests.widgets.address_probe import icon_targets, link_targets
 #: The sweep's wide terminal: wide and tall enough for every body to render.
 SIZE = (170, 60)
 
-#: 2026-10-05 layout v3: SWARM's former 400-column IN FLIGHT prose pass
-#: is retired with that panel. In-situ 110-130 sweep: both remaining seeds
-#: carry their whole copyable units from 118; LAUNCHES' icon is absent at
-#: 117, while WORKFLOWS' unlinked failure address is already whole. The
-#: original 170 pass remains in extra_sizes; this width is not a body pin.
-SWARM_WIDE_COLUMNS = 118
+#: 2026-10-06 production launches: v8 MAINNET/Base/RH tokens are already
+#: whole at 110; WORKFLOWS' unlinked failure address now binds completeness
+#: because it shares the top row. In-situ 110–190 walk: absent at 143,
+#: complete from 144. The original 170 pass remains; this is not a body pin.
+SWARM_WIDE_COLUMNS = 144
 
 
 def sizes_for(case: SweepCase, kind: str) -> list[tuple[int, int]]:
@@ -119,7 +118,7 @@ EXEMPT: dict[str, str] = {
         "quotes each site's deploy transaction hash through hash_text (a"
         " short_hex window linked to the package EXPLORER); a hash, never an"
         " address, so it carries no icon by design (swarm v2, WP7); its ens"
-        " column links a site name to eth.limo through site_text (2026-09-23),"
+        " columns link a label to sites.imd.fun through site_text (2026-10-06),"
         " a name, never an address",
     # wallet.py's own contract: "Only this panel's ``wallet`` line ever carries a
     # real address" (CuratorWalletAddress); the rest describe that wallet.
@@ -1222,5 +1221,5 @@ async def test_swarm_wide_size_is_the_seed_completeness_boundary(width, whole):
     async with app.run_test(size=(width, SIZE[1])) as pilot:
         await _enter(("s",), app, pilot)
         copied = {value.lower() for _, _, value in icon_targets(app) if value}
-        assert _SWARM_WORKFLOW.lower() in copied
-        assert (_SWARM_CONTRACT.lower() in copied) is whole
+        assert _SWARM_CONTRACT.lower() in copied
+        assert (_SWARM_WORKFLOW.lower() in copied) is whole

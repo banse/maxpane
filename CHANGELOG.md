@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Surfboard production launches: WORKFLOWS beside THROUGHPUT, full-width LAUNCHES and SITES;
+  pinned production rows, per-chain token links, provenance checks and snapshot details.
+  Trusted sites link at sites.imd.fun. A persisted SWARM LAUNCH detector announces new live
+  production launches across every body for one hour, with a 24-hour signal. Launch enrichment
+  has its own bounded, detached polling tier and independent last-good clocks.
+
 - Surfboard AGENT: `f` filters RECORD, the way `f` filters THE LIST. The editor takes RECORD's
   place under the hero and the seat cards, which stay on screen, and combines NODE, STATE, WHEN (24 h / 7 / 30 days),
   MODEL, PANEL, ANSWER, TOOK and TOK with AND; ticks inside one group are alternatives. RECORD's

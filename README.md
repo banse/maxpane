@@ -11,7 +11,7 @@ kind, no wallet, no signing, no transactions.
 
 | Game | Chain | What you see |
 |------|-------|-------------|
-| **Surfboard** | Ethereum | surfsurf.eth announce feed (threaded replies), ten detectors, IMD market, v4 launchpad, pool4 ratchet, IMD swarm, IDMD NFT |
+| **Surfboard** | Ethereum | surfsurf.eth announce feed (threaded replies), eleven detectors, IMD market, v4 launchpad, pool4 ratchet, IMD swarm, IDMD NFT |
 | **THE LIST** | Ethereum | Zero-custody allowlist game: hourly doomsday clock, survival signals, fan-out patterns, linked-wallet analysis |
 | **FWA** | Ethereum | NFT gacha pool, inverse-weighted VRF draws, pull EV |
 | **Base Trading** | Base | Trending tokens, volume, ETH price, signals |
@@ -143,8 +143,8 @@ The NFT floor is shown as `n/a — no keyless source`, not estimated. There is n
 feed for this collection, and a made-up number on a dashboard people trade against is worse than
 an honest gap.
 
-Press **`s`** for the IMD swarm's control plane. LAUNCHES sits beside THROUGHPUT, with
-WORKFLOWS and SITES in full-width rows beneath. The hero shows AGENTS (online/enrolled),
+Press **`s`** for the IMD swarm's control plane. WORKFLOWS sits beside THROUGHPUT, with
+LAUNCHES and SITES in full-width rows beneath. The hero shows AGENTS (online/enrolled),
 WORKING, ACCEPTED 24h, LAUNCHES, WORKFLOWS and SITES. The last three show totals and the largest
 status counts that fit as whole pairs; missing data says `unavailable`, while an empty list is `0`.
 
@@ -163,13 +163,33 @@ popup. The panel stays short and its title always says `x more`. The status bar 
 `l` still opens LAUNCHPAD, but is unlisted, like `e`. CAPABILITY and IN FLIGHT are parked:
 their modules, tests and source reads remain, but neither panel is mounted.
 
-LAUNCHES shows status, chain, repo and deployed artifacts, with each address linked to its own
-chain's explorer. SITES shows wider labels and a final linked job column. A site's ENS name opens
-its eth.limo site, without a wallet-copy icon. Replaced builds and builds without names are hidden;
-when none remain the panel says `No current site`. LAUNCHES and WORKFLOWS retain a blank footer row.
-SWARM's title reports a tripped breaker, explicitly down services and unhealthy or unavailable
-health. When space is tight, source names become a count and labels shorten while retaining
-price, parity, freshness and each alarm. Unknown services never count as down.
+LAUNCHES pins up to 12 production launches above 12 recent Sepolia launches. Production means
+chain 1, 8453 or 4663 and not abandoned; the hero counts retained production history, including
+launches beyond the newest 100-row API page. Chain words are MAINNET, BASE, RH and SEPOLIA.
+The token column prefers the token artifact over a distributor or hook. Enter or a row click
+opens a snapshot with every artifact, token name, pair, pool fee, policy and check evidence.
+Addresses copy and open their own chain explorer; the popup also links the IMD token page or,
+for a tokenless launch, its job. `x` still opens THROUGHPUT.
+
+The verdict describes swarm provenance only: `✓ swarm`, `… n/4`, or the failed check such as
+`✗ K3`. It is not a safety or liquidity-lock claim. Runtime bytecode or matching creation code
+can establish K3; immutable bytecode differences are labelled `pass (immutables)`. Factory-held
+liquidity remains explicitly unverified. Cold caches enrich at most three launch details and
+three site jobs per minute, so missing tickers and partial checks can take several polls.
+
+SITES highlights trusted production matches and keeps their ticker when labels shorten.
+Links use `https://<label>.sites.imd.fun/`, preferring the API label and falling back to the ENS
+name's label; `site.url` is ignored. Replaced or unnamed builds remain hidden.
+SWARM's title reports breaker, service, health and launch-check alarms. A new production live
+launch fires the eleventh detector once, including admitted-to-live transitions. Its accent
+news appears in every body for 60 minutes; SIGNALS stays FIRED for 24 hours and survives restart.
+Tight titles shed the ticker first, use a source count, and shorten labels while keeping the
+launch number and alarms. Unknown services never count as down.
+
+Launches refresh every 60 seconds (120-second failure backoff), sites every five minutes, and
+policies every 30 minutes. Ethereum, Base and Robinhood evidence uses keyless state RPCs.
+Each route keeps its last-good data and read clock; extracted facts and signal identity sets
+are capped at 500 entries, with a high-water mark preventing launch replay after eviction.
 
 Press **`a`** for the AGENT body — one seat's **lifetime record** from its own keyless
 `/seats/{tokenId}` page. Press **`i`** to choose and save a seat; without a saved seat, the view
@@ -258,7 +278,7 @@ working is dim `quiet`. Rates and scores are bold without invented thresholds. B
 rows are dim. SEAT stays as it is by owner decision; its larger grouping exceeded the budget
 (F54). SWARM summary counts stay bold without status colour.
 
-It reads one keyless host and nothing else — the swarm's own control plane, under two names that
+The control-plane feed reads one keyless host under two names that
 serve one deployment, rotated per request and never followed off the pool — and never the total it
 says it has inferred for anyone: the explorer publishes a running inference figure on its own page,
 and no public route on the control plane serves that number, so this view shows none of it rather
@@ -271,10 +291,9 @@ track can never freeze the list forever. A failed read serves each panel's own l
 × `SURF_SWARM_FULL_LAYOUT_ROWS`, `SURF_AGENT_FULL_LAYOUT_COLUMNS` × `SURF_AGENT_FULL_LAYOUT_ROWS`,
 and `SURF_BOARD_FULL_LAYOUT_COLUMNS` × `SURF_BOARD_FULL_LAYOUT_ROWS`
 in `screens/surf.py` (the `#:` block beside each constant carries the number and how it was
-measured). One caveat worth knowing before trusting the width: IN FLIGHT and LAUNCHES, which share
-a row, do not clear their own full column sets below 190 and 205 columns, wider than every other pin
-in the app; LAUNCHES hides no column from 138 up, and both are measured, accepted conditions at every
-width this view can reach, the same shape as surf's announce feed and a linked-transaction post.
+measured). LAUNCHES is the remaining content exception: compact/full columns start at 116/157,
+and a long parked reason can keep its own `‹ widen` lit even when every column is reachable.
+IN FLIGHT is parked and contributes no current layout requirement.
 
 ### THE LIST — the linked-wallet analysis view (`a`)
 
@@ -524,8 +543,8 @@ beside BURN & SUPPLY over SIGNALS, then STAKERS — whole 42-character addresses
 beside IF IMD FALLS, a ladder of what the hook bids as IMD falls. `4` swaps the **hero** too, for
 IMD PRICE, DOWNSIDE BID and STAKING. **And it binds `s`** (2026-09-16, rebuilt 2026-09-21) for the
 IMD swarm's own control plane — the agent workforce this repo's own branches are built by, watched
-live: LAUNCHES beside THROUGHPUT, then full-width WORKFLOWS and SITES. **`x`** opens throughput
-details; workflow Enter or row-click opens a workflow snapshot. `s` swaps the **hero** for
+live: WORKFLOWS beside THROUGHPUT, then full-width LAUNCHES and SITES. **`x`** opens throughput
+details; workflow or launch Enter/row-click opens that row's snapshot. `s` swaps the **hero** for
 AGENTS / WORKING / ACCEPTED 24h / LAUNCHES / WORKFLOWS / SITES. **And it binds `a`** (2026-09-21) for the AGENT
 body — one seat's lifetime record: its hero row (WORK and combined ACCEPTED), one seat-card row with COLLAB
 and NODES, and RECORD beneath; its title
@@ -651,12 +670,12 @@ the rail (HATCHES over sIMD VAULT) was already the tallest column, so a 44-row t
 shows `‹ taller`.
 
 Surfboard's SWARM view (`s`) is a layout of its own too, pinned by `SURF_SWARM_FULL_LAYOUT_COLUMNS`
-and `SURF_SWARM_FULL_LAYOUT_ROWS` (**129 columns × 35 rows**, re-swept 2026-10-05 after the
-owner approved the live 200×48 layout). SITES and the complete status bar bind the width.
-THROUGHPUT's nine fixed lines set the top row's floor; WORKFLOWS and SITES each have an eight-line
+and `SURF_SWARM_FULL_LAYOUT_ROWS` (**129 columns × 35 rows**, re-swept 2026-10-06 after the
+owner approved the live 150×46 layout; 200×48 also measured offline). SITES and the complete status bar bind the width.
+THROUGHPUT's nine fixed lines set the top row's floor; LAUNCHES and SITES each have an eight-line
 floor. The body scrolls with `‹ taller` below 35 rows; its tables scroll internally as their
-histories grow. LAUNCHES remains a content exception: all columns are reachable from 125 columns
-at the row pin, and the captured content clears `‹ widen` at 162. Arbitrarily long parked reasons
+histories grow. LAUNCHES remains a content exception: no columns are hidden from 77 columns
+at the row pin, and the capture clears `‹ widen` at 157 (full columns; compact starts at 116). Arbitrarily long parked reasons
 can still mark. IN FLIGHT no longer contributes a layout or address-sweep requirement.
 The AGENT view (`a`) has its own pair, `SURF_AGENT_FULL_LAYOUT_COLUMNS` ×
 `SURF_AGENT_FULL_LAYOUT_ROWS`, re-measured for the card rows over RECORD. The `#:` blocks

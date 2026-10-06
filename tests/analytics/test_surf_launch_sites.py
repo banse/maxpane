@@ -29,3 +29,12 @@ def test_v8_workflow_project_and_sepolia_are_distinct():
     assert ls.match_sites([adam], {launch['id']: facts}, {adam['id']: job}, [])[adam['id']]['method'] == 'project'
     facts['row']['chainId'] = 11155111
     assert ls.match_sites([adam], {launch['id']: facts}, {adam['id']: job}, []) == {}
+
+
+def test_v8_unrelated_genesis_and_adam_do_not_claim_a_production_launch():
+    launch = fixture('launch_737')
+    facts = dict(extract_facts(launch), row=launch)
+    sites = [s for s in fixture('sites')['sites'] if s['label'] in ('genesis', 'adam')]
+    adam = next(s for s in sites if s['label'] == 'adam')
+    jobs = {adam['id']: ls.site_job_facts(fixture('job_adam_site'))}
+    assert ls.match_sites(sites, {launch['id']: facts}, jobs, fixture('workflows_100')['workflows']) == {}

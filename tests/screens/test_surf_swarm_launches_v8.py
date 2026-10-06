@@ -212,3 +212,23 @@ async def test_crowded_swarm_title_keeps_every_fact(width, news_count, mismatch_
         shown_health = painted.split('health ', 1)[1].split(' ', 1)[0]
         assert shown_health == (health or 'unavailable') or (
             shown_health.endswith('…') and (health or 'unavailable').startswith(shown_health[:-1]))
+
+
+@pytest.mark.parametrize("height", [40, 41, 42, 43, 44, 46])
+async def test_default_rail_all_eleven_detectors_has_honest_height_boundary(height):
+    """143 columns: all WATCH rows clear at 43, and every shorter rail marks."""
+    from maxpane_dashboard.widgets.surf.signals import DETECTOR_LABELS
+    from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES
+    from tests.screens.test_surf_screen import _screen_at, _visible_panel
+    from maxpane_dashboard.widgets.surf.signals import SurfSignals
+    payload = _frozen_payload(swarm_launch_rows=[launch_row()])
+    for name in SIGNAL_NAMES:
+        payload[f"sig_{name}_state"] = "watch"
+        payload[f"sig_{name}_detail"] = "pending"
+    async with _screen_at(143, height, payload) as (app, screen, _pilot):
+        rail = screen.query_one("#surf-right-rail")
+        assert rail.show_vertical_scrollbar is (height < 43)
+        assert ("‹ taller" in _screen_text(app)) is (height < 43)
+        if height >= 43:
+            visible = _visible_panel(app, screen.query_one(SurfSignals), rail)
+            assert all(label in visible for label in DETECTOR_LABELS)

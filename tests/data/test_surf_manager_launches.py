@@ -55,7 +55,9 @@ async def test_launch_cycle_budgets_clocks_last_good_and_production_history(tmp_
         assert m._swarm_launch_events() is None
         m.swarm_client.fail=set(); m.swarm_client.rows=[]
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+602)
-        assert len([r for r in m._swarm_launch_keys()['swarm_launch_rows'] if r['production']])==9
+        retained = m._swarm_launch_keys()
+        assert len([r for r in retained['swarm_launch_rows'] if r['production']]) == 9
+        assert sum(r['count'] for r in retained['swarm_launch_summary']['by_status']) == 9
     finally: await m.close()
 
 @pytest.mark.asyncio

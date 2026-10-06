@@ -169,6 +169,17 @@ One five-second attempt, no retry loop; retain only a bounded, validated `versio
 checks at most two packages per cycle, with a persisted one-hour per-package TTL. Tests use
 trimmed captured responses under `tests/fixtures/surf/npm/` and injected transports.
 
+## Production launch evidence pools
+
+`SurfClient.fetch_launch_evidence` uses the existing Ethereum state pool. `SwarmBaseClient`
+uses `https://base-rpc.publicnode.com` then `https://mainnet.base.org`;
+`SwarmRobinhoodClient` uses `https://rpc.mainnet.chain.robinhood.com` then
+`https://robinhood-rpc.publicnode.com`. These are state-only batches for transactions, receipts
+and runtime code, never log pools. Each owns/closes its HTTP client and accepts injected
+transports. Independent failed items remain unknown; endpoint limitations rotate the batch.
+Base binds the shared Base error fragments, RH the Ethereum fragments. The v8 fixtures and
+synthetic chain swaps validate behavior offline; this branch did not live-probe Base or RH.
+
 ## Tiers and clocks
 
 Surf oracle details use `GET /oracle/requests/{uuid}?members=<submissionHash>` with a validated

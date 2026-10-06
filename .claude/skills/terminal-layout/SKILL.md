@@ -19,7 +19,7 @@ it. This file is the method; the constants are the record.
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `p` pool4 (key `e`, experimental, since 2026-09-15) | 99 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `4` pool4 market (hint `4 pl4`) | 119 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `s` swarm (layout v3, 2026-10-05; LAUNCHES beside THROUGHPUT, full-width WORKFLOWS and SITES; `x` opens a popup) | 129 cols · 35 rows (SITES and status bar bind width; fixed short throughput sets the top floor) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `s` swarm (production launches, 2026-10-06; WORKFLOWS beside THROUGHPUT, full-width LAUNCHES and SITES; `x` opens a popup) | 129 cols · 35 rows (SITES and status bar bind width; fixed short throughput sets the top floor) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `a` agent (hero and merged seat-card row, RECORD; re-swept 2026-09-24) | 139 cols · 25 rows; RECORD clears at 167 (165 before panel/tok, 2026-09-23; 204 until launch/sub left it, 2026-09-22) | `screens/surf.SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`, `RECORD_NEVER_CLEARS_BELOW` |
 | surf `b` board (LEADERBOARD beside FLEET; FLEET's five contributor lines 2026-09-22) | 141 cols · 33 rows | `screens/surf.SURF_BOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
@@ -27,9 +27,10 @@ it. This file is the method; the constants are the record.
 
 CAPABILITY (2026-10-03) and IN FLIGHT (2026-10-05) are parked and mounted on no body, so no
 current pin certifies their tiers. Any future body that mounts them re-sweeps them. SWARM's top
-floor equals THROUGHPUT's nine-line short form; `x` opens a separate snapshot popup. WORKFLOWS
-and SITES have eight-line floors and scroll internally. The live 200×48 split was approved before
-hardening. SERVICES left the hero; F55 is closed by removal. Compact title alarms retain every
+floor equals THROUGHPUT's nine-line short form; `x` opens a separate snapshot popup. LAUNCHES
+and SITES have eight-line floors and scroll internally. The live 150×46 split was approved before
+hardening; 200×48 was also measured offline. LAUNCHES compact/full start at 116/157,
+WORKFLOWS at 109/119; the capture clears at 157 while longer production parked reasons may mark. SERVICES left the hero; F55 is closed by removal. Compact title alarms retain every
 alarm at the SWARM pin without changing the default title's 143-column boundary.
 
 **Layout is a function of terminal columns.** Widgets pick a width tier and

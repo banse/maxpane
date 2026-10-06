@@ -116,26 +116,20 @@ MEASURED_SWARM_ROWS = 35
 MEASURED_AGENT_COLUMNS = 139
 MEASURED_AGENT_ROWS = 25
 
-#: The `s` body's two named exceptions (``SURF_SWARM_FULL_LAYOUT_COLUMNS``'s
-#: block): the outer width at which each one's own ``‹`` goes dark on the
-#: capture. Both sit past the width sweep's band, so folding either into
-#: "whole" would make the property unpassable rather than strict.
-#: 2026-10-05: IN FLIGHT retired; LAUNCHES alone clears at 162 in the new top row.
-LAUNCHES_NEVER_CLEARS_BELOW = 162
-#: LAUNCHES hides a column behind its horizontal scrollbar under this width
-#: and none from it -- the ``4fr : 5fr`` seam's one job at the pin, and since
-#: CAPABILITY was parked (2026-10-03) the SWARM column pin itself.
-#: 2026-10-05: new top row, no hidden columns from 125 at 35 rows (123 at 80).
-LAUNCHES_HIDES_NO_COLUMN_FROM = 125
+#: Full-width LAUNCHES clears the capture's marker at 157. The production
+#: payload may keep marking a parked reason; that is content, not a hidden column.
+LAUNCHES_NEVER_CLEARS_BELOW = 157
+#: Measured at 35 rows; without vertical scrolling at 80 rows the onset is 75.
+LAUNCHES_HIDES_NO_COLUMN_FROM = 77
 
-#: Measured tier edges the width sweeps straddle (+-1 each).
+#: Every measured edge enters the width boundary set.
 _S_THRESHOLDS = (
-    62, 72,       # WORKFLOWS compact/full
-    93,           # THROUGHPUT's fixed line and 46-cell plateau
-    101, 103,     # SITES no hidden column at 80/35 rows
-    121, 129,     # SITES compact/full; the complete status bar also clears at 129
-    123, 125,     # LAUNCHES no hidden column at 80/35 rows
-    148, 162,     # LAUNCHES compact/full
+    75, 77,       # LAUNCHES no hidden columns at 80/35 rows
+    93,           # THROUGHPUT fixed-width plateau
+    101, 103,     # SITES no hidden columns at 80/35 rows
+    109, 119,     # WORKFLOWS compact/full in the shared top row
+    116, 157,     # LAUNCHES compact/full
+    121, 129,     # SITES compact/full; status bar whole from 129
 )
 _A_THRESHOLDS = (
     99, 107, # RECORD compact/full with panel/tok and short models, 2026-09-23
@@ -726,7 +720,7 @@ def _assert_whole(r: dict, where: str) -> None:
 # ---------------------------------------------------------------------------
 
 #: SWARM payloads; the body always shows short-form throughput since layout v3.
-_S_PAYLOADS = ("capture", "worst-s", "v3-s", "extra-states-s")
+_S_PAYLOADS = ("capture", "worst-s", "v3-s", "extra-states-s", "production-s")
 
 #: SWARM's width sweep: per payload, the widths one mounted app is walked
 #: through in ascending order (``_walk``).
@@ -865,7 +859,7 @@ async def test_the_exceptions_are_marked_at_the_pin_and_clear_where_the_blocks_s
 
 
 async def test_launches_hides_no_column_from_the_measured_width() -> None:
-    """At 35 rows LAUNCHES hides a column at 124 and none at 125; the body and app pins clear at both tested heights."""
+    """At 35 rows LAUNCHES hides a column at 76 and none at 77; the body and app pins clear at both tested heights."""
     below = await _render(_capture_payload(), (LAUNCHES_HIDES_NO_COLUMN_FROM - 1, _S_COLUMN_SWEEP_HEIGHT), "s")
     at = await _render(_capture_payload(), (LAUNCHES_HIDES_NO_COLUMN_FROM, _S_COLUMN_SWEEP_HEIGHT), "s")
     assert below["hidden"]["SurfSwarmLaunches"] > 0, below["hidden"]
@@ -876,10 +870,10 @@ async def test_launches_hides_no_column_from_the_measured_width() -> None:
             assert r["hidden"]["SurfSwarmLaunches"] == 0, (width, height, r["hidden"])
 
 
-async def test_launches_hides_no_column_from_a_looser_width_when_its_vscroll_never_shows() -> None:
-    """At 80 rows the capture needs no vertical scrollbar: no hidden columns from 123, two columns below the 35-row onset."""
-    below = await _render(_capture_payload(), (122, _COLUMN_SWEEP_HEIGHT), "s")
-    at = await _render(_capture_payload(), (123, _COLUMN_SWEEP_HEIGHT), "s")
+async def test_launches_no_hidden_column_onset_without_vertical_scroll() -> None:
+    """At 80 rows the capture needs no vertical scrollbar: the no-hidden-column onset is 75."""
+    below = await _render(_capture_payload(), (74, _COLUMN_SWEEP_HEIGHT), "s")
+    at = await _render(_capture_payload(), (75, _COLUMN_SWEEP_HEIGHT), "s")
     assert below["hidden"]["SurfSwarmLaunches"] > 0, below["hidden"]
     assert at["hidden"]["SurfSwarmLaunches"] == 0, at["hidden"]
 
@@ -896,10 +890,10 @@ async def test_sites_tiers_are_the_measured_onsets(width, tier, hidden) -> None:
 
 
 @pytest.mark.parametrize("width,tier", [
-    (61, "tight"), (62, "compact"), (71, "compact"), (72, "full"),
+    (108, "tight"), (109, "compact"), (118, "compact"), (119, "full"),
 ])
 async def test_workflows_tiers_are_the_measured_onsets(width, tier) -> None:
-    """The full-width workflow table reaches compact at 62 and full at 72."""
+    """The shared top-row workflow table reaches compact at 109 and full at 119."""
     r = await _render(_capture_payload(), (width, _S_COLUMN_SWEEP_HEIGHT), "s")
     assert r["tiers"]["SurfSwarmWorkflows"] == tier, (width, r["tiers"])
 
@@ -1330,3 +1324,10 @@ async def test_the_swarm_body_is_whole_at_eighty_rows(payload_name):
     r = await _render(PAYLOADS[payload_name](), (width, _COLUMN_SWEEP_HEIGHT),
                       "s")
     _check_width(r, "s", payload_name, width)
+
+
+@pytest.mark.parametrize("width,tier", [(115, "tight"), (116, "compact"), (156, "compact"), (157, "full")])
+async def test_v8_production_launch_tiers_are_measured_in_full_width_row(width, tier):
+    r = await _render(_production_swarm_payload(), (width, 35), "s")
+    assert r["tiers"]["SurfSwarmLaunches"] == tier
+    assert r["hidden"]["SurfSwarmLaunches"] == 0

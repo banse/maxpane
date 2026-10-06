@@ -35,7 +35,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `l` | MODE_LAUNCHPAD | LAUNCHPAD COINS over LAUNCHPAD ACTIVITY left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail | `SurfHero` stays |
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
-| `s` | MODE_SWARM | LAUNCHES beside THROUGHPUT; WORKFLOWS and SITES full-width; `x` opens throughput details | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / LAUNCHES / WORKFLOWS / SITES |
+| `s` | MODE_SWARM | WORKFLOWS beside THROUGHPUT; LAUNCHES and SITES full-width; `x` opens throughput details | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / LAUNCHES / WORKFLOWS / SITES |
 | `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED JOBS / WORK / REWARDS / RANK / STATUS |
 | `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
 
@@ -55,8 +55,8 @@ expand/collapse toggle, with NEW REPLY on the rail so a collapsed thread still a
 
 ## Tiers, clocks and degraded groups
 
-`TIER_LAUNCHPAD`, `TIER_POOL4`, `TIER_POOL4_STAKERS` and the four swarm tiers (`TIER_SWARM`,
-`TIER_SWARM_SCORES`, `TIER_SWARM_SEAT`, `TIER_SWARM_BOARD`) are spawned and never awaited, with independent last-good slots and their own `as of HH:MM` on a slower clock than the
+`TIER_LAUNCHPAD`, `TIER_POOL4`, `TIER_POOL4_STAKERS` and the swarm tiers (`TIER_SWARM`,
+`TIER_SWARM_SCORES`, `TIER_SWARM_LAUNCHES`, `TIER_SWARM_SEAT`, `TIER_SWARM_BOARD`) are spawned and never awaited, with independent last-good slots and their own `as of HH:MM` on a slower clock than the
 title bar's. `SOURCE_POOL4` (`p4`) is the **eighth and last** degraded group — that name took the
 worst-case title row to exactly the pinned width — so the staker sweep and the swarm tiers
 **name no group at all**, not even with nothing to serve: they serve last-good behind their own
@@ -153,7 +153,7 @@ change to a pin — re-sweep, never adjust to a guess. PRD §4.1 carries the who
 Answers what the IMD swarm — the agent workforce this repo's own branches are built by — is doing:
 who is online, what is executing and on which seat, what has launched, how fast work moves; and,
 on `a`, one seat's own record. Rebuilt 2026-09-21 (swarm v2, `docs/surf_swarm_v2_implementation_plan.md`,
-WP0–WP7). It reads **one** keyless third-party source under two names (`SWARM_API_HOSTS`:
+WP0–WP7). Its control-plane feed reads **one** keyless source under two names (`SWARM_API_HOSTS`:
 `api.imd.fun` and its Railway host — one deployment, measured by `/version`, rotated per request,
 never shrunk; `follow_redirects=False`, a redirect is a host nobody allowlisted). The same source
 serves `/oracle/requests` (paged) and `/oracle/requests/{uuid}` for RECORD panel outcomes:
@@ -172,7 +172,7 @@ has moved since the manager last saw them, or when `SWARM_LIST_CEILING_S` has el
 row or the read; an all-host `503 busy` stops the fan-out at that id, stores nothing and backs the
 tier off in both tiers -- `SurfManager._swarm_details`, F-S3 -- and the live tier also puts its
 list gate back). The slow tier (`TIER_SWARM_SCORES`) sweeps the newest `SWARM_SWEEP_CAP` details
-plus `/skills`, `/workflows` (`?limit=SWARM_WORKFLOW_PAGE_SIZE`), `/launches` and `/sites` on its own
+plus `/skills` and `/workflows` (`?limit=SWARM_WORKFLOW_PAGE_SIZE`) on its own
 clock and feeds WORKFLOWS, LAUNCHES, SITES and the internal seat-selection fold; `/skills` is still
 read and folded for the parked CAPABILITY (below), which no body mounts; `swarm_throughput` is folded off the **live** slot because its widget shows
 the live marker (two clocks never meet behind one `as of`). A third slot, `SLOT_SWARM_JOBS_SEEN`,
@@ -393,9 +393,10 @@ chain id and nothing joins a workflow to a launch) -- the icon sweep's `SweepCas
 that seeded address and asserts it copies and links nowhere. WORKFLOWS' text is a pre-built
 `Text` rendered literally (IN FLIGHT's objective precedent), flattened, cut with `…` without
 lighting `‹ widen`, and an address is kept whole with its icon or dropped whole. SITES renders content hashes only and is a named exemption in
-the icon sweep; its ens column links a `<label>.site.identitymd.eth` name to
-`https://<label>.site.identitymd.eth.limo/` through `address.site_text` (explorer `SITES`, kind
-`site`; owner 2026-09-23), and it leaves out superseded rows and rows with no ENS name -- a feed that leaves nothing reads
+the icon sweep; its label and ENS columns link to `https://<label>.sites.imd.fun/`
+through `address.site_text` (explorer `SITES`, kind `site`). Prefer the API label, use the legacy
+ENS-derived label only as fallback, never `site.url`. Rows without either valid name have no link;
+superseded or unnamed rows are omitted -- a feed that leaves nothing reads
 `No current site`, an empty feed `No data` (F68). `swarm_site_rows` keeps `superseded_by` for that
 filter only; `failure` left the contract (F69), and the label column is one label wide (F67). RECORD's job id is not an address: it links the IMD explorer (not a chain)
 through `address.job_text`, with no icon; COLLAB teammate tokens pass through no address helper. The `parked_reason` cell in LAUNCHES clips to its column with a
@@ -404,8 +405,9 @@ visible `…` (accepted, `docs/decisions.md`).
 **The explorer's own inference headline is deliberately absent**: no public route serves that
 number, so this view shows none of it — absent, never estimated.
 
-**SWARM layout v3** (`docs/codex_swarm_layout_v3_plan.md`, owner-approved live at 200×48,
-2026-10-05): LAUNCHES beside THROUGHPUT; full-width WORKFLOWS; full-width SITES. The hero's last
+**Production launches layout** (`docs/codex_swarm_launches_plan.md`, owner-approved live at
+150×46 on 2026-10-06; 200×48 also measured offline): WORKFLOWS beside THROUGHPUT; full-width
+LAUNCHES; full-width SITES. The hero's last
 three cards show their totals and descending whole status/count pairs that fit the measured box.
 SITES and its hero count share `is_current_site`; superseded or unnamed builds are excluded.
 LAUNCHES and WORKFLOWS keep one blank footer row. SITES' label is 32 cells plus its layout pad,
@@ -414,8 +416,38 @@ and the final job column uses `job_text(..., explorer=JOB_EXPLORER)`.
 **`x` opens `ThroughputDetailScreen`** from a deepcopy of the last payload. The short panel always
 shows `x more`; there is no inline expansion or persisted fold. The binding stays non-priority,
 so a focused widget's own binding wins and Input keeps typed text. Missing detail blocks show
-yellow unavailable. Both new popups use the `RecordDetailScreen` frame: scrollable content,
+yellow unavailable. All three popups use the `RecordDetailScreen` frame: scrollable content,
 Space/Escape or its X to close, no network await while opening.
+
+**Production launches:** `TIER_SWARM_LAUNCHES` runs detached/single-flight at 60 seconds,
+120-second failure backoff. Launches read the newest 100 every cycle; sites refresh every 300
+seconds and policies every 1,800. `SLOT_SWARM_LAUNCHES` preserves each route and successful-read
+clock independently. `SLOT_SWARM_LAUNCH_FACTS` retains bounded extracted facts, not huge detail
+responses, with 500-entry caps. At most three production details and three eligible site jobs
+are read per cycle; Sepolia and abandoned launches are not enriched. Completed checks are reused.
+A newer policy version or a would-be wallet mismatch refreshes policies before judgment; a
+failed refresh leaves the check unknown. The cycle snapshots rows/events before spawning work.
+
+Production is chain 1/8453/4663, excluding abandoned. Retained production rows still count and
+pin after leaving the newest API window. LAUNCHES keeps 12 production + 12 Sepolia, newest
+number first within each; production is bold with `◆`, Sepolia dim. MAINNET / BASE / RH /
+SEPOLIA are the chain words. The token column prefers role `token`, then `hook`, then the first
+artifact. Full columns add kind/repo; compact drops those and tight also sheds site/parked reason.
+K1–K4 produce provenance-only `✓ swarm`, `… n/4`, or `✗ Kx`; K3 accepts deployed-code equality
+or creation-code evidence (`pass (immutables)`). K6/K7 are informational, never safety claims.
+Enter/click opens `LaunchDetailScreen`, a deep-copied snapshot with all artifacts, copy/explorer
+links, pair, fee, requester, policy, evidence, site and IMD token/job link. Selection messages
+are declared in each selectable subclass; BOARD keeps its own Enter routing.
+
+SITES uses workflow/project/named matching; named matches require payer agreement to highlight.
+Conflicts remain untrusted. Trusted production sites pin first and retain their ticker before
+label text. LAUNCHES/SITES use the launch tier marker, not the scores clock.
+
+`SWARM LAUNCH` is detector eleven; signal detail carries its own chain explorer. Persisted
+`swarm_live_seen` and pending IDs cap at 500, with a high-water number preventing replay after
+eviction; fired facts retain ages and metadata through restart. Initial reads seed silently,
+failed reads do not fire, and an observed non-live launch may later fire below the high-water
+number. Typed fired events drive all-body title news, never parsed detail text.
 
 **WORKFLOWS history:** cold or incomplete caches backfill pages of 100, at most 10 pages, using
 strict UTC `createdAt` cursors, an advancing-cursor guard and the existing inter-call delay.
@@ -437,15 +469,19 @@ mean one named service or N services down; unknown services are not down. A non-
 is sanitized and capped at 12 cells. The owner approved `health unavailable` for unread health,
 because existing manager tests explicitly require no new SWARM degraded group. A title too wide
 uses a source count (`src`), compact labels (`par`, `svc`, `ver`/`pub`/`dep`) and omits the redundant
-SURF heading; price, parity, `as of`, LP warning, taller marker and every alarm remain. Default and
-AGENT titles do not change. KEY_HINTS begins `x more`; `l` stays bound, unlisted like `e`.
+SURF heading; price, parity, `as of`, LP warning, taller marker and every alarm remain. Launch-check mismatches add `⚠ launch #n K3` or `⚠ n launch checks`. Every body also shows accent
+launch news for 60 minutes; the detector remains FIRED for 24 hours. Crowded SWARM titles may
+use `▲ LAUNCH #n`, tighter separators and shortened health text (owner approved 2026-10-06). KEY_HINTS begins `x more`; `l` stays bound, unlisted like `e`.
 
 CAPABILITY and IN FLIGHT are parked, with their modules, tests and reads retained. Every mounted /
 consumed exemption comes from `SWARM_PARKED_WIDGET_SIGNATURES`. Neither has a current body pin.
 SWARM's pins now measure 129×35: SITES and the full status bar bind the width; THROUGHPUT's nine
 lines and the two eight-line table floors bind height. LAUNCHES is the content exception,
-`LAUNCHES_NEVER_CLEARS_BELOW` 162 on capture, with no hidden columns from 125 at 35 rows or 123 at
-80 rows. WORKFLOWS compact/full start at 62/72, SITES at 121/129; these enter the boundary sets.
+`LAUNCHES_NEVER_CLEARS_BELOW` 157 on capture (production parked reasons can still mark), with no
+hidden columns from 77 at 35 rows, or 75 on the 80-row capture without its table vertical
+scrollbar. WORKFLOWS compact/full start at 109/119,
+LAUNCHES at 116/157, SITES at 121/129; these enter the boundary sets. All eleven active default
+detector rows require 43 rows at 143 columns; the mixed fixture needs 39.
 AGENT's 139×25 pin and RECORD's content exception are unchanged. The original grids remain
 historical in `docs/decisions.md` and the appended pin blocks in `screens/surf.py`.
 
