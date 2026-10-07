@@ -31,6 +31,7 @@ __all__ = [
     "COMPACT_WIDTH",
     "FULL_WIDTH",
     "PARKED_MIN_COLS",
+    "ROOMY_WIDTH",
     "TIGHT_ADDR_COLS",
     "TIGHT_WIDTH",
     "SurfSwarmLaunches",
@@ -66,13 +67,14 @@ _SPECS = (
     ("parked", "parked reason", PARKED_MIN_COLS),
 )
 _ALL = tuple(key for key, _l, _w in _SPECS)
-_ROOMY = tuple(key for key in _ALL if key != "liq")
-_COMPACT = tuple(key for key in _ALL if key not in ("kind", "repo", "liq"))
-_TIGHT = tuple(key for key in _COMPACT if key not in ("parked", "site"))
-# full: 144 cells + 22 padding = 166; roomy: 132 + 20 = 152;
-# compact: 95 + 16 = 111;
+_ROOMY = tuple(key for key in _ALL if key != "kind")
+_COMPACT = tuple(key for key in _ALL if key not in ("kind", "repo", "site"))
+_TIGHT = tuple(key for key in _COMPACT if key not in ("parked", "liq"))
+# full: 144 cells + 22 padding = 166; roomy: 131 + 20 = 151;
+# compact: 91 + 16 = 107;
 # tight: 60 + 12 = 72 (token shrinks from 23 to 17).
 FULL_WIDTH = table_cols(w for k, _l, w in _SPECS)
+ROOMY_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _ROOMY)
 COMPACT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _COMPACT)
 TIGHT_WIDTH = table_cols(_TIGHT_ARTIFACTS_COLS if k == "token" else w
                          for k, _l, w in _SPECS if k in _TIGHT)
@@ -131,7 +133,7 @@ class SurfSwarmLaunches(SwarmTableBase):
     COLUMN_SPECS = _SPECS
     TIER_COLUMNS = {"full": _ALL, "roomy": _ROOMY, "compact": _COMPACT, "tight": _TIGHT}
     LADDER = rowfit.Ladder(
-        ("full", FULL_WIDTH), ("roomy", FULL_WIDTH - 14), ("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH)
+        ("full", FULL_WIDTH), ("roomy", ROOMY_WIDTH), ("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH)
     )
 
     LOADING_ROW = (LOADING,) + ("",) * 10
@@ -160,8 +162,7 @@ class SurfSwarmLaunches(SwarmTableBase):
         """Elastic reason; tight keeps ticker/verdict and narrows the token."""
         plan = []
         keep = self.TIER_COLUMNS[tier]
-        tier_width = dict(self.LADDER.steps)[tier]
-        if tier != "full" and budget >= tier_width + 14:
+        if tier == "tight" and budget >= TIGHT_WIDTH + 14:
             keep = (*keep, "liq")
         fixed = [w for k, _l, w in _SPECS if k in keep and k != "parked"]
         if tier == "tight":

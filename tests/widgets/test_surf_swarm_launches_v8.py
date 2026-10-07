@@ -19,7 +19,7 @@ def test_v8_launch_tiers_and_pin_production_before_newer_sepolia():
     assert [r['launch_number'] for r in kept] == list(range(712,700,-1))+list(range(1012,1000,-1))
     assert panel._payload['as_of']=='03:04'
     assert tuple(k for k,l,w in panel.column_plan('full',200)) == ('number','ticker','status','chain','token','site','verdict','liq','kind','repo','parked')
-    assert tuple(k for k,l,w in panel.column_plan('compact',200)) == ('number','ticker','status','chain','token','site','verdict','liq','parked')
+    assert tuple(k for k,l,w in panel.column_plan('compact',120)) == ('number','ticker','status','chain','token','verdict','liq','parked')
     assert tuple(k for k,l,w in panel.column_plan('tight',100)) == ('number','ticker','status','chain','token','verdict','liq')
 
 

@@ -2885,6 +2885,9 @@ def _public_fetchers() -> list[str]:
 
 
 FETCHERS = _public_fetchers()
+FETCHER_ARGS = {
+    "fetch_launch_receipts": ([load_fixture("../swarm/v8/rpc_737_receipt.json")["result"]["transactionHash"]],),
+}
 
 
 def test_frozen_surface_is_complete():
@@ -2909,7 +2912,7 @@ async def test_every_fetcher_survives_total_outage_as_none(name):
     all seven cases instead of asserting anything.
     """
     async with _offline_client() as client:
-        result = await getattr(client, name)()
+        result = await getattr(client, name)(*FETCHER_ARGS.get(name, ()))
     assert result is None
 
 
@@ -2921,7 +2924,7 @@ async def test_no_fetcher_turns_outage_into_zero(name):
         return httpx.Response(521, json={})
 
     async with _client_on(RecordingTransport(handler)) as client:
-        result = await getattr(client, name)()
+        result = await getattr(client, name)(*FETCHER_ARGS.get(name, ()))
     assert result is None
     assert result != 0 and result != [] and result != {}
 

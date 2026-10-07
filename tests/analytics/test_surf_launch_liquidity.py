@@ -228,4 +228,4 @@ def test_ambiguous_cache_marker_never_exposes_a_stale_liquidity_result():
     point = {'row':row, 'pool_inputs':{'state':'ambiguous'}, 'liquidity':result}
     clean = sw.coerce_launch_facts_slot({'launches':{row['id']:point}, 'sites':{}})['launches'][row['id']]
     assert clean['pool_inputs'] == {'state':'ambiguous'}
-    assert clean['liquidity'] == ll.empty_liquidity()
+    assert clean['liquidity'] == ll.empty_liquidity('na')

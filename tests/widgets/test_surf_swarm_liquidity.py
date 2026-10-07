@@ -55,10 +55,12 @@ async def test_withdrawn_liquidity_is_red_and_keeps_swarm_verdict():
 def test_liquidity_tier_priority_and_degraded_cells():
     panel=SurfSwarmLaunches()
     assert 'liq' in [k for k,l,w in panel.column_plan('full',210)]
-    assert 'liq' not in [k for k,l,w in panel.column_plan('compact',120)]
-    for tier, budget in [('compact',125), ('compact',138), ('roomy',166)]:
+    for tier, budget in [('compact',107), ('compact',120), ('compact',138), ('roomy',151)]:
         keys = [k for k,l,w in panel.column_plan(tier,budget)]
         assert keys[keys.index('verdict')+1] == 'liq'
+        assert 'kind' not in keys
+        if tier == 'compact':
+            assert 'site' not in keys and 'repo' not in keys
     assert 'liq' in [k for k,l,w in panel.column_plan('tight',100)]
     assert 'liq' not in [k for k,l,w in panel.column_plan('tight',72)]
     for row,word in [(liquid_row(state='unknown'),'…'),(liquid_row(state='na'),'--'),
@@ -117,11 +119,12 @@ async def test_detector_multiple_active_fired_count_reaches_mounted_row():
     assert '+1' in next(line for line in text.splitlines() if 'SWARM LAUNCH' in line)
 
 
-async def test_liquidity_sheds_before_repository_in_mounted_ladder():
+async def test_roomy_sheds_kind_before_liquidity_in_mounted_ladder():
     from maxpane_dashboard.widgets.surf.swarm_launches import FULL_WIDTH
     text='\n'.join(await composite_lines(SurfSwarmLaunches,(FULL_WIDTH+1,14),swarm_launch_rows=[liquid_row()]))
     header=next(line for line in text.splitlines() if 'ticker' in line)
-    assert 'repo' in header and 'liq' not in header
+    assert 'repo' in header and 'liq' in header and 'kind' not in header
+    assert '4.7K IMD' in text
     assert 'launch-737' in text
 
 
@@ -138,3 +141,21 @@ async def test_nonfactory_lock_does_not_claim_unverified_contract(factory):
         line = next(line for line in text.splitlines() if 'never withdrawn' in line)
         assert 'held by' in line and '(unverified)' not in line
         assert '(L = deployed L)' in line
+
+
+@pytest.mark.parametrize('has_code,matching,annotated', [(True,True,True), (False,True,False),
+                                                       (None,True,False), (True,False,False)])
+async def test_nonfactory_lock_uses_cached_owner_code(has_code, matching, annotated):
+    class Probe(App): pass
+    row = liquid_row(owner_is_factory=False)
+    owner = row['liquidity']['owner']
+    row['checks']['K6'] = {'state':'info', 'evidence': {
+        'owner': owner if matching else '0x' + '1' * 40, 'owner_has_code':has_code}}
+    async with Probe().run_test(size=(110, 40)) as pilot:
+        await pilot.app.push_screen(LaunchDetailScreen(row)); await pilot.pause()
+        pilot.app.screen.query_one(VerticalScroll).scroll_end(animate=False)
+        await pilot.pause()
+        text = '\n'.join(s.text for s in pilot.app.screen._compositor.render_strips())
+        line = next(line for line in text.splitlines() if 'never withdrawn' in line)
+        assert 'held by' in line and '(unverified)' not in line
+        assert ('(contract)' in line) == annotated

@@ -1710,6 +1710,10 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: including the owner's 143x46 and 150x46. It yields to kind/repo at the
 #: roomy onset 157 and returns with full at 171; tight still has it from 91.
 #: Rechecked 129x35 and transition neighbours with scripts/measure_layout.py.
+#: V2 fix2: liq outranks kind/repo/site and stays visible from 91 through 220
+#: in the mounted integer-width sweep. Compact starts 112 (site shed), roomy
+#: 156 (kind shed), full 171. scripts/measure_layout.py checked the onset
+#: neighbours at 35 rows; 129x34 marks taller and 129x35 remains whole.
 SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for

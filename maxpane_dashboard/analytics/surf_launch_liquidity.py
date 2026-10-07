@@ -215,6 +215,15 @@ def decimals_result(value):
     return val if val is not None and val <= 255 else None
 
 
+def owner_is_factory(owner, row, policies, checks):
+    """Use the same receipt/policy identity for the label and optional code read."""
+    from .surf_launch_checks import ZERO
+    factories = {address(p['params'].get('factory')) for p in mappings(policies)
+                 if isinstance(p.get('params'), Mapping) and p['params'].get('chainId') == row.get('chainId')} - {None, ZERO}
+    tos = {address(tx.get('to')) for tx in checks.get('K2', {}).get('evidence', {}).get('transactions', [])} - {None}
+    return owner in factories | tos if factories or tos else None
+
+
 def liquidity_result(row, pool, values, decimals, policies, checks, *, now):
     """Compute a display snapshot. Missing state/decimals is not a withdrawal."""
     from .surf_launch_checks import ZERO, PAIRS
@@ -243,10 +252,7 @@ def liquidity_result(row, pool, values, decimals, policies, checks, *, now):
     owner = pool['owner']
     withdrawn = liquidity < pool['initial_liquidity']
     lock = 'burned' if owner in (ZERO, '0x'+'0'*36+'dead') else 'withdrawn' if withdrawn else 'locked'
-    factories = {address(p['params'].get('factory')) for p in mappings(policies)
-                 if isinstance(p.get('params'), Mapping) and p['params'].get('chainId') == row.get('chainId')} - {None, ZERO}
-    tos = {address(tx.get('to')) for tx in checks.get('K2', {}).get('evidence', {}).get('transactions', [])} - {None}
-    owner_factory = owner in factories | tos if factories or tos else None
+    owner_factory = owner_is_factory(owner, row, policies, checks)
     # The caller injects the clock; timestamps are parsed without reading a clock.
     from datetime import datetime
     try: age = now - datetime.fromisoformat(row['createdAt'].replace('Z', '+00:00')).timestamp()

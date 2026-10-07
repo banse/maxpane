@@ -5757,7 +5757,7 @@ class SurfManager:
             pool = point.get('pool_inputs')
             if pool is None: continue
             if pool.get('state') in ('na', 'ambiguous'):
-                point['liquidity'] = ll.empty_liquidity('na' if pool['state'] == 'na' else 'unknown')
+                point['liquidity'] = ll.empty_liquidity('na')
                 continue
             point['pool_initialize'] = ll.coerce_initialize(pool)
             point['pool_fee'] = pool['pool_fee']
@@ -5768,7 +5768,7 @@ class SurfManager:
         batches = {}
         for point in chosen:
             point['liquidity_attempt_ts'] = now
-            batch = batches.setdefault(point['row']['chainId'], {'calls': [], 'points': [], 'decimals': {}})
+            batch = batches.setdefault(point['row']['chainId'], {'calls': [], 'points': [], 'decimals': {}, 'owners': {}})
             offset = len(batch['calls'])
             batch['calls'].extend(ll.state_calls(point['pool_inputs'], keccak=keccak256))
             batch['points'].append((point, offset))
@@ -5779,11 +5779,24 @@ class SurfManager:
                     if currency == lc.ZERO or currency in point.get('pool_decimals', {}) or currency in batch['decimals']: continue
                     batch['decimals'][currency] = len(batch['calls'])
                     batch['calls'].append(('eth_call', [{'to': currency, 'data': '0x313ce567'}, 'latest']))
+            for point, _ in batch['points']:
+                owner = point['pool_inputs']['owner']
+                if (owner in (lc.ZERO, '0x' + '0' * 36 + 'dead')
+                        or ll.owner_is_factory(owner, point['row'], policies, point.get('checks') or {}) is True
+                        or point.get('owner_code', {}).get('owner') == owner or owner in batch['owners']):
+                    continue
+                batch['owners'][owner] = len(batch['calls'])
+                batch['calls'].append(('eth_getCode', [owner, 'latest']))
             client = self._launch_rpc_client(chain)
             values = await self._guard(lambda: client.fetch_launch_pool_state(batch['calls']), 'swarm pool liquidity')
             if not isinstance(values, list): continue
             values = values + [None] * max(0, len(batch['calls']) - len(values))
             for point, offset in batch['points']:
+                owner = point['pool_inputs']['owner']
+                if owner in batch['owners']:
+                    code = values[batch['owners'][owner]]
+                    if isinstance(code, str) and re.fullmatch(r'0x(?:[0-9a-fA-F]{2})*', code):
+                        point['owner_code'] = {'owner': owner, 'chain_id': chain, 'has_code': len(code) > 2}
                 decimals = point.setdefault('pool_decimals', {})
                 for currency, index in batch['decimals'].items():
                     value = ll.decimals_result(values[index])
@@ -5817,9 +5830,13 @@ class SurfManager:
             row.update({key: point.get(key) for key in ('ticker', 'token_name', 'pair', 'pool_fee', 'requester', 'policy_version')})
             row['token_address'] = next((a['address'] for a in row['artifacts'] if a['role'] == 'token'), None)
             row['job_id'] = next(iter(point.get('job_ids', [])), None)
-            row['checks'] = point.get('checks') or {k: lc.result('pass' if k == 'K1' else 'unknown') for k in ('K1', 'K2', 'K3', 'K4', 'K6', 'K7')}
+            row['checks'] = copy.deepcopy(point.get('checks')) or {k: lc.result('pass' if k == 'K1' else 'unknown') for k in ('K1', 'K2', 'K3', 'K4', 'K6', 'K7')}
             row['liquidity'] = copy.deepcopy(point.get('liquidity')) or ll.empty_liquidity()
             row['checks'] = dict(row['checks'], K8=dict(row['liquidity']))
+            held = row['checks']['K6']['evidence']
+            code = point.get('owner_code')
+            if code and code['owner'] == held.get('owner') == row['liquidity'].get('owner'):
+                held['owner_has_code'] = code['has_code']
             row['verdict'] = lc.verdict(point['row'], row['checks'])
             if row['launch_id'] in linked_sites:
                 site, link = linked_sites[row['launch_id']]

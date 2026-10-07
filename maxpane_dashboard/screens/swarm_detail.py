@@ -175,6 +175,10 @@ class LaunchDetailScreen(RecordDetailScreen):
         if lock == 'locked':
             if value.get('owner_is_factory') is True:
                 line.append(' (unverified)')
+            else:
+                evidence = ((self.row.get('checks') or {}).get('K6') or {}).get('evidence') or {}
+                if evidence.get('owner_has_code') is True and evidence.get('owner') == value.get('owner'):
+                    line.append(' (contract)')
             line.append(' · never withdrawn (L = deployed L)')
         yield line
         share = value.get('share')

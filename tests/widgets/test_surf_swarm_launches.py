@@ -19,6 +19,7 @@ from maxpane_dashboard.widgets.address import COPY_GLYPH
 from maxpane_dashboard.widgets.surf.swarm_launches import (
     ADDR_COLS,
     COMPACT_WIDTH,
+    ROOMY_WIDTH,
     FULL_WIDTH,
     TIGHT_ADDR_COLS,
     TIGHT_WIDTH,
@@ -294,7 +295,7 @@ async def test_no_summary_means_no_footer():
 # -- tiers ---------------------------------------------------------------------------------
 
 _FULL = FULL_WIDTH + GUTTER + 5
-_COMPACT = FULL_WIDTH - 14 + GUTTER - 1
+_COMPACT = ROOMY_WIDTH + GUTTER - 1
 _TIGHT = COMPACT_WIDTH + GUTTER - 1
 
 

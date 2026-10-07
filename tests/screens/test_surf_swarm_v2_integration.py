@@ -47,7 +47,7 @@ async def test_x_without_production_launch_is_noop(rows):
         assert pilot.app.screen is screen
 
 
-@pytest.mark.parametrize('width', [129, 130, 143, 150, 156, 157, 170, 171])
+@pytest.mark.parametrize('width', [90, 91, 111, 112, 129, 143, 150, 155, 156, 157, 170, 171])
 async def test_launches_liquidity_at_owner_widths(width):
     from tests.widgets.test_surf_swarm_liquidity import liquid_row
     payload = _production_swarm_payload()
@@ -56,7 +56,7 @@ async def test_launches_liquidity_at_owner_widths(width):
         screen = await _open(pilot)
         launches = screen.query_one(SurfSwarmLaunches)
         shown = 'liq' in launches._keys
-        assert shown == (130 <= width < 157 or width >= 171)
+        assert shown == (width >= 91)
         assert '4.7K IMD' in _screen_text(pilot.app) if shown else '4.7K IMD' not in _screen_text(pilot.app)
 
 
@@ -139,3 +139,56 @@ async def test_receipt_to_manager_snapshot_to_liquidity_popup(tmp_path, withdraw
                      'withdrawn 50%' if withdrawn else 'never withdrawn',
                      '50% of active liquidity' if withdrawn else '100% of active liquidity'):
             assert word in seen, (word, seen)
+
+
+async def test_liquidity_visibility_is_monotonic_from_91_through_220():
+    from tests.widgets.test_surf_swarm_liquidity import liquid_row
+    payload = _production_swarm_payload()
+    payload['swarm_launch_rows'] = [liquid_row()]
+    async with _surf_app(payload).run_test(size=(60, 46)) as pilot:
+        screen = await _open(pilot)
+        launches = screen.query_one(SurfSwarmLaunches)
+        first_seen = None
+        for width in range(60, 221):
+            await pilot.resize_terminal(width, 46)
+            await pilot.pause()
+            lines = _screen_text(pilot.app).splitlines()
+            region = launches.region
+            header = next((line for line in lines[region.y:region.bottom]
+                           if 'ticker' in line and 'verdict' in line), '')
+            shown = 'liq' in launches._keys
+            assert ('liq' in header) == shown, (width, header, launches._keys)
+            if shown and first_seen is None:
+                first_seen = width
+            if first_seen is not None:
+                assert shown, (width, first_seen, launches._tier)
+                assert '4.7K IMD' in '\n'.join(lines[region.y:region.bottom]), width
+        assert first_seen == 91
+
+
+@pytest.mark.parametrize('kind', ['initialize', 'modify'])
+async def test_ambiguous_manager_pool_paints_dash_in_liquidity_cell(tmp_path, kind):
+    from tests.analytics.test_surf_launch_liquidity import ambiguous_receipts
+    from tests.data.test_surf_manager_liquidity import manager, seed, NOW
+    from maxpane_dashboard.data.surf_cache import TIER_SWARM_LAUNCHES
+    manager_ = manager(tmp_path)
+    seed(manager_, pool=False)
+    _, receipts = ambiguous_receipts(kind)
+    async def fetch(hashes): return deepcopy(receipts)
+    manager_.client.fetch_launch_receipts = fetch
+    try:
+        await manager_._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        keys = manager_._swarm_launch_keys()
+        assert keys['swarm_launch_rows'][0]['liquidity']['state'] == 'na'
+    finally:
+        await manager_.close()
+    async with _surf_app(_frozen_payload(**keys)).run_test(size=(150, 46)) as pilot:
+        screen = await _open(pilot)
+        panel = screen.query_one(SurfSwarmLaunches)
+        table = panel.query_one(DataTable)
+        index = panel._keys.index('liq')
+        x = table.content_region.x + sum(c.get_render_width(table) for c in table.ordered_columns[:index])
+        width = table.ordered_columns[index].get_render_width(table)
+        y = table.content_region.y + table.header_height
+        cell = screen._compositor.render_strips()[y].crop(x, x + width).text.strip()
+        assert cell == '--'

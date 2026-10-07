@@ -450,11 +450,10 @@ Production is chain 1/8453/4663, excluding abandoned. Retained production rows s
 pin after leaving the newest API window. LAUNCHES keeps 12 production + 12 non-production, newest
 number first within each; production is bold with `◆`, other rows dim with verdict `--`. MAINNET / BASE / RH /
 SEPOLIA are the chain words. The token column prefers role `token`, then `hook`, then the first
-artifact. Full columns include kind/repo and `liq` after verdict; roomy drops `liq` before
-compact drops kind/repo. Tight also sheds site/parked reason, and may restore `liq` only when
-there is room after ticker and verdict. Every reduced tier restores `liq` when its minimum
-budget has fourteen spare cells; compact therefore shows it at the owner's width.
-Tier onsets live in the measured pin comment.
+artifact. Full columns include kind/repo and `liq` after verdict. Liquidity outranks
+kind, repo and site: roomy sheds kind; compact also sheds repo and site. Tight sheds the
+parked reason and restores `liq` when fourteen cells fit after ticker and verdict.
+Once visible, liquidity stays at every wider width. Tier onsets live in the measured pin comment.
 K2 uses the chain-wide wallet set and factories declared by the launch's own kind; kinds with
 no declared factory, including an absent kind, are judged on sender and receipt status alone.
 A known policy version must match an explicit launch kind. K6 factory annotation uses that same
@@ -479,7 +478,7 @@ are declared in each selectable subclass; BOARD keeps its own Enter routing.
 and pool ID in the deploy receipts. That emitter supplies the PoolManager address; owner comes
 from `topics[2]`. Signed packed ticks and the salt participate in the position storage key.
 Pool fee comes only from Initialize, displayed as a percentage (12500 → 1.25%, 3000 → 0.3%);
-missing evidence is `--`, never the manifest fee. No pool is `na`; a missing or ambiguous read
+missing evidence is `--`, never the manifest fee. No pool or complete ambiguous pool evidence is `na`; a missing read
 is unknown. Both paired and token decimals are read and cached; only native ETH defaults to 18.
 
 The independent K8 clock batches three state reads per pool, oldest eligible first, at most ten
@@ -492,7 +491,9 @@ clock backs off failures. The popup shows that result's age against the snapshot
 `liquidity` and `checks.K8` share the exact `SWARM_LIQUIDITY_KEYS` shape; Sepolia liquidity is
 None. The popup shows paired/token amounts, tick range, fee, owner with explorer/copy actions,
 lock and share of active liquidity. Factory holdings are `in factory (unverified)`, never
-burned; only zero/dead owners are burned. A position below its deployed liquidity is withdrawn,
+burned; only zero/dead owners are burned. Non-factory owners are labelled `(contract)` only
+when a successful `eth_getCode` confirms code; that read is cached by owner. Failed reads
+leave the annotation absent, and no verified-source status is inferred. A position below its deployed liquidity is withdrawn,
 with the removed percentage (zero remaining is 100%). Shares cannot exceed 100%. K8 warns for
 withdrawal, an edge price (`at limit`), or token-only positions older than one hour. The `liq`
 cell shows compact paired amount, dim `one-sided`, yellow `no liq`, red `withdrawn`, `--` for

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Surfboard SWARM: keep liquidity visible at every width from 91 columns, prioritize it
+  over kind/repository/site, and identify non-factory liquidity owners with cached contract
+  code evidence. Complete ambiguous pool evidence now shows `--`; missing reads remain `…`.
+
 - Surfboard SWARM: keep pool liquidity visible at 143 and 150 columns, place LATEST LAUNCHES'
   empty state directly below its single-line title, and clarify liquidity ownership details.
   Stop retrying terminal ambiguous pool evidence and definite admission failures; bootstrap

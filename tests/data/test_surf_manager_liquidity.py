@@ -29,7 +29,9 @@ def responder(m,answers,decimals):
     async def fetch(calls):
         batches.append(copy.deepcopy(calls)); out=[]; word=0
         for method,params in calls:
-            if params[0]['data']=='0x313ce567':
+            if method == 'eth_getCode':
+                value = None  # this fixture has no code observation for the K8 owner
+            elif params[0]['data']=='0x313ce567':
                 value='0x'+decimals[params[0]['to']].to_bytes(32,'big').hex()
             else:
                 value=answers[word%3]; word+=1
@@ -48,9 +50,10 @@ async def test_liquidity_cap_cadence_oldest_first_and_last_good(tmp_path):
         points=m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches']
         read=[p for p in points.values() if p.get('liquidity',{}).get('read_ts')==NOW]
         assert len(read)==10
-        assert sum(p[1][0]['data'].startswith('0x1e2eaeaf') for p in batches[0])==30
+        assert sum(params[0]['data'].startswith('0x1e2eaeaf') for method,params in batches[0] if method == 'eth_call')==30
+        assert all(method != 'eth_getCode' for method,_ in batches[0]), 'known factories need no code read'
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+61)
-        assert sum(p[1][0]['data'].startswith('0x1e2eaeaf') for p in batches[1])==6
+        assert sum(params[0]['data'].startswith('0x1e2eaeaf') for method,params in batches[1] if method == 'eth_call')==6
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+299)
         assert len(batches)==2
         fail.add(0)
@@ -59,7 +62,7 @@ async def test_liquidity_cap_cadence_oldest_first_and_last_good(tmp_path):
         old=[p for p in points.values() if p.get('liquidity',{}).get('read_ts')==NOW]
         assert len(old)==1 and old[0]['liquidity']['lock']=='locked'
         assert old[0]['liquidity_attempt_ts']==NOW+300
-        assert all(params[0]['data']!='0x313ce567' for _,params in batches[-1])
+        assert all(params[0]['data']!='0x313ce567' for method,params in batches[-1] if method == 'eth_call')
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+361)
         assert len(batches)==4 and len(batches[-1])==6, 'failed first pool backs off; the next two get their turn'
         rows=m._swarm_launch_keys()['swarm_launch_rows']
@@ -86,7 +89,7 @@ async def test_legacy_pool_bootstrap_is_bounded_and_decimals_retry_independently
         assert len(requests)==2 and sum('pool_inputs' in p for p in m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'].values())==12
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES},NOW+301)
         assert len(requests)==2
-        decimal_calls=[params[0]['to'] for _,params in batches[-1] if params[0]['data']=='0x313ce567']
+        decimal_calls=[params[0]['to'] for method,params in batches[-1] if method == 'eth_call' and params[0]['data']=='0x313ce567']
         assert len(decimal_calls)==1, 'the successful sibling decimal is never reread'
     finally: await m.close()
 
@@ -193,7 +196,7 @@ async def test_native_eth_pool_775_reads_no_zero_address_decimals_and_returns_k8
     batches, _ = responder(m, answers, decimals)
     try:
         await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
-        calls = [params[0]['to'] for _,params in batches[0] if params[0]['data'] == '0x313ce567']
+        calls = [params[0]['to'] for method,params in batches[0] if method == 'eth_call' and params[0]['data'] == '0x313ce567']
         assert calls == [pool['currency1']] and lc.ZERO not in calls
         shown = m._swarm_launch_keys()['swarm_launch_rows'][0]['liquidity']
         assert shown['paired_symbol'] == 'ETH' and shown['paired_amount'] == pytest.approx(14.2330796)
@@ -220,7 +223,7 @@ async def test_fifteen_due_pools_choose_ten_distinct_oldest_result_timestamps(tm
 
 
 @pytest.mark.parametrize('kind', ['initialize', 'modify'])
-async def test_ambiguous_receipts_persist_unknown_without_repeat_bootstrap(tmp_path, kind):
+async def test_ambiguous_receipts_persist_na_without_repeat_bootstrap(tmp_path, kind):
     from tests.analytics.test_surf_launch_liquidity import ambiguous_receipts
     m = manager(tmp_path)
     seed(m, pool=False)
@@ -238,7 +241,7 @@ async def test_ambiguous_receipts_persist_unknown_without_repeat_bootstrap(tmp_p
             await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + delta)
             point = next(iter(m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'].values()))
             assert point['pool_inputs'] == {'state':'ambiguous'}
-            assert m._swarm_launch_keys()['swarm_launch_rows'][0]['liquidity'] == ll.empty_liquidity()
+            assert m._swarm_launch_keys()['swarm_launch_rows'][0]['liquidity'] == ll.empty_liquidity('na')
             assert point['pool_fee'] == (12500 if kind == 'modify' else None)
         assert len(calls) == 1
     finally:
@@ -270,3 +273,89 @@ async def test_incomplete_or_malformed_receipts_retry_after_bootstrap_backoff(tm
             assert len(calls) == (2 if delta == 300 else 1)
     finally:
         await m.close()
+
+
+@pytest.mark.parametrize('has_code', [True, False], ids=['contract', 'eoa'])
+async def test_nonfactory_owner_code_is_read_once_cached_and_bound_to_snapshot(tmp_path, has_code):
+    from tests.analytics.test_surf_launch_checks import fixture
+    m = manager(tmp_path)
+    _, answers, decimals = seed(m)
+    point = next(iter(m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'].values()))
+    owner = '0x' + '2' * 40
+    point['pool_inputs']['owner'] = owner
+    point['checks']['K6']['evidence'].update(owner=owner, owner_is_factory=False)
+    batches, _ = responder(m, answers, decimals)
+    state_fetch = m.client.fetch_launch_pool_state
+    code_calls = []
+    async def fetch(calls):
+        state = await state_fetch([call for call in calls if call[0] != 'eth_getCode'])
+        code = fixture('rpc_737_code_token')['result'] if has_code else '0x'
+        for method, params in calls:
+            if method == 'eth_getCode':
+                code_calls.append(params)
+                state.append(code)
+        return state
+    m.client.fetch_launch_pool_state = fetch
+    try:
+        for delta in (0, 300, 600):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + delta)
+            row = m._swarm_launch_keys()['swarm_launch_rows'][0]
+            assert row['checks']['K6']['evidence']['owner_has_code'] is has_code
+            assert row['liquidity']['owner'] == owner and row['liquidity']['owner_is_factory'] is False
+            cached = next(iter(m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'].values()))
+            assert cached['owner_code'] == {'owner':owner, 'chain_id':1, 'has_code':has_code}
+        assert code_calls == [[owner, 'latest']]
+        cached['checks']['K6']['evidence']['owner'] = '0x' + '3' * 40
+        assert 'owner_has_code' not in m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K6']['evidence']
+        assert len(batches) == 3
+    finally:
+        await m.close()
+
+
+@pytest.mark.parametrize('failure', [None, '0x1', '0xzz', '', '0x  '])
+async def test_owner_code_failure_remains_unknown_then_retries(tmp_path, failure):
+    m = manager(tmp_path)
+    _, answers, decimals = seed(m)
+    point = next(iter(m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['launches'].values()))
+    owner = '0x' + '2' * 40
+    point['pool_inputs']['owner'] = owner
+    point['checks']['K6']['evidence'].update(owner=owner, owner_is_factory=False)
+    responder(m, answers, decimals)
+    state_fetch = m.client.fetch_launch_pool_state
+    code_calls = []
+    async def fetch(calls):
+        state = await state_fetch([call for call in calls if call[0] != 'eth_getCode'])
+        for method, params in calls:
+            if method == 'eth_getCode':
+                code_calls.append(params)
+                state.append(failure if len(code_calls) == 1 else '0x00')
+        return state
+    m.client.fetch_launch_pool_state = fetch
+    try:
+        for delta in (0, 61, 300):
+            await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW + delta)
+            evidence = m._swarm_launch_keys()['swarm_launch_rows'][0]['checks']['K6']['evidence']
+            if delta < 300:
+                assert 'owner_has_code' not in evidence
+            else:
+                assert evidence['owner_has_code'] is True
+        assert code_calls == [[owner, 'latest'], [owner, 'latest']]
+    finally:
+        await m.close()
+
+
+@pytest.mark.parametrize('bad', [
+    {'owner':'0x'+'2'*40, 'chain_id':1, 'has_code':True},
+    {'owner':None, 'chain_id':1, 'has_code':True},
+    {'owner':'same', 'chain_id':8453, 'has_code':True},
+    {'owner':'same', 'chain_id':True, 'has_code':True},
+    {'owner':'same', 'chain_id':1, 'has_code':1},
+    {'owner':'same', 'chain_id':1, 'has_code':True, 'extra':True},
+])
+def test_owner_code_cache_rejects_wrong_owner_chain_or_bool(tmp_path, bad):
+    row, inputs, _, _ = live_fixture(737)
+    cached = dict(bad)
+    if cached['owner'] == 'same': cached['owner'] = inputs['owner']
+    point = {'row':row, 'pool_inputs':inputs, 'owner_code':cached}
+    clean = sw.coerce_launch_facts_slot({'launches':{row['id']:point}, 'sites':{}})['launches'][row['id']]
+    assert 'owner_code' not in clean

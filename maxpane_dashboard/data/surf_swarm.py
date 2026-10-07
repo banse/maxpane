@@ -2558,11 +2558,17 @@ def coerce_launch_facts_slot(value):
             if pool.get('state') not in ('na', 'ambiguous'):
                 initialize = coerce_initialize(pool)
                 clean['pool_initialize'] = initialize
+        owner_code = point.get('owner_code')
+        if (isinstance(owner_code, dict) and set(owner_code) == {'owner', 'chain_id', 'has_code'}
+                and type(owner_code['has_code']) is bool and type(owner_code['chain_id']) is int
+                and owner_code['chain_id'] == row['chainId'] and pool is not None
+                and address(owner_code['owner']) is not None and address(owner_code['owner']) == pool.get('owner')):
+            clean['owner_code'] = dict(owner_code, owner=address(owner_code['owner']))
         decimals = coerce_decimals(point.get('pool_decimals'))
         if decimals: clean['pool_decimals'] = decimals
         liquidity = coerce_liquidity(point.get('liquidity'))
         if pool == {'state': 'ambiguous'}:
-            liquidity = empty_liquidity()
+            liquidity = empty_liquidity('na')
         if liquidity is not None: clean['liquidity'] = liquidity
         # Old caches contain manifest fees: never present them as receipt evidence.
         clean['pool_fee'] = initialize['pool_fee'] if initialize else None

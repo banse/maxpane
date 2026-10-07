@@ -128,7 +128,7 @@ _S_THRESHOLDS = (
     93,           # LATEST LAUNCHES fixed-width plateau
     101, 103,     # SITES no hidden columns at 80/35 rows
     109, 119,     # WORKFLOWS compact/full in the shared top row
-    91, 116, 130, 157, 171,  # LAUNCHES tight liq/compact/compact liq/roomy/full
+    91, 112, 156, 171,  # LAUNCHES permanent liq onset/compact/roomy/full
     121, 129,     # SITES compact/full; status bar whole from 129
 )
 _A_THRESHOLDS = (
@@ -1327,7 +1327,7 @@ async def test_the_swarm_body_is_whole_at_eighty_rows(payload_name):
     _check_width(r, "s", payload_name, width)
 
 
-@pytest.mark.parametrize("width,tier", [(115, "tight"), (116, "compact"), (156, "compact"), (157, "roomy"), (170, "roomy"), (171, "full")])
+@pytest.mark.parametrize("width,tier", [(111, "tight"), (112, "compact"), (155, "compact"), (156, "roomy"), (170, "roomy"), (171, "full")])
 async def test_v8_production_launch_tiers_are_measured_in_full_width_row(width, tier):
     r = await _render(_production_swarm_payload(), (width, 35), "s")
     assert r["tiers"]["SurfSwarmLaunches"] == tier
