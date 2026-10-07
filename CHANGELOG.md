@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.9.4 — 2026-10-07
 
 - Surfboard SWARM: keep liquidity visible at every width from 91 columns, prioritize it
   over kind/repository/site, and identify non-factory liquidity owners with cached contract
@@ -53,15 +53,24 @@
   and CAPABILITY are parked. The owner approved the live 200×48 layout; measured pins are now
   129×35, down from 138×35. SWARM title alarms cover breaker, services and health, with compact
   labels when needed and an explicit unread-health indicator.
-- Shared text cleaning now removes the nine bidi direction-control characters while preserving
-  ZWJ and other format characters, and collapses spaces left around stripped controls.
+- Shared text cleaning now strips terminal control characters (C0, DEL and C1, except newline
+  and tab) wherever third-party text reaches a widget, and removes the nine bidi
+  direction-control characters while preserving ZWJ and other format characters, collapsing
+  spaces left around stripped controls.
 - Surfboard AGENT: the SCORE card becomes MODEL, showing the LLM model and effort the seat
   advertises on `/seats`. It shows up to three of them, then `+N more`, and hovering lists every
   one. The card says `not advertised` when the seat names none and `unavailable` when the read
   failed.
 - Sparkline panels on the shared base (bakery, ocm, cattown, dota, talismans, ttt, base): a series
   that could not be read now says `unavailable` instead of looking empty. Nothing changes on
-  screen yet, because no manager passes a failed read through.
+  screen yet, because no manager passes a failed read through. THE LIST's trend sparklines,
+  FWA's price sparkline and surf's sparklines do change: a failed read shows `unavailable`,
+  while a history too short to draw keeps its waiting message.
+- Surfboard fixes: AGENT's RUNTIME ↑ npm check now runs for the selected seat (it never did);
+  shrinking the terminal no longer leaves a blank row above RECORD's header until the next poll;
+  addresses on Robinhood Chain (4663) link to robinhoodchain.blockscout.com, including in the
+  RECORD answer popup; the WORKFLOWS footer no longer counts rows without a status as `—`; and
+  LAUNCHES shows launch numbers without a thousands separator.
 
 ## v0.9.3 — 2026-09-26
 
