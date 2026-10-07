@@ -58,8 +58,9 @@ async def test_popup_content_footer_geometry_and_scrolling(size):
         assert 'PRESS SPACE OR ESC TO CLOSE' in '\n'.join(lines(pilot.app))
 
 
-@pytest.mark.parametrize('chain', [1,56,4663])
-async def test_popup_question_notes_and_address_list_use_shared_copy_and_link_helpers(chain, monkeypatch):
+# 4663 is Robinhood Chain, routed to its Blockscout since 5ac569f6; 56 has no explorer.
+@pytest.mark.parametrize('chain,linked', [(1,True),(4663,True),(56,False)])
+async def test_popup_question_notes_and_address_list_use_shared_copy_and_link_helpers(chain, linked, monkeypatch):
     copied=[]
     async def copy(text, **kwargs): copied.append(text); return clipboard.COPIED
     monkeypatch.setattr(clipboard, 'copy_text', copy)
@@ -71,7 +72,7 @@ async def test_popup_question_notes_and_address_list_use_shared_copy_and_link_he
         icons=icon_targets(pilot.app)
         assert {t[2] for t in icons}==set(addresses)
         links=[t for t in link_targets(pilot.app) if t[4] in addresses]
-        assert bool(links) is (chain==1)
+        assert bool(links) is linked
         x,y,address=icons[0]
         await pilot.click(offset=(x,y))
         await settled(pilot, lambda: copied==[address])
