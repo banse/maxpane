@@ -584,3 +584,19 @@ async def test_every_panel_row_names_a_mounted_widget_and_its_update_data_keywor
             f"{screen_class.__name__}: mounted but in no PANELS row (a dropped "
             f"row never updates again): {unclaimed}"
         )
+
+
+@pytest.mark.asyncio
+async def test_fetch_hook_dispatches_without_calling_full_manager():
+    """A cache-backed screen can paint while the expensive fetch is parked."""
+    class SnapshotScreen(_MiniScreen):
+        async def _fetch_data(self):
+            return {"alpha": "snapshot", "delta": 7}
+
+    manager = _FakeManager()
+    screen = SnapshotScreen(manager)
+    async with _Harness(screen).run_test() as pilot:
+        await pilot.pause()
+        assert screen.query_one(_FirstPanel).seen["alpha"] == "snapshot"
+        assert screen.query_one(_LastPanel).seen["delta"] == 7
+        assert manager.calls == 0

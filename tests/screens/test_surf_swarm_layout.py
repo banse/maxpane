@@ -1239,7 +1239,11 @@ async def test_busy_agent_words_fit_every_seat_box_at_unchanged_pins():
         await pilot.press('a')
         await pilot.pause()
         screen = pilot.app.screen
-        for id_ in [BOX_IDS['accepted'], BOX_IDS['rewards'], *SEAT_BOX_IDS.values()]:
+        accepted = _region_text(pilot.app, screen.query_one('#' + BOX_IDS['accepted']))
+        # A busy detail endpoint cannot gate the independent records snapshot.
+        assert '3,253 of 3,392' in accepted and '95.9 %' in accepted
+        assert 'busy' not in accepted
+        for id_ in [BOX_IDS['rewards'], *SEAT_BOX_IDS.values()]:
             box = screen.query_one('#' + id_)
             region = _region_text(pilot.app, box)
             if id_ == SEAT_BOX_IDS['collab']:

@@ -10,6 +10,7 @@ network.
     .venv/bin/python scripts/measure_layout.py s worst-s 138x30:36
     .venv/bin/python scripts/measure_layout.py a capture 130:150x33 --whole-from
     .venv/bin/python scripts/measure_layout.py b board-worst 140x40 --json
+    .venv/bin/python scripts/measure_layout.py hub hub-normal 135:145x36 --whole-from
 
 A size is ``WxH``; either side may be a range ``LO:HI`` (inclusive). Each size prints
 ``whole`` or what breaks it: marked panels (besides the body's named exceptions), CSS-clipped
@@ -39,6 +40,9 @@ def payloads() -> dict:
     """Every payload the layout test sweeps, by name; BOARD's carry a ``board-`` prefix."""
     out = dict(layout.PAYLOADS)
     out.update({f"board-{k}": (lambda k=k: layout._board_payload(k)) for k in BOARD_KINDS})
+    from tests.surfboard_fixtures import hub_payload
+    out.update({f"hub-{k}": (lambda k=k: hub_payload(k))
+                for k in ("normal", "stress", "unavailable", "wide")})
     return out
 
 
@@ -101,6 +105,21 @@ async def measure(key: str, payload_name: str, sizes: list[tuple[int, int]]) -> 
     build = payloads()[payload_name]
     rows = []
     for size in sizes:
+        if key == "hub":
+            from tests.screens.test_surfboard_layout import _render
+            r = await _render(build(), size)
+            found = []
+            if r["horizontal"]:
+                found.append("rack horizontal scroll")
+            if r["vertical"]:
+                found.append("rack vertical scroll")
+            if r["clipped"]:
+                found.append(f"clipped cards {r['clipped']}")
+            if not r["status_whole"]:
+                found.append("status bar cropped")
+            rows.append({"size": size, "problems": found, "widths": r["widths"],
+                         "heights": r["heights"], "status_whole": r["status_whole"]})
+            continue
         r = await layout._render(build(), size, key)
         found = (board_problems(r, payload_name.removeprefix("board-")) if key == "b"
                  else problems(r))
@@ -123,7 +142,7 @@ def whole_from(rows: list[dict], axis: int) -> int | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("key", choices=("s", "a", "b"))
+    parser.add_argument("key", choices=("s", "a", "b", "hub"))
     parser.add_argument("payload", help="one of: " + ", ".join(payloads()))
     parser.add_argument("size", help="WxH, either side LO:HI")
     parser.add_argument("--whole-from", action="store_true")

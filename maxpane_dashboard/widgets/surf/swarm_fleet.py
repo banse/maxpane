@@ -41,14 +41,17 @@ class SurfSwarmFleet(SignalsPanelBase):
             self.update_data(**self._data)
 
     def update_data(self, swarm_fleet=None, swarm_board_summary=None,
-                    swarm_board_as_of_hhmm=None, swarm_workers_as_of_hhmm=None, **_kwargs):
+                    swarm_board_as_of_hhmm=None, swarm_workers_as_of_hhmm=None,
+                    swarm_outcomes_source=None, swarm_contributors_as_of_hhmm=None, **_kwargs):
         self._data = dict(swarm_fleet=swarm_fleet, swarm_board_summary=swarm_board_summary,
                          swarm_board_as_of_hhmm=swarm_board_as_of_hhmm,
-                         swarm_workers_as_of_hhmm=swarm_workers_as_of_hhmm)
+                         swarm_workers_as_of_hhmm=swarm_workers_as_of_hhmm,
+                         swarm_outcomes_source=swarm_outcomes_source,
+                         swarm_contributors_as_of_hhmm=swarm_contributors_as_of_hhmm)
         self.write('.panel-title', Text('FLEET · workers as of ' + source_clock(swarm_workers_as_of_hhmm)))
         for name in filter(None, _NAMES):
             self.write_guarded(f'#surf-fleet-{name}',
-                               lambda name=name: self._line(name, swarm_fleet, swarm_board_summary, swarm_board_as_of_hhmm),
+                               lambda name=name: self._line(name, swarm_fleet, swarm_board_summary, swarm_contributors_as_of_hhmm),
                                self._label(name) + Text('unavailable', style='yellow'))
         self.query_one('#surf-fleet-paused-detail').display = bool(self._paused(swarm_fleet))
 
@@ -121,7 +124,7 @@ class SurfSwarmFleet(SignalsPanelBase):
     def _contributors(self, name, summary):
         """One /contributors line; its first value unread is the whole line unread."""
         summary = summary if isinstance(summary, dict) else {}
-        get = lambda key: seat_token(summary.get(key))
+        get = lambda key: seat_token(summary.get('receipt_' + key if key in ('seats','attempts','accepted','rejected','pending') else key))
         first, parts = {
             'devices': (get('devices'), [self._count(get('devices')),
                                          get('seats') is not None and self._count(get('seats'), 'seats')]),
@@ -144,7 +147,7 @@ class SurfSwarmFleet(SignalsPanelBase):
 
     def _line(self, name, fleet, summary, clock):
         if name == 'contributors':
-            return Text('CONTRIBUTORS · as of ' + source_clock(clock), style='dim')
+            return Text('RECEIPTS · read ' + source_clock(clock), style='dim')
         if name in ('devices', 'accepted', 'rejected', 'turns', 'tokens-io'):
             return self._contributors(name, summary)
         if name == 'tokens':

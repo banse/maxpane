@@ -20,18 +20,20 @@ anything else       ``UNAVAILABLE`` too: a malformed state is not a fact
 ==================  =====================================================
 
 Private to the surf package, not a shared ``widgets/*.py`` (plan §9 O): it
-holds seat-state words, NODE_TITLES, the contributor RANK body and honest
+holds seat-state words, NODE_TITLES, the canonical RANK body and honest
 count forms reused by the merged NODES card. No clock or I/O.
 """
 
 from __future__ import annotations
+
+import math
 
 from rich.text import Text
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
-from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int
+from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int, hhmm
 from maxpane_dashboard.widgets.panels import LOADING, UNAVAILABLE, HeroBoxBase
 
 __all__ = [
@@ -137,7 +139,7 @@ def seat_state_line(state: object, token: object = None) -> Text | None:
     return Text.from_markup(UNAVAILABLE)
 
 
-# -- Contributor RANK: independent of seat availability -------------------
+# -- Independent outcome, effort and rank facts ---------------------------
 
 
 def count(value) -> str | None:
@@ -155,6 +157,25 @@ def contrib_body(contrib, build) -> str | Text:
             return Text("not listed", style="dim")
         return UNAVAILABLE
     return build(contrib)
+
+
+def outcomes_clock(source) -> str:
+    """Successful records observation, independently stale from seat details."""
+    source = source if isinstance(source, dict) else {}
+    stamp = source.get("read_ts")
+    valid = isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and math.isfinite(stamp) and stamp >= 0
+    return ("stale " if source.get("state") == "stale" else "read ") + (hhmm(stamp) if valid else "unavailable")
+
+
+def outcome_body(outcome, source, build) -> str | Text:
+    """Canonical summary values never borrow the detail or contributor state."""
+    if not isinstance(outcome, dict) or not isinstance(source, dict) or source.get("state") not in ("ok", "stale"):
+        return UNAVAILABLE
+    if outcome.get("listed") is False:
+        return Text("no record\nin summary\n" + outcomes_clock(source), style="dim")
+    if outcome.get("listed") is not True:
+        return UNAVAILABLE
+    return build(outcome)
 
 
 def rank_body(contrib: dict, delta=None) -> Text:

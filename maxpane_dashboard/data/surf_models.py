@@ -1461,6 +1461,31 @@ POOL4_STAKERS_KEYS: tuple[str, ...] = (
     "pool4_stakers_state",      # str | None — POOL4_STAKERS_STATES; None = nothing to explain
 )
 
+# Dashboard 9: all values are plain data. Unknown lists are None, empty reads [].
+SURFBOARD_KEYS = ("surfboard_cards", "surfboard_overview", "surfboard_events",
+                  "surfboard_hourly", "surfboard_sources")
+SURFBOARD_WIDGET_SIGNATURES = {
+    "SurfboardRack": ("surfboard_cards", "surfboard_sources"),
+    "SurfboardTerminal": ("surfboard_overview", "surfboard_events", "surfboard_sources"),
+}
+SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
+                        "destination", "meter_kind", "numerator", "denominator", "points")
+SWARM_SEAT_OUTCOME_FIELDS = ("token_id", "listed", "attempts", "accepted", "rejected",
+                           "failed", "pending", "accept_rate", "rank", "ranked_of")
+# Sources are keyed overview/records/hourly. state is ok/stale/unavailable;
+# version is the normalized payload hash, read_ts is successful observation time.
+SURFBOARD_SOURCE_FIELDS = ("payload", "read_ts", "provider_ts", "version", "attempt_ts", "state")
+SURFBOARD_OVERVIEW_FIELDS = ("agents_online", "working_now", "accepted_24h", "jobs_24h",
+                           "oracles_24h", "seats_enrolled", "jobs", "job_states",
+                           "tasks_in_progress", "services", "owners")
+SURFBOARD_EVENT_FIELDS = ("key", "timestamp", "kind", "job_id", "token_id", "agent_id",
+                        "role", "step", "state", "objective")
+SURFBOARD_COMMAND_LIMIT = 512
+SURFBOARD_REPLY_LIMIT = 200
+SURFBOARD_SEARCH_LIMIT = 20
+# Manager execute_hub_command(text) returns these fields; screen executes intent.
+SURFBOARD_COMMAND_FIELDS = ("lines", "intent", "token_id", "url", "clear")
+
 #: The `s` body's flat keys (spec §4).  One block, spliced whole into
 #: SURF_KEYS after the pool4 blocks, so its position is checkable.
 SWARM_KEYS: tuple[str, ...] = (
@@ -1492,9 +1517,9 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_seat_teammates",     # list[dict] | None -- collaborators; shared_jobs desc, token_id asc
     # ---- BOARD (`b`, 2026-09-22); independent /contributors and /workers sources ----
     "swarm_board_summary",     # dict -- SWARM_BOARD_SUMMARY_FIELDS; unread source fields None
-    "swarm_board_rows",        # list[dict] | None -- one aggregated row per contributor token
+    "swarm_board_rows",        # list[dict] | None -- one ranked row per recorded seat; effort/presence joined by token
     "swarm_fleet",             # dict | None -- SWARM_FLEET_FIELDS, from /workers only
-    "swarm_board_as_of_hhmm",   # str | None -- contributors last-good marker
+    "swarm_board_as_of_hhmm",   # str | None -- records successful-read marker
     "swarm_workers_as_of_hhmm", # str | None -- workers last-good marker
     "swarm_seat_live",         # dict | None -- selected-token /workers lookup, including metadata
     "swarm_seat_contrib",      # dict | None -- selected-token /contributors lookup
@@ -1516,6 +1541,9 @@ SWARM_KEYS: tuple[str, ...] = (
     "swarm_workflow_rows",      # list[dict] | None -- SURF_ROW_KEYS["swarm_workflow_rows"]
     "swarm_workflows_as_of_hhmm", # str | None -- last successful /workflows read
     "swarm_launches_as_of_hhmm", # str | None -- last successful launch-tier read
+    "swarm_seat_outcome",       # canonical /seats/records row, independently available
+    "swarm_outcomes_source",    # source envelope: read clock, failure and <=600s cache
+    "swarm_contributors_as_of_hhmm", # effort/receipts clock, independent of outcomes
 )
 
 #: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
@@ -1525,7 +1553,7 @@ SWARM_LATEST_LAUNCHES_SIGNATURE = ("swarm_launch_rows", "swarm_launches_as_of_hh
 SWARM_THROUGHPUT_SIGNATURE = ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale")
 
 SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
-    "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows"),
+    "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows", "surfboard_sources"),
     "SurfSwarmLatestLaunches": SWARM_LATEST_LAUNCHES_SIGNATURE,
     # WORKFLOWS took CAPABILITY's place on SWARM (2026-10-03, docs/surf_swarm_workflows_spec.md
     # §2); CAPABILITY's frozen signature moved to SWARM_PARKED_WIDGET_SIGNATURES below.
@@ -1533,13 +1561,13 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network", "swarm_launches_as_of_hhmm"),
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm", "swarm_launches_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
-    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta", "swarm_seat_rewards", "swarm_seat_rewards_state"),
+    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta", "swarm_seat_rewards", "swarm_seat_rewards_state", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
     # Card rows two and three (2026-09-22), replacing SEAT and BY NODE.
     "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates", "swarm_seat_owner_ens", "swarm_seat_node_rows", "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon"),
     "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_read"),
-    "SurfSwarmBoardHero": ("swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
-    "SurfSwarmLeaderboard": ("swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
-    "SurfSwarmFleet": ("swarm_fleet", "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm"),
+    "SurfSwarmBoardHero": ("swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
+    "SurfSwarmLeaderboard": ("swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
+    "SurfSwarmFleet": ("swarm_fleet", "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
 }
 
 # ---- BOARD contract (docs/surf_swarm_board_handover.md §3) --------------------
@@ -1555,19 +1583,20 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
 # workers also require pause_known. Old slots without bookkeeping are refused.
 # Missing top-level lists are unread, distinct from successful empty lists.
 
-#: Fields from /contributors: seats (distinct tokens), attempts/accepted/rejected/
-#: pending sums, devices (admitted rows), turns and wall_clock_ms sums, the
+#: Outcome fields seats/attempts/accepted/rejected/failed/pending come from /seats/records.
+#: Fields from /contributors: receipt_* sums, devices, turns and wall_clock_ms, the
 #: input/output token sums (optional per row, so one unserved row leaves its sum
 #: None), receipts and tokens_per_completed_job (both as served).
-#: seats includes malformed token identities; incomplete contribution accounting
-#: leaves every aggregate counter None. Unknown worker members yield unknown sums.
+#: Malformed contribution accounting leaves only receipt/effort aggregates unknown.
+#: Outcome validation rejects the whole snapshot. Worker unknowns stay independent.
 #: Fields from /workers: live (valid served count, never /health or a row count),
 #: paused (distinct seats), capacity and working sums. An unread source leaves
 #: only its own fields None; no source supplies or reconciles another's values.
 SWARM_BOARD_SUMMARY_FIELDS: tuple[str, ...] = (
     "seats", "live", "paused", "capacity", "working", "attempts", "accepted",
-    "rejected", "pending", "devices", "turns", "wall_clock_ms", "input_tokens",
+    "rejected", "failed", "pending", "devices", "turns", "wall_clock_ms", "input_tokens",
     "output_tokens", "receipts", "tokens_per_completed_job",
+    "receipt_seats", "receipt_attempts", "receipt_accepted", "receipt_rejected", "receipt_pending",
 )
 
 #: /workers-only mixes: each list[{value: str, count: int}] sorts by count desc,
@@ -1875,6 +1904,7 @@ SURF_KEYS: tuple[str, ...] = (
     # ---- swarm (detached sweep, its own slower "as of") ---------------------
     # One contiguous block, spliced whole into SURF_KEYS after the pool4 blocks,
     # so its position is checkable.
+    *SURFBOARD_KEYS,
     *SWARM_KEYS,
 )
 
@@ -2006,14 +2036,14 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "imd",         # float -- shares converted at the vault's share price
         "pct",         # float -- share of the whole vault, never of the page
     ),
-    # /contributors grouped by token; accepted desc, accept_rate desc (None last),
+    # /seats/records ranked by accepted desc, exact accept_rate desc (None last),
     # token asc. devices counts contributor devices, never the live worker count.
     # agent_id/runtime/state come from /workers. Missing workers is unavailable
     # (None); a good read without that token gives runtime/live_state="offline".
     # Runtime IDs aggregate across devices; accept_rate is None at zero attempts.
     "swarm_board_rows": (
         "rank", "token_id", "agent_id", "devices", "runtime", "attempts", "accepted",
-        "rejected", "pending", "accept_rate", "turns", "wall_clock_s", "live_state",
+        "rejected", "failed", "pending", "accept_rate", "turns", "wall_clock_s", "live_state",
         "working", "paused_until_ts", "failures",
     ),
     # ---- swarm v2 (WP0, 2026-09-21), plan §1.2 + A1. The five v1 shapes

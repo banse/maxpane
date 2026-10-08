@@ -1261,3 +1261,33 @@ parked reasons may still mark. WORKFLOWS compact/full starts at 109/119. The bro
 now seeds production MAINNET/Base/RH tokens; WORKFLOWS' unlinked failure address sets its own
 seed-completeness width of 144. That width is not a layout pin. At the unchanged default
 143-column width, eleven active detector rows need 43 rows; the mixed fixture needs 39.
+
+## SURFBOARD hub handoff — 2026-10-09
+
+`feature/surfboard-hub-9` implements dashboard 9 with the approved 149×45 four-row rack.
+The seven existing SURFBOARD destinations share their original screen and manager; three
+future cards and two empty bays reserve expansion space. The live native terminal accepts
+read-only commands and retains its input, replies and scroll position across refreshes.
+Acceptance and rank now use the same validated seat-record snapshot throughout HUB,
+AGENT and BOARD. Contributor effort, presence and each meter family retain separate clocks.
+
+The actual public-API render preceded hardening; the final live render was refreshed after
+review fixes. The rack measures 140×36 with the short-window scrollbar allowance. Existing
+SURF body pins and the app-wide 143-column pin are unchanged. Source failures retain dated
+values or explicit unavailable states. The current POOL4 API omits return-window evidence,
+so its trailing seven-day return correctly remains unavailable. IMD events are a polled
+recent window rather than complete history; seat records disclose upstream caching ≤10m.
+
+Task reviews corrected timestamp bounds, family freshness, service status, absent-record
+freshness and persistent seat selection. Final review found two Important text-fit issues:
+POOL4's focused source clocks and its seven-day return label. The single fix wave removed a
+redundant shared clock, compacted the period label and added a focused-detail overflow hint.
+The scoped re-review approved both fixes; three compositor regressions passed. No remaining
+hub review findings were filed. Earlier parked findings above retain their existing scope.
+
+Verification includes 1,534 data/widget/startup checks, the composing screen runs with their
+old-source expectations migrated, 104 final-fix data/screen/layout checks, five affected
+address-sweep cases, 82 registration mounts and 12 documentation pins. Decoder, cancellation,
+command-generation, scroll-anchor and both-direction layout-pin mutants were killed and
+restored byte for byte. All 122 project guards passed before the local commit; a full
+suite is deliberately outside this branch's authorized Tier 2 verification scope.

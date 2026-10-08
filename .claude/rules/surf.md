@@ -165,7 +165,7 @@ implementation. The contract is `SWARM_KEYS` and `SWARM_WIDGET_SIGNATURES` in
 carries exactly its `SURF_ROW_KEYS` fields.
 
 **The job list is gated on `/health`'s own counters.** The live tier reads `GET /health` every
-run. `GET /jobs` (one shot, no pagination, no ETag) is re-fetched only when one of the host's
+run. `GET /jobs` (one bounded recent page; validated pagination is available, no ETag) is re-fetched only when one of the host's
 counters (`connectedDaemons`/`activeEnrollments`/`workingNow`/`acceptedLastDay`, every `pending*`)
 has moved since the manager last saw them, or when `SWARM_LIST_CEILING_S` has elapsed regardless.
 `GET /jobs/{id}` follows for every **executing** job (plan §1.5; a 404 drops the detail, never the
@@ -209,16 +209,13 @@ body height); with a record, RECORD's title appends yellow `busy` after
 its own `as of HH:MM`. Shed the seat hint first if space is tight. Other read failures add no
 title word. Busy without a record gates the RUNTIME tooltip, just like pending.
 
-SEAT, ACCEPTED JOBS, WORK, REWARDS and RANK keep line 2 of their body blank, as STATUS does (owner,
-2026-09-25; ACCEPTED JOBS before WORK since F-S6, 2026-10-02); SEAT's blank line carries only a rare selection word (`most active`, `never paired`).
-Hero WORK reads wall-clock hours, then (after its blank line 2) lifetime output tokens (owner
+SEAT, WORK, REWARDS and RANK originally kept line 2 blank (owner, 2026-09-25). Dashboard 9 renames ACCEPTED JOBS to ACCEPTED WORK and uses the spare acceptance/work/rank line for the independent source clock; SEAT's blank line carries only a rare selection word (`most active`, `never paired`).
+Hero WORK reads wall-clock hours, its effort source clock, then lifetime output tokens (owner
 2026-09-25; turns left WORK and stay on BOARD) from `/contributors` through
 `swarm_seat_contrib` and `_swarm_seat.work_body`. Input and cached-input tokens are excluded;
-missing output tokens say `-- tokens`. WORK and RANK distinguish `not listed` from
-`unavailable` independently of the seats state. ACCEPTED combines `accepted of attempts`
-with the bold percentage on line 2; zero attempts displays `no attempts`, while a missing
-counter displays `unavailable`. There is no `of attempts` caption and no hero `as of` line:
-RECORD's title retains the seat read's freshness marker. STATUS's third line is the newest activity (owner,
+missing output tokens say `-- tokens`. WORK distinguishes missing effort from unavailable; ACCEPTED WORK and RANK use only `swarm_seat_outcome` and distinguish no submitted record from unavailable independently of seat-detail state. ACCEPTED combines `accepted of attempts`
+with its independent records clock and the bold percentage; zero attempts displays `no attempts`, while a missing
+counter displays `unavailable`. RECORD's title retains its own seat-detail freshness marker. STATUS's third line is the newest activity (owner,
 2026-09-22): `worked MM-DD HH:MM` (summary `last_worked_ts`, the newest `work[].submittedAt` of
 any status) when it is newer than `last_won_ts` or nothing was accepted, else `accepted MM-DD
 HH:MM` (the newest `work[].acceptedAt`). Feedback `reviews[].sentAt` is a separate timestamp, never seat activity. STATUS reads worker
@@ -691,14 +688,14 @@ The build reply from work index 125 is outside that displayed-window measurement
 
 ## BOARD (`b`, MODE_BOARD)
 
-Contributors and workers retain independent values and `as of` markers. FLEET's
-CONTRIBUTORS group (owner, 2026-09-22) has a blank row under its sub-header, then devices ·
+Canonical records, contributors and workers retain independent values and read markers. BOARD ranks only the validated recorded-seat population; failed work is distinct from pending work. FLEET's
+EFFORT / RECEIPTS group (owner, 2026-09-22) has a blank row under its sub-header, then devices ·
 seats, accepted of attempts, rejected · pending, turns · wall-clock hours (rounded; `N min` under half an hour, F64) and input · output
 tokens (compact), then tokens/job; each line's first value unread is the whole line
 `unavailable`, a missing second value is omitted, and a pair too wide keeps its first value
 plus `+N`. The input/output sums are `None` when any row does not serve them. LEADERBOARD's
 table has a 1-cell left margin and a 1-cell scrollbar (`GUTTER_COLS` stays 2). A missing source is
-unavailable; an empty worker metadata mix says none reported. LEADERBOARD retains every seat,
+unavailable; an empty worker metadata mix says none reported. LEADERBOARD retains every seat in the canonical records snapshot,
 marks the selected AGENT token with `▸`, and Enter validates through `parse_seat`, calls the
 shared `config.save_seat`, then reuses `_seat_entered` (set_seat, mode, scheduled refresh;
 no network await in the event handler). Rendered row identity is token metadata, never clipped
@@ -723,3 +720,19 @@ The existing global market title remains unchanged; source clocks belong in BOAR
 Parked IN FLIGHT keeps the folded dispatch/failure note as its last column; these constraints apply when it returns. Actual note clipping
 lights widen in every tier; a fitting literal ellipsis does not. Full tier is a column
 guarantee, not a promise that arbitrary notes fit; measured content limits are in surf.py.
+
+
+## SURFBOARD HUB (dashboard 9)
+
+`surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
+Seven launchers route to the native modes; Escape returns to the retained rack, while menu/Tab
+clear the return context. Future Swarm Tokens, Portfolio and Earnings cards do no feature reads.
+The terminal supports bounded read-only commands and replaces its recent `/swarm` event window
+without duplicating events or losing replies, draft or scroll anchor. Source polling and full
+collection are manager-owned single-flight tasks; only the hub skips the startup prefetch join.
+Acceptance/rank in HUB, AGENT and BOARD come from one complete `/seats/records` snapshot
+(`attempts = accepted + rejected + failed + pending`, unique IDs, matching count). Invalid reads
+retain the prior whole snapshot as stale. Upstream summary cache ≤600s is disclosed. Contributors
+remain effort/receipts; workers remain presence; detail responses never overwrite shared totals.
+Rank migration resets only contributor-based baselines (`seat-records-v1`). See the hub PRD
+and implementation plan for exact meter formulas, commands and source cadence.

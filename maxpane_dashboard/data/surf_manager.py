@@ -144,6 +144,7 @@ from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data import surf_pool4_market as mk
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
+from maxpane_dashboard.data import surfboard as hub
 from maxpane_dashboard.analytics import surf_launch_checks as lc
 from maxpane_dashboard.analytics import surf_launch_liquidity as ll, surf_launch_sites as ls
 from maxpane_dashboard.data.keccak import keccak256
@@ -1074,6 +1075,16 @@ class SurfManager:
             path=self._cache_path, clock=clock
         )
 
+        self._closing = False
+        self._full_task = None
+        self._full_started = None
+        self._last_full_payload = None
+        self._last_full_read_ts = None
+        self._hub_active = False
+        self._hub_source_tasks = {}
+        self._hub_lookup_lock = asyncio.Lock()
+        self._hub_identities = {}
+        self._hub_lookup_task = None
         self._cycle_count = 0
         self._error_count = 0
         #: Groups whose most recent *attempt* failed. Cleared on success.
@@ -1174,10 +1185,12 @@ class SurfManager:
 
         try:
             self.cache.load(slot_coercers={
+                **{slot: (lambda value, name=name: hub.coerce_source(value, name, now=self._clock()))
+                   for name, slot in hub.SOURCE_SLOTS.items()},
                 SLOT_SWARM_LAUNCHES: lambda value: sw.coerce_launches_slot(value, now=self._clock()),
                 SLOT_SWARM_LAUNCH_FACTS: sw.coerce_launch_facts_slot,
                 SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
-                SLOT_SWARM_SEAT_RANK: sw.coerce_rank_slot,
+                SLOT_SWARM_SEAT_RANK: hub.coerce_rank_basis,
                 SLOT_SWARM_SEAT_REWARDS: lambda value: sw.coerce_rewards_slot(value, now=self._clock()),
                 SLOT_SWARM_SEAT: lambda value: sw.coerce_seat_slot(value, now=self._clock()),
                 SLOT_SWARM_RUNTIME_LATEST: lambda value: coerce_runtime_slot(value, now=self._clock()),
@@ -1235,6 +1248,15 @@ class SurfManager:
         on purpose: one raising must not leave the other's sockets open, which
         a single ``try`` around both would do.
         """
+        if self._closing:
+            return
+        self._closing = True
+        tasks = {task for task in (self._full_task, self._hub_lookup_task, *self._hub_source_tasks.values()) if task is not None}
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         await self._cancel_launchpad()
         await self._cancel_pool4()
         await self._cancel_pool4_stakers()
@@ -2225,6 +2247,7 @@ class SurfManager:
             raise
         except Exception as exc:        # noqa: BLE001 — nobody awaits this task
             self._error_count += 1
+            self.cache.mark_failed(TIER_LAUNCHPAD, self._clock())
             logger.warning("SURF launchpad sweep failed: %s", exc)
 
     async def _cancel_launchpad(self) -> None:
@@ -3092,6 +3115,7 @@ class SurfManager:
             raise
         except Exception as exc:            # noqa: BLE001 — nobody awaits this task
             self._error_count += 1
+            self.cache.mark_failed(TIER_POOL4, self._clock())
             logger.warning("SURF pool4 sweep failed: %s", exc)
 
     async def _cancel_pool4(self) -> None:
@@ -5916,8 +5940,9 @@ class SurfManager:
     async def _pool_swarm(self, tiers: set[str], now: float) -> dict[str, Any]:
         """`/health`, the list when a counter moved, details for the executing.
 
-        **The job list is the expensive read** (~27.5 KB, one shot, no
-        pagination) and this is the gate that keeps it from being paid for on
+        This bounded recent page (default 100 jobs) is local observed history,
+        never the complete network or every executing job. /jobs now supports
+        pagination; this consumer deliberately stays bounded. This is the gate that keeps it from being paid for on
         every 60 s tick regardless: it is re-fetched only when the prior
         sweep has none to reuse, when one of the gate's counters
         (:func:`_swarm_gate_counters`: every ``pending*`` plus
@@ -6167,7 +6192,7 @@ class SurfManager:
 
     def _spawn_swarm_board(self, tiers: set[str], now: float) -> Any:
         """Refresh regardless of the visible body; never block first paint."""
-        if TIER_SWARM_BOARD not in tiers:
+        if self._closing or TIER_SWARM_BOARD not in tiers:
             return None
         running = self._swarm_board_task
         if running is not None and not running.done():
@@ -6204,6 +6229,7 @@ class SurfManager:
         """
         if TIER_SWARM_BOARD not in tiers:
             return {"ok": False}
+        records_task = self._offer_hub_source("records", now)
         succeeded = 0
         for method, slot, normalize, coerce in (
             ("fetch_contributors", SLOT_SWARM_CONTRIBUTORS, sw.normalize_contributors, sw.coerce_contributors_slot),
@@ -6219,6 +6245,8 @@ class SurfManager:
             if coerce(getattr(prior, "payload", None)) != payload:
                 self.cache.store_last_good(slot, payload, ts=now)
             succeeded += 1
+        if records_task is not None:
+            await asyncio.shield(records_task)
         if succeeded == 2:
             self.cache.mark_fetched(TIER_SWARM_BOARD, now)
         else:
@@ -6226,42 +6254,51 @@ class SurfManager:
         return {"ok": succeeded == 2}
 
     def _seat_rank_delta(self, token, contrib):
+        if isinstance(contrib, dict) and contrib.get("listed") is False:
+            entry = self.cache.get_last_good(SLOT_SWARM_SEAT_RANK)
+            basis = hub.coerce_rank_basis(getattr(entry, "payload", None))
+            if basis is not None and str(token) in basis["ranks"]:
+                basis["ranks"].pop(str(token))
+                self.cache.store_last_good(SLOT_SWARM_SEAT_RANK, basis, ts=self._clock())
+            return None
         if not isinstance(contrib, dict) or contrib.get("listed") is not True or sw._seat_id(token) is None:
             return None
         rank = contrib.get("rank")
         if sw._seat_id(rank) is None or rank == 0 or rank > sw.RANK_MAX:
             return None
         entry = self.cache.get_last_good(SLOT_SWARM_SEAT_RANK)
-        points = sw.coerce_rank_slot(getattr(entry, "payload", None)) or {}
+        stored = getattr(entry, "payload", None)
+        points = sw.coerce_rank_slot(stored.get("ranks")) if isinstance(stored, dict) and stored.get("basis") == hub.RANK_BASIS else {}
+        points = points or {}
         key = str(token)
         point = points.get(key)
         if point is None or point["rank"] != rank:
             point = {"rank":rank, "prev":point["rank"] if point is not None else None}
             points[key] = point
-            self.cache.store_last_good(SLOT_SWARM_SEAT_RANK, points, ts=self._clock())
+            self.cache.store_last_good(SLOT_SWARM_SEAT_RANK, {"basis":hub.RANK_BASIS,"ranks":points}, ts=self._clock())
         prev = point["prev"]
         return prev - rank if prev is not None else None
 
-    def _swarm_board_keys(self, contributors_entry: Any, workers_entry: Any, token: int | None) -> dict[str, Any]:
-        """Fold captured, validated slots; every selected-seat lookup uses token.
-
-        Coerce even in-memory entries: a cache payload is third-party input.
-        Invalid sources carry no as-of clock and cannot contaminate the other.
-        """
+    def _swarm_board_keys(self, contributors_entry: Any, workers_entry: Any, token: int | None,
+                          *, records_source: dict | None = None) -> dict[str, Any]:
         contributors = sw.coerce_contributors_slot(getattr(contributors_entry, "payload", None))
         workers = sw.coerce_workers_slot(getattr(workers_entry, "payload", None))
-        rows = sw._board_rows_from_slots(contributors, workers)
-        contrib = sw._seat_contrib_from_rows(rows, token, contributors)
+        source = records_source or self._hub_sources()["records"]
+        records = source["payload"]
+        rows, summary = hub.canonical_board(records, contributors, workers)
+        effort_rows = sw._board_rows_from_slots(contributors, workers)
+        contrib = sw._seat_contrib_from_rows(effort_rows, token, contributors)
+        outcome = hub.seat_outcome(records, token)
         return {
-            "swarm_board_summary": sw._board_summary_from_slots(contributors, workers),
-            "swarm_board_rows": rows,
+            "swarm_board_summary": summary, "swarm_board_rows": rows,
             "swarm_fleet": sw._fleet_from_slot(workers),
             "swarm_fleet_daemon": fleet_majority([row["daemon"] for row in workers["workers"]]) if workers is not None else None,
-            "swarm_board_as_of_hhmm": contributors_entry.as_of_hhmm() if contributors is not None else None,
+            "swarm_board_as_of_hhmm": hub.hhmm(source["read_ts"]) if records is not None else None,
+            "swarm_contributors_as_of_hhmm": contributors_entry.as_of_hhmm() if contributors is not None else None,
             "swarm_workers_as_of_hhmm": workers_entry.as_of_hhmm() if workers is not None else None,
-            "swarm_seat_live": sw._seat_live_from_slot(workers, token),
-            "swarm_seat_contrib": contrib,
-            "swarm_seat_rank_delta": self._seat_rank_delta(token, contrib),
+            "swarm_seat_live": sw._seat_live_from_slot(workers, token), "swarm_seat_contrib": contrib,
+            "swarm_seat_outcome": outcome, "swarm_outcomes_source": source,
+            "swarm_seat_rank_delta": self._seat_rank_delta(token, outcome),
         }
 
     # -- the AGENT body's selected seat: /seats/{token} ----------------------
@@ -6937,22 +6974,327 @@ class SurfManager:
 
     # -- public API ----------------------------------------------------------
 
-    async def fetch_and_compute(self) -> dict[str, Any]:
-        """Run one refresh cycle and return the flat dashboard dict.
+    def set_hub_active(self, active: bool) -> None:
+        """Visibility changes eligibility; manager tasks retain their owner."""
+        self._hub_active = bool(active)
 
-        **No exception escapes**: a total failure still returns the full key set
-        with every value ``None`` and ``degraded`` naming what died, because a
-        widget can render an explicit unavailable state but cannot render a
-        traceback.
-        """
+    def _hub_sources(self) -> dict[str, dict]:
+        now = self._clock()
+        sources = {}
+        for name, slot in hub.SOURCE_SLOTS.items():
+            entry = self.cache.get_last_good(slot)
+            source = hub.coerce_source(getattr(entry, "payload", None), name, now=now)
+            if source is not None and source["state"] == "ok":
+                ttl = {"overview": 15 if self._hub_active else 60, "records": 120, "hourly": 60}[name]
+                if now - source["read_ts"] > ttl:
+                    source = dict(source, state="stale")
+            sources[name] = source or hub.source_envelope(None, now)
+        return sources
+
+    def _offer_hub_source(self, name: str, now: float) -> Any:
+        if self._closing:
+            return None
+        running = self._hub_source_tasks.get(name)
+        if running is not None and not running.done():
+            return running
+        entry = self.cache.get_last_good(hub.SOURCE_SLOTS[name])
+        prior = hub.coerce_source(getattr(entry, "payload", None), name, now=now)
+        interval = {"overview": 15 if self._hub_active else 60, "records": 120, "hourly": 60}[name]
+        if prior is not None:
+            backoff = 30 if name == "overview" else interval
+            elapsed = now - prior["attempt_ts"] if prior["attempt_ts"] is not None else float("inf")
+            if elapsed < (interval if prior["state"] == "ok" else backoff):
+                return None
+        task = asyncio.create_task(self._read_hub_source(name, prior))
+        self._hub_source_tasks[name] = task
+        return task
+
+    async def _read_hub_source(self, name: str, prior: dict | None) -> None:
+        method, normalize = {
+            "overview": ("fetch_overview", hub.normalize_overview),
+            "records": ("fetch_seat_records", hub.normalize_records),
+            "hourly": ("fetch_steps_hourly", hub.normalize_hourly),
+        }[name]
+        reader = getattr(self.swarm_client, method, None)
+        raw = await self._guard(reader, f"hub {method}") if reader is not None else None
         try:
-            return await self._cycle()
-        except Exception as exc:            # noqa: BLE001 — the outermost guard
+            payload = normalize(raw)
+        except (ValueError, TypeError, OverflowError):
+            payload = None
+        now = float(self._clock())
+        provider_ts = None
+        if isinstance(raw, dict):
+            if name == "overview":
+                stamp = raw.get("at")
+                provider_ts = hub.timestamp(stamp / 1000) if type(stamp) is int and 0 <= stamp < 10**18 else None
+            elif name == "hourly":
+                provider_ts = hub.timestamp(raw.get("until"))
+        envelope = hub.source_envelope(payload, now, prior=prior, provider_ts=provider_ts)
+        if not self._closing:
+            self.cache.store_last_good(hub.SOURCE_SLOTS[name], envelope, ts=now)
+
+    def _offer_hub_sources(self, now: float) -> None:
+        for name in ("overview", "records"):
+            self._offer_hub_source(name, now)
+        if self._hub_active:
+            self._offer_hub_source("hourly", now)
+
+    def _hub_card_sources(self, data: dict) -> dict:
+        """Read clocks and latest failure state for each legacy card family."""
+        now = float(self._clock())
+        out = {}
+        degraded = set(data.get("degraded") or ()) | self._failed_groups | self._client_degradation()
+        for name, slot, tier, group, ttl in (
+            ("announce", SLOT_CHANNEL, None, SOURCE_CHANNEL, 90),
+            ("market", SLOT_MARKET, None, SOURCE_MARKET, 90),
+            ("launchpad", SLOT_LAUNCHPAD, TIER_LAUNCHPAD, SOURCE_LAUNCHPAD, 600),
+            ("pool4", SLOT_POOL4, TIER_POOL4, SOURCE_POOL4, 600),
+        ):
+            entry = self.cache.get_last_good(slot)
+            read_ts = hub.timestamp(getattr(entry, "ts", None))
+            failed = group in degraded
+            if tier is not None:
+                success = self.cache.last_fetch_ts(tier)
+                if read_ts is not None and hub.timestamp(success) is not None:
+                    read_ts = max(read_ts, success)
+                failed = failed or self.cache.last_failure_ts(tier) is not None
+            state = ("unavailable" if read_ts is None else
+                     "stale" if failed or now - read_ts > ttl else "ok")
+            out[name] = {"state": state, "read_ts": read_ts}
+        stamp = self._last_full_read_ts
+        out["signals"] = {"read_ts": stamp, "state": "unavailable" if stamp is None else
+                          "stale" if degraded or now - stamp > self.poll_interval else "ok"}
+        return out
+
+    def _project_hub(self, base: dict | None = None, *, refresh_legacy: bool = True) -> dict[str, Any]:
+        """Capture independent slots synchronously; never await between families."""
+        data = dict(base if base is not None else self._last_full_payload or self._blank_payload())
+        if refresh_legacy:
+            now = float(self._clock())
+            swarm_entry = self.cache.get_last_good(SLOT_SWARM)
+            scores_entry = self.cache.get_last_good(SLOT_SWARM_SCORES)
+            seat_entry = self.cache.get_last_good(SLOT_SWARM_SEAT)
+            answers_entry = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
+            oracle_entry = self.cache.get_last_good(SLOT_SWARM_ORACLE)
+            seen = getattr(self.cache.get_last_good(SLOT_SWARM_JOBS_SEEN), "payload", None)
+            scores = getattr(scores_entry, "payload", None) or {}
+            data.update(self._swarm_keys(getattr(swarm_entry, "payload", None) or {}, swarm_entry, now, seen))
+            data.update(self._swarm_scores_keys(scores, scores_entry, swarm_entry, now))
+            data.update(self._swarm_launch_keys())
+            data.update(self._swarm_seat_keys(scores, scores_entry, seen, seat_entry, answers_entry, now, oracle_entry))
+            data.update(self._seat_rewards_keys(data, data.get("imd_price_usd"), now))
+            data.update(self._runtime_keys(now))
+            # Keep the card's USD conversion and post age on the same captured
+            # source versions as the source clocks shown beside those values.
+            market = getattr(self.cache.get_last_good(SLOT_MARKET), "payload", None) or {}
+            data["eth_usd"] = market.get("eth_usd")
+            channel = getattr(self.cache.get_last_good(SLOT_CHANNEL), "payload", None) or {}
+            items = channel.get("items")
+            data["feed_last_post_age_s"] = self._last_post_age(items, now) if isinstance(items, list) else None
+            data["degraded"] = self._degraded()
+            pool_entry = self.cache.get_last_good(SLOT_POOL4)
+            pool = getattr(pool_entry, "payload", None) or {}
+            data.update(self._pool4_keys(pool, pool_entry, now, eth_usd=data.get("eth_usd")))
+            stakers_entry = self.cache.get_last_good(SLOT_POOL4_STAKERS)
+            data.update(self._pool4_stakers_keys(getattr(stakers_entry, "payload", None) or {}, stakers_entry))
+            launch_entry = self.cache.get_last_good(SLOT_LAUNCHPAD)
+            launch = getattr(launch_entry, "payload", None) or {}
+            for field in ("coin_count", "launch_count", "new_24h", "creator_count", "swap_count", "trader_count", "activity", "burnkeepers"):
+                data["launchpad_" + field] = launch.get(field)
+            data["launchpad_as_of_hhmm"] = launch_entry.as_of_hhmm() if launch_entry is not None else None
+            data["launchpad_coins"] = self._with_mcap_usd(launch.get("coins"), data.get("eth_usd"))
+            for key in ("pool_id_source", "decoy_pool_count"):
+                data[key] = launch.get(key)
+            data["pool_fee_bps"] = launch.get("pool_fee")
+        sources = self._hub_sources()
+        overview_slot = sources["overview"]["payload"] or {}
+        overview = overview_slot.get("overview")
+        data.update(surfboard_sources=sources, surfboard_overview=overview,
+                    surfboard_events=overview_slot.get("events"), surfboard_hourly=sources["hourly"]["payload"])
+        selected = data.get("swarm_seat_selected")
+        token = sw.parse_seat_token(self._seat_saved)
+        if token is None:
+            token = selected.get("token_id") if isinstance(selected, dict) else None
+        if token is not None and (not selected or selected.get("token_id") != token):
+            data["swarm_seat_selected"] = {"token_id":token,"agent_id":None,"selected_by":"saved"}
+        data.update(self._swarm_board_keys(self.cache.get_last_good(SLOT_SWARM_CONTRIBUTORS),
+                                          self.cache.get_last_good(SLOT_SWARM_WORKERS), token,
+                                          records_source=sources["records"]))
+        o = overview or {}
+        data.update(swarm_agents_online=o.get("agents_online"), swarm_agents_enrolled=o.get("seats_enrolled"),
+                    swarm_working_now=o.get("working_now"), swarm_accepted_today=o.get("accepted_24h"),
+                    swarm_services_up=o.get("services"))
+        launchpad = getattr(self.cache.get_last_good(SLOT_LAUNCHPAD), "payload", None)
+        data["surfboard_cards"] = hub.cards(data, sources, now=self._clock(), launchpad=launchpad,
+                                                 announce_read_ts=getattr(self.cache.get_last_good(SLOT_CHANNEL), "ts", None),
+                                                 family_sources=self._hub_card_sources(data))
+        return data
+
+    async def fetch_hub_snapshot(self) -> dict[str, Any]:
+        """Offer eligible work and return cached data without waiting on I/O."""
+        if not self._closing:
+            now = float(self._clock())
+            self._offer_full(now)
+            self._offer_hub_sources(now)
+            self._spawn_swarm_board(set(self.cache.tiers_due(now)), now)
+        return self._project_hub()
+
+    def _offer_full(self, now: float) -> Any:
+        if self._closing:
+            return None
+        if self._full_task is not None and not self._full_task.done():
+            return self._full_task
+        if self._full_started is not None and now - self._full_started < self.poll_interval:
+            return None
+        self._full_started = now
+        self._full_task = asyncio.create_task(self._collect_full())
+        return self._full_task
+
+    async def _collect_full(self) -> dict[str, Any]:
+        self._offer_hub_sources(float(self._clock()))
+        try:
+            payload = await self._cycle()
+            self._last_full_read_ts = float(self._clock())
+        except Exception as exc:  # noqa: BLE001 -- outer boundary degrades explicitly
             self._error_count += 1
             logger.exception("SURF refresh cycle failed outright: %s", exc)
             payload = self._blank_payload()
             payload["degraded"] = list(SOURCES)
-            return payload
+        self._last_full_payload = payload
+        return payload
+
+    async def fetch_and_compute(self) -> dict[str, Any]:
+        """Share full collection across screens; cancelling a waiter preserves it."""
+        task = self._offer_full(float(self._clock()))
+        if task is not None:
+            await asyncio.shield(task)
+        data = self._project_hub(refresh_legacy=task is None)
+        selected = data.get("swarm_seat_selected")
+        if not self._closing:
+            await self._offer_swarm_seat(set(self.cache.tiers_due(self._clock())),
+                                        selected["token_id"] if selected else None,
+                                        self.cache.get_last_good(SLOT_SWARM_SEAT), self._clock())
+        return data
+
+    def _hub_cached_identities(self) -> dict[int, dict]:
+        entry = self.cache.get_last_good(SLOT_SWARM_SEAT)
+        slot = sw.coerce_seat_slot(getattr(entry, "payload", None), now=self._clock()) or {"seats": {}}
+        identities = dict(self._hub_identities)
+        for token, point in slot["seats"].items():
+            if point["state"] == "ok":
+                summary = sw.seat_summary_from_seat(point["seat"])
+                identities[int(token)] = {"owner": summary.get("owner"), "agent_id": summary.get("agent_id"), "read_ts": point["read_ts"]}
+        return identities
+
+    async def _hub_identity(self, token: int) -> dict | None:
+        cached = self._hub_cached_identities().get(token)
+        if cached is not None:
+            return cached
+        if self._closing or self._hub_lookup_lock.locked() or self._hub_lookup_task is not None and not self._hub_lookup_task.done():
+            return None
+        reader = getattr(self.swarm_client, "fetch_seat", None)
+        if reader is None:
+            return None
+        async with self._hub_lookup_lock:
+            try:
+                self._hub_lookup_task = asyncio.create_task(self._guard(lambda: reader(token), "hub identity"))
+                raw = await asyncio.wait_for(asyncio.shield(self._hub_lookup_task), timeout=15)
+            except asyncio.TimeoutError:
+                self._hub_lookup_task.cancel()
+                await asyncio.gather(self._hub_lookup_task, return_exceptions=True)
+                return None
+        if sw.seat_state(raw, token) != "ok":
+            return None
+        summary = sw.seat_summary_from_seat(raw)
+        point = {"owner": summary.get("owner"), "agent_id": summary.get("agent_id"), "read_ts": self._clock()}
+        self._hub_identities[token] = point
+        if len(self._hub_identities) > 20:
+            self._hub_identities.pop(next(iter(self._hub_identities)))
+        return point
+
+    async def execute_hub_command(self, command: str, *, wallet: str | None = None) -> dict:
+        from maxpane_dashboard.analytics.surfboard import parse_command
+        from maxpane_dashboard.analytics.surf_ids import parse_job_id
+        result = {"lines":[],"intent":None,"token_id":None,"url":None,"clear":False}
+        def reply(*lines):
+            result["lines"] = list(lines)[:200]
+            return result
+        if self._closing:
+            return reply("Dashboard is closing.")
+        parsed = parse_command(command)
+        if parsed is None:
+            return reply("Invalid command; use at most 512 printable characters.")
+        cmd, arg = parsed
+        data = self._project_hub(); o = data.get("surfboard_overview") or {}; events = data.get("surfboard_events")
+        if cmd in ("help", "?"):
+            return reply("help · status · jobs · seat #n · agent #n · find ENS/address/#seat", "me · grep text · open #n/job-id · clear", "Read-only · recent events, not complete history · seat summary cache ≤10m")
+        if cmd == "clear":
+            result["clear"] = True
+            return result
+        if cmd == "status":
+            return reply(f"Online {o.get('agents_online', 'unavailable')} · working {o.get('working_now', 'unavailable')}",
+                         f"24h: jobs {o.get('jobs_24h', 'unavailable')} · oracles {o.get('oracles_24h', 'unavailable')} · accepted steps {o.get('accepted_24h', 'unavailable')}",
+                         "Services: " + " · ".join(f"{name} " + ("up" if (o.get('services') or {}).get(name) is True else
+                             "down" if (o.get('services') or {}).get(name) is False else "unavailable")
+                             for name in ("verifier", "publisher", "deployer")),
+                         " · ".join(f"{name}: {source['state']} read {hub.hhmm(source['read_ts'])}" for name,source in data['surfboard_sources'].items()))
+        if cmd == "jobs":
+            return reply(f"Snapshot jobs: {o.get('jobs', 'unavailable')} · states {o.get('job_states') or 'unavailable'}",
+                         f"Recent-event window: {len(events)} events" if events is not None else "Recent events unavailable")
+        if cmd == "grep":
+            if not arg:return reply("Usage: grep text")
+            if events is None:return reply("Recent events unavailable")
+            matches = [row for row in events if arg.casefold() in " ".join(str(v or '') for v in row.values()).casefold()][:20]
+            return reply(*(f"{hub.hhmm(row['timestamp'])} {row['kind']} {row['state'] or ''} {row['objective'] or ''}" for row in matches)) if matches else reply("No match in the recent-event window.")
+        if cmd == "open":
+            if arg.startswith('#'):
+                token = sw.parse_seat_token(arg[1:])
+                if token is None:return reply("Invalid seat number.")
+                result.update(intent="open_seat",token_id=token)
+                return result
+            job = parse_job_id(arg)
+            if job is None and re.fullmatch(r"[0-9a-f-]{6,36}",arg):
+                matches = {row['job_id'] for row in events or [] if row.get('job_id') and row['job_id'].startswith(arg)}
+                if len(matches)!=1:return reply("Job prefix is ambiguous or unknown in recent events.")
+                job = matches.pop()
+            if job is None:return reply("Use open #seat or a canonical job ID / known unique prefix.")
+            result.update(intent="open_url",url=f"https://explorer.imd.fun/jobs/{job}")
+            return result
+        if cmd in ("seat", "agent") or cmd == "find" and re.fullmatch(r"#?[0-9]+",arg):
+            token = sw.parse_seat_token(arg.lstrip('#'))
+            if token is None:return reply("Usage: seat #number")
+            outcome = hub.seat_outcome(data['surfboard_sources']['records']['payload'],token)
+            if outcome is None:return reply(f"Seat #{token}: submitted outcomes unavailable")
+            if not outcome['listed']:return reply(f"Seat #{token}: no submitted record in summary")
+            rate = outcome['accept_rate'];source=data['surfboard_sources']['records']
+            live = sw._seat_live_from_slot(sw.coerce_workers_slot(getattr(self.cache.get_last_good(SLOT_SWARM_WORKERS),'payload',None)), token)
+            identity = await self._hub_identity(token)
+            owner_line = (f"Owner {identity['owner'] or 'unavailable'} · identity read {hub.hhmm(identity['read_ts'])}"
+                          if identity else "Identity unavailable")
+            return reply(f"Seat #{token}: accepted {outcome['accepted']:,} / {outcome['attempts']:,}"+(f" ({rate:.1%})" if rate is not None else " · no attempts"),
+                         f"Rejected {outcome['rejected']} · failed {outcome['failed']} · pending {outcome['pending']} · rank #{outcome['rank']} of {outcome['ranked_of']}",
+                         f"Summary {source['state']} · read {hub.hhmm(source['read_ts'])} · cache ≤10m",
+                         f"Presence: {live['live_state'] if live else 'unavailable'} · read {data.get('swarm_workers_as_of_hhmm') or '—'}", owner_line)
+        if cmd in ("find", "me"):
+            target = arg if cmd == "find" else wallet or (data.get('swarm_seat_summary') or {}).get('owner')
+            if not target:return reply("No selected public wallet or known selected-seat owner.")
+            addr = lc.address(target)
+            if addr is None:
+                if self._hub_lookup_lock.locked() or self._hub_lookup_task is not None and not self._hub_lookup_task.done():return reply("An identity lookup is already running.")
+                if not isinstance(target,str) or not re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+",target) or len(target)>255:
+                    return reply("Use an ENS name, address, or #seat.")
+                async with self._hub_lookup_lock:
+                    try:
+                        self._hub_lookup_task = asyncio.create_task(self.client.fetch_ens_address(target))
+                        addr = await asyncio.wait_for(self._hub_lookup_task, timeout=15)
+                    except (asyncio.TimeoutError, AttributeError):
+                        addr = None
+                if addr is None:return reply("ENS address unavailable.")
+            tokens = sorted(token for token, point in self._hub_cached_identities().items()
+                            if str(point.get('owner', '')).lower() == addr.lower())
+            return reply(addr, "Known seats: "+", ".join(f"#{n}" for n in tokens[:20]) if tokens else "No matching seat in cached owner data.")
+        return reply("Unknown command. Type help.")
+
 
     # -- the cycle -----------------------------------------------------------
 

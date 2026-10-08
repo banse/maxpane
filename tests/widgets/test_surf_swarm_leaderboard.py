@@ -10,17 +10,18 @@ ROWS=fold.board_rows(swarm_capture_v3('contributors'),swarm_capture_v3('workers'
 async def render(rows=ROWS,selected=None,size=(120,18)):
     return '\n'.join(await composite_lines(SurfSwarmLeaderboard,size,
         swarm_board_rows=rows,swarm_seat_selected=selected,
-        swarm_board_as_of_hhmm='03:01',swarm_workers_as_of_hhmm='04:02'))
+        swarm_board_as_of_hhmm='03:01',swarm_workers_as_of_hhmm='04:02',
+        swarm_outcomes_source={'state':'ok','read_ts':1700000000},swarm_contributors_as_of_hhmm='03:01'))
 async def test_lifetime_columns_marker_and_two_clocks():
     text=await render(selected={'token_id':ROWS[0]['token_id']})
-    for word in ('LEADERBOARD','lifetime','runtime','dev','att','acc','rej','pend','rate','turns','hrs','state','03:01','04:02'):
+    for word in ('LEADERBOARD','recorded seats','runtime','dev','att','acc','rej','pend','rate','turns','hrs','state','03:01','04:02'):
         assert word in text
     assert f"▸#{ROWS[0]['token_id']}" in text
     other=await render(selected={'token_id':ROWS[1]['token_id']})
     assert f"▸#{ROWS[1]['token_id']}" in other and f"▸#{ROWS[0]['token_id']}" not in other
 async def test_unread_and_empty_are_distinct():
     assert 'unavailable' in await render(None)
-    assert 'no contributors yet' in await render([])
+    assert 'no submitted records yet' in await render([])
 async def test_hostile_runtime_is_sanitized_with_visible_clip():
     text=await render([dict(ROWS[0],runtime='[/x]PWNED'+'x'*64)])
     assert 'PWNED' in text and '…' in text and '‹ widen' in text

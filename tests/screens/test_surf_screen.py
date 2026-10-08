@@ -756,6 +756,9 @@ _KEYS_WITHOUT_A_RENDERER = frozenset({
     # 2026-09-22: the owner replaced the IMD SUPPLY hero card with BOARDS;
     # the key is still read (manager and cache) but no widget shows it.
     "imd_supply",
+    # Hub SWARM renders the projected eight buckets through surfboard_cards;
+    # the raw provider series is retained only as source evidence.
+    "surfboard_hourly",
     # The eight swarm v1 keys sat here between WP7's two commits (2026-09-21):
     # their widgets -- THE FIELD, QUEUE, JUST SHIPPED, the score-table
     # THROUGHPUT -- left with the first, the keys, folds and fixtures with the
@@ -1904,7 +1907,11 @@ def test_surf_keys_covers_the_local_signature_map():
     carve-out for the v4/launchpad keys Tasks 8-12 have not wired yet -- a
     key regressing outside that list still fails here.
     """
+    from maxpane_dashboard.screens.surfboard import SurfboardScreen
     dispatched = {k for sig in SURF_WIDGET_SIGNATURES.values() for k in sig}
+    # One shared manager now drives two screens. Read actual adapters so a
+    # removed hub dispatch still leaves an orphan and fails this agreement.
+    dispatched |= {key for _, adapt in SurfboardScreen.PANELS for key in adapt({})}
     assert dispatched <= set(SURF_KEYS), (
         f"dispatch kwargs not in SURF_KEYS: {sorted(dispatched - set(SURF_KEYS))}"
     )
@@ -2480,6 +2487,34 @@ async def test_screen_dispatches_every_data_key():
             "fixture no longer distinguishes enough keys for the value "
             "check to mean much"
         )
+
+        # Dashboard nine shares this manager but dispatches its own keys.
+        # Observe its real mounted widgets as well: merely exempting the hub
+        # keys would let a removed adapter silently orphan a live card/feed.
+        from unittest.mock import Mock
+        from maxpane_dashboard.data.surf_models import SURFBOARD_WIDGET_SIGNATURES
+        from maxpane_dashboard.screens.surfboard import SurfboardScreen
+        from tests.surfboard_fixtures import HubPayloadManager, hub_payload
+        hub_data = hub_payload()
+        hub_screen = SurfboardScreen(HubPayloadManager(hub_data))
+        await app.push_screen(hub_screen)
+        await pilot.pause()
+        hub_spies = {}
+        for widget_class, _adapt in SurfboardScreen.PANELS:
+            widget = hub_screen.query_one(widget_class)
+            spy = Mock(wraps=widget.update_data)
+            widget.update_data = spy
+            hub_spies[widget_class.__name__] = spy
+        await hub_screen._do_refresh()
+        await pilot.pause()
+        for name, signature in SURFBOARD_WIDGET_SIGNATURES.items():
+            spy = hub_spies[name]
+            spy.assert_called_once()
+            kwargs = spy.call_args.kwargs
+            assert set(kwargs) == set(signature)
+            for key in signature:
+                assert kwargs[key] == hub_data[key], f"{name} dispatched the wrong {key} value"
+            dispatched.update(signature)
 
         # Nothing in the contract goes unrendered by accident: it is either a
         # widget kwarg, a meta key the screen itself consumes, or one of the

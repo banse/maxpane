@@ -1,9 +1,9 @@
-"""BOARD facts: contributor totals and worker capacity keep independent clocks."""
+"""BOARD facts: canonical outcomes, contributor receipts and worker clocks."""
 from rich.text import Text
 from maxpane_dashboard.widgets.panels import HeroBoxBase, HeroRow
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.surf._fmt import fmt_win_rate, source_clock
-from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
+from maxpane_dashboard.widgets.surf._swarm_seat import seat_token, outcomes_clock
 
 class SurfSwarmBoardHeroBox(HeroBoxBase):
     """Geometry is supplied by the two screen stylesheets."""
@@ -11,15 +11,21 @@ class SurfSwarmBoardHeroBox(HeroBoxBase):
 class SurfSwarmBoardHero(HeroRow):
     BOX_CLASS = SurfSwarmBoardHeroBox
     BOXES = tuple((f'surf-board-{key}',label) for key,label in (
-        ('seats','SEATS'),('live','LIVE'),('paused','PAUSED'),('capacity','CAPACITY'),
+        ('seats','RECORDED SEATS'),('live','LIVE'),('paused','PAUSED'),('capacity','CAPACITY'),
         ('rate','ACCEPT RATE'),('receipts','RECEIPTS')))
 
     def update_data(self, swarm_board_summary=None, swarm_board_as_of_hhmm=None,
-                    swarm_workers_as_of_hhmm=None, **_kwargs):
+                    swarm_workers_as_of_hhmm=None, swarm_outcomes_source=None,
+                    swarm_contributors_as_of_hhmm=None, **_kwargs):
         summary=swarm_board_summary if isinstance(swarm_board_summary,dict) else {}
         for key,label in self.BOXES:
             field=key.removeprefix('surf-board-')
-            clock=swarm_workers_as_of_hhmm if field in ('live','paused','capacity') else swarm_board_as_of_hhmm
+            if field in ('live','paused','capacity'):
+                clock='as of ' + source_clock(swarm_workers_as_of_hhmm)
+            elif field=='receipts':
+                clock='read ' + source_clock(swarm_contributors_as_of_hhmm)
+            else:
+                clock=outcomes_clock(swarm_outcomes_source)
             self.render_box(f'#{key}',label,lambda field=field,clock=clock: self._body(field,summary,clock))
 
     @staticmethod
@@ -34,6 +40,8 @@ class SurfSwarmBoardHero(HeroRow):
                 body=f'{fmt_int(working)} of {fmt_int(value)}\nworking'
         elif field=='rate':
             accepted,attempts=seat_token(summary.get('accepted')),seat_token(summary.get('attempts'))
-            if attempts==0: body='no attempts'
-            elif accepted is not None and attempts is not None: body=fmt_win_rate(accepted/attempts)+'\nof attempts'
-        return Text(body+'\nas of '+source_clock(clock))
+            if attempts==0 and accepted==0: body='no attempts'
+            elif accepted is not None and attempts is not None and accepted <= attempts:
+                failed=seat_token(summary.get('failed'))
+                body=fmt_win_rate(accepted/attempts)+'\n'+(f'{fmt_int(failed)} failed' if failed is not None else 'failed unavailable')
+        return Text(body+'\n'+clock)

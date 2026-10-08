@@ -1,4 +1,4 @@
-"""The AGENT body's hero: SEAT · ACCEPTED JOBS · WORK · REWARDS · RANK · STATUS.
+"""The AGENT body's hero: SEAT · ACCEPTED WORK · WORK · REWARDS · RANK · STATUS.
 
 Composited assertions only. The summaries are **folded** from the committed
 ``/seats`` captures (``tests/fixtures/surf/swarm/seats/``) by
@@ -51,6 +51,14 @@ CONTRIB = swarm_agent_sources(420)["swarm_seat_contrib"]
 SELECTED = {"token_id": int(SEAT_420["tokenId"]), "agent_id": str(SEAT_420["agentId"]),
             "selected_by": "saved"}
 AS_OF = "04:06"
+SOURCE = {"state": "ok", "read_ts": 1_700_000_000}
+OUTCOME = dict(SUMMARY, token_id=420, listed=True, accept_rate=SUMMARY["win_rate"],
+               rank=CONTRIB["rank"], ranked_of=CONTRIB["ranked_of"])
+
+
+def _outcome(summary):
+    return dict(OUTCOME, **{key: summary.get(key) for key in ("accepted", "attempts")},
+                accept_rate=summary.get("win_rate"))
 #: F-S5: seat 420's three disperse payments (13.8662 IMD, the committed
 #: Blockscout capture) at a fixed price -- the owner's example, $105.84.
 REWARD_IMD = (7692307692307692307 + 3052147239263803680 + 3121794871794871794) / 1e18
@@ -60,7 +68,7 @@ SIZE = (SURF_AGENT_FULL_LAYOUT_COLUMNS, 9)
 #: The two widths the hero has to be whole at: its body's pin and the app's.
 PINS = (SURF_AGENT_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS)
 #: The seats-gated boxes; RANK reads ``/contributors`` and is not gated.
-STAT_BOXES = ("accepted", "rewards")
+STAT_BOXES = ("rewards",)
 
 
 _DROP = object()
@@ -90,7 +98,8 @@ def _merged(kwargs) -> dict:
     return {"swarm_seat_selected": SELECTED, "swarm_seat_summary": SUMMARY,
             "swarm_seat_state": "ok", "swarm_seat_as_of_hhmm": AS_OF,
             "swarm_seat_live": {"live":True,"live_state":"idle","working":0,"max_concurrency":2},
-            "swarm_seat_contrib": CONTRIB,
+            "swarm_seat_contrib": CONTRIB, "swarm_seat_outcome": OUTCOME,
+            "swarm_outcomes_source": SOURCE, "swarm_contributors_as_of_hhmm": "05:08",
             "swarm_seat_rewards": REWARDS, "swarm_seat_rewards_state": "ok",
             "swarm_workers_as_of_hhmm":"05:07", **kwargs}
 
@@ -98,6 +107,47 @@ def _merged(kwargs) -> dict:
 async def _hero(size=SIZE, **kwargs):
     return "\n".join(await composite_lines(SurfSwarmAgentHero, size, css_path=CSS_PATH,
                                            **_merged(kwargs)))
+
+
+async def test_summary_outcomes_still_paint_when_detail_and_contributors_fail():
+    outcomes = dict(token_id=420, listed=True, attempts=10, accepted=9, rejected=1,
+                    failed=0, pending=0, accept_rate=.9, rank=2, ranked_of=30)
+    source = dict(state="ok", read_ts=1_700_000_000)
+    accepted = await _box_text(BOX_IDS["accepted"], swarm_seat_summary=None, swarm_seat_state=None,
+                               swarm_seat_contrib=None, swarm_seat_outcome=outcomes, swarm_outcomes_source=source)
+    rank = await _box_text(BOX_IDS["rank"], swarm_seat_summary=None, swarm_seat_state=None,
+                           swarm_seat_contrib=None, swarm_seat_outcome=outcomes, swarm_outcomes_source=source)
+    assert "ACCEPTED WORK" in accepted and "9 of 10" in accepted and "90.0 %" in accepted
+    assert "#2 of 30" in rank and "read " in accepted and "read " in rank
+
+
+async def test_newer_seat_detail_cannot_override_canonical_outcomes_or_supply_missing_outcomes():
+    summary = dict(SUMMARY, accepted=999, attempts=1000, win_rate=.999)
+    outcomes = dict(token_id=420, listed=True, attempts=10, accepted=9, accept_rate=.9, rank=2, ranked_of=30)
+    body = await _box_text(BOX_IDS["accepted"], swarm_seat_summary=summary,
+                           swarm_seat_outcome=outcomes, swarm_outcomes_source=dict(state="stale", read_ts=1_700_000_000))
+    assert "9 of 10" in body and "stale" in body and "999" not in body
+    missing = await _box_text(BOX_IDS["accepted"], swarm_seat_summary=summary,
+                              swarm_seat_outcome=None, swarm_outcomes_source=None)
+    assert "unavailable" in missing and "999" not in missing
+
+
+async def test_a_previous_selected_seats_outcomes_cannot_paint_under_a_new_seat_identity():
+    text = await _box_text(BOX_IDS["accepted"], swarm_seat_selected=dict(SELECTED, token_id=12345),
+                           swarm_seat_outcome=OUTCOME)
+    assert "unavailable" in text and f"{OUTCOME['accepted']} of" not in text
+
+
+@pytest.mark.parametrize("box", ["accepted", "rank"])
+@pytest.mark.parametrize("state", ["ok", "stale"])
+async def test_absent_summary_record_keeps_its_source_clock_and_stale_state_at_the_pin(box, state):
+    source = dict(SOURCE, state=state)
+    text = await _box_text(BOX_IDS[box], size=(139, 9),
+                           swarm_seat_outcome=dict(OUTCOME, listed=False), swarm_outcomes_source=source)
+    assert "no record" in text and "in summary" in text
+    assert ("stale " if state == "stale" else "read ") + hhmm(SOURCE["read_ts"]) in text
+    assert "…" not in text
+    assert len(_lines(text)) == 4  # Title and the existing three content rows.
 
 
 async def _box_text(box_id, size=SIZE, **kwargs):
@@ -158,8 +208,8 @@ def test_the_box_class_is_its_own_type_selector_and_the_six_boxes_are_named():
     assert SurfSwarmAgentHero.BOX_CLASS is SurfSwarmAgentHeroBox
     assert len(BOX_IDS) == 6 == len(SurfSwarmAgentHero.BOXES)
     labels = [label for _id, label in SurfSwarmAgentHero.BOXES]
-    # F-S6 (owner, 2026-10-02): ACCEPTED JOBS and WORK traded places.
-    assert labels == ["SEAT", "ACCEPTED JOBS", "WORK", "REWARDS", "RANK", "STATUS"]
+    # F-S6 (owner, 2026-10-02): ACCEPTED WORK and WORK traded places.
+    assert labels == ["SEAT", "ACCEPTED WORK", "WORK", "REWARDS", "RANK", "STATUS"]
     assert [box_id for box_id, _label in SurfSwarmAgentHero.BOXES] == [
         BOX_IDS[key] for key in ("seat", "accepted", "work", "rewards", "rank", "status")]
 
@@ -230,7 +280,8 @@ async def test_pending_says_loading_in_the_stat_boxes_and_still_names_the_seat()
         assert "Loading..." in boxes[key], (key, boxes[key])
     # SUMMARY (seat #420's numbers) was passed in and must not reach a pixel.
     whole = "\n".join(boxes.values())
-    assert f"{SUMMARY['accepted']} of" not in whole and "IMD" not in whole
+    assert f"{SUMMARY['accepted']} of" not in whole and "13.87 IMD" not in whole
+    assert "unavailable" in boxes["accepted"]
 
 
 async def test_a_failed_read_is_unavailable_never_zero_and_still_names_the_seat():
@@ -285,7 +336,7 @@ async def test_a_five_digit_record_fits_every_box_at_both_pins(width):
     the hero has no ``‹``. REWARDS' widest amount below the compact form,
     ``99,999.99 IMD`` over ``$99,999.99``, fits whole, and so does ACCEPTED's
     ``9,999 of 99,999``."""
-    boxes = await _boxes(size=(width, 9), swarm_seat_summary=FIVE_DIGIT,
+    boxes = await _boxes(size=(width, 9), swarm_seat_summary=FIVE_DIGIT, swarm_seat_outcome=_outcome(FIVE_DIGIT),
                          swarm_seat_rewards={"imd": 99_999.99, "usd": 99_999.99, "seats": 1})
     assert _lines(boxes["rewards"])[-2:] == ["99,999.99 IMD", "$99,999.99"], boxes["rewards"]
     assert "9,999 of 99,999" in boxes["accepted"]
@@ -299,7 +350,7 @@ async def test_a_five_digit_record_fits_every_box_at_both_pins(width):
 
 async def test_a_zero_record_renders_zeros_not_unavailable():
     zero = _folded(attempts=0, accepted=0, work=[], reviews=[], collaborators=[])
-    boxes = await _boxes(swarm_seat_summary=zero)
+    boxes = await _boxes(swarm_seat_summary=zero, swarm_seat_outcome=_outcome(zero))
     assert "0 of 0" in boxes["accepted"]
     assert "no attempts" in boxes["accepted"]
     for key in STAT_BOXES:
@@ -311,7 +362,7 @@ async def test_a_field_the_source_did_not_carry_is_unavailable_in_its_own_box_on
     ``unavailable`` -- never ``12 of 0`` -- and the other boxes keep their numbers."""
     missing = _folded(attempts=_DROP)
     assert missing["attempts"] is None and missing["accepted"] == SUMMARY["accepted"]
-    boxes = await _boxes(swarm_seat_summary=missing)
+    boxes = await _boxes(swarm_seat_summary=missing, swarm_seat_outcome=_outcome(missing))
     assert "unavailable" in boxes["accepted"]
     assert " of 0" not in boxes["accepted"] and " of " not in boxes["accepted"]
     assert "13.87 IMD" in _lines(boxes["rewards"])
@@ -364,7 +415,7 @@ async def test_malformed_payloads_land_on_unavailable_not_a_crash():
     seat = await _box_text(BOX_IDS["seat"], swarm_seat_selected=["not", "a", "dict"])
     assert "unavailable" in seat
     typed = dict(SUMMARY, accepted="lots", online="yes")
-    boxes = await _boxes(swarm_seat_summary=typed,swarm_seat_live={"live":"yes"})
+    boxes = await _boxes(swarm_seat_summary=typed, swarm_seat_outcome=_outcome(typed),swarm_seat_live={"live":"yes"})
     assert "unavailable" in boxes["accepted"] and "unavailable" in boxes["status"]
     assert f"#{CONTRIB['rank']} of" in boxes["rank"]
 
@@ -373,15 +424,15 @@ async def test_malformed_payloads_land_on_unavailable_not_a_crash():
 
 
 @pytest.mark.parametrize("state", ["pending", None, "unknown_seat"])
-async def test_rank_follows_the_contributors_read_not_the_seat(state):
+async def test_rank_follows_the_records_read_not_the_seat(state):
     rank = await _box_text(BOX_IDS["rank"], swarm_seat_state=state, swarm_seat_summary=None)
     assert f"#{CONTRIB['rank']} of {CONTRIB['ranked_of']}" in rank
 
 
-@pytest.mark.parametrize("contrib,expected", [({**CONTRIB, "listed": False}, "not listed"),
+@pytest.mark.parametrize("contrib,expected", [({**OUTCOME, "listed": False}, "no record"),
                                                (None, "unavailable")])
 async def test_rank_says_not_listed_apart_from_a_failed_read(contrib, expected):
-    rank = await _box_text(BOX_IDS["rank"], swarm_seat_contrib=contrib)
+    rank = await _box_text(BOX_IDS["rank"], swarm_seat_outcome=contrib)
     assert expected in rank and "#" not in rank
 
 
@@ -562,7 +613,7 @@ async def test_rank_move_has_composited_direction_and_color(delta, word, color):
     (10**30,'1.0e+30 tokens'),(10**1000,'-- tokens')])
 async def test_work_output_tokens_are_bounded_and_honest(tokens, expected):
     text = await _box_text(BOX_IDS['work'], swarm_seat_contrib={**CONTRIB, 'output_tokens':tokens})
-    assert _lines(text) == ['WORK', f"{CONTRIB['wall_clock_s']/3600:.1f} h", expected]
+    assert _lines(text) == ['WORK', f"{CONTRIB['wall_clock_s']/3600:.1f} h", "read 05:08", expected]
 
 
 @pytest.mark.parametrize('contrib,word', [(None,'unavailable'),({'listed':False},'not listed')])
@@ -572,28 +623,30 @@ async def test_work_uses_contributor_availability(contrib,word):
 
 
 async def test_unranked_never_shows_a_stale_delta():
-    text = await _box_text(BOX_IDS['rank'], swarm_seat_contrib={**CONTRIB, 'rank':None}, swarm_seat_rank_delta=2)
-    assert _lines(text) == ['RANK', 'unranked']
+    text = await _box_text(BOX_IDS['rank'], swarm_seat_outcome={**OUTCOME, 'rank':None}, swarm_seat_rank_delta=2)
+    assert _lines(text) == ['RANK', 'unranked', 'read ' + hhmm(SOURCE['read_ts'])]
 
 
 async def test_committed_420_capture_reaches_work_accepted_and_rank():
     from tests.surf_swarm_fixtures import swarm_capture_v3
     summary = seat_summary_from_seat(swarm_capture_v3('seat_420_with_contributors'))
-    boxes = await _boxes(swarm_seat_summary=summary)
-    assert _lines(boxes['work']) == ['WORK', '8.1 h', '1.2M tokens']
-    assert _lines(boxes['accepted']) == ['ACCEPTED JOBS', '190 of 204', '93.1 %']
-    assert _lines(boxes['rank']) == ['RANK', '#6 of 99']
+    boxes = await _boxes(swarm_seat_summary=summary, swarm_seat_outcome=_outcome(summary))
+    assert _lines(boxes['work']) == ['WORK', '8.1 h', 'read 05:08', '1.2M tokens']
+    assert _lines(boxes['accepted']) == ['ACCEPTED WORK', '190 of 204', 'read ' + hhmm(SOURCE['read_ts']), '93.1 %']
+    assert _lines(boxes['rank']) == ['RANK', '#6 of 99', 'read ' + hhmm(SOURCE['read_ts'])]
 
 
 @pytest.mark.parametrize('width', PINS)
 async def test_owner_hero_example_is_an_explicit_synthetic_layout_case(width):
     boxes = await _boxes(size=(width,9),
                          swarm_seat_summary={**SUMMARY, 'accepted':242, 'attempts':280, 'win_rate':242/280},
+                         swarm_seat_outcome={**OUTCOME, 'accepted':242, 'attempts':280,
+                                             'accept_rate':242/280,'rank':8,'ranked_of':306},
                          swarm_seat_contrib={**CONTRIB, 'turns':3063, 'wall_clock_s':11.9*3600,
                                              'output_tokens':1_700_000, 'rank':8, 'ranked_of':306})
-    assert _lines(boxes['work']) == ['WORK', '11.9 h', '1.7M tokens']
-    assert _lines(boxes['accepted']) == ['ACCEPTED JOBS', '242 of 280', '86.4 %']
-    assert _lines(boxes['rank']) == ['RANK', '#8 of 306']
+    assert _lines(boxes['work']) == ['WORK', '11.9 h', 'read 05:08', '1.7M tokens']
+    assert _lines(boxes['accepted']) == ['ACCEPTED WORK', '242 of 280', 'read ' + hhmm(SOURCE['read_ts']), '86.4 %']
+    assert _lines(boxes['rank']) == ['RANK', '#8 of 306', 'read ' + hhmm(SOURCE['read_ts'])]
     assert 'as of' not in '\n'.join(boxes.values())
 
 
@@ -607,14 +660,13 @@ def _inner_rows(box: str) -> list[str]:
     return rows
 
 
-async def test_two_line_boxes_have_a_blank_row_between_their_lines_like_status():
-    """Owner, 2026-09-25: label, blank, line 1, blank, line 2 -- STATUS's rhythm.
-    SEAT's blank line 2 carries only a rare selection word (most active, never paired)."""
+async def test_source_clocks_use_blank_middle_rows_without_growing_the_hero():
     boxes = await _boxes(swarm_seat_rank_delta=2,
                          swarm_seat_selected=dict(SELECTED, selected_by="saved"))
     for key in ("seat", "work", "accepted", "rewards", "rank"):
         rows = _inner_rows(boxes[key])
-        assert len(rows) == 5 and rows[1] == "" and rows[3] == "", (key, rows)
+        assert len(rows) == 5 and rows[1] == "", (key, rows)
+        assert rows[3].startswith("read ") if key in ("work", "accepted", "rank") else rows[3] == ""
         assert all(rows[i] for i in (0, 2, 4)), (key, rows)
 
 

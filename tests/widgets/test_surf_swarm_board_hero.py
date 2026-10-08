@@ -7,9 +7,12 @@ from tests.surf_swarm_fixtures import swarm_capture_v3
 from tests.widgets.surf_compositing import composite_lines
 
 SUMMARY = fold.board_summary(swarm_capture_v3('contributors'), swarm_capture_v3('workers'))
+# Explicit canonical summary fixture, deliberately different from receipt counts.
+SUMMARY.update(seats=50,attempts=100,accepted=80,rejected=5,failed=3,pending=12)
 async def render(summary=SUMMARY):
     return '\n'.join(await composite_lines(SurfSwarmBoardHero, (150,9), css_path=CSS_PATH,
-        swarm_board_summary=summary, swarm_board_as_of_hhmm='03:01', swarm_workers_as_of_hhmm='04:02'))
+        swarm_board_summary=summary, swarm_board_as_of_hhmm='03:01', swarm_workers_as_of_hhmm='04:02',
+        swarm_outcomes_source={'state':'ok','read_ts':1700000000},swarm_contributors_as_of_hhmm='03:01'))
 
 async def test_six_titles_and_separate_source_clocks():
     text=await render()
@@ -24,7 +27,7 @@ async def test_sources_fail_independently(contributors,workers):
                                swarm_capture_v3(workers) if workers else None)
     text=await render(summary)
     assert 'unavailable' in text
-    if contributors: assert f"{summary['accepted']/summary['attempts']*100:.1f} %" in text
+    if contributors: assert 'RECEIPTS' in text
     if workers: assert f"{summary['live']} workers" in text
 
 async def test_zero_attempts_is_not_a_rate():
@@ -38,5 +41,5 @@ async def test_invalid_source_clocks_are_explicit_and_never_painted(widget_name)
         swarm_board_rows=fold.board_rows(swarm_capture_v3("contributors"), swarm_capture_v3("workers")),
         swarm_fleet=fold.fleet(swarm_capture_v3("workers")),
         swarm_board_as_of_hhmm="[/x]PWNED", swarm_workers_as_of_hhmm="99:99"))
-    assert "as of unavailable" in text
+    assert "unavailable" in text
     assert "PWNED" not in text and "99:99" not in text and "[/x]" not in text

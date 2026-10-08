@@ -1398,7 +1398,7 @@ def _board_rows_from_slots(contributors: dict | None, workers: dict | None) -> l
             "devices": len(counts["devices"]),
             "runtime": (_runtime_bucket(_metadata_union(live_rows, "runtimes")) if live_rows
                         else "offline" if workers is not None else None),
-            **{field: counts[field] for field in ("attempts", "accepted", "rejected", "pending")},
+            **{field: counts[field] if field != "failed" else None for field in ("attempts", "accepted", "rejected", "failed", "pending")},
             "accept_rate": rate, "turns": counts["turns"], "wall_clock_s": _seconds(counts["wall_clock_ms"]),
             "live_state": _live_state(live, live_rows) if live is not None else None,
             "working": live["working"] if live is not None else None,
@@ -1431,6 +1431,8 @@ def _board_summary_from_slots(contributors: dict | None, workers: dict | None) -
             summary["devices"] = len(rows)
         summary["receipts"] = contributors["receipts"]
         summary["tokens_per_completed_job"] = contributors["tokens_per_completed_job"]
+        for field in ("seats", "attempts", "accepted", "rejected", "pending"):
+            summary["receipt_" + field] = summary[field]
     if workers is not None:
         rows = workers["workers"]
         summary["live"] = workers["count"]

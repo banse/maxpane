@@ -1,0 +1,35 @@
+{
+  "count": 3,
+  "seats": [
+    {
+      "tokenId": "1836",
+      "agentId": "52478",
+      "attempts": 1,
+      "accepted": 1,
+      "rejected": 0,
+      "failed": 0,
+      "pending": 0,
+      "lastWorkedAt": "2026-10-08T22:27:17.562Z"
+    },
+    {
+      "tokenId": "420",
+      "agentId": "50939",
+      "attempts": 3392,
+      "accepted": 3253,
+      "rejected": 40,
+      "failed": 21,
+      "pending": 78,
+      "lastWorkedAt": "2026-10-08T21:31:45.225Z"
+    },
+    {
+      "tokenId": "1836",
+      "agentId": "52478",
+      "attempts": 1,
+      "accepted": 1,
+      "rejected": 0,
+      "failed": 0,
+      "pending": 0,
+      "lastWorkedAt": "2026-10-08T22:27:17.562Z"
+    }
+  ]
+}

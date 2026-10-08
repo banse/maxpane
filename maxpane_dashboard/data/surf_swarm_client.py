@@ -3,22 +3,11 @@
 GET only, a two-host pool, no key of any kind.  Every fetch returns ``None``
 rather than raising: a failed read is not a zero and not an empty list.
 
-The /jobs route serves no filters, no caching validators and no pagination, so the
-job list is all-or-nothing; the manager's counter check, not this client,
-decides how often it is paid for.  No path ever carries a ``?``: parameters
-on ``/jobs`` are ignored upstream and would imply a page that does not exist
-(``docs/surf_swarm_v2_implementation_plan.md`` §0 R3/R4); ``_get`` raises on
-one. The detail getter interpolating caller text into a path,
-:meth:`SwarmClient.fetch_job`, refuses an id that is not a plain path segment
-and returns ``None`` -- so the contract above holds at every public getter.
-:meth:`SwarmClient.fetch_seat` formats an ``int`` (``{token:d}``) and refuses
-anything else before any request. ``submissions`` validates a canonical UUID
-before interpolating a job id; any 404 is confined to that job.
-Oracle reads use /oracle/requests and /oracle/requests/{uuid}; the list
-getter supplies validated limit/before query parameters separately from the path.
-``/workflows`` is the one other parameterised getter: :meth:`SwarmClient.fetch_workflows`
-sends a validated ``limit`` (a strict ``int`` in 1..100) through ``params=``
-(``docs/surf_swarm_workflows_spec.md`` §2). Every other getter sends none.
+The /jobs route accepts validated ``limit`` (1..500), exclusive ISO ``before``
+and text ``q`` (up to 200 characters) through HTTP query parameters. Its returned
+count is a page count, never a network total. The default read is a bounded
+recent page. Paths never contain queries. Overview, records and hourly getters
+preserve their envelopes for validation by the data projection layer.
 
 The seat getter distinguishes a real negative from a failed read:
 ``fetch_seat`` returns a fresh copy of :data:`UNKNOWN_SEAT` for the host's
@@ -280,8 +269,36 @@ class SwarmClient(OwnedHttpClient):
         # empty and passes through.
         return rows if isinstance(rows, list) else None
 
-    async def fetch_jobs(self) -> list[dict[str, Any]] | None:
-        return await self._list("/jobs", "jobs")
+    async def fetch_overview(self) -> dict[str, Any] | None:
+        return await self._dict("/swarm")
+
+    async def fetch_seat_records(self) -> dict[str, Any] | None:
+        return await self._dict("/seats/records")
+
+    async def fetch_steps_hourly(self) -> dict[str, Any] | None:
+        return await self._dict("/steps/hourly")
+
+    async def fetch_jobs(self, *, limit: int = 100, before: str | None = None,
+                         q: str | None = None) -> list[dict[str, Any]] | None:
+        """One bounded recent page; ``before`` is exclusive, not a total count."""
+        if type(limit) is not int or not 1 <= limit <= 500:
+            return None
+        if before is not None:
+            if not isinstance(before, str) or re.fullmatch(
+                    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z", before) is None:
+                return None
+            try:
+                datetime.fromisoformat(before)
+            except ValueError:
+                return None
+        if q is not None and (not isinstance(q, str) or len(q) > 200):
+            return None
+        params = {"limit": str(limit)}
+        if before is not None:
+            params["before"] = before
+        if q is not None:
+            params["q"] = q
+        return await self._list("/jobs", "jobs", params=params)
 
     async def fetch_launches(self) -> list[dict[str, Any]] | None:
         return await self._list("/launches", "launches", params={"limit": "100"})

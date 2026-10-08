@@ -1,21 +1,22 @@
-"""AGENT hero: SEAT, ACCEPTED JOBS, WORK, REWARDS, RANK and STATUS.
+"""AGENT hero: SEAT, ACCEPTED WORK, WORK, REWARDS, RANK and STATUS.
 
-ACCEPTED JOBS (box key ``accepted``; WORK traded places with it, F-S6, owner
+ACCEPTED WORK (box key ``accepted``; WORK traded places with it, F-S6, owner
 2026-10-02) includes the lifetime accepted / attempts rate; a real zero denominator says
 ``no attempts`` and a missing counter says ``unavailable``. STATUS names the
 newest work with its local date -- ``worked`` when the newest attempt is newer
 than the newest accepted one, else ``accepted`` (owner, 2026-09-22) -- never the
 feedback queue's sent time. An idle worker reads ``● online`` and a working one
 ``● working`` (F-S4), each in green with its counts dim after it. RANK
-comes from ``/contributors`` and survives a pending or unavailable seat.
+and acceptance come from one ``/seats/records`` snapshot and survive a pending
+or unavailable detail read. WORK retains its independent contributor clock.
 REWARDS (F-S5, owner 2026-10-02; it replaced REVIEWED) is the IMD the seat's
 owner was paid since ``pairedAt``, split over the owner's seats, then that IMD
 at today's price: ``Loading…`` before its read lands, ``unavailable`` after a
 failed one, ``0.00 IMD`` for a real zero.
-The seats state gates its own statistics; workers remain independent. The selected IDMD token
+The detail state gates REWARDS; outcomes and workers remain independent. The selected IDMD token
 remains visible while its read is pending or unavailable. Geometry belongs
 to the stylesheet; all six titles share one row. Historical contract keys
-``win_rate`` and ``last_won_ts`` retain their accepted-work meanings.
+``last_won_ts`` retains its accepted-work meaning for the detail chronology.
 """
 
 from __future__ import annotations
@@ -28,13 +29,15 @@ from rich.text import Text
 from maxpane_dashboard.widgets.fmt import fmt_int, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import LOADING, UNAVAILABLE, HeroBoxBase, HeroRow
-from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_win_rate, mmdd_hhmm
+from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_win_rate, mmdd_hhmm, source_clock
 from maxpane_dashboard.widgets.surf._swarm_seat import (
     _UNSIZED,
     MeasuredRow,
     NEVER_PAIRED_STYLE,
     NEVER_PAIRED_WORDS,
     contrib_body,
+    outcome_body,
+    outcomes_clock,
     rank_body,
     work_body,
     seat_state_line,
@@ -121,7 +124,7 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
     IDS = BOX_IDS
     BOXES = (
         (BOX_IDS["seat"], "SEAT"),
-        (BOX_IDS["accepted"], "ACCEPTED JOBS"),
+        (BOX_IDS["accepted"], "ACCEPTED WORK"),
         (BOX_IDS["work"], "WORK"),
         (BOX_IDS["rewards"], "REWARDS"),
         (BOX_IDS["rank"], "RANK"),
@@ -138,6 +141,9 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
         swarm_seat_rank_delta=None,
         swarm_seat_rewards=None,
         swarm_seat_rewards_state=None,
+        swarm_seat_outcome=None,
+        swarm_outcomes_source=None,
+        swarm_contributors_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
         """Rewrite all six boxes; the state says which kind of missing."""
@@ -146,6 +152,8 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
             swarm_seat_state=swarm_seat_state, swarm_seat_live=swarm_seat_live,
             swarm_seat_contrib=swarm_seat_contrib, swarm_seat_rank_delta=swarm_seat_rank_delta,
             swarm_seat_rewards=swarm_seat_rewards, swarm_seat_rewards_state=swarm_seat_rewards_state,
+            swarm_seat_outcome=swarm_seat_outcome, swarm_outcomes_source=swarm_outcomes_source,
+            swarm_contributors_as_of_hhmm=swarm_contributors_as_of_hhmm,
         )
 
     def _paint(
@@ -158,22 +166,30 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
         swarm_seat_rank_delta=None,
         swarm_seat_rewards=None,
         swarm_seat_rewards_state=None,
+        swarm_seat_outcome=None,
+        swarm_outcomes_source=None,
+        swarm_contributors_as_of_hhmm=None,
     ) -> None:
         selected = swarm_seat_selected
         state = swarm_seat_state
+        selected_token = seat_token(selected.get("token_id")) if isinstance(selected, dict) else None
+        if (not isinstance(swarm_seat_outcome, dict) or selected_token is None
+                or seat_token(swarm_seat_outcome.get("token_id")) != selected_token):
+            swarm_seat_outcome = None
         self.render_box(f"#{BOX_IDS['seat']}", "SEAT",
                         lambda: self._seat_body(selected, state))
-        for key, label, build in (
-            ("accepted", "ACCEPTED JOBS", self._accepted_body),
-            ("rewards", "REWARDS",
-             lambda _summary: self._rewards_body(swarm_seat_rewards, swarm_seat_rewards_state)),
-        ):
-            self.render_box(f"#{BOX_IDS[key]}", label,
-                            lambda build=build: self._stat_body(swarm_seat_summary, state, build))
+        self.render_box(f"#{BOX_IDS['accepted']}", "ACCEPTED WORK",
+                        lambda: outcome_body(swarm_seat_outcome, swarm_outcomes_source,
+                                             lambda row: self._accepted_body(row, swarm_outcomes_source)))
+        self.render_box(f"#{BOX_IDS['rewards']}", "REWARDS",
+                        lambda: self._stat_body(swarm_seat_summary, state,
+                            lambda _: self._rewards_body(swarm_seat_rewards, swarm_seat_rewards_state)))
         self.render_box(f"#{BOX_IDS['work']}", "WORK",
-                        lambda: contrib_body(swarm_seat_contrib, work_body))
+                        lambda: contrib_body(swarm_seat_contrib, lambda row:
+                            self._timed_work(row, swarm_contributors_as_of_hhmm)))
         self.render_box(f"#{BOX_IDS['rank']}", "RANK",
-                        lambda: contrib_body(swarm_seat_contrib, lambda c: rank_body(c, swarm_seat_rank_delta)))
+                        lambda: outcome_body(swarm_seat_outcome, swarm_outcomes_source,
+                            lambda row: self._timed_rank(row, swarm_seat_rank_delta, swarm_outcomes_source)))
         self.render_box(f"#{BOX_IDS['status']}", "STATUS",
                         lambda: self._status_body(swarm_seat_summary, state, swarm_seat_live,
                                                   self._room("status")))
@@ -216,18 +232,30 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
         return build(summary)
 
     @staticmethod
-    def _accepted_body(summary: dict) -> str | Text:
+    def _accepted_body(summary: dict, source=None) -> str | Text:
         accepted = _count(summary.get("accepted"))
         attempts = _count(summary.get("attempts"))
-        if accepted is None or attempts is None:
+        if accepted is None or attempts is None or accepted > attempts:
             return UNAVAILABLE
         body = Text()
         body.append(fmt_int(accepted), style="bold green" if accepted else "bold")
         body.append(" of ", style="dim")
         body.append(fmt_int(attempts), style="bold")
         rate = SurfSwarmAgentHero._win_rate_body(summary)
-        # A blank row between the two lines, as in STATUS (owner, 2026-09-25).
-        return body.append("\n\n") + (Text.from_markup(rate) if isinstance(rate, str) else rate)
+        body.append("\n").append(outcomes_clock(source), style="dim").append("\n")
+        return body + (Text.from_markup(rate) if isinstance(rate, str) else rate)
+
+    @staticmethod
+    def _timed_work(row, clock):
+        body = work_body(row)
+        lines = body.split("\n")
+        return lines[0] + Text("\nread " + source_clock(clock) + "\n", style="dim") + lines[-1]
+
+    @staticmethod
+    def _timed_rank(row, delta, source):
+        body = rank_body(row, delta)
+        lines = body.split("\n")
+        return lines[0] + Text("\n" + outcomes_clock(source), style="dim") + (Text("\n") + lines[-1] if len(lines) > 1 else Text())
 
     @staticmethod
     def _rewards_body(rewards, state) -> str | Text:
@@ -251,8 +279,8 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
         """Lifetime accepted / attempts; zero attempts has no rate."""
         if summary.get("attempts") == 0:
             return Text("no attempts", style="dim")
-        rate = summary.get("win_rate")
-        if isinstance(rate, bool) or not isinstance(rate, (int, float)):
+        rate = summary.get("accept_rate")
+        if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not math.isfinite(rate) or not 0 <= rate <= 1:
             return UNAVAILABLE
         return Text().append(fmt_win_rate(rate), style="bold")
 

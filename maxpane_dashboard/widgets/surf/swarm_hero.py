@@ -1,7 +1,7 @@
 """SWARM's six summary cards on HeroRow.
 
-AGENTS (online/enrolled), WORKING and ACCEPTED 24h retain their numeric
-semantics. LAUNCHES, WORKFLOWS and SITES show a bold total, followed by
+AGENTS (online/enrolled), WORKING and STEPS 24h are the shared overview
+snapshot, with its own successful-read/stale clock. LAUNCHES, WORKFLOWS and SITES show a bold total, followed by
 whole status/count pairs in descending count order within the measured box.
 None is yellow unavailable; empty lists are real zero. SITES shares its
 current-site predicate with the table. Breaker, services and health belong
@@ -17,6 +17,7 @@ from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, saniti
 from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
 from maxpane_dashboard.widgets.rowfit import clip
 from ._swarm_summary import launch_counts, row_counts, summary_body
+from ._swarm_seat import outcomes_clock
 
 __all__ = [
     "BOX_IDS",
@@ -28,7 +29,7 @@ __all__ = [
 BOXES: tuple[tuple[str, str], ...] = (
     ("surf-swarm-hero-agents", "AGENTS"),
     ("surf-swarm-hero-working", "WORKING"),
-    ("surf-swarm-hero-accepted", "ACCEPTED 24h"),
+    ("surf-swarm-hero-accepted", "STEPS 24h"),
     ("surf-swarm-hero-launches", "LAUNCHES"),
     ("surf-swarm-hero-workflows", "WORKFLOWS"),
     ("surf-swarm-hero-sites", "SITES"),
@@ -104,6 +105,7 @@ class SurfSwarmHero(HeroRow):
         swarm_launch_summary=None,
         swarm_workflow_rows=None,
         swarm_site_rows=None,
+        surfboard_sources=None,
         **_kwargs,
     ) -> None:
         """Refresh all six boxes; every box is written on every poll (MEDI-38).
@@ -118,6 +120,7 @@ class SurfSwarmHero(HeroRow):
             "launches": swarm_launch_summary,
             "workflows": swarm_workflow_rows,
             "sites": swarm_site_rows,
+            "overview_source": surfboard_sources.get("overview") if isinstance(surfboard_sources, dict) else None,
         }
         self._render_view()
 
@@ -137,13 +140,13 @@ class SurfSwarmHero(HeroRow):
         agents, working, accepted, launches, workflows, sites = BOX_IDS
         self.render_box(
             f"#{agents}", "AGENTS",
-            lambda: _agents_body(data.get("online"), data.get("enrolled")),
+            lambda: self._network_body(_agents_body(data.get("online"), data.get("enrolled"))),
         )
         self.render_box(
-            f"#{working}", "WORKING", lambda: _working_body(data.get("working")),
+            f"#{working}", "WORKING", lambda: self._network_body(_working_body(data.get("working"))),
         )
         self.render_box(
-            f"#{accepted}", "ACCEPTED 24h", lambda: _count_body(data.get("accepted")),
+            f"#{accepted}", "STEPS 24h", lambda: self._network_body(_count_body(data.get("accepted"))),
         )
         for box_id, label, summary in (
             (launches, "LAUNCHES", launch_counts(data.get("launches"))),
@@ -152,3 +155,10 @@ class SurfSwarmHero(HeroRow):
         ):
             self.render_box(f"#{box_id}", label,
                             lambda s=summary, b=box_id: summary_body(s, self._box_width(b)))
+
+    def _network_body(self, body):
+        text = Text.from_markup(body) if isinstance(body, str) else body
+        source = (self._payload or {}).get("overview_source")
+        if isinstance(source, dict):
+            text.append("\n" + outcomes_clock(source), style="dim")
+        return text

@@ -1123,7 +1123,8 @@ async def test_burned_cum_is_zero_after_one_read_then_accumulates(tmp_path):
     lying on every fresh install.
     """
     client = FakeSurfClient()
-    m = _manager(tmp_path, client=client)
+    clock = FakeClock()
+    m = _manager(tmp_path, client=client, clock=clock)
 
     first = await m.fetch_and_compute()
     assert first["imd_burned_cum"] == 0.0        # one read: honestly zero observed
@@ -1132,6 +1133,7 @@ async def test_burned_cum_is_zero_after_one_read_then_accumulates(tmp_path):
         block_number=BLOCK + 100,
         imd_supply_wei=IMD_SUPPLY_WEI - 15_745 * 10**18,
     )
+    clock.advance(m.poll_interval)  # full collection coalesces calls within one interval
     second = await m.fetch_and_compute()
     assert second["imd_burned_cum"] == pytest.approx(15_745.0)
     assert second["imd_supply"] == pytest.approx(2_360_986.868679)
@@ -3078,6 +3080,7 @@ async def test_no_signal_fires_and_no_baseline_moves_under_a_total_outage(tmp_pa
     await m.fetch_and_compute()                      # cycle 1: spawns the sweep
     if m._launchpad_task is not None:
         await asyncio.wait_for(m._launchpad_task, timeout=2.0)  # let it land
+    clock.advance(m.poll_interval)
     await m.fetch_and_compute()                      # cycle 2: folds it into baselines
     before = m.cache.get_baselines()                 # now a genuine "established" snapshot
 

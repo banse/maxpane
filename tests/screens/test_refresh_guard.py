@@ -347,3 +347,29 @@ def test_no_screen_schedules_a_bare_refresh_worker():
             offenders.append(str(path.relative_to(REPO)))
     assert not offenders, f"bare refresh worker (MEDI-34/35 pattern) in: {offenders}"
 
+
+
+@pytest.mark.asyncio
+async def test_snapshot_screen_can_opt_out_of_startup_prefetch_join():
+    """The hub's separately protected cache projection need not await RPC work."""
+    class SnapshotScreen(DashboardScreen):
+        GAME_NAME = "snapshot"
+        REFRESH_WORKER_NAME = "snapshot-refresh"
+        JOIN_STARTUP_PREFETCH = False
+
+        async def _fetch_data(self):
+            self.painted = True
+            return {}
+
+    manager = _BlockingManager()
+    app = _PrefetchHarness(manager)
+    screen = SnapshotScreen(manager)
+    screen.painted = False
+    async with app.run_test():
+        await manager.entered.wait()
+        app.push_screen(screen)
+        await _drain()
+        assert screen.painted
+        assert manager.calls == 1
+        assert manager.completed == 0
+        manager.release.set()

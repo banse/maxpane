@@ -1,0 +1,17 @@
+{
+  "captured_utc": "2026-10-08T22:29:00Z",
+  "source": "https://api.imd.fun",
+  "notes": "Records/contributors reduced to seats 420/1836; record count adjusted to retained rows. Overview seats/events reduced, owners removed, objective text abridged. Counters retained. All are public API data, no credentials. bad_partition, duplicate_records, missing_records, malformed_records, empty_records and hostile_overview are synthetic derivatives.",
+  "files": [
+    "records",
+    "contributors",
+    "overview",
+    "hourly",
+    "empty_records",
+    "bad_partition",
+    "duplicate_records",
+    "missing_records",
+    "malformed_records",
+    "hostile_overview"
+  ]
+}

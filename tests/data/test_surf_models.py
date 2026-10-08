@@ -599,14 +599,14 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
         POOL4_KEYS, POOL4_STAKERS_KEYS, SWARM_KEYS,
     )
 
-    assert set(SURF_KEYS) == EXPECTED_KEYS
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 208
+    assert set(SURF_KEYS) == EXPECTED_KEYS | {"surfboard_cards", "surfboard_overview", "surfboard_events", "surfboard_hourly", "surfboard_sources", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"}
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 216
     # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
-    assert len(SWARM_KEYS) == 43
-    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 89
+    assert len(SWARM_KEYS) == 46
+    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 94
 
 
 def test_every_signal_has_all_three_facets() -> None:
@@ -862,3 +862,17 @@ def test_v8_launch_and_site_rows_freeze_launch_contract():
     assert "swarm_launch_events" in READING_KEYS
     for widget in ("SurfSwarmLaunches", "SurfSwarmSites"):
         assert "swarm_launches_as_of_hhmm" in SWARM_WIDGET_SIGNATURES[widget]
+
+
+def test_surfboard_contract_freezes_plain_data_and_independent_clocks():
+    from maxpane_dashboard.data import surf_models as m
+    assert m.SURFBOARD_KEYS == ('surfboard_cards','surfboard_overview','surfboard_events','surfboard_hourly','surfboard_sources')
+    assert m.SURFBOARD_WIDGET_SIGNATURES == {
+        'SurfboardRack': ('surfboard_cards','surfboard_sources'),
+        'SurfboardTerminal': ('surfboard_overview','surfboard_events','surfboard_sources'),
+    }
+    assert m.SURFBOARD_CARD_FIELDS == ('key','title','status','primary','secondary','detail','destination','meter_kind','numerator','denominator','points')
+    assert m.SWARM_SEAT_OUTCOME_FIELDS == ('token_id','listed','attempts','accepted','rejected','failed','pending','accept_rate','rank','ranked_of')
+    assert m.SURFBOARD_SOURCE_FIELDS == ('payload','read_ts','provider_ts','version','attempt_ts','state')
+    assert {'swarm_seat_outcome','swarm_outcomes_source','swarm_contributors_as_of_hhmm'} <= set(m.SWARM_KEYS)
+    assert all(m.SURF_KEYS.count(key)==1 for key in m.SURFBOARD_KEYS)

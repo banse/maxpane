@@ -296,8 +296,7 @@ async def test_the_jobs_request_carries_no_query_and_no_key_shaped_header():
     request = seen[0]
     assert request.method == "GET"
     assert request.url.path == "/jobs"
-    assert request.url.query == b"", "no filter, no page: the upstream ignores parameters (R3/R4)"
-    assert "?" not in str(request.url)
+    assert dict(request.url.params) == {"limit": "100"}, "the default is a bounded recent page"
     lowered = {k.lower() for k in request.headers}
     assert not lowered & {"authorization", "x-api-key", "api-key", "x-token", "cookie"}
     # Nothing beyond the transport's own plumbing and Accept: no header may
@@ -1009,3 +1008,43 @@ async def test_workflow_history_stop_and_failure_paths(case, monkeypatch, caplog
         assert not complete and len(rows) == (200 if case == "cap" else 100)
         assert len(calls) == 2
     if case == "later_failure": assert "partial workflow history" in caplog.text
+
+# HUB readers and current /jobs pagination contract (2026-10-09).
+@pytest.mark.parametrize('method,path', [('fetch_overview','/swarm'), ('fetch_seat_records','/seats/records'), ('fetch_steps_hourly','/steps/hourly')])
+async def test_hub_readers_rotate_keyless_and_preserve_empty_envelopes(method,path):
+    seen=[]
+    def handler(request):
+        seen.append(request)
+        assert request.url.path == path
+        assert not {'authorization','cookie','x-api-key'} & set(request.headers)
+        return httpx.Response(503) if len(seen)==1 else httpx.Response(200,json={})
+    async with _client(handler,inter_call_delay=0) as client:
+        assert await getattr(client,method)() == {}
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
+
+@pytest.mark.parametrize('kwargs', [dict(limit=True),dict(limit=0),dict(limit=501),dict(before='2026-02-30T00:00:00Z'),dict(before='today'),dict(q='x'*201),dict(q=True)])
+async def test_jobs_invalid_queries_issue_no_request(kwargs):
+    async with _client(_no_network,inter_call_delay=0) as client:
+        assert await client.fetch_jobs(**kwargs) is None
+
+async def test_jobs_validated_query_is_passed_separately():
+    seen=[]
+    async with _client(_recording(seen,lambda r: httpx.Response(200,json={'jobs':[]})),inter_call_delay=0) as client:
+        assert await client.fetch_jobs(limit=500,before='2026-10-08T22:00:00Z',q='A&B') == []
+    assert dict(seen[0].url.params) == {'limit':'500','before':'2026-10-08T22:00:00Z','q':'A&B'}
+
+async def test_forward_ens_reuses_registry_and_state_pool():
+    from maxpane_dashboard.data.surf_client import SurfClient
+    from maxpane_dashboard.data import ens
+    from unittest.mock import AsyncMock
+    target='0x'+'12'*20; resolver='0x'+'34'*20
+    client=SurfClient()
+    client._rpc_state=AsyncMock(side_effect=['0x'+'00'*12+resolver[2:],'0x'+'00'*12+target[2:]])
+    try:
+        assert await client.fetch_ens_address('surf.eth')==target
+        calls=client._rpc_state.call_args_list
+        assert calls[0].args[1][0]['to']==ens.ENS_REGISTRY
+        assert calls[1].args[1][0]['to']==resolver
+        assert await client.fetch_ens_address('../bad') is None
+        assert client._rpc_state.await_count==2
+    finally:await client.close()

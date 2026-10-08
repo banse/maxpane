@@ -6,10 +6,10 @@ Add **9 · SURFBOARD HUB**, game ID `surfboard`, to MaxPane's start screen. It u
 Equipment Rack design at **149 columns × 45 rows**, with four card rows and six columns.
 It launches every existing SURFBOARD view and displays a live IMD command monitor.
 
-This specification and its work-package plan are the deliverable of the current planning
-task on `feature/surfboard-hub-9`. Implementation follows the plan; no production dashboard
-is registered by this documentation commit. The data-consistency changes below are required
-implementation work, not fixes claimed to have already shipped.
+Implemented on `feature/surfboard-hub-9`. The production rack was rendered against live
+keyless sources at 149×45 before layout hardening. Its measured full layout is 140×36,
+including the width needed when a shorter viewport shows a vertical scrollbar.
+The data-consistency corrections below apply to the hub and the existing SURFBOARD views.
 
 Entries 1–8 retain their numbers. Entry 1 remains Surfboard and the default/prefetched dashboard.
 The new hub is a separate entrance while its design is evaluated. `--game surfboard` is added

@@ -20,6 +20,32 @@ https://identitymdcontrol-plane-production.up.railway.app
 
 ## The control plane
 
+### Current hub reads — 2026-10-09
+
+Dashboard 9 uses the same keyless host pool and client as the existing SURF views:
+
+| Route | Current meaning |
+|---|---|
+| `/swarm` | Network health/counts and a bounded recent-event window; 15s while the hub is visible, 60s elsewhere |
+| `/seats/records` | Canonical submitted-work outcomes; validated as one complete snapshot; polled at 120s with an upstream cache of up to 600s |
+| `/steps/hourly` | Separate hourly accepted-step history, grouped into eight three-hour sparkline buckets |
+| `/jobs?limit=N&before=ISO&q=text` | Current bounded pagination/search: limit 1–500, exclusive UTC cursor, query up to 200 characters; returned count is a page count |
+
+The older no-pagination and `/swarm`-404 observations below are historical. Current recent-job
+scans still deliberately read one bounded page; they do not claim a complete job history.
+See [hub source research](surfboard_game_mechanics.md) and the sanitized
+`tests/fixtures/surf/swarm/hub/MANIFEST.json` for capture provenance.
+
+HUB, AGENT and BOARD use the same records snapshot for accepted work, attempts and rank.
+Require `attempts = accepted + rejected + failed + pending`, unique normalized seat IDs and
+an envelope count matching the rows. Any bad row rejects the entire new outcome snapshot,
+retaining the prior coherent snapshot as stale. `/contributors` supplies device effort and
+explicit receipt counters; `/workers` supplies presence. Neither changes the outcome denominator.
+Seat detail history has a separate clock and cannot patch a single row into the shared ranking.
+Rank baselines carry `seat-records-v1`; older contributor-based deltas are reset.
+
+### Historical endpoint observations
+
 Keyless. No key, token, cookie or signature was sent for any read below, and every one answered 200. Its
 `/health` reports `"operatorSurface": "authenticated"`, so the write surface is closed and the reads here are
 the public subset.
@@ -27,7 +53,7 @@ the public subset.
 | Route | Result | Size |
 |---|---|---|
 | `GET /health` | swarm counters and the identity contracts | 567 B |
-| `GET /jobs` | the newest 100 jobs, newest first; `count` is the page length, not a total; no pagination; parameters ignored (2026-09-21). On 2026-09-16 it read as every job: 62 | 27.5 KB (62 jobs, 2026-09-16); 43.1 KB (100, 2026-09-21) |
+| `GET /jobs` | historical 2026-09-21 capture: newest 100 jobs, count is page length; pagination was not served then (current contract above) | 27.5 KB (62 jobs, 2026-09-16); 43.1 KB (100, 2026-09-21) |
 | `GET /contributors` | per-device lifetime counters; aggregate by token (2026-09-22) | 32,113 B |
 | `GET /workers` | live devices, capacity, pauses and runtime metadata (2026-09-22) | 97,420 B |
 | `GET /seats/{tokenId}` | one seat's lifetime record (measured 2026-09-21; see [`/seats/{tokenId}`](#seatstokenid)) | 6–90 KB |
@@ -47,7 +73,7 @@ the public subset.
 The explorer's own origin serves no `/api/*` route either. (`/seats` was on this list on 2026-09-16; the bare
 route is still 404, but `/seats/{tokenId}` answers — see below.)
 
-**No filters on `/jobs`.** `?state=executing`, `?limit=3` and `?since=…` all return the same 62 rows, so the list is
+**Historical no-filter observation on `/jobs` (superseded above).** `?state=executing`, `?limit=3` and `?since=…` all return the same 62 rows, so the list is
 all-or-nothing. **Re-measured 2026-09-21 on `https://api.imd.fun`:** `/jobs` returns `count: 100` and exactly
 100 rows — the newest 100 jobs (that capture spans `createdAt` 02:26–05:44 UTC, about 3.3 h), with no page
 parameter and no older page. The 2026-09-16 reading of "every job" was true only while fewer than 100 existed;

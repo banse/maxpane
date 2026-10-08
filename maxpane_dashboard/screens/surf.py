@@ -222,6 +222,7 @@ import time
 from typing import TYPE_CHECKING
 
 from rich.text import Text
+from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -1902,6 +1903,8 @@ MODE_SWARM = "swarm"
 #: above a full-width RECORD. Seats, contributors and workers keep independent groups.
 MODE_AGENT = "agent"
 MODE_BOARD = "board"
+SURF_MODES = (MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER,
+              MODE_SWARM, MODE_AGENT, MODE_BOARD)
 BOARD_BODY_ID = "surf-board-body"
 
 #: BOARD width, measured 2026-09-22: every integer 60–225 at 80 rows, with
@@ -3424,6 +3427,7 @@ class SurfScreen(DashboardScreen):
         #: hero) or MODE_LAUNCHPAD (the ``l`` view). The hero row is not
         #: part of either -- it stays mounted and visible regardless.
         self._mode: str = MODE_DASHBOARD
+        self._return_context: str | None = None
         self.record_cap = SurfSwarmSeatRecord.ROW_CAP
         self.record_open_only = False
         self._record_seat_token = None
@@ -3613,6 +3617,40 @@ class SurfScreen(DashboardScreen):
     def on_mount(self) -> None:
         self._show_mode()
 
+    @property
+    def return_context(self) -> str | None:
+        """The optional rack route that owns this visit."""
+        return self._return_context
+
+    def clear_return_context(self) -> None:
+        self._return_context = None
+
+    def open_mode(self, mode: str, *, return_context: str | None = None) -> None:
+        """Select a native body before or after mounting without a private route."""
+        if mode not in SURF_MODES:
+            raise ValueError(f"Unknown SURFBOARD mode: {mode!r}")
+        if return_context not in (None, "surfboard"):
+            raise ValueError("Unknown SURFBOARD return context")
+        self._mode = mode
+        self._return_context = return_context
+        if self.is_mounted:
+            self._show_mode()
+
+    def _sync_agent_runtime(self) -> None:
+        setter = getattr(self._data_manager, "set_agent_active", None)
+        if setter is not None:
+            setter(self.is_current and self._mode == MODE_AGENT)
+
+    @on(events.ScreenResume)
+    def _resume_agent_runtime(self) -> None:
+        self._sync_agent_runtime()
+
+    @on(events.ScreenSuspend)
+    def _suspend_agent_runtime(self) -> None:
+        setter = getattr(self._data_manager, "set_agent_active", None)
+        if setter is not None:
+            setter(False)
+
     def _prime_status_bar(self, bar: StatusBar) -> None:
         """The one extra line this screen primes: the body keys.
 
@@ -3707,11 +3745,9 @@ class SurfScreen(DashboardScreen):
         if self._mode != MODE_AGENT:
             self._record_filter_open = False
         self._show_record_editor()
-        setter = getattr(self._data_manager, "set_agent_active", None)
-        if setter is not None:
-            setter(self._mode == MODE_AGENT)
-            if self._mode == MODE_AGENT:
-                self.start_refresh()
+        self._sync_agent_runtime()
+        if self.is_current and self._mode == MODE_AGENT:
+            self.start_refresh()
         # The row marker is about whichever body is now showing (only the
         # dashboard body's right rail can scroll), so it has to be re-read --
         # deferred, exactly like ``on_resize``, because the newly-shown body
@@ -3851,8 +3887,7 @@ class SurfScreen(DashboardScreen):
         if token is None:
             return
         event.stop()
-        config.save_seat(token)
-        self._seat_entered(token)
+        self.select_seat(token)
 
     def action_set_seat(self) -> None:
         """``i`` -- prompt for the seat the AGENT body is about.
@@ -3862,6 +3897,14 @@ class SurfScreen(DashboardScreen):
         (``__main__`` reads it into ``SurfManager(seat=)``).
         """
         self.app.push_screen(SeatInputScreen(), callback=self._seat_entered)
+
+    def select_seat(self, token: int) -> None:
+        """Persist a validated public selection using the native seat behavior."""
+        parsed = parse_seat(str(token)) if isinstance(token, int) and not isinstance(token, bool) else None
+        if parsed is None:
+            raise ValueError("Invalid IDMD seat")
+        config.save_seat(parsed)
+        self._seat_entered(parsed)
 
     def _seat_entered(self, token: int | None) -> None:
         """Callback from ``SeatInputScreen``: ``None`` means escape.
@@ -3880,6 +3923,9 @@ class SurfScreen(DashboardScreen):
         self.record_open_only = False
         self._clear_record_filter()
         self._record_seat_token = token
+        if not self.is_mounted:
+            self._mode = MODE_AGENT
+            return
         self._repaint_record_view()
         self._mode = MODE_AGENT
         self._show_mode()
@@ -4013,6 +4059,9 @@ class SurfScreen(DashboardScreen):
 
     def action_show_dashboard(self) -> None:
         """``escape`` -- one-way back out of **any** alternate body."""
+        if self._return_context == "surfboard":
+            self.app.return_to_surfboard()
+            return
         self._mode = MODE_DASHBOARD
         self._show_mode()
 

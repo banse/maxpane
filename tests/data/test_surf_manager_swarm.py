@@ -27,6 +27,10 @@ below was re-read off that corpus: ``/health.connectedDaemons`` is 28, the
 and seat 463 works the one executing detail. The corpus stamps are
 2026-09-20 -- 43 days *after* ``test_surf_manager.NOW`` -- so the tests
 that reason about the seen slot's age run their clock from ``V2_NOW``.
+
+Dashboard 9 adds the committed ``hub/overview`` and ``hub/records`` captures.
+Their network headlines and submitted outcomes deliberately differ from the
+older health/contributor fixtures: one source family cannot replace another.
 """
 from __future__ import annotations
 
@@ -41,6 +45,7 @@ import pytest
 
 from maxpane_dashboard.data import surf_manager as surf_manager_mod
 from maxpane_dashboard.data import surf_swarm as sw
+from maxpane_dashboard.data import surfboard as hub
 from maxpane_dashboard.data.surf_cache import (
     SLOT_SWARM, SLOT_SWARM_JOBS_SEEN, SLOT_SWARM_SCORES, SLOT_SWARM_SEAT, TIER_SWARM,
     TIER_SWARM_SCORES, TIER_SWARM_SEAT,
@@ -52,6 +57,7 @@ from maxpane_dashboard.data.surf_models import SURF_KEYS, SWARM_KEYS
 from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY, UNKNOWN_SEAT
 from tests.data.test_surf_manager import FakeClock, FakeSurfClient, NOW
 from tests.data.test_surf_manager_pool4 import FakePool4Client
+from tests.data.test_surfboard import capture as hub_capture
 from tests.surf_swarm_fixtures import (
     swarm_capture_v2, swarm_capture_v6, swarm_details_v2, swarm_seat_capture, swarm_capture_v3,
 )
@@ -91,7 +97,7 @@ def _synthetic_jobs(n: int, *, start_ts: float, step_s: float = 1.0,
 
 
 class _FakeSwarm:
-    """Serves the committed v2 corpus and counts what was asked for, per route.
+    """Serves committed swarm captures and counts what was asked for, per route.
 
     Each method carries a real ``await asyncio.sleep(0)`` -- fix round 1
     finding 1 -- so two concurrently-spawned tasks against this fake actually
@@ -138,6 +144,9 @@ class _FakeSwarm:
         self.seat_entered = asyncio.Event()
         self.workers = swarm_capture_v3("workers")
         self.contributors = swarm_capture_v3("contributors")
+        self.overview = hub_capture("overview")
+        self.records = hub_capture("records")
+        self.fail_overview = self.fail_records = False
         self.fail_workers = self.fail_contributors = False
         self.board_gate = None
         self.board_entered = asyncio.Event()
@@ -163,6 +172,16 @@ class _FakeSwarm:
         await asyncio.sleep(0)
         self.calls["health"] += 1
         return None if self._fail else dict(self._health)
+
+    async def fetch_overview(self):
+        await asyncio.sleep(0)
+        self.calls["overview"] += 1
+        return None if self._fail or self.fail_overview else copy.deepcopy(self.overview)
+
+    async def fetch_seat_records(self):
+        await asyncio.sleep(0)
+        self.calls["records"] += 1
+        return None if self.fail_records else copy.deepcopy(self.records)
 
     async def fetch_version(self):
         await asyncio.sleep(0)
@@ -267,7 +286,9 @@ def _manager(tmp_path, swarm, **kw) -> SurfManager:
 async def _settle(manager: SurfManager) -> None:
     """Wait for whichever swarm tiers this cycle spawned (the seat read too)."""
     tasks = [t for t in (manager._swarm_task, manager._swarm_scores_task,
-                         manager._swarm_seat_task, getattr(manager, "_swarm_board_task", None), getattr(manager, "_runtime_task", None)) if t is not None]
+                         manager._swarm_seat_task, getattr(manager, "_swarm_board_task", None),
+                         getattr(manager, "_runtime_task", None), getattr(manager, "_full_task", None),
+                         *getattr(manager, "_hub_source_tasks", {}).values()) if t is not None]
     await asyncio.gather(*tasks, return_exceptions=True)
 
 
@@ -631,7 +652,7 @@ async def test_a_dead_skills_route_leaves_only_its_keys_none(tmp_path):
     assert isinstance(payload["swarm_site_rows"], list) and payload["swarm_site_rows"]
     assert payload["swarm_seat_selected"] is not None
     assert payload["swarm_launch_summary"]["by_status"] == []  # v2 holds no production launches
-    assert payload["swarm_agents_online"] == 28 and payload["swarm_as_of_hhmm"] is not None
+    assert payload["swarm_agents_online"] == 864 and payload["swarm_as_of_hhmm"] is not None
 
 
 async def test_a_dead_launches_route_leaves_only_its_keys_none(tmp_path):
@@ -1305,13 +1326,14 @@ async def test_the_payload_is_exactly_the_contract_with_or_without_the_swarm(tmp
 
 
 async def test_the_swarm_keys_are_filled_from_the_slot(tmp_path):
-    """Re-pinned on the v2 corpus (WP7): 28 connected daemons; two IN FLIGHT
+    """Shared overview supplies 864 online; the v2 corpus keeps two IN FLIGHT
     rows -- both executing jobs, the one with a committed detail carrying its
     node and the one whose detail is a 404 carrying ``None`` node fields (a
     404 drops the detail, never the row or the read); a THROUGHPUT dict over
     the whole hundred-job list."""
     manager, payload = await _landed(tmp_path, _FakeSwarm())
-    assert payload["swarm_agents_online"] == swarm_capture_v2("health")["connectedDaemons"] == 28
+    assert payload["swarm_agents_online"] == 864
+    assert payload["surfboard_overview"]["agents_online"] == payload["swarm_agents_online"]
     rows = payload["swarm_inflight_rows"]
     assert len(rows) == 2
     assert sorted(r["node_key"] is None for r in rows) == [False, True]
@@ -1426,12 +1448,21 @@ async def test_node_rows_distinguish_unread_children_from_served_lists(tmp_path,
     await manager.close()
 
 
-# BOARD: one independent tier, two last-good sources and cached seat lookups.
+# BOARD: canonical outcomes plus independently timed effort and presence.
 
 _BOARD_KEYS = (
     "swarm_board_summary", "swarm_board_rows", "swarm_fleet", "swarm_fleet_daemon", "swarm_board_as_of_hhmm",
-    "swarm_workers_as_of_hhmm", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta",
+    "swarm_contributors_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_seat_live", "swarm_seat_contrib",
+    "swarm_seat_outcome", "swarm_outcomes_source", "swarm_seat_rank_delta",
 )
+
+
+def _assert_recorded_outcomes(payload):
+    """Literal capture facts must survive unrelated effort/presence failures."""
+    assert [(row["token_id"], row["rank"], row["accepted"], row["attempts"])
+            for row in payload["swarm_board_rows"]] == [(420, 1, 3253, 3392), (1836, 2, 1, 1)]
+    assert payload["swarm_board_summary"]["accepted"] == 3254
+    assert payload["swarm_board_summary"]["attempts"] == 3393
 
 
 async def test_board_keys_are_exact_before_finalization_and_survive_cold_start(tmp_path):
@@ -1439,16 +1470,19 @@ async def test_board_keys_are_exact_before_finalization_and_survive_cold_start(t
     cold = manager._swarm_board_keys(None, None, 420)
     assert tuple(cold) == _BOARD_KEYS
     assert cold["swarm_board_summary"] and all(value is None for value in cold["swarm_board_summary"].values())
-    assert all(value is None for key, value in cold.items() if key != "swarm_board_summary")
-    first = await manager.fetch_and_compute()
-    assert first["swarm_board_rows"] is None
+    assert all(value is None for key, value in cold.items()
+               if key not in ("swarm_board_summary", "swarm_outcomes_source"))
+    assert cold["swarm_outcomes_source"]["payload"] is None
+    assert cold["swarm_outcomes_source"]["state"] == "unavailable"
+    await manager.fetch_and_compute()
     await _settle(manager)
     payload = await manager.fetch_and_compute()
     assert set(payload) == set(SURF_KEYS)
     assert set(key for key in payload if key.startswith("swarm_")) == (
         set(SWARM_KEYS) | {"swarm_launch_fired"}  # signal output, independent of the swarm data folds
     )
-    assert payload["swarm_board_rows"] == sw.board_rows(manager.swarm_client.contributors, manager.swarm_client.workers)
+    _assert_recorded_outcomes(payload)
+    assert payload["swarm_seat_outcome"]["rank"] == 1
     assert payload["swarm_fleet"] == sw.fleet(manager.swarm_client.workers)
     assert payload["swarm_seat_live"] == sw.seat_live(manager.swarm_client.workers, 420)
     assert payload["swarm_seat_contrib"] == sw.seat_contrib(manager.swarm_client.contributors, 420)
@@ -1460,17 +1494,17 @@ async def test_board_one_failed_source_does_not_blank_the_other(tmp_path, failed
     swarm = _FakeSwarm(); setattr(swarm, f"fail_{failed}", True)
     manager, payload = await _landed(tmp_path, swarm, seat=420)
     assert swarm.calls["workers"] == swarm.calls["contributors"] == 1
+    _assert_recorded_outcomes(payload)
     if failed == "workers":
-        assert payload["swarm_board_rows"] == sw.board_rows(swarm.contributors, None)
-        assert payload["swarm_board_rows"]
         assert payload["swarm_fleet"] is payload["swarm_seat_live"] is None
         assert payload["swarm_workers_as_of_hhmm"] is None
-        assert payload["swarm_board_as_of_hhmm"] is not None
+        assert payload["swarm_contributors_as_of_hhmm"] is not None
     else:
-        assert payload["swarm_board_rows"] is payload["swarm_seat_contrib"] is None
+        assert payload["swarm_seat_contrib"] is None
         assert payload["swarm_fleet"] == sw.fleet(swarm.workers)
         assert payload["swarm_workers_as_of_hhmm"] is not None
-        assert payload["swarm_board_as_of_hhmm"] is None
+        assert payload["swarm_contributors_as_of_hhmm"] is None
+    assert payload["swarm_board_as_of_hhmm"] is not None
     assert manager.cache.last_fetch_ts("swarm_board") is None
     assert not manager.cache.is_due("swarm_board", manager._clock() + 119)
     assert manager.cache.is_due("swarm_board", manager._clock() + 120)
@@ -1495,11 +1529,13 @@ async def test_board_last_good_and_read_markers_advance_independently(tmp_path, 
     after = await manager.fetch_and_compute()
     assert manager.cache.get_last_good(f"swarm_{failed}") is first_entries[failed]
     assert manager.cache.get_last_good(f"swarm_{good}").ts == clock.t
-    old_clock = "swarm_workers_as_of_hhmm" if failed == "workers" else "swarm_board_as_of_hhmm"
-    new_clock = "swarm_board_as_of_hhmm" if failed == "workers" else "swarm_workers_as_of_hhmm"
+    old_clock = "swarm_workers_as_of_hhmm" if failed == "workers" else "swarm_contributors_as_of_hhmm"
+    new_clock = "swarm_contributors_as_of_hhmm" if failed == "workers" else "swarm_workers_as_of_hhmm"
     assert after[old_clock] == before[old_clock]
     assert after[new_clock] != before[new_clock]
     assert after["swarm_board_rows"] and after["swarm_fleet"]
+    _assert_recorded_outcomes(after)
+    assert after["swarm_board_as_of_hhmm"] != before["swarm_board_as_of_hhmm"]
     assert swarm.calls["workers"] == swarm.calls["contributors"] == 2
     await manager.close()
 
@@ -1543,7 +1579,9 @@ async def test_board_first_paint_is_detached_one_task_and_close_cancels(tmp_path
     swarm = _FakeSwarm(); swarm.board_gate = asyncio.Event()
     manager = _manager(tmp_path, swarm, seat=420)
     first = await asyncio.wait_for(manager.fetch_and_compute(), timeout=2)
-    assert first["swarm_board_rows"] is None
+    # Outcomes may arrive independently; the blocked workers read cannot
+    # hold either first paint or the canonical record source behind it.
+    assert first["swarm_fleet"] is None
     await asyncio.wait_for(swarm.board_entered.wait(), timeout=2)
     task = manager._swarm_board_task
     assert task is not None and not task.done()
@@ -1593,9 +1631,11 @@ async def test_board_hand_edited_in_memory_slot_is_refused_before_consumption(tm
         assert after["swarm_workers_as_of_hhmm"] is None
         assert after["swarm_board_rows"]
     else:
-        assert after["swarm_board_rows"] is after["swarm_seat_contrib"] is None
-        assert after["swarm_board_as_of_hhmm"] is None
+        assert after["swarm_seat_contrib"] is None
+        assert after["swarm_contributors_as_of_hhmm"] is None
+        assert after["swarm_board_as_of_hhmm"] is not None
         assert after["swarm_fleet"]
+    _assert_recorded_outcomes(after)
     await manager.close()
 
 
@@ -1624,13 +1664,18 @@ async def test_i1_manager_preserves_malformed_token_bookkeeping_across_cache(tmp
     swarm.contributors['contributors'].append(sibling)
     manager, payload = await _landed(tmp_path, swarm, seat=420)
     assert payload['swarm_seat_contrib'] is None
-    assert all(row['token_id'] != 420 for row in payload['swarm_board_rows'])
+    _assert_recorded_outcomes(payload)
+    assert next(row for row in payload['swarm_board_rows'] if row['token_id'] == 420)['turns'] is None
     assert manager.cache.get_last_good('swarm_contributors').payload['malformed_tokens'] == [420]
     await manager.close()
-    fresh = _manager(tmp_path, _FakeSwarm(), seat=420)
+    failed = _FakeSwarm()
+    failed.fail_contributors = True
+    fresh = _manager(tmp_path, failed, seat=420)
+    assert fresh.cache.get_last_good('swarm_contributors').payload['malformed_tokens'] == [420]
     restored = await fresh.fetch_and_compute()
     assert restored['swarm_seat_contrib'] is None
-    assert restored['swarm_board_summary']['attempts'] is None
+    _assert_recorded_outcomes(restored)
+    assert restored['swarm_board_summary']['receipt_attempts'] is None
     await fresh.close()
 
 
@@ -1719,7 +1764,7 @@ async def test_rank_delta_tracks_last_move_per_seat_and_survives_restart(tmp_pat
         assert observe(420, 9) == -3
         prior = copy.deepcopy(manager.cache.get_last_good(SLOT_SWARM_SEAT_RANK).payload)
         assert observe(420, None) is None
-        assert observe(420, 1, False) is None
+        assert manager._seat_rank_delta(420, None) is None
         assert manager.cache.get_last_good(SLOT_SWARM_SEAT_RANK).payload == prior
         assert observe(421, 4) is None
         manager.set_seat(420)
@@ -1734,18 +1779,36 @@ async def test_rank_delta_tracks_last_move_per_seat_and_survives_restart(tmp_pat
         await restarted.close()
 
 
+async def test_authoritative_absence_resets_only_that_seats_rank_baseline(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK
+    manager = _manager(tmp_path, _FakeSwarm())
+    try:
+        manager._seat_rank_delta(420, {'listed': True, 'rank': 8})
+        manager._seat_rank_delta(421, {'listed': True, 'rank': 4})
+        assert manager._seat_rank_delta(420, {'listed': False, 'rank': None}) is None
+        assert manager.cache.get_last_good(SLOT_SWARM_SEAT_RANK).payload['ranks'] == {
+            '421': {'rank': 4, 'prev': None}}
+        assert manager._seat_rank_delta(420, {'listed': True, 'rank': 2}) is None
+        assert manager._seat_rank_delta(421, {'listed': True, 'rank': 3}) == 1
+    finally:
+        await manager.close()
+
+
 @pytest.mark.parametrize('bad', ['x', -1, True, 0])
 async def test_rank_cache_drops_malformed_points_on_load(tmp_path, bad):
     from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK
     manager = _manager(tmp_path, _FakeSwarm())
     manager.cache.store_last_good(SLOT_SWARM_SEAT_RANK, {
+        'basis': 'seat-records-v1', 'ranks': {
         '420': {'rank':6, 'prev':8}, '421': {'rank':bad, 'prev':None},
         '422': {'rank':5, 'prev':bad},
+        },
     }, ts=NOW)
     await manager.close()
     restored = _manager(tmp_path, _FakeSwarm())
     try:
-        assert restored.cache.get_last_good(SLOT_SWARM_SEAT_RANK).payload == {'420': {'rank':6, 'prev':8}}
+        assert restored.cache.get_last_good(SLOT_SWARM_SEAT_RANK).payload == {
+            'basis': 'seat-records-v1', 'ranks': {'420': {'rank':6, 'prev':8}}}
     finally:
         await restored.close()
 
@@ -1758,7 +1821,7 @@ async def test_out_of_range_live_rank_has_no_delta_and_leaves_slot_unchanged(tmp
         manager._seat_rank_delta(420, {'listed': True, 'rank': 8})
         assert manager._seat_rank_delta(420, {'listed': True, 'rank': 6}) == 2
         before = copy.deepcopy(manager.cache.get_last_good(SLOT_SWARM_SEAT_RANK))
-        monkeypatch.setattr(sw, '_seat_contrib_from_rows',
+        monkeypatch.setattr(hub, 'seat_outcome',
                             lambda *_: {'listed': True, 'rank': 10**6 + 1})
         data = manager._swarm_board_keys(None, None, token)
         assert data['swarm_seat_rank_delta'] is None
@@ -1767,22 +1830,34 @@ async def test_out_of_range_live_rank_has_no_delta_and_leaves_slot_unchanged(tmp
         await manager.close()
 
 
-async def test_contributors_fold_updates_selected_rank_history(tmp_path):
+async def test_records_fold_updates_rank_history_and_contributors_cannot_override(tmp_path):
     from maxpane_dashboard.data.surf_cache import LastGood
     manager = _manager(tmp_path, _FakeSwarm())
-    raw = swarm_capture_v3('contributors')
-    first = sw.normalize_contributors(raw)
+    first = sw.normalize_contributors(swarm_capture_v3('contributors'))
+    records = hub.normalize_records(hub_capture('records'))
+    source = hub.source_envelope(records, NOW)
     try:
-        data = manager._swarm_board_keys(LastGood(first, NOW), None, 420)
-        rank = data['swarm_seat_contrib']['rank']
+        data = manager._swarm_board_keys(LastGood(first, NOW), None, 420, records_source=source)
+        assert data['swarm_seat_contrib']['rank'] == 6
+        assert data['swarm_seat_outcome']['rank'] == 1
         assert data['swarm_seat_rank_delta'] is None
         updated = copy.deepcopy(first)
         for row in updated['contributors']:
             if row['token_id'] == 420:
                 row['accepted'] = row['attempts'] = 10_000_000
-        data = manager._swarm_board_keys(LastGood(updated, NOW + 1), None, 420)
+        data = manager._swarm_board_keys(LastGood(updated, NOW + 1), None, 420, records_source=source)
         assert data['swarm_seat_contrib']['rank'] == 1
-        assert data['swarm_seat_rank_delta'] == rank - 1
+        assert data['swarm_seat_outcome']['rank'] == 1
+        assert data['swarm_seat_rank_delta'] is None
+        moved = hub_capture('records')
+        for row in moved['seats']:
+            if row['tokenId'] == '1836':
+                row.update(attempts=4000, accepted=4000)
+        moved_source = hub.source_envelope(hub.normalize_records(moved), NOW + 1)
+        data = manager._swarm_board_keys(LastGood(updated, NOW + 1), None, 420,
+                                        records_source=moved_source)
+        assert data['swarm_seat_outcome']['rank'] == 2
+        assert data['swarm_seat_rank_delta'] == -1
     finally:
         await manager.close()
 
@@ -2266,3 +2341,59 @@ async def test_failed_workflow_read_carries_only_a_finite_timestamp_and_caps_his
         assert manager._swarm_scores_keys(restored.payload, restored, None, now + 7200)["swarm_workflows_as_of_hhmm"] == expected
     finally:
         await manager.close()
+
+
+async def test_records_failure_retains_effort_without_using_it_for_outcomes(tmp_path):
+    swarm = _FakeSwarm()
+    swarm.fail_records = True
+    manager, payload = await _landed(tmp_path, swarm, seat=420)
+    try:
+        assert payload['swarm_seat_contrib']['rank'] == 6
+        assert payload['swarm_fleet']
+        assert payload['swarm_board_rows'] is None
+        assert payload['swarm_seat_outcome'] is None
+        assert payload['swarm_board_summary']['attempts'] is None
+        assert payload['swarm_board_summary']['receipt_attempts'] is not None
+        assert payload['swarm_outcomes_source']['state'] == 'unavailable'
+    finally:
+        await manager.close()
+
+
+async def test_records_failure_keeps_last_whole_snapshot_and_successful_read_clock(tmp_path):
+    clock = FakeClock(V2_NOW)
+    swarm = _FakeSwarm()
+    manager, before = await _landed(tmp_path, swarm, seat=420, clock=clock)
+    try:
+        swarm.fail_records = True
+        swarm.contributors['receipts'] += 1
+        clock.advance(121)
+        await manager.fetch_and_compute()
+        await _settle(manager)
+        after = await manager.fetch_and_compute()
+        _assert_recorded_outcomes(after)
+        assert after['swarm_seat_outcome'] == before['swarm_seat_outcome']
+        assert after['swarm_outcomes_source']['state'] == 'stale'
+        assert after['swarm_outcomes_source']['read_ts'] == before['swarm_outcomes_source']['read_ts']
+        assert after['swarm_board_as_of_hhmm'] == before['swarm_board_as_of_hhmm']
+        assert after['swarm_contributors_as_of_hhmm'] != before['swarm_contributors_as_of_hhmm']
+    finally:
+        await manager.close()
+
+
+async def test_legacy_rank_basis_resets_only_rank_movement_on_reload(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK
+    manager, before = await _landed(tmp_path, _FakeSwarm(), seat=420)
+    manager.cache.store_last_good(SLOT_SWARM_SEAT_RANK, {'420': {'rank': 6, 'prev': 8}}, ts=NOW)
+    await manager.close()
+    fresh = _manager(tmp_path, _FakeSwarm(), seat=420)
+    try:
+        assert fresh.cache.get_last_good(SLOT_SWARM_SEAT_RANK).payload == {
+            'basis': 'seat-records-v1', 'ranks': {}}
+        data = fresh._swarm_board_keys(fresh.cache.get_last_good('swarm_contributors'),
+                                      fresh.cache.get_last_good('swarm_workers'), 420)
+        assert data['swarm_seat_rank_delta'] is None
+        assert data['swarm_seat_outcome'] == before['swarm_seat_outcome']
+        assert data['swarm_seat_contrib'] == before['swarm_seat_contrib']
+        assert (await fresh.fetch_and_compute())['swarm_seat_selected']['token_id'] == 420
+    finally:
+        await fresh.close()

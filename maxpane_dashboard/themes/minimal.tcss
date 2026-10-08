@@ -3069,3 +3069,11 @@ CuratorScreen #curator-filter-error {
     height: 1;
     color: $error;
 }
+
+/* ── SURFBOARD hub screen ─────────────────────────────────────────────── */
+/* Dashboard 9: scope the rack palette so native SURF bodies retain their styles. */
+SurfboardScreen { background: #141714; color: #d8ddd5; }
+SurfboardScreen #surfboard-title { height: 1; color: #a2d84a; padding: 0 1; }
+SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1; overflow: auto auto;
+    scrollbar-gutter: stable; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
+SurfboardScreen #surfboard-detail { height: 1; padding: 0 1; color: #a5b29d; text-wrap: nowrap; }

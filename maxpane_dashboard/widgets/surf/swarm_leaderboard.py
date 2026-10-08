@@ -1,4 +1,4 @@
-"""Lifetime contributor seats, enriched by workers; token metadata survives clipping."""
+"""Recorded-seat outcomes with independent effort and worker facts."""
 from rich.style import Style
 from rich.text import Text
 from textual.widgets import DataTable, Static
@@ -7,7 +7,7 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int, fmt_float, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
 from maxpane_dashboard.widgets.surf._fmt import source_clock
-from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
+from maxpane_dashboard.widgets.surf._swarm_seat import seat_token, outcomes_clock
 from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase, table_cols
 
 # Counts keep every decimal digit without grouping separators. This reserves
@@ -33,10 +33,10 @@ class _SeatTable(DataTable):
 
 
 class SurfSwarmLeaderboard(SwarmTableBase):
-    TITLE='LEADERBOARD · lifetime'
+    TITLE='LEADERBOARD · recorded seats'
     TABLE_ID='surf-swarm-leaderboard-table'
     ROW_CAP=None
-    EMPTY_LINE='no contributors yet'
+    EMPTY_LINE='no submitted records yet'
     COLUMN_SPECS=_SPECS
     TIER_COLUMNS={'full':_ALL,'compact':_COMPACT,'tight':_TIGHT}
     LADDER=rowfit.Ladder(*((name,table_cols(w for key,_,w in _SPECS if key in keep))
@@ -60,11 +60,12 @@ class SurfSwarmLeaderboard(SwarmTableBase):
             yield _SeatTable(id=child.id, cursor_foreground_priority='renderable') if isinstance(child, DataTable) else child
         yield Static('',classes='board-clocks')
     def update_data(self,swarm_board_rows=None,swarm_seat_selected=None,
-                    swarm_board_as_of_hhmm=None,swarm_workers_as_of_hhmm=None,**_kwargs):
+                    swarm_board_as_of_hhmm=None,swarm_workers_as_of_hhmm=None,
+                    swarm_outcomes_source=None,swarm_contributors_as_of_hhmm=None,**_kwargs):
         selected=swarm_seat_selected if isinstance(swarm_seat_selected,dict) else {}
         self._selected=seat_token(selected.get('token_id'))
         self.store(swarm_board_rows,None)
-        self.write('.board-clocks',Text(f'contributors as of {source_clock(swarm_board_as_of_hhmm)} · workers as of {source_clock(swarm_workers_as_of_hhmm)}'))
+        self.write('.board-clocks',Text(f'records {outcomes_clock(swarm_outcomes_source)} · effort {source_clock(swarm_contributors_as_of_hhmm)} · workers {source_clock(swarm_workers_as_of_hhmm)}'))
     def _repaint(self):
         # Column installation and row rendering both clear the table. Capture
         # immutable identity first; saved selection and cursor are independent.

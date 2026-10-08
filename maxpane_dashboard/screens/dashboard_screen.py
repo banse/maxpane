@@ -208,6 +208,10 @@ class DashboardScreen(RefreshGuard, Screen):
     # The refresh
     # ------------------------------------------------------------------
 
+    async def _fetch_data(self) -> dict:
+        """Fetch the payload; snapshot screens may supply a cheaper projection."""
+        return await self._data_manager.fetch_and_compute()
+
     async def _do_refresh(self) -> None:
         """Fetch once, then update the title, every panel and the status bar.
 
@@ -216,7 +220,7 @@ class DashboardScreen(RefreshGuard, Screen):
         data is from.
         """
         try:
-            data = await self._data_manager.fetch_and_compute()
+            data = await self._fetch_data()
         except Exception as exc:
             logger.warning("%s refresh failed: %s", self.GAME_NAME, exc)
             try:

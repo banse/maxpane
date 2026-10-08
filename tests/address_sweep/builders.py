@@ -49,6 +49,9 @@ from maxpane_dashboard.screens.surf import (
     SurfScreen,
 )
 from maxpane_dashboard.screens.talismans import TalismansScreen
+from maxpane_dashboard.screens.surfboard import (
+    SurfboardScreen, SURFBOARD_FULL_LAYOUT_COLUMNS, SURFBOARD_FULL_LAYOUT_ROWS,
+)
 from maxpane_dashboard.screens.ttt import TTTScreen
 from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA, ROBINHOOD
 from tests.address_sweep.case import SweepCase
@@ -646,7 +649,46 @@ BAKERY_SEEDED: tuple[str, ...] = (
 
 # -- the registry ----------------------------------------------------------------
 
+_HUB_OWNER = "0x1234567890abcdef1234567890abcdef12345678"
+
+
+def _surfboard_payload() -> dict:
+    # Event prose has no chain identity: copyable, with no guessed explorer.
+    return {
+        "surfboard_cards": [{
+            "key": "announce", "status": "active", "primary": _HUB_OWNER,
+            "secondary": "copyable identity", "detail": _HUB_OWNER,
+            "destination": "dashboard", "meter_kind": "ratio",
+            "numerator": 0, "denominator": 11, "points": None,
+        }],
+        "surfboard_events": [{
+            "key": "address-sweep", "timestamp": 1791496800,
+            "kind": "job", "job_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "token_id": None, "agent_id": None, "role": None,
+            "step": None, "state": "posted", "objective": _HUB_OWNER,
+        }],
+        "surfboard_overview": {},
+        "surfboard_sources": {"overview": {"state": "ok", "read_ts": 1791496800}},
+    }
+
+
+class _SurfboardPayloadManager(_PayloadManager):
+    async def fetch_hub_snapshot(self) -> dict:
+        return dict(self._payload)
+
+
+def _surfboard_app() -> App:
+    return _CopyHarness(SurfboardScreen(
+        _SurfboardPayloadManager(_surfboard_payload()), poll_interval=30, name="surfboard"))
+
+
 CASES: tuple[SweepCase, ...] = (
+    SweepCase(
+        name="surfboard", screen_class=SurfboardScreen,
+        build=_surfboard_app, payload=_surfboard_payload,
+        seeded=(_HUB_OWNER,),
+        pins=((SURFBOARD_FULL_LAYOUT_COLUMNS, SURFBOARD_FULL_LAYOUT_ROWS),),
+    ),
     SweepCase(
         name="surf",
         # Mainnet by default (``widgets/surf/_fmt.EXPLORER``); the pool4 panels link

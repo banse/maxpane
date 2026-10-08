@@ -88,7 +88,7 @@ tests/               analytics/ data/ screens/ widgets/ address_sweep/ fixtures/
 `manager` (`fetch_and_compute()` → flat dict) → `screen` (dispatch) → `widgets` (render only:
 `str`/`int`/`float`/`bool`/`dict`/`list[dict]`; may import pure `analytics/` helpers, never
 `data/`). Dashboards (`--game`): `surf` (default, prefetched), `curator`, `fwa`, `base`,
-`frenpet`, `cattown`, `ttt`, `talismans`; hidden but intact: `bakery`, `ocm`, `dota`,
+`frenpet`, `cattown`, `ttt`, `talismans`, `surfboard` (dashboard 9, shares SurfManager); hidden but intact: `bakery`, `ocm`, `dota`,
 `frenpet_full/_wallet/_perf`. Adding, hiding or reordering one touches six surfaces
 (`rules/dashboard-registry.md`).
 

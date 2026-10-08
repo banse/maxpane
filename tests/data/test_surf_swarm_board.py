@@ -120,7 +120,8 @@ def test_served_empty_sources_are_real_zeros_and_not_listed():
     workers = {'workers': [], 'count': 0}
     summary = sw.board_summary(contributors, workers)
     assert tuple(summary) == SWARM_BOARD_SUMMARY_FIELDS
-    assert all(value == 0 for value in summary.values())
+    assert summary["failed"] is None  # contributor receipts have no failed partition
+    assert all(value == 0 for key, value in summary.items() if key != "failed")
     assert sw.board_rows(contributors, workers) == []
     absent = sw.seat_contrib(contributors, 420)
     assert tuple(absent) == SWARM_SEAT_CONTRIB_FIELDS

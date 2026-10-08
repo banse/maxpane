@@ -123,7 +123,7 @@ async def test_the_six_labels_stand_in_row_order():
     rows, regions, _ = await _render([KW])
     label_y = regions[AGENTS].y
     line = rows[label_y]
-    order = [line.index(w) for w in ("AGENTS", "WORKING", "ACCEPTED 24h", "LAUNCHES", "WORKFLOWS", "SITES")]
+    order = [line.index(w) for w in ("AGENTS", "WORKING", "STEPS 24h", "LAUNCHES", "WORKFLOWS", "SITES")]
     assert order == sorted(order), line
 
 
@@ -180,6 +180,15 @@ async def test_accepted_24h_is_grouped_and_three_states():
     zero = await _box(ACCEPTED, swarm_accepted_today=0)
     assert zero.splitlines()[2].strip() == "0", zero
     assert "unavailable" in await _box(ACCEPTED, swarm_accepted_today=None)
+
+
+async def test_global_network_figures_disclose_their_independent_overview_clock():
+    from maxpane_dashboard.widgets.fmt import hhmm
+    source = {"state": "stale", "read_ts": 1_700_000_000}
+    for box in (AGENTS, WORKING, ACCEPTED):
+        text = await _box(box, surfboard_sources={"overview": source}, swarm_as_of_hhmm="01:01")
+        assert "stale " + hhmm(source["read_ts"]) in text
+        assert "01:01" not in text
 
 
 

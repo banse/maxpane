@@ -173,7 +173,7 @@ async def test_every_agent_hero_title_sits_on_the_same_row():
         heights = {len(str(b.render()).split("\n")) for b in boxes}
 
     assert len(heights) > 1, "every body has the same height: nothing to align"
-    assert firsts == ["SEAT", "ACCEPTED JOBS", "WORK", "REWARDS", "RANK", "STATUS"], firsts
+    assert firsts == ["SEAT", "ACCEPTED WORK", "WORK", "REWARDS", "RANK", "STATUS"], firsts
 
 
 @pytest.mark.parametrize("width", [SURF_AGENT_FULL_LAYOUT_COLUMNS, 150, 169, 211])
@@ -325,11 +325,11 @@ async def test_retired_roster_selection_is_gone():
         assert "FEEDBACK" in text and "BY NODE" not in text
 
 
-def _record_needles(seat: dict) -> list[str]:
-    """Strings only seat *seat*'s ``/seats`` record puts on the AGENT body."""
+def _record_needles(seat: dict, outcome: dict) -> list[str]:
+    """Distinct canonical outcome and detail strings belonging to one seat."""
     summary = sw.seat_summary_from_seat(seat)
     work = sw.seat_work_rows(seat)
-    needles = [f"{summary['accepted']} of {summary['attempts']}", summary["owner"][:6]]
+    needles = [f"{outcome['accepted']:,} of {outcome['attempts']:,}", summary["owner"][:6]]
     needles += [row["job_id"][:8] for row in work[:3]]
     return needles
 
@@ -339,13 +339,14 @@ async def test_a_switch_pending_composite_shows_no_number_of_the_old_seat(tmp_pa
     Not one of A's record strings reaches the composited AGENT body -- and
     each of them does reach it while A is the selected seat, so the needles
     can match (a control, not an assumption)."""
-    manager, before = await _seated(tmp_path, _FakeSwarm())
-    assert before["swarm_seat_selected"]["token_id"] == 0
-    manager.set_seat(420)
+    manager, before = await _seated(tmp_path, _FakeSwarm(), seat=420)
+    assert before["swarm_seat_selected"]["token_id"] == 420
+    assert before["swarm_seat_outcome"]["accepted"] == 3253
+    manager.set_seat(1836)
     pending = await manager.fetch_and_compute()
     await manager.close()
     assert pending["swarm_seat_state"] == "pending"
-    needles = _record_needles(swarm_seat_capture("seat_0"))
+    needles = _record_needles(swarm_seat_capture("seat_420"), before["swarm_seat_outcome"])
     for payload, should_show in ((before, True), (pending, False)):
         async with _surf_app(payload).run_test(size=(170, 60)) as pilot:
             screen = await _open(pilot, "a")
@@ -357,8 +358,9 @@ async def test_a_switch_pending_composite_shows_no_number_of_the_old_seat(tmp_pa
                 assert shown == needles, sorted(set(needles) - set(shown))
             else:
                 assert shown == [], shown
-                assert "IDMD #420" in hero and "Loading" in hero
-                assert "IDMD #0" not in hero
+                assert "IDMD #1836" in hero and "Loading" in hero
+                assert "1 of 1" in hero and "#2 of 2" in hero
+                assert "IDMD #420" not in hero
 
 
 # -- the seat prompt (`i`) ----------------------------------------------------
@@ -598,8 +600,13 @@ async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_u
         screen=await _open(pilot,"a")
         hero=_region_text(pilot.app,screen.query_one(SurfSwarmAgentHero))
         seat=_region_text(pilot.app,screen.query_one(SurfSwarmSeatCards))
+        accepted=_region_text(pilot.app,screen.query_one(f"#{AGENT_HERO_BOX_IDS['accepted']}"))
+        rank=_region_text(pilot.app,screen.query_one(f"#{AGENT_HERO_BOX_IDS['rank']}"))
     assert "IDMD #420" in hero and f"{WORKING_GLYPH} 0 of 1" in hero
-    assert "accepted unavailable" in hero and "#6 of " in hero  # RANK is not seats-gated
+    # The canonical summary is independent of both the unread seat detail
+    # and the contributor accounting (whose rank would be #6).
+    assert "3,253 of 3,392" in accepted and "#1 of 2" in rank
+    assert "accepted unavailable" not in accepted and "#6 of " not in rank
     assert "skills" not in seat and "linux arm64" not in seat
     # Owner 2026-09-22: neither STATUS nor BOARD names its source clock.
     assert "as of 04:02" not in hero + seat

@@ -55,7 +55,7 @@ def test_the_jobs_seen_slot_is_registered_so_it_restores():
     assert SLOT_SWARM_JOBS_SEEN in SLOTS
     # SLOT_SWARM_JOB_DETAIL adds bounded popup job facts, independently of jobs-seen;
     # SLOT_SWARM_SEAT_REWARDS (F-S5) the selected seat's IMD rewards.
-    assert len(SLOTS) == 24
+    assert len(SLOTS) == 27  # independent overview, records and hourly envelopes
 
 
 def test_a_seen_map_round_trips_through_save_and_load(tmp_path):
@@ -328,3 +328,28 @@ def test_seat_slot_load_drops_malformed_or_future_entry_keeps_sibling(tmp_path, 
     fresh = SurfCache(path=path, clock=lambda: 1000.0)
     fresh.load(slot_coercers={SLOT_SWARM_SEAT: lambda value: sw.coerce_seat_slot(value, now=1000.0)})
     assert fresh.get_last_good(SLOT_SWARM_SEAT).payload == {"seats": {"420": sibling}}
+
+
+def test_hub_failed_attempt_never_advances_successful_global_clock(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SurfCache
+    from maxpane_dashboard.data.surfboard import source_envelope
+    cache=SurfCache(path=tmp_path/'hub.json',clock=lambda:200)
+    cache.store_last_good('surfboard_records',source_envelope(None,200),ts=200)
+    assert cache.newest_as_of() is None
+    good=source_envelope({'count':0,'seats':[]},100)
+    cache.store_last_good('surfboard_records',source_envelope(None,200,prior=good),ts=200)
+    assert cache.newest_as_of()==100
+
+
+def test_hub_cache_refuses_unvalidated_or_corrupt_outcomes(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SurfCache
+    from maxpane_dashboard.data import surfboard as hub
+    from tests.data.test_surfboard import capture
+    path=tmp_path/'hub.json';cache=SurfCache(path=path,clock=lambda:1000)
+    clean=hub.source_envelope(hub.normalize_records(capture('records')),1000)
+    cache.store_last_good('surfboard_records',clean,ts=1000);cache.save()
+    unread=SurfCache(path=path,clock=lambda:1000);unread.load()
+    assert unread.get_last_good('surfboard_records') is None
+    loaded=SurfCache(path=path,clock=lambda:1000)
+    loaded.load(slot_coercers={'surfboard_records':lambda value:hub.coerce_source(value,'records',now=1000)})
+    assert loaded.get_last_good('surfboard_records').payload==clean

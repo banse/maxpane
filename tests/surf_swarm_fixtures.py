@@ -51,21 +51,36 @@ def swarm_capture_v3(name: str) -> dict:
 
 
 def swarm_board_payload():
-    """Frozen v3 contributor/worker facts and their independent source clocks."""
+    """Canonical recorded outcomes plus independent v3 effort/presence facts."""
     from maxpane_dashboard.data import surf_swarm as fold
+    from maxpane_dashboard.data import surfboard as hub
     contributors, workers = swarm_capture_v3('contributors'), swarm_capture_v3('workers')
-    return dict(swarm_board_summary=fold.board_summary(contributors,workers),
-                swarm_board_rows=fold.board_rows(contributors,workers),
+    source = swarm_outcomes_source()
+    rows, summary = hub.canonical_board(source['payload'], fold.normalize_contributors(contributors),
+                                        fold.normalize_workers(workers))
+    return dict(swarm_board_summary=summary, swarm_board_rows=rows,
                 swarm_fleet=fold.fleet(workers),
-                swarm_board_as_of_hhmm='03:01',swarm_workers_as_of_hhmm='04:02')
+                swarm_board_as_of_hhmm='03:01', swarm_workers_as_of_hhmm='04:02',
+                swarm_contributors_as_of_hhmm='05:03', swarm_outcomes_source=source)
+
+
+def swarm_outcomes_source():
+    """Public records capture with a synthetic, fixed read clock for composites."""
+    from maxpane_dashboard.data import surfboard as hub
+    raw = json.loads((SWARM_FIXTURES_V2.parent / 'hub' / 'records.json').read_text())
+    return hub.source_envelope(hub.normalize_records(raw), 1791428460.0)
 
 
 def swarm_agent_sources(token):
     """Independently folded v3 worker/contributor facts for exactly this seat."""
     from maxpane_dashboard.data import surf_swarm as fold
+    from maxpane_dashboard.data import surfboard as hub
+    source = swarm_outcomes_source()
     return dict(swarm_seat_live=fold.seat_live(swarm_capture_v3("workers"), token),
                 swarm_seat_contrib=fold.seat_contrib(swarm_capture_v3("contributors"), token),
-                swarm_workers_as_of_hhmm="04:02", swarm_board_as_of_hhmm="03:01")
+                swarm_workers_as_of_hhmm="04:02", swarm_board_as_of_hhmm="03:01",
+                swarm_contributors_as_of_hhmm="05:03", swarm_outcomes_source=source,
+                swarm_seat_outcome=hub.seat_outcome(source['payload'], token))
 
 
 def swarm_capture_v5(name: str) -> dict:

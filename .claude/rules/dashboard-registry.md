@@ -12,7 +12,7 @@ paths:
 
 # Adding, hiding or reordering a dashboard
 
-## The eight visible dashboards
+## The nine visible dashboards
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
@@ -24,11 +24,12 @@ paths:
 | 6 | `cattown` | Base | fishing competition, KIBBLE economy |
 | 7 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
 | 8 | `talismans` | Ethereum | core-conservation NFT collection |
+| 9 | `surfboard` | Ethereum / IMD | SURFBOARD HUB: four-row rack, seven existing views and a read-only command terminal; shares `_surf_manager` |
 
 `surf` is position 1, the `--game` default, and the dashboard prefetched at launch; that is
 meant to stay. Hidden from the selection pane, code and tests intact: `bakery`, `ocm`, `dota`
 (backend is NXDOMAIN; 77 client tests still pass), `frenpet_full`, `frenpet_wallet`,
-`frenpet_perf`. Ten themes are registered.
+`frenpet_perf`. Ten themes are registered. Dashboard 9 aliases `_surf_manager` for prefetch and shutdown; it adds no manager attribute. `ALL_GAMES` includes `surfboard`, while the four `MANAGER_ATTRS` lists stay unchanged.
 
 **Hiding, adding or reordering a dashboard touches six surfaces and they must agree:**
 

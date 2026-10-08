@@ -1278,7 +1278,8 @@ def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
 # ---------------------------------------------------------------------------
 
 #: Keys whose type is never a bare ``int``/``float`` -- ``str``, ``bool`` or
-#: ``list[...]`` -- so there is no None-vs-0 ambiguity to defend: a bool's
+#: ``list[...]``/``dict[...]`` -- so there is no scalar None-vs-0 ambiguity
+#: to defend here (nested numeric fields have dedicated widget tests): a bool's
 #: unread state is already distinct from ``False`` without going anywhere
 #: near ``"0"``, and a list's unread state is ``None`` vs. ``[]``, the same
 #: distinction ``surf_models.LogWindow``'s own docstring draws for ``()``.
@@ -1480,6 +1481,19 @@ _NON_NUMERIC_KEYS = frozenset(
         "swarm_board_summary", "swarm_board_rows", "swarm_fleet",
         "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm",
         "swarm_seat_live", "swarm_seat_contrib",
+        # The accepted-work migration separates the source clocks. This
+        # nullable string dates effort/receipts in AGENT WORK and BOARD;
+        # the accepted/rank read comes from the envelope below instead.
+        "swarm_contributors_as_of_hhmm",
+        # Canonical selected-seat counters are a dict, not a scalar. AGENT
+        # ACCEPTED WORK/RANK consumes it; the nested zero-vs-unavailable
+        # distinction is pinned by test_a_zero_record_renders_zeros_not_unavailable
+        # in tests/widgets/test_surf_swarm_agent_hero.py.
+        "swarm_seat_outcome",
+        # AGENT and BOARD consume this source envelope's clock/state;
+        # unavailable vs retained stale records is covered by the same
+        # hero file and BOARD source-clock tests, not a scalar zero probe.
+        "swarm_outcomes_source",
         # Runtime versions/clocks are dictionaries; fleet reference is a tuple.
         "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon",
         "swarm_health_status",  # served status word, never a numeric zero
@@ -1488,6 +1502,25 @@ _NON_NUMERIC_KEYS = frozenset(
         # 2026-10-03): a list[dict] payload, `None` unread vs `[]` a real
         # empty page -- not an int/float, so no zero probe applies.
         "swarm_workflow_rows",
+        # Dashboard 9: explicitly classified structured contracts. Rack
+        # readouts/meters consume the card list; nested denominator/zero
+        # behavior is pinned in tests/widgets/test_surfboard_rack.py and
+        # tests/data/test_surfboard.py, including invalid boolean counters.
+        "surfboard_cards",
+        # The terminal consumes this row list. None (unavailable) and []
+        # (quiet) are separately rendered in test_surfboard_terminal.py.
+        "surfboard_events",
+        # The terminal header consumes this dict of network facts. The
+        # same test file renders known zeros separately from missing facts.
+        "surfboard_overview",
+        # Raw hourly dict retained as source evidence: its eight projected
+        # buckets reach the SWARM card through surfboard_cards. Missing
+        # bucket vs real zero is pinned in test_surfboard.py; no widget
+        # accepts this raw provider payload as a numeric value.
+        "surfboard_hourly",
+        # Dict of source envelopes, consumed by the rack/terminal and the
+        # native SWARM hero for independent read clocks and stale state.
+        "surfboard_sources",
     }
 )
 

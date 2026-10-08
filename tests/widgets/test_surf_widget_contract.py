@@ -39,6 +39,7 @@ from textual.app import App, ComposeResult
 
 from maxpane_dashboard.data.surf_models import (
     SURF_KEYS,
+    SURFBOARD_WIDGET_SIGNATURES,
     SWARM_PARKED_WIDGET_SIGNATURES,
     SWARM_WIDGET_SIGNATURES,
 )
@@ -46,6 +47,7 @@ from maxpane_dashboard.data.surf_models import (
 # Package root, not submodule paths: this is the surface ``screens/surf.py``
 # and its screen test import from (WP5), so the contract sweep exercises it.
 import maxpane_dashboard.widgets.surf as surf_widgets
+import maxpane_dashboard.widgets.surfboard as surfboard_widgets
 from maxpane_dashboard.widgets.surf import (
     SurfBurnkeepers,
     SurfBurnPipeline,
@@ -105,7 +107,8 @@ def _exported_widget_classes() -> tuple[type, ...]:
     )
 
 
-_ALL_WIDGETS = _exported_widget_classes()
+_HUB_WIDGETS = tuple(getattr(surfboard_widgets, name) for name in surfboard_widgets.__all__)
+_ALL_WIDGETS = _exported_widget_classes() + _HUB_WIDGETS
 
 #: The widgets that deliberately do **not** name their ``update_data`` kwargs
 #: after ``SURF_KEYS``. The ``l`` view's three panels are primitives-only and
@@ -225,7 +228,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         SurfSwarmWorkflows, SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
         SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet,
     SurfSwarmAgentHero, SurfSwarmSeatCards,
-        SurfSwarmSeatRecord,
+        SurfSwarmSeatRecord, *_HUB_WIDGETS,
     }
     assert _SHORT_KWARG_WIDGETS < set(_ALL_WIDGETS)
 
@@ -549,7 +552,11 @@ def test_widget_modules_import_no_data_layer_and_no_analytics():
     package, not a surf defect, and a ``sys.modules``-based check would
     misattribute it to these modules.
     """
-    for module in _surf_widget_modules():
+    import importlib
+    hub_modules = tuple(importlib.import_module(f"{surfboard_widgets.__name__}.{path.stem}")
+                        for path in Path(surfboard_widgets.__file__).parent.glob("*.py")
+                        if path.stem != "__init__") + (surfboard_widgets,)
+    for module in _surf_widget_modules() + hub_modules:
         for name in _imported_names(module):
             assert "maxpane_dashboard.data" not in name, (module.__name__, name)
             if "analytics" in name:
@@ -834,3 +841,15 @@ def test_every_exported_swarm_widget_implements_its_mounted_or_parked_signature(
         expected = SWARM_WIDGET_SIGNATURES.get(name) or SWARM_PARKED_WIDGET_SIGNATURES[name]
         assert _kwargs_of(cls) == expected, name
     assert set(SWARM_PARKED_WIDGET_SIGNATURES) <= {cls.__name__ for cls in swarm}
+
+
+@pytest.mark.parametrize("cls", _HUB_WIDGETS)
+def test_hub_exports_match_frozen_signatures(cls):
+    assert _kwargs_of(cls) == SURFBOARD_WIDGET_SIGNATURES[cls.__name__]
+
+
+def test_hub_terminal_limits_agree_with_model_contract():
+    from maxpane_dashboard.data.surf_models import SURFBOARD_COMMAND_LIMIT, SURFBOARD_REPLY_LIMIT
+    from maxpane_dashboard.widgets.surfboard.terminal import COMMAND_LIMIT, REPLY_LIMIT
+    assert COMMAND_LIMIT == SURFBOARD_COMMAND_LIMIT
+    assert REPLY_LIMIT == SURFBOARD_REPLY_LIMIT

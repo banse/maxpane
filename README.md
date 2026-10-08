@@ -19,6 +19,25 @@ kind, no wallet, no signing, no transactions.
 | **Cat Town** | Base | Fishing competition, KIBBLE economy, catches |
 | **Ten Thousand Tokens** | Ethereum | NFT burn-to-launch on UniV4, fee engines, holder claims |
 | **Talismans** | Ethereum | Core-conservation NFT collection, materials, essence × tier |
+| **SURFBOARD HUB** | Ethereum / IMD | Dashboard 9: seven SURFBOARD launchers, live IMD terminal, three future dashboards and two empty bays |
+
+### SURFBOARD HUB — dashboard 9
+
+Choose **9** on the start screen for the four-row, six-column equipment rack. It is designed
+for **149×45**. The central terminal spans the bottom three rows; all seven existing SURFBOARD
+views open through their original screen, with Escape returning to the rack. Entry 1 remains
+the default. `--game surfboard` preloads the shared data; the selection menu still appears.
+
+Use arrows and Enter to open a card, `/` to type, and Escape to leave the input or return to
+the menu. Outside the input, Tab continues cycling dashboards. Type `?` for commands:
+`status`, `jobs`, `seat #420`, `find <ENS/address/#seat>`, `me`, `grep <text>`,
+`open <#seat/job-id>` and `clear`. These commands only read public data or open an existing
+view. Swarm Tokens, Portfolio and Earnings are planned cards; two bays remain empty.
+
+Acceptance and rank in HUB, AGENT and BOARD share one validated `/seats/records` snapshot.
+Its upstream cache can lag by ten minutes. Device effort and worker presence keep separate
+source clocks. Focus a card to see its meter definition and source time; missing data is
+labelled unavailable. The terminal is a recent-event window, not a complete job history.
 
 ### FWA — Fake World Assets
 

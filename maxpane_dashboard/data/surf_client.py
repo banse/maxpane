@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import math
 import time
 from collections.abc import Sequence
@@ -1504,6 +1505,26 @@ class SurfClient(OwnedHttpClient):
             ops=to_int(results[2]),
             block_number=to_int(results[3]),
         )
+
+    async def fetch_ens_address(self, name: str) -> str | None:
+        """Bounded forward ENS read through the existing mainnet state pool."""
+        if (not isinstance(name, str) or len(name) > 255
+                or re.fullmatch(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+", name) is None):
+            return None
+        node = ens.namehash(name.lower())
+        try:
+            raw = await self._rpc_state("eth_call", [{"to": ens.ENS_REGISTRY,
+                "data": ens._call(ens.SEL_RESOLVER, node)}, "latest"])
+            resolver = ens.decode_address(raw) if isinstance(raw, str) else None
+            if not resolver or resolver == ens.ZERO_ADDRESS:
+                return None
+            raw = await self._rpc_state("eth_call", [{"to": resolver,
+                "data": ens._call(ens.SEL_ADDR, node)}, "latest"])
+            address = ens.decode_address(raw) if isinstance(raw, str) else None
+            return address if address and address != ens.ZERO_ADDRESS else None
+        except Exception as exc:  # a failed identity lookup is unavailable
+            logger.debug("SURF forward ENS read failed: %s", exc)
+            return None
 
     async def fetch_ens_names(self, addresses: Sequence[str]) -> dict[str, str]:
         """Reverse-resolve addresses to **forward-verified** ENS names.

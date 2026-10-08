@@ -1,7 +1,7 @@
 # SURFBOARD hub implementation plan
 
-Status: **ready for implementation; not built**. This document does not
-register dashboard 9 or claim the consistency correction has shipped.
+Status: **implemented and verified**. Dashboard 9 and the shared
+source-consistency correction are present on the dedicated branch.
 Branch: `feature/surfboard-hub-9`, based on `6a22d54b`.
 Authority: `CLAUDE.md` → [PRD](surfboard_PRD.md) → [source research](surfboard_game_mechanics.md)
 → this plan. No Superpowers. Preserve unrelated work and the standalone mock.
@@ -248,4 +248,30 @@ Run `.venv/bin/python -m pytest -m 'guard and not mounts_app' tests`, plus regis
 tests/test_fwa_guardrails.py tests/test_surfboard_registration.py` and docpin tests.
 No full suite unless the owner requests it or a version is tagged. Final whole-branch review
 checks the PRD, same-source invariants, actual live preview, targeted evidence and residuals.
-Only then mark implementation complete; this planning turn ends with the three design documents.
+Only then mark implementation complete.
+
+## Implementation evidence — 2026-10-09
+
+- Registered `surfboard` at 9 without a second manager or changing the original default.
+- Live 149×45 renders used public endpoints and an isolated cache. Network overview painted
+  within six seconds while full collection continued; missing POOL4 return-window evidence
+  remained unavailable. The owner received the live render before measurements and reviews.
+- The rack measures 140×36 with the short-window scrollbar allowance; 139×36 fits without
+  vertical scrolling. The app-wide 143-column pin is unchanged. Four payload classes and
+  both sides of each boundary are covered; event prose may retain its own truncation marker.
+- WP0 review approved readers/contracts. WP1 review corrected timestamp range checks,
+  independent meter freshness and service status output. WP2 review corrected freshness on
+  absent recorded seats. WP3 review corrected persistence of terminal seat selection.
+- Mutation checks cover malformed job limits, outcome partition rejection, shared-fetch
+  cancellation isolation, startup-prefetch opt-out, late command suppression, event scroll
+  anchors and both directions of each layout pin. Each mutation restores the original bytes.
+- Final whole-branch review raised two POOL4 text-fit findings. The single fix wave keeps
+  the exact meter ratio and both independent clocks visible, uses a complete compact seven-day
+  label, and marks longer focused details for widening. Scoped re-review: **Approved**;
+  all three production-projector/compositor regressions passed.
+- Final checks passed: 1,534 data/widget/startup cases; composing-screen coverage with the
+  former contributor-based expectations migrated; 104 final-fix data/screen/layout cases;
+  122 guards; 82 registration mounts; five affected address cases; 12 documentation pins.
+  Tests use fixtures and isolated caches. The final public-API preview was refreshed separately.
+- Full-suite execution is intentionally excluded by the project's Tier 2 workflow; scoped
+  data, widget, composing-screen, address, registration and documentation checks are the gates.

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from textual.app import App
 from textual.binding import Binding
+from textual.widgets import Input
 
 from maxpane_dashboard.copy_action import CopyAddressMixin
 from maxpane_dashboard.explorer_action import ExplorerLinkMixin
@@ -36,7 +37,8 @@ from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 from maxpane_dashboard.config import get_wallet
 from maxpane_dashboard.screens.ocm import OCMScreen
 from maxpane_dashboard.screens.splash import SplashScreen
-from maxpane_dashboard.screens.surf import SurfScreen
+from maxpane_dashboard.screens.surf import MODE_AGENT, SurfScreen
+from maxpane_dashboard.screens.surfboard import SurfboardScreen
 from maxpane_dashboard.screens.talismans import TalismansScreen
 from maxpane_dashboard.screens.ttt import TTTScreen
 from maxpane_dashboard.themes import THEMES, THEME_NAMES
@@ -110,6 +112,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         # handed in rather than read here: a bare ``MaxPaneApp()`` in a test
         # must not pick up the developer's own ``~/.maxpane/config.toml``.
         self._surf_manager = SurfManager(poll_interval=poll_interval, seat=seat)
+        self._surfboard_wallet_address = wallet_address
         # THE LIST's YOU row is wallet-scoped, so the curator manager is one of
         # the few that takes the address.  It normalises with ``wallet or None``,
         # so the empty string ``get_wallet()`` returns when nothing is
@@ -181,6 +184,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
             "ttt": self._ttt_manager,
             "talismans": self._talismans_manager,
             "surf": self._surf_manager,
+            "surfboard": self._surf_manager,
             "curator": self._curator_manager,
             "fwa": self._fwa_manager,
         }.get(game_id)
@@ -226,6 +230,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         "cattown",
         "ttt",
         "talismans",
+        "surfboard",
     ]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
@@ -234,6 +239,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         When *first* is True, uses push_screen (no existing screen to pop).
         Otherwise uses switch_screen (replaces current screen).
         """
+        self._clear_surf_navigation()
         if game_id == "bakery":
             if not self.is_screen_installed("bakery"):
                 self.install_screen(
@@ -324,15 +330,13 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
                     name="fwa",
                 )
         elif game_id == "surf":
-            if not self.is_screen_installed("surf"):
-                self.install_screen(
-                    SurfScreen(
-                        self._surf_manager,
-                        self.poll_interval,
-                        name="surf",
-                    ),
-                    name="surf",
-                )
+            self._ensure_surf_screen()
+        elif game_id == "surfboard":
+            if not self.is_screen_installed("surfboard"):
+                self.install_screen(SurfboardScreen(
+                    self._surf_manager, self.poll_interval, name="surfboard",
+                    wallet=self._surfboard_wallet_address,
+                ), name="surfboard")
         elif game_id == "curator":
             if not self.is_screen_installed("curator"):
                 self.install_screen(
@@ -351,6 +355,41 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
             self.push_screen(game_id)
         else:
             self.switch_screen(game_id)
+
+    def _ensure_surf_screen(self) -> SurfScreen:
+        if not self.is_screen_installed("surf"):
+            self.install_screen(SurfScreen(
+                self._surf_manager, self.poll_interval, name="surf",
+            ), name="surf")
+        return self.get_screen("surf")
+
+    def _clear_surf_navigation(self) -> None:
+        """Menu and dashboard cycling end the rack's transient body visit."""
+        if self.is_screen_installed("surf"):
+            self.get_screen("surf").clear_return_context()
+        setter = getattr(self._surf_manager, "set_agent_active", None)
+        if setter is not None:
+            setter(False)
+
+    def open_surf_mode(self, mode: str, *, token_id: int | None = None) -> None:
+        """Open the installed native SURF body on behalf of dashboard nine."""
+        if token_id is not None:
+            from maxpane_dashboard.screens.seat_input import parse_seat
+            token = parse_seat(str(token_id)) if not isinstance(token_id, bool) else None
+            if token is None or mode != MODE_AGENT:
+                raise ValueError("A seat route needs a valid AGENT seat")
+        screen = self._ensure_surf_screen()
+        screen.open_mode(mode, return_context="surfboard")
+        if token_id is not None:
+            screen.select_seat(token)
+        self._current_game = "surfboard"
+        self.switch_screen("surf")
+
+    def return_to_surfboard(self) -> None:
+        """Restore the retained rack, draft and scroll position."""
+        self._clear_surf_navigation()
+        self._current_game = "surfboard"
+        self.switch_screen("surfboard")
 
     def _on_wallet_entered(self, address: str | None) -> None:
         """Callback after the wallet input screen is dismissed."""
@@ -405,6 +444,8 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         actively hostile).
         """
         if action == "switch_game":
+            if isinstance(self.focused, Input):
+                return False
             try:
                 screen_name = self.screen.name
             except Exception:  # no screen on the stack yet
@@ -414,6 +455,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
 
     def action_show_menu(self) -> None:
         """Return to the game selection screen."""
+        self._clear_surf_navigation()
         self.pop_screen()
         self.push_screen(GameSelectScreen(), callback=self._on_game_selected)
 

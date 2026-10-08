@@ -195,6 +195,7 @@ SLOT_SWARM_JOB_DETAIL = "swarm_job_detail"  # job UUID -> bounded popup job fact
 SLOT_SWARM_ANSWERS = "swarm_answers"  # job UUID -> submission hash -> extracted answer entry
 
 SLOTS: tuple[str, ...] = (
+    "surfboard_overview", "surfboard_records", "surfboard_hourly",
     SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS,
     SLOT_CHAIN,
     SLOT_CHANNEL,
@@ -438,6 +439,7 @@ class SurfCache:
         self.path = str(path)
         self._clock = clock
         self._tier_last_fetch: dict[str, float] = {}
+        self._tier_last_failure: dict[str, float] = {}
         self._tier_next_due: dict[str, float] = {}
         self.last_good: dict[str, LastGood] = {}
         self.series: dict[str, deque[tuple[float, float]]] = {
@@ -533,6 +535,7 @@ class SurfCache:
         self._check_tier(tier)
         ts = self._now(now)
         self._tier_last_fetch[tier] = ts
+        self._tier_last_failure.pop(tier, None)
         self._tier_next_due[tier] = ts + TIER_TTL_SECONDS[tier]
 
     def mark_failed(
@@ -548,7 +551,8 @@ class SurfCache:
             if retry_after is None
             else float(retry_after)
         )
-        self._tier_next_due[tier] = self._now(now) + max(0.0, backoff)
+        self._tier_last_failure[tier] = self._now(now)
+        self._tier_next_due[tier] = self._tier_last_failure[tier] + max(0.0, backoff)
 
     def mark_due(self, tier: str) -> None:
         """Make ``tier`` due on the next :meth:`tiers_due`, whatever its clock said.
@@ -572,6 +576,11 @@ class SurfCache:
     def last_fetch_ts(self, tier: str) -> float | None:
         self._check_tier(tier)
         return self._tier_last_fetch.get(tier)
+
+    def last_failure_ts(self, tier: str) -> float | None:
+        """Latest failure since the tier's last success; never a successful-read clock."""
+        self._check_tier(tier)
+        return self._tier_last_failure.get(tier)
 
     # -- last-good snapshots -------------------------------------------------
 
@@ -618,7 +627,14 @@ class SurfCache:
 
     def newest_as_of(self) -> float | None:
         """Timestamp of the freshest successful read across every slot."""
-        stamps = [e.ts for e in self.last_good.values()]
+        stamps = []
+        for slot, entry in self.last_good.items():
+            if slot in ("surfboard_overview", "surfboard_records", "surfboard_hourly"):
+                stamp = entry.payload.get("read_ts") if isinstance(entry.payload, dict) else None
+                if type(stamp) in (int, float) and math.isfinite(stamp):
+                    stamps.append(stamp)
+            else:
+                stamps.append(entry.ts)
         return max(stamps) if stamps else None
 
     # -- series --------------------------------------------------------------
@@ -1242,7 +1258,7 @@ class SurfCache:
                             "read_ts": entry.ts,
                         }}}, ts=entry.ts)
                         self._dirty = True
-                    if slot in (SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS, SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS):
+                    if slot in ("surfboard_overview", "surfboard_records", "surfboard_hourly", SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS, SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:

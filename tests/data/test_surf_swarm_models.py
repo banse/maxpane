@@ -72,7 +72,7 @@ SWARM_RETIRED_KEYS = (
 SWARM_V2_ROW_SHAPES = {
     "swarm_board_rows": (
         "rank", "token_id", "agent_id", "devices", "runtime", "attempts", "accepted",
-        "rejected", "pending", "accept_rate", "turns", "wall_clock_s", "live_state",
+        "rejected", "failed", "pending", "accept_rate", "turns", "wall_clock_s", "live_state",
         "working", "paused_until_ts", "failures",
     ),
     "swarm_inflight_rows": (
@@ -147,8 +147,8 @@ def test_the_swarm_block_includes_runtime_checks_and_rank_delta():
     """Thirty-two existing keys, the served health status word and the owner's ENS name,
     runtime/rank/read keys, F-S5's two REWARDS keys, the /workflows rows
     and their independent successful-read marker, plus the launches tier marker."""
-    assert len(SWARM_KEYS) == 43
-    assert len(set(SWARM_KEYS)) == 43
+    assert len(SWARM_KEYS) == 46
+    assert len(set(SWARM_KEYS)) == 46
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -170,11 +170,11 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-33:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+    assert SWARM_KEYS[-36:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
                                 + ("swarm_health_status", "swarm_seat_owner_ens", "swarm_runtime_latest",
                                    "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta", "swarm_seat_read",
                                    "swarm_seat_rewards", "swarm_seat_rewards_state",
-                                   "swarm_workflow_rows", "swarm_workflows_as_of_hhmm", "swarm_launches_as_of_hhmm"))
+                                   "swarm_workflow_rows", "swarm_workflows_as_of_hhmm", "swarm_launches_as_of_hhmm", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"))
 
 
 def test_the_retired_keys_are_gone_and_the_ten_survivors_lead():
@@ -216,7 +216,7 @@ def test_every_signature_key_is_a_swarm_key():
     not a contract key would be a widget reading a value nothing emits."""
     for widget, kwargs in SWARM_WIDGET_SIGNATURES.items():
         for key in kwargs:
-            assert key in (*SWARM_KEYS, "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
+            assert key in (*SWARM_KEYS, *models.SURFBOARD_KEYS, "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
 
 
 def test_every_signature_kwarg_is_unique_within_its_widget():
@@ -313,7 +313,7 @@ def test_the_agent_signatures_are_the_flipped_literals():
         "SurfSwarmAgentHero": (
             "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state",
             "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta",
-            "swarm_seat_rewards", "swarm_seat_rewards_state",
+            "swarm_seat_rewards", "swarm_seat_rewards_state", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm",
         ),
         "SurfSwarmSeatCards": (
             "swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates",
@@ -334,8 +334,9 @@ def test_the_agent_signatures_reach_every_seats_key_and_drop_the_window_ones():
 @pytest.mark.parametrize(("name", "expected"), [
     ("SWARM_BOARD_SUMMARY_FIELDS", (
         "seats", "live", "paused", "capacity", "working", "attempts", "accepted",
-        "rejected", "pending", "devices", "turns", "wall_clock_ms", "input_tokens",
+        "rejected", "failed", "pending", "devices", "turns", "wall_clock_ms", "input_tokens",
         "output_tokens", "receipts", "tokens_per_completed_job",
+        "receipt_seats", "receipt_attempts", "receipt_accepted", "receipt_rejected", "receipt_pending",
     )),
     ("SWARM_FLEET_FIELDS", (
         "runtimes", "daemons", "os", "profiles", "concurrency",
@@ -364,15 +365,15 @@ def test_board_signatures_carry_each_source_clock():
         "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
     )} == {
         "SurfSwarmBoardHero": (
-            "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm",
+            "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm",
         ),
         "SurfSwarmLeaderboard": (
             "swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm",
-            "swarm_workers_as_of_hhmm",
+            "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm",
         ),
         "SurfSwarmFleet": (
             "swarm_fleet", "swarm_board_summary", "swarm_board_as_of_hhmm",
-            "swarm_workers_as_of_hhmm",
+            "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm",
         ),
     }
     named = {key for signature in SWARM_WIDGET_SIGNATURES.values() for key in signature}
@@ -407,7 +408,7 @@ def test_polish_answer_fetch_window_agrees_with_record_row_cap():
 def test_layout_v3_hero_contract_uses_summary_sources():
     assert SWARM_WIDGET_SIGNATURES["SurfSwarmHero"] == (
         "swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now",
-        "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows",
+        "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows", "surfboard_sources",
     )
 
 
@@ -481,7 +482,7 @@ def test_capability_is_parked_with_its_frozen_signature():
     }
     for widget, kwargs in models.SWARM_PARKED_WIDGET_SIGNATURES.items():
         for key in kwargs:
-            assert key in (*SWARM_KEYS, "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
+            assert key in (*SWARM_KEYS, *models.SURFBOARD_KEYS, "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
     signature = inspect.signature(SurfSwarmCapability.update_data)
     actual = tuple(name for name, value in signature.parameters.items()
                    if name != "self" and value.kind != inspect.Parameter.VAR_KEYWORD)

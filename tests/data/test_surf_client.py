@@ -2886,6 +2886,7 @@ def _public_fetchers() -> list[str]:
 
 FETCHERS = _public_fetchers()
 FETCHER_ARGS = {
+    "fetch_ens_address": ("surf.eth",),
     "fetch_launch_receipts": ([load_fixture("../swarm/v8/rpc_737_receipt.json")["result"]["transactionHash"]],),
 }
 

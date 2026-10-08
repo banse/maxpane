@@ -47,6 +47,7 @@ ALL_GAMES = [
     "fwa",
     "surf",
     "curator",
+    "surfboard",
 ]
 
 #: Attribute names of every manager the app builds in ``__init__``.
@@ -224,6 +225,11 @@ def test_a_bare_app_prefetches_the_dashboard_the_menu_opens_on() -> None:
                 f"{menu_first} opens the menu but was never prefetched"
             )
             for _key, other, *_ in GAMES[1:]:
+                if app._prefetch_manager(other) is app._prefetch_manager(menu_first):
+                    # The rack is a second entrance to the same collector.
+                    # Its shared cache is warm without a second prefetch.
+                    assert app._prefetch_manager(other).calls == 1
+                    continue
                 assert app._prefetch_manager(other).calls == 0, (
                     f"{other} was prefetched instead of the menu's first entry"
                 )

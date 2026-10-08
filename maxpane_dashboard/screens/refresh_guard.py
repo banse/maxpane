@@ -121,6 +121,10 @@ class RefreshGuard:
     #: Worker name, per screen.  Only used for logging and worker introspection.
     REFRESH_WORKER_NAME: str = "refresh"
 
+    #: Only a screen backed by manager-level single-flight snapshot reads may
+    #: opt out. Legacy collectors still join the app's startup scan.
+    JOIN_STARTUP_PREFETCH: bool = True
+
     #: True from the moment a refresh worker is scheduled until its coroutine
     #: has finished, failed or been cancelled.
     _refresh_in_flight: bool = False
@@ -185,7 +189,8 @@ class RefreshGuard:
     async def _guarded_refresh(self) -> None:
         """Join the startup prefetch, run one refresh, then lower the flag."""
         try:
-            await self._await_startup_prefetch()
+            if self.JOIN_STARTUP_PREFETCH:
+                await self._await_startup_prefetch()
             await self._do_refresh()
         finally:
             # finally, not else: a cancelled or failed refresh must not wedge

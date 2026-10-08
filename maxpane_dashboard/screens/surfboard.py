@@ -1,0 +1,186 @@
+"""Dashboard nine: a retained SURFBOARD rack and native IMD command monitor."""
+from __future__ import annotations
+
+from urllib.parse import urlsplit
+
+from rich.text import Text
+from textual import events, on
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import VerticalScroll
+from textual.widgets import Input, Static
+
+from maxpane_dashboard.data.surf_models import SURFBOARD_WIDGET_SIGNATURES
+from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
+from maxpane_dashboard.screens.surf import MODE_AGENT
+from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
+from maxpane_dashboard.widgets.status_bar import StatusBar
+from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
+from maxpane_dashboard.widgets.surfboard.terminal import fit_prose
+
+#: Measured after the 2026-10-09 live 149×45 preview. Normal, stress, unavailable
+#: and wide-prose composites swept at 110–160 columns / 25–55 rows. The rack
+#: is whole from 139×36 without a vertical scrollbar; 140 keeps the same six
+#: columns without horizontal scrolling when the viewport is shorter. At 139×35
+#: both bars appear, at 140×35 only the vertical bar appears. The four seven-row
+#: card floors bind height: 35 scrolls and 36 fits. Event prose may still ellipsise
+#: with its own marker at any width. The app-wide 143-column pin stays unchanged.
+SURFBOARD_FULL_LAYOUT_COLUMNS = 140
+SURFBOARD_FULL_LAYOUT_ROWS = 36
+
+
+class SurfboardScreen(DashboardScreen):
+    GAME_NAME = "SURFBOARD HUB"
+    REFRESH_WORKER_NAME = "surfboard-refresh"
+    JOIN_STARTUP_PREFETCH = False
+    PANELS = (
+        (SurfboardRack, keys(*SURFBOARD_WIDGET_SIGNATURES["SurfboardRack"])),
+        (SurfboardTerminal, keys(*SURFBOARD_WIDGET_SIGNATURES["SurfboardTerminal"])),
+    )
+    BINDINGS = [
+        Binding("slash", "command_input", "Command", show=False),
+        Binding("left", "card('left')", show=False),
+        Binding("right", "card('right')", show=False),
+        Binding("up", "card('up')", show=False),
+        Binding("down", "card('down')", show=False),
+        Binding("enter", "open_card", "Open", show=False),
+        Binding("escape", "back", show=False),
+    ]
+    DEFAULT_CSS = """
+    SurfboardScreen { background: #141714; color: #d8ddd5; }
+    SurfboardScreen #surfboard-title { height: 1; color: #a2d84a; padding: 0 1; }
+    SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1; overflow: auto auto;
+        scrollbar-gutter: stable; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
+    SurfboardScreen #surfboard-detail { height: 1; padding: 0 1; color: #a5b29d; text-wrap: nowrap; }
+    """
+
+    def __init__(self, manager, poll_interval=30, name="surfboard", *, wallet=None, **kwargs):
+        if isinstance(poll_interval, bool) or poll_interval <= 0:
+            raise ValueError("poll_interval must be positive")
+        super().__init__(manager, min(15, poll_interval), name=name, **kwargs)
+        self._wallet = wallet
+        self._command_generation = 0
+        self._command_worker = None
+        self._command_busy = False
+        self._detail = "ANNOUNCE · waiting for source"
+
+    def compose(self) -> ComposeResult:
+        yield Static(Text("SURFBOARD / DASHBOARD RACK"), id="surfboard-title")
+        with VerticalScroll(id="surfboard-viewport"):
+            yield SurfboardRack(id="surfboard-rack")
+        yield Static(Text(self._detail), id="surfboard-detail")
+        yield StatusBar()
+
+    @on(events.ScreenResume)
+    def _resume_hub(self) -> None:
+        setter = getattr(self._data_manager, "set_hub_active", None)
+        if setter is not None:
+            setter(True)
+        self.call_after_refresh(self.query_one(SurfboardRack).focus_card)
+
+    @on(events.ScreenSuspend)
+    def _suspend_hub(self) -> None:
+        setter = getattr(self._data_manager, "set_hub_active", None)
+        if setter is not None:
+            setter(False)
+        self._command_generation += 1
+        self._command_busy = False
+        if self._command_worker is not None:
+            self._command_worker.cancel()
+            self._command_worker = None
+
+    async def _fetch_data(self) -> dict:
+        return await self._data_manager.fetch_hub_snapshot()
+
+    def _prime_status_bar(self, bar: StatusBar) -> None:
+        bar.set_key_hints("arrows cards · enter open · / command · esc menu")
+
+    def _update_title(self, data: dict) -> None:
+        self.call_after_refresh(self._render_chrome)
+
+    def on_resize(self) -> None:
+        self.call_after_refresh(self._render_chrome)
+
+    def _render_chrome(self) -> None:
+        viewport = self.query_one("#surfboard-viewport", VerticalScroll)
+        detail, detail_cut = fit_prose(self._detail, max(1, self.size.width - 2))
+        hints = []
+        if viewport.show_horizontal_scrollbar:
+            hints.append("‹ widen")
+        if viewport.show_vertical_scrollbar:
+            hints.append("‹ taller")
+        if detail_cut:
+            hints.append("detail ‹ widen")
+        self.query_one("#surfboard-title", Static).update(Text(
+            "SURFBOARD / DASHBOARD RACK" + (" · " + " · ".join(hints) if hints else "")))
+        self.query_one("#surfboard-detail", Static).update(detail)
+
+    def on_surfboard_rack_card_focused(self, event: SurfboardRack.CardFocused) -> None:
+        self._detail = event.detail
+        self._render_chrome()
+
+    def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
+        if event.destination is None:
+            self._detail = event.detail
+            self._render_chrome()
+            return
+        self.app.open_surf_mode(event.destination)
+
+    def action_command_input(self) -> None:
+        self.query_one(SurfboardTerminal).focus_input()
+
+    def action_card(self, direction: str) -> None:
+        if not isinstance(self.focused, Input):
+            self.query_one(SurfboardRack).move_focus(direction)
+
+    def action_open_card(self) -> None:
+        if not isinstance(self.focused, Input):
+            self.query_one(SurfboardRack).activate_focused()
+
+    def action_back(self) -> None:
+        if isinstance(self.focused, Input):
+            self.query_one(SurfboardRack).focus_card()
+        else:
+            self.app.action_show_menu()
+
+    def on_surfboard_terminal_command_requested(self, event: SurfboardTerminal.CommandRequested) -> None:
+        """Only schedule a lookup here; the manager owns all external reads."""
+        event.stop()
+        if self._command_busy:
+            self.query_one(SurfboardTerminal).add_reply("lookup in progress")
+            return
+        if not event.command.strip():
+            return
+        self._command_busy = True
+        generation = self._command_generation
+        self._command_worker = self.run_worker(
+            self._execute_command(event.command, generation),
+            group="surfboard-command", name="surfboard-command", exit_on_error=False,
+        )
+
+    async def _execute_command(self, command: str, generation: int) -> None:
+        try:
+            result = await self._data_manager.execute_hub_command(command, wallet=self._wallet)
+            if generation != self._command_generation or not self.is_current:
+                return
+            terminal = self.query_one(SurfboardTerminal)
+            if result.get("clear"):
+                terminal.clear_replies()
+            else:
+                terminal.add_reply(result.get("lines") or [])
+            if result.get("intent") == "open_seat":
+                self.app.open_surf_mode(MODE_AGENT, token_id=result.get("token_id"))
+            elif result.get("intent") == "open_url":
+                url = result.get("url")
+                if isinstance(url, str):
+                    parsed = urlsplit(url)
+                    job_id = parsed.path.removeprefix("/jobs/")
+                    if is_job_id(job_id) and url == job_url(IMD, job_id):
+                        self.app.action_open_explorer(IMD.name, "job", job_id)
+        except Exception:
+            if generation == self._command_generation and self.is_current:
+                self.query_one(SurfboardTerminal).add_reply("lookup unavailable; try again")
+        finally:
+            if generation == self._command_generation:
+                self._command_busy = False
+                self._command_worker = None

@@ -1,0 +1,115 @@
+{
+  "at": 1791498585587,
+  "health": {
+    "reachable": true,
+    "agentsOnline": 864,
+    "workingNow": 9,
+    "acceptedLastDay": 32621,
+    "jobsDoneLastDay": 1134,
+    "oraclesDoneLastDay": 237,
+    "seatsEnrolled": 872,
+    "pendingVerification": 0,
+    "pendingDeployment": 0,
+    "pendingSites": 0,
+    "verifierUp": true,
+    "publisherUp": true,
+    "deployerUp": true
+  },
+  "counts": {
+    "jobs": 10748,
+    "jobStates": {
+      "blocked": 128,
+      "cancelled": 126,
+      "completed": 10490,
+      "executing": 4
+    },
+    "tasksInProgress": 6,
+    "launchesLive": 285,
+    "sites": 216,
+    "inferenceTokens": 188932748311
+  },
+  "seats": {
+    "420": {
+      "tokenId": 420,
+      "agentId": "50939",
+      "attempts": 3392,
+      "accepted": 3253,
+      "rejected": 40,
+      "failed": 21,
+      "pending": 78,
+      "last": "2026-10-08T21:31:45.225Z",
+      "working": false,
+      "queued": 0
+    },
+    "1836": {
+      "tokenId": 1836,
+      "agentId": "52478",
+      "attempts": 0,
+      "accepted": 1,
+      "rejected": 0,
+      "failed": 0,
+      "pending": 0,
+      "last": "2026-10-08T22:28:39.862Z",
+      "working": false,
+      "queued": 0
+    }
+  },
+  "events": [
+    {
+      "kind": "node",
+      "at": "2026-10-08T22:00:48.515Z",
+      "tokenId": 1975,
+      "step": "adapt_contract_project",
+      "role": "implement",
+      "state": "accepted",
+      "jobId": "dc4e3a21-8e12-44c3-9a6d-ae180f5c8c60",
+      "objective": "[link=https://evil.invalid]hello[/link]\u001b[31m\u0007",
+      "reason": null
+    },
+    {
+      "kind": "job",
+      "at": "2026-10-08T22:00:25.494Z",
+      "jobId": "67a915b2-9c4f-4548-87d9-5ecaa6c5b3b8",
+      "objective": "Captured public job objective (abridged)"
+    },
+    {
+      "kind": "done",
+      "at": "2026-10-08T22:00:02.477Z",
+      "jobId": "dec04d23-9b4c-454c-9593-cc0a6df6eac7",
+      "objective": "Captured public job objective (abridged)",
+      "state": "completed",
+      "steps": 1,
+      "failure": null
+    },
+    {
+      "kind": "node",
+      "at": "2026-10-08T22:00:02.477Z",
+      "tokenId": 285,
+      "step": "build_contract_project",
+      "role": "implement",
+      "state": "accepted",
+      "jobId": "dec04d23-9b4c-454c-9593-cc0a6df6eac7",
+      "objective": "Captured public job objective (abridged)",
+      "reason": null
+    },
+    {
+      "kind": "agent",
+      "at": "2026-10-08T21:59:41.916Z",
+      "tokenId": 1781,
+      "state": "joined",
+      "objective": "Captured public job objective (abridged)"
+    },
+    {
+      "kind": "agent",
+      "at": "2026-10-08T21:58:56.977Z",
+      "tokenId": 560,
+      "state": "joined",
+      "objective": "Captured public job objective (abridged)"
+    }
+  ],
+  "owners": [],
+  "chain": {
+    "chainId": 1,
+    "collection": "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d"
+  }
+}

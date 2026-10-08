@@ -8,10 +8,13 @@ from tests.widgets.surf_compositing import composite_lines
 WORKERS=swarm_capture_v3('workers')
 FLEET=fold.fleet(WORKERS)
 SUMMARY=fold.board_summary(swarm_capture_v3('contributors'),WORKERS)
+# Synthetic renderer contract: receipt accounting intentionally differs from canonical outcomes.
+SUMMARY.update({f'receipt_{key}': SUMMARY[key] for key in ('seats','attempts','accepted','rejected','pending')})
+SUMMARY.update(seats=50,attempts=100,accepted=80,rejected=5,failed=3,pending=12)
 async def render(fleet=FLEET,summary=SUMMARY):
     return '\n'.join(await composite_lines(SurfSwarmFleet,(37,30),css_path=CSS_PATH,
         swarm_fleet=fleet,swarm_board_summary=summary,
-        swarm_board_as_of_hhmm='03:01',swarm_workers_as_of_hhmm='04:02'))
+        swarm_board_as_of_hhmm='02:00',swarm_contributors_as_of_hhmm='03:01',swarm_workers_as_of_hhmm='04:02'))
 async def test_mixes_tokens_and_clocks_have_distinct_sources():
     text=await render()
     for word in ('FLEET','runtime','daemon','os','profile','slots','heartbeat','tokens/job','served','paused','03:01','04:02'):
@@ -63,7 +66,7 @@ async def test_polish_groups_align_labels_and_keep_the_advertised_model_prefix()
         line=next(line.strip() for line in lines if line.strip().startswith(label+' '))
         assert line.startswith(label.ljust(11)), (label,line)
     assert 'astra 6 xhigh 43' in text and '+2 (advertised)' in text
-    header=next(i for i,line in enumerate(lines) if 'CONTRIBUTORS · as of 03:01' in line)
+    header=next(i for i,line in enumerate(lines) if 'RECEIPTS · read 03:01' in line)
     paused=next(i for i,line in enumerate(lines) if line.strip().startswith('paused '))
     assert not lines[paused-1].strip() and not lines[header-1].strip()
     assert 'FLEET · workers as of 04:02' in text
@@ -74,13 +77,13 @@ async def test_polish_groups_align_labels_and_keep_the_advertised_model_prefix()
 
 async def test_contributors_show_devices_outcomes_turns_and_tokens():
     lines=(await render(summary=SUMMARY)).splitlines()
-    header=next(i for i,line in enumerate(lines) if 'CONTRIBUTORS' in line)
+    header=next(i for i,line in enumerate(lines) if 'RECEIPTS' in line)
     body=[line.strip() for line in lines[header+2:header+7]]
     s=SUMMARY
     assert body==[
-        f"devices    {s['devices']:,} · {s['seats']:,} seats",
-        f"accepted   {s['accepted']:,} of {s['attempts']:,}",
-        f"rejected   {s['rejected']:,} · {s['pending']:,} pending",
+        f"devices    {s['devices']:,} · {s['receipt_seats']:,} seats",
+        f"accepted   {s['receipt_accepted']:,} of {s['receipt_attempts']:,}",
+        f"rejected   {s['receipt_rejected']:,} · {s['receipt_pending']:,} pending",
         f"turns      {s['turns']:,} · {(s['wall_clock_ms']+1_800_000)//3_600_000:,} h",
         f"tokens     {s['input_tokens']/1e6:.1f}M in · {s['output_tokens']/1e6:.1f}M out",
     ]
@@ -96,10 +99,10 @@ async def test_contributor_hours_round_and_under_half_an_hour_read_minutes(ms,sh
 
 
 async def test_an_unread_contributor_value_is_unavailable_never_zero():
-    text=await render(summary=dict(SUMMARY,devices=None,attempts=None,input_tokens=None,
+    text=await render(summary=dict(SUMMARY,devices=None,receipt_attempts=None,input_tokens=None,
                                    wall_clock_ms=None))
     assert 'devices    unavailable' in text and 'tokens     unavailable' in text
-    assert any(l.strip()==f"accepted   {SUMMARY['accepted']:,}" for l in text.splitlines())
+    assert any(l.strip()==f"accepted   {SUMMARY['receipt_accepted']:,}" for l in text.splitlines())
     assert any(l.strip()==f"turns      {SUMMARY['turns']:,}" for l in text.splitlines())
     none=await render(summary=None)
     for label in ('devices','accepted','rejected','turns','tokens'):
@@ -107,7 +110,7 @@ async def test_an_unread_contributor_value_is_unavailable_never_zero():
 
 
 async def test_a_contributor_pair_too_wide_for_its_line_counts_its_second_value():
-    text=await render(summary=dict(SUMMARY,rejected=99_999_999,pending=99_999_999))
+    text=await render(summary=dict(SUMMARY,receipt_rejected=99_999_999,receipt_pending=99_999_999))
     assert any(l.strip()=='rejected   99,999,999 · +1' for l in text.splitlines()), text
 
 

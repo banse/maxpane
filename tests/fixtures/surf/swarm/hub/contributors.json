@@ -1,0 +1,20 @@
+{
+  "receipts": 985132,
+  "contributors": [
+    {
+      "deviceKey": "72b617d4b615473ad3b763b0e3d0fbbe45ab980941c095e9f4ea11e135554beb",
+      "wallet": "0xe5b1275fb926613d983da33fbfe1f331b7f64f2a",
+      "tokenId": "420",
+      "attempts": 3442,
+      "accepted": 3222,
+      "rejected": 40,
+      "pending": 180,
+      "wallClockMs": "171044130",
+      "inputTokens": "62800",
+      "outputTokens": "10602279",
+      "cachedInputTokens": "1054885506",
+      "turns": 28806
+    }
+  ],
+  "tokensPerCompletedJob": 1491589
+}
