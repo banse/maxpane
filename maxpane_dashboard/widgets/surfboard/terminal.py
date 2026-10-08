@@ -32,12 +32,12 @@ def fitted_prose(value, width, *, style="") -> Text:
 class SurfboardTerminal(PanelBase):
     TITLE = "IMD TERMINAL · recent events"
     DEFAULT_CSS = """
-    SurfboardTerminal { height: 1fr; min-height: 11; border: round $panel; background: $background; color: $text; padding: 0 1; }
-    SurfboardTerminal > .panel-title { height: 1; color: $text-muted; }
-    SurfboardTerminal > .terminal-overview { height: 1; color: $text-muted; text-wrap: nowrap; }
-    SurfboardTerminal > RichLog { height: 1fr; min-height: 3; background: $background; color: $text; scrollbar-size-vertical: 1; scrollbar-gutter: stable; }
-    SurfboardTerminal > Input { height: 3; background: $background; border: round $panel; color: $text; }
-    SurfboardTerminal > Input:focus { border: round $accent; }
+    SurfboardTerminal { height: 1fr; min-height: 11; border: round #475047; background: #080c09; padding: 0 1; }
+    SurfboardTerminal > .panel-title { height: 1; color: #a2d84a; }
+    SurfboardTerminal > .terminal-overview { height: 1; color: #a5b29d; text-wrap: nowrap; }
+    SurfboardTerminal > RichLog { height: 1fr; min-height: 3; background: #080c09; scrollbar-size-vertical: 1; scrollbar-gutter: stable; }
+    SurfboardTerminal > Input { height: 3; background: #101710; border: round #475047; color: #d8ddd5; }
+    SurfboardTerminal > Input:focus { border: round #a2d84a; }
     """
 
     class CommandRequested(Message):
@@ -101,7 +101,7 @@ class SurfboardTerminal(PanelBase):
 
     def _header(self, width):
         if self._overview is None:
-            return Text("network unavailable", style="yellow"), False
+            return Text("network unavailable", style="#d5a24e"), False
         overview = self._overview or {}
         fields = (("agents_online", "online"), ("working_now", "working"),
                   ("jobs_24h", "jobs"), ("oracles_24h", "oracles"), ("accepted_24h", "steps"))
@@ -114,7 +114,7 @@ class SurfboardTerminal(PanelBase):
         source = self._overview_source()
         if source.get("state") == "stale":
             text = "stale · " + text
-        return fit_prose(text, width, style="dim")
+        return fit_prose(text, width, style="#a5b29d")
 
     def _event_text(self, row, previous_job, width):
         job = row.get("job_id")
@@ -129,7 +129,7 @@ class SurfboardTerminal(PanelBase):
                      "reviewer": "reviewing", "review": "reviewing"}.get(role, state)
         prefix = f"{'└' if grouped else '›'} {hhmm(row.get('timestamp'))} {clip(flatten(row.get('kind')) or 'event', 7):<7} {actor:<7} {clip(state, 11):<11} "
         line, clipped = fit_prose(prefix + flatten(row.get("objective")), width)
-        line.stylize("dim", 0, min(8, len(line)))
+        line.stylize("#71856d", 0, min(8, len(line)))
         return line, clipped
 
     def _paint(self):
@@ -154,7 +154,7 @@ class SurfboardTerminal(PanelBase):
             rows.append(("event:" + row["key"], line))
             previous = row.get("job_id")
         for key, reply in self._replies:
-            line, lost = fit_prose(reply, width)
+            line, lost = fit_prose(reply, width, style="#c2d5b9")
             clipped |= lost
             rows.append((key, line))
         keys = [key for key, _ in rows]

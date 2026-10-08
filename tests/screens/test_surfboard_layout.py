@@ -29,7 +29,7 @@ class HubHarness(App):
         self.push_screen(self.hub)
 
 
-async def test_hub_palette_follows_the_native_theme_including_live_theme_changes():
+async def test_cards_follow_native_theme_while_terminal_keeps_original_palette():
     from rich.color import Color
     from textual.widgets import RichLog
 
@@ -45,9 +45,9 @@ async def test_hub_palette_follows_the_native_theme_including_live_theme_changes
             await pilot.pause()
             assert app.hub.styles.background.hex.casefold() == theme.background.casefold()
             assert card.styles.background.hex.casefold() == theme.surface.casefold()
-            assert terminal.styles.background.hex.casefold() == theme.background.casefold()
-            assert terminal.command_input.styles.background.hex.casefold() == theme.background.casefold()
-            assert terminal.query_one(RichLog).styles.background.hex.casefold() == theme.background.casefold()
+            assert terminal.styles.background.hex.casefold() == "#080c09"
+            assert terminal.command_input.styles.background.hex.casefold() == "#101710"
+            assert terminal.query_one(RichLog).styles.background.hex.casefold() == "#080c09"
             strips = app.hub._compositor.render_strips()
             value = next(segment for strip in strips for segment in strip
                          if "IDMD #420" in segment.text)
@@ -55,7 +55,7 @@ async def test_hub_palette_follows_the_native_theme_including_live_theme_changes
                          if "palette reply" in segment.text)
             assert value.style.bgcolor == Color.parse(theme.background)
             assert value.style.color == card.rich_style.color
-            assert reply.style.color == terminal.query_one(RichLog).rich_style.color
+            assert reply.style.color == Color.parse("#c2d5b9")
             rack = app.hub.query_one(SurfboardRack)
             rack.focus_card("agent")
             await pilot.pause()
