@@ -47,11 +47,11 @@ class SurfboardScreen(DashboardScreen):
         Binding("escape", "back", show=False),
     ]
     DEFAULT_CSS = """
-    SurfboardScreen { background: #141714; color: #d8ddd5; }
-    SurfboardScreen #surfboard-title { height: 1; color: #a2d84a; padding: 0 1; }
+    SurfboardScreen { background: $background; color: $text; }
+    SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $text-muted; padding: 0 1; }
     SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
-    SurfboardScreen #surfboard-detail { height: 1; padding: 0 1; color: #a5b29d; text-wrap: nowrap; }
+    SurfboardScreen #surfboard-detail { height: 1; padding: 0 1; color: $text-muted; text-wrap: nowrap; }
     """
 
     def __init__(self, manager, poll_interval=30, name="surfboard", *, wallet=None, **kwargs):

@@ -38,9 +38,10 @@ visible scrolling/`‹ widen`/`‹ taller`, never an unnoticed reflow to fewer c
 The existing mock script remains an independent design artifact. Production uses shared
 `HeroBoxBase`/`PanelBase` primitives and a `DashboardScreen` subclass, not imports from `scripts/`.
 Retain dark faceplates, inset readouts, restrained green lamps and the recessed terminal.
-Palette reference: background `#141714`, card `#252a24`, terminal `#080c09`, text `#d8ddd5`,
-accent `#a2d84a`, warning `#d5a24e`. Keep palette application scoped to the rack and compatible
-with Textual theme contrast; legacy bodies retain their styles. No idle blinking or fake activity.
+The owner requested the existing SURFBOARD palette on 2026-10-09: use the same shared
+`$background`, `$surface`, `$panel`, `$text`, `$text-muted` and `$accent` theme tokens,
+with native Rich green/yellow status colors and dim secondary text. The hub follows live
+theme changes; legacy bodies retain their styles. No idle blinking or fake activity.
 
 Each card has title, explicit status, two readout lines and an eight-cell meter. Give the
 focused card a visible border. Its full metric definition, exact ratio/count and source clock

@@ -29,6 +29,39 @@ class HubHarness(App):
         self.push_screen(self.hub)
 
 
+async def test_hub_palette_follows_the_native_theme_including_live_theme_changes():
+    from rich.color import Color
+    from textual.widgets import RichLog
+
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        for name in ("matrix", "minimal", "fwa"):
+            app.theme = name
+            await pilot.pause()
+            theme = THEMES[name]
+            card = app.hub.query_one("#surfboard-card-agent", SurfboardCard)
+            terminal = app.hub.query_one(SurfboardTerminal)
+            terminal.add_reply("palette reply")
+            await pilot.pause()
+            assert app.hub.styles.background.hex.casefold() == theme.background.casefold()
+            assert card.styles.background.hex.casefold() == theme.surface.casefold()
+            assert terminal.styles.background.hex.casefold() == theme.background.casefold()
+            assert terminal.command_input.styles.background.hex.casefold() == theme.background.casefold()
+            assert terminal.query_one(RichLog).styles.background.hex.casefold() == theme.background.casefold()
+            strips = app.hub._compositor.render_strips()
+            value = next(segment for strip in strips for segment in strip
+                         if "IDMD #420" in segment.text)
+            reply = next(segment for strip in strips for segment in strip
+                         if "palette reply" in segment.text)
+            assert value.style.bgcolor == Color.parse(theme.background)
+            assert value.style.color == card.rich_style.color
+            assert reply.style.color == terminal.query_one(RichLog).rich_style.color
+            rack = app.hub.query_one(SurfboardRack)
+            rack.focus_card("agent")
+            await pilot.pause()
+            assert card.styles.border_top[1].hex.casefold() == theme.accent.casefold()
+
+
 @pytest.mark.parametrize("state", ("ok", "stale"))
 async def test_projected_pool4_value_period_ratio_and_source_clocks_fit_owner_size(state):
     from maxpane_dashboard.data import surfboard as projection

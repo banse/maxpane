@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 
+from rich.style import Style
 from rich.text import Text
 from textual.binding import Binding
 from textual.containers import Grid
@@ -15,9 +16,9 @@ from maxpane_dashboard.widgets.rowfit import clip, title_with_hint
 from maxpane_dashboard.widgets.sparkline_common import build_sparkline
 from .terminal import SurfboardTerminal, fitted_prose, fit_prose
 
-GREEN = "#a2d84a"
-MUTED = "#8b968b"
-AMBER = "#d5a24e"
+GREEN = "green"
+MUTED = "dim"
+AMBER = "yellow"
 
 # Layout identities, not data: future and empty bays deliberately have no route.
 SLOTS = (
@@ -45,9 +46,9 @@ def meter_text(card: dict) -> Text:
     """An eight-cell scale; unavailable and zero denominators never imply zero."""
     key, status = card.get("key"), card.get("status")
     label = METER_LABELS.get(key, "AUX")
-    out = Text(label + " ", style=MUTED)
+    out = Text().append(label + " ", style=MUTED)
     if key in PLANNED or str(key).startswith("bay-"):
-        return out.append("▱" * 8, style="#596357")
+        return out.append("▱" * 8, style=MUTED)
     if card.get("meter_kind") == "sparkline":
         points = card.get("points")
         if isinstance(points, list) and len(points) == 8 and all(_number(point) for point in points):
@@ -57,7 +58,7 @@ def meter_text(card: dict) -> Text:
     if not _number(numerator) or not _number(denominator) or denominator == 0 or numerator > denominator:
         return out.append("—", style=AMBER)
     full = int(numerator * 8 / denominator)
-    return out.append("▰" * full, style=AMBER if key == "protocol" else GREEN).append("▱" * (8 - full), style="#596357")
+    return out.append("▰" * full, style=AMBER if key == "protocol" else GREEN).append("▱" * (8 - full), style=MUTED)
 
 
 class SurfboardCard(HeroBoxBase, can_focus=True):
@@ -105,19 +106,23 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             status = "experimental"
         muted = self.key in PLANNED or not self.can_focus
         color = MUTED if muted else AMBER if status in ("unavailable", "stale", "experimental") else GREEN
+        palette = self.app.get_css_variables()
+        inset = Style(color=palette["panel"], bgcolor=palette["background"])
         body = Text()
         status_line = Text(clip(("○ " if muted else "● ") + status, width), style=color)
         status_line.align("center", width)
-        body.append_text(status_line).append("\n").append("┌" + "─" * inside + "┐\n", style="#475047 on #101410")
+        body.append_text(status_line).append("\n").append("┌" + "─" * inside + "┐\n", style=inset)
         clipped = False
         for field in ("primary", "secondary"):
             raw = flatten(self.data.get(field)) or "unavailable"
-            line, lost = fit_prose(raw, inside, style=f"{'bold ' if field == 'primary' and not muted else ''}#d8ddd5 on #101410")
+            line, lost = fit_prose(raw, inside, style=Style(
+                color=self.rich_style.color, bgcolor=palette["background"],
+                bold=field == "primary" and not muted, dim=muted))
             clipped |= lost
             line.align("center", inside)
-            body.append("│", style="#475047 on #101410").append_text(line).append("│\n", style="#475047 on #101410")
+            body.append("│", style=inset).append_text(line).append("│\n", style=inset)
         self.border_title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, self.size.width - 4)))
-        return body.append("└" + "─" * inside + "┘", style="#475047 on #101410")
+        return body.append("└" + "─" * inside + "┘", style=inset)
 
     def on_focus(self):
         self.post_message(self.Focused(self))
@@ -140,10 +145,10 @@ class SurfboardRack(Grid):
     SurfboardRack { layout: grid; grid-size: 6 4; grid-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
         grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 137; }
     SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
-        border: round #475047; background: #252a24; color: #d8ddd5; content-align: center middle;
-        border-title-color: #a5b29d; border-subtitle-color: #8b968b; }
-    SurfboardRack > SurfboardCard:focus { border: round #a2d84a; background: #2b3228; }
-    SurfboardRack > SurfboardCard.empty { border: dashed #384035; color: #657065; background: #1a2019; }
+        border: round $panel; background: $surface; color: $text; content-align: center middle;
+        border-title-color: $text-muted; border-subtitle-color: $text-muted; }
+    SurfboardRack > SurfboardCard:focus { border: round $accent; }
+    SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
     """
 
