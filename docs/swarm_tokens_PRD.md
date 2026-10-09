@@ -15,20 +15,25 @@ Target: 149×45. The top-level dashboard registry and CLI game list stay unchang
 
 ## Layout
 
+The owner subsequently requested native MaxPane styling: standard panels have
+no surrounding borders, and no title or filter controls appear above the hero
+cards. This revises the initial boxed mock while retaining version 1's hierarchy.
+
 ```text
-SWARM TOKENS / MOCK DATA                 [ALL] ETH BASE RH
 + TOKENS --------+ + NEW / 24H -----+ + VOLUME / 24H --+ + LIQUIDITY ----+
 | deployed count| | count / 24h    | | known USD sum  | | position mix  |
 +---------------+ +----------------+ +----------------+ +---------------+
-+ ALL TOKENS / filtered count / sort -----------------------------------+
-| launch token chain age price 24h% mcap volume buys/sells paired LP      |
-|        LP state   per-token 24h sparkline   launch verdict             |
-|                          scrollable token rows                        |
-+----------------------------------------------------------------------+
-+ NEWLY LAUNCHED --------+ + BEST PLAYS ------------+ + ACTIVITY --------+
-| age / token / chain   | | gainers and losers     | | time / kind      |
-| liquidity state      | | change / liquidity     | | token / amount   |
-+-----------------------+ +------------------------+ +-------------------+
+MOCK DATA / chain: All / LP: All / search: none / sort: volume
+
+ALL TOKENS / filtered count
+launch token chain age price 24h% mcap volume buys/sells paired LP
+       LP state   per-token 24h sparkline   launch verdict
+                         scrollable token rows
+
+NEWLY LAUNCHED            BEST PLAYS                 ACTIVITY
+age / token / chain      gainers and losers          time / kind
+liquidity state          change / liquidity          token / amount
+
 selected token summary / help                           MOCK DATA
 ```
 
@@ -37,6 +42,16 @@ table row each, as approved in the full version-1 preview. The main table owns
 most available height. Supporting widgets remain visible at the target size.
 Narrow/short terminals expose scrolling and `widen`/`taller` hints instead of
 silently discarding required columns or changing to a different design.
+Use native `HeroRow`/`HeroBoxBase` framing for the four top metrics. Standard
+table and supporting panels use the existing unbordered `TableLeaderboard`,
+`RichLogFeed` and `PanelBase` appearance. Place the mock notice, compact applied
+filter summary and any overflow hints below the hero row.
+
+Filter editing follows THE LIST and the SURFBOARD AGENT record editor: a
+dashboard-owned `FilterEditorBase` subclass shows compact, titled controls in
+the body, using its four-column layout and two-column compact form. Reuse the
+local shared base, which matches `/Library/Vibes/autopull`'s original primitive;
+do not import another checkout at runtime or create a competing control style.
 
 ## Content and interactions
 
@@ -55,12 +70,19 @@ silently discarding required columns or changing to a different design.
   Search and LP-state filters apply consistently across table, metrics and
   supporting widgets. Sort allows volume and newest (additional numeric sorts
   may reuse the same small implementation).
+- `f` opens the filter editor; `/` opens it with search focused. The existing
+  chain, search, LP-state and sort fields are the complete filter set. Edits are
+  drafts until **APPLY FILTER**; **RESET ALL** restores their default values.
+  Escape cancels the draft and closes the editor without changing the applied
+  result. Existing `c`/`o` chain/sort shortcuts operate only while the editor is
+  closed, so typing in controls cannot accidentally change the dashboard.
 - Preserve selected token identity through sorting and filter updates when it
   remains visible. Otherwise choose the first visible token; handle zero rows.
 - Enter exposes selected-token detail within the demo. Unknown contract/pool
   links say not connected in mock; no fabricated explorer targets or inert copy icons.
 - Escape returns to the existing hub when pushed from its SWARM TOKENS card;
-  standalone Escape exits. Search Escape first leaves the active input.
+  standalone Escape exits. An open filter editor consumes Escape first to
+  cancel its draft; token details retain their own close-before-back behavior.
 - The hub card clearly says demo/mock; future Portfolio and Earnings cards stay
   planned. No live polling label or fake refresh activity on this static demo.
 

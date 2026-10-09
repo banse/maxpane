@@ -1,9 +1,8 @@
 """Approved market overview, with an explicitly offline demo data provider."""
 from rich.text import Text
-from textual import on
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Input, Select, Static
+from textual.widgets import DataTable, Input, Select, Static
 
 from maxpane_dashboard.analytics.swarm_tokens import project_snapshot
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
@@ -13,22 +12,24 @@ from maxpane_dashboard.widgets.swarm_tokens import (
     BestPlays, NewlyLaunched, TokenActivity, TokensHero, TokensTable,
 )
 from maxpane_dashboard.widgets.swarm_tokens.detail import SwarmTokenDetail
+from maxpane_dashboard.widgets.swarm_tokens.filter import SwarmTokensFilterEditor
 
 #: Mock overview measured in the real screen after its 149x45 preview.
-#: At 145x40 all thirteen table columns, four heroes and three lower panels
-#: fit without an outer scrollbar. At 144x40 the viewport scrolls horizontally;
-#: at 145x39 it scrolls vertically and advertises the reduced space.
+#: Native revision: at 145x35 all thirteen table columns, four heroes and
+#: three lower panels fit without an outer scrollbar. At 144x35 or 145x34
+#: the viewport scrolls and advertises the reduced space. At 149x45 the
+#: table shows seventeen data rows, with the remaining rows behind its scrollbar.
 #: The table keeps all 24 rows and scrolls internally at every measured size.
-#: Widgets retain a 143-column body and 37-row content floor; a vertical
+#: Widgets retain a 143-column body and 33-row content floor; a vertical
 #: scrollbar below the row pin can also require a horizontal one.
 SWARM_TOKENS_FULL_LAYOUT_COLUMNS = 145
-SWARM_TOKENS_FULL_LAYOUT_ROWS = 40
+SWARM_TOKENS_FULL_LAYOUT_ROWS = 35
 
 
 class DemoStatusBar(StatusBar):
     """The demo has a frozen snapshot, so never imply a fresh market read."""
     def _ordinary_status(self, *_args):
-        return 'q quit · r refresh · m/esc back · tab panels · / find · c chain · o sort · enter details'
+        return self._key_hints or 'q quit · r refresh · m/esc back · tab panels · f filter · / find · c chain · o sort · enter details'
 
 
 class SwarmTokensScreen(DashboardScreen):
@@ -47,31 +48,32 @@ class SwarmTokensScreen(DashboardScreen):
         Binding('escape', 'back', show=False), Binding('m', 'back', show=False),
         Binding('/', 'search', show=False), Binding('c', 'chain', show=False),
         Binding('o', 'sort', show=False),
+        Binding('f', 'filter', show=False),
     ]
     DEFAULT_CSS = '''
     SwarmTokensScreen { background: $background; color: $text; }
-    SwarmTokensScreen #st-title { height: 1; padding: 0 1; background: $surface; color: $text-muted; }
+    SwarmTokensScreen #st-title { height: 1; margin-bottom: 1; padding: 0 1; color: $text-muted;
+        text-wrap: nowrap; text-overflow: ellipsis; }
     SwarmTokensScreen #st-viewport { height: 1fr; padding: 0 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size: 1 1; }
-    SwarmTokensScreen #st-body { width: 1fr; min-width: 143; height: 1fr; min-height: 37; }
-    SwarmTokensScreen #st-controls { height: 3; margin: 1 0 0 0; }
-    SwarmTokensScreen Select { width: 24; height: 3; margin-right: 1; }
-    SwarmTokensScreen #st-search { width: 1fr; height: 3; }
-    SwarmTokensScreen TokensHero { height: 6; margin: 1 0; }
-    SwarmTokensScreen TokensHeroBox { width: 1fr; height: 6; border: round $panel;
-        background: $surface; padding: 0 1; margin-right: 1; content-align: center middle;
+    SwarmTokensScreen #st-body { width: 1fr; min-width: 143; height: 1fr; min-height: 33; }
+    SwarmTokensScreen TokensHero { height: 7; margin: 1 0; }
+    SwarmTokensScreen TokensHeroBox { width: 1fr; height: 7; border: solid $panel;
+        background: $surface; padding: 0 1; margin: 0 1; content-align: center middle;
         text-align: center; }
-    SwarmTokensScreen TokensHeroBox:last-child { margin-right: 0; }
-    SwarmTokensScreen TokensTable { height: 1fr; min-height: 12; border: solid $panel; }
+    SwarmTokensScreen #st-content { height: 1fr; min-height: 22; }
+    SwarmTokensScreen #st-market { height: 1fr; }
+    SwarmTokensScreen TokensTable { height: 1fr; min-height: 10; border: none; }
     SwarmTokensScreen DataTable { height: 1fr; background: $background; scrollbar-size: 1 1; }
-    SwarmTokensScreen #st-bottom { height: 12; margin-top: 1; }
+    SwarmTokensScreen #st-bottom { height: 11; margin-top: 1; }
     SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays, SwarmTokensScreen TokenActivity {
-        width: 1fr; height: 1fr; border: solid $panel; }
+        width: 1fr; height: 1fr; border: none; }
     SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays { margin-right: 1; }
     SwarmTokensScreen .panel-title { height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted; }
     SwarmTokensScreen RichLog { height: 1fr; padding: 0 1; background: $background;
         scrollbar-size: 1 1; }
     SwarmTokensScreen #st-best-body { height: 1fr; padding: 0 1; }
+    SwarmTokensScreen SwarmTokensFilterEditor { display: none; }
     SwarmTokensScreen #st-selection { height: 1; color: $text-muted; padding: 0 1;
         text-wrap: nowrap; text-overflow: ellipsis; }
     '''
@@ -84,25 +86,21 @@ class SwarmTokensScreen(DashboardScreen):
         self.lp_state = 'all'
         self.sort = 'volume'
         self._standalone = standalone
+        self._filter_open = False
 
     def compose(self):
-        yield Static(Text('SURFBOARD / SWARM TOKENS · MOCK DATA'), id='st-title')
         with VerticalScroll(id='st-viewport'):
             with Vertical(id='st-body'):
-                with Horizontal(id='st-controls'):
-                    yield Select([('All chains','all'),('Ethereum','eth'),('Base','base'),('Robinhood','rh')],
-                                 value='all', allow_blank=False, id='st-chain')
-                    yield Select([('All liquidity','all'),('Two-sided','two-sided'),('One-sided','one-sided'),
-                                  ('Withdrawn / unknown','issues')], value='all', allow_blank=False, id='st-lp')
-                    yield Select([('Volume ↓','volume'),('24h change ↓','change'),('Newest first','newest'),
-                                  ('Token A–Z','symbol')], value='volume', allow_blank=False, id='st-sort')
-                    yield Input(placeholder='Search token, name or launch #', id='st-search')
                 yield TokensHero()
-                yield TokensTable()
-                with Horizontal(id='st-bottom'):
-                    yield NewlyLaunched()
-                    yield BestPlays()
-                    yield TokenActivity()
+                yield Static(Text('SWARM TOKENS · MOCK DATA'), id='st-title')
+                with Vertical(id='st-content'):
+                    with Vertical(id='st-market'):
+                        yield TokensTable()
+                        with Horizontal(id='st-bottom'):
+                            yield NewlyLaunched()
+                            yield BestPlays()
+                            yield TokenActivity()
+                    yield SwarmTokensFilterEditor()
         yield Static(Text('Select a token · Enter for details'), id='st-selection')
         yield DemoStatusBar()
 
@@ -123,24 +121,63 @@ class SwarmTokensScreen(DashboardScreen):
 
     def _chrome(self):
         viewport = self.query_one('#st-viewport',VerticalScroll)
+        # Keep the native editor within the visible viewport even when the
+        # market's wider hero/table canvas needs horizontal scrolling.
+        editor=self.query_one(SwarmTokensFilterEditor)
+        editor.styles.width=viewport.scrollable_content_region.width
+        if self._filter_open:
+            # Revealing from a horizontally scrolled canvas can settle the
+            # width after Resize was delivered. Reuse the base's compact rule
+            # once the visible editor has its final content geometry.
+            self.call_after_refresh(editor.on_resize)
         suffix = (' · ‹ widen' if viewport.show_horizontal_scrollbar else '')
         suffix += ' · ‹ taller' if viewport.show_vertical_scrollbar else ''
-        total = (self.snapshot.get('metrics') or {}).get('total',0)
+        chain={'all':'all chains','eth':'Ethereum','base':'Base','rh':'Robinhood'}[self.chain]
+        state='FILTER · draft' if self._filter_open else chain
+        selection=f' · {self.lp_state}' if self.lp_state!='all' else ''
+        selection+=f' · search: {flatten(self.search_query)}' if self.search_query else ''
         self.query_one('#st-title',Static).update(Text(
-            f'SURFBOARD / SWARM TOKENS · MOCK DATA · {total} tokens · 24h window{suffix}', style='bold'))
+            f'SWARM TOKENS · MOCK DATA{suffix} · {state}{selection} · sort: {self.sort}', style='bold'))
         self._selection(self.query_one(TokensTable).selected_token())
 
-    @on(Select.Changed)
-    def filters_changed(self,event):
-        attribute={'st-chain':'chain','st-lp':'lp_state','st-sort':'sort'}.get(event.select.id)
-        if attribute and isinstance(event.value,str):
-            setattr(self,attribute,event.value)
-            self.action_refresh()
+    def _show_filter(self, editing):
+        self._filter_open=editing
+        self.query_one('#st-market').display=not editing
+        self.query_one(SwarmTokensFilterEditor).display=editing
+        self.query_one(DemoStatusBar).set_key_hints(
+            'f apply · esc cancel · tab fields · APPLY FILTER / RESET ALL' if editing else '')
+        self.call_after_refresh(self._chrome)
 
-    @on(Input.Changed,'#st-search')
-    def search_changed(self,event):
-        self.search_query=event.value
+    def action_filter(self):
+        if self._filter_open:
+            self._apply_filter()
+            return
+        editor=self.query_one(SwarmTokensFilterEditor)
+        editor.set_values(dict(chain='any' if self.chain=='all' else self.chain,
+                               liquidity='any' if self.lp_state=='all' else self.lp_state,
+                               sort='any' if self.sort=='volume' else self.sort,
+                               query=self.search_query))
+        self._show_filter(True)
+        self.call_after_refresh(lambda: editor.query_one(Select).focus())
+
+    def _apply_filter(self):
+        values=self.query_one(SwarmTokensFilterEditor).values()
+        self.chain='all' if values['chain']=='any' else values['chain']
+        self.lp_state='all' if values['liquidity']=='any' else values['liquidity']
+        self.sort='volume' if values['sort']=='any' else values['sort']
+        self.search_query=values['query'].strip()
+        self._show_filter(False)
         self.action_refresh()
+        self.call_after_refresh(lambda: self.query_one(DataTable).focus())
+
+    def on_swarm_tokens_filter_apply_requested(self,event):
+        event.stop()
+        if self._filter_open:
+            self._apply_filter()
+
+    def on_swarm_tokens_filter_reset_requested(self,event):
+        event.stop()
+        self.query_one(SwarmTokensFilterEditor).set_values({})
 
     def on_tokens_table_highlighted(self,event):
         self._selection(event.token)
@@ -159,19 +196,28 @@ class SwarmTokensScreen(DashboardScreen):
             self.app.push_screen(SwarmTokenDetail(event.token))
 
     def action_search(self):
-        self.query_one('#st-search',Input).focus()
+        if not self._filter_open:
+            self.action_filter()
+        self.call_after_refresh(lambda: self.query_one('#filter-query',Input).focus())
 
     def action_chain(self):
+        if self._filter_open:
+            return
         values=['all','eth','base','rh']
-        self.query_one('#st-chain',Select).value=values[(values.index(self.chain)+1)%len(values)]
+        self.chain=values[(values.index(self.chain)+1)%len(values)]
+        self.action_refresh()
 
     def action_sort(self):
+        if self._filter_open:
+            return
         values=['volume','change','newest','symbol']
-        self.query_one('#st-sort',Select).value=values[(values.index(self.sort)+1)%len(values)]
+        self.sort=values[(values.index(self.sort)+1)%len(values)]
+        self.action_refresh()
 
     def action_back(self):
-        if isinstance(self.focused,Input):
-            self.query_one(TokensTable).query_one('DataTable').focus()
+        if self._filter_open:
+            self._show_filter(False)
+            self.call_after_refresh(lambda: self.query_one(DataTable).focus())
         elif self._standalone:
             self.app.exit()
         else:

@@ -22,3 +22,10 @@ bind `data/swarm_tokens_models.py::WIDGET_SIGNATURES` to actual widget
 `update_data` signatures in an agreement test when that test file is next
 touched. The existing mounted PANELS agreement covers the screen/widget seam,
 but mutating the unused model mapping survived the named contract tests.
+
+Native-style revision review: the compact editor transition after horizontal
+scrolling was reproduced and fixed, with a regression covering that route.
+The scoped re-review marked the Important finding ADDRESSED.
+One Minor UI followup remains: filter-specific footer hints repaint on the
+next refresh rather than immediately when the editor opens. Apply/Reset
+buttons are visible, and filter shortcuts already work while it is open.

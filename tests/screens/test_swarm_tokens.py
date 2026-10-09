@@ -7,7 +7,9 @@ from maxpane_dashboard.demos.swarm_tokens import SwarmTokensDemo
 from maxpane_dashboard.screens.swarm_tokens import (
     SwarmTokensScreen, SWARM_TOKENS_FULL_LAYOUT_COLUMNS, SWARM_TOKENS_FULL_LAYOUT_ROWS,
 )
-from maxpane_dashboard.widgets.swarm_tokens import TokensTable
+from maxpane_dashboard.widgets.swarm_tokens import (
+    TokensTable, TokensHero, NewlyLaunched, BestPlays, TokenActivity,
+)
 
 
 def painted(app):
@@ -71,12 +73,28 @@ async def test_mock_overview_renders_all_panels_and_every_token_without_network(
         assert any(char in text for char in '▂▃▄▅▆▇█')
 
 
+async def test_native_layout_starts_with_heroes_and_standard_panels_have_no_frames():
+    app=SwarmTokensDemo()
+    async with app.run_test(size=(149,45)) as pilot:
+        await pilot.pause()
+        hero=app.screen.query_one(TokensHero)
+        assert hero.region.y <= 1
+        assert app.screen.query_one('#st-title').region.y >= hero.region.bottom
+        assert not any(w.region.width for w in app.screen.query('Input, Select'))
+        for kind in (TokensTable,NewlyLaunched,BestPlays,TokenActivity):
+            panel=app.screen.query_one(kind)
+            assert panel.styles.border_top[0] in ('','none')
+            assert panel.styles.border_left[0] in ('','none')
+
+
 async def test_filters_apply_across_panels_and_search_can_return_no_matches():
     app = SwarmTokensDemo()
     async with app.run_test(size=(149,45)) as pilot:
         await pilot.pause()
         screen = app.screen
-        screen.query_one('#st-chain',Select).value = 'base'
+        await pilot.press('f')
+        screen.query_one('#filter-chain',Select).value = 'base'
+        await pilot.click('#filter-apply')
         await pilot.pause()
         assert screen.snapshot['tokens']
         assert all(row['chain']=='base' for row in screen.snapshot['tokens'])
@@ -84,13 +102,17 @@ async def test_filters_apply_across_panels_and_search_can_return_no_matches():
         ids={row['id'] for row in screen.snapshot['tokens']}
         assert all(event['token_id'] in ids for event in screen.snapshot['activity'])
         assert screen.snapshot['metrics']['total']==len(ids)
-        screen.query_one('#st-search',Input).value='no such token'
+        await pilot.press('/')
+        screen.query_one('#filter-query',Input).value='no such token'
+        await pilot.click('#filter-apply')
         await pilot.pause()
         assert screen.snapshot['tokens']==[]
         assert screen.snapshot['activity']==[]
         assert 'No matching tokens' in painted(app)
-        screen.query_one('#st-search',Input).value=''
-        screen.query_one('#st-lp',Select).value='one-sided'
+        await pilot.press('f')
+        screen.query_one('#filter-query',Input).value=''
+        screen.query_one('#filter-liquidity',Select).value='one-sided'
+        await pilot.click('#filter-apply')
         await pilot.pause()
         assert all(row['lp_state'] in ('one-token','one-quote') for row in screen.snapshot['tokens'])
 
@@ -105,7 +127,7 @@ async def test_selected_token_survives_sort_refresh_and_opens_mock_details():
         table.move_cursor(row=2)
         await pilot.pause()
         selected=panel.selected_token()['id']
-        app.screen.query_one('#st-sort',Select).value='newest'
+        await pilot.press('o','o')
         await pilot.pause()
         assert panel.selected_token()['id']==selected
         app.screen.action_refresh()
@@ -117,6 +139,67 @@ async def test_selected_token_survives_sort_refresh_and_opens_mock_details():
         assert 'MOCK DATA' in painted(app) and 'LAUNCH POSITION' in painted(app)
         await pilot.press('escape')
         assert isinstance(app.screen,SwarmTokensScreen)
+
+
+async def test_filter_draft_cancel_reset_and_shortcut_isolation():
+    app=SwarmTokensDemo()
+    async with app.run_test(size=(149,45)) as pilot:
+        await pilot.pause()
+        screen=app.screen
+        await pilot.press('f')
+        for label in ('CHAIN','LIQUIDITY','SORT','SEARCH','APPLY FILTER','RESET ALL'):
+            assert label in painted(app)
+        screen.query_one('#filter-chain',Select).value='base'
+        await pilot.pause()
+        assert screen.chain=='all' and len(screen.snapshot['tokens'])==24
+        await pilot.press('escape')
+        assert app.screen is screen
+        await pilot.press('f')
+        assert screen.query_one('#filter-chain',Select).value=='any'
+        screen.query_one('#filter-chain',Select).value='base'
+        await pilot.press('f')
+        await pilot.pause()
+        assert screen.chain=='base'
+        await pilot.press('/')
+        await pilot.press('f','c','o','m','q','r')
+        assert screen.query_one('#filter-query',Input).value=='fcomqr'
+        screen.action_refresh()
+        await pilot.pause()
+        assert screen.query_one('#filter-query',Input).value=='fcomqr'
+        assert screen.chain=='base' and screen.sort=='volume'
+        await pilot.click('#filter-reset-all')
+        await pilot.pause()
+        assert screen.chain=='base'  # Reset only changes the draft, as in RECORD.
+        assert screen.query_one('#filter-query',Input).value==''
+        assert screen.query_one('#filter-chain',Select).value=='any'
+        await pilot.click('#filter-apply')
+        await pilot.pause()
+        assert screen.chain=='all' and len(screen.snapshot['tokens'])==24
+        assert screen.query_one(TokensTable).query_one(DataTable).has_focus
+
+
+@pytest.mark.parametrize('width,columns',[(149,4),(100,2)])
+@pytest.mark.parametrize('scrolled',[False,True])
+async def test_native_filter_grid_fits_the_visible_viewport(width,columns,scrolled):
+    from textual.containers import Grid
+    from maxpane_dashboard.widgets.swarm_tokens.filter import SwarmTokensFilterEditor
+    app=SwarmTokensDemo()
+    async with app.run_test(size=(width,45)) as pilot:
+        await pilot.pause()
+        if scrolled:
+            viewport=app.screen.query_one('#st-viewport',VerticalScroll)
+            viewport.scroll_to(x=viewport.max_scroll_x,animate=False)
+            await pilot.pause()
+        await pilot.press('f')
+        await pilot.pause()
+        editor=app.screen.query_one(SwarmTokensFilterEditor)
+        assert editor.query_one(Grid).styles.grid_size_columns==columns
+        for field in editor.query('Input, Select'):
+            assert field.region.height==1
+            assert field.region.right <= width
+        text=painted(app)
+        for label in ('CHAIN','LIQUIDITY','SORT','SEARCH','APPLY FILTER','RESET ALL'):
+            assert label in text
 
 
 async def test_hub_demo_route_returns_with_terminal_draft_and_card_focus():
@@ -134,6 +217,9 @@ async def test_hub_demo_route_returns_with_terminal_draft_and_card_focus():
         await pilot.pause()
         assert isinstance(app.screen,SwarmTokensScreen)
         assert not managers['_surf_manager'].hub_active
+        tokens=app.screen
+        await pilot.press('f','escape')
+        assert app.screen is tokens
         await pilot.press('escape')
         await pilot.pause()
         assert app.screen is hub

@@ -141,8 +141,74 @@ unrelated branch work untouched. No push or live-data rollout in this task.
 
 ## Measured implementation
 
-The mock render at 149×45 retains all 24 scrollable rows and all thirteen table
+The initial mock render at 149×45 retained all 24 scrollable rows and all thirteen table
 columns, with the three supporting panels visible. The measured full-layout
 boundary is 145×40; below it the outer viewport exposes scrolling with
 `widen`/`taller` hints. Named layout constants and their boundary tests live
 beside the new screen, independent of the existing hub's pins.
+
+These measurements describe the initial boxed implementation. The native-style
+revision below must be rendered and measured again before claiming its boundary.
+
+## Approved revision — native panels and filter editor
+
+The owner requested the appearance of the supplied native MaxPane screenshots:
+unbordered standard panels, nothing above the four hero cards, and filtering
+like THE LIST and SURFBOARD AGENT's record editor. The four metrics, wide main
+table and three supporting panels remain in version 1's approved order. Mock
+data and current chain/search/LP/sort semantics remain the complete scope.
+
+Reuse provenance: local `widgets/filter_editor.py` and `widgets/panels.py` were
+verified byte-identical to the corresponding `/Library/Vibes/autopull`
+primitives during discovery. Use these local shared implementations directly:
+`FilterEditorBase` supplies the titled four-column grid, two-column compact
+form, controls and APPLY FILTER/RESET ALL actions; `HeroRow`/`HeroBoxBase`
+supplies native metric framing; `TableLeaderboard`, `RichLogFeed` and
+`PanelBase` supply the standard unbordered panel appearance. Do not copy these
+modules, change shared primitives for this dashboard, or depend on the external
+checkout at runtime.
+
+### Ownership and implementation
+
+Tier 2 revision, aiming under 500 changed production lines. One implementer
+(root/session) owns screen, dashboard-owned filter editor/widgets, scoped CSS,
+tests and README integration. The planning agent owns updates to this plan and
+the PRD only. No data contract or live API changes; no new filter dimensions.
+The original three-package allocation above records the initial implementation
+and does not dispatch new packages for this revision.
+
+1. **Native composition (30–60 minutes).** Remove the extra title and always
+   visible control bar above the hero cards. Retain native hero frames, remove
+   outer borders from standard panels, and place MOCK DATA, applied-filter
+   summary and overflow hints below the hero row. Acceptance: at 149×45 the
+   first dashboard content is the four hero cards; required table columns and
+   all three lower panels remain visible using the existing dark theme.
+2. **Draft filter editor (30–60 minutes).** Add a dashboard-owned
+   `FilterEditorBase` subclass using the existing record-editor workflow. `f`
+   opens it, `/` opens it with search focused, APPLY FILTER commits the draft,
+   RESET ALL restores defaults, and Escape cancels without changing applied
+   results. Keep `c`/`o` active only outside the editor. Acceptance: all existing
+   filter fields retain their options and projection meanings; draft changes
+   do not alter counts, rankings or selection before apply; cancel, reset and
+   reopening are deterministic and keyboard controls do not leak to the body.
+
+### Verification and review
+
+Root first shows an actual running mock render at 149×45. Then verify target
+and smaller scrolling layouts in situ, including the editor's compact grid,
+without inheriting the initial 145×40 measurement. Test apply/reset/cancel,
+draft isolation, shortcut scoping, stable selection and unchanged cross-widget
+filter consistency. Preserve existing offline/no-network and return-navigation
+coverage. Run touched tests and composing files once plus applicable fast
+guards; do not run the full suite or research live sources.
+
+Use one final revision review after the render and focused checks, with one fix
+wave and a scoped re-review only if production fixes are needed. Minor-only
+findings go to followups. Root commits explicit owned files; the planning agent
+does not commit or edit production files.
+
+The revised mock overview was rendered at 149×45 with no panel frames and
+seventeen visible data rows. Its new measured boundary is 145×35; at 144×35
+or 145×34 the viewport advertises scrolling. The editor uses the visible
+viewport width so its inherited compact grid also works while the market's
+wider canvas retains horizontal scrolling.

@@ -59,9 +59,12 @@ launched list, gainers/losers and activity together. Each token has a price spar
 paired liquidity and an explicit liquidity state. `one-token` and `one-quote` identify
 one-sided positions; `*` marks these in Best Plays. Unknown values display `--`.
 
-Use `/` to search, `c` to cycle chains, `o` to sort, arrows to select, and Enter for details.
-Escape returns to the hub (or exits the standalone demo); from search it first leaves the
-input. All values are labelled **MOCK DATA**. Refresh reloads the fixed sample, and the
+The hero cards come first; standard panels use MaxPane's borderless style. Press `f` for
+the shared THE LIST / RECORD filter editor, or `/` to open it with search focused.
+**APPLY FILTER** commits the draft; **RESET ALL** clears the draft; Escape cancels it.
+Outside the editor, use `c` to cycle chains, `o` to sort, arrows to select, and Enter for details.
+Escape returns to the hub (or exits the standalone demo). All values are labelled
+**MOCK DATA**. Refresh reloads the fixed sample, and the
 standalone demo makes no network requests. Live sources and contract links come later.
 
 ### FWA — Fake World Assets
