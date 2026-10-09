@@ -127,6 +127,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 rows = [("", False), (count, False), ("", False)]
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=inset)
+        if label and (start := body.plain.find(label.strip())) >= 0:
+            body.stylize("bold", start, start + len(label.strip()))
         bottom = f" {secondary} " if self.key == "swarm" else ""
         if len(bottom) > inside:
             bottom = bottom.strip()

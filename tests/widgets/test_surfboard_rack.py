@@ -79,6 +79,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         assert footer.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
         assert "24H ▁▂▃▄▅▆▇█" in "\n".join(strip.text for strip in strips)
         header = next(segment for segment in strips[top] if "AGENTS ONLINE" in segment.text)
+        assert header.style.bold
         assert header.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
 
 
