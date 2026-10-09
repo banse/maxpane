@@ -69,18 +69,41 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
                   pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
         top = next(i for i, strip in enumerate(strips) if "┌" in strip.text)
         left, right = strips[top].text.index("┌"), strips[top].text.index("┐")
-        assert " AGENTS ONLINE " in strips[top].text
+        assert " AGENTS " in strips[top].text
+        assert "ONLINE" not in strips[top].text
         assert strips[top + 4].text[left:right + 1] == "└" + " 27 working ".center(right - left - 1, "─") + "┘"
         for strip, row in zip(strips[top + 1:top + 4], expected):
             padding = (right - left - 1 - len(row)) // 2
             assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
         footer = next(segment for segment in strips[top + 4] if "27 working" in segment.text)
         assert not footer.style.bold
-        assert footer.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
+        assert footer.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
         assert "24H ▁▂▃▄▅▆▇█" in "\n".join(strip.text for strip in strips)
-        header = next(segment for segment in strips[top] if "AGENTS ONLINE" in segment.text)
+        header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
         assert header.style.bold
-        assert header.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
+        assert header.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
+
+
+async def test_swarm_working_count_overrides_status_color_and_resets_on_refresh():
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one("#surfboard-card-swarm", SurfboardCard)
+        for status, secondary, ink in [
+            ("stale", "1 working", 2), ("stale", "0 working", 3),
+            ("unavailable", "1,000 working", 2), ("stale", "unavailable", 3),
+            ("stale", "-1 working", 3), ("stale", "1 online", 3),
+            ("stale", "0.5 working", 3), ("active", "0 working", 2),
+        ]:
+            card.set_data(dict(status=status, primary="894 online", secondary=secondary))
+            await pilot.pause()
+            strips = [strip.crop(card.region.x, card.region.right) for strip in
+                      pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+            top = next(i for i, strip in enumerate(strips) if "┌" in strip.text)
+            left, right = strips[top].text.index("┌"), strips[top].text.index("┐")
+            expected = pilot.app.ansi_theme.ansi_colors[ink]
+            for row in range(top, top + 5):
+                for x in (left, right):
+                    edge = next(iter(strips[row].crop(x, x + 1)))
+                    assert edge.style.color.get_truecolor() == expected, (status, secondary)
 
 
 async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():

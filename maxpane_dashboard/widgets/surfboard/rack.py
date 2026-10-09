@@ -107,15 +107,19 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             status = "experimental"
         muted = self.key in PLANNED or not self.can_focus
         color = MUTED if muted else AMBER if status in ("unavailable", "stale", "experimental") else GREEN
-        palette = self.app.get_css_variables()
-        inset = Style.parse(color) + Style(bgcolor=palette["background"])
         primary = flatten(self.data.get("primary")) or "unavailable"
         secondary = flatten(self.data.get("secondary")) or "unavailable"
+        working = secondary.removesuffix(" working").replace(",", "")
+        if (self.key == "swarm" and secondary.endswith(" working")
+                and working.isascii() and working.isdecimal() and working.strip("0")):
+            color = GREEN
+        palette = self.app.get_css_variables()
+        inset = Style.parse(color) + Style(bgcolor=palette["background"])
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
         if self.key == "swarm":
-            label = " AGENTS ONLINE "
+            label = " AGENTS "
             count = primary.removesuffix(" online")
             digits = count.replace(",", "")
             # Use the same native 3x3 renderer as Textual's Digits widget.

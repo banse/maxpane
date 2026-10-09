@@ -243,7 +243,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
         for card in payload["surfboard_cards"][:7]:
             if card["key"] == "swarm":
                 text = r["card_text"]["swarm"]
-                assert "AGENTS ONLINE" in text, r
+                assert "AGENTS" in text and "AGENTS ONLINE" not in text, r
                 expected = ("╭─╮╭─╴╶─╮", "├─┤├─╮ ─┤", "╰─╯╰─╯╶─╯") if kind in ("normal", "wide") else (card["primary"],)
                 assert all(row in text for row in expected), r
                 assert card["secondary"] in text, r
