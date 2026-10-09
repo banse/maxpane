@@ -1,5 +1,6 @@
 """The approved rack is a fixed six-column machine faceplate, not a reflow."""
 from textual.app import App
+from rich.color import Color
 import pytest
 
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
@@ -26,6 +27,7 @@ async def test_status_colors_the_taller_inset_without_a_separate_status_row(key,
         rack = pilot.app.query_one(SurfboardRack)
         rack.update_data(surfboard_cards=[dict(key=key, status=status,
             primary="IDMD #420", secondary="95.9% accepted")])
+        rack.focus_card("announce")
         await pilot.pause()
         card = rack.query_one(f"#surfboard-card-{key}", SurfboardCard)
         strips = [strip.crop(card.region.x, card.region.right) for strip in
@@ -41,6 +43,9 @@ async def test_status_colors_the_taller_inset_without_a_separate_status_row(key,
         assert lines[top + 4][left:right + 1] == "└" + "─" * (right - left - 1) + "┘"
         border = next(segment for segment in strips[top] if "┌" in segment.text)
         expected = pilot.app.ansi_theme.ansi_colors[ink] if ink is not None else border.style.color.get_truecolor()
+        if ink == 2:
+            outer = rack.query_one("#surfboard-card-announce", SurfboardCard)
+            expected = Color.parse(outer.styles.border_top[1].hex).get_truecolor()
         if ink is None:
             assert expected.red == expected.green == expected.blue < 200
         for strip in strips[top:top + 5]:
@@ -77,11 +82,11 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
             assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
         footer = next(segment for segment in strips[top + 4] if "27 working" in segment.text)
         assert not footer.style.bold
-        assert footer.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
+        assert footer.style.color.get_truecolor() == Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
         assert "24H ▁▂▃▄▅▆▇█" in "\n".join(strip.text for strip in strips)
         header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
         assert header.style.bold
-        assert header.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
+        assert header.style.color.get_truecolor() == Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
 
 
 async def test_swarm_working_count_overrides_status_color_and_resets_on_refresh():
@@ -99,7 +104,8 @@ async def test_swarm_working_count_overrides_status_color_and_resets_on_refresh(
                       pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             top = next(i for i, strip in enumerate(strips) if "┌" in strip.text)
             left, right = strips[top].text.index("┌"), strips[top].text.index("┐")
-            expected = pilot.app.ansi_theme.ansi_colors[ink]
+            expected = (Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
+                        if ink == 2 else pilot.app.ansi_theme.ansi_colors[ink])
             for row in range(top, top + 5):
                 for x in (left, right):
                     edge = next(iter(strips[row].crop(x, x + 1)))

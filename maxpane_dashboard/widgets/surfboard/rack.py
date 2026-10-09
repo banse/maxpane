@@ -114,7 +114,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 and working.isascii() and working.isdecimal() and working.strip("0")):
             color = GREEN
         palette = self.app.get_css_variables()
-        inset = Style.parse(color) + Style(bgcolor=palette["background"])
+        inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
