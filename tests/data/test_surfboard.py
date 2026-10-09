@@ -99,6 +99,33 @@ def test_unknown_detector_prevents_a_false_zero_bar():
     assert cards[0]['numerator'] is cards[0]['denominator'] is None
 
 
+@pytest.mark.parametrize('state,working,capacity,slots,status', [
+    ('working', 2, 3, '2 of 3 slots', 'working'),
+    ('idle', 0, 3, '0 of 3 slots', 'idle'),
+    ('offline', 0, 0, '0 of 0 slots', 'offline'),
+    ('paused', 0, 3, '0 of 3 slots', 'paused'),
+    ('paused', 1, 3, '1 of 3 slots', 'paused'),
+    ('working', 0, 3, '0 of 3 slots', 'unavailable'),
+    ('working', None, 3, '— of 3 slots', 'unavailable'),
+    ('working', True, 3, '— of 3 slots', 'unavailable'),
+    ('working', 1, None, '1 of — slots', 'working'),
+    ('working', 9, 3, '9 working', 'working'),
+    (None, None, None, '— of — slots', 'unavailable'),
+])
+def test_agent_card_uses_the_selected_seat_live_slots(state, working, capacity, slots, status):
+    outcome = hub.seat_outcome(hub.normalize_records(capture('records')), 420)
+    data = dict(swarm_seat_selected={'token_id':420}, swarm_seat_outcome=outcome,
+                swarm_seat_live=dict(live_state=state, working=working, max_concurrency=capacity),
+                swarm_workers_as_of_hhmm='12:34')
+    cards = hub.cards(data, {'records':dict(state='stale', read_ts=100)}, now=200)
+    agent = next(card for card in cards if card['key']=='agent')
+    assert agent['primary']=='IDMD #420' and agent['secondary']==slots
+    assert agent['status']==status
+    assert (agent['numerator'],agent['denominator'])==(3253,3392)
+    assert '95.9% accepted' in agent['detail'] and 'records stale' in agent['detail']
+    assert 'workers' in agent['detail'] and '12:34' in agent['detail']
+
+
 def test_card_zero_denominator_differs_from_invalid_boolean():
     def pool(assets,supply):
         return next(c for c in hub.cards({'pool4_vault_assets':assets,'pool4_total_supply':supply},{},now=100) if c['key']=='pool4')

@@ -392,9 +392,21 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     card("swarm","SWARM",_value(overview.get("agents_online")," online"),_value(overview.get("working_now")," working"),spark_detail,"swarm",points=points,source="overview")
     outcome=data.get("swarm_seat_outcome") or {}; selected=data.get("swarm_seat_selected") or {}
     token=selected.get("token_id"); acceptance=outcome.get("accept_rate")
+    live=data.get("swarm_seat_live") or {}
+    active,capacity=count(live.get("working")),count(live.get("max_concurrency"))
+    live_state=live.get("live_state")
+    slot_text=f"{active:,}" if active is not None else "—"
+    slot_text+=f" of {capacity:,} slots" if capacity is not None else " of — slots"
+    if active is not None and capacity is not None and active>capacity:
+        slot_text=f"{active:,} working"  # Oracle work may exceed maxConcurrency, as on AGENT.
+    acceptance_text=(f"{acceptance:.1%} accepted" if acceptance is not None else
+                     "no submitted record" if outcome.get("listed") is False else "acceptance unavailable")
     card("agent","AGENT",f"IDMD #{token}" if token is not None else "choose a seat",
-         f"{acceptance:.1%} accepted" if acceptance is not None else "no submitted record" if outcome.get("listed") is False else "acceptance unavailable",
-         "PASS · submitted work · summary cache ≤10m","agent",outcome.get("accepted"),outcome.get("attempts"),source="records")
+         slot_text, f"PASS · {acceptance_text} · summary cache ≤10m · records {(sources.get('records') or {}).get('state','unavailable')}"
+         f" · workers {live_state or 'unavailable'} · as of {data.get('swarm_workers_as_of_hhmm') or '—'}",
+         "agent",outcome.get("accepted"),outcome.get("attempts"),source="records")
+    result[-1]["status"]=(live_state if live_state in ("idle","offline","paused") else
+                           "working" if live_state=="working" and active is not None and active>0 else "unavailable")
     summary=data.get("swarm_board_summary") or {}; rank=outcome.get("rank")
     card("board","BOARD",_value(summary.get("seats")," seats"),f"rank #{rank}" if rank is not None else "rank unavailable",
          "PASS · recorded-seat fleet · summary cache ≤10m","board",summary.get("accepted"),summary.get("attempts"),source="records")

@@ -18,8 +18,8 @@ def painted(app):
 
 
 @pytest.mark.parametrize("key,status,ink", [
-    ("agent", "active", 2), ("agent", "stale", 3),
-    ("agent", "unavailable", 3), ("protocol", "active", 3),
+    ("board", "active", 2), ("board", "stale", 3),
+    ("board", "unavailable", 3), ("protocol", "active", 3),
     ("portfolio", "planned", None), ("bay-11", "unassigned", None),
 ])
 async def test_status_colors_the_taller_inset_without_a_separate_status_row(key, status, ink):
@@ -110,6 +110,33 @@ async def test_swarm_working_count_overrides_status_color_and_resets_on_refresh(
                 for x in (left, right):
                     edge = next(iter(strips[row].crop(x, x + 1)))
                     assert edge.style.color.get_truecolor() == expected, (status, secondary)
+
+
+@pytest.mark.parametrize("size", [(149, 45), (140, 36)])
+async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
+    async with RackApp().run_test(size=size) as pilot:
+        card = pilot.app.query_one("#surfboard-card-agent", SurfboardCard)
+        for status, slots in [("working", "2 of 3 slots"), ("idle", "0 of 3 slots"),
+                              ("paused", "1 of 3 slots"), ("offline", "0 of 0 slots"),
+                              ("unavailable", "— of — slots"), ("active", "0 of 3 slots")]:
+            card.set_data(dict(status=status, primary="IDMD #420", secondary=slots,
+                               numerator=4, denominator=8))
+            await pilot.pause()
+            strips = [strip.crop(card.region.x, card.region.right) for strip in
+                      pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+            top = next(i for i, strip in enumerate(strips) if "┌" in strip.text)
+            left, right = strips[top].text.index("┌"), strips[top].text.index("┐")
+            header = next(segment for segment in strips[top] if "SEAT NUMBER" in segment.text)
+            assert header.style.bold
+            ink = (Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
+                   if status == "working" else pilot.app.ansi_theme.ansi_colors[3])
+            assert header.style.color.get_truecolor() == ink
+            for strip, row in zip(strips[top + 1:top + 4], ["╷ ╷╶─╮╭─╮", "╰─┤┌─┘│ │", "  ╵╰─╴╰─╯"]):
+                padding = (right - left - 1 - len(row)) // 2
+                assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
+            footer = next(segment for segment in strips[top + 4] if slots in segment.text)
+            assert not footer.style.bold and footer.style.color.get_truecolor() == ink
+            assert "PASS ▰▰▰▰▱▱▱▱" in "\n".join(strip.text for strip in strips)
 
 
 async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():

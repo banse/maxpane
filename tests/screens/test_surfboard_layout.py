@@ -39,7 +39,7 @@ async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
             app.theme = name
             await pilot.pause()
             theme = THEMES[name]
-            card = app.hub.query_one("#surfboard-card-agent", SurfboardCard)
+            card = app.hub.query_one("#surfboard-card-board", SurfboardCard)
             terminal = app.hub.query_one(SurfboardTerminal)
             terminal.add_reply("palette reply")
             await pilot.pause()
@@ -50,14 +50,14 @@ async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
             assert terminal.query_one(RichLog).styles.background.hex.casefold() == "#050805"
             strips = app.hub._compositor.render_strips()
             value = next(segment for strip in strips for segment in strip
-                         if "IDMD #420" in segment.text)
+                         if "892 seats" in segment.text)
             reply = next(segment for strip in strips for segment in strip
                          if "palette reply" in segment.text)
             assert value.style.bgcolor == Color.parse(theme.background)
             assert value.style.color == card.rich_style.color
             assert reply.style.color == Color.parse("#9fc99c")
             rack = app.hub.query_one(SurfboardRack)
-            rack.focus_card("agent")
+            rack.focus_card("board")
             await pilot.pause()
             assert card.styles.border_top[1].hex.casefold() == theme.accent.casefold()
             prompt = terminal.query_one(".terminal-prompt")
@@ -241,6 +241,15 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
     assert all(value >= 7 for value in r["heights"].values()), r
     if height >= SURFBOARD_FULL_LAYOUT_ROWS:
         for card in payload["surfboard_cards"][:7]:
+            if card["key"] == "agent":
+                text = r["card_text"]["agent"]
+                assert "SEAT NUMBER" in text, r
+                expected = (("╭─╮" * 5, "╰─┤" * 5, "╶─╯" * 5) if kind == "stress" else
+                            ("╷ ╷╶─╮╭─╮", "╰─┤┌─┘│ │", "  ╵╰─╴╰─╯") if kind in ("normal", "wide") else
+                            (card["primary"],))
+                assert all(row in text for row in expected), r
+                assert ("99,999/99,999" if kind == "stress" else card["secondary"]) in text, r
+                continue
             if card["key"] == "swarm":
                 text = r["card_text"]["swarm"]
                 assert "AGENTS" in text and "AGENTS ONLINE" not in text, r
