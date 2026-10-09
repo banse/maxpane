@@ -7181,7 +7181,9 @@ class SurfManager:
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
                                                  announce_read_ts=getattr(channel_entry, "ts", None),
                                                  announce_items=channel.get("items"),
-                                                 family_sources=family_sources)
+                                                 family_sources=family_sources,
+                                                 tokens_catalogue=(self._swarm_tokens_manager.catalogue_summary()
+                                                     if getattr(self, '_swarm_tokens_manager', None) is not None else None))
         return data
 
     async def fetch_hub_snapshot(self) -> dict[str, Any]:
@@ -7189,6 +7191,7 @@ class SurfManager:
         if not self._closing:
             now = float(self._clock())
             self._offer_full(now)
+            self.swarm_tokens_manager().offer_catalogue()
             self._offer_hub_sources(now)
             self._spawn_swarm_board(set(self.cache.tiers_due(now)), now)
         return self._project_hub()

@@ -216,12 +216,33 @@ class SwarmTokensManager:
             else:
                 self._failed[name].add(key)
 
+    def offer_catalogue(self):
+        """Schedule only catalogue discovery; the hub needs no market enrichment."""
+        now = self._clock()
+        if self._cat_attempt is None or self._scan is not None or now-self._cat_attempt >= self.CATALOGUE_TTL:
+            self._start('catalogue', self._scan_catalogue())
+
+    def _catalogue_source(self, tokens, source, now):
+        state = ('unavailable' if tokens is None else 'stale' if self._complete and self._cat_failed else
+                 'partial' if not self._complete or self._scan is not None else
+                 'stale' if now-(self._cat_as_of or 0) > self.CATALOGUE_TTL else 'ok')
+        rows = self._catalogue_rows()
+        return {'state': state, 'as_of': self._cat_as_of if self._cat_as_of is not None else source.get('as_of'),
+                'complete': self._complete, 'loaded': len(rows if rows is not None else source.get('rows') or [])}
+
+    def catalogue_summary(self):
+        """Pure cached projection using the dashboard's exact token population."""
+        now = self._clock()
+        tokens = self._tokens({}, now)
+        source = self._catalogue_source(tokens, {}, now)
+        return {'count': len(tokens) if tokens is not None else None,
+                'state': source['state'], 'as_of': source['as_of']}
+
     async def fetch_and_compute(self):
         now = self._clock()
         source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
         tokens = self._tokens(source, now)
-        if self._cat_attempt is None or self._scan is not None or now-self._cat_attempt >= self.CATALOGUE_TTL:
-            self._start('catalogue', self._scan_catalogue())
+        self.offer_catalogue()
         for name, ttl, limit in (('markets', self.MARKET_TTL, self.MARKET_BATCH),
                                   ('history', self.HISTORY_TTL, self.DETAIL_BATCH),
                                   ('trades', self.TRADES_TTL, self.DETAIL_BATCH)):
@@ -246,11 +267,7 @@ class SwarmTokensManager:
             for event in (cached[0].get('activity', []) if cached else []):
                 if event.get('token_id') == row['id']:
                     activity[event['id']] = event
-        state = ('unavailable' if tokens is None else 'stale' if self._complete and self._cat_failed else
-                 'partial' if not self._complete or self._scan is not None else
-                 'stale' if now-(self._cat_as_of or 0) > self.CATALOGUE_TTL else 'ok')
-        sources = {'catalogue': {'state': state, 'as_of': self._cat_as_of if self._cat_as_of is not None else source.get('as_of'),
-                                'complete': self._complete, 'loaded': len(self._catalogue_rows() if self._catalogue_rows() is not None else source.get('rows') or [])}}
+        sources = {'catalogue': self._catalogue_source(tokens, source, now)}
         for name, label in (('markets', 'market'), ('history', 'history'), ('trades', 'trades'), ('liquidity', 'liquidity')):
             states = [row[label+'_state'] for row in tokens or []]
             stamps = [row[label+'_read_at'] for row in tokens or [] if row[label+'_read_at'] is not None]

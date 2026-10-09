@@ -70,3 +70,15 @@ A real 149×45 render and the boundary sweep preserve the 145×32 pin. Verificat
 width/height pin directions, mixed currencies, stale balances and unknown-as-zero.
 Final scoped review approved with no findings; the additional hero-order
 mutation was killed and the CSS agreement check passed.
+
+## TOKENS hub card — 2026-10-10
+
+The hub now uses LAUNCHED digits from the retained production-token catalogue.
+Its `x new` footer and green border share the SWARM title's one-hour detected
+launch-news window. Catalogue polling from the hub schedules no market reads.
+A live 149×45 capture showed 117 launched and 1 new (SPALACE #1210).
+
+Final review approved with no findings. Focused data, widget and composing
+screen checks passed, including the 57-case layout file; 123 fast guards passed.
+Four mutation checks verified expiry, scheduling, count and digits. Existing
+followups above remain; this card introduces no additional review followups.

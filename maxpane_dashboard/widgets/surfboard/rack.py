@@ -27,7 +27,7 @@ SLOTS = (
     ("announce", "ANNOUNCE", 0, 0), ("swarm", "SWARM", 0, 1),
     ("agent", "AGENT", 0, 2), ("board", "BOARD", 0, 3),
     ("launchpad", "LAUNCHPAD", 0, 4), ("pool4", "POOL4", 0, 5),
-    ("protocol", "PROTOCOL", 1, 0), ("swarm-tokens", "SWARM TOKENS", 1, 5),
+    ("protocol", "PROTOCOL", 1, 0), ("swarm-tokens", "TOKENS", 1, 5),
     ("portfolio", "PORTFOLIO", 2, 0), ("earnings", "EARNINGS", 2, 5),
     ("bay-11", "BAY 11", 3, 0), ("bay-12", "BAY 12", 3, 5),
 )
@@ -93,8 +93,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         self.data = dict(data) if isinstance(data, dict) else {}
         self.data.update(key=self.key, title=self.title)
         if self.key == "swarm-tokens":
-            self.data.update(status="available", primary="SWARM TOKENS", secondary="open markets",
-                             destination="swarm-tokens", detail="SWARM TOKENS · production-chain markets · Enter to open")
+            self.data["destination"] = "swarm-tokens"
+            self.data.setdefault("detail", "TOKENS · production-chain markets · unavailable · Enter to open")
         if planned or empty:
             self.data.update(status="planned" if planned else "unassigned", primary="coming soon" if planned else "empty slot",
                              secondary="future dashboard" if planned else "· · ·", destination=None,
@@ -140,12 +140,13 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "agent", "announce", "protocol"):
+        if self.key in ("swarm", "agent", "announce", "protocol", "swarm-tokens"):
             label = {"swarm": " AGENTS ", "agent": " SEAT ",
-                     "announce": " NEW POSTS ", "protocol": " IMD REWARDS "}[self.key]
+                     "announce": " NEW POSTS ", "protocol": " IMD REWARDS ",
+                     "swarm-tokens": " LAUNCHED "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
-            readout = count if self.key == "protocol" else digits
+            readout = count if self.key in ("protocol", "swarm-tokens") else digits
             # Use the same native 3x3 renderer as Textual's Digits widget.
             native_digits = digits.isascii() and digits.isdecimal() and Digits.get_width(readout) <= inside
             if native_digits:

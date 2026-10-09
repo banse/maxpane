@@ -13,7 +13,7 @@ from functools import cmp_to_key
 from typing import Any
 
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
-from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_points, compact_age
+from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_points, compact_age, recent_launch_news
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.analytics.surf_launch_checks import address
 from maxpane_dashboard.data.surf_models import (
@@ -358,7 +358,7 @@ def _value(value: object, suffix: str = "") -> str:
     return f"{value:,.0f}{suffix}" if type(value) is int else f"{value:,.2f}{suffix}"
 
 
-def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None) -> list[dict]:
+def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None) -> list[dict]:
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES, FIRED_TTL_S, _tx_hash
     result = []
     def card(key,title,primary,secondary,detail,destination,n=None,d=None,points=None,source=None):
@@ -458,7 +458,19 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
             row["status"] = "unavailable"
         elif "stale" in states:
             row["status"] = "stale"
-    for key,title in (("swarm-tokens","SWARM TOKENS"),("portfolio","PORTFOLIO"),("earnings","EARNINGS")):
+    catalogue = tokens_catalogue or {}
+    total = count(catalogue.get("count"))
+    catalogue_state = catalogue.get("state", "unavailable")
+    primary = f"{total:,}" if total is not None else "unavailable"
+    if total is not None and catalogue_state == "partial":
+        primary = "≥" + primary
+    events = data.get("swarm_launch_fired")
+    new = len(recent_launch_news(events, now=now)) if isinstance(events, list) else None
+    card("swarm-tokens", "TOKENS", primary, f"{new:,} new" if new is not None else "unavailable",
+         f"TOKENS · production-chain markets · catalogue {catalogue_state} · read {hhmm(catalogue.get('as_of'))}"
+         f" · launch news 1h · evaluated {hhmm(now)}", "swarm-tokens")
+    result[-1]["status"] = "active" if new else "idle"
+    for key,title in (("portfolio","PORTFOLIO"),("earnings","EARNINGS")):
         row=dict.fromkeys(SURFBOARD_CARD_FIELDS);row.update(key=key,title=title,status="planned",primary="planned",secondary="coming soon",detail=f"{title} · planned dashboard")
         result.append(row)
     return result

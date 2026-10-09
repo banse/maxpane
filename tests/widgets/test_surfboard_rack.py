@@ -223,7 +223,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
         for label in ("ANNOUNCE", "SWARM", "AGENT", "BOARD", "LAUNCHPAD", "POOL4",
-                      "PROTOCOL", "PORTFOLIO", "EARNINGS", "SWARM TOKENS", "BAY 11", "BAY 12"):
+                      "PROTOCOL", "PORTFOLIO", "EARNINGS", "TOKENS", "BAY 11", "BAY 12"):
             assert label in text
 
 
@@ -293,3 +293,26 @@ async def test_chart_requires_all_eight_buckets_and_planned_cards_stay_unlit():
         rack.update_data(surfboard_cards=[dict(key="swarm", meter_kind="sparkline", points=[0, 1])])
         await pilot.pause()
         assert "24H —" in painted(pilot.app)
+
+
+@pytest.mark.parametrize('size', [(149, 45), (140, 36)])
+async def test_tokens_card_launch_digits_and_news_border_refresh(size):
+    async with RackApp().run_test(size=size) as pilot:
+        card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
+        for status, footer in [('active', '2 new'), ('idle', '0 new')]:
+            card.set_data(dict(status=status, primary='116', secondary=footer, destination='swarm-tokens'))
+            await pilot.pause()
+            strips = [strip.crop(card.region.x, card.region.right) for strip in
+                      pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+            top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
+            assert '⊙ TOKENS' in '\n'.join(s.text for s in strips)
+            assert 'SWARM TOKENS' not in '\n'.join(s.text for s in strips)
+            header = next(s for s in strips[top] if 'LAUNCHED' in s.text)
+            expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+                        if status == 'active' else pilot.app.ansi_theme.ansi_colors[3])
+            assert header.style.bold and header.style.color.get_truecolor() == expected
+            for strip, digits in zip(strips[top+1:top+4], ['╶╮ ╶╮ ╭─╴', ' │  │ ├─╮', '╶┴╴╶┴╴╰─╯']):
+                assert digits in strip.text
+            assert footer in strips[top+4].text
+            bottom = next(s for s in strips[top+4] if footer in s.text)
+            assert not bottom.style.bold and bottom.style.color.get_truecolor() == expected

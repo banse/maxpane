@@ -51,3 +51,13 @@ def compact_age(value: object) -> str:
     if seconds >= 3600:
         return f"{seconds // 3600}h {seconds % 3600 // 60}m ago"
     return f"{seconds // 60}m ago" if seconds >= 60 else f"{seconds}s ago"
+
+
+def recent_launch_news(events: object, *, now: object) -> list[dict]:
+    """Detected launch news shared by the SWARM title and TOKENS card (one hour)."""
+    if type(now) not in (int, float) or not isinstance(events, list):
+        return []
+    return [event for event in events if isinstance(event, dict)
+            and type(event.get("ts")) in (int, float)
+            and 0 <= now - event["ts"] < 3600
+            and type(event.get("number")) is int]

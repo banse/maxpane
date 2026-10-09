@@ -16,6 +16,9 @@ def manager(tmp_path):
     swarm.fetch_seat_records=AsyncMock(return_value=capture('records'))
     swarm.fetch_steps_hourly=AsyncMock(return_value=capture('hourly'))
     m=SurfManager(clock=lambda:clock.now,cache_path=str(tmp_path/'cache.json'),client=Client(),pool4_client=Client(),swarm_client=swarm,npm_client=Client(),seat=420)
+    from maxpane_dashboard.data.swarm_tokens_manager import SwarmTokensManager
+    from tests.data.test_swarm_tokens_live import Pages, Market
+    m._swarm_tokens_manager = SwarmTokensManager(m, client=Pages(), market=Market(), clock=lambda: clock.now)
     m._cycle=AsyncMock(return_value=m._blank_payload())
     return m,clock
 
@@ -314,3 +317,26 @@ async def test_old_overview_snapshot_survives_failed_read_until_tokens_arrive(ma
     assert m._project_hub()['surfboard_footer']['inference_tokens'] == 188932748311
     assert m._project_hub()['surfboard_footer']['overview_read_ts'] == 1030
     await m.close()
+
+
+async def test_tokens_card_shares_retained_catalogue_and_ages_news_without_full_read(manager):
+    m, clock = manager
+    m._last_full_payload = dict(as_of=1000, swarm_launch_fired=[dict(ts=1000., number=1210)])
+    m._offer_full = lambda now: None
+    try:
+        first = await m.fetch_hub_snapshot()
+        assert next(c for c in first['surfboard_cards'] if c['key']=='swarm-tokens')['primary'] == 'unavailable'
+        adapter = m.swarm_tokens_manager()
+        await adapter.wait_pending()
+        second = await m.fetch_hub_snapshot()
+        card = next(c for c in second['surfboard_cards'] if c['key']=='swarm-tokens')
+        assert (card['primary'], card['secondary'], card['status']) == ('3', '1 new', 'active')
+        assert adapter is m.swarm_tokens_manager()
+        assert set(adapter._tasks) == {'catalogue'}
+        clock.now = 4600
+        card = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
+        assert (card['primary'], card['secondary'], card['status']) == ('3', '0 new', 'idle')
+        assert 'catalogue stale' in card['detail']
+    finally:
+        await m.close()
+    assert adapter._closed

@@ -476,3 +476,26 @@ async def test_new_expected_pool_withholds_cached_or_inflight_quote_and_reads_im
     finally:
         gate.set()
         await manager.close()
+
+
+async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads():
+    now = [1000.]
+    manager = SwarmTokensManager(Source(), client=Pages(), market=Market(), clock=lambda: now[0])
+    try:
+        assert manager.catalogue_summary() == {'count': None, 'state': 'unavailable', 'as_of': None}
+        manager.offer_catalogue()
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        summary = manager.catalogue_summary()
+        assert summary == {'count': 3, 'state': 'ok', 'as_of': 1000.}
+        assert set(manager._tasks) == {'catalogue'}
+        assert manager.client.calls == [None]
+        dashboard = await manager.fetch_and_compute()
+        assert summary['count'] == len(dashboard['tokens'])
+        assert summary['state'] == dashboard['sources']['catalogue']['state']
+        now[0] += 301
+        assert manager.catalogue_summary() == {'count': 3, 'state': 'stale', 'as_of': 1000.}
+        manager._complete = False
+        assert manager.catalogue_summary()['state'] == 'partial'
+    finally:
+        await manager.close()

@@ -14,6 +14,7 @@ def hub_payload(kind="normal"):
         ("launchpad", "LAUNCHPAD", "launchpad", "208 coins", "0 new / 24h", 0, 208),
         ("pool4", "POOL4", "pool4_user", "7.90 USD", "1.40% / 7d", 350, 1000),
         ("protocol", "PROTOCOL", "pool4", "5,873", "33,279 burned", 60, 100),
+        ("swarm-tokens", "TOKENS", "swarm-tokens", "116", "2 new", None, None),
     )
     cards = []
     for key, title, destination, primary, secondary, numerator, denominator in definitions:
@@ -24,7 +25,7 @@ def hub_payload(kind="normal"):
                           meter_kind="sparkline" if key == "swarm" else "ratio",
                           numerator=numerator, denominator=denominator,
                           points=[1, 2, 3, 4, 3, 2, 1, 8] if key == "swarm" else None))
-    for key, title in (("swarm-tokens", "SWARM TOKENS"), ("portfolio", "PORTFOLIO"), ("earnings", "EARNINGS")):
+    for key, title in (("portfolio", "PORTFOLIO"), ("earnings", "EARNINGS")):
         cards.append(dict(key=key, title=title, destination=None, status="planned",
                           primary="coming soon", secondary="future dashboard", detail="planned / coming soon",
                           meter_kind=None, numerator=None, denominator=None, points=None))
@@ -41,7 +42,7 @@ def hub_payload(kind="normal"):
     sources = {name: dict(state="ok", read_ts=STAMP, attempt_ts=STAMP, provider_ts=None,
                          version="display-fixture", payload=None) for name in ("overview", "records", "hourly")}
     if kind == "stress":
-        for card in cards[:7]:
+        for card in cards[:8]:
             card["primary"] = "999.9K units"
             card["secondary"] = "100.0% accepted"
         next(card for card in cards if card["key"] == "agent").update(
@@ -50,13 +51,15 @@ def hub_payload(kind="normal"):
             primary="11", secondary="99,999 new posts")
         next(card for card in cards if card["key"] == "protocol").update(
             primary="1,234,567", secondary="99,999 burned")
+        next(card for card in cards if card["key"] == "swarm-tokens").update(
+            primary="1,234,567", secondary="99,999 new")
         overview = dict(agents_online=99999, working_now=99999, jobs_24h=999999,
                         oracles_24h=99999, accepted_24h=99999999, seats_enrolled=99999,
                         services=dict(verifier=False, publisher=None, deployer=True))
         footer.update(market_value_usd=999999999999., inference_tokens=999999999999999,
                       market_basis="fdv", market_state="stale", overview_state="stale")
     elif kind == "unavailable":
-        for card in cards[:7]:
+        for card in cards[:8]:
             card.update(status="unavailable", primary="unavailable", secondary="unavailable",
                         numerator=None, denominator=None, points=None)
         overview, events = None, None

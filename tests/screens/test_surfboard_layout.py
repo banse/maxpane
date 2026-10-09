@@ -213,7 +213,7 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert r["terminal"].bottom == r["cards"]["bay-11"].bottom == r["cards"]["bay-12"].bottom
     assert r["cards"]["protocol"].right < r["terminal"].x < r["terminal"].right < r["cards"]["swarm-tokens"].x
     for title in ("ANNOUNCE", "SWARM", "AGENT", "BOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
-                  "SWARM TOKENS", "PORTFOLIO", "EARNINGS", "BAY 11", "BAY 12"):
+                  "TOKENS", "PORTFOLIO", "EARNINGS", "BAY 11", "BAY 12"):
         assert title in r["text"], (title, r["text"])
 
 

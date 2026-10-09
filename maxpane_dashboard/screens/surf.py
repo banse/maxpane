@@ -229,6 +229,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Static
 
 from maxpane_dashboard import config
+from maxpane_dashboard.analytics.surfboard import recent_launch_news
 from maxpane_dashboard.analytics.range_filters import FilterValidationError
 from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, parse_record_filter
 from maxpane_dashboard.screens.seat_input import parse_seat
@@ -2410,14 +2411,7 @@ def _agent_title_head(data: dict) -> str:
 def _launch_news(data: dict, *, ticker: bool = True, accent: str = "cyan",
                  compact: bool = False, separator: str = " · ") -> str:
     """News ages against the payload clock, independently of the FIRED row's TTL."""
-    now = data.get("as_of")
-    if not isinstance(now, (int, float)) or isinstance(now, bool):
-        return ""
-    events = data.get("swarm_launch_fired")
-    recent = [event for event in events if isinstance(event, dict)
-              and type(event.get("ts")) in (int, float)
-              and 0 <= now - event["ts"] < 3600
-              and type(event.get("number")) is int] if isinstance(events, list) else []
+    recent = recent_launch_news(data.get("swarm_launch_fired"), now=data.get("as_of"))
     if not recent:
         return ""
     if len(recent) > 1:

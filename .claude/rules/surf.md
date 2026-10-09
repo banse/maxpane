@@ -726,7 +726,11 @@ guarantee, not a promise that arbitrary notes fit; measured content limits are i
 
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
 Seven launchers route to the native modes; Escape returns to the retained rack, while menu/Tab
-clear the return context. Future Swarm Tokens, Portfolio and Earnings cards do no feature reads.
+clear the return context. TOKENS opens the retained SWARM TOKENS dashboard and shows its catalogue population in
+native digits. Hub polling offers catalogue discovery only, without market/history/trade reads.
+Its `x new` footer and green inset share the SWARM header's one-hour detected-launch news
+predicate; cold/partial/stale catalogue states remain explicit. Portfolio and Earnings cards
+do no feature reads.
 The terminal supports bounded read-only commands and replaces its recent `/swarm` event window
 without duplicating events or losing replies, draft or scroll anchor. Source polling and full
 collection are manager-owned single-flight tasks; only the hub skips the startup prefetch join.

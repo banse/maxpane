@@ -89,7 +89,7 @@ def test_rack_meters_use_real_denominators_uncapped_population_and_split():
     assert (cards['pool4']['numerator'],cards['pool4']['denominator'])==(20,100)
     assert (cards['protocol']['numerator'],cards['protocol']['denominator'])==(2,10)
     assert cards['protocol']['status']=='experimental'
-    assert {c['key'] for c in cards.values() if c['status']=='planned'}=={'swarm-tokens','portfolio','earnings'}
+    assert {c['key'] for c in cards.values() if c['status']=='planned'}=={'portfolio','earnings'}
     lp['launch_count']=24
     assert next(c for c in hub.cards(data,{},now=100,launchpad=lp) if c['key']=='launchpad')['numerator'] is None
 
@@ -413,3 +413,34 @@ def test_legacy_event_migration_does_not_bless_corruption(damage):
         payload['events'][0]['details'] = None
         source['version'] = hub.version(payload)
     assert hub.coerce_source(source, 'overview', now=1001) is None
+
+
+@pytest.mark.parametrize('events,expected', [
+    ([], 0), ([{'ts': 10000, 'number': 1210}], 1),
+    ([{'ts': 6401, 'number': 1210}, {'ts': 9999, 'number': 1211}], 2),
+    ([{'ts': 6400, 'number': 1210}, {'ts': 10001, 'number': 1211},
+      {'ts': True, 'number': 1212}, {'ts': 9999, 'number': True}, None], 0),
+])
+def test_tokens_card_uses_same_launch_news_window_as_swarm_header(events, expected):
+    from maxpane_dashboard.screens.surf import _launch_news
+    data = dict(as_of=10000, swarm_launch_fired=events)
+    row = next(r for r in hub.cards(data, {}, now=10000,
+        tokens_catalogue=dict(count=116, state='ok', as_of=9900)) if r['key']=='swarm-tokens')
+    assert (row['title'], row['primary'], row['secondary']) == ('TOKENS', '116', f'{expected} new')
+    assert row['destination'] == 'swarm-tokens'
+    assert (row['status'] == 'active') == bool(_launch_news(data)) == (expected > 0)
+    assert 'catalogue ok' in row['detail'] and hub.hhmm(9900) in row['detail']
+
+
+@pytest.mark.parametrize('catalogue,primary', [
+    (None, 'unavailable'), ({'count': 0, 'state': 'ok', 'as_of': 9900}, '0'),
+    ({'count': 116, 'state': 'partial', 'as_of': 9900}, '≥116'),
+    ({'count': 116, 'state': 'stale', 'as_of': 9900}, '116'),
+])
+def test_tokens_card_preserves_unknown_partial_and_stale_catalogue(catalogue, primary):
+    row = next(r for r in hub.cards({}, {}, now=10000, tokens_catalogue=catalogue) if r['key']=='swarm-tokens')
+    assert row['primary'] == primary
+    assert row['secondary'] == 'unavailable'
+    assert row['status'] != 'active'
+    assert row['destination'] == 'swarm-tokens'
+    assert (catalogue or {'state':'unavailable'})['state'] in row['detail']
