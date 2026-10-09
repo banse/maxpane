@@ -20,6 +20,7 @@ from .terminal import SurfboardTerminal, fitted_prose, fit_prose
 GREEN = "green"
 MUTED = "dim"
 AMBER = "yellow"
+RED = "red"
 
 # Layout identities, not data: future and empty bays deliberately have no route.
 SLOTS = (
@@ -106,20 +107,30 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.key == "protocol" and status == "active":
             status = "experimental"
         muted = self.key in PLANNED or not self.can_focus
-        color = MUTED if muted else AMBER if status in ("unavailable", "stale", "experimental") else GREEN
+        color = MUTED if muted else {"active": GREEN, "working": GREEN,
+            "stale": AMBER, "unavailable": AMBER, "paused": AMBER,
+            "offline": RED, "error": RED, "failed": RED}.get(status, MUTED)
         primary = flatten(self.data.get("primary")) or "unavailable"
         secondary = flatten(self.data.get("secondary")) or "unavailable"
         working = secondary.removesuffix(" working").replace(",", "")
         if (self.key == "swarm" and secondary.endswith(" working")
                 and working.isascii() and working.isdecimal() and working.strip("0")):
             color = GREEN
+        elif self.key == "swarm" and status == "active":
+            color = MUTED if working == "0" else AMBER
         if self.key == "agent":
-            color = GREEN if status == "working" else AMBER
-            secondary = secondary.removesuffix(" slots")
+            if status == "active":
+                color = MUTED
+            secondary = "offline" if status == "offline" else secondary.removesuffix(" slots")
         if self.key == "announce":
             posts = secondary.removesuffix(" new posts").removesuffix(" new post").replace(",", "")
-            color = (GREEN if secondary.endswith((" new post", " new posts"))
-                     and posts.isascii() and posts.isdecimal() and posts.strip("0") else AMBER)
+            if color not in (AMBER, RED):
+                color = (GREEN if secondary.endswith((" new post", " new posts"))
+                         and posts.isascii() and posts.isdecimal() and posts.strip("0") else MUTED)
+        if not muted and (primary == "unavailable" or secondary == "unavailable") and color == MUTED:
+            color = AMBER
+        if status in ("offline", "error", "failed") and not muted:
+            color = RED
         palette = self.app.get_css_variables()
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         label = ""
