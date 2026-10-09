@@ -298,7 +298,7 @@ async def test_planned_cards_explain_without_navigating_and_draft_survives_visit
         rack = hub.query_one(SurfboardRack)
         terminal = hub.query_one(SurfboardTerminal)
         terminal.command_input.value = "find unchanged.eth"
-        for key in ("swarm-tokens", "portfolio", "earnings"):
+        for key in ("portfolio", "earnings"):
             rack.focus_card(key)
             await pilot.press("enter")
             assert app.screen is hub

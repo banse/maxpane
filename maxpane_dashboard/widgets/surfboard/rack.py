@@ -31,7 +31,7 @@ SLOTS = (
     ("portfolio", "PORTFOLIO", 2, 0), ("earnings", "EARNINGS", 2, 5),
     ("bay-11", "BAY 11", 3, 0), ("bay-12", "BAY 12", 3, 5),
 )
-PLANNED = frozenset(("swarm-tokens", "portfolio", "earnings"))
+PLANNED = frozenset(("portfolio", "earnings"))
 METER_LABELS = dict(announce="ALERT", swarm="24H", agent="PASS", board="PASS",
                     launchpad="TRADE", pool4="STAKE", protocol="BURN",
                     **{"swarm-tokens": "TOKENS", "portfolio": "ASSETS", "earnings": "EARN"})
@@ -49,7 +49,7 @@ def meter_text(card: dict) -> Text:
     key, status = card.get("key"), card.get("status")
     label = METER_LABELS.get(key, "AUX")
     out = Text().append(label + " ", style=MUTED)
-    if key in PLANNED or str(key).startswith("bay-"):
+    if key in PLANNED or key == "swarm-tokens" or str(key).startswith("bay-"):
         return out.append("▱" * 8, style=MUTED)
     if card.get("meter_kind") == "sparkline":
         points = card.get("points")
@@ -92,6 +92,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         planned, empty = self.key in PLANNED, self.key.startswith("bay-")
         self.data = dict(data) if isinstance(data, dict) else {}
         self.data.update(key=self.key, title=self.title)
+        if self.key == "swarm-tokens":
+            self.data.update(status="demo", primary="MOCK DATA", secondary="open preview",
+                             destination="swarm-tokens-demo", detail="SWARM TOKENS · offline mock preview · Enter to open")
         if planned or empty:
             self.data.update(status="planned" if planned else "unassigned", primary="coming soon" if planned else "empty slot",
                              secondary="future dashboard" if planned else "· · ·", destination=None,

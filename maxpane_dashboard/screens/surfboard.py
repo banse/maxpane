@@ -141,6 +141,11 @@ class SurfboardScreen(DashboardScreen):
         self._render_chrome()
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
+        if event.key == "swarm-tokens":
+            from maxpane_dashboard.data.swarm_tokens_demo import DemoSwarmTokensManager
+            from maxpane_dashboard.screens.swarm_tokens import SwarmTokensScreen
+            self.app.push_screen(SwarmTokensScreen(DemoSwarmTokensManager()))
+            return
         if event.destination is None:
             self._detail = event.detail
             self._render_chrome()

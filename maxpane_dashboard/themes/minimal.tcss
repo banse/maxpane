@@ -3077,3 +3077,30 @@ SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $text
 SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1; overflow: auto auto;
     scrollbar-gutter: stable; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
 SurfboardScreen #surfboard-detail { height: 1; padding: 0 1; color: $text-muted; text-wrap: nowrap; }
+
+/* SWARM TOKENS mock screen */
+SwarmTokensScreen { background: $background; color: $text; }
+SwarmTokensScreen #st-title { height: 1; padding: 0 1; background: $surface; color: $text-muted; }
+SwarmTokensScreen #st-viewport { height: 1fr; padding: 0 1; overflow: auto auto;
+    scrollbar-gutter: stable; scrollbar-size: 1 1; }
+SwarmTokensScreen #st-body { width: 1fr; min-width: 143; height: 1fr; min-height: 37; }
+SwarmTokensScreen #st-controls { height: 3; margin: 1 0 0 0; }
+SwarmTokensScreen Select { width: 24; height: 3; margin-right: 1; }
+SwarmTokensScreen #st-search { width: 1fr; height: 3; }
+SwarmTokensScreen TokensHero { height: 6; margin: 1 0; }
+SwarmTokensScreen TokensHeroBox { width: 1fr; height: 6; border: round $panel;
+    background: $surface; padding: 0 1; margin-right: 1; content-align: center middle;
+    text-align: center; }
+SwarmTokensScreen TokensHeroBox:last-child { margin-right: 0; }
+SwarmTokensScreen TokensTable { height: 1fr; min-height: 12; border: solid $panel; }
+SwarmTokensScreen DataTable { height: 1fr; background: $background; scrollbar-size: 1 1; }
+SwarmTokensScreen #st-bottom { height: 12; margin-top: 1; }
+SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays, SwarmTokensScreen TokenActivity {
+    width: 1fr; height: 1fr; border: solid $panel; }
+SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays { margin-right: 1; }
+SwarmTokensScreen .panel-title { height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted; }
+SwarmTokensScreen RichLog { height: 1fr; padding: 0 1; background: $background;
+    scrollbar-size: 1 1; }
+SwarmTokensScreen #st-best-body { height: 1fr; padding: 0 1; }
+SwarmTokensScreen #st-selection { height: 1; color: $text-muted; padding: 0 1;
+    text-wrap: nowrap; text-overflow: ellipsis; }

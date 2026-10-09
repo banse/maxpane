@@ -19,7 +19,7 @@ kind, no wallet, no signing, no transactions.
 | **Cat Town** | Base | Fishing competition, KIBBLE economy, catches |
 | **Ten Thousand Tokens** | Ethereum | NFT burn-to-launch on UniV4, fee engines, holder claims |
 | **Talismans** | Ethereum | Core-conservation NFT collection, materials, essence × tier |
-| **SURFBOARD HUB** | Ethereum / IMD | Dashboard 9: seven SURFBOARD launchers, live IMD terminal, three future dashboards and two empty bays |
+| **SURFBOARD HUB** | Ethereum / IMD | Dashboard 9: seven SURFBOARD launchers, live IMD terminal, SWARM TOKENS mock preview, two future dashboards and two empty bays |
 
 ### SURFBOARD HUB — dashboard 9
 
@@ -32,7 +32,8 @@ Use arrows and Enter to open a card, `/` to type, and Escape to leave the input 
 the menu. Outside the input, Tab continues cycling dashboards. Type `?` for commands:
 `status`, `jobs`, `seat #420`, `find <ENS/address/#seat>`, `me`, `grep <text>`,
 `open <#seat/job-id>` and `clear`. These commands only read public data or open an existing
-view. Swarm Tokens, Portfolio and Earnings are planned cards; two bays remain empty.
+view. Swarm Tokens opens the mock preview below; Portfolio and Earnings remain planned,
+with two empty bays available.
 
 Acceptance and rank in HUB, AGENT and BOARD share one validated `/seats/records` snapshot.
 Its upstream cache can lag by ten minutes. Device effort and worker presence keep separate
@@ -43,6 +44,25 @@ Its aligned columns show time, event, agent,
 state and description; the footer shows IMD market cap (or labelled FDV), progress toward
 the site's $1B goal, inference tokens used and snapshot age. `V* P* D*` means the verifier,
 publisher and deployer are up; `!` means down and `?` unknown.
+
+### SWARM TOKENS — offline preview
+
+Open **SWARM TOKENS** from dashboard 9, or run the isolated mock demo:
+
+```bash
+.venv/bin/python -m maxpane_dashboard.demos.swarm_tokens
+```
+
+The market overview is designed for **149×45**, with 24 synthetic tokens across Ethereum,
+Base and Robinhood. Chain, search and liquidity filters update the table, metrics, newly
+launched list, gainers/losers and activity together. Each token has a price sparkline,
+paired liquidity and an explicit liquidity state. `one-token` and `one-quote` identify
+one-sided positions; `*` marks these in Best Plays. Unknown values display `--`.
+
+Use `/` to search, `c` to cycle chains, `o` to sort, arrows to select, and Enter for details.
+Escape returns to the hub (or exits the standalone demo); from search it first leaves the
+input. All values are labelled **MOCK DATA**. Refresh reloads the fixed sample, and the
+standalone demo makes no network requests. Live sources and contract links come later.
 
 ### FWA — Fake World Assets
 

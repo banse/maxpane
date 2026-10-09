@@ -53,6 +53,10 @@ from maxpane_dashboard.screens.surfboard import (
     SurfboardScreen, SURFBOARD_FULL_LAYOUT_COLUMNS, SURFBOARD_FULL_LAYOUT_ROWS,
 )
 from maxpane_dashboard.screens.ttt import TTTScreen
+from maxpane_dashboard.data.swarm_tokens_demo import demo_snapshot
+from maxpane_dashboard.screens.swarm_tokens import (
+    SwarmTokensScreen, SWARM_TOKENS_FULL_LAYOUT_COLUMNS, SWARM_TOKENS_FULL_LAYOUT_ROWS,
+)
 from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA, ROBINHOOD
 from tests.address_sweep.case import SweepCase
 from tests.screens import test_curator_screen as _curator
@@ -682,7 +686,16 @@ def _surfboard_app() -> App:
         _SurfboardPayloadManager(_surfboard_payload()), poll_interval=30, name="surfboard"))
 
 
+def _swarm_tokens_app() -> App:
+    return _CopyHarness(SwarmTokensScreen(_PayloadManager(demo_snapshot())))
+
+
 CASES: tuple[SweepCase, ...] = (
+    SweepCase(
+        name="swarm_tokens_demo", screen_class=SwarmTokensScreen,
+        build=_swarm_tokens_app, payload=demo_snapshot, address_free=True,
+        pins=((SWARM_TOKENS_FULL_LAYOUT_COLUMNS, SWARM_TOKENS_FULL_LAYOUT_ROWS),),
+    ),
     SweepCase(
         name="surfboard", screen_class=SurfboardScreen,
         build=_surfboard_app, payload=_surfboard_payload,
