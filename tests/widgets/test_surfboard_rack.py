@@ -16,6 +16,39 @@ def painted(app):
                      for strip in app.screen._compositor.render_strips())
 
 
+@pytest.mark.parametrize("key,status,ink", [
+    ("agent", "active", 2), ("agent", "stale", 3),
+    ("agent", "unavailable", 3), ("protocol", "active", 3),
+    ("portfolio", "planned", None), ("bay-11", "unassigned", None),
+])
+async def test_status_colors_the_taller_inset_without_a_separate_status_row(key, status, ink):
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        rack = pilot.app.query_one(SurfboardRack)
+        rack.update_data(surfboard_cards=[dict(key=key, status=status,
+            primary="IDMD #420", secondary="95.9% accepted")])
+        await pilot.pause()
+        card = rack.query_one(f"#surfboard-card-{key}", SurfboardCard)
+        strips = [strip.crop(card.region.x, card.region.right) for strip in
+                  pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+        lines = [strip.text for strip in strips]
+        assert not any(label in "\n".join(lines) for label in
+                       ("active", "stale", "unavailable", "experimental", "planned", "unassigned"))
+        top = next(i for i, line in enumerate(lines) if "┌" in line)
+        left, right = lines[top].index("┌"), lines[top].index("┐")
+        assert lines[top + 1][left:right + 1] == "│" + " " * (right - left - 1) + "│"
+        assert card.data["primary"] in lines[top + 2]
+        assert card.data["secondary"] in lines[top + 3]
+        assert lines[top + 4][left:right + 1] == "└" + "─" * (right - left - 1) + "┘"
+        border = next(segment for segment in strips[top] if "┌" in segment.text)
+        expected = pilot.app.ansi_theme.ansi_colors[ink] if ink is not None else border.style.color.get_truecolor()
+        if ink is None:
+            assert expected.red == expected.green == expected.blue < 200
+        for strip in strips[top:top + 5]:
+            for segment in strip.crop(left, right + 1):
+                if any(char in "┌┐└┘─│" for char in segment.text):
+                    assert segment.style.color.get_truecolor() == expected
+
+
 async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         rack = pilot.app.query_one(SurfboardRack)

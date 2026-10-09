@@ -12,7 +12,7 @@ from textual.message import Message
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
-from maxpane_dashboard.widgets.rowfit import clip, title_with_hint
+from maxpane_dashboard.widgets.rowfit import title_with_hint
 from maxpane_dashboard.widgets.sparkline_common import build_sparkline
 from .terminal import SurfboardTerminal, fitted_prose, fit_prose
 
@@ -107,11 +107,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         muted = self.key in PLANNED or not self.can_focus
         color = MUTED if muted else AMBER if status in ("unavailable", "stale", "experimental") else GREEN
         palette = self.app.get_css_variables()
-        inset = Style(color=palette["panel"], bgcolor=palette["background"])
+        inset = Style.parse(color) + Style(bgcolor=palette["background"])
         body = Text()
-        status_line = Text(clip(("○ " if muted else "● ") + status, width), style=color)
-        status_line.align("center", width)
-        body.append_text(status_line).append("\n").append("┌" + "─" * inside + "┐\n", style=inset)
+        body.append("┌" + "─" * inside + "┐\n", style=inset)
+        body.append("│" + " " * inside + "│\n", style=inset)
         clipped = False
         for field in ("primary", "secondary"):
             raw = flatten(self.data.get(field)) or "unavailable"
