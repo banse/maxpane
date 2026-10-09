@@ -99,6 +99,47 @@ def test_unknown_detector_prevents_a_false_zero_bar():
     assert cards[0]['numerator'] is cards[0]['denominator'] is None
 
 
+@pytest.mark.parametrize('items,footer', [
+    (None,'unavailable'), ([], '0 new posts'),
+    ([dict(kind='self',ts=99999,tx_hash='0x'+'a'*64)],'1 new post'),
+    ([dict(kind=kind,ts=99999,tx_hash='0x'+char*64)
+      for kind,char in [('self','a'),('reply','b'),('answer','c')]],'3 new posts'),
+    ([dict(kind=kind,ts=ts,tx_hash='0x'+char*64) for kind,ts,char in [
+        ('self',99999,'a'),('self',99999,'A'),('reply',13601,'b'),
+        ('reply',13600,'c'),('self',100001,'d'),('action',99999,'e'),
+        ('failed',99999,'f'),('fund',99999,'1')]],'2 new posts'),
+    ([None,dict(kind='self',ts=True,tx_hash='0x'+'a'*64),
+      dict(kind='self',ts=99999,tx_hash='bad')],'0 new posts'),
+])
+def test_announce_card_counts_unique_posts_replies_and_answers_in_last_day(items,footer):
+    from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES
+    data={f'sig_{name}_state':'fired' if i<5 else 'ok' for i,name in enumerate(SIGNAL_NAMES)}
+    row=hub.cards(data,{},now=100000,announce_items=items)[0]
+    assert row['primary']=='5' and row['secondary']==footer
+    assert row['numerator']==5 and row['denominator']==len(SIGNAL_NAMES)
+    assert '24h' in row['detail'] and 'cached' in row['detail']
+    assert hub.cards({}, {},now=100000,announce_items=[])[0]['primary']=='unavailable'
+
+
+@pytest.mark.parametrize('burn,reward,primary,secondary', [
+    (33279.30, 5872.82, '33,279', '5,873 rewarded'),
+    (0, 0, '0', '0 rewarded'),
+    (12.8, 3.2, '13', '3 rewarded'),
+    (None, None, 'unavailable', 'unavailable'),
+    (True, float('nan'), 'unavailable', 'unavailable'),
+])
+def test_protocol_card_rounds_readouts_but_keeps_exact_flow(burn, reward, primary, secondary):
+    row=next(c for c in hub.cards(dict(pool4_total_burned=burn,
+        pool4_total_rewarded=reward,pool4_total_fee_token=1),{},now=100) if c['key']=='protocol')
+    assert (row['primary'],row['secondary'])==(primary,secondary)
+    assert row['status']=='experimental'
+    if type(burn) in (int,float):
+        assert row['numerator']==burn
+        assert row['denominator']==burn+reward+1
+        assert (f'{burn:,}' if type(burn) is int else f'{burn:,.2f}')+' burned' in row['detail']
+        assert (f'{reward:,}' if type(reward) is int else f'{reward:,.2f}')+' rewarded' in row['detail']
+
+
 @pytest.mark.parametrize('state,working,capacity,slots,status', [
     ('working', 2, 3, '2 of 3 slots', 'working'),
     ('idle', 0, 3, '0 of 3 slots', 'idle'),

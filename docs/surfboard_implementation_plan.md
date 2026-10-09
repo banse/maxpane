@@ -465,3 +465,32 @@ extension complete; preserve the earlier completed extension's evidence as histo
   arrival work history to preceding events. Four focused regressions passed; scoped re-review
   marked all three **ADDRESSED / Approved**. No remaining review findings were filed.
 - The four-payload rack boundary checks keep the 140×36 pin unchanged. No full suite was run.
+
+## ANNOUNCE and PROTOCOL digit cards — 2026-10-09
+
+Owner request: ANNOUNCE uses bold SIGNALS, the fired-detector count in native
+3x3 digits, and a regular `N new post(s)` footer. New means the last 24 hours,
+combining posts, replies and answers, deduplicated by transaction hash. Only
+a positive count colors its inner border green; zero or unknown stays amber.
+Use the entire cached channel page history, not the 25-row visible feed.
+Disclose the window, source clock and cached coverage in the focused detail.
+PROTOCOL uses bold IMD BURNED, rounded whole burned IMD in native digits and
+`N rewarded` rounded to whole IMD in the footer. Preserve exact flow values
+and the experimental source indication in detail and meter. Unknown is never
+zero. Long values retain the existing whole-value text fallback and widen hint.
+
+Tier 2 by file count; one session-owned package under 100 production lines.
+Dependencies: pure projection and manager snapshot -> existing card renderer ->
+fixtures and composited boundary checks. No new API calls, persisted state,
+contract fields, widget classes or layout pins are planned.
+
+Verification: TDD for count boundaries/deduplication/rounding and painted digits,
+live keyless preview at 149x45 before hardening, current layout boundary checks,
+mutation proof, touched/composing tests and fast guards/docpins. One final
+branch-scope review of this extension, one fix wave if needed; no full suite.
+
+Verification complete: the live 149x45 render showed 5 signals / 1 new post
+(green) and 33,279 burned / 5,873 rewarded. All 399 touched/composing tests
+and 125 guard/docpin checks passed; five mutants were killed and restored.
+The 140x36 boundary remains unchanged. Final review: Approved, no findings;
+no new follow-ups. No full suite was run.

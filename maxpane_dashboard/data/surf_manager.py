@@ -7130,8 +7130,11 @@ class SurfManager:
         family_sources = self._hub_card_sources(data)
         market = getattr(self.cache.get_last_good(SLOT_MARKET), "payload", None)
         data["surfboard_footer"] = hub.footer(market, family_sources["market"], sources["overview"], now=now)
+        channel_entry = self.cache.get_last_good(SLOT_CHANNEL)
+        channel = getattr(channel_entry, "payload", None) or {}
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
-                                                 announce_read_ts=getattr(self.cache.get_last_good(SLOT_CHANNEL), "ts", None),
+                                                 announce_read_ts=getattr(channel_entry, "ts", None),
+                                                 announce_items=channel.get("items"),
                                                  family_sources=family_sources)
         return data
 

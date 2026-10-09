@@ -47,6 +47,24 @@ async def test_hub_sources_progress_while_full_startup_blocked(manager):
     assert m.swarm_client.fetch_overview.await_count==1
     await m.close()
 
+
+async def test_announce_card_counts_full_channel_snapshot_not_visible_feed(manager):
+    from maxpane_dashboard.data.surf_cache import SLOT_CHANNEL
+    m,clock=manager
+    rows=[dict(kind=('self','reply','answer')[i%3],ts=999,tx_hash=f'0x{i:064x}') for i in range(40)]
+    m._last_full_payload=dict(feed_items=rows[:25])
+    m.cache.store_last_good(SLOT_CHANNEL,dict(items=rows),ts=999)
+    try:
+        for refresh in (False,True):
+            data=m._project_hub(refresh_legacy=refresh)
+            assert data['surfboard_cards'][0]['secondary']=='40 new posts'
+        m.cache.store_last_good(SLOT_CHANNEL,dict(items=[rows[0]]),ts=1000)
+        assert m._project_hub()['surfboard_cards'][0]['secondary']=='1 new post'
+        clock.now=999+86400
+        assert m._project_hub()['surfboard_cards'][0]['secondary']=='0 new posts'
+    finally:
+        await m.close()
+
 async def test_source_failure_retains_clock_and_backoff(manager):
     m,clock=manager;m.set_hub_active(True)
     await m.fetch_hub_snapshot();await asyncio.gather(*m._hub_source_tasks.values())

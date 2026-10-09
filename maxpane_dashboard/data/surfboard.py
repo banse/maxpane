@@ -358,8 +358,8 @@ def _value(value: object, suffix: str = "") -> str:
     return f"{value:,.0f}{suffix}" if type(value) is int else f"{value:,.2f}{suffix}"
 
 
-def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, family_sources: dict | None = None) -> list[dict]:
-    from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES
+def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None) -> list[dict]:
+    from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES, FIRED_TTL_S, _tx_hash
     result = []
     def card(key,title,primary,secondary,detail,destination,n=None,d=None,points=None,source=None):
         state = (sources.get(source) or {}).get("state", "unavailable") if source else "active"
@@ -381,8 +381,16 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     states=[data.get(f"sig_{name}_state") for name in SIGNAL_NAMES]
     known=sum(s in ("ok","watch","fired") for s in states); fired=states.count("fired")
     age=data.get("feed_last_post_age_s")
-    card("announce","ANNOUNCE",compact_age(age),f"{fired} fired" if known else "signals unavailable",
-         f"ALERT · {known}/{len(states)} detectors known · post read {hhmm(announce_read_ts)} · snapshot {hhmm(data.get('as_of'))}", "dashboard",fired if known==len(states) else None,len(states) if known==len(states) else None)
+    new_posts=None
+    if isinstance(announce_items,list):
+        new_posts=len({tx for item in announce_items if isinstance(item,dict)
+                       and item.get("kind") in ("self","reply","answer")
+                       and (stamp:=timestamp(item.get("ts"))) is not None and 0<=now-stamp<FIRED_TTL_S
+                       and (tx:=_tx_hash(item.get("tx_hash"))) is not None})
+    post_text=f"{new_posts:,} new {'post' if new_posts==1 else 'posts'}" if new_posts is not None else "unavailable"
+    card("announce","ANNOUNCE",str(fired) if known else "unavailable",post_text,
+         f"ALERT · {known}/{len(states)} detectors known · 24h posts + replies (cached channel) · last post {compact_age(age)}"
+         f" · post read {hhmm(announce_read_ts)} · snapshot {hhmm(data.get('as_of'))}", "dashboard",fired if known==len(states) else None,len(states) if known==len(states) else None)
     overview=data.get("surfboard_overview") or {}; hourly=data.get("surfboard_hourly") or {}
     points=hourly.get("points")
     spark_detail="24H · accepted steps per 3h"
@@ -421,8 +429,10 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          "STAKE · vault assets / token supply"+f" · {data.get('pool4_network') or 'unknown network'}","pool4_user",data.get("pool4_vault_assets"),data.get("pool4_total_supply"))
     burn=data.get("pool4_total_burned");reward=data.get("pool4_total_rewarded");fee=data.get("pool4_total_fee_token")
     denominator=sum((burn,reward,fee)) if all(number(x) is not None for x in (burn,reward,fee)) else None
-    card("protocol","PROTOCOL",_value(burn," burned"),_value(reward," rewarded"),
-         "BURN · measured flow · EXPERIMENTAL"+f" · {data.get('pool4_network') or 'unknown network'} · as of {data.get('pool4_as_of_hhmm') or '—'}","pool4",burn,denominator)
+    card("protocol","PROTOCOL",_value(round(burn)) if number(burn) is not None else "unavailable",
+         _value(round(reward)," rewarded") if number(reward) is not None else "unavailable",
+         f"BURN · {_value(burn,' burned')} · {_value(reward,' rewarded')} · measured flow · EXPERIMENTAL"
+         +f" · {data.get('pool4_network') or 'unknown network'} · as of {data.get('pool4_as_of_hhmm') or '—'}","pool4",burn,denominator)
     families = family_sources or {}
     for row in result:
         names = {"announce": ("announce", "signals"), "swarm": ("hourly",),

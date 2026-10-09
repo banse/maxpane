@@ -7,13 +7,13 @@ STAMP = 1791496800.0
 def hub_payload(kind="normal"):
     """Normal, stress, unavailable and hostile prose at the same source instant."""
     definitions = (
-        ("announce", "ANNOUNCE", "dashboard", "2d 19h ago", "4 fired", 4, 11),
+        ("announce", "ANNOUNCE", "dashboard", "4", "0 new posts", 4, 11),
         ("swarm", "SWARM", "swarm", "863 online", "9 working", None, None),
         ("agent", "AGENT", "agent", "IDMD #420", "0 of 3 slots", 3253, 3392),
         ("board", "BOARD", "board", "892 seats", "rank #69", 3253, 3392),
         ("launchpad", "LAUNCHPAD", "launchpad", "208 coins", "0 new / 24h", 0, 208),
         ("pool4", "POOL4", "pool4_user", "7.90 USD", "1.40% / 7d", 350, 1000),
-        ("protocol", "PROTOCOL", "pool4", "33.3K burned", "5.9K rewarded", 60, 100),
+        ("protocol", "PROTOCOL", "pool4", "33,279", "5,873 rewarded", 60, 100),
     )
     cards = []
     for key, title, destination, primary, secondary, numerator, denominator in definitions:
@@ -46,6 +46,10 @@ def hub_payload(kind="normal"):
             card["secondary"] = "100.0% accepted"
         next(card for card in cards if card["key"] == "agent").update(
             status="working", primary="IDMD #99999", secondary="99,999 of 99,999 slots")
+        next(card for card in cards if card["key"] == "announce").update(
+            primary="11", secondary="99,999 new posts")
+        next(card for card in cards if card["key"] == "protocol").update(
+            primary="1,234,567", secondary="99,999 rewarded")
         overview = dict(agents_online=99999, working_now=99999, jobs_24h=999999,
                         oracles_24h=99999, accepted_24h=99999999, seats_enrolled=99999,
                         services=dict(verifier=False, publisher=None, deployer=True))

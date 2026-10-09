@@ -19,7 +19,7 @@ def painted(app):
 
 @pytest.mark.parametrize("key,status,ink", [
     ("board", "active", 2), ("board", "stale", 3),
-    ("board", "unavailable", 3), ("protocol", "active", 3),
+    ("board", "unavailable", 3),
     ("portfolio", "planned", None), ("bay-11", "unassigned", None),
 ])
 async def test_status_colors_the_taller_inset_without_a_separate_status_row(key, status, ink):
@@ -139,6 +139,36 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             footer = next(segment for segment in strips[top + 4] if slots.removesuffix(" slots") in segment.text)
             assert not footer.style.bold and footer.style.color.get_truecolor() == ink
             assert "PASS ▰▰▰▰▱▱▱▱" in "\n".join(strip.text for strip in strips)
+
+
+@pytest.mark.parametrize('size',[(149,45),(140,36)])
+@pytest.mark.parametrize('key,primary,secondary,label,expected,green',[
+    ('announce','5','0 new posts','SIGNALS',['╭─╴','╰─╮','╶─╯'],False),
+    ('announce','5','1 new post','SIGNALS',['╭─╴','╰─╮','╶─╯'],True),
+    ('announce','0','12 new posts','SIGNALS',['╭─╮','│ │','╰─╯'],True),
+    ('announce','unavailable','unavailable','SIGNALS',['','unavailable',''],False),
+    ('protocol','33,279','5,873 rewarded','IMD BURNED',
+     ['╶─╮╶─╮╶─╮╶─┐╭─╮',' ─┤ ─┤┌─┘  │╰─┤','╶─╯╶─╯╰─╴  ╵╶─╯'],False),
+    ('protocol','1,234,567','12,345 rewarded','IMD BURNED',['','1,234,567',''],False),
+])
+async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,label,expected,green):
+    async with RackApp().run_test(size=size) as pilot:
+        card=pilot.app.query_one(f'#surfboard-card-{key}',SurfboardCard)
+        card.set_data(dict(status='active',primary=primary,secondary=secondary))
+        await pilot.pause()
+        strips=[strip.crop(card.region.x,card.region.right) for strip in
+                pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+        top=next(i for i,strip in enumerate(strips) if '┌' in strip.text)
+        left,right=strips[top].text.index('┌'),strips[top].text.index('┐')
+        header=next(segment for segment in strips[top] if label in segment.text)
+        ink=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+             if green else pilot.app.ansi_theme.ansi_colors[3])
+        assert header.style.bold and header.style.color.get_truecolor()==ink
+        for strip,row in zip(strips[top+1:top+4],expected):
+            padding=(right-left-1-len(row))//2
+            assert strip.text[left+1:right]==(' '*padding+row).ljust(right-left-1)
+        footer=next(segment for segment in strips[top+4] if secondary in segment.text)
+        assert not footer.style.bold and footer.style.color.get_truecolor()==ink
 
 
 async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
