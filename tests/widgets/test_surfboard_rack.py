@@ -62,7 +62,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
     async with RackApp().run_test(size=size) as pilot:
         rack = pilot.app.query_one(SurfboardRack)
         rack.update_data(surfboard_cards=[dict(key="swarm", status="stale", primary=primary,
-            secondary="2 working", meter_kind="sparkline", points=[0, 1, 2, 3, 4, 5, 6, 7])])
+            secondary="27 working", meter_kind="sparkline", points=[0, 1, 2, 3, 4, 5, 6, 7])])
         await pilot.pause()
         card = rack.query_one("#surfboard-card-swarm", SurfboardCard)
         strips = [strip.crop(card.region.x, card.region.right) for strip in
@@ -70,11 +70,13 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         top = next(i for i, strip in enumerate(strips) if "┌" in strip.text)
         left, right = strips[top].text.index("┌"), strips[top].text.index("┐")
         assert " AGENTS ONLINE " in strips[top].text
-        assert strips[top + 4].text[left:right + 1] == "└" + "─" * (right - left - 1) + "┘"
+        assert strips[top + 4].text[left:right + 1] == "└" + " 27 working ".center(right - left - 1, "─") + "┘"
         for strip, row in zip(strips[top + 1:top + 4], expected):
             padding = (right - left - 1 - len(row)) // 2
             assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
-        assert "2 working" not in "\n".join(strip.text for strip in strips)
+        footer = next(segment for segment in strips[top + 4] if "27 working" in segment.text)
+        assert not footer.style.bold
+        assert footer.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
         assert "24H ▁▂▃▄▅▆▇█" in "\n".join(strip.text for strip in strips)
         header = next(segment for segment in strips[top] if "AGENTS ONLINE" in segment.text)
         assert header.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]

@@ -127,7 +127,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 rows = [("", False), (count, False), ("", False)]
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=inset)
-        clipped = len(label) > inside
+        bottom = f" {secondary} " if self.key == "swarm" else ""
+        if len(bottom) > inside:
+            bottom = bottom.strip()
+        clipped = len(label) > inside or len(bottom) > inside
         for raw, bold in rows:
             style = Style(
                 color=self.rich_style.color, bgcolor=palette["background"],
@@ -137,7 +140,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             line.align("center", inside)
             body.append("│", style=inset).append_text(line).append("│\n", style=inset)
         self.border_title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, self.size.width - 4)))
-        return body.append("└" + "─" * inside + "┘", style=inset)
+        return body.append("└" + clip(bottom, inside).center(inside, "─") + "┘",
+                           style=inset + Style(bold=False))
 
     def on_focus(self):
         self.post_message(self.Focused(self))

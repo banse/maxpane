@@ -246,8 +246,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 assert "AGENTS ONLINE" in text, r
                 expected = ("╭─╮╭─╴╶─╮", "├─┤├─╮ ─┤", "╰─╯╰─╯╶─╯") if kind in ("normal", "wide") else (card["primary"],)
                 assert all(row in text for row in expected), r
-                if card["primary"] != card["secondary"]:
-                    assert card["secondary"] not in text, r
+                assert card["secondary"] in text, r
                 continue
             assert card["primary"] in r["card_text"][card["key"]], (card, r)
             assert card["secondary"] in r["card_text"][card["key"]], (card, r)
