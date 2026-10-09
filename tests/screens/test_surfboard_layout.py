@@ -46,7 +46,7 @@ async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
             assert app.hub.styles.background.hex.casefold() == theme.background.casefold()
             assert card.styles.background.hex.casefold() == theme.surface.casefold()
             assert terminal.styles.background.hex.casefold() == "#050805"
-            assert terminal.command_input.styles.background.hex.casefold() == "#050805"
+            assert terminal.command_input.styles.background.hex.casefold() == "#101710"
             assert terminal.query_one(RichLog).styles.background.hex.casefold() == "#050805"
             strips = app.hub._compositor.render_strips()
             value = next(segment for strip in strips for segment in strip
@@ -60,6 +60,16 @@ async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
             rack.focus_card("agent")
             await pilot.pause()
             assert card.styles.border_top[1].hex.casefold() == theme.accent.casefold()
+            prompt = terminal.query_one(".terminal-prompt")
+            for focused, ink in ((False, "#345533"), (True, "#9fc99c")):
+                if focused:
+                    terminal.focus_input()
+                    await pilot.pause()
+                strips = app.hub._compositor.render_strips()
+                top = strips[prompt.region.y].crop(prompt.region.x, prompt.region.right)
+                assert top.text.startswith("╭") and top.text.endswith("╮")
+                assert any("─" in segment.text and segment.style.color == Color.parse(ink)
+                           for segment in top)
 
 
 @pytest.mark.parametrize("state", ("ok", "stale"))
