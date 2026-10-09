@@ -233,6 +233,7 @@ class MarketSnapshot:
     indexer_name: str | None
     indexer_symbol: str | None
     sources_agree: bool | None = None
+    market_cap_usd: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1463,10 +1464,10 @@ POOL4_STAKERS_KEYS: tuple[str, ...] = (
 
 # Dashboard 9: all values are plain data. Unknown lists are None, empty reads [].
 SURFBOARD_KEYS = ("surfboard_cards", "surfboard_overview", "surfboard_events",
-                  "surfboard_hourly", "surfboard_sources")
+                  "surfboard_hourly", "surfboard_sources", "surfboard_footer")
 SURFBOARD_WIDGET_SIGNATURES = {
     "SurfboardRack": ("surfboard_cards", "surfboard_sources"),
-    "SurfboardTerminal": ("surfboard_overview", "surfboard_events", "surfboard_sources"),
+    "SurfboardTerminal": ("surfboard_overview", "surfboard_events", "surfboard_sources", "surfboard_footer"),
 }
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points")
@@ -1475,9 +1476,11 @@ SWARM_SEAT_OUTCOME_FIELDS = ("token_id", "listed", "attempts", "accepted", "reje
 # Sources are keyed overview/records/hourly. state is ok/stale/unavailable;
 # version is the normalized payload hash, read_ts is successful observation time.
 SURFBOARD_SOURCE_FIELDS = ("payload", "read_ts", "provider_ts", "version", "attempt_ts", "state")
+SURFBOARD_FOOTER_FIELDS = ("market_value_usd", "market_basis", "market_state", "market_read_ts",
+                          "inference_tokens", "overview_state", "overview_read_ts", "provider_ts", "as_of")
 SURFBOARD_OVERVIEW_FIELDS = ("agents_online", "working_now", "accepted_24h", "jobs_24h",
                            "oracles_24h", "seats_enrolled", "jobs", "job_states",
-                           "tasks_in_progress", "services", "owners")
+                           "tasks_in_progress", "services", "owners", "inference_tokens")
 SURFBOARD_EVENT_FIELDS = ("key", "timestamp", "kind", "job_id", "token_id", "agent_id",
                         "role", "step", "state", "objective")
 SURFBOARD_COMMAND_LIMIT = 512

@@ -12,6 +12,14 @@
     "duplicate_records",
     "missing_records",
     "malformed_records",
-    "hostile_overview"
-  ]
+    "hostile_overview",
+    "footer_counts"
+  ],
+  "additional_captures": {
+    "footer_counts": {
+      "source": "https://api.imd.fun/swarm",
+      "provider_utc": "2026-10-09T00:11:25.092000+00:00",
+      "notes": "Only at and counts extracted from the public /tmp/maxpane-imd-terminal/swarm-live.json capture. Other overview fields are omitted, not fabricated."
+    }
+  }
 }

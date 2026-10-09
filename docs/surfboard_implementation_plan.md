@@ -275,3 +275,102 @@ Only then mark implementation complete.
   Tests use fixtures and isolated caches. The final public-API preview was refreshed separately.
 - Full-suite execution is intentionally excluded by the project's Tier 2 workflow; scoped
   data, widget, composing-screen, address, registration and documentation checks are the gates.
+
+## Terminal parity extension — complete
+
+Base `63771d53` on `feature/surfboard-hub-9`. The owner requests live events after command
+replies, the imd.fun footer, and the reference terminal's text columns/appearance. This is
+Tier 2 because it adds a data contract key. Estimate **360–620 production lines** for the
+whole extension: data 120–180, terminal 200–350, screen integration 40–90. The under-1,000-line
+rule applies: no package reviews; one final review after the live preview and targeted checks.
+The original implementation evidence above remains historical, not proof of this extension.
+
+### Frozen data and presentation seam
+
+- Add only `surfboard_footer` to `SURFBOARD_KEYS` and the terminal's update signature. Its
+  plain dictionary fields are `market_value_usd`, `market_basis`, `market_state`,
+  `market_read_ts`, `inference_tokens`, `overview_state`, `overview_read_ts`, `provider_ts`,
+  and `as_of`. Basis is `market_cap`/`fdv`/None; states use ok/stale/unavailable. Values and
+  clocks may be None except `as_of`, which is the manager's injected current timestamp.
+- Add optional-default `MarketSnapshot.market_cap_usd`, read from the already verified
+  DexScreener pair's `marketCap`; use existing `fdv_usd` only with a visible FDV label.
+  Preserve pool verification, existing request cadence and source clocks; no new endpoint.
+  Validate finite nonnegative values without treating genuine zero as missing. Market failure
+  retains honest last-good/stale behavior and does not erase available inference statistics.
+- Add optional strict nonnegative integer `inference_tokens` from `/swarm.counts.inferenceTokens`
+  to normalized overview; absence must not invalidate otherwise useful older cached snapshots.
+  Normalize numeric `/swarm.at` milliseconds to seconds at that endpoint boundary. Do not
+  change generic timestamp handling for sources that already serve seconds or ISO timestamps.
+- `$1B` is the named website presentation goal, not a fetched protocol parameter. Its 24-cell
+  bar may saturate at the goal while the exact actual value remains visible. Show compact token
+  usage and provider snapshot age; never present local read age as provider freshness.
+- Terminal `update_age(elapsed)` accepts injected nonnegative elapsed seconds, computes age
+  from `as_of + elapsed - provider_ts` with a zero floor, and repaints only footer chrome.
+  Missing provider time renders unknown age. `update_data` resets elapsed to zero. The screen
+  owns an injected monotonic clock and one lifecycle-stopped one-second display timer; this
+  timer causes no manager call, network request, transcript repaint or widget clock access.
+
+### Bounded mixed transcript and reference rendering
+
+Keep stable mixed event/reply order, at most 60 current event rows and 200 reply lines. A valid
+snapshot replaces event payloads, removes event keys outside its bounded window, retains reply
+positions, and appends unseen events after the latest reply. Repeated/overlapping snapshots
+must not duplicate rows. A failed/None event update preserves available rows with failure
+disclosure; a successfully empty list clears event rows only. `clear` removes replies only.
+There is no durable history or unbounded seen-key set. Preserve input draft/cursor/focus and
+the existing keyed scroll anchor; follow the tail only when the reader was already following.
+Commands break adjacent-job tree grouping, so an event after a reply starts a visible new group.
+
+Use the public reference's columns after the tree prefix: time 7 cells, event 8, actor 13,
+state 13, then flexible objective text. Node rows display as job rows; `agent #n` means the
+served token ID, never agent ID. Reuse literal text fitting, address units and safe links.
+Keep unknown states explicit and preserve the real role/step meaning when choosing verbs.
+Use the agreed phosphor styling within the terminal; do not change the outer rack topology.
+The footer must fit the current 140-column rack pin and 149×45 target, with visible truncation
+disclosure at narrower widths rather than losing tokens, freshness or FDV meaning silently.
+
+### Packages, ownership and acceptance
+
+| Package | Owner and files | Dependency |
+|---|---|---|
+| T1 footer source/projection | Data worker: `data/surf_models.py`, `surf_client.py`, `surfboard.py`, `surf_manager.py`; their targeted data tests | Frozen contract above |
+| T2 transcript/footer rendering | UI worker: `widgets/surfboard/terminal.py`, `tests/widgets/test_surfboard_terminal.py` | Frozen contract; parallel with T1 |
+| T3 integration/live verification | Controller: `screens/surfboard.py`, screen/layout tests, fixtures, README/PRD/research and source/guard documentation | T1 + T2 |
+
+Workers preserve others' changes. This planning agent owns only this appended plan. Tests
+precede implementations: T1 proves market-cap preference, labelled FDV fallback, verified-pair
+selection, missing/bool/nonfinite values, optional cached fields, milliseconds and separate clocks.
+T2 reproduces command→new event ordering in composited output, then covers repeated snapshots,
+aged-out keys, failed versus empty reads, bounded replies, clear, anchors, draft and literal text.
+Test exact reference column starts, footer unavailable/stale states, goal saturation and a
+footer age change that leaves RichLog rows and scroll unchanged. T3 proves the one-second
+display timer resets on data, stops on suspend, resumes once and makes no additional fetch.
+
+Show the actual keyless live 149×45 render before layout hardening or final review. Then run
+changed data/widget files and composing screen/layout/contract tests, fast guards and applicable
+docpins; run address tests if address fitting changed. No full suite. Mutate the ordering fix
+and footer source/age decoding to prove the new regressions fail, then restore original bytes.
+Re-measure affected boundaries in situ without guessing a larger pin. Final review gets one
+fix wave and one scoped re-review only for production fixes; file Minor findings in follow-ups.
+Record extension-specific evidence before marking this extension complete.
+
+### Extension verification — 2026-10-09
+
+- The final keyless public-API capture at 149×45 visibly shows two new event rows after a
+  `status` reply. The reference columns, service markers, one-line prompt and valuation/
+  inference/age footer fit in the existing three-row terminal span. Card styling is retained.
+- A mixed bounded transcript fixes the event/reply ordering. The footer reuses the verified
+  market pair and independent overview clock; its display-only age timer stops on suspension.
+  Valid older overview envelopes migrate with an unknown token count while retaining their
+  original clocks and events, even when the next refresh fails. Original hashes are checked.
+- Data verification passed 587 cases initially and 317 affected data/composing cases after
+  the legacy-cache preservation change. The final UI/contract/composing run passed 251 cases;
+  122 fast guards, 12 documentation pins and two hub address-sweep cases also passed.
+- Six targeted mutants were killed and restored: strict inference-count decoding, original
+  legacy-cache hash validation, live-event ordering, footer elapsed age, screen capture reset,
+  and timer stopping. The prompt overflow regression failed at both 140 and 149 columns before
+  the input's width was corrected.
+- The in-situ 139–141 by 35–37 boundary measurement confirms the existing 140×36 rack pin;
+  the four payload-class layout tests also pass. No layout pin changed.
+- Final whole-diff review: **Approved**, no findings, with 12 additional focused tests. No
+  review fix wave was needed. No full suite was run, per the scoped Tier 2 workflow.

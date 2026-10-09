@@ -40,8 +40,10 @@ The existing mock script remains an independent design artifact. Production uses
 Retain dark faceplates, inset readouts, restrained green lamps and the recessed terminal.
 The owner requested the existing SURFBOARD palette on 2026-10-09: use the same shared
 `$background`, `$surface`, `$panel`, `$text`, `$text-muted` and `$accent` theme tokens,
-with native Rich green/yellow status colors and dim secondary text. The hub follows live
-theme changes; legacy bodies retain their styles. No idle blinking or fake activity.
+with native Rich green/yellow status colors and dim secondary text. Cards follow live
+theme changes; legacy bodies retain their styles. The inner terminal keeps its own web-style
+near-black background and muted green text, per the owner's subsequent correction.
+No idle blinking or fake activity.
 
 Each card has title, explicit status, two readout lines and an eight-cell meter. Give the
 focused card a visible border. Its full metric definition, exact ratio/count and source clock
@@ -171,18 +173,37 @@ entire network. Hub commands/feed use snapshot counts/events and do not require 
 
 ## Terminal behavior
 
-The header uses one overview snapshot for online, working, jobs/oracles/accepted steps in 24h.
-Display `time · kind · seat/source · state · objective`, with adjacent-job grouping and literal,
-sanitized text. Native labels map real role/step/state combinations to queued, building,
-reviewing, accepted, failed and deployed. Unrecognized states remain visible as neutral text.
+The header uses one overview snapshot for online, working, jobs/oracles/accepted steps in 24h,
+plus verifier/publisher/deployer status. Compact `V`, `P`, `D` service markers show `*` up,
+`!` down and `?` unknown. The `status` command names each service in full.
+The web-style text columns are a tree marker followed by time (7 cells), event type (8),
+actor (13), state (13), and the remaining description. Node work appears as `job` and the
+actor as `agent #<seat token>`; the device's agent ID is not substituted for the seat number.
+Adjacent rows for the same job omit a repeated objective, with grouping reset after a command
+reply. Native labels map known role/step/state combinations to queued, building, reviewing,
+built, reviewed, failed and deployed. Unrecognized states remain visible as neutral text.
 No invented workspace/progress narration or mixed announce/trade events in the IMD feed.
 
 Use the endpoint's bounded recent snapshot (currently 60 events), ordered oldest to newest
-for reading. Replace/reconcile that window, not append every poll. Preserve the scroll anchor
+for reading. Reconcile stable event IDs into a bounded mixed event/reply timeline. Existing
+events update in place; newly observed events append after prior command replies. Repeated
+snapshots add no duplicates. Removed events leave the window; a failed read retains the last
+window with stale/unavailable source state. Preserve the scroll anchor
 when reading older rows; follow the tail only when already there. A refresh must not steal
 input focus, clear typed text or erase command replies. Advertise “recent events” rather than
 complete history; do not fabricate missing events after an outage. Command replies have a
 bounded separate buffer. `clear` clears replies, preserving the live event window like imd.fun.
+
+Below the prompt, show `$IMD <valuation> [progress] $1B goal`, total inference tokens used,
+and provider snapshot age. The goal is the website's display target, not a projected value.
+The existing verified-pair DexScreener reader supplies market cap, falling back to explicitly
+labelled FDV. It keeps its own source state/read clock. `/swarm.counts.inferenceTokens`
+supplies total usage; `/swarm.at` (milliseconds at the API boundary) dates the snapshot.
+Missing values remain unavailable; missing provider time means unknown age, never a locally
+invented fresh timestamp. Market and swarm stale states remain independent and visible.
+An injected screen clock advances age every second without refetching or rewriting the feed;
+its timer stops while the hub is suspended. Shorter progress bars preserve the numeric fields
+at the 149×45 owner size and the existing layout pin.
 
 | Command | Native behavior |
 |---|---|

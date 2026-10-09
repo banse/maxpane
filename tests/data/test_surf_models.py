@@ -85,7 +85,7 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
         "imd_price_usd", "imd_price_usd_gecko", "imd_change_24h_pct",
         "imd_vol_24h_usd", "pool_liquidity_usd", "pool_imd", "pool_weth",
         "fp_price_usd", "fdv_usd", "eth_usd", "indexer_name", "indexer_symbol",
-        "sources_agree",
+        "sources_agree", "market_cap_usd",
     ),
     LogWindow: (
         "from_block", "to_block", "bridge_mints", "identity_updates",
@@ -599,14 +599,14 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
         POOL4_KEYS, POOL4_STAKERS_KEYS, SWARM_KEYS,
     )
 
-    assert set(SURF_KEYS) == EXPECTED_KEYS | {"surfboard_cards", "surfboard_overview", "surfboard_events", "surfboard_hourly", "surfboard_sources", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"}
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 216
+    assert set(SURF_KEYS) == EXPECTED_KEYS | {"surfboard_cards", "surfboard_overview", "surfboard_events", "surfboard_hourly", "surfboard_sources", "surfboard_footer", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"}
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 217
     # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
     assert len(SWARM_KEYS) == 46
-    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 94
+    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 95
 
 
 def test_every_signal_has_all_three_facets() -> None:
@@ -866,13 +866,21 @@ def test_v8_launch_and_site_rows_freeze_launch_contract():
 
 def test_surfboard_contract_freezes_plain_data_and_independent_clocks():
     from maxpane_dashboard.data import surf_models as m
-    assert m.SURFBOARD_KEYS == ('surfboard_cards','surfboard_overview','surfboard_events','surfboard_hourly','surfboard_sources')
+    assert m.SURFBOARD_KEYS == ('surfboard_cards','surfboard_overview','surfboard_events','surfboard_hourly','surfboard_sources','surfboard_footer')
     assert m.SURFBOARD_WIDGET_SIGNATURES == {
         'SurfboardRack': ('surfboard_cards','surfboard_sources'),
-        'SurfboardTerminal': ('surfboard_overview','surfboard_events','surfboard_sources'),
+        'SurfboardTerminal': ('surfboard_overview','surfboard_events','surfboard_sources','surfboard_footer'),
     }
     assert m.SURFBOARD_CARD_FIELDS == ('key','title','status','primary','secondary','detail','destination','meter_kind','numerator','denominator','points')
     assert m.SWARM_SEAT_OUTCOME_FIELDS == ('token_id','listed','attempts','accepted','rejected','failed','pending','accept_rate','rank','ranked_of')
     assert m.SURFBOARD_SOURCE_FIELDS == ('payload','read_ts','provider_ts','version','attempt_ts','state')
     assert {'swarm_seat_outcome','swarm_outcomes_source','swarm_contributors_as_of_hhmm'} <= set(m.SWARM_KEYS)
     assert all(m.SURF_KEYS.count(key)==1 for key in m.SURFBOARD_KEYS)
+
+
+def test_surfboard_footer_contract_is_plain_and_has_independent_source_clocks():
+    from maxpane_dashboard.data.surf_models import SURFBOARD_FOOTER_FIELDS
+    assert SURFBOARD_FOOTER_FIELDS == (
+        'market_value_usd', 'market_basis', 'market_state', 'market_read_ts',
+        'inference_tokens', 'overview_state', 'overview_read_ts', 'provider_ts', 'as_of',
+    )

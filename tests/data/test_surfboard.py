@@ -135,3 +135,75 @@ def test_degraded_pool4_never_labels_retained_numbers_active():
     cards={c['key']:c for c in hub.cards(data,{},now=100)}
     assert cards['pool4']['status']=='stale'
     assert cards['pool4']['numerator']==20
+
+
+def test_overview_inference_tokens_uses_captured_network_count():
+    raw = capture('overview')
+    raw.update(capture('footer_counts'))
+    assert hub.normalize_overview(raw)['overview']['inference_tokens'] == 189121393249
+
+
+@pytest.mark.parametrize('value,expected', [(0, 0), (True, None), (-1, None), (1.5, None), ('123', None), (None, None)])
+def test_inference_tokens_is_optional_strict_nonnegative_integer(value, expected):
+    raw = capture('overview')
+    raw['counts']['inferenceTokens'] = value
+    assert hub.normalize_overview(raw)['overview']['inference_tokens'] == expected
+    del raw['counts']['inferenceTokens']
+    assert hub.normalize_overview(raw)['overview']['inference_tokens'] is None
+
+
+@pytest.mark.parametrize('value', [True, -1, 1.5, '123'])
+def test_restored_inference_tokens_rejects_invalid_values_even_with_matching_hash(value):
+    payload = hub.normalize_overview(capture('overview'))
+    payload['overview']['inference_tokens'] = value
+    assert hub.coerce_source(hub.source_envelope(payload, 1000), 'overview', now=1001) is None
+
+
+def test_legacy_overview_cache_load_preserves_data_and_source_clocks(tmp_path):
+    from maxpane_dashboard.data.surf_cache import SurfCache
+    payload = hub.normalize_overview(capture('overview'))
+    payload['overview'].pop('inference_tokens')
+    old = hub.source_envelope(payload, 1000, provider_ts=990)
+    old = hub.source_envelope(None, 1001, prior=old)
+    path = tmp_path / 'legacy.json'
+    cache = SurfCache(path=path, clock=lambda: 1002)
+    cache.store_last_good(hub.SOURCE_SLOTS['overview'], old, ts=1001)
+    cache.save()
+    loaded = SurfCache(path=path, clock=lambda: 1002)
+    loaded.load(slot_coercers={hub.SOURCE_SLOTS['overview']: lambda value: hub.coerce_source(value, 'overview', now=1002)})
+    source = loaded.get_last_good(hub.SOURCE_SLOTS['overview']).payload
+    assert source['payload'] == dict(payload, overview=dict(payload['overview'], inference_tokens=None))
+    assert source['version'] == hub.version(source['payload']) != old['version']
+    assert {k: v for k, v in source.items() if k not in ('payload', 'version')} == {
+        'read_ts': 1000, 'provider_ts': 990, 'attempt_ts': 1001, 'state': 'stale',
+    }
+    assert hub.coerce_source(source, 'overview', now=1002) == source
+    assert 'inference_tokens' not in old['payload']['overview']
+
+
+@pytest.mark.parametrize('damage', ['tampered_hash', 'boolean_counter', 'missing_counter', 'bad_event_hash'])
+def test_legacy_overview_cache_does_not_bless_tampered_or_malformed_data(damage):
+    payload = hub.normalize_overview(capture('overview'))
+    payload['overview'].pop('inference_tokens')
+    old = hub.source_envelope(payload, 1000)
+    if damage == 'tampered_hash':
+        payload['overview']['agents_online'] += 1
+    elif damage == 'boolean_counter':
+        payload['overview']['agents_online'] = True
+        old['version'] = hub.version(payload)
+    elif damage == 'missing_counter':
+        payload['overview'].pop('jobs')
+        old['version'] = hub.version(payload)
+    else:
+        payload['events'][0]['objective'] = 'tampered'
+        old['version'] = hub.version(payload)
+    assert hub.coerce_source(old, 'overview', now=1001) is None
+
+
+def test_current_overview_with_unknown_inference_count_roundtrips():
+    raw = capture('overview')
+    raw['counts'].pop('inferenceTokens')
+    payload = hub.normalize_overview(raw)
+    assert payload['overview']['inference_tokens'] is None
+    source = hub.source_envelope(payload, 1000)
+    assert hub.coerce_source(source, 'overview', now=1001) == source

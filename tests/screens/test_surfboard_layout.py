@@ -29,7 +29,7 @@ class HubHarness(App):
         self.push_screen(self.hub)
 
 
-async def test_cards_follow_native_theme_while_terminal_keeps_original_palette():
+async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
     from rich.color import Color
     from textual.widgets import RichLog
 
@@ -45,9 +45,9 @@ async def test_cards_follow_native_theme_while_terminal_keeps_original_palette()
             await pilot.pause()
             assert app.hub.styles.background.hex.casefold() == theme.background.casefold()
             assert card.styles.background.hex.casefold() == theme.surface.casefold()
-            assert terminal.styles.background.hex.casefold() == "#080c09"
-            assert terminal.command_input.styles.background.hex.casefold() == "#101710"
-            assert terminal.query_one(RichLog).styles.background.hex.casefold() == "#080c09"
+            assert terminal.styles.background.hex.casefold() == "#050805"
+            assert terminal.command_input.styles.background.hex.casefold() == "#050805"
+            assert terminal.query_one(RichLog).styles.background.hex.casefold() == "#050805"
             strips = app.hub._compositor.render_strips()
             value = next(segment for strip in strips for segment in strip
                          if "IDMD #420" in segment.text)
@@ -55,7 +55,7 @@ async def test_cards_follow_native_theme_while_terminal_keeps_original_palette()
                          if "palette reply" in segment.text)
             assert value.style.bgcolor == Color.parse(theme.background)
             assert value.style.color == card.rich_style.color
-            assert reply.style.color == Color.parse("#c2d5b9")
+            assert reply.style.color == Color.parse("#9fc99c")
             rack = app.hub.query_one(SurfboardRack)
             rack.focus_card("agent")
             await pilot.pause()
@@ -103,6 +103,29 @@ async def test_focused_detail_marks_overflow_until_the_whole_line_fits():
         await pilot.pause()
         assert "detail ‹ widen" not in app.hub._compositor.render_strips()[0].text
         assert payload["surfboard_cards"][0]["detail"].strip() in app.hub._compositor.render_strips()[-2].text
+
+
+@pytest.mark.parametrize("width", (140, 149))
+async def test_web_terminal_footer_and_prompt_fit_inside_the_three_row_span(width):
+    from textual.widgets import RichLog
+
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(width, 45)) as pilot:
+        await pilot.pause()
+        terminal = app.hub.query_one(SurfboardTerminal)
+        footer = terminal.query_one("#surfboard-terminal-footer")
+        log = terminal.query_one(RichLog)
+        command = terminal.command_input
+        assert log.region.height >= 3
+        assert log.region.bottom <= command.region.y < footer.region.y
+        assert footer.region.bottom < terminal.region.bottom
+        assert command.region.right <= terminal.content_region.right
+        strips = app.hub._compositor.render_strips()
+        visible = "\n".join(strip.crop(footer.region.x, footer.region.right).text
+                            for strip in strips[footer.region.y:footer.region.bottom])
+        for field in ("$IMD", "$33.69M", "$1B goal", "189.1B", "tokens", "updated"):
+            assert field in visible
+        assert "‹ widen" not in visible
 
 
 async def _render(payload, size):

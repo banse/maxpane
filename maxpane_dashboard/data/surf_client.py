@@ -43,6 +43,7 @@ from urllib.parse import urlparse
 import httpx
 
 from maxpane_dashboard.analytics import surf_launchpad
+from maxpane_dashboard.analytics.surfboard import number as nonnegative_number
 from maxpane_dashboard.data import surf_addresses as A
 from maxpane_dashboard.data import surf_v4
 from maxpane_dashboard.data.evm_abi import (
@@ -2941,7 +2942,8 @@ class SurfClient(OwnedHttpClient):
             pool_imd=self._f(liq.get("base")),
             pool_weth=self._f(liq.get("quote")),
             fp_price_usd=self._f((fp_pair or {}).get("priceUsd")),
-            fdv_usd=self._f((pair or {}).get("fdv")),
+            fdv_usd=nonnegative_number((pair or {}).get("fdv")),
+            market_cap_usd=nonnegative_number((pair or {}).get("marketCap")),
             # 0.0 would be a sentinel, and an ETH price of zero is not a number
             # anyone should see rendered as one.
             eth_usd=(eth_usd if (eth_usd or 0) > 0 else None),

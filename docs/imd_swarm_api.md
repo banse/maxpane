@@ -44,6 +44,20 @@ explicit receipt counters; `/workers` supplies presence. Neither changes the out
 Seat detail history has a separate clock and cannot patch a single row into the shared ranking.
 Rank baselines carry `seat-records-v1`; older contributor-based deltas are reset.
 
+The [imd.fun terminal](https://imd.fun/) footer was inspected again on 2026-10-09.
+`/swarm.counts.inferenceTokens` is a cumulative nonnegative integer (189,121,393,249 in the
+sanitized footer capture); `/swarm.at` is the provider timestamp in milliseconds. Missing
+usage is unknown, not zero. The native footer converts the provider clock once, then advances
+its displayed age locally without additional requests. Local successful-read time remains
+separate from provider age and is never used to make an old snapshot appear new.
+
+The website's valuation face uses DexScreener `marketCap`, falling back to `fdv`, against a
+fixed $1B display goal. MaxPane reads those fields through its existing verified-IMD-pair
+market reader, preserving the anti-decoy pool selection instead of choosing by liquidity
+alone. A fallback is labelled FDV; a missing valuation has no zero-valued progress bar.
+Market freshness and swarm freshness are independent. See `footer_counts.json` in the hub
+fixture manifest; tests use that captured data without network access.
+
 ### Historical endpoint observations
 
 Keyless. No key, token, cookie or signature was sent for any read below, and every one answered 200. Its

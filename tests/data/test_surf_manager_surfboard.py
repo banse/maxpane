@@ -196,3 +196,89 @@ async def test_legacy_source_success_clears_failure_without_retimestamping_conte
     clock.now=1551
     assert m._hub_card_sources({})['launchpad']['state']=='stale'
     await m.close()
+
+
+async def test_footer_sources_are_independent_and_use_injected_clock(manager):
+    from maxpane_dashboard.data.surf_cache import SLOT_MARKET
+    from maxpane_dashboard.data.surf_manager import SOURCE_MARKET
+    m, clock = manager
+    raw = capture('overview'); raw.update(capture('footer_counts'))
+    m.swarm_client.fetch_overview.return_value = raw
+    m.cache.store_last_good(SLOT_MARKET, {'market_cap_usd': 2_345_678, 'fdv_usd': 9_876_543}, ts=995)
+    await ready(m)
+    footer = m._project_hub()['surfboard_footer']
+    assert footer == {
+        'market_value_usd': 2_345_678, 'market_basis': 'market_cap', 'market_state': 'ok', 'market_read_ts': 995,
+        'inference_tokens': 189121393249, 'overview_state': 'ok', 'overview_read_ts': 1000,
+        'provider_ts': raw['at'] / 1000, 'as_of': 1000,
+    }
+    clock.now = 1016
+    m.swarm_client.fetch_overview.return_value = None
+    await m._read_hub_source('overview', m._hub_sources()['overview'])
+    failed = m._project_hub()['surfboard_footer']
+    assert failed == dict(footer, overview_state='stale', as_of=1016)
+    m._failed_groups.add(SOURCE_MARKET)
+    assert m._project_hub()['surfboard_footer'] == dict(failed, market_state='stale')
+    m._failed_groups.clear()
+    clock.now = 1086
+    assert m._project_hub()['surfboard_footer'] == dict(failed, market_state='stale', as_of=1086)
+    await m.close()
+
+
+@pytest.mark.parametrize('cap,fdv,value,basis', [
+    (0, 200, 0, 'market_cap'), (None, 200, 200, 'fdv'), (True, 200, 200, 'fdv'),
+    (-1, 0, 0, 'fdv'), (float('inf'), 200, 200, 'fdv'), (float('nan'), 200, 200, 'fdv'),
+    (None, True, None, None), (None, -1, None, None), (None, float('inf'), None, None),
+    (None, None, None, None),
+])
+async def test_footer_validates_restored_market_values_and_labels_fdv(manager, cap, fdv, value, basis):
+    from maxpane_dashboard.data.surf_cache import SLOT_MARKET
+    m, clock = manager
+    m.cache.store_last_good(SLOT_MARKET, {'market_cap_usd': cap, 'fdv_usd': fdv}, ts=990)
+    footer = m._project_hub()['surfboard_footer']
+    assert footer['market_value_usd'] == value and footer['market_basis'] == basis
+    assert footer['market_read_ts'] == 990 and footer['market_state'] == 'ok'
+    assert footer['inference_tokens'] is None and footer['overview_state'] == 'unavailable'
+    assert footer['overview_read_ts'] is None and footer['provider_ts'] is None
+    await m.close()
+
+
+async def test_footer_cold_cache_uses_unknowns_and_no_fake_zero(manager):
+    m, clock = manager
+    assert m._project_hub()['surfboard_footer'] == {
+        'market_value_usd': None, 'market_basis': None, 'market_state': 'unavailable', 'market_read_ts': None,
+        'inference_tokens': None, 'overview_state': 'unavailable', 'overview_read_ts': None,
+        'provider_ts': None, 'as_of': 1000,
+    }
+    await m.close()
+
+
+def test_market_payload_carries_verified_cap_and_fdv_without_requiring_new_field():
+    from tests.data.test_surf_manager import _market
+    snap = _market(market_cap_usd=456.0, fdv_usd=789.0)
+    assert SurfManager._market_payload(snap)['market_cap_usd'] == 456.0
+    assert SurfManager._market_payload(snap)['fdv_usd'] == 789.0
+    assert SurfManager._market_payload(_market())['market_cap_usd'] is None
+
+
+async def test_old_overview_snapshot_survives_failed_read_until_tokens_arrive(manager):
+    from maxpane_dashboard.data import surfboard as hub
+    m, clock = manager
+    old = hub.normalize_overview(capture('overview'))
+    old['overview'].pop('inference_tokens')
+    m.cache.store_last_good(hub.SOURCE_SLOTS['overview'], hub.source_envelope(old, 999), ts=999)
+    footer = m._project_hub()['surfboard_footer']
+    assert footer['inference_tokens'] is None and footer['overview_state'] == 'ok'
+    assert footer['overview_read_ts'] == 999
+    m.swarm_client.fetch_overview.return_value = None
+    await m._read_hub_source('overview', m._hub_sources()['overview'])
+    failed = m._project_hub()
+    assert failed['surfboard_overview'] == dict(old['overview'], inference_tokens=None)
+    assert failed['surfboard_events'] == old['events']
+    assert failed['surfboard_footer'] == dict(footer, overview_state='stale')
+    m.swarm_client.fetch_overview.return_value = capture('overview')
+    clock.now += 30
+    await m._read_hub_source('overview', m._hub_sources()['overview'])
+    assert m._project_hub()['surfboard_footer']['inference_tokens'] == 188932748311
+    assert m._project_hub()['surfboard_footer']['overview_read_ts'] == 1030
+    await m.close()

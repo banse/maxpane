@@ -1521,6 +1521,10 @@ _NON_NUMERIC_KEYS = frozenset(
         # Dict of source envelopes, consumed by the rack/terminal and the
         # native SWARM hero for independent read clocks and stale state.
         "surfboard_sources",
+        # Structured market valuation, token usage and independent source
+        # clocks; the terminal footer tests distinguish missing values from
+        # real zero and identify a stale retained valuation.
+        "surfboard_footer",
     }
 )
 

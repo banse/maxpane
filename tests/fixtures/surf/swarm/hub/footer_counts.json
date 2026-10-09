@@ -1,0 +1,16 @@
+{
+  "at": 1791504685092,
+  "counts": {
+    "jobs": 10771,
+    "jobStates": {
+      "blocked": 132,
+      "cancelled": 126,
+      "completed": 10499,
+      "executing": 14
+    },
+    "tasksInProgress": 16,
+    "launchesLive": 288,
+    "sites": 216,
+    "inferenceTokens": 189121393249
+  }
+}

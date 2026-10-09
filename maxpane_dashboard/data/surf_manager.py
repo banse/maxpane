@@ -1405,7 +1405,7 @@ class SurfManager:
     def _market_payload(snap: Any) -> dict[str, Any]:
         """The whole PRD §5 market view, scaled once and cached as one dict.
 
-        **All six values, not just the two prices.** The slot is what `_cycle`
+        **All market values, not just the two prices.** The slot is what `_cycle`
         falls back to on a skipped medium tier, so anything left out of it is a
         key that renders `--` on two refreshes out of three — while `_degraded`
         correctly says the market group is healthy, because a skip never reaches
@@ -1427,6 +1427,8 @@ class SurfManager:
             "pool_liquidity_usd": _opt_float(_field(snap, "pool_liquidity_usd")),
             "fp_price_usd": _opt_float(_field(snap, "fp_price_usd")),
             "eth_usd": _opt_float(_field(snap, "eth_usd")),
+            "market_cap_usd": hub.number(_field(snap, "market_cap_usd")),
+            "fdv_usd": hub.number(_field(snap, "fdv_usd")),
         }
 
     async def _pool_logs(self, tiers: set[str], now: float) -> Any:
@@ -7069,8 +7071,8 @@ class SurfManager:
     def _project_hub(self, base: dict | None = None, *, refresh_legacy: bool = True) -> dict[str, Any]:
         """Capture independent slots synchronously; never await between families."""
         data = dict(base if base is not None else self._last_full_payload or self._blank_payload())
+        now = float(self._clock())
         if refresh_legacy:
-            now = float(self._clock())
             swarm_entry = self.cache.get_last_good(SLOT_SWARM)
             scores_entry = self.cache.get_last_good(SLOT_SWARM_SCORES)
             seat_entry = self.cache.get_last_good(SLOT_SWARM_SEAT)
@@ -7125,9 +7127,12 @@ class SurfManager:
                     swarm_working_now=o.get("working_now"), swarm_accepted_today=o.get("accepted_24h"),
                     swarm_services_up=o.get("services"))
         launchpad = getattr(self.cache.get_last_good(SLOT_LAUNCHPAD), "payload", None)
-        data["surfboard_cards"] = hub.cards(data, sources, now=self._clock(), launchpad=launchpad,
+        family_sources = self._hub_card_sources(data)
+        market = getattr(self.cache.get_last_good(SLOT_MARKET), "payload", None)
+        data["surfboard_footer"] = hub.footer(market, family_sources["market"], sources["overview"], now=now)
+        data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
                                                  announce_read_ts=getattr(self.cache.get_last_good(SLOT_CHANNEL), "ts", None),
-                                                 family_sources=self._hub_card_sources(data))
+                                                 family_sources=family_sources)
         return data
 
     async def fetch_hub_snapshot(self) -> dict[str, Any]:

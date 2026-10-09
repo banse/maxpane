@@ -1291,3 +1291,20 @@ address-sweep cases, 82 registration mounts and 12 documentation pins. Decoder, 
 command-generation, scroll-anchor and both-direction layout-pin mutants were killed and
 restored byte for byte. All 122 project guards passed before the local commit; a full
 suite is deliberately outside this branch's authorized Tier 2 verification scope.
+
+## SURFBOARD terminal parity handoff — 2026-10-09
+
+The hub terminal now places new live events after prior command replies, retaining its bounded
+window, input draft and manual scroll anchor. Time/event/agent/state/description columns follow
+the imd.fun reference. A compact prompt and footer show verified-pair IMD market cap (explicit
+FDV fallback), the website's $1B display goal, total inference tokens and provider snapshot age.
+Market and swarm stale states remain independent. The one-second age timer updates only the
+footer and stops while the screen is suspended. Existing overview cache entries preserve useful
+totals/events on upgrade; an absent new token count stays unknown.
+
+The final 149×45 public-API capture shows two new events below a `status` reply. The rack's
+140×36 pin and card palette remain unchanged. Final whole-diff review approved the extension
+with no findings after 12 focused checks; no fix wave or new follow-up was needed. Verification
+passed 251 UI/contract/composing tests, 317 data/composing tests after cache migration, the
+earlier 587-case data run, 122 guards, 12 docpins and two address cases. Six targeted source,
+ordering and timer mutants were killed and byte-restored. The full suite was not run.

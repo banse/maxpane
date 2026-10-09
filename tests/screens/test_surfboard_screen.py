@@ -91,6 +91,50 @@ def painted(app):
     return "\n".join(strip.text for strip in app.screen._compositor.render_strips())
 
 
+async def test_terminal_age_timer_uses_injected_elapsed_time_and_stops_when_hidden(monkeypatch):
+    from types import SimpleNamespace
+    from textual.screen import Screen
+    from maxpane_dashboard.screens.surfboard import SurfboardScreen
+    from maxpane_dashboard.widgets.surfboard import SurfboardTerminal
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import HubPayloadManager, hub_payload
+
+    clock = SimpleNamespace(now=100.)
+    payload = hub_payload()
+    app = HubHarness(payload)
+    app.hub = SurfboardScreen(HubPayloadManager(payload), clock=lambda: clock.now)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        hub = app.hub
+        first_timer = hub._age_timer
+        assert first_timer is not None
+        first_timer.pause()
+        terminal = hub.query_one(SurfboardTerminal)
+        calls = []
+        monkeypatch.setattr(terminal, "update_age", calls.append, raising=False)
+        clock.now += 9
+        hub._tick_terminal_age()
+        assert calls == [9.]
+        await hub._do_refresh()
+        hub._tick_terminal_age()
+        assert calls[-1] == 0.
+        await app.push_screen(Screen())
+        await pilot.pause()
+        assert hub._age_timer is None
+        assert first_timer._task is None
+        count = len(calls)
+        clock.now += 20
+        hub._tick_terminal_age()
+        assert len(calls) == count
+        await app.pop_screen()
+        await pilot.pause()
+        assert hub._age_timer is not None and hub._age_timer is not first_timer
+        hub._age_timer.pause()
+        clock.now += 3
+        hub._tick_terminal_age()
+        assert calls[-1] == 3.
+
+
 def test_open_mode_validates_before_mount_without_scheduling():
     screen = SurfScreen(HubManager())
     screen.open_mode(MODE_AGENT, return_context="surfboard")

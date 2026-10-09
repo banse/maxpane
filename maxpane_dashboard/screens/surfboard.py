@@ -1,6 +1,7 @@
 """Dashboard nine: a retained SURFBOARD rack and native IMD command monitor."""
 from __future__ import annotations
 
+from time import monotonic
 from urllib.parse import urlsplit
 
 from rich.text import Text
@@ -54,7 +55,7 @@ class SurfboardScreen(DashboardScreen):
     SurfboardScreen #surfboard-detail { height: 1; padding: 0 1; color: $text-muted; text-wrap: nowrap; }
     """
 
-    def __init__(self, manager, poll_interval=30, name="surfboard", *, wallet=None, **kwargs):
+    def __init__(self, manager, poll_interval=30, name="surfboard", *, wallet=None, clock=monotonic, **kwargs):
         if isinstance(poll_interval, bool) or poll_interval <= 0:
             raise ValueError("poll_interval must be positive")
         super().__init__(manager, min(15, poll_interval), name=name, **kwargs)
@@ -63,6 +64,9 @@ class SurfboardScreen(DashboardScreen):
         self._command_worker = None
         self._command_busy = False
         self._detail = "ANNOUNCE · waiting for source"
+        self._age_clock = clock
+        self._age_captured = None
+        self._age_timer = None
 
     def compose(self) -> ComposeResult:
         yield Static(Text("SURFBOARD / DASHBOARD RACK"), id="surfboard-title")
@@ -76,10 +80,13 @@ class SurfboardScreen(DashboardScreen):
         setter = getattr(self._data_manager, "set_hub_active", None)
         if setter is not None:
             setter(True)
+        if self._age_timer is None:
+            self._age_timer = self.set_interval(1, self._tick_terminal_age)
         self.call_after_refresh(self.query_one(SurfboardRack).focus_card)
 
     @on(events.ScreenSuspend)
     def _suspend_hub(self) -> None:
+        self._stop_age_timer()
         setter = getattr(self._data_manager, "set_hub_active", None)
         if setter is not None:
             setter(False)
@@ -89,6 +96,19 @@ class SurfboardScreen(DashboardScreen):
             self._command_worker.cancel()
             self._command_worker = None
 
+    def on_unmount(self) -> None:
+        self._stop_age_timer()
+
+    def _stop_age_timer(self) -> None:
+        if self._age_timer is not None:
+            self._age_timer.stop()
+            self._age_timer = None
+
+    def _tick_terminal_age(self) -> None:
+        if self._age_timer is not None and self.is_current and self._age_captured is not None:
+            self.query_one(SurfboardTerminal).update_age(
+                max(0, self._age_clock() - self._age_captured))
+
     async def _fetch_data(self) -> dict:
         return await self._data_manager.fetch_hub_snapshot()
 
@@ -96,6 +116,7 @@ class SurfboardScreen(DashboardScreen):
         bar.set_key_hints("arrows cards · enter open · / command · esc menu")
 
     def _update_title(self, data: dict) -> None:
+        self._age_captured = self._age_clock()
         self.call_after_refresh(self._render_chrome)
 
     def on_resize(self) -> None:

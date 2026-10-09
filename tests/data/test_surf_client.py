@@ -381,7 +381,7 @@ def test_this_wp_constructs_against_wp0s_frozen_field_names():
             "imd_price_usd", "imd_price_usd_gecko", "imd_change_24h_pct",
             "imd_vol_24h_usd", "pool_liquidity_usd", "pool_imd", "pool_weth",
             "fp_price_usd", "fdv_usd", "eth_usd", "indexer_name",
-            "indexer_symbol", "sources_agree",
+            "indexer_symbol", "sources_agree", "market_cap_usd",
         },
         m.LogWindow: {
             "from_block", "to_block", "bridge_mints", "identity_updates",
@@ -5655,3 +5655,40 @@ async def test_fetch_ens_names_contains_a_raise(monkeypatch):
     monkeypatch.setattr(surf_client.ens, "resolve_names", boom)
     async with _raising_client() as client:
         assert await client.fetch_ens_names(["0x" + "ab" * 20]) == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('value,expected', [(3_210_987, 3_210_987), (0, 0), (None, None), (True, None), (-1, None), ('NaN', None)])
+async def test_fetch_market_cap_uses_only_verified_pair_without_new_reads(value, expected):
+    fixture = load_fixture('dexscreener_imd.json')
+    real = next(p for p in fixture['pairs'] if p['pairAddress'] == A.POOL_V4_ID_FALLBACK)
+    real['marketCap'] = value
+    decoy = dict(real, pairAddress='0x' + 'ab' * 32, marketCap=999_999_999)
+    fixture['pairs'] = [decoy, real]
+    requests = []
+    def handler(request):
+        requests.append(request)
+        if 'dexscreener' in str(request.url) and A.IMD_TOKEN.lower() in str(request.url).lower():
+            return httpx.Response(200, json=fixture)
+        return _market_handler()(request)
+    async with _client_on(RecordingTransport(handler)) as client:
+        snap = await client.fetch_market(real_pool_id=A.POOL_V4_ID_FALLBACK)
+        assert snap.market_cap_usd == expected
+        assert len(requests) == 4
+        unmatched = await client.fetch_market()
+        assert unmatched.market_cap_usd is None
+        assert unmatched.fdv_usd is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('fdv,expected', [(0, 0), (123.5, 123.5), (True, None), (-1, None), ('Infinity', None)])
+async def test_market_footer_fdv_is_a_finite_nonnegative_number(fdv, expected):
+    fixture = load_fixture('dexscreener_imd.json')
+    real = next(p for p in fixture['pairs'] if p['pairAddress'] == A.POOL_V4_ID_FALLBACK)
+    real['fdv'] = fdv
+    def handler(request):
+        if 'dexscreener' in str(request.url) and A.IMD_TOKEN.lower() in str(request.url).lower():
+            return httpx.Response(200, json=fixture)
+        return _market_handler()(request)
+    async with _client_on(RecordingTransport(handler)) as client:
+        assert (await client.fetch_market(real_pool_id=A.POOL_V4_ID_FALLBACK)).fdv_usd == expected

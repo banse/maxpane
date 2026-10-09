@@ -119,6 +119,7 @@ def normalize_overview(raw: object) -> dict | None:
     if any(out[key] is None for key in mapping):
         return None
     out["jobs"] = count(counts.get("jobs"))
+    out["inference_tokens"] = count(counts.get("inferenceTokens"))
     out["tasks_in_progress"] = count(counts.get("tasksInProgress"))
     states = counts.get("jobStates")
     if not isinstance(states, dict) or any(not isinstance(k, str) or count(v) is None for k, v in states.items()):
@@ -189,6 +190,18 @@ def coerce_source(value: object, name: str, *, now: float) -> dict | None:
         return dict(value) if value["read_ts"] is None and value["version"] is None and value["state"] == "unavailable" else None
     if not isinstance(payload, dict) or value["state"] == "unavailable" or value["read_ts"] is None:
         return None
+    if name == "overview" and isinstance(payload.get("overview"), dict) and "inference_tokens" not in payload["overview"]:
+        # This optional field was added after overview envelopes shipped. Check
+        # the original hash before upgrading, so migration cannot bless edits.
+        try:
+            if value["version"] != version(payload):
+                return None
+        except (TypeError, ValueError, OverflowError):
+            return None
+        upgraded = dict(payload, overview=dict(payload["overview"], inference_tokens=None))
+        if _coerce_overview(upgraded) is None:
+            return None
+        return dict(value, payload=upgraded, version=version(upgraded))
     if name == "records":
         clean = _coerce_records(payload)
     elif name == "hourly":
@@ -204,7 +217,7 @@ def _coerce_overview(payload: dict) -> dict | None:
     o, events = payload.get("overview"), payload.get("events")
     if not isinstance(o, dict) or set(o) != set(SURFBOARD_OVERVIEW_FIELDS) or not isinstance(events, list) or len(events) > 60:
         return None
-    for key in ("agents_online", "working_now", "accepted_24h", "jobs_24h", "oracles_24h", "seats_enrolled", "jobs", "tasks_in_progress"):
+    for key in ("agents_online", "working_now", "accepted_24h", "jobs_24h", "oracles_24h", "seats_enrolled", "jobs", "tasks_in_progress", "inference_tokens"):
         if o[key] is not None and count(o[key]) is None:
             return None
     if not isinstance(o["services"], dict) or set(o["services"]) != {"verifier", "publisher", "deployer"}:
@@ -228,6 +241,25 @@ def _coerce_overview(payload: dict) -> dict | None:
         if row["key"] != version({k:v for k,v in row.items() if k != "key"}):
             return None
     return payload
+
+
+def footer(market: dict | None, market_source: dict, overview_source: dict, *, now: float) -> dict:
+    """Keep network totals and verified-pair valuation on their own read clocks.
+
+    Source state describes the read, while a missing optional value stays None.
+    Persisted market values are revalidated before selecting cap or labelled FDV.
+    """
+    market = market if isinstance(market, dict) else {}
+    cap, fdv = number(market.get("market_cap_usd")), number(market.get("fdv_usd"))
+    overview = (overview_source["payload"] or {}).get("overview") or {}
+    return {
+        "market_value_usd": cap if cap is not None else fdv,
+        "market_basis": "market_cap" if cap is not None else "fdv" if fdv is not None else None,
+        "market_state": market_source["state"], "market_read_ts": market_source["read_ts"],
+        "inference_tokens": overview.get("inference_tokens"),
+        "overview_state": overview_source["state"], "overview_read_ts": overview_source["read_ts"],
+        "provider_ts": overview_source["provider_ts"], "as_of": now,
+    }
 
 
 def canonical_board(records: dict | None, contributors: dict | None, workers: dict | None) -> tuple[list[dict] | None, dict]:
