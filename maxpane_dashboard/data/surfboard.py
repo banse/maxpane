@@ -429,8 +429,8 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          "STAKE · vault assets / token supply"+f" · {data.get('pool4_network') or 'unknown network'}","pool4_user",data.get("pool4_vault_assets"),data.get("pool4_total_supply"))
     burn=data.get("pool4_total_burned");reward=data.get("pool4_total_rewarded");fee=data.get("pool4_total_fee_token")
     denominator=sum((burn,reward,fee)) if all(number(x) is not None for x in (burn,reward,fee)) else None
-    card("protocol","PROTOCOL",_value(round(burn)) if number(burn) is not None else "unavailable",
-         _value(round(reward)," rewarded") if number(reward) is not None else "unavailable",
+    card("protocol","PROTOCOL",_value(round(reward)) if number(reward) is not None else "unavailable",
+         _value(round(burn)," burned") if number(burn) is not None else "unavailable",
          f"BURN · {_value(burn,' burned')} · {_value(reward,' rewarded')} · measured flow · EXPERIMENTAL"
          +f" · {data.get('pool4_network') or 'unknown network'} · as of {data.get('pool4_as_of_hhmm') or '—'}","pool4",burn,denominator)
     families = family_sources or {}

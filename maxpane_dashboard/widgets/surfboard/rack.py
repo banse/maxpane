@@ -127,7 +127,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         rows = [("", False), (primary, not muted), (secondary, False)]
         if self.key in ("swarm", "agent", "announce", "protocol"):
             label = {"swarm": " AGENTS ", "agent": " SEAT ",
-                     "announce": " SIGNALS ", "protocol": " IMD BURNED "}[self.key]
+                     "announce": " SIGNALS ", "protocol": " IMD REWARDS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
             # Use the same native 3x3 renderer as Textual's Digits widget.

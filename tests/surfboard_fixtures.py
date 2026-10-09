@@ -13,7 +13,7 @@ def hub_payload(kind="normal"):
         ("board", "BOARD", "board", "892 seats", "rank #69", 3253, 3392),
         ("launchpad", "LAUNCHPAD", "launchpad", "208 coins", "0 new / 24h", 0, 208),
         ("pool4", "POOL4", "pool4_user", "7.90 USD", "1.40% / 7d", 350, 1000),
-        ("protocol", "PROTOCOL", "pool4", "33,279", "5,873 rewarded", 60, 100),
+        ("protocol", "PROTOCOL", "pool4", "5,873", "33,279 burned", 60, 100),
     )
     cards = []
     for key, title, destination, primary, secondary, numerator, denominator in definitions:
@@ -49,7 +49,7 @@ def hub_payload(kind="normal"):
         next(card for card in cards if card["key"] == "announce").update(
             primary="11", secondary="99,999 new posts")
         next(card for card in cards if card["key"] == "protocol").update(
-            primary="1,234,567", secondary="99,999 rewarded")
+            primary="1,234,567", secondary="99,999 burned")
         overview = dict(agents_online=99999, working_now=99999, jobs_24h=999999,
                         oracles_24h=99999, accepted_24h=99999999, seats_enrolled=99999,
                         services=dict(verifier=False, publisher=None, deployer=True))

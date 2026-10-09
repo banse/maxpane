@@ -122,9 +122,9 @@ def test_announce_card_counts_unique_posts_replies_and_answers_in_last_day(items
 
 
 @pytest.mark.parametrize('burn,reward,primary,secondary', [
-    (33279.30, 5872.82, '33,279', '5,873 rewarded'),
-    (0, 0, '0', '0 rewarded'),
-    (12.8, 3.2, '13', '3 rewarded'),
+    (33279.30, 5872.82, '5,873', '33,279 burned'),
+    (0, 0, '0', '0 burned'),
+    (12.8, 3.2, '3', '13 burned'),
     (None, None, 'unavailable', 'unavailable'),
     (True, float('nan'), 'unavailable', 'unavailable'),
 ])
