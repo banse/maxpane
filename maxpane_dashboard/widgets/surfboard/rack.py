@@ -109,7 +109,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         muted = self.key in PLANNED or not self.can_focus
         color = MUTED if muted else {"active": GREEN, "working": GREEN,
             "stale": AMBER, "unavailable": AMBER, "paused": AMBER,
-            "offline": RED, "error": RED, "failed": RED}.get(status, MUTED)
+            "offline": RED, "error": RED, "failed": RED}.get(status, AMBER)
         primary = flatten(self.data.get("primary")) or "unavailable"
         secondary = flatten(self.data.get("secondary")) or "unavailable"
         working = secondary.removesuffix(" working").replace(",", "")
@@ -117,18 +117,16 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 and working.isascii() and working.isdecimal() and working.strip("0")):
             color = GREEN
         elif self.key == "swarm" and status == "active":
-            color = MUTED if working == "0" else AMBER
+            color = AMBER
         if self.key == "agent":
             if status == "active":
-                color = MUTED
+                color = AMBER
             secondary = "offline" if status == "offline" else secondary.removesuffix(" slots")
         if self.key == "announce":
             posts = secondary.removesuffix(" new posts").removesuffix(" new post").replace(",", "")
             if color not in (AMBER, RED):
                 color = (GREEN if secondary.endswith((" new post", " new posts"))
-                         and posts.isascii() and posts.isdecimal() and posts.strip("0") else MUTED)
-        if not muted and (primary == "unavailable" or secondary == "unavailable") and color == MUTED:
-            color = AMBER
+                         and posts.isascii() and posts.isdecimal() and posts.strip("0") else AMBER)
         if status in ("offline", "error", "failed") and not muted:
             color = RED
         palette = self.app.get_css_variables()
