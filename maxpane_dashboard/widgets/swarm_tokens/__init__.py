@@ -14,6 +14,9 @@ from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_comp
 
 __all__ = ["TokensHero", "TokensTable", "NewlyLaunched", "BestPlays", "TokenActivity"]
 
+# Explicit neutral ink renders identically in RichLog and Static; ANSI dim
+# white is resolved differently by the two renderers.
+_COLUMN_HEADER_STYLE = "#b1b1b1"
 
 def _cell(value, width, style="white", *, right=False):
     clean = clip(flatten(value), width)
@@ -61,14 +64,14 @@ def _paired(token):
     return amount if amount == "--" else f"{amount} {flatten(token.get('paired_symbol'))}"
 
 
-def _chart(token):
+def _chart(token, width):
     series = token.get("sparkline")
     if not isinstance(series, list):
         return "--"
     points = [point for value in series if (point := as_float(value)) is not None]
-    if len(points) > 8:
-        points = [points[round(i * (len(points) - 1) / 7)] for i in range(8)]
-    return "new" if len(points) < 2 else build_sparkline(points, width=8, pad=False)
+    if len(points) > width:
+        points = [points[round(i * (len(points) - 1) / (width-1))] for i in range(width)]
+    return "new" if len(points) < 2 else build_sparkline(points, width=width, pad=False)
 
 
 class TokensHeroBox(HeroBoxBase):
@@ -99,9 +102,10 @@ class TokensTable(TableLeaderboard):
     TITLE = "ALL TOKENS"
     TABLE_ID = "st-token-table"
     ROW_CAP = None
+    SPARK_WIDTH = 20
     COLUMNS = (("LAUNCH", 6), ("TOKEN", 9), ("CHAIN", 5), ("AGE", 4),
                ("PRICE", 11), ("24H %", 8), ("MCAP", 9), ("VOL 24H", 9),
-               ("BUY/SELL", 9), ("PAIRED LP", 11), ("LP STATE", 10), ("PRICE 24H", 9),
+               ("BUY/SELL", 9), ("PAIRED LP", 11), ("PRICE 24H", SPARK_WIDTH+1),
                ("VERDICT", 8))
 
     class Selected(Message):
@@ -130,16 +134,15 @@ class TokensTable(TableLeaderboard):
         return self._tokens.get(key)
 
     def build_row(self, index, item):
-        state = item.get("lp_state", "unknown")
         change = item.get("change_24h")
         values = (fmt_int(item.get("launch_id")), item.get("symbol", "--"),
             flatten(item.get("chain", "--")).upper(), _age(item, self._as_of),
             _usd(item.get("price_usd"), price=True), _change(change),
             _usd(item.get("mcap_usd")), _usd(item.get("volume_24h")),
             f"{_quantity(item.get('buys_24h'))}/{_quantity(item.get('sells_24h'))}",
-            _paired(item), state, _chart(item), item.get("verdict", "--"))
-        styles = {1: "bold white", 5: _change_color(change), 10: _lp_color(state), 11: _change_color(change)}
-        return tuple(Text(pad(value, width), style=styles[i]) if i == 11 else
+            _paired(item), _chart(item,self.SPARK_WIDTH), item.get("verdict", "--"))
+        styles = {1: "bold white", 5: _change_color(change), 10: _change_color(change)}
+        return tuple(Text(pad(value, width), style=styles[i]) if i == 10 else
                      _cell(value, width, styles.get(i, "white"), right=4 <= i <= 9)
                      for i, (value, (_, width)) in enumerate(zip(values, self.COLUMNS)))
 
@@ -190,7 +193,7 @@ class _CompactFeed(RichLogFeed):
 class NewlyLaunched(_CompactFeed):
     TITLE = "NEWLY LAUNCHED / 24H"
     LOG_ID = "st-new-log"
-    HEADER_LINE = Text("AGE   TOKEN      CHAIN LP STATE", style="dim white")
+    HEADER_LINE = Text("AGE  TOKEN      CHAIN LP STATE\n", style=_COLUMN_HEADER_STYLE)
     EMPTY_LINE = Text("No launches in the last 24h", style="dim white")
 
     def update_data(self, newly_launched=None, as_of=None):
@@ -212,7 +215,7 @@ class BestPlays(PanelBase):
         yield Static(Text("--", style="dim white"), id="st-best-body")
 
     def update_data(self, gainers=None, losers=None):
-        result = Text("GAINERS               LOSERS\n", style="dim white")
+        result = Text("GAINERS               LOSERS\n\n", style=_COLUMN_HEADER_STYLE)
         markers = {}
         for index in range(min(5, max(len(gainers or []), len(losers or []), 1))):
             for side, entries in enumerate((gainers, losers)):

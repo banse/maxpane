@@ -79,7 +79,9 @@ async def test_native_layout_starts_with_heroes_and_standard_panels_have_no_fram
         await pilot.pause()
         hero=app.screen.query_one(TokensHero)
         assert hero.region.y <= 1
-        assert app.screen.query_one('#st-title').region.y >= hero.region.bottom
+        assert not app.screen.query('#st-title, #st-selection')
+        assert app.screen.query_one(TokensTable).region.y==hero.region.bottom+1
+        assert 'Enter for mock details' not in painted(app)
         assert not any(w.region.width for w in app.screen.query('Input, Select'))
         for kind in (TokensTable,NewlyLaunched,BestPlays,TokenActivity):
             panel=app.screen.query_one(kind)

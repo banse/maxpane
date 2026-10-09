@@ -3080,11 +3080,9 @@ SurfboardScreen #surfboard-detail { height: 1; padding: 0 1; color: $text-muted;
 
 /* SWARM TOKENS mock screen */
 SwarmTokensScreen { background: $background; color: $text; }
-SwarmTokensScreen #st-title { height: 1; margin-bottom: 1; padding: 0 1; color: $text-muted;
-    text-wrap: nowrap; text-overflow: ellipsis; }
 SwarmTokensScreen #st-viewport { height: 1fr; padding: 0 1; overflow: auto auto;
     scrollbar-gutter: stable; scrollbar-size: 1 1; }
-SwarmTokensScreen #st-body { width: 1fr; min-width: 143; height: 1fr; min-height: 33; }
+SwarmTokensScreen #st-body { width: 1fr; min-width: 143; height: 1fr; min-height: 31; }
 SwarmTokensScreen TokensHero { height: 7; margin: 1 0; }
 SwarmTokensScreen TokensHeroBox { width: 1fr; height: 7; border: solid $panel;
     background: $surface; padding: 0 1; margin: 0 1; content-align: center middle;
@@ -3097,10 +3095,9 @@ SwarmTokensScreen #st-bottom { height: 11; margin-top: 1; }
 SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays, SwarmTokensScreen TokenActivity {
     width: 1fr; height: 1fr; border: none; }
 SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays { margin-right: 1; }
-SwarmTokensScreen .panel-title { height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted; }
+SwarmTokensScreen .panel-title { height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted;
+    text-wrap: nowrap; text-overflow: ellipsis; }
 SwarmTokensScreen RichLog { height: 1fr; padding: 0 1; background: $background;
     scrollbar-size: 1 1; }
 SwarmTokensScreen #st-best-body { height: 1fr; padding: 0 1; }
 SwarmTokensScreen SwarmTokensFilterEditor { display: none; }
-SwarmTokensScreen #st-selection { height: 1; color: $text-muted; padding: 0 1;
-    text-wrap: nowrap; text-overflow: ellipsis; }

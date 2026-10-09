@@ -57,8 +57,9 @@ async def test_table_renders_all_columns_unknowns_zero_and_sparse_series():
         table.update_data(tokens=rows, as_of=NOW)
         await pilot.pause()
         output = painted(pilot.app)
-        for expected in ("PAIRED LP", "LP STATE", "PRICE 24H", "VERDICT", "swarm", "788 IMD", "one-token", "0 IMD", "▁▂▂▃▄▅▆█"):
+        for expected in ("PAIRED LP", "PRICE 24H", "VERDICT", "swarm", "788 IMD", "0 IMD", "▁▂▂▃▄▅▆█"):
             assert expected in output
+        assert 'LP STATE' not in output and 'one-token' not in output
         line = next(row for row in output.splitlines() if "NEW" in row)
         assert "$0" in line and "--" in line and "new" in line
         line = next(row for row in output.splitlines() if "UNKNOWN" in row)
@@ -89,13 +90,11 @@ async def test_selection_survives_reordered_refresh_and_rows_are_not_capped():
 
 
 async def test_lp_states_have_distinct_color_and_markup_is_literal():
-    table = TokensTable()
-    async with Probe(table).run_test(size=(149, 45)) as pilot:
+    panel = NewlyLaunched()
+    async with Probe(panel).run_test(size=(149, 45)) as pilot:
         rows = [token(id=state, symbol="[/x]", lp_state=state)
                 for state in ("two-sided", "one-token", "one-quote", "withdrawn", "unknown")]
-        table.update_data(tokens=rows, as_of=NOW)
-        table.query_one(DataTable).show_cursor = False
-        table.query_one(DataTable).styles.color = "green"
+        panel.update_data(newly_launched=rows, as_of=NOW)
         await pilot.pause()
         strips = pilot.app.screen._compositor.render_strips()
         colors = {}
@@ -146,9 +145,35 @@ async def test_sparkline_keeps_the_full_window_and_never_pads_sparse_history_wit
         table.update_data(tokens=[token(sparkline=[8] + [0] * 23),
             token(id="sparse", symbol="SPARSE", sparkline=[1, 8])], as_of=NOW)
         await pilot.pause()
-        assert "█▁▁▁▁▁▁▁" in painted(pilot.app)
+        assert "█"+"▁"*19 in painted(pilot.app)
         sparse = next(line for line in painted(pilot.app).splitlines() if "SPARSE" in line)
-        assert "      ▁█" in sparse
+        assert "                  ▁█" in sparse
+
+
+async def test_supporting_column_headers_match_and_leave_a_blank_row():
+    colors=[]
+    for panel,values,header in (
+        (NewlyLaunched(),dict(newly_launched=[token()],as_of=NOW),'AGE'),
+        (BestPlays(),dict(gainers=[token()],losers=[]),'GAINERS'),
+    ):
+        async with Probe(panel).run_test(size=(149,45)) as pilot:
+            panel.update_data(**values)
+            await pilot.pause()
+            strips=pilot.app.screen._compositor.render_strips()
+            index=next(i for i,s in enumerate(strips) if header in s.text)
+            assert not strips[index+1].text.strip()
+            assert 'SC' in strips[index+2].text
+            colors.append(next(s.style.color for s in strips[index] if header in s.text))
+    assert colors[0]==colors[1]
+
+
+def test_model_widget_signatures_match_the_renderers():
+    import inspect
+    from maxpane_dashboard.data.swarm_tokens_models import WIDGET_SIGNATURES
+    from maxpane_dashboard.widgets import swarm_tokens
+    for name,keys in WIDGET_SIGNATURES.items():
+        parameters=tuple(inspect.signature(getattr(swarm_tokens,name).update_data).parameters)
+        assert parameters==('self',*keys)
 
 
 async def test_best_plays_is_explicitly_top_five():

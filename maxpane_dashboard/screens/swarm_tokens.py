@@ -15,25 +15,25 @@ from maxpane_dashboard.widgets.swarm_tokens.detail import SwarmTokenDetail
 from maxpane_dashboard.widgets.swarm_tokens.filter import SwarmTokensFilterEditor
 
 #: Mock overview measured in the real screen after its 149x45 preview.
-#: Native revision: at 145x35 all thirteen table columns, four heroes and
-#: three lower panels fit without an outer scrollbar. At 144x35 or 145x34
+#: Compact revision: at 145x32 all twelve table columns, four heroes and
+#: three lower panels fit without an outer scrollbar. At 144x32 or 145x31
 #: the viewport scrolls and advertises the reduced space. At 149x45 the
-#: table shows seventeen data rows, with the remaining rows behind its scrollbar.
+#: table shows twenty data rows, with the remaining rows behind its scrollbar.
 #: The table keeps all 24 rows and scrolls internally at every measured size.
-#: Widgets retain a 143-column body and 33-row content floor; a vertical
+#: Widgets retain a 143-column body and 31-row content floor; a vertical
 #: scrollbar below the row pin can also require a horizontal one.
 SWARM_TOKENS_FULL_LAYOUT_COLUMNS = 145
-SWARM_TOKENS_FULL_LAYOUT_ROWS = 35
+SWARM_TOKENS_FULL_LAYOUT_ROWS = 32
 
 
 class DemoStatusBar(StatusBar):
     """The demo has a frozen snapshot, so never imply a fresh market read."""
     def _ordinary_status(self, *_args):
-        return self._key_hints or 'q quit · r refresh · m/esc back · tab panels · f filter · / find · c chain · o sort · enter details'
+        return self._key_hints or 'q quit · r refresh · esc back · tab · f filter · / find · c chain · o sort · enter open'
 
 
 class SwarmTokensScreen(DashboardScreen):
-    GAME_NAME = 'SWARM TOKENS · MOCK'
+    GAME_NAME = 'SWARM TOKENS · MOCK DATA'
     REFRESH_WORKER_NAME = 'swarm-tokens-demo-refresh'
     # This provider is offline and independent of the application's live prefetch.
     JOIN_STARTUP_PREFETCH = False
@@ -52,11 +52,9 @@ class SwarmTokensScreen(DashboardScreen):
     ]
     DEFAULT_CSS = '''
     SwarmTokensScreen { background: $background; color: $text; }
-    SwarmTokensScreen #st-title { height: 1; margin-bottom: 1; padding: 0 1; color: $text-muted;
-        text-wrap: nowrap; text-overflow: ellipsis; }
     SwarmTokensScreen #st-viewport { height: 1fr; padding: 0 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size: 1 1; }
-    SwarmTokensScreen #st-body { width: 1fr; min-width: 143; height: 1fr; min-height: 33; }
+    SwarmTokensScreen #st-body { width: 1fr; min-width: 143; height: 1fr; min-height: 31; }
     SwarmTokensScreen TokensHero { height: 7; margin: 1 0; }
     SwarmTokensScreen TokensHeroBox { width: 1fr; height: 7; border: solid $panel;
         background: $surface; padding: 0 1; margin: 0 1; content-align: center middle;
@@ -69,13 +67,12 @@ class SwarmTokensScreen(DashboardScreen):
     SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays, SwarmTokensScreen TokenActivity {
         width: 1fr; height: 1fr; border: none; }
     SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays { margin-right: 1; }
-    SwarmTokensScreen .panel-title { height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted; }
+    SwarmTokensScreen .panel-title { height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted;
+        text-wrap: nowrap; text-overflow: ellipsis; }
     SwarmTokensScreen RichLog { height: 1fr; padding: 0 1; background: $background;
         scrollbar-size: 1 1; }
     SwarmTokensScreen #st-best-body { height: 1fr; padding: 0 1; }
     SwarmTokensScreen SwarmTokensFilterEditor { display: none; }
-    SwarmTokensScreen #st-selection { height: 1; color: $text-muted; padding: 0 1;
-        text-wrap: nowrap; text-overflow: ellipsis; }
     '''
 
     def __init__(self, manager, poll_interval=30, name='swarm-tokens-demo', *, standalone=False, **kwargs):
@@ -92,7 +89,6 @@ class SwarmTokensScreen(DashboardScreen):
         with VerticalScroll(id='st-viewport'):
             with Vertical(id='st-body'):
                 yield TokensHero()
-                yield Static(Text('SWARM TOKENS · MOCK DATA'), id='st-title')
                 with Vertical(id='st-content'):
                     with Vertical(id='st-market'):
                         yield TokensTable()
@@ -101,7 +97,6 @@ class SwarmTokensScreen(DashboardScreen):
                             yield BestPlays()
                             yield TokenActivity()
                     yield SwarmTokensFilterEditor()
-        yield Static(Text('Select a token · Enter for details'), id='st-selection')
         yield DemoStatusBar()
 
     async def _fetch_data(self):
@@ -133,12 +128,12 @@ class SwarmTokensScreen(DashboardScreen):
         suffix = (' · ‹ widen' if viewport.show_horizontal_scrollbar else '')
         suffix += ' · ‹ taller' if viewport.show_vertical_scrollbar else ''
         chain={'all':'all chains','eth':'Ethereum','base':'Base','rh':'Robinhood'}[self.chain]
-        state='FILTER · draft' if self._filter_open else chain
         selection=f' · {self.lp_state}' if self.lp_state!='all' else ''
         selection+=f' · search: {flatten(self.search_query)}' if self.search_query else ''
-        self.query_one('#st-title',Static).update(Text(
-            f'SWARM TOKENS · MOCK DATA{suffix} · {state}{selection} · sort: {self.sort}', style='bold'))
-        self._selection(self.query_one(TokensTable).selected_token())
+        total=(self.snapshot.get('metrics') or {}).get('total',0)
+        count=f'{total} tokens' if total else 'No matching tokens'
+        self.query_one(TokensTable).query_one('.panel-title',Static).update(Text(
+            f'ALL TOKENS · {count}{suffix} · {chain}{selection} · sort: {self.sort}', style='bold'))
 
     def _show_filter(self, editing):
         self._filter_open=editing
@@ -178,17 +173,6 @@ class SwarmTokensScreen(DashboardScreen):
     def on_swarm_tokens_filter_reset_requested(self,event):
         event.stop()
         self.query_one(SwarmTokensFilterEditor).set_values({})
-
-    def on_tokens_table_highlighted(self,event):
-        self._selection(event.token)
-
-    def _selection(self,token):
-        if not token:
-            text='No token selected'
-        else:
-            text=(f"{token.get('symbol')} / {token.get('chain','').upper()} / #{token.get('launch_id')}"
-                  f" · {token.get('name')} · LP: {token.get('lp_state')} · Enter for mock details")
-        self.query_one('#st-selection',Static).update(Text(flatten(text)))
 
     def on_tokens_table_selected(self,event):
         event.stop()
