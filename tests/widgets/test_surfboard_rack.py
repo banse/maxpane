@@ -147,7 +147,7 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             assert "PASS ▰▰▰▰▱▱▱▱" in "\n".join(strip.text for strip in strips)
 
 
-async def test_inactive_and_warning_cards_keep_orange_borders():
+async def test_card_activity_colors_update_from_current_counts():
     async with RackApp().run_test(size=(149,45)) as pilot:
         for key,status,primary,secondary,ink in [
             ('protocol','experimental','5,873','33,279 burned',3),
@@ -155,7 +155,9 @@ async def test_inactive_and_warning_cards_keep_orange_borders():
             ('protocol','unavailable','5,873','33,279 burned',3),
             ('protocol','experimental','unavailable','33,279 burned',3),
             ('protocol','experimental','5,873','33,279 burned',3),
-            ('announce','stale','5','1 new post',3),
+            ('announce','stale','5','1 new post',2),
+            ('announce','stale','5','0 new posts',3),
+            ('announce','unavailable','unavailable','1 new post',2),
             ('announce','active','5','0 new posts',3),
         ]:
             card=pilot.app.query_one(f'#surfboard-card-{key}',SurfboardCard)
@@ -164,23 +166,27 @@ async def test_inactive_and_warning_cards_keep_orange_borders():
             strips=[strip.crop(card.region.x,card.region.right) for strip in
                     pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             edge=next(segment for strip in strips for segment in strip if '┌' in segment.text)
-            assert edge.style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[ink]
+            expected=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+                      if ink==2 else pilot.app.ansi_theme.ansi_colors[ink])
+            assert edge.style.color.get_truecolor()==expected
 
 
 @pytest.mark.parametrize('size',[(149,45),(140,36)])
-@pytest.mark.parametrize('key,primary,secondary,label,expected,green',[
-    ('announce','5','0 new posts','SIGNALS',['╭─╴','╰─╮','╶─╯'],False),
-    ('announce','5','1 new post','SIGNALS',['╭─╴','╰─╮','╶─╯'],True),
-    ('announce','0','12 new posts','SIGNALS',['╭─╮','│ │','╰─╯'],True),
-    ('announce','unavailable','unavailable','SIGNALS',['','unavailable',''],False),
+@pytest.mark.parametrize('key,primary,secondary,label,expected,green,footer_text',[
+    ('announce','5','0 new posts','NEW POSTS',['╭─╮','│ │','╰─╯'],False,'5 signals fired'),
+    ('announce','5','1 new post','NEW POSTS',['╶╮ ',' │ ','╶┴╴'],True,'5 signals fired'),
+    ('announce','0','12 new posts','NEW POSTS',['╶╮ ╶─╮',' │ ┌─┘','╶┴╴╰─╴'],True,'0 signals fired'),
+    ('announce','1','1 new post','NEW POSTS',['╶╮ ',' │ ','╶┴╴'],True,'1 signal fired'),
+    ('announce','5','unavailable','NEW POSTS',['','unavailable',''],False,'5 signals fired'),
+    ('announce','unavailable','unavailable','NEW POSTS',['','unavailable',''],False,'unavailable'),
     ('protocol','5,873','33,279 burned','IMD REWARDS',
-     ['╭─╴ ╭─╮╶─┐╶─╮','╰─╮ ├─┤  │ ─┤','╶─╯,╰─╯  ╵╶─╯'],False),
+     ['╭─╴ ╭─╮╶─┐╶─╮','╰─╮ ├─┤  │ ─┤','╶─╯,╰─╯  ╵╶─╯'],False,'33,279 burned'),
     ('protocol','99,999','12,345 burned','IMD REWARDS',
-     ['╭─╮╭─╮ ╭─╮╭─╮╭─╮','╰─┤╰─┤ ╰─┤╰─┤╰─┤','╶─╯╶─╯,╶─╯╶─╯╶─╯'],False),
-    ('protocol','123,456','12,345 burned','IMD REWARDS',['','123,456',''],False),
-    ('protocol','1,234,567','12,345 burned','IMD REWARDS',['','1,234,567',''],False),
+     ['╭─╮╭─╮ ╭─╮╭─╮╭─╮','╰─┤╰─┤ ╰─┤╰─┤╰─┤','╶─╯╶─╯,╶─╯╶─╯╶─╯'],False,'12,345 burned'),
+    ('protocol','123,456','12,345 burned','IMD REWARDS',['','123,456',''],False,'12,345 burned'),
+    ('protocol','1,234,567','12,345 burned','IMD REWARDS',['','1,234,567',''],False,'12,345 burned'),
 ])
-async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,label,expected,green):
+async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,label,expected,green,footer_text):
     async with RackApp().run_test(size=size) as pilot:
         card=pilot.app.query_one(f'#surfboard-card-{key}',SurfboardCard)
         card.set_data(dict(status='active',primary=primary,secondary=secondary))
@@ -196,7 +202,7 @@ async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,labe
         for strip,row in zip(strips[top+1:top+4],expected):
             padding=(right-left-1-len(row))//2
             assert strip.text[left+1:right]==(' '*padding+row).ljust(right-left-1)
-        footer=next(segment for segment in strips[top+4] if secondary in segment.text)
+        footer=next(segment for segment in strips[top+4] if footer_text in segment.text)
         assert not footer.style.bold and footer.style.color.get_truecolor()==ink
 
 

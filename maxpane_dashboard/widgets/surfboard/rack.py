@@ -123,10 +123,13 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 color = AMBER
             secondary = "offline" if status == "offline" else secondary.removesuffix(" slots")
         if self.key == "announce":
-            posts = secondary.removesuffix(" new posts").removesuffix(" new post").replace(",", "")
-            if color not in (AMBER, RED):
-                color = (GREEN if secondary.endswith((" new post", " new posts"))
-                         and posts.isascii() and posts.isdecimal() and posts.strip("0") else AMBER)
+            posts = secondary.removesuffix(" new posts").removesuffix(" new post")
+            digits = posts.replace(",", "")
+            valid_posts = secondary.endswith((" new post", " new posts")) and digits.isascii() and digits.isdecimal()
+            color = GREEN if valid_posts and digits.strip("0") else AMBER
+            secondary = (f"{primary} {'signal' if primary == '1' else 'signals'} fired"
+                         if primary != "unavailable" else "unavailable")
+            primary = posts if valid_posts else "unavailable"
         if status in ("offline", "error", "failed") and not muted:
             color = RED
         palette = self.app.get_css_variables()
@@ -136,7 +139,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         rows = [("", False), (primary, not muted), (secondary, False)]
         if self.key in ("swarm", "agent", "announce", "protocol"):
             label = {"swarm": " AGENTS ", "agent": " SEAT ",
-                     "announce": " SIGNALS ", "protocol": " IMD REWARDS "}[self.key]
+                     "announce": " NEW POSTS ", "protocol": " IMD REWARDS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
             readout = count if self.key == "protocol" else digits
