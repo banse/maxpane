@@ -9,6 +9,35 @@ from maxpane_dashboard.data.swarm_tokens_demo import MOCK_NOW, demo_snapshot
 from maxpane_dashboard.data import swarm_tokens_models as models
 
 
+def test_live_unavailable_is_not_empty_and_source_clocks_survive_filters():
+    raw = dict(tokens=None, activity=None, as_of=MOCK_NOW, is_mock=False,
+               sources={'catalogue': {'state': 'unavailable', 'as_of': None}})
+    unavailable = project_snapshot(raw)
+    assert unavailable['tokens'] is None and unavailable['metrics'] is None
+    assert unavailable['newly_launched'] is None and unavailable['gainers'] is None
+    assert unavailable['sources'] == raw['sources']
+    raw.update(tokens=[], activity=[])
+    assert project_snapshot(raw)['metrics']['total'] == 0
+    raw['tokens'] = [dict(demo_snapshot()['tokens'][0], launched_at=None,
+                          token_address='0x'+'a'*40)]
+    projected = project_snapshot(raw, query='0x'+'a'*40)
+    assert len(projected['tokens']) == 1
+    assert projected['newly_launched'] == []
+    assert projected['sources'] == raw['sources']
+    projected['sources']['catalogue']['state'] = 'wrong'
+    assert raw['sources']['catalogue']['state'] == 'unavailable'
+
+
+def test_stale_market_quotes_remain_visible_but_do_not_rank_as_live_plays():
+    raw = demo_snapshot()
+    raw['tokens'] = [dict(raw['tokens'][0],market_state='stale')]
+    projected = project_snapshot(raw)
+    assert len(projected['tokens']) == 1
+    assert projected['gainers'] == projected['losers'] == []
+    assert projected['metrics']['volume_24h'] is None
+    assert projected['metrics']['volume_known'] == 0
+
+
 def test_projection_metrics_reconcile_with_rows_and_unknown_volume():
     snapshot = demo_snapshot()
     result = project_snapshot(snapshot)

@@ -245,7 +245,7 @@ async def test_planned_cards_focus_but_empty_bays_do_not_and_arrows_follow_geome
         assert all(not card.can_focus for card in rack.query(".empty"))
 
 
-async def test_demo_card_routes_while_planned_cards_explain_without_destination():
+async def test_live_tokens_card_routes_while_planned_cards_explain_without_destination():
     class Messages(RackApp):
         opened = []
 
@@ -259,8 +259,8 @@ async def test_demo_card_routes_while_planned_cards_explain_without_destination(
             rack.activate_focused()
         await pilot.pause()
         assert [event.key for event in pilot.app.opened] == ["swarm-tokens", "portfolio", "earnings"]
-        demo, *planned = pilot.app.opened
-        assert demo.destination == "swarm-tokens-demo" and "mock preview" in demo.detail
+        live, *planned = pilot.app.opened
+        assert live.destination == "swarm-tokens" and "production-chain markets" in live.detail
         assert all(event.destination is None and "planned" in event.detail for event in planned)
 
 

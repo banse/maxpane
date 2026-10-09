@@ -204,10 +204,13 @@ async def test_native_filter_grid_fits_the_visible_viewport(width,columns,scroll
             assert label in text
 
 
-async def test_hub_demo_route_returns_with_terminal_draft_and_card_focus():
+async def test_hub_live_route_returns_with_terminal_draft_and_card_focus():
     from tests.screens.test_surfboard_screen import hub_app
     from maxpane_dashboard.widgets.surfboard.rack import SurfboardRack
     app,managers=hub_app()
+    from tests.screens.test_swarm_tokens_live import LiveProvider
+    provider = LiveProvider()
+    managers['_surf_manager'].swarm_tokens_manager = lambda: provider
     async with app.run_test(size=(149,45)) as pilot:
         await pilot.pause()
         hub=app.screen
@@ -218,6 +221,8 @@ async def test_hub_demo_route_returns_with_terminal_draft_and_card_focus():
         await pilot.press('enter')
         await pilot.pause()
         assert isinstance(app.screen,SwarmTokensScreen)
+        assert app.screen._data_manager is provider
+        assert 'MOCK DATA' not in painted(app)
         assert not managers['_surf_manager'].hub_active
         tokens=app.screen
         await pilot.press('f','escape')

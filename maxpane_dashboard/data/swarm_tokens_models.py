@@ -1,8 +1,8 @@
-"""Frozen primitive payload for the mock SWARM TOKENS preview.
+"""Primitive payload shared by live SWARM TOKENS and its offline preview.
 
-The market values are illustrative, never live quotes. ``None`` means unknown;
-zero is a known measurement. A sparkline is 24 evenly spaced price samples over
-the same 24-hour window, or None when that history is not available.
+``None`` means unknown; zero is a known measurement. Live price history keeps
+missing hourly samples as None within the same 24-hour window. Live tokens
+carry their own source clocks; snapshot as_of is only the evaluation clock.
 """
 
 TOKEN_KEYS = (
@@ -13,6 +13,14 @@ TOKEN_KEYS = (
 )
 ACTIVITY_KEYS = ('id', 'token_id', 'ts', 'kind', 'amount', 'asset')
 SNAPSHOT_KEYS = ('tokens', 'activity', 'as_of', 'is_mock')
+LIVE_TOKEN_KEYS = TOKEN_KEYS + (
+    'token_address', 'chain_id', 'launch_uuid', 'launch_pool',
+    'market_pool', 'market_source', 'market_read_at', 'liquidity_read_at',
+    'history_read_at', 'trades_read_at', 'market_state', 'history_state',
+    'liquidity_state', 'trades_state', 'sparkline_timestamps',
+    'token_amount', 'withdrawn_pct',
+)
+LIVE_SNAPSHOT_KEYS = SNAPSHOT_KEYS + ('sources',)
 METRIC_KEYS = (
     'total', 'new_24h', 'two_sided', 'one_sided', 'unknown', 'other',
     'volume_24h', 'volume_known', 'volume_total',

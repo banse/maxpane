@@ -84,6 +84,7 @@ def demo_snapshot() -> dict:
 class DemoSwarmTokensManager:
     """Dashboard lifecycle adapter; fetching only reconstructs the mock snapshot."""
 
+    is_mock = True
     _error_count = 0
 
     async def fetch_and_compute(self) -> dict:

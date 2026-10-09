@@ -1,4 +1,4 @@
-# SWARM TOKENS mock dashboard
+# SWARM TOKENS dashboard
 
 ## Approved requirements
 
@@ -7,7 +7,8 @@ the swarm LAUNCHES table, with "a NEWLY LAUNCHED widget and best plays and activ
 and a main table containing "liquidty info(especially if its one-sided or not)
 and a sparkline for each token together will all other important info."
 The owner selected version **1**, Market overview, and **all production chains,
-with a chain filter**. This delivery is the mock Textual demo, before live APIs.
+with a chain filter**. The mock-first design was approved; the live phase below
+now supersedes mock-only hub behavior.
 
 Stack: existing Python ≥3.11/Textual/Rich application. Use current SURFBOARD
 dark theme tokens, shared panel bases and sparkline helpers. No new dependencies.
@@ -98,3 +99,27 @@ layout hardening. This explicit mock-first request supersedes the usual live
 render step for this phase. Then verify composited layout and interactions at
 target size and smaller scrolling sizes, with no network or real clipboard use.
 All screenshots and sample counters remain visibly marked MOCK DATA.
+
+## Approved live phase
+
+The owner approved the compact design and requested real data. Preserve the four
+heroes, borderless panels, 12-column main table and 20-character sparkline.
+LP STATE remains removed from the main table; it stays in Newly Launched,
+Best Plays markers, filters and details. ALL TOKENS carries applied filter/source
+context immediately below the heroes; the extra title and selected-token footer
+remain removed. Newly Launched and Best Plays share header ink and a blank line.
+
+The hub opens a retained `SwarmTokensManager`, using complete numeric-cursor IMD
+catalogue reads, existing SURF launch evidence, keyless selected-pool quotes and
+observed history/trades. All supported production chains remain selectable.
+No wallet, signing, API key or new dependency. The isolated mock entry point
+continues to use fixed fixtures with no network requests and a MOCK DATA label.
+
+The live screen polls every 30 seconds. It keeps every catalogue token visible
+when market data is absent and discloses partial/stale/unavailable sources.
+Successful zero differs from a failed read. Source timestamps remain independent;
+current volume and Best Plays exclude stale quotes. Enter provides cached source
+status plus shared explorer/copy actions for verified contract addresses.
+The catalogue, quotes, history, trades and K8 positions have distinct TTLs and
+bounded work. Full source definitions and observed coverage are recorded in
+`swarm_tokens_game_mechanics.md`; ownership/acceptance is in `swarm_tokens_live_plan.md`.

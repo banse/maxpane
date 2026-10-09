@@ -1,0 +1,123 @@
+{
+  "data": [
+    {
+      "id": "eth_0x50d143388d24ca04253d54b36f622ea8908be24a09cc44a2b7a96b5eaeb054df",
+      "type": "pool",
+      "attributes": {
+        "base_token_price_usd": "0.00004781356551",
+        "base_token_price_native_currency": "0.0000000215539483405731",
+        "quote_token_price_usd": "8.76911450724331",
+        "quote_token_price_native_currency": "0.0033869115751651",
+        "base_token_price_quote_token": "0.000006363894617",
+        "quote_token_price_base_token": "157136.480131094",
+        "address": "0x50d143388d24ca04253d54b36f622ea8908be24a09cc44a2b7a96b5eaeb054df",
+        "name": "SC / VIBE 1.25%",
+        "pool_created_at": "2026-10-09T15:08:35Z",
+        "token_price_usd": "0.00004781356551",
+        "fdv_usd": "47813.56551",
+        "market_cap_usd": null,
+        "price_change_percentage": {
+          "m5": "0",
+          "m15": "-8.344",
+          "m30": "-8.344",
+          "h1": "-8.34",
+          "h6": "-8.34",
+          "h24": "-8.34"
+        },
+        "transactions": {
+          "m5": {
+            "buys": 1,
+            "sells": 0,
+            "buyers": 1,
+            "sellers": 0
+          },
+          "m15": {
+            "buys": 1,
+            "sells": 5,
+            "buyers": 1,
+            "sellers": 5
+          },
+          "m30": {
+            "buys": 1,
+            "sells": 5,
+            "buyers": 1,
+            "sellers": 5
+          },
+          "h1": {
+            "buys": 1,
+            "sells": 5,
+            "buyers": 1,
+            "sellers": 5
+          },
+          "h6": {
+            "buys": 1,
+            "sells": 5,
+            "buyers": 1,
+            "sellers": 5
+          },
+          "h24": {
+            "buys": 1,
+            "sells": 5,
+            "buyers": 1,
+            "sellers": 5
+          }
+        },
+        "volume_usd": {
+          "m5": "1.9380092972",
+          "m15": "3176.1811964751",
+          "m30": "3176.1811964751",
+          "h1": "3176.1811964751",
+          "h6": "3176.1811964751",
+          "h24": "3176.1811964751"
+        },
+        "reserve_in_usd": "41672.275"
+      },
+      "relationships": {
+        "base_token": {
+          "data": {
+            "id": "eth_0x1ae93a4d9cc0b41c594d00387b6f832a88f729b7",
+            "type": "token"
+          }
+        },
+        "quote_token": {
+          "data": {
+            "id": "eth_0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+            "type": "token"
+          }
+        },
+        "dex": {
+          "data": {
+            "id": "uniswap-v4-ethereum",
+            "type": "dex"
+          }
+        }
+      }
+    }
+  ],
+  "included": [
+    {
+      "id": "eth_0x1ae93a4d9cc0b41c594d00387b6f832a88f729b7",
+      "type": "token",
+      "attributes": {
+        "address": "0x1ae93a4d9cc0b41c594d00387b6f832a88f729b7",
+        "name": "SwarmCity",
+        "symbol": "SC",
+        "decimals": 18,
+        "image_url": null,
+        "coingecko_coin_id": null
+      }
+    },
+    {
+      "id": "eth_0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+      "type": "token",
+      "attributes": {
+        "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "name": "Vibe Coins",
+        "symbol": "VIBE",
+        "decimals": 18,
+        "image_url": null,
+        "coingecko_coin_id": null
+      }
+    }
+  ]
+}

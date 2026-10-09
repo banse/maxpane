@@ -1,0 +1,1 @@
+Trimmed from GET /launches?limit=500 captured 2026-10-09. Kept exact selected rows for production token, testnet and parked/non-token boundary tests. API createdAt is launch-record creation, not a proven onchain deployment timestamp.

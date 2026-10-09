@@ -1,0 +1,64 @@
+{
+  "data": [
+    {
+      "id": "eth_26157347_0x945b9d786837d6f30681fce8afcc4e52f8cc98052343313ed902d2f1732ee115_127_1791578976",
+      "type": "trade",
+      "attributes": {
+        "block_number": 26157347,
+        "block_timestamp": "2026-10-09T20:48:59Z",
+        "tx_hash": "0x945b9d786837d6f30681fce8afcc4e52f8cc98052343313ed902d2f1732ee115",
+        "tx_from_address": "0x450bd857ca398d91625e199307d9591cb7c01969",
+        "kind": "buy",
+        "from_token_address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "to_token_address": "0x1ae93a4d9cc0b41c594d00387b6f832a88f729b7",
+        "from_token_amount": "0.221518979107493",
+        "to_token_amount": "40532.6245046855",
+        "price_from_in_usd": "8.76911450724331",
+        "price_to_in_usd": "0.0000478135655135788",
+        "price_from_in_currency_token": "0.00353860148872065",
+        "price_to_in_currency_token": "0.0000000192942119717605",
+        "volume_in_usd": "1.94252529332124"
+      }
+    },
+    {
+      "id": "eth_26157325_0x1b24993e36f907ab160a1175a048ecb924d64502dbd73decab85c358e3dd5386_229_1791578686",
+      "type": "trade",
+      "attributes": {
+        "block_number": 26157325,
+        "block_timestamp": "2026-10-09T20:44:35Z",
+        "tx_hash": "0x1b24993e36f907ab160a1175a048ecb924d64502dbd73decab85c358e3dd5386",
+        "tx_from_address": "0x4337001fff419768e088ce247456c1b892888084",
+        "kind": "sell",
+        "from_token_address": "0x1ae93a4d9cc0b41c594d00387b6f832a88f729b7",
+        "to_token_address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "from_token_amount": "19953985.3367116",
+        "to_token_amount": "109.859790554227",
+        "price_from_in_usd": "0.0000494753588706789",
+        "price_to_in_usd": "8.67803075984929",
+        "price_from_in_currency_token": "0.0000000199795496792307",
+        "price_to_in_currency_token": "0.00350443434149711",
+        "volume_in_usd": "987.230585434072"
+      }
+    },
+    {
+      "id": "eth_26157310_0x814a2061d4120115cc80092216b841900f9c6dd89674d64fcf8361eabd56f077_8_1791578502",
+      "type": "trade",
+      "attributes": {
+        "block_number": 26157310,
+        "block_timestamp": "2026-10-09T20:41:35Z",
+        "tx_hash": "0x814a2061d4120115cc80092216b841900f9c6dd89674d64fcf8361eabd56f077",
+        "tx_from_address": "0x87aeb03aefef5224513ebbc28eff82fbccd63298",
+        "kind": "sell",
+        "from_token_address": "0x1ae93a4d9cc0b41c594d00387b6f832a88f729b7",
+        "to_token_address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "from_token_amount": "12067698.2957208",
+        "to_token_amount": "70.0458495678478",
+        "price_from_in_usd": "0.0000519191478337573",
+        "price_to_in_usd": "8.52420309755265",
+        "price_from_in_currency_token": "0.0000000209653201720854",
+        "price_to_in_currency_token": "0.0034421336753119",
+        "volume_in_usd": "626.544611828709"
+      }
+    }
+  ]
+}

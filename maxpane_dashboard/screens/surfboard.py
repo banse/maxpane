@@ -142,9 +142,8 @@ class SurfboardScreen(DashboardScreen):
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
         if event.key == "swarm-tokens":
-            from maxpane_dashboard.data.swarm_tokens_demo import DemoSwarmTokensManager
             from maxpane_dashboard.screens.swarm_tokens import SwarmTokensScreen
-            self.app.push_screen(SwarmTokensScreen(DemoSwarmTokensManager()))
+            self.app.push_screen(SwarmTokensScreen(self._data_manager.swarm_tokens_manager()))
             return
         if event.destination is None:
             self._detail = event.detail

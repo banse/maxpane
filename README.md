@@ -19,7 +19,7 @@ kind, no wallet, no signing, no transactions.
 | **Cat Town** | Base | Fishing competition, KIBBLE economy, catches |
 | **Ten Thousand Tokens** | Ethereum | NFT burn-to-launch on UniV4, fee engines, holder claims |
 | **Talismans** | Ethereum | Core-conservation NFT collection, materials, essence × tier |
-| **SURFBOARD HUB** | Ethereum / IMD | Dashboard 9: seven SURFBOARD launchers, live IMD terminal, SWARM TOKENS mock preview, two future dashboards and two empty bays |
+| **SURFBOARD HUB** | Ethereum / IMD | Dashboard 9: seven SURFBOARD launchers, live IMD terminal, live SWARM TOKENS markets, two future dashboards and two empty bays |
 
 ### SURFBOARD HUB — dashboard 9
 
@@ -45,27 +45,38 @@ state and description; the footer shows IMD market cap (or labelled FDV), progre
 the site's $1B goal, inference tokens used and snapshot age. `V* P* D*` means the verifier,
 publisher and deployer are up; `!` means down and `?` unknown.
 
-### SWARM TOKENS — offline preview
+### SWARM TOKENS — live markets
 
-Open **SWARM TOKENS** from dashboard 9, or run the isolated mock demo:
+Open **SWARM TOKENS** from dashboard 9:
+
+```bash
+.venv/bin/python -m maxpane_dashboard --game surfboard
+```
+
+The 149×45 market overview lists deployed swarm tokens on Ethereum, Base and Robinhood.
+Chain, search and liquidity filters update the table, heroes, newly launched list,
+gainers/losers and activity together. Press `f` for the native filter editor, `/` for
+search, `c` to cycle chains, `o` to sort, and Enter for token details and explorer links.
+**APPLY FILTER** commits the draft; **RESET ALL** clears it; Escape cancels or returns.
+
+The complete IMD launch catalogue supplies token identity. DexScreener supplies a
+selected pool's quotes, market cap and volume; GeckoTerminal supplies observed hourly
+prices and recent trades. SURFBOARD's existing launch checks supply paired balances
+and position sidedness. `one-token` and `one-quote` identify one-sided positions;
+Best Plays marks them with `*`, withdrawn positions with `!`, and unknowns with `?`.
+Market cap never falls back to FDV. Age and the new/24h count use launch-record time.
+
+The screen refreshes every 30 seconds; source reads are bounded and fill progressively.
+Headings disclose catalogue status, quote coverage and trade availability. Details show
+independent read times. Missing prices/liquidity display `--`, missing candles stay gaps,
+and stale quotes/history carry `~`. Stale quotes remain inspectable but are excluded from
+Best Plays and the current volume total. Unindexed tokens remain in the list.
+
+The isolated, deterministic **MOCK DATA** demo remains available without network requests:
 
 ```bash
 .venv/bin/python -m maxpane_dashboard.demos.swarm_tokens
 ```
-
-The market overview is designed for **149×45**, with 24 synthetic tokens across Ethereum,
-Base and Robinhood. Chain, search and liquidity filters update the table, metrics, newly
-launched list, gainers/losers and activity together. Each token has a price sparkline,
-paired liquidity and an explicit liquidity state. `one-token` and `one-quote` identify
-one-sided positions; `*` marks these in Best Plays. Unknown values display `--`.
-
-The hero cards come first; standard panels use MaxPane's borderless style. Press `f` for
-the shared THE LIST / RECORD filter editor, or `/` to open it with search focused.
-**APPLY FILTER** commits the draft; **RESET ALL** clears the draft; Escape cancels it.
-Outside the editor, use `c` to cycle chains, `o` to sort, arrows to select, and Enter for details.
-Escape returns to the hub (or exits the standalone demo). All values are labelled
-**MOCK DATA**. Refresh reloads the fixed sample, and the
-standalone demo makes no network requests. Live sources and contract links come later.
 
 ### FWA — Fake World Assets
 

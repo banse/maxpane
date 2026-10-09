@@ -93,8 +93,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         self.data = dict(data) if isinstance(data, dict) else {}
         self.data.update(key=self.key, title=self.title)
         if self.key == "swarm-tokens":
-            self.data.update(status="demo", primary="MOCK DATA", secondary="open preview",
-                             destination="swarm-tokens-demo", detail="SWARM TOKENS · offline mock preview · Enter to open")
+            self.data.update(status="available", primary="SWARM TOKENS", secondary="open markets",
+                             destination="swarm-tokens", detail="SWARM TOKENS · production-chain markets · Enter to open")
         if planned or empty:
             self.data.update(status="planned" if planned else "unassigned", primary="coming soon" if planned else "empty slot",
                              secondary="future dashboard" if planned else "· · ·", destination=None,

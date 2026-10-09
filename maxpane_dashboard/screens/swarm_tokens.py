@@ -1,4 +1,4 @@
-"""Approved market overview, with an explicitly offline demo data provider."""
+"""Approved market overview with live and explicitly offline providers."""
 from rich.text import Text
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -8,6 +8,7 @@ from maxpane_dashboard.analytics.swarm_tokens import project_snapshot
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.status_bar import StatusBar
+from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.swarm_tokens import (
     BestPlays, NewlyLaunched, TokenActivity, TokensHero, TokensTable,
 )
@@ -27,15 +28,17 @@ SWARM_TOKENS_FULL_LAYOUT_ROWS = 32
 
 
 class DemoStatusBar(StatusBar):
-    """The demo has a frozen snapshot, so never imply a fresh market read."""
+    """Short native hints; live clocks belong to the data's source headings."""
+    is_mock = True
     def _ordinary_status(self, *_args):
-        return self._key_hints or 'q quit · r refresh · esc back · tab · f filter · / find · c chain · o sort · enter open'
+        return self._key_hints or ('q quit · r refresh · esc back · tab · f filter · / find · c chain · o sort · enter open'
+                                  + ('' if self.is_mock else ' · 30s'))
 
 
 class SwarmTokensScreen(DashboardScreen):
-    GAME_NAME = 'SWARM TOKENS · MOCK DATA'
-    REFRESH_WORKER_NAME = 'swarm-tokens-demo-refresh'
-    # This provider is offline and independent of the application's live prefetch.
+    GAME_NAME = 'SWARM TOKENS'
+    REFRESH_WORKER_NAME = 'swarm-tokens-refresh'
+    # This provider schedules its own sources independently of SURF's prefetch.
     JOIN_STARTUP_PREFETCH = False
     PANELS = (
         (TokensHero, keys('metrics')),
@@ -84,6 +87,8 @@ class SwarmTokensScreen(DashboardScreen):
         self.sort = 'volume'
         self._standalone = standalone
         self._filter_open = False
+        self._is_mock = getattr(manager, 'is_mock', False)
+        self.GAME_NAME = 'SWARM TOKENS · MOCK DATA' if self._is_mock else 'SWARM TOKENS'
 
     def compose(self):
         with VerticalScroll(id='st-viewport'):
@@ -97,7 +102,9 @@ class SwarmTokensScreen(DashboardScreen):
                             yield BestPlays()
                             yield TokenActivity()
                     yield SwarmTokensFilterEditor()
-        yield DemoStatusBar()
+        bar = DemoStatusBar()
+        bar.is_mock = self._is_mock
+        yield bar
 
     async def _fetch_data(self):
         raw = await self._data_manager.fetch_and_compute()
@@ -130,10 +137,25 @@ class SwarmTokensScreen(DashboardScreen):
         chain={'all':'all chains','eth':'Ethereum','base':'Base','rh':'Robinhood'}[self.chain]
         selection=f' · {self.lp_state}' if self.lp_state!='all' else ''
         selection+=f' · search: {flatten(self.search_query)}' if self.search_query else ''
-        total=(self.snapshot.get('metrics') or {}).get('total',0)
-        count=f'{total} tokens' if total else 'No matching tokens'
+        total=(self.snapshot.get('metrics') or {}).get('total')
+        count='unavailable' if total is None else f'{total} tokens' if total else 'No matching tokens'
+        sources=self.snapshot.get('sources') or {}
+        cat=sources.get('catalogue') or {}
+        source_text=''
+        if sources:
+            source_text=f" · as of {hhmm(cat.get('as_of'))} · {cat.get('state','unavailable')}"
+            rows=self.snapshot.get('tokens') or []
+            quoted=sum(row.get('market_state')=='ok' and row.get('price_usd') is not None for row in rows)
+            source_text+=f" · quotes {quoted}/{len(rows)}"
+            if any(row.get('market_state')=='stale' for row in self.snapshot.get('tokens') or []):
+                source_text+=' · ~ stale quotes'
         self.query_one(TokensTable).query_one('.panel-title',Static).update(Text(
-            f'ALL TOKENS · {count}{suffix} · {chain}{selection} · sort: {self.sort}', style='bold'))
+            f'ALL TOKENS · {count}{suffix} · {chain}{selection} · sort: {self.sort}{source_text}', style='bold'))
+        if sources:
+            trades=sources.get('trades') or {}
+            state=trades.get('state','unavailable')
+            self.query_one(TokenActivity).query_one('.panel-title',Static).update(Text(
+                f"ACTIVITY · trades {state}",style='bold'))
 
     def _show_filter(self, editing):
         self._filter_open=editing
@@ -177,7 +199,8 @@ class SwarmTokensScreen(DashboardScreen):
     def on_tokens_table_selected(self,event):
         event.stop()
         if event.token:
-            self.app.push_screen(SwarmTokenDetail(event.token))
+            self.app.push_screen(SwarmTokenDetail(event.token, is_mock=self._is_mock,
+                                                 as_of=self.snapshot.get('as_of')))
 
     def action_search(self):
         if not self._filter_open:

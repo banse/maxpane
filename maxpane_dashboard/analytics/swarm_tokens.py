@@ -12,8 +12,8 @@ def select_tokens(tokens: list[dict], *, chain: str = 'all', query: str = '',
     rows = [row for row in tokens
             if (chain == 'all' or row['chain'] == chain)
             and (lp_state == 'all' or row['lp_state'] in allowed)
-            and (not needle or any(needle in str(row[key]).casefold()
-                                   for key in ('symbol', 'name', 'launch_id')))]
+            and (not needle or any(needle in str(row.get(key, '')).casefold()
+                                   for key in ('symbol', 'name', 'launch_id', 'token_address')))]
     if sort == 'symbol':
         rows.sort(key=lambda row: (row['symbol'].casefold(), row['id']))
     else:
@@ -26,12 +26,19 @@ def select_tokens(tokens: list[dict], *, chain: str = 'all', query: str = '',
 def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
                      lp_state: str = 'all', sort: str = 'volume') -> dict:
     """Apply one selection to every panel, preserving known zero versus unknown."""
+    extra = {'sources': deepcopy(snapshot['sources'])} if 'sources' in snapshot else {}
+    if snapshot['tokens'] is None:
+        return dict(tokens=None, metrics=None, newly_launched=None, gainers=None,
+                    losers=None, activity=None, as_of=snapshot['as_of'],
+                    is_mock=snapshot['is_mock'], **extra)
     tokens = select_tokens(snapshot['tokens'], chain=chain, query=query,
                            lp_state=lp_state, sort=sort)
     now = snapshot['as_of']
-    new = sorted((row for row in tokens if 0 <= now-row['launched_at'] < 86400),
+    new = sorted((row for row in tokens if row['launched_at'] is not None
+                  and 0 <= now-row['launched_at'] < 86400),
                  key=lambda row: (-row['launched_at'], row['id']))
-    volumes = [row['volume_24h'] for row in tokens if row['volume_24h'] is not None]
+    volumes = [row['volume_24h'] for row in tokens if row['volume_24h'] is not None
+               and row.get('market_state', 'ok') == 'ok']
     counts = {state: sum(row['lp_state'] == state for row in tokens)
               for state in ('two-sided', 'one-token', 'one-quote', 'unknown')}
     one_sided = counts['one-token'] + counts['one-quote']
@@ -44,16 +51,17 @@ def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
     }
     priced = [row for row in tokens
               if row['price_usd'] is not None and row['price_usd'] > 0
-              and row['change_24h'] is not None]
+              and row['change_24h'] is not None
+              and row.get('market_state', 'ok') == 'ok']
     gainers = sorted((row for row in priced if row['change_24h'] > 0),
                      key=lambda row: (-row['change_24h'], row['id']))
     losers = sorted((row for row in priced if row['change_24h'] < 0),
                     key=lambda row: (row['change_24h'], row['id']))
     ids = {row['id'] for row in tokens}
-    activity = sorted((row for row in snapshot['activity'] if row['token_id'] in ids),
+    activity = sorted((row for row in snapshot['activity'] or [] if row['token_id'] in ids),
                       key=lambda row: (-row['ts'], row['id']))
     return {
         'tokens': tokens, 'metrics': metrics, 'newly_launched': new,
         'gainers': gainers, 'losers': losers, 'activity': deepcopy(activity),
-        'as_of': now, 'is_mock': snapshot['is_mock'],
+        'as_of': now, 'is_mock': snapshot['is_mock'], **extra,
     }

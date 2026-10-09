@@ -1,19 +1,18 @@
 # SWARM TOKENS followups
 
-This delivery is the approved version-1 offline mock dashboard. Live API
-integration is a later phase; none of these values are live market data.
+Live integration now supplies production-chain catalogue identity, quotes,
+observed history, recent trades, source freshness and explorer links. The
+standalone mock demo remains available for offline design work.
 
-- Replace mock IDs with chain plus token contract identity, enumerate all
-  production-chain launches, and establish pagination/completeness per source.
-- Validate market-cap versus FDV, paired balances, LP position sidedness and
-  token price-history coverage with keyless sources. Preserve missing values
-  and source timestamps independently; never infer liquidity state from USD
-  totals alone.
-- Connect real contract/pool detail links through the shared explorer/copy
-  helpers once verified addresses are available.
-- Add live source freshness and refresh behavior after the data contract is
-  backed by real endpoints. The current demo intentionally reloads a fixed
-  snapshot and makes no market-data requests.
+Known limits and future work:
+
+- Provider indexing and history are partial; retain explicit unavailable states.
+  A future source may improve coverage, but must not seed fabricated candles.
+- New/24h and age use launch-record time. A separate verified deployment-time
+  source could refine that meaning without guessing from the first market trade.
+- New chain IDs require verified production/network/explorer mappings.
+- Detail sources fill progressively in bounded batches; no aggressive full-sweep
+  refresh or duplicated launch-evidence collector is introduced.
 
 ## Final review
 
@@ -39,3 +38,22 @@ ink and a blank row before data. The measured layout boundary is now 145×32.
 
 Compact-layout review approved with no findings. Verification passed: 31 focused
 tests, 123 fast guards, and all four row/column boundary mutations detected.
+
+## Live verification
+
+Actual keyless data rendered at 149×45 with the approved geometry and partial
+quote/trade coverage visible. Catalogue, version joins, source scheduling,
+market identity/cap semantics and history gaps have targeted mutation proofs.
+The live phase retains the existing filter-footer Minor item above.
+
+The live review found and resolved two provenance issues: catalogue revisions
+now clear old detail/pool/position facts and withhold mismatched cached rows;
+market caches and in-flight replies are bound to the expected launch pool, with
+immediate discovery when that identity changes. Scoped re-review marked both
+findings ADDRESSED. All four regression cases and all four associated mutation
+checks passed. The earlier market/catalogue/source mutation checks also passed.
+
+Focused integration checks passed across the data, projection, widget and screen
+files. The existing rack color tests require NO_COLOR to be unset (55/55 passed
+with colors enabled); fast guards passed 123 cases and registration 81 cases.
+No full-suite run or push was requested.

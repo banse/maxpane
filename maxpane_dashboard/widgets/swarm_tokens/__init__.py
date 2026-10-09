@@ -1,4 +1,4 @@
-"""Render-only widgets for the Swarm Tokens mock market overview."""
+"""Render-only widgets for the Swarm Tokens market overview."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase, HeroRow, PanelBase, RichLogFeed, TableLeaderboard
 from maxpane_dashboard.widgets.rowfit import clip, pad
 from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_compact
+from maxpane_dashboard.widgets.explorer import is_address
 
 __all__ = ["TokensHero", "TokensTable", "NewlyLaunched", "BestPlays", "TokenActivity"]
 
@@ -61,17 +62,23 @@ def _age(token, as_of):
 
 def _paired(token):
     amount = _quantity(token.get("paired_amount"))
-    return amount if amount == "--" else f"{amount} {flatten(token.get('paired_symbol'))}"
+    symbol = token.get('paired_symbol')
+    # The full address and its explorer/copy actions live in the detail popup.
+    return amount if amount == "--" else f"{amount} {'token' if is_address(symbol) else flatten(symbol)}"
 
 
 def _chart(token, width):
     series = token.get("sparkline")
     if not isinstance(series, list):
         return "--"
-    points = [point for value in series if (point := as_float(value)) is not None]
+    points = [as_float(value) for value in series]
     if len(points) > width:
         points = [points[round(i * (len(points) - 1) / (width-1))] for i in range(width)]
-    return "new" if len(points) < 2 else build_sparkline(points, width=width, pad=False)
+    known = [point for point in points if point is not None]
+    if len(known) < 2:
+        return 'new' if known else '--'
+    glyphs = iter(build_sparkline(known, width=len(known), pad=False))
+    return ''.join(next(glyphs) if point is not None else ' ' for point in points).rjust(width)
 
 
 class TokensHeroBox(HeroBoxBase):
@@ -137,10 +144,10 @@ class TokensTable(TableLeaderboard):
         change = item.get("change_24h")
         values = (fmt_int(item.get("launch_id")), item.get("symbol", "--"),
             flatten(item.get("chain", "--")).upper(), _age(item, self._as_of),
-            _usd(item.get("price_usd"), price=True), _change(change),
+            ('~' if item.get('market_state') == 'stale' else '') + _usd(item.get("price_usd"), price=True), _change(change),
             _usd(item.get("mcap_usd")), _usd(item.get("volume_24h")),
             f"{_quantity(item.get('buys_24h'))}/{_quantity(item.get('sells_24h'))}",
-            _paired(item), _chart(item,self.SPARK_WIDTH), item.get("verdict", "--"))
+            _paired(item), ('~' if item.get('history_state') == 'stale' else '') + _chart(item,self.SPARK_WIDTH), item.get("verdict", "--"))
         styles = {1: "bold white", 5: _change_color(change), 10: _change_color(change)}
         return tuple(Text(pad(value, width), style=styles[i]) if i == 10 else
                      _cell(value, width, styles.get(i, "white"), right=4 <= i <= 9)

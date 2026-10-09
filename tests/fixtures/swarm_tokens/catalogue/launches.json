@@ -1,0 +1,163 @@
+{
+  "launches": [
+    {
+      "id": "fe93a7c4-7ed9-4b53-ad04-d474970e18f9",
+      "launchNumber": 1202,
+      "kind": "custom_token",
+      "status": "live",
+      "chainId": 1,
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1202-swarmcore",
+      "sourceCommit": "55d204fd6f2af3def69ce5a24212ccaec04f51de",
+      "parkedReason": null,
+      "artifactCount": 3,
+      "artifacts": [
+        {
+          "role": "distributor",
+          "name": "MerkleDistributor",
+          "address": "0x2afe40f059e11952e537ac36fbeec0dc563be68a",
+          "txHash": "0x4361b20a0158dea5522ab981ca608a2143f24f876dca35bbf7c621c10fc3c92e",
+          "blockNumber": 26157068
+        },
+        {
+          "role": "hook",
+          "name": "PoolInitializationGuard",
+          "address": "0x784ff9a3ac5d88a30bfff6f7f2a270161fbe6000",
+          "txHash": "0x4361b20a0158dea5522ab981ca608a2143f24f876dca35bbf7c621c10fc3c92e",
+          "blockNumber": 26157068
+        },
+        {
+          "role": "token",
+          "name": "SwarmCoreToken",
+          "address": "0xd1decf65337d2be11c5a86594ee6cf17ce529bbc",
+          "txHash": "0x4361b20a0158dea5522ab981ca608a2143f24f876dca35bbf7c621c10fc3c92e",
+          "blockNumber": 26157068
+        }
+      ],
+      "createdAt": "2026-10-09T19:52:17.236Z",
+      "updatedAt": "2026-10-09T19:53:13.678Z"
+    },
+    {
+      "id": "3862ed00-691f-430a-81aa-5f39cf03d6e7",
+      "launchNumber": 1191,
+      "kind": "custom_token",
+      "status": "live",
+      "chainId": 1,
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1191-irreversible-monkey-dinasty",
+      "sourceCommit": "28c6dbab8edd4562477012485ff4cd053c31adad",
+      "parkedReason": null,
+      "artifactCount": 3,
+      "artifacts": [
+        {
+          "role": "distributor",
+          "name": "MerkleDistributor",
+          "address": "0xb143e54b6c8d8b12516077396a3d4d2cf441912f",
+          "txHash": "0xf784b25c632a20c239b64496bba3e720df0023db9fab10c17e62639588f7b864",
+          "blockNumber": 26156557
+        },
+        {
+          "role": "token",
+          "name": "MonkeyToken",
+          "address": "0xfea12e3f0530ca4cce63cfac0f6e02a67d766197",
+          "txHash": "0xf784b25c632a20c239b64496bba3e720df0023db9fab10c17e62639588f7b864",
+          "blockNumber": 26156557
+        },
+        {
+          "role": "hook",
+          "name": "PoolInitializationGuard",
+          "address": "0x784ff9a3ac5d88a30bfff6f7f2a270161fbe6000",
+          "txHash": "0xf784b25c632a20c239b64496bba3e720df0023db9fab10c17e62639588f7b864",
+          "blockNumber": 26156557
+        }
+      ],
+      "createdAt": "2026-10-09T18:09:58.579Z",
+      "updatedAt": "2026-10-09T18:10:38.807Z"
+    },
+    {
+      "id": "4588a79b-d65f-49ce-8cc1-f70eb54049c0",
+      "launchNumber": 1172,
+      "kind": "custom_token",
+      "status": "live",
+      "chainId": 4663,
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1172-swarm-pepephereum",
+      "sourceCommit": "0313d60c19486271209bbdbc277bdc34b6c43bab",
+      "parkedReason": null,
+      "artifactCount": 3,
+      "artifacts": [
+        {
+          "role": "distributor",
+          "name": "MerkleDistributor",
+          "address": "0xd57e4aa6f565d545445274a724096ac3eb953a96",
+          "txHash": "0xa8e436c170f2b27a10416661e1888a240140aa47b1197e657f961fe9d1a4e01d",
+          "blockNumber": 84263821
+        },
+        {
+          "role": "hook",
+          "name": "PoolInitializationGuard",
+          "address": "0x19bec7c2e1b2aadaf67b259744751a9960d66000",
+          "txHash": "0xa8e436c170f2b27a10416661e1888a240140aa47b1197e657f961fe9d1a4e01d",
+          "blockNumber": 84263821
+        },
+        {
+          "role": "token",
+          "name": "SPEPEToken",
+          "address": "0x1a2170fee814b824556f3ada2e90385a29aae8f4",
+          "txHash": "0xa8e436c170f2b27a10416661e1888a240140aa47b1197e657f961fe9d1a4e01d",
+          "blockNumber": 84263821
+        }
+      ],
+      "createdAt": "2026-10-09T15:30:39.494Z",
+      "updatedAt": "2026-10-09T15:30:59.784Z"
+    },
+    {
+      "id": "92c94ddc-8b00-4966-b749-3e92b00f18bd",
+      "launchNumber": 1043,
+      "kind": "evm_contracts",
+      "status": "parked",
+      "chainId": 1,
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1043-placefrens-workerart1-workerart2-placemo",
+      "sourceCommit": "cc7a6612a36a2681dfeeed38d7491f688936e03b",
+      "parkedReason": "simulation failed: The contract function \"launchContracts\" reverted with the following signature:\n0xc91acad3: execution reverted\n\nThe contract function \"launchContracts\" reverted with the following signature:\n0xc91acad3\n\nUnable to decode signature \"0xc91acad3\" as it was not found on the provided ABI.\nMake sure you are using the correct ABI and that the error exists on it.\nYou can look up the decoded signature here: https://4byte.sourcify.dev/\u2026\n \nContract Call:\n  address:   0xff03410d0fe5fa8f7f59f743de35e333d9857120\n  function:  launchContracts((uint64 launchNumber, bytes[] contractCreationCodes, bytes32[] contractNames, address[] expectedContracts, (bytes32 kind, uint64 launchNumber, uint64 recordedAt, bytes32 sourceCommit, bytes32 manifestHash, bytes32 attestationHash, bytes32 verifierKey, string sourceRepoUrl), uint256[] agentIds))\n  args:                     ({\"launchNumber\":\"1043\",\"contractCreationCodes\":[\"0x60c060405234619bf157619bd0611d20619bcb6123486040516100228482619b\u2026(40822 by",
+      "artifactCount": 0,
+      "artifacts": [],
+      "createdAt": "2026-10-08T15:39:37.395Z",
+      "updatedAt": "2026-10-08T15:42:12.094Z"
+    },
+    {
+      "id": "c2536a52-a060-4831-bd7c-60d700b9596a",
+      "launchNumber": 732,
+      "kind": "evm_project",
+      "status": "live",
+      "chainId": 11155111,
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-732-workflow-contract-stage-context",
+      "sourceCommit": "d93fdc27e586c09915b806f3a402f244f3fb3ae8",
+      "parkedReason": null,
+      "artifactCount": 3,
+      "artifacts": [
+        {
+          "role": "token",
+          "name": "LaunchToken",
+          "address": "0x0e5c9297c9f02af05e691fd5421a73158e27d748",
+          "txHash": "0x389fe77758fdee626b4c330e1a840cf41845e6e777a911957302d1f8715d6b7b",
+          "blockNumber": 11851548
+        },
+        {
+          "role": "distributor",
+          "name": "MerkleDistributor",
+          "address": "0xaf4a46d1776188e1adb5abe6aa87b5a86177f4aa",
+          "txHash": "0x389fe77758fdee626b4c330e1a840cf41845e6e777a911957302d1f8715d6b7b",
+          "blockNumber": 11851548
+        },
+        {
+          "role": "hook",
+          "name": "PoolInitializationGuard",
+          "address": "0xa0602cb30558d5dd17415b6268a4feea3a0ca000",
+          "txHash": "0x389fe77758fdee626b4c330e1a840cf41845e6e777a911957302d1f8715d6b7b",
+          "blockNumber": 11851548
+        }
+      ],
+      "createdAt": "2026-10-05T21:52:14.341Z",
+      "updatedAt": "2026-10-05T21:53:29.034Z"
+    }
+  ],
+  "count": 5
+}

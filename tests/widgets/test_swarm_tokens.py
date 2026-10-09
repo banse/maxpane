@@ -9,6 +9,17 @@ from maxpane_dashboard.widgets.swarm_tokens import (
 )
 
 
+async def test_live_history_keeps_gaps_and_stale_quotes_are_marked():
+    table = TokensTable()
+    async with Probe(table).run_test(size=(149, 45)) as pilot:
+        table.update_data(tokens=[token(sparkline=[1, None, 3, None, 5],
+                                        market_state='stale')], as_of=NOW)
+        await pilot.pause()
+        text = painted(pilot.app)
+        assert '▁ ▄ █' in text
+        assert '~$0.0042' in text
+
+
 NOW = 1_800_000_000
 
 

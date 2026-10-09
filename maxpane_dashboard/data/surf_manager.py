@@ -1251,6 +1251,12 @@ class SurfManager:
         if self._closing:
             return
         self._closing = True
+        tokens_manager = getattr(self, '_swarm_tokens_manager', None)
+        if tokens_manager is not None:
+            try:
+                await tokens_manager.close()
+            except Exception as exc:
+                logger.debug('closing the SWARM TOKENS adapter failed: %s', exc)
         tasks = {task for task in (self._full_task, self._hub_lookup_task, *self._hub_source_tasks.values()) if task is not None}
         for task in tasks:
             if not task.done():
@@ -5506,6 +5512,36 @@ class SurfManager:
 
     # -- the swarm control plane: independent tiers and source clocks --------
 
+    def swarm_tokens_manager(self):
+        """One retained live adapter, owned and closed by this manager."""
+        from maxpane_dashboard.data.swarm_tokens_manager import SwarmTokensManager
+        if getattr(self, '_swarm_tokens_manager', None) is None:
+            self._swarm_tokens_manager = SwarmTokensManager(self, clock=self._clock)
+        return self._swarm_tokens_manager
+
+    def swarm_tokens_source(self, catalogue=None):
+        """Borrow launch evidence without running unrelated SURF collectors.
+
+        A complete catalogue supplies older rows to the same bounded evidence
+        pipeline. The newest API head overrides its versions. Each K8 result
+        keeps its own read clock; the catalogue clock never certifies it.
+        """
+        if catalogue is not None:
+            self._swarm_tokens_catalogue = copy.deepcopy(catalogue)
+        now = self._clock()
+        if not self._closing and self.cache.is_due(TIER_SWARM_LAUNCHES, now):
+            self._spawn_swarm_launches({TIER_SWARM_LAUNCHES}, now)
+        slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
+        facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}})
+        return {
+            'rows': self._swarm_launch_keys()['swarm_launch_rows'],
+            'as_of': slot.get('launches_ts'),
+            'pool_ids': {key: point['pool_initialize']['pool_id']
+                         for key, point in facts['launches'].items()
+                         if point.get('pool_initialize') and point.get('detail_version') ==
+                         [point['row']['status'], point['row'].get('updatedAt')]},
+        }
+
     def _spawn_swarm_launches(self, tiers, now):
         if TIER_SWARM_LAUNCHES not in tiers:
             return None
@@ -5565,13 +5601,21 @@ class SurfManager:
                 logger.debug('SURF launch %s read failed; retaining last-good', route)
         slot = sw.coerce_launches_slot(slot, now=now)
         # Only a successful list advances rows; a failed list retains its version.
+        catalogue = {row['id']: row for row in getattr(self, '_swarm_tokens_catalogue', [])}
         for row in slot.get('launches') or []:
+            cached = catalogue.get(row['id'], {})
+            if (row.get('updatedAt') or '') >= (cached.get('updatedAt') or ''):
+                catalogue[row['id']] = row
+        for row in catalogue.values():
             if lc.is_production(row):
                 point = facts['launches'].setdefault(row['id'], {})
                 version = [row['status'], row.get('updatedAt')]
                 if point.get('detail_version') != version:
-                    point.pop('checks', None)
-                    point.pop('k3_retry_ts', None)
+                    # Every detail-derived fact belongs to its catalogue version,
+                    # including the position and pool. Keep only retry ordering.
+                    for key in tuple(point):
+                        if key not in ('row', 'detail_failed_ts', 'detail_attempt_ts'):
+                            point.pop(key)
                 point['row'] = row
             else:
                 facts['launches'].pop(row['id'], None)
@@ -5713,7 +5757,7 @@ class SurfManager:
         stamps = [slot.get(route + '_ts') for route in ('launches', 'sites', 'policies') if slot.get(route + '_ts') is not None]
         if stamps:
             self.cache.store_last_good(SLOT_SWARM_LAUNCHES, sw.coerce_launches_slot(slot, now=now), ts=max(stamps))
-        if facts['launches'] or facts['sites'] or self._swarm_launch_read_ok:
+        if facts['launches'] or facts['sites'] or self._swarm_launch_read_ok or facts != previous_facts:
             self.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, sw.coerce_launch_facts_slot(facts), ts=facts_ts)
         (self.cache.mark_failed if failed else self.cache.mark_fetched)(TIER_SWARM_LAUNCHES, now)
 
@@ -5853,6 +5897,8 @@ class SurfManager:
             if point is None:
                 continue
             row['production'] = True
+            if point.get('detail_version') != [point['row']['status'], point['row'].get('updatedAt')]:
+                continue
             row.update({key: point.get(key) for key in ('ticker', 'token_name', 'pair', 'pool_fee', 'requester', 'policy_version')})
             row['token_address'] = next((a['address'] for a in row['artifacts'] if a['role'] == 'token'), None)
             row['job_id'] = next(iter(point.get('job_ids', [])), None)

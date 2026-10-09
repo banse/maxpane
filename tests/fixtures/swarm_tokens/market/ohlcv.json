@@ -1,0 +1,32 @@
+{
+  "data": {
+    "id": "d4b0b110-b410-4c2b-953a-fbd81928ff00",
+    "type": "ohlcv_request_response",
+    "attributes": {
+      "ohlcv_list": [
+        [
+          1791576000,
+          5.21664105687859e-05,
+          5.33884834211493e-05,
+          4.78135655135788e-05,
+          4.78135655135788e-05,
+          3238.821179623303
+        ]
+      ]
+    }
+  },
+  "meta": {
+    "base": {
+      "name": "SwarmCity",
+      "symbol": "SC",
+      "coingecko_coin_id": null,
+      "address": "0x1ae93a4d9cc0b41c594d00387b6f832a88f729b7"
+    },
+    "quote": {
+      "name": "Vibe Coins",
+      "symbol": "VIBE",
+      "coingecko_coin_id": null,
+      "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+    }
+  }
+}

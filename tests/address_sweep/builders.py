@@ -687,13 +687,30 @@ def _surfboard_app() -> App:
 
 
 def _swarm_tokens_app() -> App:
-    return _CopyHarness(SwarmTokensScreen(_PayloadManager(demo_snapshot())))
+    return _CopyHarness(SwarmTokensScreen(_PayloadManager(_swarm_tokens_payload())))
+
+
+_TOKEN_CONTRACTS = ('0x'+'a1'*20, '0x'+'b2'*20, '0x'+'c3'*20)
+
+
+def _swarm_tokens_payload():
+    snapshot = demo_snapshot()
+    snapshot['is_mock'] = False
+    snapshot['tokens'] = snapshot['tokens'][:3]
+    for row, chain, chain_id, contract in zip(snapshot['tokens'], ('eth','base','rh'),
+                                            (1,8453,4663), _TOKEN_CONTRACTS):
+        row.update(chain=chain, chain_id=chain_id, token_address=contract)
+    return snapshot
 
 
 CASES: tuple[SweepCase, ...] = (
     SweepCase(
-        name="swarm_tokens_demo", screen_class=SwarmTokensScreen,
-        build=_swarm_tokens_app, payload=demo_snapshot, address_free=True,
+        name="swarm_tokens_live", screen_class=SwarmTokensScreen,
+        build=_swarm_tokens_app, payload=_swarm_tokens_payload,
+        views=(('enter',), ('down','enter'), ('down','down','enter')),
+        seeded=_TOKEN_CONTRACTS, explorer=ETHEREUM,
+        explorers=(ETHEREUM,BASE,ROBINHOOD), rows_pick_explorer=True,
+        explorer_for=dict(zip(_TOKEN_CONTRACTS,(ETHEREUM,BASE,ROBINHOOD))),
         pins=((SWARM_TOKENS_FULL_LAYOUT_COLUMNS, SWARM_TOKENS_FULL_LAYOUT_ROWS),),
     ),
     SweepCase(
