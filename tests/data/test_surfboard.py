@@ -207,3 +207,141 @@ def test_current_overview_with_unknown_inference_count_roundtrips():
     assert payload['overview']['inference_tokens'] is None
     source = hub.source_envelope(payload, 1000)
     assert hub.coerce_source(source, 'overview', now=1001) == source
+
+
+def test_event_details_cover_all_seven_reference_kinds_without_invented_history():
+    raw = capture('event_parity')
+    events = {e['kind']: e for e in hub.normalize_overview(raw)['events']}
+    assert set(events) == {'job', 'node', 'done', 'review', 'site', 'launch', 'agent'}
+    assert events['job']['state'] == 'posted'
+    assert events['job']['details'] == events['node']['details'] == {}
+    assert events['done']['details'] == {'steps': 1}
+    assert events['review']['details'] == {'scores': 3, 'accepted': 2}
+    assert events['launch']['details'] == {'token': 'Slabs', 'launch_number': 791, 'chain_id': 4663}
+    site = next(e for e in raw['events'] if e['kind'] == 'site')
+    assert events['site']['details'] == {'ens_name': site['ensName'], 'cid': site['cid']}
+    agent = events['agent']
+    assert agent['details'] == {
+        'seat_accepted': 662, 'seat_failed': 16,
+        'last_work': hub.timestamp('2026-10-08T21:27:07.886Z'),
+        'owner': raw['owners'][str(agent['token_id'])], 'owner_seats': len(raw['owners']),
+    }
+    payload = hub.normalize_overview(raw)
+    source = hub.source_envelope(payload, 1000)
+    assert hub.coerce_source(source, 'overview', now=1001) == source
+
+
+def test_captured_failure_details_preserve_reason_and_zero_steps():
+    raw = capture('event_parity')
+    raw['events'] = capture('event_failures')
+    events = hub.normalize_overview(raw)['events']
+    assert [e['kind'] for e in events] == ['node', 'done']
+    assert events[0]['state'] == 'failed'
+    assert events[0]['details'] == {'reason': 'launch.json is not a valid launch manifest: pool.initialPrice: Invalid input: expected string, received undefined'}
+    assert events[1]['details'] == {'steps': 0, 'failure': 'node build_contract_project: analysis_failed'}
+
+
+@pytest.mark.parametrize('state', ['running', 'assigned', 'executing'])
+def test_node_state_is_preserved_for_view_mapping(state):
+    raw = capture('event_parity')
+    raw['events'] = [dict(next(e for e in raw['events'] if e['kind'] == 'node'), state=state)]
+    assert hub.normalize_overview(raw)['events'][0]['state'] == state
+
+
+def test_metadata_changes_preserve_event_identity_but_update_source_version():
+    raw = capture('event_parity')
+    before = hub.normalize_overview(raw)
+    next(e for e in raw['events'] if e['kind'] == 'launch')['token'] = 'Updated label'
+    raw['seats']['961']['accepted'] += 1
+    after = hub.normalize_overview(raw)
+    assert [e['key'] for e in before['events']] == [e['key'] for e in after['events']]
+    assert hub.version(before) != hub.version(after)
+    for e in after['events']:
+        assert e['key'] == hub.version({k: v for k, v in e.items() if k not in ('key', 'details')})
+
+
+@pytest.mark.parametrize('reverse_input', [False, True])
+def test_equal_timestamp_events_retain_reversed_api_order(reverse_input):
+    raw = capture('event_parity')
+    done = next(e for e in raw['events'] if e['kind'] == 'done')
+    node = dict(next(e for e in raw['events'] if e['kind'] == 'node'), at=done['at'], state='accepted')
+    raw['events'] = [done, node]
+    if reverse_input:
+        raw['events'].reverse()
+    assert [e['kind'] for e in hub.normalize_overview(raw)['events']] == [e['kind'] for e in reversed(raw['events'])]
+
+
+def test_agent_history_is_sparse_and_owner_holdings_are_case_insensitive():
+    raw = capture('event_parity')
+    agent = next(e for e in raw['events'] if e['kind'] == 'agent')
+    raw['events'] = [agent]
+    raw['seats'] = {'961': {'accepted': 0, 'failed': True, 'last': 'bad'}}
+    owner = raw['owners']['961']
+    owners = [None] * 962
+    owners[961], owners[5], owners[6] = owner, '0x' + owner[2:].upper(), 'invalid'
+    raw['owners'] = owners
+    assert hub.normalize_overview(raw)['events'][0]['details'] == {'seat_accepted': 0, 'owner': owner, 'owner_seats': 2}
+    del raw['seats']; del raw['owners']
+    assert hub.normalize_overview(raw)['events'][0]['details'] == {}
+
+
+@pytest.mark.parametrize('field,value', [('token', 1), ('ensName', True), ('cid', []), ('failure', None), ('reason', {}), ('launchNumber', True), ('chainId', -1), ('steps', 1.2), ('scores', '3'), ('accepted', float('inf'))])
+def test_invalid_optional_event_details_are_omitted_at_live_boundary(field, value):
+    raw = capture('event_parity')
+    raw['events'] = [dict(kind='job', at=raw['events'][0]['at'], **{field: value})]
+    assert hub.normalize_overview(raw)['events'][0]['details'] == {}
+
+
+@pytest.mark.parametrize('details', [None, [], {'unknown': 'x'}, {'token': 1}, {'ens_name': True}, {'cid': None}, {'launch_number': True}, {'chain_id': -1}, {'steps': 1.1}, {'scores': '1'}, {'accepted': None}, {'seat_accepted': True}, {'seat_failed': -1}, {'owner_seats': False}, {'owner': 2}, {'last_work': '2026-10-09T00:00:00Z'}, {'last_work': 1e300}])
+def test_persisted_event_details_reject_bad_shapes_even_with_matching_source_hash(details):
+    payload = hub.normalize_overview(capture('event_parity'))
+    payload['events'][0]['details'] = details
+    assert hub.coerce_source(hub.source_envelope(payload, 1000), 'overview', now=1001) is None
+
+
+def test_persisted_event_detail_nonfinite_value_is_rejected():
+    source = hub.source_envelope(hub.normalize_overview(capture('event_parity')), 1000)
+    source['payload']['events'][0]['details'] = {'last_work': float('nan')}
+    assert hub.coerce_source(source, 'overview', now=1001) is None
+
+
+@pytest.mark.parametrize('owner', ['invalid', '0x1234', '0x' + 'z' * 40])
+def test_persisted_event_owner_must_be_valid_address(owner):
+    payload = hub.normalize_overview(capture('event_parity'))
+    payload['events'][0]['details'] = {'owner': owner}
+    assert hub.coerce_source(hub.source_envelope(payload, 1000), 'overview', now=1001) is None
+
+
+@pytest.mark.parametrize('without_tokens', [False, True])
+def test_legacy_event_details_migrate_without_losing_identity_or_clocks(without_tokens):
+    payload = hub.normalize_overview(capture('event_parity'))
+    for row in payload['events']:
+        row.pop('details', None)
+    if without_tokens:
+        payload['overview'].pop('inference_tokens')
+    source = hub.source_envelope(payload, 1000, provider_ts=990)
+    source = hub.source_envelope(None, 1001, prior=source)
+    upgraded = hub.coerce_source(source, 'overview', now=1002)
+    assert upgraded is not None
+    assert upgraded['payload']['events'] == [dict(row, details={}) for row in payload['events']]
+    assert upgraded['payload']['overview']['inference_tokens'] == (None if without_tokens else capture('event_parity')['counts']['inferenceTokens'])
+    assert {k: v for k, v in upgraded.items() if k not in ('payload', 'version')} == {k: v for k, v in source.items() if k not in ('payload', 'version')}
+    assert upgraded['version'] == hub.version(upgraded['payload'])
+    assert hub.coerce_source(upgraded, 'overview', now=1002) == upgraded
+
+
+@pytest.mark.parametrize('damage', ['envelope_hash', 'event_hash', 'invalid_present_details'])
+def test_legacy_event_migration_does_not_bless_corruption(damage):
+    payload = hub.normalize_overview(capture('event_parity'))
+    for row in payload['events']:
+        row.pop('details', None)
+    source = hub.source_envelope(payload, 1000)
+    if damage == 'envelope_hash':
+        payload['overview']['jobs'] += 1
+    elif damage == 'event_hash':
+        payload['events'][0]['objective'] = 'tampered'
+        source['version'] = hub.version(payload)
+    else:
+        payload['events'][0]['details'] = None
+        source['version'] = hub.version(payload)
+    assert hub.coerce_source(source, 'overview', now=1001) is None

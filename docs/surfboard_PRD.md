@@ -141,11 +141,13 @@ persisted payloads as external input. Each publishes `read_ts`, available provid
 availability and last-attempt failure separately; a successful response with unchanged data
 can refresh read freshness without pretending the underlying record changed.
 
-The hub should request `/swarm` no more often than every 15 seconds, with 30-second failure
-backoff; `/steps/hourly` every 60 seconds with 60-second failure backoff. Use the hub screen's
-normal lifecycle timer and manager tier eligibility, not a second persistent polling loop.
-Full SURF collection retains the configured poll interval; a 15-second hub refresh must not
-double fast-tier RPC scans. Add `SurfManager.fetch_hub_snapshot()` for lightweight source
+The inner terminal uses a fixed **30-second** hub lifecycle refresh. `/swarm` has a 30-second
+active success interval, freshness threshold and failure backoff; its inactive interval stays
+60 seconds. Changing the app poll setting does not shorten this terminal interval. Keep
+`/steps/hourly` at 60 seconds and records at 120 seconds. Use the hub screen's normal lifecycle
+timer and manager tier eligibility, not a second persistent polling loop. Full SURF collection
+retains its configured eligibility; a terminal refresh must not duplicate fast-tier RPC scans.
+Add `SurfManager.fetch_hub_snapshot()` for lightweight source
 refresh and cached assembly. One shared full-collection task and separate source-keyed tasks
 join duplicate work; a global lock must not make the monitor await a slow RPC/history scan.
 The hub offers due full work without awaiting it and captures whole last-good slots for its
@@ -177,12 +179,45 @@ The header uses one overview snapshot for online, working, jobs/oracles/accepted
 plus verifier/publisher/deployer status. Compact `V`, `P`, `D` service markers show `*` up,
 `!` down and `?` unknown. The `status` command names each service in full.
 The web-style text columns are a tree marker followed by time (7 cells), event type (8),
-actor (13), state (13), and the remaining description. Node work appears as `job` and the
-actor as `agent #<seat token>`; the device's agent ID is not substituted for the seat number.
-Adjacent rows for the same job omit a repeated objective, with grouping reset after a command
-reply. Native labels map known role/step/state combinations to queued, building, reviewing,
-built, reviewed, failed and deployed. Unrecognized states remain visible as neutral text.
-No invented workspace/progress narration or mixed announce/trade events in the IMD feed.
+actor (13), state (13), and the remaining description. Use the reference's `job` classification
+for work/delivery events, `oracle` for recognized oracle work, and `joined` for agent arrivals.
+The actor `agent #<seat token>` uses token ID, never device agent ID. Group adjacent events
+by the reference job identity; launches and arrivals start their own rows even if a job ID is
+served. Commands also reset grouping. Suppress repeated objective text only inside the same
+group; retain non-repeated step, delivery and outcome details.
+
+| Served kind | Actor | State and description |
+|---|---|---|
+| `node` | selected agent, otherwise swarm | Known role/step verbs for waiting, working and accepted work; failure retains its reason; cancellation retains its step with a neutral cancelled label |
+| `done` | swarm | Completed, cancelled or stopped from the served state; step count or failure detail; recognized oracle completion is signed |
+| `review` | verifier | Onchain; objective and available score/accepted counts, without inventing missing totals |
+| `site` | publisher | Hosted when ENS name is served, otherwise published; objective plus ENS name or CID |
+| `launch` | deployer | Deployed; served token or launch number plus known chain label |
+| `agent` | arriving agent | Awake/ready from served seat history or earlier node work; owner, owner seat count and last-work detail when available |
+
+These labels follow imd.fun's event semantics, not a blanket fallback from missing state to
+unknown. Unrecognized states remain literal neutral text; do not classify unknown states as
+success. The renderer owns vocabulary and formatting. Source normalization retains raw state,
+role and step instead of prematurely rewriting running work as building. No invented progress
+narration or mixed announce/trade events enters this feed.
+
+Each normalized event adds a sparse `details` dictionary containing recognized metadata only:
+strings `token`, `ens_name`, `cid`, `failure`, `reason`, `owner`; strict nonnegative integers
+`launch_number`, `chain_id`, `steps`, `scores`, `accepted`, `seat_accepted`, `seat_failed`,
+`owner_seats`; and normalized timestamp `last_work`. Owner is a validated address. Missing or
+invalid optional live values are omitted; cached unknown keys/invalid values fail validation.
+Metadata may be enriched from the same snapshot's owners/seats and earlier events. It does
+not change canonical recorded-seat outcomes or make `/swarm.seats` a ranking authority.
+
+The stable event key hashes original event fields, excluding `key` and `details`. Metadata
+enrichment updates a row in place instead of appending it after commands. Restore older cached
+events with `details={}` only after checking the original envelope and every original event
+hash. Then validate the upgraded shape and compute the new envelope hash including details.
+Preserve existing inference-token migration, source timestamps and bounded event/reply order.
+
+Joined-agent owner text uses the served full address with shared copy/link handling and a
+visible truncation marker when needed. No ENS lookup or avatar fetch is added. Relative last
+work uses the injected footer capture time; no widget wall clock or additional source request.
 
 Use the endpoint's bounded recent snapshot (currently 60 events), ordered oldest to newest
 for reading. Reconcile stable event IDs into a bounded mixed event/reply timeline. Existing

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from datetime import datetime
 from functools import cmp_to_key
 from typing import Any
@@ -22,6 +23,8 @@ from maxpane_dashboard.data.surf_models import (
 OUTCOME_COUNTERS = ("attempts", "accepted", "rejected", "failed", "pending")
 SOURCE_SLOTS = {"overview": "surfboard_overview", "records": "surfboard_records", "hourly": "surfboard_hourly"}
 RANK_BASIS = "seat-records-v1"
+_EVENT_TEXT = {"token": "token", "ens_name": "ensName", "cid": "cid", "failure": "failure", "reason": "reason"}
+_EVENT_COUNTS = {"launch_number": "launchNumber", "chain_id": "chainId", "steps": "steps", "scores": "scores", "accepted": "accepted"}
 
 
 def timestamp(value: object) -> float | None:
@@ -107,6 +110,31 @@ def seat_outcome(records: dict | None, token: int | None) -> dict | None:
     return out
 
 
+def _event_owners(raw: object) -> dict[int, str]:
+    items = enumerate(raw) if isinstance(raw, list) else raw.items() if isinstance(raw, dict) else ()
+    return {sw._served_token(token): address(owner) for token, owner in items
+            if sw._served_token(token) is not None and address(owner) is not None}
+
+
+def _event_details(item: dict, seats: object, owners: dict[int, str], holdings: Counter) -> dict:
+    details = {key: item[field] for key, field in _EVENT_TEXT.items() if isinstance(item.get(field), str)}
+    details.update({key: item[field] for key, field in _EVENT_COUNTS.items() if count(item.get(field)) is not None})
+    token = sw._served_token(item.get("tokenId"))
+    if item["kind"] == "agent" and token is not None:
+        seat = seats.get(str(token)) if isinstance(seats, dict) else None
+        if isinstance(seat, dict):
+            for field in ("accepted", "failed"):
+                if count(seat.get(field)) is not None:
+                    details["seat_" + field] = seat[field]
+            last = timestamp(seat.get("last"))
+            if last is not None:
+                details["last_work"] = last
+        owner = owners.get(token)
+        if owner is not None:
+            details.update(owner=owner, owner_seats=holdings[owner])
+    return details
+
+
 def normalize_overview(raw: object) -> dict | None:
     if not isinstance(raw, dict) or not isinstance(raw.get("health"), dict) or not isinstance(raw.get("counts"), dict) or not isinstance(raw.get("events"), list):
         return None
@@ -129,8 +157,10 @@ def normalize_overview(raw: object) -> dict | None:
                        for key in ("verifier", "publisher", "deployer")}
     owners = raw.get("owners")
     out["owners"] = [v for v in owners if isinstance(v, str) and address(v)] if isinstance(owners, list) else None
+    event_owners = _event_owners(owners)
+    holdings = Counter(event_owners.values())
     events = []
-    for item in raw["events"][:60]:
+    for item in reversed(raw["events"][:60]):
         if not isinstance(item, dict):
             return None
         ts = timestamp(item.get("at"))
@@ -139,17 +169,16 @@ def normalize_overview(raw: object) -> dict | None:
         state = _text(item.get("state"))
         role = _text(item.get("role"))
         kind = item["kind"]
-        if state in ("running", "assigned", "executing"):
-            state = "reviewing" if role in ("review", "judge", "audit") else "building"
-        elif state is None and kind == "job":
+        if state is None and kind == "job":
             state = "posted"
         row = {"timestamp": ts, "kind": kind, "job_id": parse_job_id(item.get("jobId")),
                "token_id": sw._served_token(item.get("tokenId")), "agent_id": _text(item.get("agentId")),
                "role": role, "step": _text(item.get("step")), "state": state,
                "objective": _text(item.get("objective"))}
         row["key"] = version(row)
+        row["details"] = _event_details(item, raw.get("seats"), event_owners, holdings)
         events.append(row)
-    return {"overview": out, "events": sorted({e["key"]: e for e in events}.values(), key=lambda e: (e["timestamp"], e["key"]))}
+    return {"overview": out, "events": sorted({e["key"]: e for e in events}.values(), key=lambda e: e["timestamp"])}
 
 
 def normalize_hourly(raw: object) -> dict | None:
@@ -190,16 +219,16 @@ def coerce_source(value: object, name: str, *, now: float) -> dict | None:
         return dict(value) if value["read_ts"] is None and value["version"] is None and value["state"] == "unavailable" else None
     if not isinstance(payload, dict) or value["state"] == "unavailable" or value["read_ts"] is None:
         return None
-    if name == "overview" and isinstance(payload.get("overview"), dict) and "inference_tokens" not in payload["overview"]:
-        # This optional field was added after overview envelopes shipped. Check
-        # the original hash before upgrading, so migration cannot bless edits.
+    if name == "overview":
+        # Check the original hash before adding optional legacy fields, so
+        # migration cannot bless edited snapshots or lose useful old events.
         try:
             if value["version"] != version(payload):
                 return None
         except (TypeError, ValueError, OverflowError):
             return None
-        upgraded = dict(payload, overview=dict(payload["overview"], inference_tokens=None))
-        if _coerce_overview(upgraded) is None:
+        upgraded = _coerce_overview(payload)
+        if upgraded is None:
             return None
         return dict(value, payload=upgraded, version=version(upgraded))
     if name == "records":
@@ -215,6 +244,8 @@ def coerce_source(value: object, name: str, *, now: float) -> dict | None:
 
 def _coerce_overview(payload: dict) -> dict | None:
     o, events = payload.get("overview"), payload.get("events")
+    if isinstance(o, dict) and "inference_tokens" not in o:
+        o = dict(o, inference_tokens=None)
     if not isinstance(o, dict) or set(o) != set(SURFBOARD_OVERVIEW_FIELDS) or not isinstance(events, list) or len(events) > 60:
         return None
     for key in ("agents_online", "working_now", "accepted_24h", "jobs_24h", "oracles_24h", "seats_enrolled", "jobs", "tasks_in_progress", "inference_tokens"):
@@ -229,8 +260,9 @@ def _coerce_overview(payload: dict) -> dict | None:
     if o["owners"] is not None and (not isinstance(o["owners"],list) or any(address(v) is None for v in o["owners"])):
         return None
     from maxpane_dashboard.data.surf_models import SURFBOARD_EVENT_FIELDS
+    cleaned_events = []
     for row in events:
-        if not isinstance(row, dict) or set(row) != set(SURFBOARD_EVENT_FIELDS) or timestamp(row["timestamp"]) is None:
+        if not isinstance(row, dict) or set(row) not in (set(SURFBOARD_EVENT_FIELDS), set(SURFBOARD_EVENT_FIELDS) - {"details"}) or timestamp(row["timestamp"]) is None:
             return None
         if row["job_id"] is not None and parse_job_id(row["job_id"]) is None:
             return None
@@ -238,9 +270,32 @@ def _coerce_overview(payload: dict) -> dict | None:
             return None
         if any(row[k] is not None and not isinstance(row[k], str) for k in ("key", "kind", "agent_id", "role", "step", "state", "objective")):
             return None
-        if row["key"] != version({k:v for k,v in row.items() if k != "key"}):
+        if row["key"] != version({k:v for k,v in row.items() if k not in ("key", "details")}):
             return None
-    return payload
+        details = row.get("details", {})
+        if not _valid_event_details(details):
+            return None
+        cleaned_events.append(dict(row, details=details))
+    return dict(payload, overview=o, events=cleaned_events)
+
+
+def _valid_event_details(details: object) -> bool:
+    if not isinstance(details, dict):
+        return False
+    for key, value in details.items():
+        if key == "owner":
+            valid = address(value) is not None
+        elif key in _EVENT_TEXT:
+            valid = isinstance(value, str)
+        elif key in (*_EVENT_COUNTS, "seat_accepted", "seat_failed", "owner_seats"):
+            valid = count(value) is not None
+        elif key == "last_work":
+            valid = number(value) is not None and timestamp(value) is not None
+        else:
+            return False
+        if not valid:
+            return False
+    return True
 
 
 def footer(market: dict | None, market_source: dict, overview_source: dict, *, now: float) -> dict:

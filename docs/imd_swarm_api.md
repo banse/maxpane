@@ -622,3 +622,19 @@ after 120 seconds and retains at most 400 jobs for 48 hours. A failed read stays
 completed/failed/cancelled are terminal, blocked is not. The row's `job_detail_state` leaves
 its original seat-reported `job_state` intact. `job_read_ts` supplies the JOB line's `as of HH:MM`
 for both successful and failed cached reads. Popup opening reads only a cached snapshot.
+
+## Hub event rendering — verified 2026-10-09
+
+The public imd.fun terminal bundle (`4591-0abca4b023bca423.js`, still referenced by the live
+site) derives display state from event kind, not only the optional `state` field. Launch
+events render `job / deployer / deployed`, with `token` or `launchNumber` and `chainId`.
+Site events render publisher hosted/published with `ensName`/`cid`; reviews show verifier
+onchain and score counts. Completion events remain job/oracle rows, with steps or failure
+detail. Agent arrivals use the same response's seat history and indexed owner array.
+
+The adapter preserves these optional facts in sparse `details`, separately from stable event
+identity. Old hashed cache rows gain empty details without inventing values or source times.
+The view applies the site's title, role/step, grouping and equal-time ordering rules. Unknown
+new states remain literal; absent metadata is unavailable. Active overview fetch eligibility,
+freshness and screen refresh now use 30 seconds; inactive overview stays at 60 seconds.
+The final live capture includes `PixelToken · Ethereum` under the deployer/deployed columns.

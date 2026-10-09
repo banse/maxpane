@@ -6987,7 +6987,7 @@ class SurfManager:
             entry = self.cache.get_last_good(slot)
             source = hub.coerce_source(getattr(entry, "payload", None), name, now=now)
             if source is not None and source["state"] == "ok":
-                ttl = {"overview": 15 if self._hub_active else 60, "records": 120, "hourly": 60}[name]
+                ttl = {"overview": 30 if self._hub_active else 60, "records": 120, "hourly": 60}[name]
                 if now - source["read_ts"] > ttl:
                     source = dict(source, state="stale")
             sources[name] = source or hub.source_envelope(None, now)
@@ -7001,7 +7001,7 @@ class SurfManager:
             return running
         entry = self.cache.get_last_good(hub.SOURCE_SLOTS[name])
         prior = hub.coerce_source(getattr(entry, "payload", None), name, now=now)
-        interval = {"overview": 15 if self._hub_active else 60, "records": 120, "hourly": 60}[name]
+        interval = {"overview": 30 if self._hub_active else 60, "records": 120, "hourly": 60}[name]
         if prior is not None:
             backoff = 30 if name == "overview" else interval
             elapsed = now - prior["attempt_ts"] if prior["attempt_ts"] is not None else float("inf")

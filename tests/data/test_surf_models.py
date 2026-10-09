@@ -874,6 +874,7 @@ def test_surfboard_contract_freezes_plain_data_and_independent_clocks():
     assert m.SURFBOARD_CARD_FIELDS == ('key','title','status','primary','secondary','detail','destination','meter_kind','numerator','denominator','points')
     assert m.SWARM_SEAT_OUTCOME_FIELDS == ('token_id','listed','attempts','accepted','rejected','failed','pending','accept_rate','rank','ranked_of')
     assert m.SURFBOARD_SOURCE_FIELDS == ('payload','read_ts','provider_ts','version','attempt_ts','state')
+    assert m.SURFBOARD_EVENT_FIELDS == ('key','timestamp','kind','job_id','token_id','agent_id','role','step','state','objective','details')
     assert {'swarm_seat_outcome','swarm_outcomes_source','swarm_contributors_as_of_hhmm'} <= set(m.SWARM_KEYS)
     assert all(m.SURF_KEYS.count(key)==1 for key in m.SURFBOARD_KEYS)
 

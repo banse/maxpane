@@ -58,7 +58,7 @@ class SurfboardScreen(DashboardScreen):
     def __init__(self, manager, poll_interval=30, name="surfboard", *, wallet=None, clock=monotonic, **kwargs):
         if isinstance(poll_interval, bool) or poll_interval <= 0:
             raise ValueError("poll_interval must be positive")
-        super().__init__(manager, min(15, poll_interval), name=name, **kwargs)
+        super().__init__(manager, 30, name=name, **kwargs)
         self._wallet = wallet
         self._command_generation = 0
         self._command_worker = None

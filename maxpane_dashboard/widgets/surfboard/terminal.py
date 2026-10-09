@@ -1,6 +1,7 @@
 """Bounded live IMD events and an input; no I/O or clock in this widget."""
 from collections import deque
 import math
+import re
 from textual.containers import Horizontal
 from textual.message import Message
 from textual.widgets import Input, RichLog, Static
@@ -11,11 +12,12 @@ from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.rowfit import clip, cell_len, WIDEN_HINT
 from maxpane_dashboard.widgets.surf._icons import mark_addresses, keep_units, unmark, link_in_order
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
+from maxpane_dashboard.widgets.explorer import for_chain_id
 
 COMMAND_LIMIT = 512
 REPLY_LIMIT = 200
 EVENT_LIMIT = 60
-#: IMD event/command prose does not carry chain identity; copy without guessing an explorer.
+#: Untagged prose stays copy-only; event metadata can supply its own chain explorer.
 EXPLORER = None
 INK = "#9fc99c"
 DIM = "#537b52"
@@ -31,6 +33,7 @@ STEP_WORDS = {
 }
 LIVE_STATES = frozenset(word for pair in STEP_WORDS.values() for word in pair) | {
     "working", "running", "executing", "leased", "accepted", "completed", "posted", "joined",
+    "asked", "answered", "signed", "passed", "onchain", "hosted", "awake",
 }
 
 
@@ -49,12 +52,31 @@ def _market_money(value):
     return f"${value:.2f}"
 
 
-def fit_prose(value, width, *, style="") -> tuple[Text, bool]:
+def _event_title(value):
+    """The website's short objective caption, kept literal for Rich rendering."""
+    text = flatten(value).strip()
+    text = re.sub(r"^Answer this question about chain \d+ over blocks \d+ to \d+, exactly as \S+ pins it:\s*", "", text, flags=re.I)
+    text = re.sub(r"\s*Write only artifacts/answer\.json.*$", "", text, flags=re.I)
+    text = re.split(r"[.?!](?:\s|$)", text, maxsplit=1)[0]
+    text = re.sub(r",? as of the pinned window", "", text, flags=re.I)
+    text = re.sub(r"^what (?:is|was|are|were) (?:the )?", "", text, flags=re.I).strip()
+    return text[:1].upper() + text[1:]
+
+
+def _joined(*parts):
+    return " · ".join(part for part in parts if part)
+
+
+def _job_of(row):
+    return row.get("job_id") if row and row.get("kind") not in ("launch", "agent") else None
+
+
+def fit_prose(value, width, *, style="", explorer=EXPLORER) -> tuple[Text, bool]:
     """Fit literal served text, preserving address/icon units and safe links."""
     marked, addresses, spans = mark_addresses(flatten(value), width=17)
     fitted = keep_units(marked, spans, clip(marked, max(0, width)))
     out = Text(unmark(fitted or ("…" if marked and width else "")), style=style)
-    link_in_order([out], addresses, explorer=EXPLORER)
+    link_in_order([out], addresses, explorer=explorer)
     return out, cell_len(marked) > width
 
 
@@ -135,8 +157,11 @@ class SurfboardTerminal(PanelBase):
             unique = {}
             for row in surfboard_events:
                 if isinstance(row, dict) and isinstance(row.get("key"), str):
+                    details = row.get("details")
+                    if row.get("kind") == "review" and isinstance(details, dict) and type(details.get("scores")) is int and details["scores"] == 0:
+                        continue
                     unique["event:" + row["key"]] = row
-            ordered = sorted(unique, key=lambda key: (_number(unique[key].get("timestamp")) or 0, key))[-EVENT_LIMIT:]
+            ordered = sorted(unique, key=lambda key: _number(unique[key].get("timestamp")) or 0)[-EVENT_LIMIT:]
             previous = self._events or {}
             self._events = {key: unique[key] for key in ordered}
             self._transcript.extend(key for key in ordered if key not in previous)
@@ -192,28 +217,104 @@ class SurfboardTerminal(PanelBase):
         result.truncate(width, overflow="ellipsis")
         return result, True
 
-    def _event_text(self, row, previous_row, width):
-        job = row.get("job_id")
-        grouped = job is not None and previous_row is not None and job == previous_row.get("job_id")
+    def _event_fields(self, row, grouped):
+        details = row.get("details")
+        details = details if isinstance(details, dict) else {}
+        raw_kind = row.get("kind")
         token = row.get("token_id")
         has_agent = isinstance(token, int) and not isinstance(token, bool) and token >= 0
         actor = f"agent #{token}" if has_agent else "swarm"
         state = flatten(row.get("state")) or flatten(row.get("step")) or "unknown"
         role = flatten(row.get("role")).casefold()
         step = flatten(row.get("step")).casefold()
+        objective = flatten(row.get("objective"))
+        if raw_kind == "job" and row.get("job_id"):
+            objective = max([objective] + [flatten(e.get("objective")) for e in (self._events or {}).values()
+                                           if e.get("job_id") == row["job_id"]], key=len)
+        oracle = step == "oracle_assess" or re.match(r"^answer this question about chain \d+ over blocks", objective, re.I)
+        kind = "joined" if raw_kind == "agent" else "oracle" if oracle else "job"
+        title = _event_title(objective)
+        description = "" if grouped else title
         words = STEP_WORDS.get(role) or STEP_WORDS.get(step)
-        if state == "accepted" and words:
-            state = words[0]
-        elif state in ("running", "executing", "leased", "working", "building", "reviewing") and words:
-            state = words[1]
-        elif state in ("ready", "waiting") and (row.get("kind") == "node" or words is not None):
-            state = "called" if has_agent else "queued"
-        kind = flatten(row.get("kind")) or "event"
-        kind = {"node": "job", "agent": "joined"}.get(kind, kind)
-        description = flatten(row.get("objective"))
-        if grouped and description == flatten(previous_row.get("objective")):
-            description = ""
-        failed = state == "failed"
+        if raw_kind == "job":
+            actor, state, description = "swarm", "asked" if oracle else "posted", title
+        elif raw_kind == "done":
+            actor, description = "swarm", title
+            if state == "completed":
+                state = "signed" if oracle else "completed"
+                steps = details.get("steps")
+                if not oracle and steps is not None:
+                    description = _joined(title, f"{steps} step" + ("" if steps == 1 else "s"))
+            elif state in ("failed", "blocked"):
+                state = "stopped"
+                description = _joined(title, flatten(details.get("failure")))
+        elif raw_kind == "node":
+            reason = flatten(details.get("reason"))
+            if state == "accepted":
+                state = "answered" if oracle else words[0] if words else "passed"
+            elif state == "failed":
+                if "cancel" in reason.casefold():
+                    actor, state = "swarm", "cancelled"
+                    description = _joined(description, step)
+                else:
+                    description = _joined(description, step, reason)
+            elif state in ("ready", "waiting"):
+                state, description = ("called" if has_agent else "queued"), _joined(title, step)
+            elif state in ("running", "assigned", "executing", "leased", "working", "building", "reviewing"):
+                state = "working" if oracle else words[1] if words else "working"
+        elif raw_kind == "review":
+            actor, state = "verifier", "onchain"
+            scores, accepted = details.get("scores"), details.get("accepted")
+            counts = "scores unavailable" if scores is None else f"{scores} score" + ("" if scores == 1 else "s")
+            if scores is not None and accepted is not None:
+                counts += ", all accepted" if accepted == scores else ", all rejected" if accepted == 0 else f", {accepted} accepted"
+            description = _joined(description, counts)
+        elif raw_kind == "site":
+            actor = "publisher"
+            ens, cid = flatten(details.get("ens_name")), flatten(details.get("cid"))
+            state = "hosted" if ens else "published"
+            description = _joined(description, ens or (cid[:16] + "…" if cid else "site unavailable"))
+        elif raw_kind == "launch":
+            actor, state = "deployer", "deployed"
+            launch = details.get("launch_number")
+            name = flatten(details.get("token")) or ("launch unavailable" if launch is None else f"launch {launch}")
+            chain = details.get("chain_id")
+            chain_name = {1: "Ethereum", 8453: "Base", 11155111: "Sepolia"}.get(chain)
+            description = _joined(name, chain_name or ("chain unavailable" if chain is None else f"chain {chain}"))
+        elif raw_kind == "agent":
+            accepted, failed = details.get("seat_accepted"), details.get("seat_failed")
+            last = _number(details.get("last_work"))
+            worked = last is not None or (accepted or 0) + (failed or 0) > 0
+            seen_work = False
+            for event in (self._events or {}).values():
+                if event.get("key") == row.get("key"):
+                    break
+                if event.get("kind") == "node" and event.get("token_id") == token:
+                    seen_work = True
+            history_known = accepted is not None and failed is not None
+            shift = ""
+            if worked or seen_work:
+                state = "awake"
+                now = _number(self._footer.get("as_of"))
+                if last is not None and now is not None and now >= last:
+                    age = now - last
+                    shift = f"last worked {fmt_age(age)} ago" if age < 3600 else f"back after {fmt_age(age)}"
+            elif history_known:
+                state, shift = "ready", "first shift"
+            owner = flatten(details.get("owner"))
+            seats = details.get("owner_seats")
+            if owner and seats is not None and seats > 1:
+                owner += f", {seats} seats"
+            description = _joined(owner, shift)
+        else:
+            kind = flatten(raw_kind) or "event"
+        return kind, actor, state, description
+
+    def _event_text(self, row, previous_row, width):
+        job = _job_of(row)
+        grouped = job is not None and job == _job_of(previous_row)
+        kind, actor, state, description = self._event_fields(row, grouped)
+        failed = state in ("failed", "stopped")
         state_ink = FAIL if failed else LIVE if state in LIVE_STATES else DIM if state in ("queued", "called", "waiting", "ready") else INK
         line = Text("└ " if grouped else "> ", style=FAIL if failed else DIM)
         clipped = False
@@ -223,7 +324,9 @@ class SurfboardTerminal(PanelBase):
             text = Text(clip(value, cells), style=style)
             text.pad_right(max(0, cells - text.cell_len))
             line.append_text(text)
-        detail, lost = fit_prose(description, max(0, width - line.cell_len), style=FAIL if failed else INK)
+        metadata = row.get("details")
+        explorer = for_chain_id(metadata.get("chain_id")) if isinstance(metadata, dict) else EXPLORER
+        detail, lost = fit_prose(description, max(0, width - line.cell_len), style=FAIL if failed else INK, explorer=explorer)
         line.append_text(detail)
         clipped |= lost or line.cell_len > width
         line.truncate(width, overflow="ellipsis")

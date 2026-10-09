@@ -1482,7 +1482,7 @@ SURFBOARD_OVERVIEW_FIELDS = ("agents_online", "working_now", "accepted_24h", "jo
                            "oracles_24h", "seats_enrolled", "jobs", "job_states",
                            "tasks_in_progress", "services", "owners", "inference_tokens")
 SURFBOARD_EVENT_FIELDS = ("key", "timestamp", "kind", "job_id", "token_id", "agent_id",
-                        "role", "step", "state", "objective")
+                        "role", "step", "state", "objective", "details")
 SURFBOARD_COMMAND_LIMIT = 512
 SURFBOARD_REPLY_LIMIT = 200
 SURFBOARD_SEARCH_LIMIT = 20

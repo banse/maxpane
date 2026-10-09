@@ -1,0 +1,115 @@
+{
+  "at": 1791507694112,
+  "health": {
+    "reachable": true,
+    "agentsOnline": 848,
+    "workingNow": 15,
+    "acceptedLastDay": 32399,
+    "jobsDoneLastDay": 884,
+    "oraclesDoneLastDay": 237,
+    "seatsEnrolled": 876,
+    "pendingVerification": 0,
+    "pendingDeployment": 0,
+    "pendingSites": 0,
+    "verifierUp": true,
+    "publisherUp": true,
+    "deployerUp": true
+  },
+  "counts": {
+    "jobs": 10781,
+    "jobStates": {
+      "blocked": 133,
+      "cancelled": 126,
+      "completed": 10509,
+      "executing": 13
+    },
+    "tasksInProgress": 15,
+    "launchesLive": 292,
+    "sites": 218,
+    "inferenceTokens": 189250903955
+  },
+  "events": [
+    {
+      "kind": "node",
+      "at": "2026-10-09T01:01:32.088Z",
+      "tokenId": 1781,
+      "step": "write_foundry_tests",
+      "role": "tests",
+      "state": "verifying",
+      "jobId": "10d36739-0a2c-4388-b19a-753136227683",
+      "objective": "When the hook acts: after every swap (afterSwap), plus once at pool initialization (beforeInitialize) to lock the hook to this launch's pool.",
+      "reason": null
+    },
+    {
+      "kind": "review",
+      "at": "2026-10-09T01:01:32.088Z",
+      "jobId": "eb5540a3-6ab0-4ffc-8b35-72b99f0a0d53",
+      "scores": 3,
+      "accepted": 2,
+      "objective": "Synthetic review branch: mixed accepted scores"
+    },
+    {
+      "kind": "done",
+      "at": "2026-10-09T01:01:12.440Z",
+      "jobId": "eb5540a3-6ab0-4ffc-8b35-72b99f0a0d53",
+      "objective": "Fee Trade 4%",
+      "state": "completed",
+      "steps": 1,
+      "failure": null
+    },
+    {
+      "kind": "agent",
+      "at": "2026-10-09T01:00:20.058Z",
+      "tokenId": 961,
+      "state": "joined"
+    },
+    {
+      "kind": "job",
+      "at": "2026-10-09T00:06:44.728Z",
+      "jobId": "6154a55e-4637-4f4b-8197-d29f9f552eff",
+      "objective": "[SIMD-LAUNCH]"
+    },
+    {
+      "kind": "site",
+      "at": "2026-10-06T12:30:49.051Z",
+      "jobId": "79f70a34-743d-40c3-96c1-7d25be21dba0",
+      "ensName": "pepe-collective-small-frogs-big.site.identitymd.eth",
+      "cid": "bafybeifwklblpzo32ape64kazqke2vn4zvm7bmkehwwse3fklu4ouqrbtu"
+    },
+    {
+      "kind": "launch",
+      "at": "2026-10-06T11:15:24.771Z",
+      "launchNumber": 791,
+      "chainId": 4663,
+      "token": "Slabs"
+    }
+  ],
+  "seats": {
+    "961": {
+      "accepted": 662,
+      "failed": 16,
+      "last": "2026-10-08T21:27:07.886Z"
+    }
+  },
+  "owners": {
+    "68": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "115": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "143": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "366": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "387": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "713": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "714": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "813": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "935": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "961": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "1383": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "1509": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "1510": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "1654": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "1690": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "1771": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "1784": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "1966": "0xaa90befc76b37f487eec5c1a593ea5b9826440be",
+    "1970": "0xaa90befc76b37f487eec5c1a593ea5b9826440be"
+  }
+}

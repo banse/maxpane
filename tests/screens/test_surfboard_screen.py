@@ -91,6 +91,20 @@ def painted(app):
     return "\n".join(strip.text for strip in app.screen._compositor.render_strips())
 
 
+@pytest.mark.parametrize("configured_interval", (15,30,60))
+async def test_hub_terminal_polling_is_thirty_seconds(configured_interval):
+    from maxpane_dashboard.screens.surfboard import SurfboardScreen
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import HubPayloadManager, hub_payload
+    payload=hub_payload()
+    app=HubHarness(payload)
+    app.hub=SurfboardScreen(HubPayloadManager(payload), poll_interval=configured_interval)
+    async with app.run_test(size=(149,45)) as pilot:
+        await pilot.pause()
+        assert app.hub._poll_interval==30
+        assert '30s poll' in painted(app)
+
+
 async def test_terminal_age_timer_uses_injected_elapsed_time_and_stops_when_hidden(monkeypatch):
     from types import SimpleNamespace
     from textual.screen import Screen

@@ -138,6 +138,38 @@ async def test_web_terminal_footer_and_prompt_fit_inside_the_three_row_span(widt
         assert "‹ widen" not in visible
 
 
+async def test_served_event_metadata_reaches_reference_rows_and_enriches_in_place():
+    from maxpane_dashboard.data import surfboard as projection
+    from tests.data.test_surfboard import capture
+    from textual.widgets import RichLog
+
+    raw=capture('event_parity')
+    normalized=projection.normalize_overview(raw)
+    payload=hub_payload()
+    payload['surfboard_events']=normalized['events']
+    payload['surfboard_footer']['as_of']=raw['at']/1000
+    app=HubHarness(payload)
+    async with app.run_test(size=(149,45)) as pilot:
+        await pilot.pause()
+        terminal=app.hub.query_one(SurfboardTerminal)
+        text='\n'.join(strip.text for strip in app.hub._compositor.render_strips())
+        for expected in ('job     deployer     deployed     Slabs · chain 4663',
+                         'job     publisher    hosted', 'job     verifier     onchain',
+                         'job     swarm        completed    Fee Trade 4% · 1 step',
+                         'joined  agent #961   awake'):
+            assert expected in text
+        assert '19 seats · back after' in text
+        terminal.add_reply('metadata enrichment should stay above this reply')
+        launch=next(row for row in raw['events'] if row['kind']=='launch')
+        launch['token']='Slabs updated'
+        terminal.update_data(surfboard_events=projection.normalize_overview(raw)['events'])
+        await pilot.pause()
+        rows=[line.text for line in terminal.query_one(RichLog).lines]
+        assert len(rows)==len(normalized['events'])+1
+        assert rows[-1]=='metadata enrichment should stay above this reply'
+        assert sum('Slabs updated' in row for row in rows)==1
+
+
 async def _render(payload, size):
     app = HubHarness(payload)
     async with app.run_test(size=size) as pilot:

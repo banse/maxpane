@@ -13,13 +13,25 @@
     "missing_records",
     "malformed_records",
     "hostile_overview",
-    "footer_counts"
+    "footer_counts",
+    "event_parity",
+    "event_failures"
   ],
   "additional_captures": {
     "footer_counts": {
       "source": "https://api.imd.fun/swarm",
       "provider_utc": "2026-10-09T00:11:25.092000+00:00",
       "notes": "Only at and counts extracted from the public /tmp/maxpane-imd-terminal/swarm-live.json capture. Other overview fields are omitted, not fabricated."
+    },
+    "event_parity": {
+      "source": "https://api.imd.fun/swarm",
+      "provider_utc": "2026-10-09T01:01:34.112000+00:00",
+      "notes": "Composite offline event fixture. agent/done/node extracted from /tmp/maxpane-event-parity/swarm.json; job extracted from /tmp/maxpane-imd-terminal/swarm-live.json. Objectives reduced to first line, at most 150 chars. Agent seat history retained; owners list reduced to this owner and encoded as token-keyed mapping, preserving its holdings count. Synthetic site and launch event envelopes derive only public fields from ../v9/sites.json (first site) and ../v9/launch_791.json; they are not captured /swarm events. Review is explicitly synthetic (scores 3, accepted 2) because no review event was present in available /swarm captures."
+    },
+    "event_failures": {
+      "source": "https://api.imd.fun/swarm",
+      "provider_utc": "2026-10-09T00:11:25.092000+00:00",
+      "notes": "Two captured done/node rows for job 5478dd56-b9ce-4e93-aad6-3f3f2f879443 from /tmp/maxpane-imd-terminal/swarm-live.json. failure/reason/steps and equal timestamps retained; objective reduced to first line at most 150 chars. API order retained."
     }
   }
 }

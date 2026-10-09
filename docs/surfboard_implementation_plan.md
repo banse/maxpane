@@ -374,3 +374,94 @@ Record extension-specific evidence before marking this extension complete.
   the four payload-class layout tests also pass. No layout pin changed.
 - Final whole-diff review: **Approved**, no findings, with 12 additional focused tests. No
   review fix wave was needed. No full suite was run, per the scoped Tier 2 workflow.
+
+## Event semantics and 30-second terminal — complete
+
+Base `6c078a77`; same dedicated branch. The owner compared the terminal with imd.fun and
+identified unknown launch/site states and incorrect event labels, actors and descriptions.
+Implement reference event semantics and a fixed 30-second inner-terminal refresh. This
+supersedes the earlier plan's 15-second active overview cadence; previous completion evidence
+does not certify this extension. Tier 2, estimated **200–400 production lines**, so no package
+reviews; one final review after live preview and scoped verification. No Superpowers.
+
+### Frozen event contract
+
+Append sparse `details` to `SURFBOARD_EVENT_FIELDS`. Its allowed string keys are token,
+ens_name, cid, failure, reason and owner; integer keys are launch_number, chain_id, steps,
+scores, accepted, seat_accepted, seat_failed and owner_seats; last_work is a timestamp.
+Reject bool as an integer and validate owner as an address. Invalid/missing optional live
+values are omitted; persisted unsupported keys or malformed values invalidate restoration.
+Preserve raw state/role/step; vocabulary belongs to the renderer. Details may use context
+from the same served overview without changing canonical outcome/ranking sources.
+
+Hash original event fields except key/details for stable row identity. Verify the original
+envelope hash and each original event hash before adding details={} to valid older events;
+then validate and hash the upgraded envelope. Compose this with the existing optional
+inference_tokens migration. Keep source clocks, unknown metadata and last-good outage behavior.
+Metadata-only updates must not move events past command replies or create duplicate rows.
+Older cached building/reviewing states may already have lost the raw served state: preserve
+their validated identity on migration; do not guess that state back from the display word.
+
+### Disjoint packages
+
+| Package | Owner and files | Dependency |
+|---|---|---|
+| E1 metadata normalization/cache migration | Data worker: `data/surf_models.py`, `data/surfboard.py`, their model/normalizer data tests and sanitized event fixtures/manifest | Frozen seam above |
+| E2 reference renderer and cadence | Controller: `widgets/surfboard/terminal.py`, `data/surf_manager.py`, `screens/surfboard.py`, matching widget/manager/screen/layout tests | Can start with E1 fixtures; integrate after E1 |
+| E3 live proof and closure | Controller: rendering, scoped verification, source/follow-up docs; planning agent owns this plan and PRD until handoff | E1 + E2 |
+
+E1 first writes failing typed-metadata, raw-state and cache-migration cases. Validate every
+detail family and legacy format with/without inference_tokens. Tampered envelope/event hashes,
+unknown cached keys and invalid counters must fail; valid pre-extension caches survive a
+failed subsequent fetch. Add paired rows proving metadata changes leave the event key stable.
+The data worker owns fixture provenance; no tests request network data.
+
+E2 first reproduces launch/site unknown text in composited output, then implements the official
+feedLine/job-classification rules captured from the imd.fun bundle. Cover job, node, done,
+review, site, launch, agent and oracle cases. Test actor, state and description together:
+publisher hosted/published with ENS/CID; deployer deployed with token/launch number and chain;
+verifier onchain with available score counts; node role/step verbs and cancellation reasons;
+joined agents with served owner/history rather than guessed success. Use the existing injected
+footer capture time for last-work age. Preserve full owner address/copy behavior, neutral
+unknown states and inert third-party text; do not add ENS/avatar reads.
+
+Keep reference columns 7/8/13/13 after the tree marker, native title/grouping conventions,
+bounded mixed transcript, input draft and anchor behavior. Launches/arrivals do not group merely
+because their payload includes a job ID; replies reset grouping. An enriched retained event
+updates in place. The existing footer and four-row/six-column rack remain structurally intact.
+
+Set the screen's inherited refresh interval to 30 seconds. Change active overview due and
+freshness thresholds to 30 seconds; inactive stays 60 and overview failure backoff stays 30.
+Do not alter full-collection, records or hourly source gates, or the display-only one-second
+footer age timer. Controlled-clock tests prove no overview request before 30, eligibility at
+30, inactive behavior, and unchanged other source intervals without sleeping or network I/O.
+
+### Verification and completion
+
+Run targeted data/widget cases during development, then whole touched files plus composing
+`tests/screens/test_surfboard_screen.py`, `test_surfboard_layout.py` and widget-contract tests.
+Show the keyless live 149×45 terminal before layout hardening/final review; verify reference
+rows against source facts, not invented demo values. Check the current 140×36 boundary and
+address sweep if address rendering changed. Add decoder/hash and active-cadence mutation proof.
+Run applicable fast guards/docpins; no full suite. Final review allows one fix wave and one
+scoped re-review for production fixes. Record new evidence and residuals before marking this
+extension complete; preserve the earlier completed extension's evidence as historical.
+
+### Event extension verification — 2026-10-09
+
+- The public bundle and API confirmed kind-specific actor/state/detail semantics. A live
+  149×45 capture shows `job / deployer / deployed / PixelToken · Ethereum` and `30s poll`.
+  Launch/site metadata, completion counts, verifier scores and arrival history now survive
+  normalization; unknown metadata stays explicit. The highlighted input and footer are retained.
+- The initial integrated run passed 574 data, widget, contract and composing cases; the address
+  link addition passed 127 terminal/screen/layout cases. Fast guards passed 122 cases, docpins
+  12, and the hub address sweep two. Tests use offline fixtures and isolated caches.
+- Nine targeted mutants were killed and byte-restored: metadata-dependent identity, legacy
+  event-hash bypass, malformed owner acceptance, early fetch, early staleness, early screen
+  refresh, missing blocked-failure semantics, missing cancellation step, and equal-time
+  arrival misclassification. Source interval tests use injected time without sleeps.
+- Final review found three Important event edge cases. The single fix wave maps captured
+  blocked completions to stopped with failure detail, retains cancelled-node steps and limits
+  arrival work history to preceding events. Four focused regressions passed; scoped re-review
+  marked all three **ADDRESSED / Approved**. No remaining review findings were filed.
+- The four-payload rack boundary checks keep the 140×36 pin unchanged. No full suite was run.

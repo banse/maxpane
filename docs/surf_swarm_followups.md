@@ -1308,3 +1308,23 @@ with no findings after 12 focused checks; no fix wave or new follow-up was neede
 passed 251 UI/contract/composing tests, 317 data/composing tests after cache migration, the
 earlier 587-case data run, 122 guards, 12 docpins and two address cases. Six targeted source,
 ordering and timer mutants were killed and byte-restored. The full suite was not run.
+
+## SURFBOARD event semantics and cadence — 2026-10-09
+
+The terminal now follows the site's launch, publisher, verifier, completion, oracle and
+arrival labels and descriptions. Sparse validated event metadata includes token/launch/chain,
+ENS/CID, steps/failure, score counts and owner/history facts. Metadata enrichment retains
+event identity and command-relative position; legacy cached events migrate without invented
+detail or refreshed timestamps. Address links use only the served, allowlisted chain.
+
+The screen and active overview use 30 seconds for refresh, eligibility and freshness; inactive
+overview, other source tiers and the display-only footer timer keep their own cadences.
+The live 149×45 preview showed a real PixelToken launch under deployer/deployed and a 30s poll
+indicator before hardening. The highlighted input, footer and card layout remain in place.
+
+Final review found three Important cases: blocked completions lost failure detail, cancelled
+nodes lost their step, and later equal-time work could mark an earlier arrival awake. The single
+fix wave addressed all three, with four focused regressions and inverse-mutation proof.
+Scoped re-review: **Approved**; no remaining review findings. The initial integrated run passed
+574 scoped cases, then 127 UI/composing cases after chain-link support; guards, docpins and hub
+address checks passed. Nine targeted mutants were killed and restored. No full suite was run.

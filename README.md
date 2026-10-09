@@ -38,7 +38,8 @@ Acceptance and rank in HUB, AGENT and BOARD share one validated `/seats/records`
 Its upstream cache can lag by ten minutes. Device effort and worker presence keep separate
 source clocks. Focus a card to see its meter definition and source time; missing data is
 labelled unavailable. The terminal is a recent-event window, not a complete job history.
-New events continue below command replies. Its aligned columns show time, event, agent,
+The terminal refreshes every 30 seconds; new events continue below command replies.
+Its aligned columns show time, event, agent,
 state and description; the footer shows IMD market cap (or labelled FDV), progress toward
 the site's $1B goal, inference tokens used and snapshot age. `V* P* D*` means the verifier,
 publisher and deployer are up; `!` means down and `?` unknown.

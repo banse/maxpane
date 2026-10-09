@@ -50,7 +50,7 @@ async def test_hub_sources_progress_while_full_startup_blocked(manager):
 async def test_source_failure_retains_clock_and_backoff(manager):
     m,clock=manager;m.set_hub_active(True)
     await m.fetch_hub_snapshot();await asyncio.gather(*m._hub_source_tasks.values())
-    clock.now+=16;m.swarm_client.fetch_overview.return_value=None
+    clock.now+=31;m.swarm_client.fetch_overview.return_value=None
     await m.fetch_hub_snapshot();await asyncio.gather(*m._hub_source_tasks.values())
     result=await m.fetch_hub_snapshot()
     assert result['surfboard_sources']['overview']['read_ts']==1000
@@ -66,10 +66,10 @@ async def ready(m):
 async def test_source_success_refreshes_read_clock_but_keeps_content_version(manager):
     m,clock=manager;await ready(m)
     before=(await m.fetch_hub_snapshot())['surfboard_sources']['overview']
-    clock.now+=15
+    clock.now+=30
     await m.fetch_hub_snapshot();await asyncio.gather(*m._hub_source_tasks.values())
     after=(await m.fetch_hub_snapshot())['surfboard_sources']['overview']
-    assert after['read_ts']==1015 and before['read_ts']==1000
+    assert after['read_ts']==1030 and before['read_ts']==1000
     assert after['version']==before['version']
     await m.close()
 
@@ -88,13 +88,27 @@ async def test_hourly_only_eligible_in_hub_and_overview_uses_background_cadence(
     m,clock=manager
     await m.fetch_hub_snapshot();await asyncio.gather(*m._hub_source_tasks.values())
     assert m.swarm_client.fetch_steps_hourly.await_count==0
-    clock.now+=15
+    clock.now+=30
     await m.fetch_hub_snapshot();await asyncio.gather(*m._hub_source_tasks.values())
     assert m.swarm_client.fetch_overview.await_count==1
     m.set_hub_active(True)
     await m.fetch_hub_snapshot();await asyncio.gather(*m._hub_source_tasks.values())
     assert m.swarm_client.fetch_steps_hourly.await_count==1
     assert m.swarm_client.fetch_overview.await_count==2
+    await m.close()
+
+async def test_visible_hub_waits_thirty_seconds_and_keeps_the_source_fresh(manager):
+    m,clock=manager;await ready(m)
+    for elapsed in (15,29):
+        clock.now=1000+elapsed
+        result=await m.fetch_hub_snapshot()
+        await asyncio.gather(*m._hub_source_tasks.values())
+        assert m.swarm_client.fetch_overview.await_count==1
+        assert result['surfboard_sources']['overview']['state']=='ok'
+    clock.now=1030
+    await m.fetch_hub_snapshot();await asyncio.gather(*m._hub_source_tasks.values())
+    assert m.swarm_client.fetch_overview.await_count==2
+    assert m._hub_sources()['overview']['read_ts']==1030
     await m.close()
 
 async def test_commands_canonical_outcome_and_read_only_navigation(manager):
