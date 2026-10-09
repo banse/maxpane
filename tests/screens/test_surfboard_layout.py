@@ -243,12 +243,12 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
         for card in payload["surfboard_cards"][:7]:
             if card["key"] == "agent":
                 text = r["card_text"]["agent"]
-                assert "SEAT NUMBER" in text, r
+                assert " SEAT " in text, r
                 expected = (("╭─╮" * 5, "╰─┤" * 5, "╶─╯" * 5) if kind == "stress" else
                             ("╷ ╷╶─╮╭─╮", "╰─┤┌─┘│ │", "  ╵╰─╴╰─╯") if kind in ("normal", "wide") else
                             (card["primary"],))
                 assert all(row in text for row in expected), r
-                assert ("99,999/99,999" if kind == "stress" else card["secondary"]) in text, r
+                assert card["secondary"].removesuffix(" slots") in text, r
                 continue
             if card["key"] == "swarm":
                 text = r["card_text"]["swarm"]

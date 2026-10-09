@@ -115,13 +115,14 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             color = GREEN
         if self.key == "agent":
             color = GREEN if status == "working" else AMBER
+            secondary = secondary.removesuffix(" slots")
         palette = self.app.get_css_variables()
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
         if self.key in ("swarm", "agent"):
-            label = " AGENTS " if self.key == "swarm" else " SEAT NUMBER "
+            label = " AGENTS " if self.key == "swarm" else " SEAT "
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
             # Use the same native 3x3 renderer as Textual's Digits widget.
@@ -139,7 +140,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if len(bottom) > inside:
             bottom = bottom.strip()
         if self.key == "agent" and len(bottom) > inside:
-            bottom = bottom.replace(" of ", "/").removesuffix(" slots")
+            bottom = bottom.replace(" of ", "/")
         clipped = len(label) > inside or len(bottom) > inside
         for raw, bold in rows:
             style = Style(

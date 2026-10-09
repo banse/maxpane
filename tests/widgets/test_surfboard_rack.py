@@ -126,7 +126,8 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
                       pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             top = next(i for i, strip in enumerate(strips) if "┌" in strip.text)
             left, right = strips[top].text.index("┌"), strips[top].text.index("┐")
-            header = next(segment for segment in strips[top] if "SEAT NUMBER" in segment.text)
+            assert " SEAT " in strips[top].text and "NUMBER" not in strips[top].text
+            header = next(segment for segment in strips[top] if "SEAT" in segment.text)
             assert header.style.bold
             ink = (Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
                    if status == "working" else pilot.app.ansi_theme.ansi_colors[3])
@@ -134,7 +135,8 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             for strip, row in zip(strips[top + 1:top + 4], ["╷ ╷╶─╮╭─╮", "╰─┤┌─┘│ │", "  ╵╰─╴╰─╯"]):
                 padding = (right - left - 1 - len(row)) // 2
                 assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
-            footer = next(segment for segment in strips[top + 4] if slots in segment.text)
+            assert "slots" not in strips[top + 4].text
+            footer = next(segment for segment in strips[top + 4] if slots.removesuffix(" slots") in segment.text)
             assert not footer.style.bold and footer.style.color.get_truecolor() == ink
             assert "PASS ▰▰▰▰▱▱▱▱" in "\n".join(strip.text for strip in strips)
 
