@@ -8,11 +8,12 @@ from rich.text import Text
 from textual.binding import Binding
 from textual.containers import Grid
 from textual.message import Message
+from textual.renderables.digits import Digits
 
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
-from maxpane_dashboard.widgets.rowfit import title_with_hint
+from maxpane_dashboard.widgets.rowfit import clip, title_with_hint
 from maxpane_dashboard.widgets.sparkline_common import build_sparkline
 from .terminal import SurfboardTerminal, fitted_prose, fit_prose
 
@@ -62,7 +63,7 @@ def meter_text(card: dict) -> Text:
 
 
 class SurfboardCard(HeroBoxBase, can_focus=True):
-    """A focusable faceplate with an inset two-line readout."""
+    """A focusable faceplate with an inset readout."""
     BINDINGS = [Binding("enter", "activate", "Open", show=False)]
 
     class Activated(Message):
@@ -108,15 +109,30 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         color = MUTED if muted else AMBER if status in ("unavailable", "stale", "experimental") else GREEN
         palette = self.app.get_css_variables()
         inset = Style.parse(color) + Style(bgcolor=palette["background"])
+        primary = flatten(self.data.get("primary")) or "unavailable"
+        secondary = flatten(self.data.get("secondary")) or "unavailable"
+        label = ""
+        native_digits = False
+        rows = [("", False), (primary, not muted), (secondary, False)]
+        if self.key == "swarm":
+            label = " AGENTS ONLINE "
+            count = primary.removesuffix(" online")
+            digits = count.replace(",", "")
+            # Use the same native 3x3 renderer as Textual's Digits widget.
+            native_digits = digits.isascii() and digits.isdecimal() and Digits.get_width(digits) <= inside
+            if native_digits:
+                rows = [(segment.text, False) for segment in Digits(digits).render(Style())
+                        if segment.text != "\n"]
+            else:
+                rows = [("", False), (count, False), ("", False)]
         body = Text()
-        body.append("┌" + "─" * inside + "┐\n", style=inset)
-        body.append("│" + " " * inside + "│\n", style=inset)
-        clipped = False
-        for field in ("primary", "secondary"):
-            raw = flatten(self.data.get(field)) or "unavailable"
-            line, lost = fit_prose(raw, inside, style=Style(
+        body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=inset)
+        clipped = len(label) > inside
+        for raw, bold in rows:
+            style = Style(
                 color=self.rich_style.color, bgcolor=palette["background"],
-                bold=field == "primary" and not muted, dim=muted))
+                bold=bold, dim=muted)
+            line, lost = (Text(raw, style=style), False) if native_digits else fit_prose(raw, inside, style=style)
             clipped |= lost
             line.align("center", inside)
             body.append("│", style=inset).append_text(line).append("│\n", style=inset)
