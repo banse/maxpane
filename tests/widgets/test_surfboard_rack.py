@@ -173,11 +173,11 @@ async def test_card_activity_colors_update_from_current_counts():
 
 @pytest.mark.parametrize('size',[(149,45),(140,36)])
 @pytest.mark.parametrize('key,primary,secondary,label,expected,green,footer_text',[
-    ('announce','5','0 new posts','NEW POSTS',['╭─╮','│ │','╰─╯'],False,'5 signals fired'),
-    ('announce','5','1 new post','NEW POSTS',['╶╮ ',' │ ','╶┴╴'],True,'5 signals fired'),
-    ('announce','0','12 new posts','NEW POSTS',['╶╮ ╶─╮',' │ ┌─┘','╶┴╴╰─╴'],True,'0 signals fired'),
-    ('announce','1','1 new post','NEW POSTS',['╶╮ ',' │ ','╶┴╴'],True,'1 signal fired'),
-    ('announce','5','unavailable','NEW POSTS',['','unavailable',''],False,'5 signals fired'),
+    ('announce','5','0 new posts','NEW POSTS',['╭─╮','│ │','╰─╯'],False,'5 signals'),
+    ('announce','5','1 new post','NEW POSTS',['╶╮ ',' │ ','╶┴╴'],True,'5 signals'),
+    ('announce','0','12 new posts','NEW POSTS',['╶╮ ╶─╮',' │ ┌─┘','╶┴╴╰─╴'],True,'0 signals'),
+    ('announce','1','1 new post','NEW POSTS',['╶╮ ',' │ ','╶┴╴'],True,'1 signal'),
+    ('announce','5','unavailable','NEW POSTS',['','unavailable',''],False,'5 signals'),
     ('announce','unavailable','unavailable','NEW POSTS',['','unavailable',''],False,'unavailable'),
     ('protocol','5,873','33,279 burned','IMD REWARDS',
      ['╭─╴ ╭─╮╶─┐╶─╮','╰─╮ ├─┤  │ ─┤','╶─╯,╰─╯  ╵╶─╯'],False,'33,279 burned'),
@@ -203,6 +203,7 @@ async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,labe
             padding=(right-left-1-len(row))//2
             assert strip.text[left+1:right]==(' '*padding+row).ljust(right-left-1)
         footer=next(segment for segment in strips[top+4] if footer_text in segment.text)
+        assert strips[top+4].text[left+1:right].strip('─ ')==footer_text
         assert not footer.style.bold and footer.style.color.get_truecolor()==ink
 
 

@@ -253,7 +253,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                     expected = ("╭─╴ ╭─╮╶─┐╶─╮", "╰─╮ ├─┤  │ ─┤", "╶─╯,╰─╯  ╵╶─╯")
                 assert all(row in text for row in expected), r
                 footer = (("unavailable" if kind == "unavailable" else
-                           "11 signals fired" if kind == "stress" else "4 signals fired")
+                           "11 signals" if kind == "stress" else "4 signals")
                           if card["key"] == "announce" else card["secondary"])
                 assert footer in text, r
                 continue

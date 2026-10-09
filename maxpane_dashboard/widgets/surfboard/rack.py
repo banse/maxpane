@@ -127,7 +127,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             digits = posts.replace(",", "")
             valid_posts = secondary.endswith((" new post", " new posts")) and digits.isascii() and digits.isdecimal()
             color = GREEN if valid_posts and digits.strip("0") else AMBER
-            secondary = (f"{primary} {'signal' if primary == '1' else 'signals'} fired"
+            secondary = (f"{primary} {'signal' if primary == '1' else 'signals'}"
                          if primary != "unavailable" else "unavailable")
             primary = posts if valid_posts else "unavailable"
         if status in ("offline", "error", "failed") and not muted:
