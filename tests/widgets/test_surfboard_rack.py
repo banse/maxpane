@@ -148,7 +148,10 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
     ('announce','0','12 new posts','SIGNALS',['╭─╮','│ │','╰─╯'],True),
     ('announce','unavailable','unavailable','SIGNALS',['','unavailable',''],False),
     ('protocol','5,873','33,279 burned','IMD REWARDS',
-     ['╭─╴╭─╮╶─┐╶─╮','╰─╮├─┤  │ ─┤','╶─╯╰─╯  ╵╶─╯'],False),
+     ['╭─╴ ╭─╮╶─┐╶─╮','╰─╮ ├─┤  │ ─┤','╶─╯,╰─╯  ╵╶─╯'],False),
+    ('protocol','99,999','12,345 burned','IMD REWARDS',
+     ['╭─╮╭─╮ ╭─╮╭─╮╭─╮','╰─┤╰─┤ ╰─┤╰─┤╰─┤','╶─╯╶─╯,╶─╯╶─╯╶─╯'],False),
+    ('protocol','123,456','12,345 burned','IMD REWARDS',['','123,456',''],False),
     ('protocol','1,234,567','12,345 burned','IMD REWARDS',['','1,234,567',''],False),
 ])
 async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,label,expected,green):

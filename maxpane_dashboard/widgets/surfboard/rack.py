@@ -130,10 +130,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                      "announce": " SIGNALS ", "protocol": " IMD REWARDS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
+            readout = count if self.key == "protocol" else digits
             # Use the same native 3x3 renderer as Textual's Digits widget.
-            native_digits = digits.isascii() and digits.isdecimal() and Digits.get_width(digits) <= inside
+            native_digits = digits.isascii() and digits.isdecimal() and Digits.get_width(readout) <= inside
             if native_digits:
-                rows = [(segment.text, False) for segment in Digits(digits).render(Style())
+                rows = [(segment.text, False) for segment in Digits(readout).render(Style())
                         if segment.text != "\n"]
             else:
                 rows = [("", False), (count, False), ("", False)]
