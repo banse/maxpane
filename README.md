@@ -54,6 +54,10 @@ Open **SWARM TOKENS** from dashboard 9:
 ```
 
 The 149×45 market overview lists deployed swarm tokens on Ethereum, Base and Robinhood.
+Heroes are followed by Activity, Newly Launched and Best Plays, then All Tokens.
+The liquidity hero sums paired IMD and ETH separately for the filtered rows;
+`≥` marks a known subtotal with incomplete coverage. Newly Launched shows the
+same paired balances as the main table. Missing balances stay `--`.
 Chain, search and liquidity filters update the table, heroes, newly launched list,
 gainers/losers and activity together. Press `f` for the native filter editor, `/` for
 search, `c` to cycle chains, `o` to sort, and Enter for token details and explorer links.

@@ -1,6 +1,7 @@
 """Pure, clock-injected projections for the SWARM TOKENS market overview."""
 
 from copy import deepcopy
+from math import isfinite
 
 
 def select_tokens(tokens: list[dict], *, chain: str = 'all', query: str = '',
@@ -42,12 +43,23 @@ def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
     counts = {state: sum(row['lp_state'] == state for row in tokens)
               for state in ('two-sided', 'one-token', 'one-quote', 'unknown')}
     one_sided = counts['one-token'] + counts['one-quote']
+    paired = [row for row in tokens if row.get('liquidity_state', 'ok') == 'ok'
+              and type(row.get('paired_amount')) in (int, float)
+              and isfinite(row['paired_amount']) and row['paired_amount'] >= 0
+              and isinstance(row.get('paired_symbol'), str) and row['paired_symbol'].strip()]
+    partial = len(paired) < len(tokens)
+    totals = {}
+    for asset in ('IMD', 'ETH'):
+        amounts = [row['paired_amount'] for row in paired if row['paired_symbol'].strip().upper() == asset]
+        totals[asset] = sum(amounts) if amounts or not partial else None
     metrics = {
         'total': len(tokens), 'new_24h': len(new), 'two_sided': counts['two-sided'],
         'one_sided': one_sided, 'unknown': counts['unknown'],
         'other': len(tokens)-counts['two-sided']-one_sided-counts['unknown'],
         'volume_24h': sum(volumes) if volumes else None,
         'volume_known': len(volumes), 'volume_total': len(tokens),
+        'liquidity_imd': totals['IMD'], 'liquidity_eth': totals['ETH'],
+        'liquidity_partial': partial,
     }
     priced = [row for row in tokens
               if row['price_usd'] is not None and row['price_usd'] > 0

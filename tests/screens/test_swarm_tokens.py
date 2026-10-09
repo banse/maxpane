@@ -44,9 +44,9 @@ async def test_measured_layout_boundary_matches_composited_content(axis,delta):
         assert not table.show_horizontal_scrollbar
         if not cut:
             for label in ('NEWLY LAUNCHED','BEST PLAYS','ACTIVITY','PAIRED LP',
-                          'PRICE 24H','LP STATE','VERDICT'):
+                          'PRICE 24H','VERDICT'):
                 assert label in text
-            assert app.screen.query_one('#st-bottom').region.bottom <= viewport.region.bottom
+            assert app.screen.query_one(TokensTable).region.bottom <= viewport.region.bottom
 
 
 async def test_small_terminal_advertises_scroll_and_retains_full_table():
@@ -57,7 +57,7 @@ async def test_small_terminal_advertises_scroll_and_retains_full_table():
         viewport=app.screen.query_one('#st-viewport',VerticalScroll)
         viewport.scroll_to(x=viewport.max_scroll_x,y=viewport.max_scroll_y,animate=False)
         await pilot.pause()
-        assert 'ACTIVITY' in painted(app)
+        assert 'VERDICT' in painted(app)
         assert app.screen.query_one(DataTable).row_count==24
 
 
@@ -66,10 +66,10 @@ async def test_mock_overview_renders_all_panels_and_every_token_without_network(
     async with app.run_test(size=(149,45)) as pilot:
         await pilot.pause()
         text = painted(app)
-        for word in ('MOCK DATA','SWARM TOKENS','NEWLY LAUNCHED','BEST PLAYS','ACTIVITY','PAIRED','LP STATE'):
+        for word in ('MOCK DATA','SWARM TOKENS','NEWLY LAUNCHED','BEST PLAYS','ACTIVITY','PAIRED LP'):
             assert word in text
         assert app.screen.query_one(TokensTable).query_one(DataTable).row_count == 24
-        assert 'one-token' in text and 'two-sided' in text
+        assert '* one-sided' in text and 'two-sided' in text
         assert any(char in text for char in '▂▃▄▅▆▇█')
 
 
@@ -80,7 +80,17 @@ async def test_native_layout_starts_with_heroes_and_standard_panels_have_no_fram
         hero=app.screen.query_one(TokensHero)
         assert hero.region.y <= 1
         assert not app.screen.query('#st-title, #st-selection')
-        assert app.screen.query_one(TokensTable).region.y==hero.region.bottom+1
+        activity = app.screen.query_one(TokenActivity)
+        newly = app.screen.query_one(NewlyLaunched)
+        plays = app.screen.query_one(BestPlays)
+        table = app.screen.query_one(TokensTable)
+        assert activity.region.y == newly.region.y == plays.region.y == hero.region.bottom+1
+        assert activity.region.right < newly.region.x and newly.region.right < plays.region.x
+        assert table.region.y == activity.region.bottom+1
+        lines=painted(app).splitlines()
+        heading=next(i for i,line in enumerate(lines) if 'NEWLY LAUNCHED' in line)
+        assert lines[heading].index('ACTIVITY') < lines[heading].index('NEWLY LAUNCHED') < lines[heading].index('BEST PLAYS')
+        assert next(i for i,line in enumerate(lines) if 'ALL TOKENS' in line) > heading
         assert 'Enter for mock details' not in painted(app)
         assert not any(w.region.width for w in app.screen.query('Input, Select'))
         for kind in (TokensTable,NewlyLaunched,BestPlays,TokenActivity):

@@ -123,3 +123,16 @@ status plus shared explorer/copy actions for verified contract addresses.
 The catalogue, quotes, history, trades and K8 positions have distinct TTLs and
 bounded work. Full source definitions and observed coverage are recorded in
 `swarm_tokens_game_mechanics.md`; ownership/acceptance is in `swarm_tokens_live_plan.md`.
+
+## Approved panel-order revision — 2026-10-10
+
+After the heroes, show Activity, Newly Launched and Best Plays left to right.
+All Tokens occupies the full-width row below. Keep the table's flexible height
+and the summary row's existing height, with the separator below that row.
+The LIQUIDITY hero shows total known paired IMD on its first line and ETH on
+its second line. Totals follow all current filters and do not combine currencies
+or convert USD. Incomplete known sums use `≥`; an unavailable asset sum uses
+`--`, while a successful zero remains zero. Newly Launched replaces LP STATE
+with PAIRED LP, reusing the main-table amount/unit formatter. Position states
+remain in filters, Best Plays markers and details. The measured pin stays
+145×32 after an actual live render at 149×45.

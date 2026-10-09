@@ -100,23 +100,33 @@ async def test_selection_survives_reordered_refresh_and_rows_are_not_capped():
         assert "No matching tokens" in painted(pilot.app)
 
 
-async def test_lp_states_have_distinct_color_and_markup_is_literal():
+async def test_newly_launched_reuses_paired_amounts_and_keeps_markup_literal():
     panel = NewlyLaunched()
     async with Probe(panel).run_test(size=(149, 45)) as pilot:
-        rows = [token(id=state, symbol="[/x]", lp_state=state)
-                for state in ("two-sided", "one-token", "one-quote", "withdrawn", "unknown")]
-        panel.update_data(newly_launched=rows, as_of=NOW)
+        panel.update_data(newly_launched=[token(symbol="[/x]"),
+            token(id="zero",symbol="ZERO",paired_amount=0,paired_symbol="ETH"),
+            token(id="missing",symbol="MISSING",paired_amount=None)], as_of=NOW)
         await pilot.pause()
-        strips = pilot.app.screen._compositor.render_strips()
-        colors = {}
-        for state in ("two-sided", "one-token", "one-quote", "withdrawn"):
-            colors[state] = next(segment.style.color for strip in strips for segment in strip if state in segment.text)
-        assert colors["two-sided"] != colors["one-token"] != colors["withdrawn"]
-        assert colors["one-token"] == colors["one-quote"]
-        unknown = next(segment for strip in strips for segment in strip if "unknown" in segment.text)
-        neutral = unknown.style.color.get_truecolor()
-        assert max(neutral) - min(neutral) < 16  # ANSI white may be slightly warm.
-        assert "[/x]" in painted(pilot.app)
+        output=painted(pilot.app)
+        assert "PAIRED LP" in output and "LP STATE" not in output
+        assert "788 IMD" in output and "0 ETH" in output and "[/x]" in output
+        assert "--" in next(line for line in output.splitlines() if "MISSING" in line)
+        assert "two-sided" not in output
+
+
+async def test_liquidity_hero_displays_imd_then_eth_and_marks_partial_totals():
+    hero=TokensHero()
+    async with Probe(hero).run_test(size=(149,45)) as pilot:
+        hero.update_data(metrics=dict(liquidity_imd=788,liquidity_eth=2.5,liquidity_partial=True))
+        await pilot.pause()
+        lines=painted(pilot.app).splitlines()
+        imd=next(i for i,line in enumerate(lines) if '≥ 788 IMD' in line)
+        assert '≥ 2.5 ETH' in lines[imd+1]
+        assert 'one-sided' not in '\n'.join(lines)
+        hero.update_data(metrics=dict(liquidity_imd=0,liquidity_eth=None,liquidity_partial=False))
+        await pilot.pause()
+        assert '0 IMD' in painted(pilot.app) and '-- ETH' in painted(pilot.app)
+        assert '≥' not in painted(pilot.app)
 
 
 async def test_hero_distinguishes_empty_from_unknown_coverage():
@@ -136,7 +146,7 @@ async def test_hero_distinguishes_empty_from_unknown_coverage():
 
 
 @pytest.mark.parametrize("widget,kwargs,expected", [
-    (NewlyLaunched, dict(newly_launched=[token(launched_at=NOW - 240)], as_of=NOW), ("4m", "SC", "ETH", "two-sided")),
+    (NewlyLaunched, dict(newly_launched=[token(launched_at=NOW - 240)], as_of=NOW), ("4m", "SC", "ETH", "788 IMD")),
     (BestPlays, dict(gainers=[token()], losers=[token(symbol="FROG", chain="rh", change_24h=-10.6)]), ("GAINERS", "LOSERS", "+24.8%", "-10.6%", "RH")),
     (TokenActivity, dict(activity=[dict(ts=NOW, kind="BUY", token_id="eth-sc", amount=42.6, asset="IMD")], tokens=[token()]), ("BUY", "ETH", "SC", "42.6 IMD")),
     (TokenActivity, dict(activity=[dict(ts=NOW, kind="LP READ", token_id="eth-sc", amount=None, asset="")], tokens=[token()]), ("LP READ ETH", "SC", "--")),

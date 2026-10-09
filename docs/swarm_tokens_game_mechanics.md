@@ -111,3 +111,12 @@ onchain deployment timestamp. Activity includes those launch records and the
 provider's recent trade window, not complete chain-wide activity. Older or
 unsupported indexed pools may have no history. Unknown future chain IDs require
 an explicit mapping before admission; no explorer or provider network is guessed.
+
+## Paired-liquidity totals — 2026-10-10
+
+The liquidity hero sums the current filtered tokens' paired balances by their
+displayed unit: IMD then ETH. Other units are excluded and no conversion occurs.
+Stale, missing or invalid balances do not enter the sum. A known incomplete sum
+is a lower bound (`≥`); an entirely unknown asset sum is `--`. A complete empty
+selection, or a complete selection with no balance in that unit, yields zero.
+Newly Launched now shows these per-token paired amounts instead of LP state.

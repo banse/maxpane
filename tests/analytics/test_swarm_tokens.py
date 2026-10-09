@@ -38,6 +38,31 @@ def test_stale_market_quotes_remain_visible_but_do_not_rank_as_live_plays():
     assert projected['metrics']['volume_known'] == 0
 
 
+def test_paired_liquidity_totals_keep_assets_filters_zero_and_unknown_separate():
+    raw = demo_snapshot()
+    base = raw['tokens'][0]
+    raw['tokens'] = [dict(base, id=str(i), chain=chain, paired_symbol=symbol,
+                          paired_amount=amount, liquidity_state=state)
+                     for i, (chain, symbol, amount, state) in enumerate([
+                         ('eth','IMD',788,'ok'), ('rh','IMD',12,'ok'),
+                         ('eth','ETH',2.5,'ok'), ('base','ETH',0,'ok'),
+                         ('eth','USDC',900,'ok'), ('eth','IMD',999,'stale'),
+                         ('eth',None,None,'unknown')])]
+    metrics = project_snapshot(raw)['metrics']
+    assert metrics['liquidity_imd'] == 800 and metrics['liquidity_eth'] == 2.5
+    assert metrics['liquidity_partial'] is True
+    filtered = project_snapshot(raw, chain='rh')['metrics']
+    assert filtered['liquidity_imd'] == 12 and filtered['liquidity_eth'] == 0
+    assert filtered['liquidity_partial'] is False
+    zero = project_snapshot(raw, chain='base')['metrics']
+    assert zero['liquidity_eth'] == 0 and zero['liquidity_partial'] is False
+    empty = project_snapshot(raw, query='no such token')['metrics']
+    assert empty['liquidity_imd'] == empty['liquidity_eth'] == 0
+    raw['tokens'] = [raw['tokens'][-1]]
+    unknown = project_snapshot(raw)['metrics']
+    assert unknown['liquidity_imd'] is unknown['liquidity_eth'] is None
+
+
 def test_projection_metrics_reconcile_with_rows_and_unknown_volume():
     snapshot = demo_snapshot()
     result = project_snapshot(snapshot)

@@ -93,12 +93,16 @@ class TokensHero(HeroRow):
     def update_data(self, metrics=None):
         data = metrics or {}
         total = fmt_int(data.get("total"))
+        liquidity = []
+        for asset in ('IMD', 'ETH'):
+            value = data.get('liquidity_' + asset.lower())
+            prefix = '≥ ' if data.get('liquidity_partial') and value is not None else ''
+            liquidity.append(f'{prefix}{_quantity(value)} {asset}')
         bodies = (
             (f"{total} deployed", f"{fmt_int(data.get('two_sided'))} two-sided"),
             (f"{fmt_int(data.get('new_24h'))} launches", "last 24 hours"),
             (_usd(data.get("volume_24h")), f"{fmt_int(data.get('volume_known'))}/{total} volumes known"),
-            (f"{fmt_int(data.get('one_sided'))} one-sided",
-             f"{fmt_int(data.get('unknown'))} unknown / {fmt_int(data.get('other'))} other"),
+            tuple(liquidity),
         )
         for (widget_id, label), (main, sub) in zip(self.BOXES, bodies):
             self.render_box(f"#{widget_id}", label,
@@ -200,7 +204,7 @@ class _CompactFeed(RichLogFeed):
 class NewlyLaunched(_CompactFeed):
     TITLE = "NEWLY LAUNCHED / 24H"
     LOG_ID = "st-new-log"
-    HEADER_LINE = Text("AGE  TOKEN      CHAIN LP STATE\n", style=_COLUMN_HEADER_STYLE)
+    HEADER_LINE = Text("AGE  TOKEN      CHAIN PAIRED LP\n", style=_COLUMN_HEADER_STYLE)
     EMPTY_LINE = Text("No launches in the last 24h", style="dim white")
 
     def update_data(self, newly_launched=None, as_of=None):
@@ -208,11 +212,10 @@ class NewlyLaunched(_CompactFeed):
         self.render_events(newly_launched)
 
     def format_row(self, event):
-        state = event.get("lp_state", "unknown")
         return (_cell(_age(event, self._as_of), 5, "dim white") +
                 _cell(event.get("symbol", "--"), 11, "bold white") +
                 _cell(flatten(event.get("chain", "--")).upper(), 6) +
-                _cell(state, 10, _lp_color(state)))
+                _cell(_paired(event), 18, right=True))
 
 
 class BestPlays(PanelBase):

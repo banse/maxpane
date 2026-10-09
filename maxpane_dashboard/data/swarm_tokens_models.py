@@ -24,6 +24,7 @@ LIVE_SNAPSHOT_KEYS = SNAPSHOT_KEYS + ('sources',)
 METRIC_KEYS = (
     'total', 'new_24h', 'two_sided', 'one_sided', 'unknown', 'other',
     'volume_24h', 'volume_known', 'volume_total',
+    'liquidity_imd', 'liquidity_eth', 'liquidity_partial',
 )
 PROJECTION_KEYS = (
     'tokens', 'metrics', 'newly_launched', 'gainers', 'losers',

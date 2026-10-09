@@ -57,3 +57,16 @@ Focused integration checks passed across the data, projection, widget and screen
 files. The existing rack color tests require NO_COLOR to be unset (55/55 passed
 with colors enabled); fast guards passed 123 cases and registration 81 cases.
 No full-suite run or push was requested.
+
+## Panel-order and liquidity revision — 2026-10-10
+
+Heroes now precede Activity / Newly Launched / Best Plays, with All Tokens below.
+Newly Launched shows paired balances; position states remain in filters, Best
+Plays markers and details. The liquidity hero sums current filtered IMD and ETH
+balances separately; `≥` marks incomplete known totals and `--` unknown totals.
+
+A real 149×45 render and the boundary sweep preserve the 145×32 pin. Verification:
+51 focused tests and 123 fast guards passed. Seven mutants were killed: both
+width/height pin directions, mixed currencies, stale balances and unknown-as-zero.
+Final scoped review approved with no findings; the additional hero-order
+mutation was killed and the CSS agreement check passed.

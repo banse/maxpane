@@ -15,9 +15,10 @@ from maxpane_dashboard.widgets.swarm_tokens import (
 from maxpane_dashboard.widgets.swarm_tokens.detail import SwarmTokenDetail
 from maxpane_dashboard.widgets.swarm_tokens.filter import SwarmTokensFilterEditor
 
-#: Mock overview measured in the real screen after its 149x45 preview.
+#: Overview remeasured after the live 149x45 panel-order revision (2026-10-10).
 #: Compact revision: at 145x32 all twelve table columns, four heroes and
-#: three lower panels fit without an outer scrollbar. At 144x32 or 145x31
+#: the Activity / Newly Launched / Best Plays row fit above All Tokens without
+#: an outer scrollbar. At 144x32 or 145x31
 #: the viewport scrolls and advertises the reduced space. At 149x45 the
 #: table shows twenty data rows, with the remaining rows behind its scrollbar.
 #: The table keeps all 24 rows and scrolls internally at every measured size.
@@ -66,10 +67,10 @@ class SwarmTokensScreen(DashboardScreen):
     SwarmTokensScreen #st-market { height: 1fr; }
     SwarmTokensScreen TokensTable { height: 1fr; min-height: 10; border: none; }
     SwarmTokensScreen DataTable { height: 1fr; background: $background; scrollbar-size: 1 1; }
-    SwarmTokensScreen #st-bottom { height: 11; margin-top: 1; }
+    SwarmTokensScreen #st-summary { height: 11; margin-bottom: 1; }
     SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays, SwarmTokensScreen TokenActivity {
         width: 1fr; height: 1fr; border: none; }
-    SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays { margin-right: 1; }
+    SwarmTokensScreen TokenActivity, SwarmTokensScreen NewlyLaunched { margin-right: 1; }
     SwarmTokensScreen .panel-title { height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted;
         text-wrap: nowrap; text-overflow: ellipsis; }
     SwarmTokensScreen RichLog { height: 1fr; padding: 0 1; background: $background;
@@ -96,11 +97,11 @@ class SwarmTokensScreen(DashboardScreen):
                 yield TokensHero()
                 with Vertical(id='st-content'):
                     with Vertical(id='st-market'):
-                        yield TokensTable()
-                        with Horizontal(id='st-bottom'):
+                        with Horizontal(id='st-summary'):
+                            yield TokenActivity()
                             yield NewlyLaunched()
                             yield BestPlays()
-                            yield TokenActivity()
+                        yield TokensTable()
                     yield SwarmTokensFilterEditor()
         bar = DemoStatusBar()
         bar.is_mock = self._is_mock
