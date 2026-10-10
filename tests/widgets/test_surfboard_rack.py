@@ -48,7 +48,7 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
                 for x in (left,right):
                     assert next(iter(row.crop(x,x+1))).style.color.get_truecolor()==expected
             footer=next(seg for seg in strips[top+4] if '7 new' in seg.text)
-            assert footer.style.color.get_truecolor()==status_ink
+            assert footer.style.color.get_truecolor()==expected
 
 
 @pytest.mark.parametrize('size', [(149,45),(140,36)])

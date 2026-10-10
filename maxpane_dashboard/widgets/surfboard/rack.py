@@ -227,10 +227,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         self.border_title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, self.size.width - 4)))
         footer = Text("└" + clip(bottom, inside).center(inside, "─") + "┘",
                       style=border_inset + Style(bold=False))
-        if border_inset != inset and bottom:
-            caption = clip(bottom, inside)
-            start = footer.plain.index(caption)
-            footer.stylize(inset + Style(bold=False, dim=False), start, start + len(caption))
         return body.append_text(footer)
 
     def on_focus(self):
