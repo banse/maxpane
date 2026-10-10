@@ -78,18 +78,18 @@ def _number(value):
 
 
 def meter_text(card: dict, width: int | None = None) -> Text:
-    """Fixed ratio scales and a fitted history; missing values never imply zero."""
+    """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     label = METER_LABELS.get(key, "AUX")
     out = Text().append(label + " ", style=MUTED)
+    cells = 8 if width is None else max(0, width - cell_len(label) - 1)
     if key in PLANNED or key in ("swarm-tokens", "portfolio") or str(key).startswith("bay-"):
-        return out.append("▱" * 8, style=MUTED)
+        return out.append("▱" * cells, style=MUTED)
     if card.get("meter_kind") == "sparkline":
         points = card.get("points")
         if isinstance(points, list) and len(points) == 8 and all(_number(point) for point in points):
             chart = build_sparkline(points, width=8, pad=False)
-            if key == "swarm" and width is not None:
-                cells = max(0, width - cell_len(label) - 1)
+            if width is not None:
                 # Stretch each existing time bucket; do not invent more samples.
                 chart = "".join(chart[column * len(chart) // cells] for column in range(cells))
             return out.append(chart, style=GREEN)
@@ -97,8 +97,8 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     numerator, denominator = card.get("numerator"), card.get("denominator")
     if not _number(numerator) or not _number(denominator) or denominator == 0 or numerator > denominator:
         return out.append("—", style=AMBER)
-    full = int(numerator * 8 / denominator)
-    return out.append("▰" * full, style=AMBER if key == "protocol" else GREEN).append("▱" * (8 - full), style=MUTED)
+    full = int(numerator * cells / denominator)
+    return out.append("▰" * full, style=AMBER if key == "protocol" else GREEN).append("▱" * (cells - full), style=MUTED)
 
 
 def signal_meter_text(card: dict, width: int) -> Text:
@@ -282,9 +282,7 @@ class SurfboardRack(Grid):
         grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 137; }
     SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
         border: round $panel; background: $surface; color: $text; content-align: center middle;
-        border-title-color: $text-muted; border-subtitle-color: $text-muted; }
-    SurfboardRack > #surfboard-card-announce,
-    SurfboardRack > #surfboard-card-swarm { border-subtitle-align: left; }
+        border-title-color: $text-muted; border-subtitle-color: $text-muted; border-subtitle-align: left; }
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
     SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }

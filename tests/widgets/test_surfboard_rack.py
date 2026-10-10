@@ -250,7 +250,8 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             if status == "offline":
                 assert " of " not in strips[top + 4].text
             assert not footer.style.bold and footer.style.color.get_truecolor() == ink
-            assert "PASS ▰▰▰▰▱▱▱▱" in "\n".join(strip.text for strip in strips)
+            bar = "▰▰▰▰▰▰▱▱▱▱▱▱▱" if size[0] == 149 else "▰▰▰▰▰▰▱▱▱▱▱▱"
+            assert strips[-1].text == f"╰─ PASS {bar} ─╯"
 
 
 async def test_card_activity_colors_update_from_current_counts():
@@ -383,8 +384,8 @@ async def test_live_tokens_card_routes_while_planned_cards_explain_without_desti
 
 
 @pytest.mark.parametrize("numerator,denominator,expected", [
-    (0, 8, "PASS ▱▱▱▱▱▱▱▱"), (4, 8, "PASS ▰▰▰▰▱▱▱▱"),
-    (8, 8, "PASS ▰▰▰▰▰▰▰▰"), (0, 0, "PASS —"),
+    (0, 8, "PASS ▱▱▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "PASS ▰▰▰▰▰▰▱▱▱▱▱▱▱"),
+    (8, 8, "PASS ▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "PASS —"),
     (None, 8, "PASS —"), (True, 8, "PASS —"), (9, 8, "PASS —"),
     (-1, 8, "PASS —"), (float("inf"), 8, "PASS —"),
 ])
@@ -435,6 +436,49 @@ async def test_swarm_outer_footer_stretches_history_on_resize_and_keeps_unknown_
         footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
         assert footer.text.startswith("╰─ 24H — ")
         assert not any(char in footer.text for char in "▁▂▃▄▅▆▇█")
+
+
+async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import hub_payload
+
+    labels = {"swarm-tokens": "TOKENS", "pool4": "STAKE", "protocol": "BURN", "board": "PASS",
+              "launchpad": "TRADE", "agent": "PASS", "portfolio": "ASSETS", "earnings": "EARN",
+              "bay-11": "AUX", "bay-12": "AUX"}
+    placeholders = {"swarm-tokens", "portfolio", "earnings", "bay-11", "bay-12"}
+    payload = hub_payload()
+    for data in payload["surfboard_cards"]:
+        if data["key"] in labels:
+            data.update(numerator=1, denominator=2)
+    app = HubHarness(payload)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        for width in (149, 180, 140, 149):
+            await pilot.resize_terminal(width, 45)
+            await pilot.pause()
+            strips = app.hub._compositor.render_strips()
+            for key, label in labels.items():
+                card = app.hub.query_one(f"#surfboard-card-{key}", SurfboardCard)
+                footer = strips[card.region.bottom - 1].crop(card.region.x, card.region.right)
+                prefix, suffix = ("┗╍ ", " ╍┛") if key.startswith("bay-") else ("╰─ ", " ─╯")
+                assert footer.text.startswith(prefix + label + " ")
+                assert footer.text.endswith(suffix)
+                bar = footer.text[len(prefix + label + " "):-len(suffix)]
+                assert bar and set(bar) <= {"▰", "▱"}
+                assert bar.count("▰") == (0 if key in placeholders else len(bar) // 2)
+                for segment in footer:
+                    if "▰" in segment.text:
+                        assert segment.style.color.get_truecolor() == app.ansi_theme.ansi_colors[3 if key == "protocol" else 2]
+        for key in labels.keys() - placeholders:
+            card = app.hub.query_one(f"#surfboard-card-{key}", SurfboardCard)
+            card.set_data(dict(card.data, numerator=None))
+        await pilot.pause()
+        strips = app.hub._compositor.render_strips()
+        for key in labels.keys() - placeholders:
+            card = app.hub.query_one(f"#surfboard-card-{key}", SurfboardCard)
+            footer = strips[card.region.bottom - 1].crop(card.region.x, card.region.right).text
+            assert footer.startswith(f"╰─ {labels[key]} — ")
+            assert "▰" not in footer and "▱" not in footer
 
 
 @pytest.mark.parametrize('size', [(149, 45), (140, 36)])
