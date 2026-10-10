@@ -1,0 +1,23 @@
+{
+  "captured_at": "2026-10-10T13:25:52.940393+00:00",
+  "wallet": "0x65fcec1f5bfa9c8d8b93bc1dba740b5977019696",
+  "launch_uuid": "c792b3eb-7f6d-495d-89f2-0bdf03c67edd",
+  "chain_id": 1,
+  "sources": {
+    "earned.json": "https://explorer.imd.fun/api/earned?wallet=0x65fcec1f5bfa9c8d8b93bc1dba740b5977019696",
+    "claim.json": "https://explorer.imd.fun/api/claim?launch=c792b3eb-7f6d-495d-89f2-0bdf03c67edd&wallet=0x65fcec1f5bfa9c8d8b93bc1dba740b5977019696",
+    "agents.json": "https://api.imd.fun/pair/wallet/0x65fcec1f5bfa9c8d8b93bc1dba740b5977019696",
+    "launch.json": "https://identitymdcontrol-plane-production.up.railway.app/launches/c792b3eb-7f6d-495d-89f2-0bdf03c67edd?claims=1",
+    "MerkleDistributor.sol": "https://eth.blockscout.com/api/v2/smart-contracts/0xff03410d0fe5fa8f7f59f743de35e333d9857120",
+    "rpc.json": "https://ethereum-rpc.publicnode.com",
+    "no_allocation.json": "https://explorer.imd.fun/api/claim?launch=c792b3eb-7f6d-495d-89f2-0bdf03c67edd&wallet=0x1111111111111111111111111111111111111111"
+  },
+  "notes": [
+    "Launch fixture retains only identity/artifacts/root from public payload; no invented fields.",
+    "MerkleDistributor source extracted verbatim from verified ProjectFactory additional_sources src/MerkleDistributor.sol. ABI is its view-only subset.",
+    "RPC capture uses one fixed block; block fixture retains number/hash/timestamp only.",
+    "Other edge payloads in tests are explicit synthetic mutations of these captures.",
+    "Distributor claims are all-or-nothing per round and account; partial leaf claims are unsupported.",
+    "Earned route has no pagination fields or documented cursor; unexpected cursor/completeness metadata is refused rather than guessed."
+  ]
+}

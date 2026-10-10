@@ -1,9 +1,17 @@
 # PORTFOLIO — live integration plan
 
-Status: **design approved** after the implemented Textual preview, including
-the owner's replacement of LAUNCH LIQUIDITY with **P/L**. Live implementation
-has **not** been executed. This document completes the requested planning
-handoff; it is not evidence that any live Portfolio source already works.
+Status: **implemented and verified**. The owner
+approved the Textual preview, including **P/L**, then authorized the build.
+Packages 0/A/B/C/D are implemented and package reviews are approved. Package E
+is integrated with the hub; actual live rendering preceded final hardening.
+Final review is approved after fixing ISO unlock timestamp normalization and
+proving the captured-claim detail regression with a killed mutation.
+
+The plan below records the approved work breakdown. Live sources are now
+established in `portfolio_game_mechanics.md`; remaining limits are tracked in
+`portfolio_followups.md`. No verified keyless cost-basis acquisition was found,
+so live P/L deliberately stays unavailable. Token decimals are reread with each
+balance batch instead of separately cached, avoiding stale proxy metadata.
 
 ## Approved outcome and scope
 

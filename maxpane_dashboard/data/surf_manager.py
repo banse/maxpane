@@ -1251,6 +1251,12 @@ class SurfManager:
         if self._closing:
             return
         self._closing = True
+        portfolio_manager = getattr(self, '_portfolio_manager', None)
+        if portfolio_manager is not None:
+            try:
+                await portfolio_manager.close()
+            except Exception as exc:
+                logger.debug('closing the PORTFOLIO adapter failed: %s', exc)
         tokens_manager = getattr(self, '_swarm_tokens_manager', None)
         if tokens_manager is not None:
             try:
@@ -5518,6 +5524,13 @@ class SurfManager:
         if getattr(self, '_swarm_tokens_manager', None) is None:
             self._swarm_tokens_manager = SwarmTokensManager(self, clock=self._clock)
         return self._swarm_tokens_manager
+
+    def portfolio_manager(self, wallet=None):
+        """Retain the explicit session wallet and borrow the single market provider."""
+        from maxpane_dashboard.data.portfolio_manager import PortfolioManager
+        if getattr(self, '_portfolio_manager', None) is None:
+            self._portfolio_manager = PortfolioManager(self.swarm_tokens_manager(), wallet, clock=self._clock)
+        return self._portfolio_manager
 
     def swarm_tokens_source(self, catalogue=None):
         """Borrow launch evidence without running unrelated SURF collectors.

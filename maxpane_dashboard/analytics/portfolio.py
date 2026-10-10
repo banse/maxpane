@@ -69,10 +69,14 @@ def _subtotal(tokens: list[dict], quantity: str, state: str, value: str) -> tupl
     return (sum(values) if values or not positions else None, len(values), len(positions))
 
 
-def _pnl(tokens: list[dict]) -> tuple:
+def _pnl(tokens: list[dict], *, live=False) -> tuple:
     """Unrealized USD P/L needs current value and cost for every held position."""
     held = [row for row in tokens if row['held_quantity'] != 0 or row['balance_state'] != 'ok']
     if any(row['held_usd'] is None or not _number(row.get('held_cost_usd')) for row in held):
+        return None, None
+    if live and any(row.get('basis_state') != 'ok' or not row.get('basis_source')
+                    or row.get('basis_read_at') is None
+                    or row.get('basis_quantity') != row['held_quantity'] for row in held):
         return None, None
     cost = sum(row['held_cost_usd'] for row in held)
     gain = sum(row['held_usd'] for row in held) - cost
@@ -80,6 +84,30 @@ def _pnl(tokens: list[dict]) -> tuple:
         return None, None
     percent = gain / cost * 100 if cost else None
     return gain, percent if percent is not None and isfinite(percent) else None
+
+
+def _live_sources(result, snapshot):
+    if snapshot['is_mock']:
+        return result
+    sources = deepcopy(snapshot.get('sources') or {})
+    result.update(wallet_generation=snapshot.get('wallet_generation'), sources=sources)
+    metrics = result['metrics']
+    if metrics is not None:
+        catalogue = sources.get('catalogue') or {}
+        discovery = catalogue.get('coverage_complete', catalogue.get('complete', False))
+        for name, source in (('held', 'balances'), ('claimable', 'claims')):
+            complete = (sources.get(source) or {}).get('complete', False)
+            if name == 'held':
+                complete = complete and discovery
+            partial = not complete or metrics[name + '_known'] < metrics[name + '_total']
+            metrics[name + '_partial'] = partial
+            if partial and metrics[name + '_known'] == 0:
+                metrics[name + '_value'] = None
+        if metrics['held_partial']:
+            metrics['pnl_usd'] = metrics['pnl_percent'] = None
+        agents = sources.get('agents') or {}
+        metrics.update(agents_state=agents.get('state', 'unavailable'), agents_as_of=agents.get('as_of'))
+    return result
 
 
 def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
@@ -96,9 +124,9 @@ def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
     if agents is not None:
         agents = list({agent['id']: agent for agent in agents}.values())
     if wallet is not None and snapshot['tokens'] is None:
-        return dict(wallet=wallet, tokens=None, metrics=None, claimable=None,
+        return _live_sources(dict(wallet=wallet, tokens=None, metrics=None, claimable=None,
                     gainers=None, losers=None, activity=None, agents=agents,
-                    as_of=snapshot['as_of'], is_mock=snapshot['is_mock'])
+                    as_of=snapshot['as_of'], is_mock=snapshot['is_mock']), snapshot)
 
     rows, aliases = _deduplicate(snapshot['tokens'] or []) if wallet is not None else ([], {})
     selected = []
@@ -127,7 +155,7 @@ def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
     liquidity = market_snapshot(dict(base, tokens=_liquidity_tokens(tokens)))['metrics']
     online = (sum(agent['online'] is True for agent in agents)
               if agents is not None and all(agent['online'] is not None for agent in agents) else None)
-    pnl, pnl_percent = _pnl(tokens)
+    pnl, pnl_percent = _pnl(tokens, live=not snapshot['is_mock'])
     metrics = dict(
         total=len(tokens), held_value=held[0], held_known=held[1], held_total=held[2],
         claimable_value=claims[0], claimable_known=claims[1], claimable_total=claims[2],
@@ -139,8 +167,8 @@ def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
     claimable = sorted((row for row in tokens if _ready(row)),
                        key=lambda row: (row['claimable_usd'] is None,
                                         -(row['claimable_usd'] or 0), row['id']))
-    return dict(
+    return _live_sources(dict(
         wallet=wallet, tokens=tokens, metrics=metrics, claimable=claimable,
         gainers=market['gainers'], losers=market['losers'], activity=market['activity'],
         agents=agents, as_of=snapshot['as_of'], is_mock=snapshot['is_mock'],
-    )
+    ), snapshot)

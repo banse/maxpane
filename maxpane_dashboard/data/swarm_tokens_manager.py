@@ -22,6 +22,14 @@ def _number(value):
     return value if type(value) in (int, float) and math.isfinite(value) else None
 
 
+def _token_artifacts(row):
+    artifacts = [a for a in row.get('artifacts', []) if a.get('role') == 'token']
+    valid = {address(a.get('address')): a for a in artifacts
+             if address(a.get('address')) not in (None, ZERO)}
+    malformed = any(address(a.get('address')) in (None, ZERO) for a in artifacts)
+    return valid, bool(artifacts) and (malformed or len(valid) != 1)
+
+
 class SwarmTokensManager:
     is_mock = False
     _error_count = 0
@@ -53,6 +61,8 @@ class SwarmTokensManager:
         self._attempts = {name: {} for name in ('markets', 'history', 'trades')}
         self._failed = {name: set() for name in self._attempts}
         self._detail_pools = {'history': {}, 'trades': {}}
+        self._portfolio_active = False
+        self._portfolio_priority_ids = set()
 
     def _start(self, name, coroutine):
         if self._closed or name in self._tasks and not self._tasks[name].done():
@@ -101,23 +111,30 @@ class SwarmTokensManager:
             return list(merged.values())
         return self._catalogue
 
-    def _tokens(self, source, now):
+    def _base_rows(self, source):
         raw = self._catalogue_rows()
-        base = launch_rows(raw) if raw is not None else source.get('rows')
+        return launch_rows(raw) if raw is not None else source.get('rows')
+
+    def _tokens(self, source, now, *, include_inactive=False):
+        base = self._base_rows(source)
         if base is None:
             return None
         enriched = {row['launch_id']: row for row in source.get('rows') or []}
         result = {}
-        # Highest launch number deterministically represents a repeated deployment.
-        for row in sorted(base, key=lambda r: r.get('launch_number') or -1, reverse=True):
+        # Keep the market view's live representative when the same deployment
+        # has inactive aliases, so switching views never churns its pool cache.
+        for row in sorted(base, key=lambda r: (r.get('status') == 'live',
+                                             r.get('launch_number') or -1), reverse=True):
             chain = row.get('chain_id')
-            artifacts = {address(a.get('address')): a for a in row.get('artifacts', [])
-                         if a.get('role') == 'token' and address(a.get('address')) not in (None, ZERO)}
-            if chain not in CHAINS or row.get('status') != 'live' or len(artifacts) != 1:
+            artifacts, ambiguous = _token_artifacts(row)
+            if chain not in CHAINS or len(artifacts) != 1 or include_inactive and ambiguous:
                 continue
             contract, artifact = next(iter(artifacts.items()))
             token_id = f'{chain}:{contract}'
             if token_id in result:
+                result[token_id]['launch_uuids'].append(row['launch_id'])
+                continue
+            if not include_inactive and row.get('status') != 'live':
                 continue
             evidence = enriched.get(row['launch_id'], {})
             if (evidence.get('chain_id') != chain or address(evidence.get('token_address')) != contract
@@ -125,6 +142,7 @@ class SwarmTokensManager:
                 evidence = {}
             token = dict.fromkeys(TOKEN_KEYS)
             token.update(id=token_id, launch_id=row['launch_number'], launch_uuid=row['launch_id'],
+                         launch_uuids=[row['launch_id']],
                          chain=CHAINS[chain], chain_id=chain, token_address=contract,
                          symbol=evidence.get('ticker') or artifact.get('name') or '—',
                          name=evidence.get('token_name') or artifact.get('name') or '—',
@@ -222,13 +240,32 @@ class SwarmTokensManager:
         if self._cat_attempt is None or self._scan is not None or now-self._cat_attempt >= self.CATALOGUE_TTL:
             self._start('catalogue', self._scan_catalogue())
 
-    def _catalogue_source(self, tokens, source, now):
+    def _catalogue_source(self, tokens, source, now, *, portfolio=False):
         state = ('unavailable' if tokens is None else 'stale' if self._complete and self._cat_failed else
                  'partial' if not self._complete or self._scan is not None else
                  'stale' if now-(self._cat_as_of or 0) > self.CATALOGUE_TTL else 'ok')
         rows = self._catalogue_rows()
-        return {'state': state, 'as_of': self._cat_as_of if self._cat_as_of is not None else source.get('as_of'),
-                'complete': self._complete, 'loaded': len(rows if rows is not None else source.get('rows') or [])}
+        result = {'state': state, 'as_of': self._cat_as_of if self._cat_as_of is not None else source.get('as_of'),
+                  'complete': self._complete, 'loaded': len(rows if rows is not None else source.get('rows') or [])}
+        if portfolio:
+            unsupported = ambiguous = 0
+            for row in self._base_rows(source) or []:
+                artifacts, invalid = _token_artifacts(row)
+                ambiguous += invalid
+                unsupported += bool(artifacts) and row.get('chain_id') not in CHAINS
+            reasons = []
+            if unsupported:
+                reasons.append(f'{unsupported} token launches on unsupported chains')
+            if ambiguous:
+                reasons.append(f'{ambiguous} token launches with ambiguous artifacts')
+            if reasons and state == 'ok':
+                result['state'] = 'partial'
+            result.update(coverage_complete=state == 'ok' and not reasons,
+                          candidates=len(tokens) if tokens is not None else None,
+                          unsupported_candidates=unsupported if tokens is not None else None,
+                          ambiguous_candidates=ambiguous if tokens is not None else None,
+                          reasons=reasons)
+        return result
 
     def catalogue_summary(self):
         """Pure cached projection using the dashboard's exact token population."""
@@ -238,11 +275,7 @@ class SwarmTokensManager:
         return {'count': len(tokens) if tokens is not None else None,
                 'state': source['state'], 'as_of': source['as_of']}
 
-    async def fetch_and_compute(self):
-        now = self._clock()
-        source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
-        tokens = self._tokens(source, now)
-        self.offer_catalogue()
+    def _offer_enrichment(self, tokens, now):
         for name, ttl, limit in (('markets', self.MARKET_TTL, self.MARKET_BATCH),
                                   ('history', self.HISTORY_TTL, self.DETAIL_BATCH),
                                   ('trades', self.TRADES_TTL, self.DETAIL_BATCH)):
@@ -254,8 +287,43 @@ class SwarmTokensManager:
                         or name != 'markets' and self._detail_pools[name].get(row['id']) != row['market_pool'])]
             due.sort(key=lambda row: (attempts.get(row['id'], -1), -row['launch_id']))
             if due:
-                self._start(name, self._refresh_markets(due[:limit]) if name == 'markets'
-                            else self._refresh_details(name, due[:limit]))
+                # Reserve half the existing budget for relevant wallet tokens;
+                # the oldest-due remainder guarantees the market keeps moving.
+                priority = [row for row in due if row['id'] in self._portfolio_priority_ids][:limit//2]
+                chosen = {row['id'] for row in priority}
+                batch = priority + [row for row in due if row['id'] not in chosen][:limit-len(priority)]
+                self._start(name, self._refresh_markets(batch) if name == 'markets'
+                            else self._refresh_details(name, batch))
+
+    async def fetch_and_compute(self):
+        """Existing live-launch market view, sharing Portfolio's refresh work."""
+        return self._snapshot()
+
+    async def fetch_portfolio(self, priority_ids=()):
+        """Cached candidates on supported chains, including inactive launches.
+
+        Artifacts identify candidates, not verified ERC-20 deployments. The
+        wallet reader must still confirm balances and actual token decimals.
+        No network is awaited here; catalogue and enrichment use shared tasks.
+        """
+        self._portfolio_active = True
+        self._portfolio_priority_ids = set(priority_ids)
+        return self._snapshot(portfolio=True)
+
+    def _snapshot(self, *, portfolio=False):
+        now = self._clock()
+        source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
+        tokens = self._tokens(source, now, include_inactive=portfolio)
+        enrichment = tokens
+        if self._portfolio_active:
+            market_tokens = self._tokens(source, now) if portfolio else tokens
+            candidates = tokens if portfolio else self._tokens(source, now, include_inactive=True)
+            # Portfolio's stricter artifact validation must not stop refreshing
+            # rows still displayed by the market. Schedule each identity once.
+            enrichment = list({row['id']: row for population in (candidates, market_tokens)
+                               for row in population or []}.values())
+        self.offer_catalogue()
+        self._offer_enrichment(enrichment, now)
         activity = {f"launch:{row['id']}:{row['launch_uuid']}":
                     {'id': f"launch:{row['id']}:{row['launch_uuid']}", 'token_id': row['id'],
                      'ts': row['launched_at'], 'kind': 'LAUNCH', 'amount': None, 'asset': ''}
@@ -267,7 +335,7 @@ class SwarmTokensManager:
             for event in (cached[0].get('activity', []) if cached else []):
                 if event.get('token_id') == row['id']:
                     activity[event['id']] = event
-        sources = {'catalogue': self._catalogue_source(tokens, source, now)}
+        sources = {'catalogue': self._catalogue_source(tokens, source, now, portfolio=portfolio)}
         for name, label in (('markets', 'market'), ('history', 'history'), ('trades', 'trades'), ('liquidity', 'liquidity')):
             states = [row[label+'_state'] for row in tokens or []]
             stamps = [row[label+'_read_at'] for row in tokens or [] if row[label+'_read_at'] is not None]

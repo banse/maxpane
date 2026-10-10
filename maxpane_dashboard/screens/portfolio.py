@@ -1,4 +1,4 @@
-"""Approved Option 1: an explicitly offline, wallet-scoped portfolio preview."""
+"""Approved wallet overview with live sources and an isolated offline preview."""
 import asyncio
 
 from rich.text import Text
@@ -13,6 +13,7 @@ from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 from maxpane_dashboard.widgets.address import address_text, is_address
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.rowfit import clip
+from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.portfolio import (
     EXPLORER, PortfolioHero, PortfolioTable, ClaimableTokens,
     PortfolioActivity, PortfolioMovers, PortfolioDetail,
@@ -28,12 +29,14 @@ KEY_HINTS = 'w wallet · f filters · / find · c chain · o sort · enter detai
 #: table floor retain every field. The table scrolls internally for long wallets;
 #: this pin describes the fixed chrome, not a maximum number of positions.
 #: Narrow/short screens retain all ten columns with outer scrolling and hints.
+#: Live 118-token capture re-swept over 138–150 columns and 28–38 rows on
+#: 2026-10-10: the same 145×35 boundary, including source/coverage headings.
 PORTFOLIO_FULL_LAYOUT_COLUMNS = 145
 PORTFOLIO_FULL_LAYOUT_ROWS = 35
 
 
 class PortfolioScreen(SwarmTokensScreen):
-    GAME_NAME = 'PORTFOLIO · MOCK DATA'
+    GAME_NAME = 'PORTFOLIO'
     REFRESH_WORKER_NAME = 'portfolio-refresh'
     PANELS = (
         (PortfolioHero, lambda data: {'metrics': data.get('metrics') if data.get('wallet') else {'wallet_required': True}}),
@@ -49,9 +52,11 @@ class PortfolioScreen(SwarmTokensScreen):
     PortfolioScreen #pf-separator { height: 1; color: $panel; padding: 0 1; }
     '''
 
-    def __init__(self, manager, poll_interval=30, name='portfolio', *, standalone=False, **kwargs):
+    def __init__(self, manager, poll_interval=None, name='portfolio', *, standalone=False, **kwargs):
+        if poll_interval is None:
+            poll_interval = 30 if getattr(manager, 'is_mock', False) else 5
         super().__init__(manager, poll_interval, name=name, standalone=standalone, **kwargs)
-        self.GAME_NAME = 'PORTFOLIO · MOCK DATA'
+        self.GAME_NAME = 'PORTFOLIO · MOCK DATA' if self._is_mock else 'PORTFOLIO'
         self.assets, self.sort = 'all', 'value'
         self._wallet_generation = 0
 
@@ -59,7 +64,7 @@ class PortfolioScreen(SwarmTokensScreen):
         with VerticalScroll(id='st-viewport'):
             with Vertical(id='st-body'):
                 yield PortfolioHero()
-                yield Static(Text('MOCK DATA'), id='pf-context')
+                yield Static(Text('MOCK DATA' if self._is_mock else 'PORTFOLIO'), id='pf-context')
                 with Vertical(id='st-content'):
                     with Vertical(id='st-market'):
                         with Horizontal(id='st-summary'):
@@ -69,7 +74,9 @@ class PortfolioScreen(SwarmTokensScreen):
                         yield Static('─' * 160, id='pf-separator')
                         yield PortfolioTable()
                     yield PortfolioFilterEditor()
-        yield DemoStatusBar()
+        bar = DemoStatusBar()
+        bar.is_mock = self._is_mock
+        yield bar
 
     async def _fetch_data(self):
         generation = self._wallet_generation
@@ -82,7 +89,8 @@ class PortfolioScreen(SwarmTokensScreen):
                                 lp_state=self.lp_state, assets=self.assets, sort=self.sort)
 
     def _prime_status_bar(self, bar):
-        bar.set_key_hints(KEY_HINTS.replace('esc hub', 'esc quit') if self._standalone else KEY_HINTS)
+        hints = KEY_HINTS.replace('esc hub', 'esc quit') if self._standalone else KEY_HINTS
+        bar.set_key_hints(hints if self._is_mock else hints.replace('reload', 'refresh'))
 
     def _chrome(self):
         viewport = self.query_one('#st-viewport', VerticalScroll)
@@ -92,12 +100,13 @@ class PortfolioScreen(SwarmTokensScreen):
             self.call_after_refresh(editor.on_resize)
         wallet = self._data_manager.wallet
         context = Text('')
-        context.append('MOCK DATA · ', style='yellow')
+        if self._is_mock:
+            context.append('MOCK DATA · ', style='yellow')
         if is_address(wallet):
             context += Text('Wallet: ') + address_text(wallet, width=17, explorer=EXPLORER)
         else:
             context += Text('Example wallet' if wallet else 'Set a wallet with w')
-        context += Text(' · w change · example positions; no wallet reads', style='dim white')
+        context += Text(' · w change' + (' · example positions; no wallet reads' if self._is_mock else ''), style='dim white')
         hints = (' · ‹ widen' if viewport.show_horizontal_scrollbar else '')
         hints += ' · ‹ taller' if viewport.show_vertical_scrollbar else ''
         context += Text(hints, style='yellow')
@@ -108,9 +117,26 @@ class PortfolioScreen(SwarmTokensScreen):
             context += Text(' · search: ' + clip(flatten(self.search_query), 32))
         self.query_one('#pf-context', Static).update(context)
         total = (self.snapshot.get('metrics') or {}).get('total')
+        sources = self.snapshot.get('sources') or {}
+        balances, claims = sources.get('balances') or {}, sources.get('claims') or {}
+        incomplete = sources and (not balances.get('complete') or not claims.get('complete'))
         count = ('Set a wallet' if not wallet else 'Loading...' if not self.snapshot else
-                 'unavailable' if total is None else 'No matching tokens' if total == 0 else f'{total} tokens')
-        self.query_one(PortfolioTable).query_one('.panel-title', Static).update(Text('PORTFOLIO · ' + count, style='bold'))
+                 'unavailable' if total is None else '0 known matches' if total == 0 and incomplete else
+                 'No matching tokens' if total == 0 else f'{total} tokens')
+        heading = 'PORTFOLIO · ' + count
+        if sources:
+            heading += (f" · balances {balances.get('checked', 0)}/{balances.get('total') if balances.get('total') is not None else '?'}"
+                        f" · {balances.get('state', 'pending')} · as of {hhmm(balances.get('as_of'))}"
+                        f" · claims {claims.get('checked', 0)}/{claims.get('total') if claims.get('total') is not None else '?'}")
+            catalogue = sources.get('catalogue') or {}
+            if not catalogue.get('coverage_complete', catalogue.get('complete')):
+                heading += ' · scan incomplete'
+            self.query_one(ClaimableTokens).query_one('.panel-title', Static).update(Text(
+                f"CLAIMABLE · {claims.get('state', 'pending')} · as of {hhmm(claims.get('as_of'))}", style='bold'))
+            trades = sources.get('trades') or {}
+            self.query_one(PortfolioActivity).query_one('.panel-title', Static).update(Text(
+                f"MARKET ACTIVITY · {trades.get('state', 'pending')}", style='bold'))
+        self.query_one(PortfolioTable).query_one('.panel-title', Static).update(Text(heading, style='bold'))
 
     def _show_filter(self, editing):
         super()._show_filter(editing)
@@ -150,7 +176,7 @@ class PortfolioScreen(SwarmTokensScreen):
         event.prevent_default()
         event.stop()
         if event.token:
-            self.app.push_screen(PortfolioDetail(event.token, is_mock=True, as_of=self.snapshot.get('as_of')))
+            self.app.push_screen(PortfolioDetail(event.token, is_mock=self._is_mock, as_of=self.snapshot.get('as_of')))
 
     def action_set_wallet(self):
         if not self._filter_open:

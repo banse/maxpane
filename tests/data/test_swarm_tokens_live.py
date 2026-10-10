@@ -499,3 +499,209 @@ async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads(
         assert manager.catalogue_summary()['state'] == 'partial'
     finally:
         await manager.close()
+
+
+async def test_portfolio_retains_inactive_candidates_and_all_launch_aliases():
+    # Synthetic status/duplicate variants of the committed catalogue capture.
+    raw = rows()[:3]
+    raw[0]['status'] = 'abandoned'
+    alias = dict(deepcopy(raw[1]), id='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+                 launchNumber=1300, status='retired')
+    raw.insert(0, alias)
+    manager = SwarmTokensManager(Source(), client=Pages(raw), market=Market(), clock=lambda:1000)
+    try:
+        cold = await manager.fetch_portfolio()
+        assert cold['tokens'] is None
+        await manager.wait_pending()
+        portfolio = await manager.fetch_portfolio()
+        market = await manager.fetch_and_compute()
+        assert len(portfolio['tokens']) == 3 and len(market['tokens']) == 2
+        assert {r['status'] for r in market['tokens']} == {'live'}
+        aliased = next(r for r in portfolio['tokens'] if r['launch_uuid'] == raw[2]['id'])
+        assert set(aliased['launch_uuids']) == {raw[2]['id'], alias['id']}
+        assert next(r for r in market['tokens'] if r['id'] == aliased['id']) == aliased
+        assert all(r['price_usd'] is None for r in portfolio['tokens'])
+        assert portfolio['sources']['catalogue']['coverage_complete']
+        portfolio['tokens'][0]['launch_uuids'].clear()
+        portfolio['sources']['catalogue']['reasons'].append('mutated')
+        detached = await manager.fetch_portfolio()
+        assert detached['tokens'][0]['launch_uuids']
+        assert 'mutated' not in detached['sources']['catalogue']['reasons']
+    finally:
+        await manager.close()
+
+
+async def test_portfolio_discovery_counts_unresolved_candidates_without_certifying_coverage():
+    raw = rows()
+    # A second token address is ambiguous; a malformed token address cannot be
+    # silently discarded to make the remaining artifact look unambiguous.
+    token = next(a for a in raw[0]['artifacts'] if a['role'] == 'token')
+    raw[0]['artifacts'].append(dict(token, address='0x'+'f'*40))
+    raw[1]['artifacts'].append(dict(token, address='broken address'))
+    manager = SwarmTokensManager(Source(), client=Pages(raw), market=Market(), clock=lambda:1000)
+    try:
+        await manager.fetch_portfolio()
+        await manager.wait_pending()
+        snapshot = await manager.fetch_portfolio()
+        coverage = snapshot['sources']['catalogue']
+        assert coverage['complete'] and coverage['loaded'] == 5
+        assert not coverage['coverage_complete'] and coverage['state'] == 'partial'
+        assert coverage['candidates'] == 1
+        assert coverage['unsupported_candidates'] == 1
+        assert coverage['ambiguous_candidates'] == 2
+        assert coverage['reasons']
+        assert [r['chain_id'] for r in snapshot['tokens']] == [4663]
+    finally:
+        await manager.close()
+
+
+async def test_portfolio_pages_include_old_inactive_token_after_first_page():
+    raw = rows()[:3]
+    raw[-1]['status'] = 'retired'
+    pages = Pages(raw)
+    manager = SwarmTokensManager(Source(), client=pages, market=Market(), clock=lambda:1000)
+    manager.PAGE_SIZE, manager.PAGE_BUDGET = 1, 1
+    try:
+        for _ in range(4):
+            await manager.fetch_portfolio()
+            await manager.wait_pending()
+        snapshot = await manager.fetch_portfolio()
+        assert len(snapshot['tokens']) == 3
+        assert snapshot['sources']['catalogue']['coverage_complete']
+        assert pages.calls == [None, 1202, 1191, 1172]
+    finally:
+        await manager.close()
+
+
+async def test_portfolio_status_change_does_not_erase_deployed_candidate():
+    now, pages = [1000], Pages(rows()[:1])
+    manager = SwarmTokensManager(Source(), client=pages, market=Market(), clock=lambda:now[0])
+    try:
+        await manager.fetch_portfolio()
+        await manager.wait_pending()
+        before = await manager.fetch_portfolio()
+        pages.data[0]['status'] = 'abandoned'
+        now[0] += manager.CATALOGUE_TTL
+        await manager.fetch_and_compute()
+        await manager.wait_pending()
+        after = await manager.fetch_portfolio()
+        assert [r['id'] for r in after['tokens']] == [r['id'] for r in before['tokens']]
+        assert after['tokens'][0]['status'] == 'abandoned'
+        assert (await manager.fetch_and_compute())['tokens'] == []
+    finally:
+        await manager.close()
+
+
+async def test_portfolio_and_market_share_singleflight_clocks_and_enrichment():
+    gate, entered = asyncio.Event(), asyncio.Event()
+    class Quotes(Market):
+        def __init__(self):
+            self.calls, self.histories, self.trades = [], [], []
+        async def fetch_markets(self, tokens):
+            self.calls.append([t['id'] for t in tokens])
+            entered.set()
+            await gate.wait()
+            return {t['id']: {'state':'ok', 'price_usd':2, 'market_pool':'0x'+'a'*40} for t in tokens}
+        async def fetch_history(self, token):
+            self.histories.append(token['id'])
+            return {'state':'ok', 'sparkline':[1,2], 'timestamps':[1,2]}
+        async def fetch_trades(self, token):
+            self.trades.append(token['id'])
+            return {'state':'ok', 'activity':[]}
+    market, pages = Quotes(), Pages(rows()[:2])
+    manager = SwarmTokensManager(Source(), client=pages, market=market, clock=lambda:1000)
+    try:
+        await manager.fetch_portfolio()
+        await manager.wait_pending()
+        await manager.fetch_portfolio()
+        await entered.wait()
+        await manager.fetch_and_compute()
+        await manager.fetch_portfolio()
+        assert len(market.calls) == 1 and pages.calls == [None]
+        gate.set()
+        await manager.wait_pending()
+        await manager.fetch_and_compute()
+        await manager.fetch_portfolio()
+        await manager.wait_pending()
+        portfolio = await manager.fetch_portfolio()
+        swarm = await manager.fetch_and_compute()
+        assert portfolio['tokens'] == swarm['tokens']
+        assert len(market.histories) == len(set(market.histories)) == 2
+        assert len(market.trades) == len(set(market.trades)) == 2
+        assert all(t['market_read_at'] == t['history_read_at'] == 1000 for t in portfolio['tokens'])
+    finally:
+        gate.set()
+        await manager.close()
+
+
+@pytest.mark.parametrize('refresh_view', ['fetch_portfolio', 'fetch_and_compute'])
+async def test_portfolio_activation_keeps_market_only_candidates_refreshing(refresh_view):
+    # Synthetic malformed duplicate of a captured token artifact: the existing
+    # market view accepts the valid address, while Portfolio reports ambiguity.
+    raw = rows()[:2]
+    token = next(a for a in raw[0]['artifacts'] if a['role'] == 'token')
+    raw[0]['artifacts'].append(dict(token, address='invalid address'))
+    class Quotes(Market):
+        def __init__(self):
+            self.calls = []
+        async def fetch_markets(self, tokens):
+            self.calls.append([t['id'] for t in tokens])
+            return {t['id']: {'state':'ok', 'price_usd':len(self.calls)} for t in tokens}
+    now, market = [1000], Quotes()
+    manager = SwarmTokensManager(Source(), client=Pages(raw), market=market, clock=lambda:now[0])
+    try:
+        await manager.fetch_and_compute()
+        await manager.wait_pending()
+        await manager.fetch_and_compute()
+        await manager.wait_pending()
+        before = await manager.fetch_and_compute()
+        portfolio = await manager.fetch_portfolio()
+        assert len(before['tokens']) == 2 and len(portfolio['tokens']) == 1
+        assert portfolio['sources']['catalogue']['ambiguous_candidates'] == 1
+        now[0] += manager.MARKET_TTL
+        await getattr(manager, refresh_view)()
+        await manager.wait_pending()
+        after = await manager.fetch_and_compute()
+        expected = {t['id'] for t in before['tokens']}
+        assert len(market.calls) == 2
+        assert len(market.calls[1]) == 2 and set(market.calls[1]) == expected
+        assert all(t['price_usd'] == 2 and t['market_read_at'] == now[0] for t in after['tokens'])
+        assert len((await manager.fetch_portfolio())['tokens']) == 1
+    finally:
+        await manager.close()
+
+
+async def test_portfolio_priority_reserves_capacity_for_oldest_market_candidates():
+    class Quotes(Market):
+        def __init__(self):
+            self.calls = []
+        async def fetch_markets(self, tokens):
+            self.calls.append([t['id'] for t in tokens])
+            return {t['id']: {'state':'ok', 'price_usd':2} for t in tokens}
+    raw = rows()[:3]
+    extra = deepcopy(raw[0])
+    extra.update(id='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', launchNumber=1300)
+    for artifact in extra['artifacts']:
+        if artifact['role'] == 'token':
+            artifact['address'] = '0x'+'e'*40
+    raw.insert(0, extra)
+    now, market = [1000], Quotes()
+    manager = SwarmTokensManager(Source(), client=Pages(raw), market=market, clock=lambda:now[0])
+    manager.MARKET_BATCH = 2
+    priority = '4663:0x1a2170fee814b824556f3ada2e90385a29aae8f4'
+    try:
+        await manager.fetch_portfolio(priority_ids=[priority])
+        await manager.wait_pending()
+        await manager.fetch_and_compute()  # persisted portfolio priorities apply here too
+        await manager.wait_pending()
+        assert market.calls[0][0] == priority
+        assert len(market.calls[0]) == 2
+        # Make priorities due again: never-refreshed market tokens still get slots.
+        now[0] += manager.MARKET_TTL
+        await manager.fetch_portfolio(priority_ids=[priority])
+        await manager.wait_pending()
+        await manager.fetch_portfolio(priority_ids=[priority])
+        await manager.wait_pending()
+        assert len({key for batch in market.calls for key in batch}) == 4
+    finally:
+        await manager.close()

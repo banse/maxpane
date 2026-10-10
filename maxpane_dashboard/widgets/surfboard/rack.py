@@ -129,8 +129,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self.data["destination"] = "swarm-tokens"
             self.data.setdefault("detail", "TOKENS · production-chain markets · unavailable · Enter to open")
         if self.key == "portfolio":
-            self.data.update(status="preview", primary="MOCK DATA", secondary="wallet preview",
-                             destination="portfolio", detail="PORTFOLIO · MOCK DATA · Enter to preview")
+            self.data.update(status="active", primary="PORTFOLIO", secondary="wallet holdings",
+                             destination="portfolio", detail="PORTFOLIO · holdings and ready claims · Enter to open")
         if planned or empty:
             self.data.update(status="planned" if planned else "unassigned", primary="coming soon" if planned else "empty slot",
                              secondary="future dashboard" if planned else "· · ·", destination=None,

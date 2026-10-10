@@ -1,0 +1,39 @@
+{
+  "id": "c792b3eb-7f6d-495d-89f2-0bdf03c67edd",
+  "launchNumber": 1232,
+  "chainId": 1,
+  "status": "live",
+  "artifacts": [
+    {
+      "role": "distributor",
+      "name": "MerkleDistributor",
+      "address": "0x1a5c7459a9023ae55a56941a433704bc8e154120",
+      "creationCodeHash": "f1c21108732a73286b1030e87fbba14c806905275dde6fce012f2c0ca19e30b9",
+      "txHash": "0xf86dec684c6d4e1bfbf6a2eed9926ca624b1ce9af973adcc7c8c8492c4a24f0b",
+      "blockNumber": 26161596,
+      "verifiedAt": null,
+      "verifyFailure": null
+    },
+    {
+      "role": "hook",
+      "name": "PoolInitializationGuard",
+      "address": "0x784ff9a3ac5d88a30bfff6f7f2a270161fbe6000",
+      "creationCodeHash": "0b3f249bc36eb41d4f5f7b8d4c132f9f3e77df94b8536f2e26d0f0e7d159a7ad",
+      "txHash": "0xf86dec684c6d4e1bfbf6a2eed9926ca624b1ce9af973adcc7c8c8492c4a24f0b",
+      "blockNumber": 26161596,
+      "verifiedAt": null,
+      "verifyFailure": null
+    },
+    {
+      "role": "token",
+      "name": "PrismRiot",
+      "address": "0xd852098e83e6a8a35eb3eb6976567b0660c86494",
+      "creationCodeHash": "584aafb817f406b468d4f68d6b0c3ba305337148dac2390e0bb3ee7d58f8dd55",
+      "txHash": "0xf86dec684c6d4e1bfbf6a2eed9926ca624b1ce9af973adcc7c8c8492c4a24f0b",
+      "blockNumber": 26161596,
+      "verifiedAt": "2026-10-10T11:02:50.693Z",
+      "verifyFailure": null
+    }
+  ],
+  "merkleRoot": "0x4b953212ae3d7744bdb283145d459c31d26a3ca5fc9f65739ce17bb7bcecb703"
+}

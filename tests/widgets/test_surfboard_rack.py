@@ -355,7 +355,7 @@ async def test_live_tokens_card_routes_while_planned_cards_explain_without_desti
         assert [event.key for event in pilot.app.opened] == ["swarm-tokens", "portfolio", "earnings"]
         live, portfolio, *planned = pilot.app.opened
         assert live.destination == "swarm-tokens" and "production-chain markets" in live.detail
-        assert portfolio.destination == "portfolio" and "MOCK DATA" in portfolio.detail
+        assert portfolio.destination == "portfolio" and "holdings and ready claims" in portfolio.detail
         assert all(event.destination is None and "planned" in event.detail for event in planned)
 
 

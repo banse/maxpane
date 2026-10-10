@@ -82,28 +82,32 @@ The isolated, deterministic **MOCK DATA** demo remains available without network
 .venv/bin/python -m maxpane_dashboard.demos.swarm_tokens
 ```
 
-### PORTFOLIO — offline preview
+### PORTFOLIO — wallet holdings and claims
 
-Open **PORTFOLIO** from dashboard 9, or run the isolated sample:
+Open **PORTFOLIO** from dashboard 9 (SURFBOARD HUB). It uses your saved/environment
+wallet; press `w` to change it using THE LIST's wallet prompt. The accepted wallet
+persists for this session when returning through the hub.
+
+The overview shows swarm-token holdings, verified ready claims and linked IMD
+agents. It shares SWARM TOKENS' catalogue, quotes, market activity, price charts
+and IMD/ETH launch liquidity. Ethereum, Base and Robinhood balances use actual
+onchain decimals. Partial discovery, unsupported chains, failed reads and stale
+values remain visible; known subtotals never imply complete wallet coverage.
+
+Press `f` for filters, `/` to search, Enter for cached position/claim/market details,
+`r` to refresh and Escape to return. Claims are informational: MaxPane never
+signs or submits a transaction. Held value and claimable value stay separate;
+launch liquidity is market context, not wallet assets. **P/L is unavailable until
+a verified remaining-position cost-basis source exists.**
+
+The standalone preview remains deterministic and entirely offline. Every amount
+there is labelled **MOCK DATA**, even after entering a real address:
 
 ```bash
 .venv/bin/python -m maxpane_dashboard.demos.portfolio
-# Start with the wallet unset:
+# Start the preview with the wallet unset:
 .venv/bin/python -m maxpane_dashboard.demos.portfolio --empty
 ```
-
-The 149×45 mock shows held value, ready claims, linked IMD agents and unrealized
-P/L, followed by market activity, claims, movers and the portfolio table with
-IMD/ETH launch liquidity. Press `w` for THE LIST's saved-wallet prompt, `f` for filters,
-`/` to search and Enter for position/claim/market details. `r` reloads the same
-sample; Escape returns to the hub or exits the standalone preview.
-
-**Every amount is MOCK DATA, including after entering a real address.** Portfolio
-makes no network requests. The hub uses the saved wallet; standalone starts with
-an explicitly labelled example. Held and ready-claim values remain separate;
-launch liquidity is market context, not wallet assets. P/L excludes claims and
-uses synthetic cost bases; unknown valuation or cost makes it unavailable.
-Live balances, claims and cost-basis acquisition are a later phase.
 
 ### FWA — Fake World Assets
 

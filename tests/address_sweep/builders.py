@@ -704,6 +704,22 @@ def _portfolio_app() -> App:
 _TOKEN_CONTRACTS = ('0x'+'a1'*20, '0x'+'b2'*20, '0x'+'c3'*20)
 
 
+def _portfolio_live_payload():
+    snapshot = portfolio_snapshot(_PORTFOLIO_WALLET)
+    snapshot['is_mock'] = False
+    snapshot['tokens'] = snapshot['tokens'][:3]
+    for row, chain, chain_id, contract in zip(snapshot['tokens'], ('eth', 'base', 'rh'),
+                                            (1, 8453, 4663), _TOKEN_CONTRACTS):
+        row.update(chain=chain, chain_id=chain_id, token_address=contract,
+                   held_cost_usd=None, basis_state='unavailable')
+    return snapshot
+
+
+def _portfolio_live_app() -> App:
+    return _CopyHarness(PortfolioScreen(_PayloadManager(
+        _portfolio_live_payload(), wallet=_PORTFOLIO_WALLET, is_mock=False)))
+
+
 def _swarm_tokens_payload():
     snapshot = demo_snapshot()
     snapshot['is_mock'] = False
@@ -715,6 +731,16 @@ def _swarm_tokens_payload():
 
 
 CASES: tuple[SweepCase, ...] = (
+    SweepCase(
+        name="portfolio_live", screen_class=PortfolioScreen,
+        build=_portfolio_live_app, payload=_portfolio_live_payload,
+        views=((), ('enter',), ('down', 'enter'), ('down', 'down', 'enter')),
+        seeded=(_PORTFOLIO_WALLET, *_TOKEN_CONTRACTS), explorer=ETHEREUM,
+        explorers=(ETHEREUM, BASE, ROBINHOOD), rows_pick_explorer=True,
+        explorer_for={_PORTFOLIO_WALLET: ETHEREUM,
+                      **dict(zip(_TOKEN_CONTRACTS, (ETHEREUM, BASE, ROBINHOOD)))},
+        pins=((PORTFOLIO_FULL_LAYOUT_COLUMNS, PORTFOLIO_FULL_LAYOUT_ROWS),),
+    ),
     SweepCase(
         name="portfolio", screen_class=PortfolioScreen,
         build=_portfolio_app, payload=lambda: portfolio_snapshot(_PORTFOLIO_WALLET),

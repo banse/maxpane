@@ -50,6 +50,8 @@ from maxpane_dashboard.data import (
     fwa_logs,
     ocm_client,
     rpc_common,
+    portfolio_balance_client,
+    portfolio_claims_client,
     talismans_client,
     ttt_client,
 )
@@ -68,6 +70,8 @@ from maxpane_dashboard.data import (
 #: and ``curator_nft_holders`` was never scanned at all. A new module that
 #: talks to a chain belongs in this dict on the day it lands.
 ALL_CLIENTS = {
+    portfolio_balance_client: "PortfolioBalanceClient",
+    portfolio_claims_client: "PortfolioClaimsClient",
     surf_launch_base_client: "SwarmBaseClient",
     surf_launch_rh_client: "SwarmRobinhoodClient",
     base_client: "BaseChainClient",

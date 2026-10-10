@@ -1,0 +1,17 @@
+{
+  "wallet": "0x65fcec1f5bfa9c8d8b93bc1dba740b5977019696",
+  "chainId": 1,
+  "collection": "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d",
+  "at": "2026-10-10T13:15:38.153Z",
+  "tokens": [
+    {
+      "tokenId": "1497",
+      "agentId": "52152",
+      "device": {
+        "key": "7c748c02cd2ee98f",
+        "online": true,
+        "pairedAt": "2026-10-05T17:16:19.276Z"
+      }
+    }
+  ]
+}

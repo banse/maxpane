@@ -14,7 +14,7 @@ TOKEN_KEYS = (
 ACTIVITY_KEYS = ('id', 'token_id', 'ts', 'kind', 'amount', 'asset')
 SNAPSHOT_KEYS = ('tokens', 'activity', 'as_of', 'is_mock')
 LIVE_TOKEN_KEYS = TOKEN_KEYS + (
-    'token_address', 'chain_id', 'launch_uuid', 'launch_pool',
+    'token_address', 'chain_id', 'launch_uuid', 'launch_uuids', 'launch_pool',
     'market_pool', 'market_source', 'market_read_at', 'liquidity_read_at',
     'history_read_at', 'trades_read_at', 'market_state', 'history_state',
     'liquidity_state', 'trades_state', 'sparkline_timestamps',

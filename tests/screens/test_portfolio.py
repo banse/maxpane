@@ -16,7 +16,10 @@ def painted(app):
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
-    async def refuse(*args, **kwargs):
+    send = httpx.AsyncClient.send
+    async def refuse(client, *args, **kwargs):
+        if isinstance(client._transport, httpx.MockTransport):
+            return await send(client, *args, **kwargs)
         raise AssertionError('portfolio mock attempted network access')
     monkeypatch.setattr(httpx.AsyncClient, 'send', refuse)
 
@@ -133,12 +136,19 @@ async def test_small_terminal_keeps_fields_reachable_and_editor_fits():
         assert app.screen.assets == 'all' and app.screen.chain == 'all'
 
 
-async def test_hub_card_opens_mock_and_returns_with_wallet_choice(monkeypatch):
+async def test_hub_card_opens_retained_live_manager_and_returns_with_wallet_choice(monkeypatch):
     from tests.screens.test_surfboard_screen import hub_app
     from maxpane_dashboard.widgets.surfboard import SurfboardRack
     from maxpane_dashboard.screens.surfboard import SurfboardScreen
     monkeypatch.setattr('maxpane_dashboard.config.get_wallet', lambda: '')
     app, managers = hub_app()
+    from tests.data.test_portfolio_live import setup
+    live, *_ = setup(None)
+    calls = []
+    def portfolio_manager(wallet=None):
+        calls.append(wallet)
+        return live
+    managers['_surf_manager'].portfolio_manager = portfolio_manager
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         hub = app.screen
@@ -146,10 +156,63 @@ async def test_hub_card_opens_mock_and_returns_with_wallet_choice(monkeypatch):
         rack.query_one('#surfboard-card-portfolio').action_activate()
         await pilot.pause()
         assert isinstance(app.screen, PortfolioScreen)
-        assert app.screen._data_manager.is_mock
+        assert app.screen._data_manager is live and not live.is_mock
+        assert 'MOCK DATA' not in painted(app)
         assert 'Set a wallet' in painted(app)
         await pilot.press('escape')
         assert app.screen is hub and isinstance(app.screen, SurfboardScreen)
+    await live.close()
+    assert len(calls) == 1
+
+
+async def test_live_coverage_sources_and_details_never_show_demo_values():
+    from tests.data.test_portfolio_live import setup
+    manager, market, *_ = setup()
+    await manager.fetch_and_compute()
+    await manager.wait_pending()
+    app = PortfolioDemo()
+    app.manager = manager
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        text = painted(app)
+        assert 'MOCK DATA' not in text and 'example positions' not in text
+        assert 'balances 4/4' in text and 'claims 1/1' in text
+        assert 'as of' in text and 'valuation / cost unavailable' in text
+        await pilot.press('enter')
+        await pilot.pause()
+        text = painted(app)
+        assert 'MOCK DATA' not in text and 'mock clock' not in text
+        assert 'Balances' in text and 'Claims' in text and 'Cost basis' in text
+        assert '⧉' in text
+    await manager.close()
+
+
+async def test_captured_claim_opens_live_detail_with_normalized_unlock_time():
+    from tests.data.test_portfolio_claims import PublicReads, client, WALLET
+    from tests.data.test_portfolio_live import Market, Balances
+    from maxpane_dashboard.data.portfolio_manager import PortfolioManager
+    market = Market()
+    market.rows = []  # Claim-only identity arrives before catalogue enrichment.
+    async with client(PublicReads()) as claims:
+        manager = PortfolioManager(market, WALLET, balances=Balances(), claims=claims,
+                                   clock=lambda: 1800000000)
+        await manager.fetch_and_compute()
+        await manager.wait_pending()
+        app = PortfolioDemo()
+        app.manager = manager
+        try:
+            async with app.run_test(size=(149, 45)) as pilot:
+                await pilot.pause()
+                row, = app.screen.snapshot['tokens']
+                assert row['claim_state'] == 'ready'
+                await pilot.press('enter')
+                await pilot.pause()
+                text = painted(app)
+                assert 'YOUR POSITION' in text and 'Ready to claim' in text
+                assert 'Unlocks in' in text and '0m 0s · at snapshot' in text
+                assert isinstance(row['unlock_at'], (int, float))
+        finally:
+            await manager.close()
 
 
 @pytest.mark.guard
@@ -206,13 +269,19 @@ async def test_wallet_change_discards_late_snapshot_and_refreshes_new_identity()
 
 
 @pytest.mark.sweep
+@pytest.mark.parametrize('live', [False, True], ids=['mock', 'live'])
 @pytest.mark.parametrize('axis,delta', [('width', -1), ('width', 0), ('width', 1),
                                      ('height', -1), ('height', 0), ('height', 1)])
-async def test_measured_portfolio_boundary_preserves_columns_and_advertises_scroll(axis, delta):
+async def test_measured_portfolio_boundary_preserves_columns_and_advertises_scroll(axis, delta, live):
     from maxpane_dashboard.screens.portfolio import PORTFOLIO_FULL_LAYOUT_COLUMNS, PORTFOLIO_FULL_LAYOUT_ROWS
     width = PORTFOLIO_FULL_LAYOUT_COLUMNS + (delta if axis == 'width' else 0)
     height = PORTFOLIO_FULL_LAYOUT_ROWS + (delta if axis == 'height' else 0)
     app = PortfolioDemo(wallet='0x' + 'ab' * 20)
+    if live:
+        from tests.data.test_portfolio_live import setup
+        app.manager, *_ = setup()
+        await app.manager.fetch_and_compute()
+        await app.manager.wait_pending()
     async with app.run_test(size=(width, height)) as pilot:
         await pilot.pause()
         viewport = app.screen.query_one('#st-viewport', VerticalScroll)
@@ -226,6 +295,10 @@ async def test_measured_portfolio_boundary_preserves_columns_and_advertises_scro
             for word in ('CLAIMABLE', 'MARKET ACTIVITY', 'MOVERS / 24H', 'PAIRED LP', 'PRICE 24H', '⧉'):
                 assert word in text
             assert app.screen.query_one(PortfolioTable).region.bottom <= viewport.region.bottom
+            if live:
+                assert 'balances 4/4' in text and 'claims 1/1' in text
+                assert 'valuation / cost unavailable' in text
+    await app.manager.close()
 
 
 async def test_long_portfolio_keeps_all_rows_and_unpriced_stale_claims_visible():

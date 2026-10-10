@@ -236,3 +236,58 @@ def test_zero_cost_has_defined_dollar_pnl_but_no_infinite_percent():
     raw = _snapshot({'held_quantity': 10, 'price_usd': 2, 'held_cost_usd': 0})
     metrics = project_snapshot(raw)['metrics']
     assert metrics['pnl_usd'] == 20 and metrics['pnl_percent'] is None
+
+
+def _live_snapshot():
+    raw = _snapshot()
+    raw.update(is_mock=False, wallet_generation=4, sources={
+        name: dict(state='ok', complete=True, as_of=100) for name in ('catalogue', 'balances', 'claims', 'agents')})
+    return raw
+
+
+def test_live_projection_keeps_source_clocks_and_rejects_unproven_numeric_cost_basis():
+    raw = _live_snapshot()
+    result = project_snapshot(raw)
+    assert tuple(result) == models.LIVE_PROJECTION_KEYS
+    assert result['wallet_generation'] == 4 and result['sources'] == raw['sources']
+    assert result['metrics']['pnl_usd'] is result['metrics']['pnl_percent'] is None
+    for row in raw['tokens']:
+        row.update(basis_state='ok', basis_quantity=row['held_quantity'], basis_source='verified fixture', basis_read_at=100)
+    assert project_snapshot(raw)['metrics']['pnl_usd'] == 200
+    raw['tokens'][0]['basis_quantity'] -= 1
+    assert project_snapshot(raw)['metrics']['pnl_usd'] is None
+
+
+def test_live_missing_membership_never_looks_like_a_complete_empty_wallet():
+    raw = _live_snapshot()
+    raw['sources']['balances'].update(state='partial', complete=False, checked=0, total=4)
+    raw['sources']['claims'].update(state='pending', complete=False)
+    for row in raw['tokens']:
+        row.update(held_quantity=None, balance_state='pending', claimable_quantity=None,
+                   claim_state='unavailable', claim_read_state='pending')
+    result = project_snapshot(raw)
+    assert result['tokens'] == []
+    assert result['metrics']['held_value'] is None
+    assert result['metrics']['claimable_value'] is None
+    assert result['metrics']['held_partial'] is result['metrics']['claimable_partial'] is True
+    assert result['metrics']['pnl_usd'] is None
+
+
+def test_live_known_partial_sum_is_qualified_even_when_all_visible_rows_are_priced():
+    raw = _live_snapshot()
+    raw['sources']['balances'].update(complete=False, state='partial', checked=4, total=10)
+    result = project_snapshot(raw, chain='base')
+    assert result['metrics']['held_value'] == 800
+    assert result['metrics']['held_partial'] is True
+    assert result['metrics']['pnl_usd'] is None
+    assert result['sources']['balances']['total'] == 10
+    result['sources']['balances']['total'] = 0
+    assert raw['sources']['balances']['total'] == 10
+
+
+def test_live_stale_agents_cannot_look_like_current_online_counts():
+    raw = _live_snapshot()
+    raw['sources']['agents'].update(state='stale', complete=False)
+    result = project_snapshot(raw)
+    assert result['metrics']['agents_state'] == 'stale'
+    assert result['metrics']['agents_as_of'] == 100

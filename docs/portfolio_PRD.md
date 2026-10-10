@@ -3,8 +3,10 @@
 Date: 2026-10-10. The owner selected ASCII option **1: Portfolio overview**,
 replaced the LAUNCH LIQUIDITY hero with **P/L**, then approved the completed
 149×45 Textual design ("design approved"). The layout and interactions below
-are the implementation reference. The offline mock is complete; live data
-integration is planned in `portfolio_live_implementation_plan.md`.
+are the implementation reference. The offline mock is complete; live integration
+is implemented under
+`portfolio_live_implementation_plan.md`. Numeric live P/L remains unavailable
+without verified cost basis.
 
 ## Requirements and scope
 
@@ -15,11 +17,10 @@ connected imd agents". Reuse "widgets from the BASE TRADING dashboard" and
 "data fetching /enrichment from the SWARM TOKENS dashboard as much as
 possible", including "IMD/ETH liquidity" and MaxPane styling.
 
-Stack: existing Python ≥3.11, Textual and Rich; no new dependency. The immediate
-deliverable is a deterministic, offline preview opened from the existing
-SURFBOARD PORTFOLIO card or `python -m maxpane_dashboard.demos.portfolio`.
-The hub itself retains its existing sources; opening Portfolio adds no network
-requests. Live catalogue/balance/claim readers are a later phase.
+Stack: existing Python ≥3.11, Textual and Rich; no new dependency. The SURFBOARD
+PORTFOLIO card now opens the live dashboard, borrowing its
+retained market provider and adding bounded wallet balance/claim readers.
+`python -m maxpane_dashboard.demos.portfolio` remains the isolated offline preview.
 
 ## Approved layout
 
@@ -27,7 +28,7 @@ requests. Live catalogue/balance/claim readers are a later phase.
 HELD VALUE       CLAIMABLE       IMD AGENTS       P/L
 known USD        ready USD       linked / online  USD / % unrealized
 
-Wallet: selected wallet · chain / assets / filter context · MOCK DATA
+Wallet: selected wallet · chain / assets / filter context · source state / coverage
 
 MARKET ACTIVITY                 CLAIMABLE                 MOVERS / 24H
 matching token market feed     ready token allocations   gainers / losers
@@ -50,10 +51,12 @@ minimum for its fixed chrome; smaller terminals retain access through scrolling.
 
 ## Data meaning
 
-- A row represents one synthetic `chain:launch` identity, never a symbol.
+- A live row represents `(chain_id, token_address)`, never a symbol; launch
+  aliases and distinct reward allocations remain separate provenance.
+  The offline preview uses synthetic `chain:launch` identities.
   Include a positive held quantity **or** a positive ready claim, including
   claim-only and unpriced tokens. Synthetic records contain no invented token
-  addresses or explorer targets. Live identity will require chain + contract.
+  addresses or explorer targets. Live identity is chain + contract.
 - HELD VALUE and CLAIMABLE show separate indicative USD sums. Missing/stale
   quantity or price does not enter the known sum; show coverage and partial
   state. Zero is a successful zero, `None` is unknown, and cached stale values
@@ -80,8 +83,8 @@ minimum for its fixed chrome; smaller terminals retain access through scrolling.
 
 - The hub uses the existing saved/environment wallet or shows "Set a wallet to
   view your portfolio." Standalone may start with the explicit label "sample"
-  to preview the design without inventing a wallet address. Every view retains
-  MOCK DATA, including after entering a real address.
+  to preview the design without inventing a wallet address. Only the standalone
+  preview retains MOCK DATA, including after entering a real address.
 - `w` reuses `WalletInputScreen`, validation and persistence. Its accepted
   callback address becomes the current screen/manager wallet immediately,
   overriding startup environment precedence for this session. Cancel preserves
@@ -97,14 +100,14 @@ minimum for its fixed chrome; smaller terminals retain access through scrolling.
 - One filtered token set drives the table, valuations, liquidity, claims,
   movers and market activity. Preserve selection identity when still visible.
 - Enter shows cached position and market detail. `r` reloads the same static
-  snapshot without simulated market changes. Escape closes detail/editor first,
+  snapshot in the offline preview; the hub refreshes live sources. Escape closes detail/editor first,
   then returns to the hub; standalone Escape exits.
 
 ## Acceptance
 
-Show an actual running offline Textual render at 149×45 before layout hardening
-and final review. The owner's explicit mock-first workflow substitutes this
-for the normal live render in this phase; no further design approval is needed.
+The approved offline preview and the subsequent keyless live dashboard were
+rendered at 149×45 before their layout hardening and final review. No further
+design approval is needed.
 
 Verify target and smaller composited layouts, wallet set/cancel/switch, coherent
 filters, empty and unavailable states, claim-only and unpriced rows, stale vs
@@ -112,7 +115,8 @@ zero, details and navigation. All Portfolio tests block network use. Reuse the
 existing SWARM TOKENS projection/feed/movers/filter/detail/screen where sound
 and the shared bases used by BASE TRADING; do not copy an entire dashboard.
 
-Out of scope for the completed mock phase: live reads, new polling/cache stacks, signing, claiming or other
-transactions, wallet history, live cost-basis/PnL acquisition and top-level dashboard registry
-changes. Source research and live-integration caveats remain in
+Out of scope: signing, claim execution or other transactions, wallet history,
+unbounded cost-basis acquisition and top-level dashboard registry changes.
+Live P/L requires complete verified remaining-position basis and valuation;
+otherwise its card explicitly reports unavailable. Source evidence and limits remain in
 `portfolio_game_mechanics.md`.

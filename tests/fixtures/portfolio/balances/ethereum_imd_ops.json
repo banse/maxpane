@@ -1,0 +1,93 @@
+{
+  "provenance": {
+    "kind": "real public RPC capture",
+    "captured_at": "2026-10-10T13:17:20.535430+00:00",
+    "endpoint": "https://ethereum-rpc.publicnode.com",
+    "chain_id": 1,
+    "token": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+    "wallet": "0xE764dA9bDeA91d845AAc2C7D53A8DfE59A369095",
+    "address_source": "maxpane_dashboard/data/surf_addresses.py IMD_TOKEN and OPS_WALLET",
+    "read_only": true
+  },
+  "exchanges": [
+    {
+      "request": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "eth_chainId",
+          "params": []
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "eth_blockNumber",
+          "params": []
+        }
+      ],
+      "response": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": "0x1"
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "result": "0x18f3465"
+        }
+      ]
+    },
+    {
+      "request": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "eth_chainId",
+          "params": []
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+              "data": "0x70a08231000000000000000000000000e764da9bdea91d845aac2c7d53a8dfe59a369095"
+            },
+            "0x18f3465"
+          ]
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 3,
+          "method": "eth_call",
+          "params": [
+            {
+              "to": "0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+              "data": "0x313ce567"
+            },
+            "0x18f3465"
+          ]
+        }
+      ],
+      "response": [
+        {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": "0x1"
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "result": "0x00000000000000000000000000000000000000000000016f1a6a693dab4074dd"
+        },
+        {
+          "jsonrpc": "2.0",
+          "id": 3,
+          "result": "0x0000000000000000000000000000000000000000000000000000000000000012"
+        }
+      ]
+    }
+  ]
+}

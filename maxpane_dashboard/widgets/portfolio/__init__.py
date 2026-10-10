@@ -3,7 +3,7 @@ from rich.text import Text
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.explorer import ETHEREUM
-from maxpane_dashboard.widgets.fmt import fmt_int
+from maxpane_dashboard.widgets.fmt import fmt_int, hhmm
 from maxpane_dashboard.widgets.swarm_tokens import (
     TokensHero, TokensTable, NewlyLaunched, BestPlays, TokenActivity,
     _cell, _quantity, _usd, _paired, _chart, _change, _change_color,
@@ -25,15 +25,20 @@ class PortfolioHero(TokensHero):
         bodies = []
         for key, label in (("held", "held"), ("claimable", "ready")):
             known, total = data.get(key + '_known'), data.get(key + '_total')
-            partial = known is not None and total is not None and known < total
+            partial = data.get(key + '_partial') or known is not None and total is not None and known < total
             value = _usd(data.get(key + '_value'))
             if partial and data.get(key + '_value') is not None:
                 value = '≥ ' + value
-            subtitle = (f'{known}/{total} valued · {label}' if partial else
+            subtitle = (f'partial · {known} valued' if data.get(key + '_partial') else
+                        f'{known}/{total} valued · {label}' if partial else
                         f'{fmt_int(total)} {label} tokens')
             bodies.append((value, subtitle))
         bodies.append((f"{fmt_int(data.get('agents_total'))} linked",
                        f"{fmt_int(data.get('agents_online'))} online · wallet-wide"))
+        if data.get('agents_state') not in (None, 'ok'):
+            prefix = '~' if data.get('agents_total') is not None else ''
+            bodies[-1] = (prefix + bodies[-1][0],
+                          f"{data['agents_state']} · as of {hhmm(data.get('agents_as_of'))}")
         pnl = data.get('pnl_usd')
         sign = '+' if pnl is not None and pnl > 0 else '-' if pnl is not None and pnl < 0 else ''
         bodies.append((sign + _usd(abs(pnl)) if pnl is not None else '--',
@@ -110,7 +115,8 @@ class PortfolioMovers(BestPlays):
 class PortfolioDetail(SwarmTokenDetail):
     def compose_sections(self):
         row = self.row
-        yield from self.section('YOUR POSITION', Text('Wallet balances and values · MOCK DATA'), first=True)
+        yield from self.section('YOUR POSITION', Text('Wallet balances and values'
+                               + (' · MOCK DATA' if self.is_mock else '')), first=True)
         for label, quantity, value, state in (
             ('Held', 'held_quantity', 'held_usd', 'balance_state'),
             ('Ready to claim', 'claimable_quantity', 'claimable_usd', 'claim_read_state'),
@@ -128,5 +134,13 @@ class PortfolioDetail(SwarmTokenDetail):
             yield Static(Text('Already claimed    ' + _quantity(row['claimed_quantity'])))
         if row.get('unlock_at') is not None and self.as_of is not None:
             remaining = max(0, int(row['unlock_at'] - self.as_of))
-            yield Static(Text(f'Unlocks in         {remaining // 60}m {remaining % 60}s · mock clock'))
+            yield Static(Text(f'Unlocks in         {remaining // 60}m {remaining % 60}s'
+                              + (' · mock clock' if self.is_mock else ' · at snapshot')))
+        if not self.is_mock:
+            for label, key in (('Balances', 'balance'), ('Claims', 'claim'), ('Cost basis', 'basis')):
+                state_key = 'claim_read_state' if key == 'claim' else key + '_state'
+                yield Static(Text(f'{label:18} {flatten(row.get(state_key, "unavailable"))}'
+                                  f' · as of {hhmm(row.get(key + "_read_at"))}'))
+            if row.get('basis_reason'):
+                yield Static(Text(flatten(row['basis_reason'])))
         yield from super().compose_sections()
