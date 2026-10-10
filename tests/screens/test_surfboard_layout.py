@@ -29,7 +29,7 @@ class HubHarness(App):
         self.push_screen(self.hub)
 
 
-async def test_terminal_uses_card_background_and_native_text_colors():
+async def test_terminal_uses_dashboard_background_and_native_text_colors():
     from rich.color import Color
     from textual.widgets import RichLog
 
@@ -45,10 +45,10 @@ async def test_terminal_uses_card_background_and_native_text_colors():
             await pilot.pause()
             assert app.hub.styles.background.hex.casefold() == theme.background.casefold()
             assert card.styles.background.hex.casefold() == theme.surface.casefold()
-            assert terminal.styles.background == card.styles.background
-            assert terminal.command_input.styles.background == card.styles.background
-            assert terminal.query_one(".terminal-prompt").styles.background == card.styles.background
-            assert terminal.query_one(RichLog).styles.background == card.styles.background
+            assert terminal.styles.background == app.hub.styles.background
+            assert terminal.command_input.styles.background == app.hub.styles.background
+            assert terminal.query_one(".terminal-prompt").styles.background == app.hub.styles.background
+            assert terminal.query_one(RichLog).styles.background == app.hub.styles.background
             strips = app.hub._compositor.render_strips()
             value = next(segment for strip in strips for segment in strip
                          if "╭─╴╶─╮╶─┐" in segment.text)
@@ -57,7 +57,7 @@ async def test_terminal_uses_card_background_and_native_text_colors():
             assert value.style.bgcolor == Color.parse(theme.background)
             assert value.style.color == card.rich_style.color
             assert reply.style.color == terminal.rich_style.color
-            assert reply.style.bgcolor == Color.parse(theme.surface)
+            assert reply.style.bgcolor == Color.parse(theme.background)
             rack = app.hub.query_one(SurfboardRack)
             for face in rack.query(SurfboardCard):
                 rows = [strip.crop(face.region.x, face.region.right) for strip in
