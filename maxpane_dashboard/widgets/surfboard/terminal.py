@@ -19,10 +19,9 @@ REPLY_LIMIT = 200
 EVENT_LIMIT = 60
 #: Untagged prose stays copy-only; event metadata can supply its own chain explorer.
 EXPLORER = None
-INK = "#9fc99c"
-DIM = "#537b52"
-LIVE = "#b0edba"
-FAIL = "#8b342a"
+DIM = "#b1b1b1"
+LIVE = "green"
+FAIL = "red"
 STEP_WORDS = {
     "implement": ("built", "building"), "build_contract_project": ("built", "building"),
     "build_dapp": ("built", "building"), "test": ("tested", "testing"),
@@ -87,15 +86,15 @@ def fitted_prose(value, width, *, style="") -> Text:
 class SurfboardTerminal(PanelBase):
     TITLE = "IMD TERMINAL"
     DEFAULT_CSS = """
-    SurfboardTerminal { height: 1fr; min-height: 11; border: round #345533; background: #050805; color: #9fc99c; padding: 0 1; }
-    SurfboardTerminal > .panel-title { height: 2; margin: 0; padding: 0; border-bottom: solid #253c24; color: #9fc99c; text-style: none; text-wrap: nowrap; }
+    SurfboardTerminal { height: 1fr; min-height: 11; border: round #345533; background: #050805; color: $foreground; padding: 0 1; }
+    SurfboardTerminal > .panel-title { height: 2; margin: 0; padding: 0; border-bottom: solid #253c24; color: $foreground; text-style: none; text-wrap: nowrap; }
     SurfboardTerminal > RichLog { height: 1fr; min-height: 3; background: #050805; scrollbar-size-vertical: 1; scrollbar-gutter: stable; scrollbar-color: #345533; }
     SurfboardTerminal > .terminal-prompt { height: 3; border: round #345533; background: #101710; }
     SurfboardTerminal > .terminal-prompt:focus-within { border: round #9fc99c; }
-    SurfboardTerminal > .terminal-prompt > Static { width: 2; height: 1; color: #537b52; }
-    SurfboardTerminal Input { width: 1fr; height: 1; min-height: 1; padding: 0; background: #101710; border: none; color: #b0edba; }
+    SurfboardTerminal > .terminal-prompt > Static { width: 2; height: 1; color: $text-muted; }
+    SurfboardTerminal Input { width: 1fr; height: 1; min-height: 1; padding: 0; background: #101710; border: none; color: $foreground; }
     SurfboardTerminal Input:focus { border: none; }
-    SurfboardTerminal > .terminal-footer { height: 2; border-top: solid #253c24; color: #537b52; text-wrap: nowrap; }
+    SurfboardTerminal > .terminal-footer { height: 2; border-top: solid #253c24; color: $text-muted; text-wrap: nowrap; }
     """
 
     class CommandRequested(Message):
@@ -203,7 +202,7 @@ class SurfboardTerminal(PanelBase):
                 value = overview.get(key)
                 valid = isinstance(value, int) and _number(value) is not None
                 shown = (fmt_compact(value) if compact and value >= 1000 else fmt_int(value)) if valid else "—"
-                result.append(shown, style="bold " + LIVE).append(" " + label, style=INK)
+                result.append(shown, style="bold " + LIVE).append(" " + label, style=self.rich_style.color.name)
             result.append("  ")
             for index, service in enumerate(("verifier", "publisher", "deployer")):
                 if index:
@@ -315,18 +314,18 @@ class SurfboardTerminal(PanelBase):
         grouped = job is not None and job == _job_of(previous_row)
         kind, actor, state, description = self._event_fields(row, grouped)
         failed = state in ("failed", "stopped")
-        state_ink = FAIL if failed else LIVE if state in LIVE_STATES else DIM if state in ("queued", "called", "waiting", "ready") else INK
+        state_ink = FAIL if failed else LIVE if state in LIVE_STATES else DIM if state in ("queued", "called", "waiting", "ready") else self.rich_style.color.name
         line = Text("└ " if grouped else "> ", style=FAIL if failed else DIM)
         clipped = False
-        for value, cells, style in ((hhmm(row.get("timestamp")), 7, DIM), (kind, 8, INK),
-                                     (actor, 13, INK), (state, 13, "bold " + state_ink)):
+        for value, cells, style in ((hhmm(row.get("timestamp")), 7, DIM), (kind, 8, self.rich_style.color.name),
+                                     (actor, 13, self.rich_style.color.name), (state, 13, "bold " + state_ink)):
             clipped |= cell_len(value) > cells
             text = Text(clip(value, cells), style=style)
             text.pad_right(max(0, cells - text.cell_len))
             line.append_text(text)
         metadata = row.get("details")
         explorer = for_chain_id(metadata.get("chain_id")) if isinstance(metadata, dict) else EXPLORER
-        detail, lost = fit_prose(description, max(0, width - line.cell_len), style=FAIL if failed else INK, explorer=explorer)
+        detail, lost = fit_prose(description, max(0, width - line.cell_len), style=FAIL if failed else self.rich_style.color.name, explorer=explorer)
         line.append_text(detail)
         clipped |= lost or line.cell_len > width
         line.truncate(width, overflow="ellipsis")
@@ -375,7 +374,7 @@ class SurfboardTerminal(PanelBase):
         for value, start in (((_market_money(market) if market_known else None), 0),
                               (token_text, text.find(" | ") + 3), (age, text.rfind(" | ") + 3), ("$1B", 0)):
             if value is not None and (index := text.find(value, start)) >= 0:
-                rendered.stylize("bold " + INK, index, index + len(value))
+                rendered.stylize("bold " + self.rich_style.color.name, index, index + len(value))
         footer.update(rendered)
 
     def _paint(self):
@@ -401,7 +400,7 @@ class SurfboardTerminal(PanelBase):
                 line, lost = self._event_text(row, previous, width)
                 previous = row
             else:
-                line, lost = fit_prose(replies[key], width, style=INK)
+                line, lost = fit_prose(replies[key], width, style=self.rich_style.color.name)
                 previous = None
             clipped |= lost
             rows.append((key, line))

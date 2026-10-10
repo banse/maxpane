@@ -78,11 +78,11 @@ class PortfolioTable(TokensTable):
                   ('~' if item.get('market_state') == 'stale' else '')
                   + _usd(item.get('price_usd'), price=True), _change(change), _paired(item),
                   ('~' if item.get('history_state') == 'stale' else '') + _chart(item, self.SPARK_WIDTH))
-        styles = {1: 'bold white', 7: _change_color(change), 9: _change_color(change)}
+        styles = {1: 'bold', 7: _change_color(change), 9: _change_color(change)}
         for index, state in ((3, 'balance_state'), (4, 'claim_read_state'), (6, 'market_state')):
             if item.get(state, 'ok') != 'ok':
                 styles[index] = 'yellow'
-        return tuple(_cell(value, width, styles.get(i, 'white'), right=3 <= i <= 8)
+        return tuple(_cell(value, width, styles.get(i, ''), right=3 <= i <= 8)
                      for i, (value, (_, width)) in enumerate(zip(values, self.COLUMNS)))
 
 
@@ -96,12 +96,12 @@ class ClaimableTokens(NewlyLaunched):
 
     def format_row(self, row):
         state = row.get('claim_read_state', 'ok')
-        return (_cell(row.get('symbol', '--'), 10, 'bold white')
+        return (_cell(row.get('symbol', '--'), 10, 'bold')
                 + _cell(flatten(row.get('chain', '--')).upper(), 5)
                 + _cell(_measurement(row, 'claimable_quantity', 'claim_read_state'), 9, right=True)
                 + _cell(_usd(row.get('claimable_usd')), 10, right=True)
                 + Text(' ' + ('ready' if state == 'ok' else state),
-                       style='white' if state == 'ok' else 'yellow'))
+                       style='' if state == 'ok' else 'yellow'))
 
 
 class PortfolioActivity(TokenActivity):

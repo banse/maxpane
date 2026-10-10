@@ -290,9 +290,9 @@ async def test_footer_zero_goal_and_invalid_elapsed_are_distinct_from_unavailabl
         assert "age unknown" in painted(pilot.app)
 
 
-@pytest.mark.parametrize("state,expected", [("failed", "#8b342a"), ("working", "#b0edba"),
-                                           ("future_state", "#9fc99c")])
-async def test_event_state_has_bold_muted_failure_live_or_neutral_ink(state, expected):
+@pytest.mark.parametrize("state,expected", [("failed", "red"), ("working", "green"),
+                                           ("future_state", None)])
+async def test_event_state_has_bold_failure_live_or_theme_foreground(state, expected):
     from rich.color import Color
     async with TerminalApp().run_test(size=(100, 14)) as pilot:
         terminal = pilot.app.query_one(SurfboardTerminal)
@@ -304,7 +304,9 @@ async def test_event_state_has_bold_muted_failure_live_or_neutral_ink(state, exp
         x = lines[y].index(state)
         style = pilot.app.screen.get_style_at(x, y)
         assert style.bold
-        assert style.color.get_truecolor() == Color.parse(expected).get_truecolor()
+        color = (pilot.app.ansi_theme.ansi_colors[Color.parse(expected).number]
+                 if expected else terminal.rich_style.color.get_truecolor())
+        assert style.color.get_truecolor() == color
 
 
 async def test_long_event_hint_keeps_every_stale_header_fact_and_service_at_live_rack_width():

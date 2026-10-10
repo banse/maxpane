@@ -29,7 +29,7 @@ class HubHarness(App):
         self.push_screen(self.hub)
 
 
-async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
+async def test_terminal_text_follows_native_theme_without_changing_web_backgrounds():
     from rich.color import Color
     from textual.widgets import RichLog
 
@@ -55,7 +55,7 @@ async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
                          if "palette reply" in segment.text)
             assert value.style.bgcolor == Color.parse(theme.background)
             assert value.style.color == card.rich_style.color
-            assert reply.style.color == Color.parse("#9fc99c")
+            assert reply.style.color == terminal.rich_style.color
             rack = app.hub.query_one(SurfboardRack)
             for face in rack.query(SurfboardCard):
                 rows = [strip.crop(face.region.x, face.region.right) for strip in

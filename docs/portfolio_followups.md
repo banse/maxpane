@@ -17,6 +17,10 @@ standalone Textual demo remains offline. Remaining source limits:
 Verification environment: color assertions require `NO_COLOR` to be unset.
 The application continues to respect the user's normal color preference.
 
+The text-only alignment with native MaxPane tables is recorded in
+`hub_text_colors.md`; the Matrix live preview preserves the approved layout
+and the separate holdings/claims presentation.
+
 Package reviews A/B/C/D approved after focused fixes to shared enrichment union
 and per-allocation freshness. Mutation probes cover artifact decoding, decimals,
 chain identity, Merkle verification, unlock/claimed state, cancellation and

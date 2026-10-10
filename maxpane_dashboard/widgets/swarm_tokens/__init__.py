@@ -19,7 +19,7 @@ __all__ = ["TokensHero", "TokensTable", "NewlyLaunched", "BestPlays", "TokenActi
 # white is resolved differently by the two renderers.
 _COLUMN_HEADER_STYLE = "#b1b1b1"
 
-def _cell(value, width, style="white", *, right=False):
+def _cell(value, width, style="", *, right=False):
     clean = clip(flatten(value), width)
     return Text(clean.rjust(width) if right else pad(clean, width), style=style)
 
@@ -152,9 +152,9 @@ class TokensTable(TableLeaderboard):
             _usd(item.get("mcap_usd")), _usd(item.get("volume_24h")),
             f"{_quantity(item.get('buys_24h'))}/{_quantity(item.get('sells_24h'))}",
             _paired(item), ('~' if item.get('history_state') == 'stale' else '') + _chart(item,self.SPARK_WIDTH), item.get("verdict", "--"))
-        styles = {1: "bold white", 5: _change_color(change), 10: _change_color(change)}
+        styles = {1: "bold", 5: _change_color(change), 10: _change_color(change)}
         return tuple(Text(pad(value, width), style=styles[i]) if i == 10 else
-                     _cell(value, width, styles.get(i, "white"), right=4 <= i <= 9)
+                     _cell(value, width, styles.get(i, ""), right=4 <= i <= 9)
                      for i, (value, (_, width)) in enumerate(zip(values, self.COLUMNS)))
 
     def update_data(self, tokens=None, as_of=None):
@@ -212,20 +212,21 @@ class NewlyLaunched(_CompactFeed):
         self.render_events(newly_launched)
 
     def format_row(self, event):
-        return (_cell(_age(event, self._as_of), 5, "dim white") +
-                _cell(event.get("symbol", "--"), 11, "bold white") +
+        return (Text() + _cell(_age(event, self._as_of), 5, "dim") +
+                _cell(event.get("symbol", "--"), 11, "bold") +
                 _cell(flatten(event.get("chain", "--")).upper(), 6) +
                 _cell(_paired(event), 18, right=True))
 
 
 class BestPlays(PanelBase):
+    DEFAULT_CSS = "BestPlays > #st-best-body { color: $foreground; }"
     TITLE = "BEST PLAYS / 24H · TOP 5"
 
     def compose_body(self):
         yield Static(Text("--", style="dim white"), id="st-best-body")
 
     def update_data(self, gainers=None, losers=None):
-        result = Text("GAINERS               LOSERS\n\n", style=_COLUMN_HEADER_STYLE)
+        result = Text().append("GAINERS               LOSERS\n\n", style=_COLUMN_HEADER_STYLE)
         markers = {}
         for index in range(min(5, max(len(gainers or []), len(losers or []), 1))):
             for side, entries in enumerate((gainers, losers)):
@@ -237,7 +238,7 @@ class BestPlays(PanelBase):
                                        "withdrawn": ("!", "withdrawn"), "unknown": ("?", "unknown")}.get(state, ("", ""))
                     if marker:
                         markers[marker] = (meaning, _lp_color(state))
-                    result += _cell(marker, 2, _lp_color(state)) + _cell(name, 11) + _cell(_change(item.get("change_24h")), 8,
+                    result += Text() + _cell(marker, 2, _lp_color(state)) + _cell(name, 11) + _cell(_change(item.get("change_24h")), 8,
                         _change_color(item.get("change_24h")), right=True)
                 else:
                     result += _cell("unavailable" if entries is None and index == 0 else "none" if index == 0 else "", 21, "dim white")
@@ -261,9 +262,9 @@ class TokenActivity(_CompactFeed):
     def format_row(self, event):
         token = self._tokens.get(event.get("token_id"), {})
         kind = flatten(event.get("kind", "--")).upper()
-        color = {"BUY": "green", "SELL": "red", "LAUNCH": "yellow"}.get(kind, "white")
+        color = {"BUY": "green", "SELL": "red", "LAUNCH": "yellow"}.get(kind, "")
         amount = _quantity(event.get("amount"))
         amount = amount if amount == "--" else f"{amount} {flatten(event.get('asset'))}"
-        return (_cell(hhmm(event.get("ts")), 6, "dim white") + _cell(kind, 8, color) +
+        return (Text() + _cell(hhmm(event.get("ts")), 6, "dim") + _cell(kind, 8, color) +
                 _cell(flatten(token.get("chain", "--")).upper(), 5) +
                 _cell(token.get("symbol", "--"), 8) + _cell(amount, 13))
