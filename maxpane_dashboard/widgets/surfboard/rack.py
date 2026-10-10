@@ -170,7 +170,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         palette = self.app.get_css_variables()
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         border_inset = (Style.parse(MUTED) + Style(bgcolor=palette["background"])
-                        if self.key == "announce" and color == AMBER else inset)
+                        if color == AMBER else inset)
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
