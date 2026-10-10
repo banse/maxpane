@@ -102,14 +102,14 @@ def signal_meter_text(card: dict, width: int) -> Text:
     label = "SIGNALS"
     if (not _number(count) or not _number(total) or total == 0
             or count > total or count != int(count) or total != int(total)):
-        return Text().append("— ", style=AMBER).append(label, style=MUTED)
+        return Text().append(label + " ", style=MUTED).append("—", style=AMBER)
     full = int(count)
     gap = " " if full < width - len(label) else ""
     cells = max(0, width - len(label) - len(gap))
     if full > cells:
-        return Text(f"{full} {label}", style=MUTED)
-    return (Text().append("▰" * full, style=GREEN).append("▱" * (cells - full), style=MUTED)
-            .append(gap + label, style=MUTED))
+        return Text(f"{label} {full}", style=MUTED)
+    return (Text().append(label + gap, style=MUTED).append("▰" * full, style=GREEN)
+            .append("▱" * (cells - full), style=MUTED))
 
 
 class SurfboardCard(HeroBoxBase, can_focus=True):

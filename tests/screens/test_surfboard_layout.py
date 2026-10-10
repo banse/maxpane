@@ -44,17 +44,17 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(
                 card.region.x, card.region.right)
             if signals is None:
-                assert footer.text.endswith("— SIGNALS ─╯")
+                assert footer.text.endswith("SIGNALS — ─╯")
                 assert "▰" not in footer.text and "▱" not in footer.text
                 continue
             if signals > cells + 1:
-                assert footer.text.endswith(f"{signals} SIGNALS ─╯")
+                assert footer.text.endswith(f"SIGNALS {signals} ─╯")
                 assert "▰" not in footer.text
                 continue
             # Drop the gap if that lets the last signal fit beside the label.
             gap = "" if signals > cells else " "
             bar = "▰" * signals + "▱" * (cells + (not gap) - signals)
-            assert footer.text == f"╰─ {bar}{gap}SIGNALS ─╯"
+            assert footer.text == f"╰─ SIGNALS{gap}{bar} ─╯"
             assert "‹ widen" not in str(card.border_title)
             for segment in footer:
                 if "▰" in segment.text:
@@ -77,11 +77,11 @@ async def test_news_signal_footer_refresh_and_overflow_remain_exact():
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(
                 card.region.x, card.region.right).text
             if count == 24:
-                assert "24 SIGNALS" in footer and "▰" not in footer
+                assert "SIGNALS 24" in footer and "▰" not in footer
             else:
                 assert footer.count("▰") == (count or 0)
                 assert "‹ widen" not in str(card.border_title)
-                assert ("— SIGNALS" in footer) == (count is None)
+                assert ("SIGNALS —" in footer) == (count is None)
 
 
 async def test_terminal_uses_dashboard_background_and_native_text_colors():
