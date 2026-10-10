@@ -1,6 +1,8 @@
 # PORTFOLIO offline mock implementation plan
 
 Approved: ASCII option 1, Portfolio overview, 149×45, 2026-10-10.
+Status: mock complete; the owner approved the rendered design with P/L on
+2026-10-10. The next phase is described in `portfolio_live_implementation_plan.md`.
 Authority: `CLAUDE.md` Tier 2 and `portfolio_PRD.md`. Target **under 1,000 new
 production lines** through reuse (approximately 250 data/analytics, 550 UI and
 100 integration). Use one final feature review; no per-package review.

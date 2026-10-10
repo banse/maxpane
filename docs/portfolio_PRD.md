@@ -1,8 +1,10 @@
-# PORTFOLIO — approved offline mockup
+# PORTFOLIO — approved design
 
-Date: 2026-10-10. The owner selected ASCII option **1: Portfolio overview**.
-This approves the Textual mockup at **149×45**, not live wallet integration.
-Owner revision: replace the LAUNCH LIQUIDITY hero with **P/L**.
+Date: 2026-10-10. The owner selected ASCII option **1: Portfolio overview**,
+replaced the LAUNCH LIQUIDITY hero with **P/L**, then approved the completed
+149×45 Textual design ("design approved"). The layout and interactions below
+are the implementation reference. The offline mock is complete; live data
+integration is planned in `portfolio_live_implementation_plan.md`.
 
 ## Requirements and scope
 
@@ -43,7 +45,8 @@ use muted headings with their normal blank line, neutral values, green/red
 price changes and yellow degraded states. Use existing theme tokens, panel
 bases, amount formatters and 20-character price sparklines. Keep all columns
 reachable at smaller sizes through scrolling and truthful widen/taller hints.
-149×45 is the preview target; no layout minimum is claimed before measurement.
+149×45 is the approved preview target. The completed mock measured a 145×35
+minimum for its fixed chrome; smaller terminals retain access through scrolling.
 
 ## Data meaning
 
@@ -109,7 +112,7 @@ zero, details and navigation. All Portfolio tests block network use. Reuse the
 existing SWARM TOKENS projection/feed/movers/filter/detail/screen where sound
 and the shared bases used by BASE TRADING; do not copy an entire dashboard.
 
-Out of scope: live reads, new polling/cache stacks, signing, claiming or other
+Out of scope for the completed mock phase: live reads, new polling/cache stacks, signing, claiming or other
 transactions, wallet history, live cost-basis/PnL acquisition and top-level dashboard registry
 changes. Source research and live-integration caveats remain in
 `portfolio_game_mechanics.md`.

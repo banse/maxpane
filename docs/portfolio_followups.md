@@ -1,6 +1,7 @@
 # PORTFOLIO follow-ups
 
-The delivered phase is an offline Textual mock. Live integration is separate:
+The delivered offline Textual design is owner-approved. Live integration work
+packages are in `portfolio_live_implementation_plan.md`; the remaining requirements are:
 
 - Reuse the complete SWARM TOKENS catalogue and enrichment; read wallet token
   balances with actual token decimals and explicit discovery/read coverage.

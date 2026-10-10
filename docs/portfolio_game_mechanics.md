@@ -1,9 +1,10 @@
 # PORTFOLIO dashboard — design research
 
-Date: 2026-10-10. Status: the owner selected ASCII option 1, Portfolio overview.
-The offline Textual mockup is approved; live wallet integration remains future
-work. Scope and work packages are in `portfolio_PRD.md` and
-`portfolio_implementation_plan.md`.
+Date: 2026-10-10. Status: the owner approved the completed Textual design,
+ASCII option 1 with the P/L hero. Live wallet integration remains to be built.
+The approved design is in `portfolio_PRD.md`; the completed mock work is in
+`portfolio_implementation_plan.md`, and live work packages are in
+`portfolio_live_implementation_plan.md`.
 
 ## Requested outcome
 
@@ -12,8 +13,8 @@ flow, and see swarm-launched tokens held by that wallet plus tokens claimable
 through its IMD agents. Reuse BASE TRADING widgets and SWARM TOKENS fetching,
 enrichment and liquidity presentation. Follow native MaxPane styling and KISS.
 
-The initial design target is the previous SURFBOARD/SWARM TOKENS target,
-149 columns by 45 rows. This is a design assumption, not a measured layout pin.
+The approved design target is 149 columns by 45 rows. The offline composition
+has since measured a 145×35 minimum for fixed chrome.
 
 ## Repository evidence and reuse
 
@@ -22,9 +23,9 @@ The initial design target is the previous SURFBOARD/SWARM TOKENS target,
   input, persistence, immediate wallet identity repaint and wallet-scoped refresh.
   `config.py::get_wallet` currently prioritizes MAXPANE_WALLET over saved config;
   Portfolio must define the effective wallet consistently when it is changed.
-- `screens/surfboard.py` and `widgets/surfboard/rack.py`: PORTFOLIO already has a
-  planned hub card. Activate that destination rather than add another top-level
-  dashboard entry.
+- `screens/surfboard.py` and `widgets/surfboard/rack.py`: PORTFOLIO now has an
+  active mock-preview hub card. Replace its mock manager for live integration
+  rather than add another top-level dashboard entry.
 - `widgets/base/overview/`: hero, table, sparkline, signals, activity and movers
   components. Reuse their shared panel bases and suitable renderers through
   small adapters; their ETH-market labels and Base-only explorer are not valid
