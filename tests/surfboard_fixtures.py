@@ -12,8 +12,8 @@ def hub_payload(kind="normal"):
         ("agent", "AGENT", "agent", "IDMD #420", "0 of 3 slots", 3253, 3392),
         ("board", "BOARD", "board", "892 seats", "rank #69", 3253, 3392),
         ("launchpad", "LAUNCHPAD", "launchpad", "208 coins", "0 new / 24h", 0, 208),
-        ("pool4", "POOL4", "pool4_user", "7.90 USD", "1.40% / 7d", 350, 1000),
-        ("protocol", "PROTOCOL", "pool4", "5,873", "33,279 burned", 60, 100),
+        ("pool4", "POOL4", "pool4_user", "7.90", "USD", 350, 1000),
+        ("protocol", "PROTOCOL", "pool4", "33,279", "IMD", 60, 100),
         ("swarm-tokens", "TOKENS", "swarm-tokens", "116", "2 new", None, None),
     )
     cards = []
@@ -49,8 +49,10 @@ def hub_payload(kind="normal"):
             status="working", primary="IDMD #99999", secondary="99,999 of 99,999 slots")
         next(card for card in cards if card["key"] == "announce").update(
             primary="11", secondary="99,999 new posts")
+        next(card for card in cards if card["key"] == "pool4").update(
+            primary="999,999.99", secondary="USD")
         next(card for card in cards if card["key"] == "protocol").update(
-            primary="1,234,567", secondary="99,999 burned")
+            primary="1,234,567", secondary="IMD")
         next(card for card in cards if card["key"] == "swarm-tokens").update(
             primary="1,234,567", secondary="99,999 new")
         overview = dict(agents_online=99999, working_now=99999, jobs_24h=999999,
@@ -60,7 +62,8 @@ def hub_payload(kind="normal"):
                       market_basis="fdv", market_state="stale", overview_state="stale")
     elif kind == "unavailable":
         for card in cards[:8]:
-            card.update(status="unavailable", primary="unavailable", secondary="unavailable",
+            card.update(status="unavailable", primary="unavailable",
+                        secondary={"pool4":"USD", "protocol":"IMD"}.get(card["key"], "unavailable"),
                         numerator=None, denominator=None, points=None)
         overview, events = None, None
         footer.update(market_value_usd=None, market_basis=None, market_state="unavailable",

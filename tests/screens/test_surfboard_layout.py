@@ -76,11 +76,11 @@ async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
 async def test_projected_pool4_value_period_ratio_and_source_clocks_fit_owner_size(state):
     from maxpane_dashboard.data import surfboard as projection
 
-    # Public live values retain their real precision; only the return is supplied
-    # to cover the successful path missing from that live API response.
+    # Public live values retain their real precision; a supplied 24h change
+    # covers the border direction independently of the quote source.
     raw = dict(pool4_vault_assets=1795886.4737732294, pool4_total_supply=4143519.145292,
                pool4_network="MAINNET", pool4_as_of_hhmm="01:04",
-               pool4_price_usd=7.878357502256693, pool4_trailing_return_pct=1.4)
+               pool4_price_usd=7.878357502256693, imd_change_24h_pct=1.4)
     families = {name: dict(state=state, read_ts=STAMP)
                 for name in ("pool4", "market")}
     payload = hub_payload()
@@ -98,7 +98,7 @@ async def test_projected_pool4_value_period_ratio_and_source_clocks_fit_owner_si
         assert f"market {state} · read {projection.hhmm(STAMP)}" in detail
         assert f"pool4 {state} · read {projection.hhmm(STAMP)}" in detail
         assert "1,795,886.4737732294 / 4,143,519.145292" in detail
-        assert "1.40% / 7d" in "\n".join(lines)
+        assert "24h +1.40%" in detail
         assert "‹ widen" not in str(app.hub.query_one("#surfboard-card-pool4").border_title)
 
 
@@ -243,19 +243,26 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
         for card in payload["surfboard_cards"][:7]:
             if card["key"] in ("announce", "protocol"):
                 text = r["card_text"][card["key"]]
-                assert (" NEW POSTS " if card["key"] == "announce" else " IMD REWARDS ") in text, r
+                assert (" NEW POSTS " if card["key"] == "announce" else " BURNED ") in text, r
                 if kind == "unavailable" or (kind == "stress" and card["key"] == "protocol"):
                     expected = (card["primary"],)
                 elif card["key"] == "announce":
                     expected = (("╭─╮" * 5, "╰─┤" * 5, "╶─╯" * 5) if kind == "stress" else
                                 ("╭─╮", "│ │", "╰─╯"))
                 else:
-                    expected = ("╭─╴ ╭─╮╶─┐╶─╮", "╰─╮ ├─┤  │ ─┤", "╶─╯,╰─╯  ╵╶─╯")
+                    expected = ("╶─╮╶─╮ ╶─╮╶─┐╭─╮", " ─┤ ─┤ ┌─┘  │╰─┤", "╶─╯╶─╯,╰─╴  ╵╶─╯")
                 assert all(row in text for row in expected), r
                 footer = (("unavailable" if kind == "unavailable" else
                            "11 signals" if kind == "stress" else "4 signals")
                           if card["key"] == "announce" else card["secondary"])
                 assert footer in text, r
+                continue
+            if card["key"] == "pool4":
+                text = r["card_text"]["pool4"]
+                assert " 1 IMD = " in text and "USD" in text, r
+                expected = (("╶─┐ ╭─╮╭─╮", "  │ ╰─┤│ │", "  ╵•╶─╯╰─╯")
+                            if kind in ("normal", "wide") else (card["primary"],))
+                assert all(row in text for row in expected), r
                 continue
             if card["key"] == "agent":
                 text = r["card_text"]["agent"]

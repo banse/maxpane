@@ -122,11 +122,11 @@ def test_announce_card_counts_unique_posts_replies_and_answers_in_last_day(items
 
 
 @pytest.mark.parametrize('burn,reward,primary,secondary', [
-    (33279.30, 5872.82, '5,873', '33,279 burned'),
-    (0, 0, '0', '0 burned'),
-    (12.8, 3.2, '3', '13 burned'),
-    (None, None, 'unavailable', 'unavailable'),
-    (True, float('nan'), 'unavailable', 'unavailable'),
+    (33279.30, 5872.82, '33,279', 'IMD'),
+    (0, 0, '0', 'IMD'),
+    (12.8, 3.2, '13', 'IMD'),
+    (None, None, 'unavailable', 'IMD'),
+    (True, float('nan'), 'unavailable', 'IMD'),
 ])
 def test_protocol_card_rounds_readouts_but_keeps_exact_flow(burn, reward, primary, secondary):
     row=next(c for c in hub.cards(dict(pool4_total_burned=burn,
@@ -444,3 +444,33 @@ def test_tokens_card_preserves_unknown_partial_and_stale_catalogue(catalogue, pr
     assert row['status'] != 'active'
     assert row['destination'] == 'swarm-tokens'
     assert (catalogue or {'state':'unavailable'})['state'] in row['detail']
+
+
+@pytest.mark.parametrize('change,status', [(2.3,'active'),(-2.3,'idle'),(0,'idle'),
+    (None,'unavailable'),(True,'unavailable'),(float('nan'),'unavailable'),(float('inf'),'unavailable')])
+def test_pool4_price_digits_follow_valid_24h_direction(change, status):
+    row = next(c for c in hub.cards(dict(pool4_price_usd=8.77, imd_price_usd=9.99,
+        imd_change_24h_pct=change), {}, now=100) if c['key']=='pool4')
+    assert (row['primary'], row['secondary'], row['status']) == ('8.77', 'USD', status)
+    assert row['destination'] == 'pool4_user'
+    assert '24h' in row['detail']
+
+
+@pytest.mark.parametrize('state,age,ready,expected', [
+    ('fired',0,False,'active'), ('fired',86399,True,'active'),
+    ('fired',86400,True,'ready'), ('fired',None,True,'ready'),
+    ('fired',-1,False,'experimental'), ('watch',None,True,'ready'),
+    ('ok',None,True,'ready'), ('ok',None,False,'experimental'),
+    ('dead',None,None,'experimental'), ('ok',None,1,'experimental'),
+])
+def test_protocol_color_uses_recent_burn_signal_then_current_readiness(state, age, ready, expected):
+    row = next(c for c in hub.cards(dict(pool4_total_burned=33279.30,
+        sig_burn_state=state, sig_burn_age_s=age, burn_ready=ready,
+        sig_burnready_state='fired'), {}, now=100000) if c['key']=='protocol')
+    assert (row['primary'], row['secondary'], row['status']) == ('33,279', 'IMD', expected)
+    assert row['destination'] == 'pool4'
+
+
+def test_pool4_missing_price_never_shows_zero_or_green():
+    row=next(c for c in hub.cards(dict(imd_change_24h_pct=2.3),{},now=100) if c['key']=='pool4')
+    assert (row['primary'],row['secondary'],row['status']) == ('unavailable','USD','unavailable')

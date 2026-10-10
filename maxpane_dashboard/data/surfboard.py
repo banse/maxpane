@@ -425,14 +425,24 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     active=sum(n>0 for n in swaps.values()) if complete else None
     card("launchpad","LAUNCHPAD",_value(data.get("launchpad_coin_count")," coins"),_value(data.get("launchpad_new_24h")," new / 24h"),
          "TRADE · coins traded / full factory"+(" · incomplete coverage" if not complete else "")+f" · as of {data.get('launchpad_as_of_hhmm') or '—'}","launchpad",active,population if complete else None)
-    card("pool4","POOL4",_value(data.get("pool4_price_usd")," USD"),_value(data.get("pool4_trailing_return_pct"),"% / 7d"),
-         "STAKE · vault assets / token supply"+f" · {data.get('pool4_network') or 'unknown network'}","pool4_user",data.get("pool4_vault_assets"),data.get("pool4_total_supply"))
+    price = number(data.get("pool4_price_usd"))
+    change = data.get("imd_change_24h_pct")
+    valid_change = type(change) in (int, float) and number(abs(change)) is not None
+    change_text = f"{change:+.2f}%" if valid_change else "unavailable"
+    card("pool4","POOL4",f"{price:,.2f}" if price is not None else "unavailable","USD",
+         f"STAKE · vault/supply · 24h {change_text}"
+         +f" · {data.get('pool4_network') or 'unknown network'}","pool4_user",data.get("pool4_vault_assets"),data.get("pool4_total_supply"))
+    result[-1]["status"] = ("unavailable" if price is None or not valid_change else
+                            "active" if change > 0 else "idle")
     burn=data.get("pool4_total_burned");reward=data.get("pool4_total_rewarded");fee=data.get("pool4_total_fee_token")
     denominator=sum((burn,reward,fee)) if all(number(x) is not None for x in (burn,reward,fee)) else None
-    card("protocol","PROTOCOL",_value(round(reward)) if number(reward) is not None else "unavailable",
-         _value(round(burn)," burned") if number(burn) is not None else "unavailable",
+    card("protocol","PROTOCOL",_value(round(burn)) if number(burn) is not None else "unavailable", "IMD",
          f"BURN · {_value(burn,' burned')} · {_value(reward,' rewarded')} · measured flow · EXPERIMENTAL"
          +f" · {data.get('pool4_network') or 'unknown network'} · as of {data.get('pool4_as_of_hhmm') or '—'}","pool4",burn,denominator)
+    burn_age = number(data.get("sig_burn_age_s"))
+    recent_burn = data.get("sig_burn_state") == "fired" and burn_age is not None and burn_age < FIRED_TTL_S
+    result[-1]["status"] = ("active" if recent_burn else "ready" if data.get("burn_ready") is True else "experimental")
+    result[-1]["detail"] += f" · burn signal {data.get('sig_burn_state') or 'unavailable'} · ready {data.get('burn_ready')} · signal snapshot {hhmm(data.get('as_of'))}"
     families = family_sources or {}
     for row in result:
         names = {"announce": ("announce", "signals"), "swarm": ("hourly",),

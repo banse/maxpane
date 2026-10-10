@@ -150,11 +150,15 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
 async def test_card_activity_colors_update_from_current_counts():
     async with RackApp().run_test(size=(149,45)) as pilot:
         for key,status,primary,secondary,ink in [
-            ('protocol','experimental','5,873','33,279 burned',3),
-            ('protocol','stale','5,873','33,279 burned',3),
-            ('protocol','unavailable','5,873','33,279 burned',3),
-            ('protocol','experimental','unavailable','33,279 burned',3),
-            ('protocol','experimental','5,873','33,279 burned',3),
+            ('pool4','active','8.77','USD',2),
+            ('pool4','idle','8.77','USD',3),
+            ('protocol','active','33,279','IMD',2),
+            ('protocol','ready','33,279','IMD',11),
+            ('protocol','experimental','33,279','IMD',3),
+            ('protocol','stale','33,279','IMD',3),
+            ('protocol','unavailable','33,279','IMD',3),
+            ('protocol','experimental','unavailable','IMD',3),
+            ('protocol','experimental','33,279','IMD',3),
             ('announce','stale','5','1 new post',2),
             ('announce','stale','5','0 new posts',3),
             ('announce','unavailable','unavailable','1 new post',2),
@@ -179,12 +183,14 @@ async def test_card_activity_colors_update_from_current_counts():
     ('announce','1','1 new post','NEW POSTS',['╶╮ ',' │ ','╶┴╴'],True,'1 signal'),
     ('announce','5','unavailable','NEW POSTS',['','unavailable',''],False,'5 signals'),
     ('announce','unavailable','unavailable','NEW POSTS',['','unavailable',''],False,'unavailable'),
-    ('protocol','5,873','33,279 burned','IMD REWARDS',
-     ['╭─╴ ╭─╮╶─┐╶─╮','╰─╮ ├─┤  │ ─┤','╶─╯,╰─╯  ╵╶─╯'],False,'33,279 burned'),
-    ('protocol','99,999','12,345 burned','IMD REWARDS',
-     ['╭─╮╭─╮ ╭─╮╭─╮╭─╮','╰─┤╰─┤ ╰─┤╰─┤╰─┤','╶─╯╶─╯,╶─╯╶─╯╶─╯'],False,'12,345 burned'),
-    ('protocol','123,456','12,345 burned','IMD REWARDS',['','123,456',''],False,'12,345 burned'),
-    ('protocol','1,234,567','12,345 burned','IMD REWARDS',['','1,234,567',''],False,'12,345 burned'),
+    ('pool4','8.77','USD','1 IMD =',
+     ['╭─╮ ╶─┐╶─┐','├─┤   │  │','╰─╯•  ╵  ╵'],True,'USD'),
+    ('protocol','33,279','IMD','BURNED',
+     ['╶─╮╶─╮ ╶─╮╶─┐╭─╮',' ─┤ ─┤ ┌─┘  │╰─┤','╶─╯╶─╯,╰─╴  ╵╶─╯'],True,'IMD'),
+    ('protocol','99,999','IMD','BURNED',
+     ['╭─╮╭─╮ ╭─╮╭─╮╭─╮','╰─┤╰─┤ ╰─┤╰─┤╰─┤','╶─╯╶─╯,╶─╯╶─╯╶─╯'],True,'IMD'),
+    ('protocol','123,456','IMD','BURNED',['','123,456',''],True,'IMD'),
+    ('protocol','1,234,567','IMD','BURNED',['','1,234,567',''],True,'IMD'),
 ])
 async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,label,expected,green,footer_text):
     async with RackApp().run_test(size=size) as pilot:

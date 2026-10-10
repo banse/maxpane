@@ -107,10 +107,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         width = max(4, self.content_size.width)
         inside = width - 2
         status = flatten(self.data.get("status")) or "unavailable"
-        if self.key == "protocol" and status == "active":
-            status = "experimental"
         muted = self.key in PLANNED or not self.can_focus
-        color = MUTED if muted else {"active": GREEN, "working": GREEN,
+        color = MUTED if muted else {"active": GREEN, "working": GREEN, "ready": "bright_yellow",
             "stale": AMBER, "unavailable": AMBER, "paused": AMBER,
             "offline": RED, "error": RED, "failed": RED}.get(status, AMBER)
         primary = flatten(self.data.get("primary")) or "unavailable"
@@ -140,13 +138,15 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "agent", "announce", "protocol", "swarm-tokens"):
+        if self.key in ("swarm", "agent", "announce", "protocol", "swarm-tokens", "pool4"):
             label = {"swarm": " AGENTS ", "agent": " SEAT ",
-                     "announce": " NEW POSTS ", "protocol": " IMD REWARDS ",
+                     "announce": " NEW POSTS ", "protocol": " BURNED ", "pool4": " 1 IMD = ",
                      "swarm-tokens": " LAUNCHED "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
-            readout = count if self.key in ("protocol", "swarm-tokens") else digits
+            if self.key == "pool4":
+                digits = digits.replace(".", "", 1)
+            readout = count if self.key in ("protocol", "swarm-tokens", "pool4") else digits
             # Use the same native 3x3 renderer as Textual's Digits widget.
             native_digits = digits.isascii() and digits.isdecimal() and Digits.get_width(readout) <= inside
             if native_digits:
