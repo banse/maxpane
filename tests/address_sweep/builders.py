@@ -57,6 +57,10 @@ from maxpane_dashboard.data.swarm_tokens_demo import demo_snapshot
 from maxpane_dashboard.screens.swarm_tokens import (
     SwarmTokensScreen, SWARM_TOKENS_FULL_LAYOUT_COLUMNS, SWARM_TOKENS_FULL_LAYOUT_ROWS,
 )
+from maxpane_dashboard.data.portfolio_demo import DemoPortfolioManager, demo_snapshot as portfolio_snapshot
+from maxpane_dashboard.screens.portfolio import (
+    PortfolioScreen, PORTFOLIO_FULL_LAYOUT_COLUMNS, PORTFOLIO_FULL_LAYOUT_ROWS,
+)
 from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA, ROBINHOOD
 from tests.address_sweep.case import SweepCase
 from tests.screens import test_curator_screen as _curator
@@ -690,6 +694,13 @@ def _swarm_tokens_app() -> App:
     return _CopyHarness(SwarmTokensScreen(_PayloadManager(_swarm_tokens_payload())))
 
 
+_PORTFOLIO_WALLET = '0x' + 'ab' * 20
+
+
+def _portfolio_app() -> App:
+    return _CopyHarness(PortfolioScreen(DemoPortfolioManager(_PORTFOLIO_WALLET)))
+
+
 _TOKEN_CONTRACTS = ('0x'+'a1'*20, '0x'+'b2'*20, '0x'+'c3'*20)
 
 
@@ -704,6 +715,12 @@ def _swarm_tokens_payload():
 
 
 CASES: tuple[SweepCase, ...] = (
+    SweepCase(
+        name="portfolio", screen_class=PortfolioScreen,
+        build=_portfolio_app, payload=lambda: portfolio_snapshot(_PORTFOLIO_WALLET),
+        seeded=(_PORTFOLIO_WALLET,), explorer=ETHEREUM,
+        pins=((PORTFOLIO_FULL_LAYOUT_COLUMNS, PORTFOLIO_FULL_LAYOUT_ROWS),),
+    ),
     SweepCase(
         name="swarm_tokens_live", screen_class=SwarmTokensScreen,
         build=_swarm_tokens_app, payload=_swarm_tokens_payload,

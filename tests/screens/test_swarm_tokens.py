@@ -20,7 +20,7 @@ def painted(app):
 def test_screen_css_agrees_with_application_stylesheet():
     from pathlib import Path
     css=(Path(__file__).resolve().parents[2]/'maxpane_dashboard/themes/minimal.tcss').read_text()
-    block=css.split('/* SWARM TOKENS mock screen */',1)[-1]
+    block=css.split('/* SWARM TOKENS mock screen */',1)[-1].split('/* PORTFOLIO mock screen */',1)[0]
     assert ' '.join(block.split())==' '.join(SwarmTokensScreen.DEFAULT_CSS.split())
 
 

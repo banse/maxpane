@@ -19,7 +19,7 @@ kind, no wallet, no signing, no transactions.
 | **Cat Town** | Base | Fishing competition, KIBBLE economy, catches |
 | **Ten Thousand Tokens** | Ethereum | NFT burn-to-launch on UniV4, fee engines, holder claims |
 | **Talismans** | Ethereum | Core-conservation NFT collection, materials, essence × tier |
-| **SURFBOARD HUB** | Ethereum / IMD | Dashboard 9: seven SURFBOARD launchers, live IMD terminal, live SWARM TOKENS markets, two future dashboards and two empty bays |
+| **SURFBOARD HUB** | Ethereum / IMD | Dashboard 9: seven SURFBOARD launchers, live IMD terminal, live SWARM TOKENS markets, Portfolio preview, future Earnings and two empty bays |
 
 ### SURFBOARD HUB — dashboard 9
 
@@ -32,8 +32,8 @@ Use arrows and Enter to open a card, `/` to type, and Escape to leave the input 
 the menu. Outside the input, Tab continues cycling dashboards. Type `?` for commands:
 `status`, `jobs`, `seat #420`, `find <ENS/address/#seat>`, `me`, `grep <text>`,
 `open <#seat/job-id>` and `clear`. These commands only read public data or open an existing
-view. Swarm Tokens opens the mock preview below; Portfolio and Earnings remain planned,
-with two empty bays available.
+view. Swarm Tokens opens live markets; Portfolio opens the offline mock preview below.
+Earnings remains planned, with two empty bays available.
 
 Acceptance and rank in HUB, AGENT and BOARD share one validated `/seats/records` snapshot.
 Its upstream cache can lag by ten minutes. Device effort and worker presence keep separate
@@ -81,6 +81,29 @@ The isolated, deterministic **MOCK DATA** demo remains available without network
 ```bash
 .venv/bin/python -m maxpane_dashboard.demos.swarm_tokens
 ```
+
+### PORTFOLIO — offline preview
+
+Open **PORTFOLIO** from dashboard 9, or run the isolated sample:
+
+```bash
+.venv/bin/python -m maxpane_dashboard.demos.portfolio
+# Start with the wallet unset:
+.venv/bin/python -m maxpane_dashboard.demos.portfolio --empty
+```
+
+The 149×45 mock shows held value, ready claims, linked IMD agents and unrealized
+P/L, followed by market activity, claims, movers and the portfolio table with
+IMD/ETH launch liquidity. Press `w` for THE LIST's saved-wallet prompt, `f` for filters,
+`/` to search and Enter for position/claim/market details. `r` reloads the same
+sample; Escape returns to the hub or exits the standalone preview.
+
+**Every amount is MOCK DATA, including after entering a real address.** Portfolio
+makes no network requests. The hub uses the saved wallet; standalone starts with
+an explicitly labelled example. Held and ready-claim values remain separate;
+launch liquidity is market context, not wallet assets. P/L excludes claims and
+uses synthetic cost bases; unknown valuation or cost makes it unavailable.
+Live balances, claims and cost-basis acquisition are a later phase.
 
 ### FWA — Fake World Assets
 

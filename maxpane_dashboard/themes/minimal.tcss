@@ -3101,3 +3101,8 @@ SwarmTokensScreen RichLog { height: 1fr; padding: 0 1; background: $background;
     scrollbar-size: 1 1; }
 SwarmTokensScreen #st-best-body { height: 1fr; padding: 0 1; }
 SwarmTokensScreen SwarmTokensFilterEditor { display: none; }
+
+/* PORTFOLIO mock screen */
+PortfolioScreen #st-body { min-height: 34; }
+PortfolioScreen #pf-context { height: 2; padding: 0 1; color: $text-muted; text-wrap: nowrap; }
+PortfolioScreen #pf-separator { height: 1; color: $panel; padding: 0 1; }

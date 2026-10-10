@@ -141,6 +141,14 @@ class SurfboardScreen(DashboardScreen):
         self._render_chrome()
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
+        if event.key == "portfolio":
+            from maxpane_dashboard.config import get_wallet
+            from maxpane_dashboard.data.portfolio_demo import DemoPortfolioManager
+            from maxpane_dashboard.screens.portfolio import PortfolioScreen
+            if not hasattr(self, "_portfolio_manager"):
+                self._portfolio_manager = DemoPortfolioManager(get_wallet() or self._wallet)
+            self.app.push_screen(PortfolioScreen(self._portfolio_manager))
+            return
         if event.key == "swarm-tokens":
             from maxpane_dashboard.screens.swarm_tokens import SwarmTokensScreen
             self.app.push_screen(SwarmTokensScreen(self._data_manager.swarm_tokens_manager()))
