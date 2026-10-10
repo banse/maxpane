@@ -177,9 +177,12 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
                   pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
         top = next(i for i, strip in enumerate(strips) if "┌" in strip.text)
         left, right = strips[top].text.index("┌"), strips[top].text.index("┐")
+        outer_title = "⊙ SWARM ⊙"
+        title_start = strips[0].text.index(outer_title)
+        assert abs(title_start - (len(strips[0].text) - title_start - len(outer_title))) <= 1
         assert " AGENTS " in strips[top].text
         assert "ONLINE" not in strips[top].text
-        assert strips[top + 4].text[left:right + 1] == "└" + " 27 working ".center(right - left - 1, "─") + "┘"
+        assert strips[top + 4].text[left:right + 1] == "└" + " 27 working ".ljust(right - left - 1, "─") + "┘"
         for strip, row in zip(strips[top + 1:top + 4], expected):
             padding = (right - left - 1 - len(row)) // 2
             assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)

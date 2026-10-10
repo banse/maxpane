@@ -151,7 +151,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self.data.update(status="planned" if planned else "unassigned", primary="coming soon" if planned else "empty slot",
                              secondary="future dashboard" if planned else "· · ·", destination=None,
                              detail=f"{self.title} · planned / coming soon" if planned else f"{self.title} · empty expansion slot")
-        self.border_title = Text("⊙ " + self.title)
+        self.border_title = Text("⊙ " + self.title + (" ⊙" if self.key == "swarm" else ""))
         self._update_meter()
         self.refresh()
 
@@ -250,8 +250,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             clipped |= lost
             line.align("left" if preview is not None else "center", inside)
             body.append("│", style=border_inset).append_text(line).append("│\n", style=border_inset)
-        self.border_title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, self.size.width - 4)))
-        footer = Text("└" + clip(bottom, inside).center(inside, "─") + "┘",
+        title = "⊙ " + self.title + (" ⊙" if self.key == "swarm" else "")
+        self.border_title = Text(title_with_hint(title, clipped, max(0, self.size.width - 4)))
+        bottom = clip(bottom, inside)
+        bottom = bottom.ljust(inside, "─") if self.key == "swarm" else bottom.center(inside, "─")
+        footer = Text("└" + bottom + "┘",
                       style=border_inset + Style(bold=False))
         return body.append_text(footer)
 
@@ -279,6 +282,7 @@ class SurfboardRack(Grid):
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; }
     SurfboardRack > #surfboard-card-announce { border-subtitle-align: left; }
+    SurfboardRack > #surfboard-card-swarm { border-title-align: center; }
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
     SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
