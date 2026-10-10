@@ -1473,9 +1473,10 @@ SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "deta
                         "destination", "meter_kind", "numerator", "denominator", "points")
 SWARM_SEAT_OUTCOME_FIELDS = ("token_id", "listed", "attempts", "accepted", "rejected",
                            "failed", "pending", "accept_rate", "rank", "ranked_of")
-# Sources are keyed overview/records/hourly. state is ok/stale/unavailable;
+# Sources are keyed overview/records/hourly/supply. state is ok/stale/unavailable;
 # version is the normalized payload hash, read_ts is successful observation time.
 SURFBOARD_SOURCE_FIELDS = ("payload", "read_ts", "provider_ts", "version", "attempt_ts", "state")
+SURFBOARD_SUPPLY_FIELDS = ("total_supply",)  # canonical Base FP backing all production-chain IMD
 SURFBOARD_FOOTER_FIELDS = ("market_value_usd", "market_basis", "market_state", "market_read_ts",
                           "inference_tokens", "overview_state", "overview_read_ts", "provider_ts", "as_of")
 SURFBOARD_OVERVIEW_FIELDS = ("agents_online", "working_now", "accepted_24h", "jobs_24h",

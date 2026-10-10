@@ -1,5 +1,8 @@
 """Keyless Base state batches for production-launch evidence."""
 import httpx
+import re
+from maxpane_dashboard.data.surf_addresses import FP_TOKEN_BASE
+from maxpane_dashboard.data.surf_pool4 import ERC20_SELECTORS
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient, jsonrpc_payload, ENDPOINT_DEAD_CODES
 from maxpane_dashboard.data.rpc_classify import BASE_ENDPOINT_LIMITATION_FRAGMENTS, looks_like_endpoint_limitation
 from maxpane_dashboard.analytics.surf_launch_checks import evidence_calls, evidence_results
@@ -46,6 +49,19 @@ class SwarmBaseClient(OwnedHttpClient):
     async def fetch_launch_pool_state(self, calls):
         """Read v4 storage and decimals through the existing state endpoint pool."""
         return await self._rpc(calls) if calls else []
+
+    async def fetch_imd_global_supply(self):
+        """FP remaining supply backs IMD across chains; OFTs are not additive."""
+        raw = await self._rpc([
+            ('eth_call', [{'to': FP_TOKEN_BASE, 'data': ERC20_SELECTORS[name]}, 'latest'])
+            for name in ('totalSupply', 'decimals')
+        ])
+        if not isinstance(raw, list) or len(raw) != 2 or any(
+            not isinstance(word, str) or not re.fullmatch(r'0x[0-9a-fA-F]{64}', word) for word in raw
+        ):
+            return None
+        supply, decimals = (int(word, 16) for word in raw)
+        return {'total_supply': supply / 10**decimals} if supply > 0 and decimals <= 36 else None
 
     async def fetch_launch_receipts(self, tx_hashes):
         return await read_launch_receipts(self._rpc, tx_hashes)

@@ -122,11 +122,11 @@ def test_announce_card_counts_unique_posts_replies_and_answers_in_last_day(items
 
 
 @pytest.mark.parametrize('burn,reward,primary,secondary', [
-    (33279.30, 5872.82, '33,279', 'IMD'),
-    (0, 0, '0', 'IMD'),
-    (12.8, 3.2, '13', 'IMD'),
-    (None, None, 'unavailable', 'IMD'),
-    (True, float('nan'), 'unavailable', 'IMD'),
+    (33279.30, 5872.82, '33,279', 'unavailable'),
+    (0, 0, '0', 'unavailable'),
+    (12.8, 3.2, '13', 'unavailable'),
+    (None, None, 'unavailable', 'unavailable'),
+    (True, float('nan'), 'unavailable', 'unavailable'),
 ])
 def test_protocol_card_rounds_readouts_but_keeps_exact_flow(burn, reward, primary, secondary):
     row=next(c for c in hub.cards(dict(pool4_total_burned=burn,
@@ -426,7 +426,7 @@ def test_tokens_card_uses_same_launch_news_window_as_swarm_header(events, expect
     data = dict(as_of=10000, swarm_launch_fired=events)
     row = next(r for r in hub.cards(data, {}, now=10000,
         tokens_catalogue=dict(count=116, state='ok', as_of=9900)) if r['key']=='swarm-tokens')
-    assert (row['title'], row['primary'], row['secondary']) == ('TOKENS', '116', f'{expected} new')
+    assert (row['title'], row['primary'], row['secondary']) == ('LAUNCHES', '116', f'{expected} new')
     assert row['destination'] == 'swarm-tokens'
     assert (row['status'] == 'active') == bool(_launch_news(data)) == (expected > 0)
     assert 'catalogue ok' in row['detail'] and hub.hhmm(9900) in row['detail']
@@ -467,7 +467,7 @@ def test_protocol_color_uses_recent_burn_signal_then_current_readiness(state, ag
     row = next(c for c in hub.cards(dict(pool4_total_burned=33279.30,
         sig_burn_state=state, sig_burn_age_s=age, burn_ready=ready,
         sig_burnready_state='fired'), {}, now=100000) if c['key']=='protocol')
-    assert (row['primary'], row['secondary'], row['status']) == ('33,279', 'IMD', expected)
+    assert (row['primary'], row['secondary'], row['status']) == ('33,279', 'unavailable', expected)
     assert row['destination'] == 'pool4'
 
 

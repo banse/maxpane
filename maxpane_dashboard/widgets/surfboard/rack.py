@@ -27,7 +27,7 @@ SLOTS = (
     ("announce", "ANNOUNCE", 0, 0), ("swarm", "SWARM", 0, 1),
     ("agent", "AGENT", 0, 2), ("board", "BOARD", 0, 3),
     ("launchpad", "LAUNCHPAD", 0, 4), ("pool4", "POOL4", 0, 5),
-    ("protocol", "PROTOCOL", 1, 0), ("swarm-tokens", "TOKENS", 1, 5),
+    ("protocol", "PROTOCOL", 1, 0), ("swarm-tokens", "LAUNCHES", 1, 5),
     ("portfolio", "PORTFOLIO", 2, 0), ("earnings", "EARNINGS", 2, 5),
     ("bay-11", "BAY 11", 3, 0), ("bay-12", "BAY 12", 3, 5),
 )
@@ -140,8 +140,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         rows = [("", False), (primary, not muted), (secondary, False)]
         if self.key in ("swarm", "agent", "announce", "protocol", "swarm-tokens", "pool4"):
             label = {"swarm": " AGENTS ", "agent": " SEAT ",
-                     "announce": " NEW POSTS ", "protocol": " BURNED ", "pool4": " 1 IMD = ",
-                     "swarm-tokens": " LAUNCHED "}[self.key]
+                     "announce": " NEW POSTS ", "protocol": " IMD BURNED ", "pool4": " IMD PRICE ",
+                     "swarm-tokens": " TOKENS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
             if self.key == "pool4":

@@ -7033,7 +7033,7 @@ class SurfManager:
             entry = self.cache.get_last_good(slot)
             source = hub.coerce_source(getattr(entry, "payload", None), name, now=now)
             if source is not None and source["state"] == "ok":
-                ttl = {"overview": 30 if self._hub_active else 60, "records": 120, "hourly": 60}[name]
+                ttl = {"overview": 30 if self._hub_active else 60, "records": 120, "hourly": 60, "supply": 600}[name]
                 if now - source["read_ts"] > ttl:
                     source = dict(source, state="stale")
             sources[name] = source or hub.source_envelope(None, now)
@@ -7047,7 +7047,7 @@ class SurfManager:
             return running
         entry = self.cache.get_last_good(hub.SOURCE_SLOTS[name])
         prior = hub.coerce_source(getattr(entry, "payload", None), name, now=now)
-        interval = {"overview": 30 if self._hub_active else 60, "records": 120, "hourly": 60}[name]
+        interval = {"overview": 30 if self._hub_active else 60, "records": 120, "hourly": 60, "supply": 600}[name]
         if prior is not None:
             backoff = 30 if name == "overview" else interval
             elapsed = now - prior["attempt_ts"] if prior["attempt_ts"] is not None else float("inf")
@@ -7062,8 +7062,10 @@ class SurfManager:
             "overview": ("fetch_overview", hub.normalize_overview),
             "records": ("fetch_seat_records", hub.normalize_records),
             "hourly": ("fetch_steps_hourly", hub.normalize_hourly),
+            "supply": ("fetch_imd_global_supply", hub.normalize_supply),
         }[name]
-        reader = getattr(self.swarm_client, method, None)
+        client = self._launch_rpc_client(8453) if name == "supply" else self.swarm_client
+        reader = getattr(client, method, None)
         raw = await self._guard(reader, f"hub {method}") if reader is not None else None
         try:
             payload = normalize(raw)
@@ -7086,6 +7088,7 @@ class SurfManager:
             self._offer_hub_source(name, now)
         if self._hub_active:
             self._offer_hub_source("hourly", now)
+            self._offer_hub_source("supply", now)
 
     def _hub_card_sources(self, data: dict) -> dict:
         """Read clocks and latest failure state for each legacy card family."""

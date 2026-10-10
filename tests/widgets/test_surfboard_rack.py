@@ -183,14 +183,14 @@ async def test_card_activity_colors_update_from_current_counts():
     ('announce','1','1 new post','NEW POSTS',['╶╮ ',' │ ','╶┴╴'],True,'1 signal'),
     ('announce','5','unavailable','NEW POSTS',['','unavailable',''],False,'5 signals'),
     ('announce','unavailable','unavailable','NEW POSTS',['','unavailable',''],False,'unavailable'),
-    ('pool4','8.77','USD','1 IMD =',
+    ('pool4','8.77','USD','IMD PRICE',
      ['╭─╮ ╶─┐╶─┐','├─┤   │  │','╰─╯•  ╵  ╵'],True,'USD'),
-    ('protocol','33,279','IMD','BURNED',
-     ['╶─╮╶─╮ ╶─╮╶─┐╭─╮',' ─┤ ─┤ ┌─┘  │╰─┤','╶─╯╶─╯,╰─╴  ╵╶─╯'],True,'IMD'),
-    ('protocol','99,999','IMD','BURNED',
-     ['╭─╮╭─╮ ╭─╮╭─╮╭─╮','╰─┤╰─┤ ╰─┤╰─┤╰─┤','╶─╯╶─╯,╶─╯╶─╯╶─╯'],True,'IMD'),
-    ('protocol','123,456','IMD','BURNED',['','123,456',''],True,'IMD'),
-    ('protocol','1,234,567','IMD','BURNED',['','1,234,567',''],True,'IMD'),
+    ('protocol','33,279','0.47% of supply','IMD BURNED',
+     ['╶─╮╶─╮ ╶─╮╶─┐╭─╮',' ─┤ ─┤ ┌─┘  │╰─┤','╶─╯╶─╯,╰─╴  ╵╶─╯'],True,'0.47% of supply'),
+    ('protocol','99,999','~1.41% of supply','IMD BURNED',
+     ['╭─╮╭─╮ ╭─╮╭─╮╭─╮','╰─┤╰─┤ ╰─┤╰─┤╰─┤','╶─╯╶─╯,╶─╯╶─╯╶─╯'],True,'~1.41% of supply'),
+    ('protocol','123,456','1.74% of supply','IMD BURNED',['','123,456',''],True,'1.74% of supply'),
+    ('protocol','1,234,567','17.40% of supply','IMD BURNED',['','1,234,567',''],True,'17.40% of supply'),
 ])
 async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,label,expected,green,footer_text):
     async with RackApp().run_test(size=size) as pilot:
@@ -311,9 +311,9 @@ async def test_tokens_card_launch_digits_and_news_border_refresh(size):
             strips = [strip.crop(card.region.x, card.region.right) for strip in
                       pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
-            assert '⊙ TOKENS' in '\n'.join(s.text for s in strips)
+            assert '⊙ LAUNCHES' in '\n'.join(s.text for s in strips)
             assert 'SWARM TOKENS' not in '\n'.join(s.text for s in strips)
-            header = next(s for s in strips[top] if 'LAUNCHED' in s.text)
+            header = next(s for s in strips[top] if 'TOKENS' in s.text)
             expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
                         if status == 'active' else pilot.app.ansi_theme.ansi_colors[3])
             assert header.style.bold and header.style.color.get_truecolor() == expected

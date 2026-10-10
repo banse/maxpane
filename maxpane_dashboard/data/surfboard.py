@@ -17,11 +17,12 @@ from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_p
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.analytics.surf_launch_checks import address
 from maxpane_dashboard.data.surf_models import (
-    SURFBOARD_CARD_FIELDS, SURFBOARD_OVERVIEW_FIELDS, SWARM_SEAT_OUTCOME_FIELDS,
+    SURFBOARD_CARD_FIELDS, SURFBOARD_OVERVIEW_FIELDS, SURFBOARD_SUPPLY_FIELDS, SWARM_SEAT_OUTCOME_FIELDS,
 )
 
 OUTCOME_COUNTERS = ("attempts", "accepted", "rejected", "failed", "pending")
-SOURCE_SLOTS = {"overview": "surfboard_overview", "records": "surfboard_records", "hourly": "surfboard_hourly"}
+SOURCE_SLOTS = {"overview": "surfboard_overview", "records": "surfboard_records", "hourly": "surfboard_hourly",
+                "supply": "surfboard_supply"}
 RANK_BASIS = "seat-records-v1"
 _EVENT_TEXT = {"token": "token", "ens_name": "ensName", "cid": "cid", "failure": "failure", "reason": "reason"}
 _EVENT_COUNTS = {"launch_number": "launchNumber", "chain_id": "chainId", "steps": "steps", "scores": "scores", "accepted": "accepted"}
@@ -193,6 +194,13 @@ def version(payload: object) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
+def normalize_supply(raw: object) -> dict | None:
+    if not isinstance(raw, dict) or set(raw) != set(SURFBOARD_SUPPLY_FIELDS):
+        return None
+    supply = number(raw.get("total_supply"))
+    return {"total_supply": supply} if supply is not None and supply > 0 else None
+
+
 def source_envelope(payload: dict | None, now: float, *, prior: dict | None = None, provider_ts: float | None = None) -> dict:
     if payload is None:
         out = dict(prior or {"payload": None, "read_ts": None, "provider_ts": None, "version": None})
@@ -235,6 +243,8 @@ def coerce_source(value: object, name: str, *, now: float) -> dict | None:
         clean = _coerce_records(payload)
     elif name == "hourly":
         clean = normalize_hourly({"hours":24,"until":payload.get("until"),"accepted":payload.get("accepted")})
+    elif name == "supply":
+        clean = normalize_supply(payload)
     else:
         clean = _coerce_overview(payload)
     if clean != payload or clean is None or value["version"] != version(clean):
@@ -436,8 +446,16 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
                             "active" if change > 0 else "idle")
     burn=data.get("pool4_total_burned");reward=data.get("pool4_total_rewarded");fee=data.get("pool4_total_fee_token")
     denominator=sum((burn,reward,fee)) if all(number(x) is not None for x in (burn,reward,fee)) else None
-    card("protocol","PROTOCOL",_value(round(burn)) if number(burn) is not None else "unavailable", "IMD",
-         f"BURN · {_value(burn,' burned')} · {_value(reward,' rewarded')} · measured flow · EXPERIMENTAL"
+    supply_source = sources.get("supply") or {}
+    supply = normalize_supply(supply_source.get("payload"))
+    fraction = (number(burn / supply["total_supply"])
+                if supply and number(burn) is not None and data.get("pool4_network") != "SEPOLIA" else None)
+    percent = ("<0.01%" if 0 < fraction < .0001 else f"{fraction:.2%}") if fraction is not None else None
+    supply_state = supply_source.get("state", "unavailable")
+    supply_text = ("~" if supply_state == "stale" else "") + percent + " of supply" if percent is not None else "unavailable"
+    card("protocol","PROTOCOL",_value(round(burn)) if number(burn) is not None else "unavailable", supply_text,
+         f"BURN · global supply {supply_state} · as of {hhmm(supply_source.get('read_ts'))}"
+         f" · {_value(burn,' burned')} · {_value(reward,' rewarded')} · measured flow · EXPERIMENTAL"
          +f" · {data.get('pool4_network') or 'unknown network'} · as of {data.get('pool4_as_of_hhmm') or '—'}","pool4",burn,denominator)
     burn_age = number(data.get("sig_burn_age_s"))
     recent_burn = data.get("sig_burn_state") == "fired" and burn_age is not None and burn_age < FIRED_TTL_S
@@ -476,7 +494,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         primary = "≥" + primary
     events = data.get("swarm_launch_fired")
     new = len(recent_launch_news(events, now=now)) if isinstance(events, list) else None
-    card("swarm-tokens", "TOKENS", primary, f"{new:,} new" if new is not None else "unavailable",
+    card("swarm-tokens", "LAUNCHES", primary, f"{new:,} new" if new is not None else "unavailable",
          f"TOKENS · production-chain markets · catalogue {catalogue_state} · read {hhmm(catalogue.get('as_of'))}"
          f" · launch news 1h · evaluated {hhmm(now)}", "swarm-tokens")
     result[-1]["status"] = "active" if new else "idle"

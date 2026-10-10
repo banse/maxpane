@@ -82,3 +82,16 @@ Final review approved with no findings. Focused data, widget and composing
 screen checks passed, including the 57-case layout file; 123 fast guards passed.
 Four mutation checks verified expiry, scheduling, count and digits. Existing
 followups above remain; this card introduces no additional review followups.
+
+## Hub title and supply revision — 2026-10-10
+
+The token card is now LAUNCHES with TOKENS above its digits. POOL4 uses IMD PRICE;
+PROTOCOL uses IMD BURNED and a percentage of global remaining supply. The live
+149×45 capture showed 33,279 burned and 0.47% of supply. Canonical Base FP
+totalSupply backs the bridged IMD supply; the existing keyless Base reader fetches
+both supply and decimals, with an independent ten-minute source envelope.
+
+Review identified a bounded-ratio defect for cumulative burns exceeding remaining
+supply; it is fixed, with a regression and mutation proving percentages above
+100% work. Scoped re-review approved. The four initial source/denominator/cache
+mutations were also detected. No new unresolved findings.

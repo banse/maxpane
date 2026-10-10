@@ -213,7 +213,7 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert r["terminal"].bottom == r["cards"]["bay-11"].bottom == r["cards"]["bay-12"].bottom
     assert r["cards"]["protocol"].right < r["terminal"].x < r["terminal"].right < r["cards"]["swarm-tokens"].x
     for title in ("ANNOUNCE", "SWARM", "AGENT", "BOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
-                  "TOKENS", "PORTFOLIO", "EARNINGS", "BAY 11", "BAY 12"):
+                  "LAUNCHES", "PORTFOLIO", "EARNINGS", "BAY 11", "BAY 12"):
         assert title in r["text"], (title, r["text"])
 
 
@@ -243,7 +243,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
         for card in payload["surfboard_cards"][:7]:
             if card["key"] in ("announce", "protocol"):
                 text = r["card_text"][card["key"]]
-                assert (" NEW POSTS " if card["key"] == "announce" else " BURNED ") in text, r
+                assert (" NEW POSTS " if card["key"] == "announce" else " IMD BURNED ") in text, r
                 if kind == "unavailable" or (kind == "stress" and card["key"] == "protocol"):
                     expected = (card["primary"],)
                 elif card["key"] == "announce":
@@ -259,7 +259,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 continue
             if card["key"] == "pool4":
                 text = r["card_text"]["pool4"]
-                assert " 1 IMD = " in text and "USD" in text, r
+                assert " IMD PRICE " in text and "USD" in text, r
                 expected = (("╶─┐ ╭─╮╭─╮", "  │ ╰─┤│ │", "  ╵•╶─╯╰─╯")
                             if kind in ("normal", "wide") else (card["primary"],))
                 assert all(row in text for row in expected), r

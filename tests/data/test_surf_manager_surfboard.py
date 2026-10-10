@@ -16,6 +16,8 @@ def manager(tmp_path):
     swarm.fetch_seat_records=AsyncMock(return_value=capture('records'))
     swarm.fetch_steps_hourly=AsyncMock(return_value=capture('hourly'))
     m=SurfManager(clock=lambda:clock.now,cache_path=str(tmp_path/'cache.json'),client=Client(),pool4_client=Client(),swarm_client=swarm,npm_client=Client(),seat=420)
+    base=Client(); base.fetch_imd_global_supply=AsyncMock(return_value=None)
+    m._launch_rpc_clients[8453]=base
     from maxpane_dashboard.data.swarm_tokens_manager import SwarmTokensManager
     from tests.data.test_swarm_tokens_live import Pages, Market
     m._swarm_tokens_manager = SwarmTokensManager(m, client=Pages(), market=Market(), clock=lambda: clock.now)
