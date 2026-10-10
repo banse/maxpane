@@ -166,9 +166,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             color = RED
         palette = self.app.get_css_variables()
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
-        footer_style = inset + Style(bold=False)
-        if color == AMBER and self.key != "pool4":
-            inset = Style(color=palette["panel"], bgcolor=palette["background"])
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
@@ -197,12 +194,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
-            base, background = self.background_colors
-            title_color = self.styles.border_title_color
-            if self.styles.auto_border_title_color:
-                title_color = base.get_contrast_text(title_color.a)
-            title_ink = (base + background + title_color).rich_color
-            body.stylize(Style(color=title_ink, bold=False), start, start + len(label.strip()))
+            body.stylize(Style(color=self.rich_style.color, bold=False), start, start + len(label.strip()))
         bottom = f" {secondary} " if label else ""
         if len(bottom) > inside:
             bottom = bottom.strip()
@@ -228,12 +220,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             line.align("left" if preview is not None else "center", inside)
             body.append("│", style=inset).append_text(line).append("│\n", style=inset)
         self.border_title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, self.size.width - 4)))
-        footer_text = clip(bottom, inside)
-        footer = Text("└" + footer_text.center(inside, "─") + "┘", style=inset + Style(bold=False))
-        if footer_text:
-            start = footer.plain.find(footer_text)
-            footer.stylize(footer_style, start, start + len(footer_text))
-        return body.append_text(footer)
+        return body.append("└" + clip(bottom, inside).center(inside, "─") + "┘",
+                           style=inset + Style(bold=False))
 
     def on_focus(self):
         self.post_message(self.Focused(self))

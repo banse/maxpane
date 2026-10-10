@@ -12,10 +12,6 @@ class RackApp(App):
         yield SurfboardRack(id="rack")
 
 
-def outer_title_color(strips):
-    return next(segment.style.color for strip in strips for segment in strip if "⊙" in segment.text)
-
-
 @pytest.mark.parametrize('size', [(149,45),(140,36)])
 async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
     async with RackApp().run_test(size=size) as pilot:
@@ -31,7 +27,7 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
             left,right=strips[top].text.index('┌'),strips[top].text.index('┐'); inside=right-left-1
             assert '⊙ SURFBOARD' in '\n'.join(s.text for s in strips)
             header = next(s for s in strips[top] if 'LATEST POST' in s.text)
-            assert not header.style.bold and header.style.color == outer_title_color(strips)
+            assert not header.style.bold and header.style.color == card.rich_style.color
             assert [s.text[left+1:right] for s in strips[top+1:top+4]]==[
                 text[:inside],text[inside:inside*2],text[inside*2:inside*3-3]+'...']
             assert strips[top+4].text[left+1:right].strip('─ ') == '7 new'
@@ -41,7 +37,7 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
             assert ink.color==(card.rich_style.color if status=='active' else empty_ink)
             edge=next(iter(strips[top].crop(left,left+1))).style.color.get_truecolor()
             expected=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
-                      if status=='active' else Color.parse(pilot.app.get_css_variables()['panel']).get_truecolor())
+                      if status=='active' else pilot.app.ansi_theme.ansi_colors[3])
             assert edge==expected
 
 
@@ -96,7 +92,7 @@ async def test_leader_and_coins_digit_labels_exact_counts_and_launch_color(size)
                 top=next(i for i,s in enumerate(strips) if '┌' in s.text)
                 assert '⊙ '+outer in '\n'.join(s.text for s in strips)
                 header = next(s for s in strips[top] if label in s.text)
-                assert not header.style.bold and header.style.color == outer_title_color(strips)
+                assert not header.style.bold and header.style.color == card.rich_style.color
                 assert all(g in s.text for g,s in zip(glyphs,strips[top+1:top+4]))
                 expected='4,176 jobs' if key=='board' else footer
                 assert strips[top+4].text.strip('│└┘─ ') == expected
@@ -174,7 +170,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         assert "24H ▁▂▃▄▅▆▇█" in "\n".join(strip.text for strip in strips)
         header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
         assert not header.style.bold
-        assert header.style.color == outer_title_color(strips)
+        assert header.style.color == card.rich_style.color
 
 
 async def test_swarm_working_count_overrides_status_color_and_resets_on_refresh():
@@ -194,8 +190,7 @@ async def test_swarm_working_count_overrides_status_color_and_resets_on_refresh(
             top = next(i for i, strip in enumerate(strips) if "┌" in strip.text)
             left, right = strips[top].text.index("┌"), strips[top].text.index("┐")
             expected = (Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
-                        if ink == 2 else Color.parse(pilot.app.get_css_variables()["panel"]).get_truecolor()
-                        if ink == 3 else pilot.app.ansi_theme.ansi_colors[ink])
+                        if ink == 2 else pilot.app.ansi_theme.ansi_colors[ink])
             for row in range(top, top + 5):
                 for x in (left, right):
                     edge = next(iter(strips[row].crop(x, x + 1)))
@@ -223,7 +218,7 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             ink = (Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
                    if status == "working"
                    else pilot.app.ansi_theme.ansi_colors[1 if status == "offline" else 3])
-            assert header.style.color == outer_title_color(strips)
+            assert header.style.color == card.rich_style.color
             for strip, row in zip(strips[top + 1:top + 4], ["╷ ╷╶─╮╭─╮", "╰─┤┌─┘│ │", "  ╵╰─╴╰─╯"]):
                 padding = (right - left - 1 - len(row)) // 2
                 assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
@@ -261,8 +256,7 @@ async def test_card_activity_colors_update_from_current_counts():
                     pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             edge=next(segment for strip in strips for segment in strip if '┌' in segment.text)
             expected=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
-                      if ink==2 else Color.parse(pilot.app.get_css_variables()['panel']).get_truecolor()
-                      if ink==3 and key!='pool4' else pilot.app.ansi_theme.ansi_colors[ink])
+                      if ink==2 else pilot.app.ansi_theme.ansi_colors[ink])
             assert edge.style.color.get_truecolor()==expected
 
 
@@ -289,7 +283,7 @@ async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,labe
         header=next(segment for segment in strips[top] if label in segment.text)
         ink=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
              if green else pilot.app.ansi_theme.ansi_colors[3])
-        assert not header.style.bold and header.style.color == outer_title_color(strips)
+        assert not header.style.bold and header.style.color == card.rich_style.color
         for strip,row in zip(strips[top+1:top+4],expected):
             padding=(right-left-1-len(row))//2
             assert strip.text[left+1:right]==(' '*padding+row).ljust(right-left-1)
@@ -410,7 +404,7 @@ async def test_tokens_card_launch_digits_and_news_border_refresh(size):
             header = next(s for s in strips[top] if 'TOKENS' in s.text)
             expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
                         if status == 'active' else pilot.app.ansi_theme.ansi_colors[3])
-            assert not header.style.bold and header.style.color == outer_title_color(strips)
+            assert not header.style.bold and header.style.color == card.rich_style.color
             for strip, digits in zip(strips[top+1:top+4], ['╶╮ ╶╮ ╭─╴', ' │  │ ├─╮', '╶┴╴╶┴╴╰─╯']):
                 assert digits in strip.text
             assert footer in strips[top+4].text
