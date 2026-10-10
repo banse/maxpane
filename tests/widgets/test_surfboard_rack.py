@@ -186,7 +186,8 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         footer = next(segment for segment in strips[top + 4] if "27 working" in segment.text)
         assert not footer.style.bold
         assert footer.style.color.get_truecolor() == Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
-        assert "24H ▁▂▃▄▅▆▇█" in "\n".join(strip.text for strip in strips)
+        chart = "▁▁▂▂▃▃▄▅▅▆▆▇▇█" if size[0] == 149 else "▁▁▂▂▃▄▄▅▅▆▇▇█"
+        assert strips[-1].text == f"╰─ 24H {chart} ─╯"
         header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
         assert not header.style.bold
         assert header.style.color == inset_border_color(strips[top])
@@ -404,12 +405,36 @@ async def test_chart_requires_all_eight_buckets_and_planned_cards_stay_unlit():
             meter_kind="sparkline", points=[0, 1, 2, 3, 4, 5, 6, 7]),
             dict(key="earnings", status="active", numerator=1, denominator=1, destination="fake")])
         await pilot.pause()
-        assert "24H ▁▂▃▄▅▆▇█" in painted(pilot.app)
+        assert "24H ▁▁▂▂▃▃▄▅▅▆▆▇▇█" in painted(pilot.app)
         planned = rack.query_one("#surfboard-card-earnings", SurfboardCard)
         assert planned.data["destination"] is None
         rack.update_data(surfboard_cards=[dict(key="swarm", meter_kind="sparkline", points=[0, 1])])
         await pilot.pause()
         assert "24H —" in painted(pilot.app)
+
+
+async def test_swarm_outer_footer_stretches_history_on_resize_and_keeps_unknown_left():
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import hub_payload
+
+    payload = hub_payload()
+    next(card for card in payload["surfboard_cards"] if card["key"] == "swarm")["points"] = list(range(8))
+    app = HubHarness(payload)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        card = app.hub.query_one("#surfboard-card-swarm", SurfboardCard)
+        for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
+                             (140, "▁▁▂▃▃▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
+            await pilot.resize_terminal(width, 45)
+            await pilot.pause()
+            footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
+            assert footer.text == f"╰─ 24H {chart} ─╯"
+            assert str(card.border_title) == "⊙ SWARM"
+        card.set_data(dict(card.data, points=None))
+        await pilot.pause()
+        footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
+        assert footer.text.startswith("╰─ 24H — ")
+        assert not any(char in footer.text for char in "▁▂▃▄▅▆▇█")
 
 
 @pytest.mark.parametrize('size', [(149, 45), (140, 36)])

@@ -77,8 +77,8 @@ def _number(value):
         return False
 
 
-def meter_text(card: dict) -> Text:
-    """An eight-cell scale; unavailable and zero denominators never imply zero."""
+def meter_text(card: dict, width: int | None = None) -> Text:
+    """Fixed ratio scales and a fitted history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     label = METER_LABELS.get(key, "AUX")
     out = Text().append(label + " ", style=MUTED)
@@ -87,7 +87,12 @@ def meter_text(card: dict) -> Text:
     if card.get("meter_kind") == "sparkline":
         points = card.get("points")
         if isinstance(points, list) and len(points) == 8 and all(_number(point) for point in points):
-            return out.append(build_sparkline(points, width=8, pad=False), style=GREEN)
+            chart = build_sparkline(points, width=8, pad=False)
+            if key == "swarm" and width is not None:
+                cells = max(0, width - cell_len(label) - 1)
+                # Stretch each existing time bucket; do not invent more samples.
+                chart = "".join(chart[column * len(chart) // cells] for column in range(cells))
+            return out.append(chart, style=GREEN)
         return out.append("—", style=AMBER)
     numerator, denominator = card.get("numerator"), card.get("denominator")
     if not _number(numerator) or not _number(denominator) or denominator == 0 or numerator > denominator:
@@ -160,7 +165,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             # Textual reserves six cells for corners, border stubs and padding.
             self.border_subtitle = signal_meter_text(self.data, max(0, self.region.width - 6))
         else:
-            self.border_subtitle = meter_text(self.data)
+            self.border_subtitle = meter_text(self.data, max(0, self.region.width - 6))
 
     def on_resize(self):
         self._update_meter()
@@ -278,7 +283,8 @@ class SurfboardRack(Grid):
     SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; }
-    SurfboardRack > #surfboard-card-announce { border-subtitle-align: left; }
+    SurfboardRack > #surfboard-card-announce,
+    SurfboardRack > #surfboard-card-swarm { border-subtitle-align: left; }
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
     SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
