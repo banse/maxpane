@@ -8,6 +8,10 @@ is implemented under
 `portfolio_live_implementation_plan.md`. Numeric live P/L remains unavailable
 without verified cost basis.
 
+Owner revision, 2026-10-10: the table and HELD VALUE use positive wallet
+holdings only. The portfolio table sits above the three supporting panels;
+claim-only allocations stay in the CLAIMABLE panel and card.
+
 ## Requirements and scope
 
 The owner requested a dashboard that lets the user "set a wallet (like in THE
@@ -30,13 +34,13 @@ known USD        ready USD       linked / online  USD / % unrealized
 
 Wallet: selected wallet · chain / assets / filter context · source state / coverage
 
-MARKET ACTIVITY                 CLAIMABLE                 MOVERS / 24H
-matching token market feed     ready token allocations   gainers / losers
-
------------------------------------------------------------------------
-PORTFOLIO / matching token count
+PORTFOLIO / matching held-token count
 LAUNCH TOKEN CHAIN HELD CLAIMABLE HELD USD PRICE 24H % PAIRED LP PRICE 24H
                        full-width scrollable table
+-----------------------------------------------------------------------
+
+MARKET ACTIVITY                 CLAIMABLE                 MOVERS / 24H
+held-token market feed         ready token allocations   held-token movers
 
 w wallet · f filters · / search · Enter details · r refresh · Esc hub
 ```
@@ -54,8 +58,10 @@ minimum for its fixed chrome; smaller terminals retain access through scrolling.
 - A live row represents `(chain_id, token_address)`, never a symbol; launch
   aliases and distinct reward allocations remain separate provenance.
   The offline preview uses synthetic `chain:launch` identities.
-  Include a positive held quantity **or** a positive ready claim, including
-  claim-only and unpriced tokens. Synthetic records contain no invented token
+  Table rows require a positive held quantity, including unpriced holdings
+  and explicitly marked stale balances. Zero/unknown balances and claim-only
+  tokens stay out of the table and HELD VALUE population; ready allocations
+  still appear in CLAIMABLE and its value card. Synthetic records contain no invented token
   addresses or explorer targets. Live identity is chain + contract.
 - HELD VALUE and CLAIMABLE show separate indicative USD sums. Missing/stale
   quantity or price does not enter the known sum; show coverage and partial
@@ -97,8 +103,10 @@ minimum for its fixed chrome; smaller terminals retain access through scrolling.
   (all/held/claimable), LP state, search and sort apply together. Default is all
   chains, held-or-ready-claim assets and held-value descending. Unknown numeric
   values sort last. APPLY commits, RESET resets the draft, Escape cancels.
-- One filtered token set drives the table, valuations, liquidity, claims,
-  movers and market activity. Preserve selection identity when still visible.
+- Shared filters select the held and claim populations. Table, HELD VALUE,
+  liquidity, movers and market activity use held tokens; CLAIMABLE retains
+  ready allocations, including claim-only tokens. Preserve selection identity
+  when still visible. Wallet-wide source coverage survives both selections.
 - Enter shows cached position and market detail. `r` reloads the same static
   snapshot in the offline preview; the hub refreshes live sources. Escape closes detail/editor first,
   then returns to the hub; standalone Escape exits.

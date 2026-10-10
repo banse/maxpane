@@ -25,12 +25,12 @@ KEY_HINTS = 'w wallet · f filters · / find · c chain · o sort · enter detai
 #: Measured in the composed screen after the 149×45 mock preview (2026-10-10).
 #: Width sweep 138–150: 144 scrolls, 145 fits; the inherited 143-column canvas
 #: plus viewport padding binds width. Height sweep 28–38: 34 scrolls, 35 fits.
-#: The hero, two-row wallet/filter context, eleven-row summaries, separator and
-#: table floor retain every field. The table scrolls internally for long wallets;
+#: The hero, two-row wallet/filter context, table floor, separator and
+#: eleven-row summaries retain every field. The table scrolls for long wallets;
 #: this pin describes the fixed chrome, not a maximum number of positions.
 #: Narrow/short screens retain all ten columns with outer scrolling and hints.
-#: Live 118-token capture re-swept over 138–150 columns and 28–38 rows on
-#: 2026-10-10: the same 145×35 boundary, including source/coverage headings.
+#: Holdings-first live capture re-swept over 138–150 columns and 28–38 rows on
+#: 2026-10-10: the same 145×35 boundary; the table precedes all three summaries.
 PORTFOLIO_FULL_LAYOUT_COLUMNS = 145
 PORTFOLIO_FULL_LAYOUT_ROWS = 35
 
@@ -67,12 +67,12 @@ class PortfolioScreen(SwarmTokensScreen):
                 yield Static(Text('MOCK DATA' if self._is_mock else 'PORTFOLIO'), id='pf-context')
                 with Vertical(id='st-content'):
                     with Vertical(id='st-market'):
+                        yield PortfolioTable()
+                        yield Static('─' * 160, id='pf-separator')
                         with Horizontal(id='st-summary'):
                             yield PortfolioActivity()
                             yield ClaimableTokens()
                             yield PortfolioMovers()
-                        yield Static('─' * 160, id='pf-separator')
-                        yield PortfolioTable()
                     yield PortfolioFilterEditor()
         bar = DemoStatusBar()
         bar.is_mock = self._is_mock
@@ -119,7 +119,7 @@ class PortfolioScreen(SwarmTokensScreen):
         total = (self.snapshot.get('metrics') or {}).get('total')
         sources = self.snapshot.get('sources') or {}
         balances, claims = sources.get('balances') or {}, sources.get('claims') or {}
-        incomplete = sources and (not balances.get('complete') or not claims.get('complete'))
+        incomplete = sources and not balances.get('complete')
         count = ('Set a wallet' if not wallet else 'Loading...' if not self.snapshot else
                  'unavailable' if total is None else '0 known matches' if total == 0 and incomplete else
                  'No matching tokens' if total == 0 else f'{total} tokens')

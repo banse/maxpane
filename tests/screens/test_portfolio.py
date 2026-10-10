@@ -24,7 +24,7 @@ def offline(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, 'send', refuse)
 
 
-async def test_option_one_shows_native_panels_and_claim_only_tokens():
+async def test_holdings_table_precedes_supporting_panels_and_claims_stay_separate():
     app = PortfolioDemo()
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
@@ -36,11 +36,43 @@ async def test_option_one_shows_native_panels_and_claim_only_tokens():
         assert 'LAUNCH LIQUIDITY' not in text
         assert '+$200' in text and '+6.1% · unrealized' in text
         rows = app.screen.snapshot['tokens']
-        foam = next(row for row in rows if row['symbol'] == 'FOAM')
+        assert {row['symbol'] for row in rows} == {'TIDE', 'KITE', 'MESH'}
+        foam = next(row for row in app.screen.snapshot['claimable'] if row['symbol'] == 'FOAM')
         assert foam['held_quantity'] == 0 and foam['claimable_quantity'] > 0
+        table = app.screen.query_one(PortfolioTable)
+        assert table.region.bottom <= app.screen.query_one('#pf-separator').region.y
+        assert app.screen.query_one('#pf-separator').region.bottom <= app.screen.query_one('#st-summary').region.y
         assert app.screen.query_one(DataTable).row_count == len(rows)
         assert any(char in text for char in '▂▃▄▅▆▇█')
         assert '30s poll' not in text
+
+
+async def test_live_claim_only_wallet_has_zero_held_value_and_empty_portfolio():
+    from tests.data.test_portfolio_live import setup
+    manager, _, balances, *_ = setup()
+    read = balances.read_balances
+    async def zeros(wallet, tokens):
+        result = await read(wallet, tokens)
+        for row in result.values():
+            row.update(balance_raw=0, held_quantity=0)
+        return result
+    balances.read_balances = zeros
+    await manager.fetch_and_compute()
+    await manager.wait_pending()
+    app = PortfolioDemo()
+    app.manager = manager
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        snapshot = app.screen.snapshot
+        assert snapshot['tokens'] == [] and snapshot['claimable']
+        assert snapshot['metrics']['held_value'] == 0
+        assert snapshot['metrics']['held_total'] == 0
+        assert snapshot['metrics']['claimable_value'] > 0
+        text = painted(app)
+        assert '0 held tokens' in text and '1 ready tokens' in text
+        assert 'No matching tokens' in text
+        assert app.screen.query_one(PortfolioTable).selected_token() is None
+    await manager.close()
 
 
 async def test_no_wallet_prompt_persists_and_repaints_selected_address(monkeypatch, tmp_path):
@@ -83,9 +115,10 @@ async def test_filter_population_drives_every_panel_and_cancel_preserves_draft_b
         await pilot.click('#filter-apply')
         await pilot.pause()
         rows = screen.snapshot['tokens']
-        assert rows and all(row['claimable_quantity'] > 0 for row in rows)
+        assert rows and all(row['held_quantity'] > 0 and row['claimable_quantity'] > 0 for row in rows)
+        assert {row['symbol'] for row in screen.snapshot['claimable']} == {'TIDE', 'FOAM'}
         ids = {row['id'] for row in rows}
-        for key in ('claimable', 'gainers', 'losers'):
+        for key in ('gainers', 'losers'):
             assert all(row['id'] in ids for row in screen.snapshot[key])
         assert all(row['token_id'] in ids for row in screen.snapshot['activity'])
         await pilot.press('/')
@@ -197,6 +230,8 @@ async def test_captured_claim_opens_live_detail_with_normalized_unlock_time():
         manager = PortfolioManager(market, WALLET, balances=Balances(), claims=claims,
                                    clock=lambda: 1800000000)
         await manager.fetch_and_compute()
+        await manager.wait_pending()
+        await manager.fetch_and_compute()  # Discover the claim token, then read its holding.
         await manager.wait_pending()
         app = PortfolioDemo()
         app.manager = manager
@@ -320,11 +355,12 @@ async def test_long_portfolio_keeps_all_rows_and_unpriced_stale_claims_visible()
     app.manager.fetch_and_compute = snapshot
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert app.screen.query_one(DataTable).row_count == 44
+        assert app.screen.query_one(DataTable).row_count == 43
         assert 'stale' in painted(app)
         rows = app.screen.snapshot['tokens']
         assert next(row for row in rows if row['symbol'] == 'MESH')['held_usd'] is None
-        assert next(row for row in rows if row['symbol'] == 'FOAM')['claimable_usd'] is None
+        assert all(row['symbol'] != 'FOAM' for row in rows)
+        assert next(row for row in app.screen.snapshot['claimable'] if row['symbol'] == 'FOAM')['claimable_usd'] is None
         assert app.screen.snapshot['metrics']['claimable_known'] < app.screen.snapshot['metrics']['claimable_total']
         await pilot.press('ctrl+end')
         await pilot.pause()

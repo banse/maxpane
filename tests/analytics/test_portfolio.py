@@ -24,25 +24,43 @@ def test_sample_totals_reconcile_without_turning_claims_into_holdings():
     assert tuple(result) == models.PROJECTION_KEYS
     assert tuple(metrics) == models.METRIC_KEYS
     assert metrics == dict(
-        total=4, held_value=3500, held_known=3, held_total=3,
+        total=3, held_value=3500, held_known=3, held_total=3,
         claimable_value=400, claimable_known=2, claimable_total=2,
         agents_total=3, agents_online=2,
-        liquidity_imd=200000, liquidity_eth=4.2, liquidity_partial=False,
+        liquidity_imd=120000, liquidity_eth=4.2, liquidity_partial=False,
         pnl_usd=200, pnl_percent=pytest.approx(200 / 3300 * 100),
     )
-    assert [row['symbol'] for row in result['tokens']] == ['MESH', 'TIDE', 'KITE', 'FOAM']
+    assert [row['symbol'] for row in result['tokens']] == ['MESH', 'TIDE', 'KITE']
     assert {row['symbol'] for row in result['claimable']} == {'TIDE', 'FOAM'}
-    assert [row['symbol'] for row in result['gainers']] == ['TIDE', 'FOAM']
+    assert [row['symbol'] for row in result['gainers']] == ['TIDE']
     assert [row['symbol'] for row in result['losers']] == ['MESH', 'KITE']
     assert result['wallet'] == SAMPLE_WALLET
 
 
+def test_table_and_held_card_exclude_claim_only_and_unknown_balances():
+    raw = _snapshot(
+        {'held_quantity': 10, 'price_usd': 2, 'claimable_quantity': 3},
+        {'held_quantity': 0, 'price_usd': 100, 'claimable_quantity': 20},
+        {'held_quantity': None, 'balance_state': 'unavailable',
+         'price_usd': 100, 'claimable_quantity': 30},
+        {'held_quantity': 0, 'balance_state': 'stale',
+         'price_usd': 100, 'claimable_quantity': 2},
+    )
+    result = project_snapshot(raw)
+    assert [row['id'] for row in result['tokens']] == ['eth:0']
+    assert result['metrics']['total'] == result['metrics']['held_total'] == 1
+    assert result['metrics']['held_known'] == 1
+    assert result['metrics']['held_value'] == 20
+    assert len(result['claimable']) == 4
+    assert result['metrics']['claimable_value'] == 5206
+
+
 @pytest.mark.parametrize('filters, symbols, held, claimable, imd, eth', [
     ({'chain': 'base'}, {'KITE'}, 800, 0, 0, 2.4),
-    ({'query': 'foam'}, {'FOAM'}, 0, 200, 80000, 0),
+    ({'query': 'foam'}, set(), 0, 200, 0, 0),
     ({'query': '401'}, {'TIDE'}, 1000, 200, 120000, 0),
     ({'assets': 'held'}, {'TIDE', 'KITE', 'MESH'}, 3500, 200, 120000, 4.2),
-    ({'assets': 'claimable'}, {'TIDE', 'FOAM'}, 1000, 400, 200000, 0),
+    ({'assets': 'claimable'}, {'TIDE'}, 1000, 400, 120000, 0),
     ({'lp_state': 'issues'}, set(), 0, 0, 0, 0),
 ])
 def test_all_panels_share_filters_but_agent_counts_stay_wallet_scoped(
@@ -50,7 +68,7 @@ def test_all_panels_share_filters_but_agent_counts_stay_wallet_scoped(
     result = project_snapshot(_snapshot(), **filters)
     assert {row['symbol'] for row in result['tokens']} == symbols
     ids = {row['id'] for row in result['tokens']}
-    for key in ('claimable', 'gainers', 'losers'):
+    for key in ('gainers', 'losers'):
         assert all(row['id'] in ids for row in result[key])
     assert all(row['token_id'] in ids for row in result['activity'])
     metrics = result['metrics']
@@ -70,13 +88,12 @@ def test_unpriced_stale_and_unknown_measurements_preserve_rows_and_coverage():
         {'held_quantity': 0, 'price_usd': None, 'claimable_quantity': 10},
     )
     result = project_snapshot(raw)
-    assert len(result['tokens']) == 5
+    assert len(result['tokens']) == 3
     by_id = {row['id']: row for row in result['tokens']}
-    assert all(by_id[f'eth:{i}']['held_usd'] is None for i in range(4))
-    assert by_id['eth:4']['held_usd'] == 0
+    assert all(by_id[f'eth:{i}']['held_usd'] is None for i in range(3))
     assert by_id['eth:0']['claimable_usd'] == 0
     assert result['metrics']['held_value'] is None
-    assert result['metrics']['held_known'] == 0 and result['metrics']['held_total'] == 4
+    assert result['metrics']['held_known'] == 0 and result['metrics']['held_total'] == 3
     assert result['metrics']['claimable_value'] == 10
     assert result['metrics']['claimable_known'] == 1 and result['metrics']['claimable_total'] == 2
     assert all(row['id'] != 'eth:1' for row in result['gainers'])
@@ -95,7 +112,7 @@ def test_ready_claims_do_not_include_locked_claimed_or_unavailable_allocations()
         {'held_quantity': 0, 'claimable_quantity': 0, 'claim_state': 'none'},
     )
     result = project_snapshot(raw)
-    assert {row['id'] for row in result['tokens']} == {'eth:3', 'eth:4', 'eth:5'}
+    assert {row['id'] for row in result['tokens']} == {'eth:4', 'eth:5'}
     assert [row['id'] for row in result['claimable']] == ['eth:3', 'eth:5']
     assert result['metrics']['claimable_value'] == .1
     assert result['metrics']['claimable_known'] == 1
@@ -108,7 +125,7 @@ def test_stale_claim_only_token_remains_visible_without_current_usd_value():
     raw = _snapshot()
     raw['tokens'][2]['claim_read_state'] = 'stale'
     result = project_snapshot(raw, assets='claimable')
-    assert {row['symbol'] for row in result['tokens']} == {'TIDE', 'FOAM'}
+    assert {row['symbol'] for row in result['tokens']} == {'TIDE'}
     foam = next(row for row in result['claimable'] if row['symbol'] == 'FOAM')
     assert foam['claimable_quantity'] == 50000
     assert foam['claim_read_state'] == 'stale'
@@ -128,10 +145,10 @@ def test_duplicate_identities_and_paired_positions_are_not_summed_twice():
     raw['tokens'].append(dict(tide, id='eth:duplicate', token_address='SYNTHETIC:tide'))
     raw['tokens'].append(deepcopy(kite))
     result = project_snapshot(raw)
-    assert result['metrics']['total'] == 4
+    assert result['metrics']['total'] == 3
     assert result['metrics']['held_value'] == 3500
     assert result['metrics']['claimable_value'] == 400
-    assert result['metrics']['liquidity_imd'] == 200000
+    assert result['metrics']['liquidity_imd'] == 120000
     assert result['metrics']['liquidity_eth'] == 2.4
     assert result['metrics']['liquidity_partial'] is False
     raw['tokens'][-1] = dict(tide, id='base:401', chain='base', chain_id=8453)
@@ -139,12 +156,12 @@ def test_duplicate_identities_and_paired_positions_are_not_summed_twice():
 
 
 @pytest.mark.parametrize('sort, symbols', [
-    ('value', ['MESH', 'TIDE', 'KITE', 'FOAM']),
-    ('claimable', ['TIDE', 'FOAM', 'KITE', 'MESH']),
-    ('symbol', ['FOAM', 'KITE', 'MESH', 'TIDE']),
-    ('change', ['TIDE', 'FOAM', 'KITE', 'MESH']),
-    ('newest', ['TIDE', 'KITE', 'FOAM', 'MESH']),
-    ('volume', ['TIDE', 'MESH', 'KITE', 'FOAM']),
+    ('value', ['MESH', 'TIDE', 'KITE']),
+    ('claimable', ['TIDE', 'KITE', 'MESH']),
+    ('symbol', ['KITE', 'MESH', 'TIDE']),
+    ('change', ['TIDE', 'KITE', 'MESH']),
+    ('newest', ['TIDE', 'KITE', 'MESH']),
+    ('volume', ['TIDE', 'MESH', 'KITE']),
 ])
 def test_supported_sorts_are_deterministic(sort, symbols):
     result = project_snapshot(_snapshot(), sort=sort)

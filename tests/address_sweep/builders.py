@@ -711,7 +711,7 @@ def _portfolio_live_payload():
     for row, chain, chain_id, contract in zip(snapshot['tokens'], ('eth', 'base', 'rh'),
                                             (1, 8453, 4663), _TOKEN_CONTRACTS):
         row.update(chain=chain, chain_id=chain_id, token_address=contract,
-                   held_cost_usd=None, basis_state='unavailable')
+                   held_quantity=max(1, row['held_quantity']), held_cost_usd=None, basis_state='unavailable')
     return snapshot
 
 

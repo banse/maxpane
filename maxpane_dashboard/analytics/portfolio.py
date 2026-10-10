@@ -3,7 +3,7 @@
 from copy import deepcopy
 from math import isfinite
 
-from maxpane_dashboard.analytics.swarm_tokens import project_snapshot as market_snapshot
+from maxpane_dashboard.analytics.swarm_tokens import project_snapshot as market_snapshot, select_tokens
 
 
 def _number(value) -> bool:
@@ -115,9 +115,9 @@ def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
                      sort: str = 'value') -> dict:
     """Keep held balances and ready claims separate, with coverage in totals.
 
-    Filtering reuses SWARM TOKENS, and applies equally to table, market activity,
-    movers and liquidity. Agent counts describe the selected wallet regardless
-    of token filters. The input and all nested output collections are detached.
+    Shared filters select holdings and claims; the table, held value and market
+    panels use only positive wallet holdings. Claims retain their own population.
+    Agent counts are wallet-wide. Input and output collections are detached.
     """
     wallet = snapshot.get('wallet')
     agents = deepcopy(snapshot.get('agents')) if wallet is not None else []
@@ -144,18 +144,22 @@ def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
     activity = [dict(row, token_id=aliases.get(row['token_id'], row['token_id']))
                 for row in snapshot.get('activity') or []]
     base = dict(snapshot, tokens=selected, activity=activity)
-    market = market_snapshot(base, chain=chain, query=query, lp_state=lp_state,
-                             sort=sort if sort not in {'value', 'claimable'} else 'symbol')
-    tokens = market['tokens']
+    tokens = select_tokens(selected, chain=chain, query=query, lp_state=lp_state,
+                           sort=sort if sort not in {'value', 'claimable'} else 'symbol')
     if sort in {'value', 'claimable'}:
         key = 'held_usd' if sort == 'value' else 'claimable_usd'
         tokens.sort(key=lambda row: (row[key] is None, -(row[key] or 0), row['id']))
-    held = _subtotal(tokens, 'held_quantity', 'balance_state', 'held_usd')
     claims = _subtotal(tokens, 'claimable_quantity', 'claim_read_state', 'claimable_usd')
+    claimable = sorted((row for row in tokens if _ready(row)),
+                       key=lambda row: (row['claimable_usd'] is None,
+                                        -(row['claimable_usd'] or 0), row['id']))
+    pnl, pnl_percent = _pnl(tokens, live=not snapshot['is_mock'])
+    tokens = [row for row in tokens if _positive(row['held_quantity'])]
+    held = _subtotal(tokens, 'held_quantity', 'balance_state', 'held_usd')
+    market = market_snapshot(dict(base, tokens=tokens))
     liquidity = market_snapshot(dict(base, tokens=_liquidity_tokens(tokens)))['metrics']
     online = (sum(agent['online'] is True for agent in agents)
               if agents is not None and all(agent['online'] is not None for agent in agents) else None)
-    pnl, pnl_percent = _pnl(tokens, live=not snapshot['is_mock'])
     metrics = dict(
         total=len(tokens), held_value=held[0], held_known=held[1], held_total=held[2],
         claimable_value=claims[0], claimable_known=claims[1], claimable_total=claims[2],
@@ -164,9 +168,6 @@ def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
         liquidity_partial=liquidity['liquidity_partial'],
         pnl_usd=pnl, pnl_percent=pnl_percent,
     )
-    claimable = sorted((row for row in tokens if _ready(row)),
-                       key=lambda row: (row['claimable_usd'] is None,
-                                        -(row['claimable_usd'] or 0), row['id']))
     return _live_sources(dict(
         wallet=wallet, tokens=tokens, metrics=metrics, claimable=claimable,
         gainers=market['gainers'], losers=market['losers'], activity=market['activity'],
