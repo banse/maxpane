@@ -86,13 +86,13 @@ def fitted_prose(value, width, *, style="") -> Text:
 class SurfboardTerminal(PanelBase):
     TITLE = "IMD TERMINAL"
     DEFAULT_CSS = """
-    SurfboardTerminal { height: 1fr; min-height: 11; border: round #345533; background: #050805; color: $foreground; padding: 0 1; }
+    SurfboardTerminal { height: 1fr; min-height: 11; border: round #345533; background: $surface; color: $foreground; padding: 0 1; }
     SurfboardTerminal > .panel-title { height: 2; margin: 0; padding: 0; border-bottom: solid #253c24; color: $foreground; text-style: none; text-wrap: nowrap; }
-    SurfboardTerminal > RichLog { height: 1fr; min-height: 3; background: #050805; scrollbar-size-vertical: 1; scrollbar-gutter: stable; scrollbar-color: #345533; }
-    SurfboardTerminal > .terminal-prompt { height: 3; border: round #345533; background: #101710; }
+    SurfboardTerminal > RichLog { height: 1fr; min-height: 3; background: $surface; scrollbar-size-vertical: 1; scrollbar-gutter: stable; scrollbar-color: #345533; }
+    SurfboardTerminal > .terminal-prompt { height: 3; border: round #345533; background: $surface; }
     SurfboardTerminal > .terminal-prompt:focus-within { border: round #9fc99c; }
     SurfboardTerminal > .terminal-prompt > Static { width: 2; height: 1; color: $text-muted; }
-    SurfboardTerminal Input { width: 1fr; height: 1; min-height: 1; padding: 0; background: #101710; border: none; color: $foreground; }
+    SurfboardTerminal Input { width: 1fr; height: 1; min-height: 1; padding: 0; background: $surface; border: none; color: $foreground; }
     SurfboardTerminal Input:focus { border: none; }
     SurfboardTerminal > .terminal-footer { height: 2; border-top: solid #253c24; color: $text-muted; text-wrap: nowrap; }
     """
