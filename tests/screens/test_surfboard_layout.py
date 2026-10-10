@@ -29,6 +29,61 @@ class HubHarness(App):
         self.push_screen(self.hub)
 
 
+@pytest.mark.parametrize("signals", [0, 1, 4, 9, 11, None])
+async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(signals):
+    payload = hub_payload()
+    news = next(card for card in payload["surfboard_cards"] if card["key"] == "announce")
+    news.update(numerator=signals, denominator=11)
+    app = HubHarness(payload)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        for width, cells in [(149, 9), (180, 14), (140, 8), (149, 9)]:
+            await pilot.resize_terminal(width, 45)
+            await pilot.pause()
+            card = app.hub.query_one("#surfboard-card-announce", SurfboardCard)
+            footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(
+                card.region.x, card.region.right)
+            if signals is None:
+                assert footer.text.endswith("— SIGNALS ─╯")
+                assert "▰" not in footer.text and "▱" not in footer.text
+                continue
+            if signals > cells + 1:
+                assert footer.text.endswith(f"{signals} SIGNALS ─╯")
+                assert "▰" not in footer.text
+                continue
+            # Drop the gap if that lets the last signal fit beside the label.
+            gap = "" if signals > cells else " "
+            bar = "▰" * signals + "▱" * (cells + (not gap) - signals)
+            assert footer.text == f"╰─ {bar}{gap}SIGNALS ─╯"
+            assert "‹ widen" not in str(card.border_title)
+            for segment in footer:
+                if "▰" in segment.text:
+                    assert segment.style.color.get_truecolor() == app.ansi_theme.ansi_colors[2]
+                if "SIGNALS" in segment.text:
+                    earnings = app.hub.query_one("#surfboard-card-earnings", SurfboardCard)
+                    caption = next(s for s in app.hub._compositor.render_strips()[earnings.region.bottom - 1]
+                                   .crop(earnings.region.x, earnings.region.right) if "EARN" in s.text)
+                    assert segment.style.color == caption.style.color
+
+
+async def test_news_signal_footer_refresh_and_overflow_remain_exact():
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        card = app.hub.query_one("#surfboard-card-announce", SurfboardCard)
+        for count, total in [(24, 30), (3, 11), (None, None)]:
+            card.set_data(dict(primary="Latest post", secondary="7 new", numerator=count, denominator=total))
+            await pilot.pause()
+            footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(
+                card.region.x, card.region.right).text
+            if count == 24:
+                assert "24 SIGNALS" in footer and "▰" not in footer
+            else:
+                assert footer.count("▰") == (count or 0)
+                assert "‹ widen" not in str(card.border_title)
+                assert ("— SIGNALS" in footer) == (count is None)
+
+
 async def test_terminal_uses_dashboard_background_and_native_text_colors():
     from rich.color import Color
     from textual.widgets import RichLog

@@ -33,7 +33,7 @@ SLOTS = (
     ("bay-11", "BAY 11", 3, 0), ("bay-12", "BAY 12", 3, 5),
 )
 PLANNED = frozenset(("earnings",))
-METER_LABELS = dict(announce="ALERT", swarm="24H", agent="PASS", board="PASS",
+METER_LABELS = dict(swarm="24H", agent="PASS", board="PASS",
                     launchpad="TRADE", pool4="STAKE", protocol="BURN",
                     **{"swarm-tokens": "TOKENS", "portfolio": "ASSETS", "earnings": "EARN"})
 
@@ -96,6 +96,22 @@ def meter_text(card: dict) -> Text:
     return out.append("▰" * full, style=AMBER if key == "protocol" else GREEN).append("▱" * (8 - full), style=MUTED)
 
 
+def signal_meter_text(card: dict, width: int) -> Text:
+    """One lit cell per signal; the rest of the footer is an empty track."""
+    count, total = card.get("numerator"), card.get("denominator")
+    label = "SIGNALS"
+    if (not _number(count) or not _number(total) or total == 0
+            or count > total or count != int(count) or total != int(total)):
+        return Text().append("— ", style=AMBER).append(label, style=MUTED)
+    full = int(count)
+    gap = " " if full < width - len(label) else ""
+    cells = max(0, width - len(label) - len(gap))
+    if full > cells:
+        return Text(f"{full} {label}", style=MUTED)
+    return (Text().append("▰" * full, style=GREEN).append("▱" * (cells - full), style=MUTED)
+            .append(gap + label, style=MUTED))
+
+
 class SurfboardCard(HeroBoxBase, can_focus=True):
     """A focusable faceplate with an inset readout."""
     BINDINGS = [Binding("enter", "activate", "Open", show=False)]
@@ -136,8 +152,18 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                              secondary="future dashboard" if planned else "· · ·", destination=None,
                              detail=f"{self.title} · planned / coming soon" if planned else f"{self.title} · empty expansion slot")
         self.border_title = Text("⊙ " + self.title)
-        self.border_subtitle = meter_text(self.data)
+        self._update_meter()
         self.refresh()
+
+    def _update_meter(self):
+        if self.key == "announce":
+            # Textual reserves six cells for corners, border stubs and padding.
+            self.border_subtitle = signal_meter_text(self.data, max(0, self.region.width - 6))
+        else:
+            self.border_subtitle = meter_text(self.data)
+
+    def on_resize(self):
+        self._update_meter()
 
     def render(self):
         width = max(4, self.content_size.width)
