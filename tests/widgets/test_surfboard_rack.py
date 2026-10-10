@@ -17,8 +17,9 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
     async with RackApp().run_test(size=size) as pilot:
         card=pilot.app.query_one('#surfboard-card-announce',SurfboardCard)
         empty=pilot.app.query_one('#surfboard-card-bay-11',SurfboardCard)
+        earnings=pilot.app.query_one('#surfboard-card-earnings',SurfboardCard)
         text='0123456789'*10
-        for status in ('active','idle'):
+        for status in ('active','idle','stale','working','failed','active'):
             card.set_data(dict(primary=text,secondary='7 new replies',status=status))
             await pilot.pause()
             strips=[s.crop(card.region.x,card.region.right) for s in
@@ -36,9 +37,18 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
                            for seg in strip.crop(empty.region.x,empty.region.right) if 'empty slot' in seg.text)
             assert ink.color==(card.rich_style.color if status=='active' else empty_ink)
             edge=next(iter(strips[top].crop(left,left+1))).style.color.get_truecolor()
-            expected=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
-                      if status=='active' else pilot.app.ansi_theme.ansi_colors[3])
+            neutral=next(seg.style.color.get_truecolor()
+                         for strip in pilot.app.screen._compositor.render_strips()[earnings.region.y:earnings.region.bottom]
+                         for seg in strip.crop(earnings.region.x,earnings.region.right) if '┌' in seg.text)
+            status_ink=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+                        if status in ('active','working') else pilot.app.ansi_theme.ansi_colors[1 if status=='failed' else 3])
+            expected=neutral if status in ('idle','stale') else status_ink
             assert edge==expected
+            for row in strips[top:top+5]:
+                for x in (left,right):
+                    assert next(iter(row.crop(x,x+1))).style.color.get_truecolor()==expected
+            footer=next(seg for seg in strips[top+4] if '7 new' in seg.text)
+            assert footer.style.color.get_truecolor()==status_ink
 
 
 @pytest.mark.parametrize('size', [(149,45),(140,36)])

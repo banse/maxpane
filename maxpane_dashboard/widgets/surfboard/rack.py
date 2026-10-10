@@ -169,6 +169,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             color = RED
         palette = self.app.get_css_variables()
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
+        border_inset = (Style.parse(MUTED) + Style(bgcolor=palette["background"])
+                        if self.key == "announce" and color == AMBER else inset)
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
@@ -195,9 +197,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             ink = self.rich_style.color if status == "active" else self.parent.query_one(".empty").rich_style.color
             preview = _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))
         body = Text()
-        body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=inset)
+        body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
-            body.stylize(Style(color=self.rich_style.color, bold=False), start, start + len(label.strip()))
+            body.stylize(Style(color=self.rich_style.color, bold=False, dim=False), start, start + len(label.strip()))
         bottom = f" {secondary} " if label else ""
         if len(bottom) > inside:
             bottom = bottom.strip()
@@ -221,10 +223,15 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                           (Text(raw, style=style), False) if native_digits else fit_prose(raw, inside, style=style))
             clipped |= lost
             line.align("left" if preview is not None else "center", inside)
-            body.append("│", style=inset).append_text(line).append("│\n", style=inset)
+            body.append("│", style=border_inset).append_text(line).append("│\n", style=border_inset)
         self.border_title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, self.size.width - 4)))
-        return body.append("└" + clip(bottom, inside).center(inside, "─") + "┘",
-                           style=inset + Style(bold=False))
+        footer = Text("└" + clip(bottom, inside).center(inside, "─") + "┘",
+                      style=border_inset + Style(bold=False))
+        if border_inset != inset and bottom:
+            caption = clip(bottom, inside)
+            start = footer.plain.index(caption)
+            footer.stylize(inset + Style(bold=False, dim=False), start, start + len(caption))
+        return body.append_text(footer)
 
     def on_focus(self):
         self.post_message(self.Focused(self))
