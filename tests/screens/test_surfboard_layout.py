@@ -208,10 +208,13 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert r["status_whole"], r
     assert len(r["cards"]) == 12
     assert len({region.y for region in r["cards"].values()}) == 4
-    assert len({r["cards"][key].y for key in ("announce", "swarm", "agent", "board", "launchpad", "pool4")}) == 1
-    assert r["terminal"].y == r["cards"]["protocol"].y == r["cards"]["swarm-tokens"].y
+    assert len({r["cards"][key].y for key in ("announce", "swarm", "swarm-tokens", "pool4", "protocol", "board")}) == 1
+    assert r["terminal"].y == r["cards"]["launchpad"].y == r["cards"]["agent"].y
     assert r["terminal"].bottom == r["cards"]["bay-11"].bottom == r["cards"]["bay-12"].bottom
-    assert r["cards"]["protocol"].right < r["terminal"].x < r["terminal"].right < r["cards"]["swarm-tokens"].x
+    assert r["cards"]["launchpad"].right < r["terminal"].x < r["terminal"].right < r["cards"]["agent"].x
+    assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
+        "announce", "swarm", "swarm-tokens", "pool4", "protocol", "board",
+        "launchpad", "agent", "portfolio", "earnings", "bay-11", "bay-12"]
     for title in ("SURFBOARD", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
                   "LAUNCHES", "PORTFOLIO", "EARNINGS", "BAY 11", "BAY 12"):
         assert title in r["text"], (title, r["text"])

@@ -311,9 +311,18 @@ async def test_planned_cards_focus_but_empty_bays_do_not_and_arrows_follow_geome
         rack.update_data()
         rack.focus_card("announce")
         rack.move_focus("down")
-        assert rack.focused_card == "protocol"
+        assert rack.focused_card == "launchpad"
         rack.move_focus("right")
+        assert rack.focused_card == "agent"
+        rack.move_focus("up")
+        assert rack.focused_card == "board"
+        rack.move_focus("left")
+        assert rack.focused_card == "protocol"
+        rack.move_focus("left")
+        assert rack.focused_card == "pool4"
+        rack.move_focus("left")
         assert rack.focused_card == "swarm-tokens"
+        rack.focus_card("agent")
         rack.move_focus("down")
         assert rack.focused_card == "earnings"
         rack.move_focus("left")

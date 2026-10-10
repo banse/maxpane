@@ -26,9 +26,9 @@ RED = "red"
 # Layout identities, not data: future and empty bays deliberately have no route.
 SLOTS = (
     ("announce", "SURFBOARD", 0, 0), ("swarm", "SWARM", 0, 1),
-    ("agent", "AGENT", 0, 2), ("board", "LEADERBOARD", 0, 3),
-    ("launchpad", "LAUNCHPAD", 0, 4), ("pool4", "POOL4", 0, 5),
-    ("protocol", "PROTOCOL", 1, 0), ("swarm-tokens", "LAUNCHES", 1, 5),
+    ("swarm-tokens", "LAUNCHES", 0, 2), ("pool4", "POOL4", 0, 3),
+    ("protocol", "PROTOCOL", 0, 4), ("board", "LEADERBOARD", 0, 5),
+    ("launchpad", "LAUNCHPAD", 1, 0), ("agent", "AGENT", 1, 5),
     ("portfolio", "PORTFOLIO", 2, 0), ("earnings", "EARNINGS", 2, 5),
     ("bay-11", "BAY 11", 3, 0), ("bay-12", "BAY 12", 3, 5),
 )
