@@ -199,7 +199,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
-            body.stylize(Style(color=self.rich_style.color, bold=False, dim=False), start, start + len(label.strip()))
+            body.stylize(Style(bold=False), start, start + len(label.strip()))
         bottom = f" {secondary} " if label else ""
         if len(bottom) > inside:
             bottom = bottom.strip()

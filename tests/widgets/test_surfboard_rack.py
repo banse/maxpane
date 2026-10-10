@@ -12,6 +12,10 @@ class RackApp(App):
         yield SurfboardRack(id="rack")
 
 
+def inset_border_color(strip):
+    return next(segment.style.color for segment in strip if '┌' in segment.text)
+
+
 def neutral_inset_color(app):
     earnings = app.query_one('#surfboard-card-earnings', SurfboardCard)
     return next(segment.style.color.get_truecolor()
@@ -34,8 +38,8 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
             left,right=strips[top].text.index('┌'),strips[top].text.index('┐'); inside=right-left-1
             assert '⊙ ONCHAIN NEWS' in '\n'.join(s.text for s in strips)
             header = next(s for s in strips[top] if 'LATEST' in s.text)
-            assert header.text.strip() == 'LATEST'
-            assert not header.style.bold and header.style.color == card.rich_style.color
+            assert strips[top].text.strip('│┌┐─ ') == 'LATEST'
+            assert not header.style.bold and header.style.color == inset_border_color(strips[top])
             assert [s.text[left+1:right] for s in strips[top+1:top+4]]==[
                 text[:inside],text[inside:inside*2],text[inside*2:inside*3-3]+'...']
             assert strips[top+4].text[left+1:right].strip('─ ') == '7 new'
@@ -107,7 +111,7 @@ async def test_leader_and_coins_digit_labels_exact_counts_and_launch_color(size)
                 top=next(i for i,s in enumerate(strips) if '┌' in s.text)
                 assert '⊙ '+outer in '\n'.join(s.text for s in strips)
                 header = next(s for s in strips[top] if label in s.text)
-                assert not header.style.bold and header.style.color == card.rich_style.color
+                assert not header.style.bold and header.style.color == inset_border_color(strips[top])
                 assert all(g in s.text for g,s in zip(glyphs,strips[top+1:top+4]))
                 expected='4,176 jobs' if key=='board' else footer
                 assert strips[top+4].text.strip('│└┘─ ') == expected
@@ -185,7 +189,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         assert "24H ▁▂▃▄▅▆▇█" in "\n".join(strip.text for strip in strips)
         header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
         assert not header.style.bold
-        assert header.style.color == card.rich_style.color
+        assert header.style.color == inset_border_color(strips[top])
 
 
 async def test_swarm_working_count_overrides_status_color_and_resets_on_refresh():
@@ -235,7 +239,7 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
                    if status == "working"
                    else pilot.app.ansi_theme.ansi_colors[1] if status == "offline"
                    else neutral_inset_color(pilot.app))
-            assert header.style.color == card.rich_style.color
+            assert header.style.color == inset_border_color(strips[top])
             for strip, row in zip(strips[top + 1:top + 4], ["╷ ╷╶─╮╭─╮", "╰─┤┌─┘│ │", "  ╵╰─╴╰─╯"]):
                 padding = (right - left - 1 - len(row)) // 2
                 assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
@@ -301,7 +305,7 @@ async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,labe
         header=next(segment for segment in strips[top] if label in segment.text)
         ink=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
              if green else neutral_inset_color(pilot.app))
-        assert not header.style.bold and header.style.color == card.rich_style.color
+        assert not header.style.bold and header.style.color == inset_border_color(strips[top])
         for strip,row in zip(strips[top+1:top+4],expected):
             padding=(right-left-1-len(row))//2
             assert strip.text[left+1:right]==(' '*padding+row).ljust(right-left-1)
@@ -423,7 +427,7 @@ async def test_tokens_card_launch_digits_and_news_border_refresh(size):
             header = next(s for s in strips[top] if 'TOKENS' in s.text)
             expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
                         if status == 'active' else neutral_inset_color(pilot.app))
-            assert not header.style.bold and header.style.color == card.rich_style.color
+            assert not header.style.bold and header.style.color == inset_border_color(strips[top])
             for strip, digits in zip(strips[top+1:top+4], ['╶╮ ╶╮ ╭─╴', ' │  │ ├─╮', '╶┴╴╶┴╴╰─╯']):
                 assert digits in strip.text
             assert footer in strips[top+4].text
