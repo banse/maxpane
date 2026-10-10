@@ -166,6 +166,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             color = RED
         palette = self.app.get_css_variables()
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
+        footer_style = inset + Style(bold=False)
+        if color == AMBER and self.key != "pool4":
+            inset = Style(color=palette["panel"], bgcolor=palette["background"])
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
@@ -225,8 +228,12 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             line.align("left" if preview is not None else "center", inside)
             body.append("│", style=inset).append_text(line).append("│\n", style=inset)
         self.border_title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, self.size.width - 4)))
-        return body.append("└" + clip(bottom, inside).center(inside, "─") + "┘",
-                           style=inset + Style(bold=False))
+        footer_text = clip(bottom, inside)
+        footer = Text("└" + footer_text.center(inside, "─") + "┘", style=inset + Style(bold=False))
+        if footer_text:
+            start = footer.plain.find(footer_text)
+            footer.stylize(footer_style, start, start + len(footer_text))
+        return body.append_text(footer)
 
     def on_focus(self):
         self.post_message(self.Focused(self))

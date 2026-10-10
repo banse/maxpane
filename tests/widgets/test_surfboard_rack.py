@@ -41,7 +41,7 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
             assert ink.color==(card.rich_style.color if status=='active' else empty_ink)
             edge=next(iter(strips[top].crop(left,left+1))).style.color.get_truecolor()
             expected=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
-                      if status=='active' else pilot.app.ansi_theme.ansi_colors[3])
+                      if status=='active' else Color.parse(pilot.app.get_css_variables()['panel']).get_truecolor())
             assert edge==expected
 
 
@@ -194,7 +194,8 @@ async def test_swarm_working_count_overrides_status_color_and_resets_on_refresh(
             top = next(i for i, strip in enumerate(strips) if "┌" in strip.text)
             left, right = strips[top].text.index("┌"), strips[top].text.index("┐")
             expected = (Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
-                        if ink == 2 else pilot.app.ansi_theme.ansi_colors[ink])
+                        if ink == 2 else Color.parse(pilot.app.get_css_variables()["panel"]).get_truecolor()
+                        if ink == 3 else pilot.app.ansi_theme.ansi_colors[ink])
             for row in range(top, top + 5):
                 for x in (left, right):
                     edge = next(iter(strips[row].crop(x, x + 1)))
@@ -240,6 +241,11 @@ async def test_card_activity_colors_update_from_current_counts():
         for key,status,primary,secondary,ink in [
             ('pool4','active','8.77','USD',2),
             ('pool4','idle','8.77','USD',3),
+            ('board','stale','527','4,176 accepted jobs',3),
+            ('launchpad','idle','208','0 new',3),
+            ('agent','idle','IDMD #420','0 of 3 slots',3),
+            ('agent','offline','IDMD #420','0 of 3 slots',1),
+            ('swarm-tokens','idle','118','0 new',3),
             ('protocol','active','33,279','IMD',2),
             ('protocol','ready','33,279','IMD',11),
             ('protocol','experimental','33,279','IMD',3),
@@ -255,7 +261,8 @@ async def test_card_activity_colors_update_from_current_counts():
                     pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             edge=next(segment for strip in strips for segment in strip if '┌' in segment.text)
             expected=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
-                      if ink==2 else pilot.app.ansi_theme.ansi_colors[ink])
+                      if ink==2 else Color.parse(pilot.app.get_css_variables()['panel']).get_truecolor()
+                      if ink==3 and key!='pool4' else pilot.app.ansi_theme.ansi_colors[ink])
             assert edge.style.color.get_truecolor()==expected
 
 
