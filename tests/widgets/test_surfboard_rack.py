@@ -12,14 +12,96 @@ class RackApp(App):
         yield SurfboardRack(id="rack")
 
 
+@pytest.mark.parametrize('size', [(149,45),(140,36)])
+async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
+    async with RackApp().run_test(size=size) as pilot:
+        card=pilot.app.query_one('#surfboard-card-announce',SurfboardCard)
+        empty=pilot.app.query_one('#surfboard-card-bay-11',SurfboardCard)
+        text='0123456789'*10
+        for status in ('active','idle'):
+            card.set_data(dict(primary=text,secondary='7 new replies',status=status))
+            await pilot.pause()
+            strips=[s.crop(card.region.x,card.region.right) for s in
+                    pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+            top=next(i for i,s in enumerate(strips) if '┌' in s.text)
+            left,right=strips[top].text.index('┌'),strips[top].text.index('┐'); inside=right-left-1
+            assert '⊙ SURFBOARD' in '\n'.join(s.text for s in strips)
+            assert 'LATEST POST' in strips[top].text
+            assert [s.text[left+1:right] for s in strips[top+1:top+4]]==[
+                text[:inside],text[inside:inside*2],text[inside*2:inside*3-3]+'...']
+            assert '7 new replies' in strips[top+4].text
+            ink=next(iter(strips[top+1].crop(left+1,left+2))).style
+            empty_ink=next(seg.style.color for strip in pilot.app.screen._compositor.render_strips()[empty.region.y:empty.region.bottom]
+                           for seg in strip.crop(empty.region.x,empty.region.right) if 'empty slot' in seg.text)
+            assert ink.color==(card.rich_style.color if status=='active' else empty_ink)
+            edge=next(iter(strips[top].crop(left,left+1))).style.color.get_truecolor()
+            expected=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+                      if status=='active' else pilot.app.ansi_theme.ansi_colors[3])
+            assert edge==expected
+
+
+@pytest.mark.parametrize('size', [(149,45),(140,36)])
+async def test_post_preview_keeps_unicode_literal_and_address_copy_units(size):
+    address='0x1234567890abcdef1234567890abcdef12345678'
+    async with RackApp().run_test(size=size) as pilot:
+        card=pilot.app.query_one('#surfboard-card-announce',SurfboardCard)
+        for text in ('Pay '+address+' then read this long announcement carefully.',
+                     '測試界面 '*12, 'a'+'界'*100, '[bold] literal '+'x'*60, 'Short post'):
+            card.set_data(dict(primary=text,secondary='0 new replies',status='active'))
+            await pilot.pause()
+            strips=[s.crop(card.region.x,card.region.right) for s in
+                    pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+            top=next(i for i,s in enumerate(strips) if '┌' in s.text)
+            left,right=strips[top].text.index('┌'),strips[top].text.index('┐')
+            content=strips[top+1:top+4]
+            assert all(s.crop(left,left+1).text=='│' and s.crop(right,right+1).text=='│' for s in content)
+            if text.startswith('Pay'):
+                line=next(s for s in content if '0x' in s.text)
+                assert '⧉' in line.text
+                copied=[s for s in line if '⧉' in s.text]
+                assert address in str(copied[0].style.meta)
+                assert not copied[0].style.link  # prose gives no chain identity
+            elif text.startswith('[bold]'):
+                assert '[bold]' in content[0].text
+                assert not next(s.style for s in content[0] if '[bold]' in s.text).bold
+            elif text.startswith('a界'):
+                assert [s.crop(left+1,right).text.rstrip() for s in content]==[
+                    'a'+'界'*(8 if size[0]==149 else 7),
+                    '界'*(9 if size[0]==149 else 8), '界'*(7 if size[0]==149 else 6)+'...']
+            elif text=='Short post':
+                assert 'Short post' in content[0].text
+                assert all(not s.crop(left+1,right).text.strip() for s in content[1:])
+            if text!='Short post':
+                assert content[2].crop(left+1,right).text.rstrip().endswith('...')
+
+
+@pytest.mark.parametrize('size', [(149,45),(140,36)])
+async def test_leader_and_coins_digit_labels_exact_counts_and_launch_color(size):
+    async with RackApp().run_test(size=size) as pilot:
+        for key,primary,footer,label,outer,glyphs in [
+            ('board','527','4,176 accepted jobs','TOP AGENT','LEADERBOARD',['╭─╴╶─╮╶─┐','╰─╮┌─┘  │','╶─╯╰─╴  ╵']),
+            ('launchpad','208','0 new','COINS','LAUNCHPAD',['╶─╮╭─╮╭─╮','┌─┘│ │├─┤','╰─╴╰─╯╰─╯']),
+        ]:
+            card=pilot.app.query_one('#surfboard-card-'+key,SurfboardCard)
+            for status in ('active','idle'):
+                card.set_data(dict(primary=primary,secondary=footer,status=status))
+                await pilot.pause()
+                strips=[s.crop(card.region.x,card.region.right) for s in
+                    pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+                top=next(i for i,s in enumerate(strips) if '┌' in s.text)
+                assert '⊙ '+outer in '\n'.join(s.text for s in strips)
+                assert label in strips[top].text
+                assert all(g in s.text for g,s in zip(glyphs,strips[top+1:top+4]))
+                expected=(('4176 accepted jobs' if size[0]==149 else '4176 accepted') if key=='board' else footer)
+                assert expected in strips[top+4].text
+
+
 def painted(app):
     return "\n".join("".join(segment.text for segment in strip)
                      for strip in app.screen._compositor.render_strips())
 
 
 @pytest.mark.parametrize("key,status,ink", [
-    ("board", "active", 2), ("board", "stale", 3),
-    ("board", "unavailable", 3), ("board", "failed", 1),
     ("portfolio", "planned", None), ("bay-11", "unassigned", None),
 ])
 async def test_status_colors_the_taller_inset_without_a_separate_status_row(key, status, ink):
@@ -159,10 +241,6 @@ async def test_card_activity_colors_update_from_current_counts():
             ('protocol','unavailable','33,279','IMD',3),
             ('protocol','experimental','unavailable','IMD',3),
             ('protocol','experimental','33,279','IMD',3),
-            ('announce','stale','5','1 new post',2),
-            ('announce','stale','5','0 new posts',3),
-            ('announce','unavailable','unavailable','1 new post',2),
-            ('announce','active','5','0 new posts',3),
         ]:
             card=pilot.app.query_one(f'#surfboard-card-{key}',SurfboardCard)
             card.set_data(dict(status=status,primary=primary,secondary=secondary))
@@ -177,12 +255,6 @@ async def test_card_activity_colors_update_from_current_counts():
 
 @pytest.mark.parametrize('size',[(149,45),(140,36)])
 @pytest.mark.parametrize('key,primary,secondary,label,expected,green,footer_text',[
-    ('announce','5','0 new posts','NEW POSTS',['╭─╮','│ │','╰─╯'],False,'5 signals'),
-    ('announce','5','1 new post','NEW POSTS',['╶╮ ',' │ ','╶┴╴'],True,'5 signals'),
-    ('announce','0','12 new posts','NEW POSTS',['╶╮ ╶─╮',' │ ┌─┘','╶┴╴╰─╴'],True,'0 signals'),
-    ('announce','1','1 new post','NEW POSTS',['╶╮ ',' │ ','╶┴╴'],True,'1 signal'),
-    ('announce','5','unavailable','NEW POSTS',['','unavailable',''],False,'5 signals'),
-    ('announce','unavailable','unavailable','NEW POSTS',['','unavailable',''],False,'unavailable'),
     ('pool4','8.77','USD','IMD PRICE',
      ['╭─╮ ╶─┐╶─┐','├─┤   │  │','╰─╯•  ╵  ╵'],True,'USD'),
     ('protocol','33,279','0.47% of supply','IMD BURNED',
@@ -228,7 +300,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.x > cards[6].region.x
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
-        for label in ("ANNOUNCE", "SWARM", "AGENT", "BOARD", "LAUNCHPAD", "POOL4",
+        for label in ("SURFBOARD", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
                       "PROTOCOL", "PORTFOLIO", "EARNINGS", "TOKENS", "BAY 11", "BAY 12"):
             assert label in text
 

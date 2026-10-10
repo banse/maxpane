@@ -13,8 +13,9 @@ from textual.renderables.digits import Digits
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
-from maxpane_dashboard.widgets.rowfit import clip, title_with_hint
-from maxpane_dashboard.widgets.sparkline_common import build_sparkline
+from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
+from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_compact
+from maxpane_dashboard.widgets.surf._icons import mark_addresses, unmark, link_in_order
 from .terminal import SurfboardTerminal, fitted_prose, fit_prose
 
 GREEN = "green"
@@ -24,8 +25,8 @@ RED = "red"
 
 # Layout identities, not data: future and empty bays deliberately have no route.
 SLOTS = (
-    ("announce", "ANNOUNCE", 0, 0), ("swarm", "SWARM", 0, 1),
-    ("agent", "AGENT", 0, 2), ("board", "BOARD", 0, 3),
+    ("announce", "SURFBOARD", 0, 0), ("swarm", "SWARM", 0, 1),
+    ("agent", "AGENT", 0, 2), ("board", "LEADERBOARD", 0, 3),
     ("launchpad", "LAUNCHPAD", 0, 4), ("pool4", "POOL4", 0, 5),
     ("protocol", "PROTOCOL", 1, 0), ("swarm-tokens", "LAUNCHES", 1, 5),
     ("portfolio", "PORTFOLIO", 2, 0), ("earnings", "EARNINGS", 2, 5),
@@ -35,6 +36,38 @@ PLANNED = frozenset(("portfolio", "earnings"))
 METER_LABELS = dict(announce="ALERT", swarm="24H", agent="PASS", board="PASS",
                     launchpad="TRADE", pool4="STAKE", protocol="BURN",
                     **{"swarm-tokens": "TOKENS", "portfolio": "ASSETS", "earnings": "EARN"})
+
+
+def _post_preview(value, width, style):
+    """Three cell-fitted literal lines; address/copy pairs remain indivisible."""
+    marked, addresses, spans = mark_addresses(flatten(value), width=max(5, width-5))
+    lines, cursor = [], 0
+    for index in range(3):
+        remaining = marked[cursor:]
+        truncated = index == 2 and cell_len(remaining) > width
+        limit = max(0, width-3 if truncated else width)
+        end, used = cursor, 0
+        for char in remaining:
+            cells = cell_len(char)
+            if used + cells > limit:
+                break
+            end += 1
+            used += cells
+        for start, stop in spans:
+            if start < end < stop:
+                end = start
+                break
+        if index < 2 and end < len(marked) and marked[end:end+1] != " ":
+            space = marked.rfind(" ", cursor, end)
+            if space > cursor:
+                end = space
+        line = marked[cursor:end].rstrip() + ("..." if truncated else "")
+        lines.append(Text(unmark(line), style=style))
+        cursor = end
+        while cursor < len(marked) and marked[cursor] == " ":
+            cursor += 1
+    link_in_order(lines, addresses)  # A post can mention addresses on any chain.
+    return lines
 
 
 def _number(value):
@@ -123,14 +156,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if status == "active":
                 color = AMBER
             secondary = "offline" if status == "offline" else secondary.removesuffix(" slots")
-        if self.key == "announce":
-            posts = secondary.removesuffix(" new posts").removesuffix(" new post")
-            digits = posts.replace(",", "")
-            valid_posts = secondary.endswith((" new post", " new posts")) and digits.isascii() and digits.isdecimal()
-            color = GREEN if valid_posts and digits.strip("0") else AMBER
-            secondary = (f"{primary} {'signal' if primary == '1' else 'signals'}"
-                         if primary != "unavailable" else "unavailable")
-            primary = posts if valid_posts else "unavailable"
         if status in ("offline", "error", "failed") and not muted:
             color = RED
         palette = self.app.get_css_variables()
@@ -138,9 +163,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "agent", "announce", "protocol", "swarm-tokens", "pool4"):
+        if self.key in ("swarm", "agent", "board", "launchpad", "protocol", "swarm-tokens", "pool4"):
             label = {"swarm": " AGENTS ", "agent": " SEAT ",
-                     "announce": " NEW POSTS ", "protocol": " IMD BURNED ", "pool4": " IMD PRICE ",
+                     "board": " TOP AGENT ", "launchpad": " COINS ",
+                     "protocol": " IMD BURNED ", "pool4": " IMD PRICE ",
                      "swarm-tokens": " TOKENS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
@@ -154,6 +180,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                         if segment.text != "\n"]
             else:
                 rows = [("", False), (count, False), ("", False)]
+        preview = None
+        if self.key == "announce":
+            label = " LATEST POST "
+            ink = self.rich_style.color if status == "active" else self.parent.query_one(".empty").rich_style.color
+            preview = _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
@@ -163,14 +194,26 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             bottom = bottom.strip()
         if self.key == "agent" and len(bottom) > inside:
             bottom = bottom.replace(" of ", "/")
+        if self.key == "board" and len(bottom) > inside:
+            bottom = bottom.replace(",", "")
+            if len(bottom) > inside:
+                bottom = bottom.removesuffix(" jobs")
+            amount = bottom.removesuffix(" accepted")
+            if len(bottom) > inside and amount.isascii() and amount.isdecimal():
+                bottom = fmt_compact(int(amount)) + " accepted"
+        if self.key == "announce" and len(bottom) > inside:
+            bottom = bottom.replace(",", "")
+            if len(bottom) > inside:
+                bottom = bottom.replace(" new ", " ")
         clipped = len(label) > inside or len(bottom) > inside
-        for raw, bold in rows:
+        for index, (raw, bold) in enumerate(rows):
             style = Style(
                 color=self.rich_style.color, bgcolor=palette["background"],
                 bold=bold, dim=muted)
-            line, lost = (Text(raw, style=style), False) if native_digits else fit_prose(raw, inside, style=style)
+            line, lost = ((preview[index], False) if preview is not None else
+                          (Text(raw, style=style), False) if native_digits else fit_prose(raw, inside, style=style))
             clipped |= lost
-            line.align("center", inside)
+            line.align("left" if preview is not None else "center", inside)
             body.append("│", style=inset).append_text(line).append("│\n", style=inset)
         self.border_title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, self.size.width - 4)))
         return body.append("└" + clip(bottom, inside).center(inside, "─") + "┘",

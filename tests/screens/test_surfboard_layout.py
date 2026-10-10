@@ -50,7 +50,7 @@ async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
             assert terminal.query_one(RichLog).styles.background.hex.casefold() == "#050805"
             strips = app.hub._compositor.render_strips()
             value = next(segment for strip in strips for segment in strip
-                         if "892 seats" in segment.text)
+                         if "╭─╴╶─╮╶─┐" in segment.text)
             reply = next(segment for strip in strips for segment in strip
                          if "palette reply" in segment.text)
             assert value.style.bgcolor == Color.parse(theme.background)
@@ -212,7 +212,7 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert r["terminal"].y == r["cards"]["protocol"].y == r["cards"]["swarm-tokens"].y
     assert r["terminal"].bottom == r["cards"]["bay-11"].bottom == r["cards"]["bay-12"].bottom
     assert r["cards"]["protocol"].right < r["terminal"].x < r["terminal"].right < r["cards"]["swarm-tokens"].x
-    for title in ("ANNOUNCE", "SWARM", "AGENT", "BOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
+    for title in ("SURFBOARD", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
                   "LAUNCHES", "PORTFOLIO", "EARNINGS", "BAY 11", "BAY 12"):
         assert title in r["text"], (title, r["text"])
 
@@ -241,21 +241,34 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
     assert all(value >= 7 for value in r["heights"].values()), r
     if height >= SURFBOARD_FULL_LAYOUT_ROWS:
         for card in payload["surfboard_cards"][:7]:
-            if card["key"] in ("announce", "protocol"):
-                text = r["card_text"][card["key"]]
-                assert (" NEW POSTS " if card["key"] == "announce" else " IMD BURNED ") in text, r
-                if kind == "unavailable" or (kind == "stress" and card["key"] == "protocol"):
-                    expected = (card["primary"],)
-                elif card["key"] == "announce":
-                    expected = (("╭─╮" * 5, "╰─┤" * 5, "╶─╯" * 5) if kind == "stress" else
-                                ("╭─╮", "│ │", "╰─╯"))
+            if card["key"] == "announce":
+                text=r["card_text"]["announce"]
+                assert " LATEST POST " in text
+                if kind == "unavailable":
+                    assert "unavailable" in text
                 else:
-                    expected = ("╶─╮╶─╮ ╶─╮╶─┐╭─╮", " ─┤ ─┤ ┌─┘  │╰─┤", "╶─╯╶─╯,╰─╴  ╵╶─╯")
+                    assert "You can now" in text and "deploy via the" in text and "..." in text
+                    assert ("99999 replies" if kind=="stress" else card["secondary"]) in text
+                continue
+            if card["key"] in ("board", "launchpad"):
+                text=r["card_text"][card["key"]]
+                assert ("TOP AGENT" if card["key"]=="board" else "COINS") in text
+                if kind=="unavailable" or (kind=="stress" and card["key"]=="launchpad"):
+                    assert card["primary"] in text
+                else:
+                    glyph=("╭─╮"*5 if kind=="stress" else "╭─╴╶─╮╶─┐" if card["key"]=="board" else "╶─╮╭─╮╭─╮")
+                    assert glyph in text
+                footer=(("100.0M accepted" if kind=="stress" else card["secondary"].replace(",", "").removesuffix(" jobs"))
+                        if card["key"]=="board" else card["secondary"])
+                assert footer in text
+                continue
+            if card["key"] == "protocol":
+                text = r["card_text"]["protocol"]
+                assert " IMD BURNED " in text, r
+                expected = ((card["primary"],) if kind in ("unavailable", "stress") else
+                    ("╶─╮╶─╮ ╶─╮╶─┐╭─╮", " ─┤ ─┤ ┌─┘  │╰─┤", "╶─╯╶─╯,╰─╴  ╵╶─╯"))
                 assert all(row in text for row in expected), r
-                footer = (("unavailable" if kind == "unavailable" else
-                           "11 signals" if kind == "stress" else "4 signals")
-                          if card["key"] == "announce" else card["secondary"])
-                assert footer in text, r
+                assert card["secondary"] in text, r
                 continue
             if card["key"] == "pool4":
                 text = r["card_text"]["pool4"]

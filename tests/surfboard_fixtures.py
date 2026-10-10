@@ -7,11 +7,11 @@ STAMP = 1791496800.0
 def hub_payload(kind="normal"):
     """Normal, stress, unavailable and hostile prose at the same source instant."""
     definitions = (
-        ("announce", "ANNOUNCE", "dashboard", "4", "0 new posts", 4, 11),
+        ("announce", "SURFBOARD", "dashboard", "You can now deploy via the swarm on rh and mainnet. More networks soon.", "7 new replies", 4, 11),
         ("swarm", "SWARM", "swarm", "863 online", "9 working", None, None),
         ("agent", "AGENT", "agent", "IDMD #420", "0 of 3 slots", 3253, 3392),
-        ("board", "BOARD", "board", "892 seats", "rank #69", 3253, 3392),
-        ("launchpad", "LAUNCHPAD", "launchpad", "208 coins", "0 new / 24h", 0, 208),
+        ("board", "LEADERBOARD", "board", "527", "4,176 accepted jobs", 3253, 3392),
+        ("launchpad", "LAUNCHPAD", "launchpad", "208", "0 new", 0, 208),
         ("pool4", "POOL4", "pool4_user", "7.90", "USD", 350, 1000),
         ("protocol", "PROTOCOL", "pool4", "33,279", "0.47% of supply", 60, 100),
         ("swarm-tokens", "LAUNCHES", "swarm-tokens", "116", "2 new", None, None),
@@ -48,7 +48,11 @@ def hub_payload(kind="normal"):
         next(card for card in cards if card["key"] == "agent").update(
             status="working", primary="IDMD #99999", secondary="99,999 of 99,999 slots")
         next(card for card in cards if card["key"] == "announce").update(
-            primary="11", secondary="99,999 new posts")
+            primary="You can now deploy via the swarm on rh and mainnet. " * 4, secondary="99,999 new replies")
+        next(card for card in cards if card["key"] == "board").update(
+            primary="99999", secondary="99,999,999 accepted jobs")
+        next(card for card in cards if card["key"] == "launchpad").update(
+            primary="999,999", secondary="999,999 new")
         next(card for card in cards if card["key"] == "pool4").update(
             primary="999,999.99", secondary="USD")
         next(card for card in cards if card["key"] == "protocol").update(

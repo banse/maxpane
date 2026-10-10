@@ -99,26 +99,63 @@ def test_unknown_detector_prevents_a_false_zero_bar():
     assert cards[0]['numerator'] is cards[0]['denominator'] is None
 
 
-@pytest.mark.parametrize('items,footer', [
-    (None,'unavailable'), ([], '0 new posts'),
-    ([dict(kind='self',ts=99999,tx_hash='0x'+'a'*64)],'1 new post'),
-    ([dict(kind=kind,ts=99999,tx_hash='0x'+char*64)
-      for kind,char in [('self','a'),('reply','b'),('answer','c')]],'3 new posts'),
-    ([dict(kind=kind,ts=ts,tx_hash='0x'+char*64) for kind,ts,char in [
-        ('self',99999,'a'),('self',99999,'A'),('reply',13601,'b'),
-        ('reply',13600,'c'),('self',100001,'d'),('action',99999,'e'),
-        ('failed',99999,'f'),('fund',99999,'1')]],'2 new posts'),
-    ([None,dict(kind='self',ts=True,tx_hash='0x'+'a'*64),
-      dict(kind='self',ts=99999,tx_hash='bad')],'0 new posts'),
+@pytest.mark.parametrize('kind,age,expected', [
+    ('self', 0, True), ('self', 86399, True), ('self', 86400, False),
+    ('self', -1, False), ('answer', 0, False), ('reply', 0, False), ('failed', 0, False),
 ])
-def test_announce_card_counts_unique_posts_replies_and_answers_in_last_day(items,footer):
+def test_latest_announcement_controls_freshness_not_replies(kind, age, expected):
+    old = dict(kind='self', ts=1000, tx_hash='0x'+'a'*64, text='Original announcement')
+    new = dict(kind=kind, ts=100000-age, tx_hash='0x'+'b'*64, text='Latest announcement')
+    row = hub.cards({}, {}, now=100000, announce_items=[old, new])[0]
+    assert row['title'] == 'SURFBOARD'
+    assert row['primary'] == ('Latest announcement' if kind=='self' and age>=0 else 'Original announcement')
+    assert (row['status']=='active') == expected
+    assert row['secondary'] == ('1 new reply' if kind in ('reply','answer') and 0<=age<86400 else '0 new replies')
+
+
+@pytest.mark.parametrize('items,footer', [
+    (None,'unavailable'), ([], '0 new replies'),
+    ([dict(kind='self',ts=99999,tx_hash='0x'+'a'*64)],'0 new replies'),
+    ([dict(kind=kind,ts=99999,tx_hash='0x'+char*64)
+      for kind,char in [('self','a'),('reply','b'),('answer','c')]],'2 new replies'),
+    ([dict(kind=kind,ts=ts,tx_hash='0x'+char*64) for kind,ts,char in [
+        ('answer',99999,'a'),('answer',99999,'A'),('reply',13601,'b'),
+        ('reply',13600,'c'),('reply',100001,'d'),('action',99999,'e'),
+        ('failed',99999,'f'),('fund',99999,'1')]],'2 new replies'),
+    ([None,dict(kind='reply',ts=True,tx_hash='0x'+'a'*64),
+      dict(kind='reply',ts=99999,tx_hash='bad')],'0 new replies'),
+])
+def test_announce_card_counts_unique_replies_and_answers_in_last_day(items,footer):
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES
     data={f'sig_{name}_state':'fired' if i<5 else 'ok' for i,name in enumerate(SIGNAL_NAMES)}
     row=hub.cards(data,{},now=100000,announce_items=items)[0]
-    assert row['primary']=='5' and row['secondary']==footer
+    assert row['primary']=='unavailable' and row['secondary']==footer
     assert row['numerator']==5 and row['denominator']==len(SIGNAL_NAMES)
     assert '24h' in row['detail'] and 'cached' in row['detail']
-    assert hub.cards({}, {},now=100000,announce_items=[])[0]['primary']=='unavailable'
+    assert row['status']!='active'
+
+
+def test_board_face_uses_canonical_top_agent_not_selected_seat():
+    records=hub.normalize_records(capture('records'))
+    rows, summary=hub.canonical_board(records,None,None)
+    # Rank order, rather than accidental incoming order or selected seat.
+    data=dict(swarm_board_rows=list(reversed(rows)),swarm_board_summary=summary,
+              swarm_seat_selected={'token_id':1836},swarm_seat_outcome=hub.seat_outcome(records,1836))
+    row=next(c for c in hub.cards(data,{'records':hub.source_envelope(records,100)},now=100) if c['key']=='board')
+    assert (row['title'],row['primary'],row['secondary'])==('LEADERBOARD','420','3,253 accepted jobs')
+    assert row['destination']=='board'
+    for missing in (None, []):
+        data['swarm_board_rows']=missing
+        row=next(c for c in hub.cards(data,{},now=100) if c['key']=='board')
+        assert row['primary']=='unavailable' and row['secondary']=='unavailable'
+
+
+@pytest.mark.parametrize('new,status',[(0,'idle'),(1,'active'),(8,'active'),(None,'unavailable'),(True,'unavailable')])
+def test_launchpad_face_count_and_new_launch_color(new,status):
+    row=next(c for c in hub.cards(dict(launchpad_coin_count=208,launchpad_new_24h=new),{},now=100) if c['key']=='launchpad')
+    assert row['primary']=='208'
+    assert row['secondary']==(f'{new} new' if type(new) is int else 'unavailable')
+    assert row['status']==status
 
 
 @pytest.mark.parametrize('burn,reward,primary,secondary', [

@@ -95,3 +95,21 @@ Review identified a bounded-ratio defect for cumulative burns exceeding remainin
 supply; it is fixed, with a regression and mutation proving percentages above
 100% work. Scoped re-review approved. The four initial source/denominator/cache
 mutations were also detected. No new unresolved findings.
+
+## SURFBOARD, LEADERBOARD and LAUNCHPAD faces — 2026-10-10
+
+SURFBOARD now previews the latest successful surfsurf.eth announcement across
+three lines. Its 24-hour announcement age alone controls green/fresh ink; unique
+replies and owner answers from the same window form the footer. Older text
+matches empty-slot ink. LEADERBOARD uses the canonical rank-one NFT and accepted
+jobs; LAUNCHPAD shows native coin digits and turns green only for new 24h launches.
+Narrow footers drop grouping/optional words, and extreme accepted counts use
+compact notation with the exact count retained in detail.
+
+The actual 149×45 render showed an older announcement with 7 new replies,
+leader #527 with 4,176 accepted jobs, and 208 coins with 0 new. Touched and
+composing checks passed 301 cases, the fast guards 123, and six behavior mutants
+were detected. Review found a wide-Unicode wrapping defect; original-character
+cell measurement fixes it. The regression and reverse mutation cover both
+149×45 and 140×36. All 122 affected rendering/address checks passed after the fix;
+scoped re-review marked the finding ADDRESSED. No new unresolved findings.

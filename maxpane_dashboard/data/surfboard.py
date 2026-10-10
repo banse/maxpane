@@ -390,16 +390,22 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         result.append(row)
     states=[data.get(f"sig_{name}_state") for name in SIGNAL_NAMES]
     known=sum(s in ("ok","watch","fired") for s in states); fired=states.count("fired")
-    age=data.get("feed_last_post_age_s")
-    new_posts=None
-    if isinstance(announce_items,list):
-        new_posts=len({tx for item in announce_items if isinstance(item,dict)
-                       and item.get("kind") in ("self","reply","answer")
-                       and (stamp:=timestamp(item.get("ts"))) is not None and 0<=now-stamp<FIRED_TTL_S
-                       and (tx:=_tx_hash(item.get("tx_hash"))) is not None})
-    post_text=f"{new_posts:,} new {'post' if new_posts==1 else 'posts'}" if new_posts is not None else "unavailable"
-    card("announce","ANNOUNCE",str(fired) if known else "unavailable",post_text,
-         f"ALERT · {known}/{len(states)} detectors known · 24h posts + replies (cached channel) · last post {compact_age(age)}"
+    latest = None
+    replies = None
+    if isinstance(announce_items, list):
+        items = [item for item in announce_items if isinstance(item, dict)
+                 and (stamp := timestamp(item.get("ts"))) is not None and stamp <= now
+                 and _tx_hash(item.get("tx_hash")) is not None]
+        posts = [item for item in items if item.get("kind") == "self"
+                 and isinstance(item.get("text"), str) and item["text"].strip()]
+        latest = max(posts, key=lambda item: (timestamp(item["ts"]), item["tx_hash"]), default=None)
+        replies = len({_tx_hash(item["tx_hash"]) for item in items
+                       if item.get("kind") in ("reply", "answer") and now-timestamp(item["ts"]) < FIRED_TTL_S})
+    age = now-timestamp(latest["ts"]) if latest else None
+    new_announcement = age is not None and age < FIRED_TTL_S
+    reply_text = f"{replies:,} new {'reply' if replies == 1 else 'replies'}" if replies is not None else "unavailable"
+    card("announce", "SURFBOARD", latest["text"] if latest else "unavailable", reply_text,
+         f"ALERT · {known}/{len(states)} detectors known · {fired} signals · 24h replies (cached channel) · last announcement {compact_age(age)}"
          f" · post read {hhmm(announce_read_ts)} · snapshot {hhmm(data.get('as_of'))}", "dashboard",fired if known==len(states) else None,len(states) if known==len(states) else None)
     overview=data.get("surfboard_overview") or {}; hourly=data.get("surfboard_hourly") or {}
     points=hourly.get("points")
@@ -425,15 +431,19 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          "agent",outcome.get("accepted"),outcome.get("attempts"),source="records")
     result[-1]["status"]=(live_state if live_state in ("idle","offline","paused") else
                            "working" if live_state=="working" and active is not None and active>0 else "unavailable")
-    summary=data.get("swarm_board_summary") or {}; rank=outcome.get("rank")
-    card("board","BOARD",_value(summary.get("seats")," seats"),f"rank #{rank}" if rank is not None else "rank unavailable",
-         "PASS · recorded-seat fleet · summary cache ≤10m","board",summary.get("accepted"),summary.get("attempts"),source="records")
+    summary=data.get("swarm_board_summary") or {}
+    leader = next((row for row in data.get("swarm_board_rows") or []
+                   if isinstance(row, dict) and row.get("rank") == 1), {})
+    card("board","LEADERBOARD",_value(count(leader.get("token_id"))),
+         _value(count(leader.get("accepted")), " accepted jobs"),
+         f"PASS · top #{_value(count(leader.get('token_id')))} · {_value(count(leader.get('accepted')), ' accepted jobs')}"
+         " · recorded-seat fleet · summary cache ≤10m","board",summary.get("accepted"),summary.get("attempts"),source="records")
     lp=launchpad or {}; swaps=lp.get("swaps_by_coin");cursor=lp.get("cursor");population=lp.get("coin_count")
     complete=(count(population) is not None and lp.get("launch_count")==population and isinstance(cursor,dict)
               and count(cursor.get("last_block")) is not None and isinstance(cursor.get("launches"),dict) and len(cursor["launches"])==population and isinstance(swaps,dict)
               and set(swaps)<=set(cursor["launches"]) and all(count(n) is not None for n in swaps.values()))
     active=sum(n>0 for n in swaps.values()) if complete else None
-    card("launchpad","LAUNCHPAD",_value(data.get("launchpad_coin_count")," coins"),_value(data.get("launchpad_new_24h")," new / 24h"),
+    card("launchpad","LAUNCHPAD",_value(count(data.get("launchpad_coin_count"))),_value(count(data.get("launchpad_new_24h"))," new"),
          "TRADE · coins traded / full factory"+(" · incomplete coverage" if not complete else "")+f" · as of {data.get('launchpad_as_of_hhmm') or '—'}","launchpad",active,population if complete else None)
     price = number(data.get("pool4_price_usd"))
     change = data.get("imd_change_24h_pct")
@@ -486,6 +496,12 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
             row["status"] = "unavailable"
         elif "stale" in states:
             row["status"] = "stale"
+    # Activity colors describe the event window, independently of source health;
+    # retained-source states and observation clocks remain explicit in detail.
+    result[0]["status"] = "active" if new_announcement else "idle" if latest else "unavailable"
+    launches = count(data.get("launchpad_new_24h"))
+    next(row for row in result if row["key"] == "launchpad")["status"] = (
+        "unavailable" if launches is None else "active" if launches > 0 else "idle")
     catalogue = tokens_catalogue or {}
     total = count(catalogue.get("count"))
     catalogue_state = catalogue.get("state", "unavailable")

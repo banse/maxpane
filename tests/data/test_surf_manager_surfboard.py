@@ -62,11 +62,11 @@ async def test_announce_card_counts_full_channel_snapshot_not_visible_feed(manag
     try:
         for refresh in (False,True):
             data=m._project_hub(refresh_legacy=refresh)
-            assert data['surfboard_cards'][0]['secondary']=='40 new posts'
+            assert data['surfboard_cards'][0]['secondary']=='26 new replies'
         m.cache.store_last_good(SLOT_CHANNEL,dict(items=[rows[0]]),ts=1000)
-        assert m._project_hub()['surfboard_cards'][0]['secondary']=='1 new post'
+        assert m._project_hub()['surfboard_cards'][0]['secondary']=='0 new replies'
         clock.now=999+86400
-        assert m._project_hub()['surfboard_cards'][0]['secondary']=='0 new posts'
+        assert m._project_hub()['surfboard_cards'][0]['secondary']=='0 new replies'
     finally:
         await m.close()
 
@@ -212,7 +212,8 @@ async def test_cards_use_legacy_source_failure_and_success_clocks(manager):
     m.cache.mark_fetched(TIER_POOL4,910);m.cache.mark_fetched(TIER_LAUNCHPAD,910)
     m.cache.mark_failed(TIER_POOL4,950);m.cache.mark_failed(TIER_LAUNCHPAD,950)
     cards={c['key']:c for c in m._project_hub(refresh_legacy=False)['surfboard_cards']}
-    assert cards['launchpad']['status']=='stale'
+    assert cards['launchpad']['status']=='idle'  # no new launches; source staleness stays in detail
+    assert 'launchpad stale' in cards['launchpad']['detail']
     assert cards['pool4']['status']=='stale'
     assert 'pool4 stale · read '+__import__('maxpane_dashboard.data.surfboard',fromlist=['hhmm']).hhmm(910) in cards['pool4']['detail']
     assert 'market' in cards['pool4']['detail'] and 'read' in cards['pool4']['detail']
