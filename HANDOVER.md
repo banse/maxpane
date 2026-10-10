@@ -1,5 +1,80 @@
 # HANDOVER — open maintenance backlog (written 2026-09-18)
 
+## Current session handoff — 2026-10-10
+
+**Resume here.** The owner ended the session with all requested work completed.
+Working directory: `/Users/banse/codex/maxpane`; branch: `feature/surfboard-hub-9`.
+Latest implementation commit: `71d011d0` (`fix(surfboard): restore orange borders
+and white inner titles`). Changes are committed locally; no push or merge was
+performed. There is no pending implementation request: wait for the owner's next
+direction. The older maintenance narrative below is historical; do not treat its
+"first task" or uncommitted-state claims as current session instructions.
+
+### Approved SURFBOARD hub state
+
+- Top row, left to right: **SURFBOARD, SWARM, LAUNCHES, POOL4, PROTOCOL,
+  LEADERBOARD**. Second-row side cards: LAUNCHPAD left, AGENT right. Portfolio,
+  earnings and empty bays remain underneath; the central terminal polls every 30s.
+- Inner backgrounds are dark, outer populated card backgrounds lighter (original
+  scheme). Inner titles are **white like the digits, regular weight**, independent
+  of border color. Outer titles stay muted. The final change restored **orange
+  inactive borders**; green active states, red offline/error states and the yellow
+  ready-to-burn state remain. Do not reapply the reverted gray-border or muted-inner-
+  title experiments. Footer colors still follow the card state.
+- Native three-line digits retain thousands separators and decimal punctuation.
+  SURFBOARD alone uses a three-line latest-post preview, with ellipsis when clipped.
+
+| Outer card | Inner title | Main content | Footer / state behavior |
+| --- | --- | --- | --- |
+| SURFBOARD | LATEST POST | Latest successful surfsurf.eth announcement | `x new` counts unique replies and owner answers in 24h. Green/fresh text only for a new announcement within 24h; replies alone do not turn it green. Old post text matches empty-slot ink. |
+| SWARM | AGENTS | Online agent count | `x working`; green when at least one agent is working. |
+| LAUNCHES | TOKENS | Production-chain token catalogue count | `x new`; uses the SWARM header's one-hour detected launch-news window, green while a launch signal is current. |
+| POOL4 | IMD PRICE | IMD USD price | `USD`; green for positive 24h price change, orange otherwise. |
+| PROTOCOL | IMD BURNED | Cumulative IMD burned | Percentage of global remaining supply, e.g. `0.47%` (no `of supply`). Green for a recent burn signal; yellow when ready to burn. |
+| LEADERBOARD | TOP AGENT | Rank-one agent NFT number | `x jobs` using accepted jobs (no `accepted` in the footer). |
+| LAUNCHPAD | COINS | Coins launched | `x new` in 24h; green only when new launches exceed zero. |
+| AGENT | SEAT | Agent NFT/seat number | `x of y` working slots; green for working slots, orange for idle, red with `offline` footer when offline. |
+
+### Approved SWARM TOKENS dashboard
+
+Real keyless data is connected for all supported production chains, with a chain
+filter. Heroes come first, followed by **ACTIVITY / NEWLY LAUNCHED / BEST PLAYS**,
+then **ALL TOKENS** below. Standard panels are borderless and filtering follows the
+existing native filter editor. There is no extra dashboard heading above the heroes
+or selected-token footer. ALL TOKENS has paired liquidity and a widened sparkline,
+with no LP STATE column. NEWLY LAUNCHED also shows PAIRED LP instead of LP STATE.
+NEWLY LAUNCHED and BEST PLAYS have matching neutral column headings and a blank
+line before content. The LIQUIDITY hero sums filtered paired balances separately
+as IMD and ETH; incomplete known totals use `≥`, unknown totals use `--`.
+
+Source coverage/history/trades can be partial; never fabricate missing values or
+candles. `docs/swarm_tokens_followups.md` records the reviewed limitations and
+remaining Minor filter-footer hint refresh issue. The mock demo is retained for
+offline design work. No new unresolved findings came from the latest hub changes.
+
+### Where to continue and verification
+
+- Hub rendering: `maxpane_dashboard/widgets/surfboard/rack.py`; terminal renderer
+  beside it; composing screen: `maxpane_dashboard/screens/surfboard.py`.
+- Hub values: `maxpane_dashboard/data/surfboard.py` and
+  `maxpane_dashboard/analytics/surfboard.py`. Token dashboard:
+  `maxpane_dashboard/screens/swarm_tokens.py`, `widgets/swarm_tokens/`, and
+  `data/swarm_tokens_*.py`. Prior specs/plans and review outcomes are in `docs/`.
+- Final color change verified with live keyless render at **149×45**, 49 rack
+  tests, 71 composing screen/layout tests, and 123 fast guards, all passing.
+  No full-suite run. Use `.venv/bin/python` and unset `NO_COLOR` for color checks;
+  isolate HOME for parallel tests. Latest temporary capture tooling/artifacts are
+  under `/tmp/hub-card-faces/` and may not survive a restart.
+- Follow `CLAUDE.md` triage; Superpowers is disabled here. Small styling hotfixes
+  stay in the main session without agent dispatch. Read the terminal-layout skill
+  before sizing changes. Show a real live render before layout hardening/review.
+- Tracked working tree was clean after the implementation commit. Existing
+  untracked `.codex/`, `.venv311/`, `.worktrees/` and
+  `docs/codex_swarm_launches_{fix1,fix2,fix3,fix4,v2_fix1,v2_fix2,v2_plan}.md`
+  are unrelated material: do not delete, revert or stage them.
+
+---
+
 For a fresh Claude Code session started inside this directory. Read `CLAUDE.md` first; it is
 now under 200 lines and the per-area detail loads from `.claude/rules/*.md` when you read
 matching files. The audit that produced this list is at
