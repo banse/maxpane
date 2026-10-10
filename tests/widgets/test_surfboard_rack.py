@@ -29,7 +29,7 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
             assert 'LATEST POST' in strips[top].text
             assert [s.text[left+1:right] for s in strips[top+1:top+4]]==[
                 text[:inside],text[inside:inside*2],text[inside*2:inside*3-3]+'...']
-            assert '7 new replies' in strips[top+4].text
+            assert strips[top+4].text[left+1:right].strip('─ ') == '7 new'
             ink=next(iter(strips[top+1].crop(left+1,left+2))).style
             empty_ink=next(seg.style.color for strip in pilot.app.screen._compositor.render_strips()[empty.region.y:empty.region.bottom]
                            for seg in strip.crop(empty.region.x,empty.region.right) if 'empty slot' in seg.text)
@@ -92,8 +92,8 @@ async def test_leader_and_coins_digit_labels_exact_counts_and_launch_color(size)
                 assert '⊙ '+outer in '\n'.join(s.text for s in strips)
                 assert label in strips[top].text
                 assert all(g in s.text for g,s in zip(glyphs,strips[top+1:top+4]))
-                expected=(('4176 accepted jobs' if size[0]==149 else '4176 accepted') if key=='board' else footer)
-                assert expected in strips[top+4].text
+                expected='4,176 jobs' if key=='board' else footer
+                assert strips[top+4].text.strip('│└┘─ ') == expected
 
 
 def painted(app):
@@ -258,11 +258,11 @@ async def test_card_activity_colors_update_from_current_counts():
     ('pool4','8.77','USD','IMD PRICE',
      ['╭─╮ ╶─┐╶─┐','├─┤   │  │','╰─╯•  ╵  ╵'],True,'USD'),
     ('protocol','33,279','0.47% of supply','IMD BURNED',
-     ['╶─╮╶─╮ ╶─╮╶─┐╭─╮',' ─┤ ─┤ ┌─┘  │╰─┤','╶─╯╶─╯,╰─╴  ╵╶─╯'],True,'0.47% of supply'),
+     ['╶─╮╶─╮ ╶─╮╶─┐╭─╮',' ─┤ ─┤ ┌─┘  │╰─┤','╶─╯╶─╯,╰─╴  ╵╶─╯'],True,'0.47%'),
     ('protocol','99,999','~1.41% of supply','IMD BURNED',
-     ['╭─╮╭─╮ ╭─╮╭─╮╭─╮','╰─┤╰─┤ ╰─┤╰─┤╰─┤','╶─╯╶─╯,╶─╯╶─╯╶─╯'],True,'~1.41% of supply'),
-    ('protocol','123,456','1.74% of supply','IMD BURNED',['','123,456',''],True,'1.74% of supply'),
-    ('protocol','1,234,567','17.40% of supply','IMD BURNED',['','1,234,567',''],True,'17.40% of supply'),
+     ['╭─╮╭─╮ ╭─╮╭─╮╭─╮','╰─┤╰─┤ ╰─┤╰─┤╰─┤','╶─╯╶─╯,╶─╯╶─╯╶─╯'],True,'~1.41%'),
+    ('protocol','123,456','1.74% of supply','IMD BURNED',['','123,456',''],True,'1.74%'),
+    ('protocol','1,234,567','17.40% of supply','IMD BURNED',['','1,234,567',''],True,'17.40%'),
 ])
 async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,label,expected,green,footer_text):
     async with RackApp().run_test(size=size) as pilot:

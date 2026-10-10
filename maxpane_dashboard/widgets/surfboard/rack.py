@@ -156,6 +156,12 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if status == "active":
                 color = AMBER
             secondary = "offline" if status == "offline" else secondary.removesuffix(" slots")
+        if self.key == "announce":
+            secondary = secondary.removesuffix(" replies").removesuffix(" reply")
+        elif self.key == "board":
+            secondary = secondary.replace(" accepted", "")
+        elif self.key == "protocol":
+            secondary = secondary.removesuffix(" of supply")
         if status in ("offline", "error", "failed") and not muted:
             color = RED
         palette = self.app.get_css_variables()
@@ -196,11 +202,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             bottom = bottom.replace(" of ", "/")
         if self.key == "board" and len(bottom) > inside:
             bottom = bottom.replace(",", "")
-            if len(bottom) > inside:
-                bottom = bottom.removesuffix(" jobs")
-            amount = bottom.removesuffix(" accepted")
+            amount = bottom.removesuffix(" jobs")
             if len(bottom) > inside and amount.isascii() and amount.isdecimal():
-                bottom = fmt_compact(int(amount)) + " accepted"
+                bottom = fmt_compact(int(amount)) + " jobs"
         if self.key == "announce" and len(bottom) > inside:
             bottom = bottom.replace(",", "")
             if len(bottom) > inside:

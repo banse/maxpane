@@ -248,7 +248,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                     assert "unavailable" in text
                 else:
                     assert "You can now" in text and "deploy via the" in text and "..." in text
-                    assert ("99999 replies" if kind=="stress" else card["secondary"]) in text
+                    assert card["secondary"].removesuffix(" replies") in text
                 continue
             if card["key"] in ("board", "launchpad"):
                 text=r["card_text"][card["key"]]
@@ -258,7 +258,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 else:
                     glyph=("╭─╮"*5 if kind=="stress" else "╭─╴╶─╮╶─┐" if card["key"]=="board" else "╶─╮╭─╮╭─╮")
                     assert glyph in text
-                footer=(("100.0M accepted" if kind=="stress" else card["secondary"].replace(",", "").removesuffix(" jobs"))
+                footer=(card["secondary"].replace(" accepted", "")
                         if card["key"]=="board" else card["secondary"])
                 assert footer in text
                 continue
@@ -268,7 +268,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 expected = ((card["primary"],) if kind in ("unavailable", "stress") else
                     ("╶─╮╶─╮ ╶─╮╶─┐╭─╮", " ─┤ ─┤ ┌─┘  │╰─┤", "╶─╯╶─╯,╰─╴  ╵╶─╯"))
                 assert all(row in text for row in expected), r
-                assert card["secondary"] in text, r
+                assert card["secondary"].removesuffix(" of supply") in text, r
                 continue
             if card["key"] == "pool4":
                 text = r["card_text"]["pool4"]
