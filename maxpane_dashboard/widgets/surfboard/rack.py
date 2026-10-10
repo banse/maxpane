@@ -25,7 +25,7 @@ RED = "red"
 
 # Layout identities, not data: future and empty bays deliberately have no route.
 SLOTS = (
-    ("announce", "SURFBOARD", 0, 0), ("swarm", "SWARM", 0, 1),
+    ("announce", "ONCHAIN NEWS", 0, 0), ("swarm", "SWARM", 0, 1),
     ("swarm-tokens", "LAUNCHES", 0, 2), ("pool4", "POOL4", 0, 3),
     ("protocol", "PROTOCOL", 0, 4), ("board", "LEADERBOARD", 0, 5),
     ("launchpad", "LAUNCHPAD", 1, 0), ("agent", "AGENT", 1, 5),
@@ -193,7 +193,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 rows = [("", False), (count, False), ("", False)]
         preview = None
         if self.key == "announce":
-            label = " LATEST POST "
+            label = " LATEST "
             ink = self.rich_style.color if status == "active" else self.parent.query_one(".empty").rich_style.color
             preview = _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))
         body = Text()

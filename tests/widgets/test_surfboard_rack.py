@@ -26,8 +26,9 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
                     pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             top=next(i for i,s in enumerate(strips) if '┌' in s.text)
             left,right=strips[top].text.index('┌'),strips[top].text.index('┐'); inside=right-left-1
-            assert '⊙ SURFBOARD' in '\n'.join(s.text for s in strips)
-            header = next(s for s in strips[top] if 'LATEST POST' in s.text)
+            assert '⊙ ONCHAIN NEWS' in '\n'.join(s.text for s in strips)
+            header = next(s for s in strips[top] if 'LATEST' in s.text)
+            assert header.text.strip() == 'LATEST'
             assert not header.style.bold and header.style.color == card.rich_style.color
             assert [s.text[left+1:right] for s in strips[top+1:top+4]]==[
                 text[:inside],text[inside:inside*2],text[inside*2:inside*3-3]+'...']
@@ -317,7 +318,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.x > cards[6].region.x
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
-        for label in ("SURFBOARD", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
+        for label in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
                       "PROTOCOL", "PORTFOLIO", "EARNINGS", "TOKENS", "BAY 11", "BAY 12"):
             assert label in text
 

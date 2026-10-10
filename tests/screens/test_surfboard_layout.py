@@ -227,7 +227,7 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
         "announce", "swarm", "swarm-tokens", "pool4", "protocol", "board",
         "launchpad", "agent", "portfolio", "earnings", "bay-11", "bay-12"]
-    for title in ("SURFBOARD", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
+    for title in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
                   "LAUNCHES", "PORTFOLIO", "EARNINGS", "BAY 11", "BAY 12"):
         assert title in r["text"], (title, r["text"])
 
@@ -258,7 +258,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
         for card in payload["surfboard_cards"][:7]:
             if card["key"] == "announce":
                 text=r["card_text"]["announce"]
-                assert " LATEST POST " in text
+                assert " LATEST " in text
                 if kind == "unavailable":
                     assert "unavailable" in text
                 else:
