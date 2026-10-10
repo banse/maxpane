@@ -43,12 +43,13 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
             card = app.hub.query_one("#surfboard-card-announce", SurfboardCard)
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(
                 card.region.x, card.region.right)
+            assert footer.text.startswith("╰─ SIGNALS")
             if signals is None:
-                assert footer.text.endswith("SIGNALS — ─╯")
+                assert footer.text.startswith("╰─ SIGNALS — ")
                 assert "▰" not in footer.text and "▱" not in footer.text
                 continue
             if signals > cells + 1:
-                assert footer.text.endswith(f"SIGNALS {signals} ─╯")
+                assert footer.text.startswith(f"╰─ SIGNALS {signals} ")
                 assert "▰" not in footer.text
                 continue
             # Drop the gap if that lets the last signal fit beside the label.

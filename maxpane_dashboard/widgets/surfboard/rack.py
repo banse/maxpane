@@ -278,6 +278,7 @@ class SurfboardRack(Grid):
     SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; }
+    SurfboardRack > #surfboard-card-announce { border-subtitle-align: left; }
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
     SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
