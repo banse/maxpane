@@ -44,7 +44,7 @@ async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
             terminal.add_reply("palette reply")
             await pilot.pause()
             assert app.hub.styles.background.hex.casefold() == theme.background.casefold()
-            assert card.styles.background.hex.casefold() == theme.surface.casefold()
+            assert card.styles.background.hex.casefold() == theme.background.casefold()
             assert terminal.styles.background.hex.casefold() == "#050805"
             assert terminal.command_input.styles.background.hex.casefold() == "#101710"
             assert terminal.query_one(RichLog).styles.background.hex.casefold() == "#050805"
@@ -53,10 +53,19 @@ async def test_cards_follow_native_theme_while_terminal_keeps_web_palette():
                          if "╭─╴╶─╮╶─┐" in segment.text)
             reply = next(segment for strip in strips for segment in strip
                          if "palette reply" in segment.text)
-            assert value.style.bgcolor == Color.parse(theme.background)
+            assert value.style.bgcolor == Color.parse(theme.surface)
             assert value.style.color == card.rich_style.color
             assert reply.style.color == Color.parse("#9fc99c")
             rack = app.hub.query_one(SurfboardRack)
+            for face in rack.query(SurfboardCard):
+                rows = [strip.crop(face.region.x, face.region.right) for strip in
+                        strips[face.region.y:face.region.bottom]]
+                top = next(i for i, row in enumerate(rows) if "┌" in row.text)
+                left, right = rows[top].text.index("┌"), rows[top].text.index("┐")
+                assert all(segment.style.bgcolor == Color.parse(theme.background)
+                           for segment in rows[top-1].crop(left, right+1))
+                assert all(segment.style.bgcolor == Color.parse(theme.surface)
+                           for row in rows[top:top+5] for segment in row.crop(left, right+1))
             rack.focus_card("board")
             await pilot.pause()
             assert card.styles.border_top[1].hex.casefold() == theme.accent.casefold()

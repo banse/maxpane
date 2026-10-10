@@ -165,7 +165,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if status in ("offline", "error", "failed") and not muted:
             color = RED
         palette = self.app.get_css_variables()
-        inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
+        inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["surface"])
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
@@ -190,7 +190,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.key == "announce":
             label = " LATEST POST "
             ink = self.rich_style.color if status == "active" else self.parent.query_one(".empty").rich_style.color
-            preview = _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))
+            preview = _post_preview(primary, inside, Style(color=ink, bgcolor=palette["surface"], dim=status != "active"))
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
@@ -212,7 +212,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         clipped = len(label) > inside or len(bottom) > inside
         for index, (raw, bold) in enumerate(rows):
             style = Style(
-                color=self.rich_style.color, bgcolor=palette["background"],
+                color=self.rich_style.color, bgcolor=palette["surface"],
                 bold=bold, dim=muted)
             line, lost = ((preview[index], False) if preview is not None else
                           (Text(raw, style=style), False) if native_digits else fit_prose(raw, inside, style=style))
@@ -244,7 +244,7 @@ class SurfboardRack(Grid):
     SurfboardRack { layout: grid; grid-size: 6 4; grid-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
         grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 137; }
     SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
-        border: round $panel; background: $surface; color: $text; content-align: center middle;
+        border: round $panel; background: $background; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; }
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
     SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
