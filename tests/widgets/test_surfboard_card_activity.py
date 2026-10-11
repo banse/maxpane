@@ -11,6 +11,41 @@ def strips(app, card):
 
 
 @pytest.mark.parametrize('key', ['agent', 'board'])
+async def test_offline_footer_keeps_a_full_empty_track_and_red_off_label(key):
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
+        card.set_data(dict(primary='420', secondary='0 of 3 slots', status='offline',
+            meter_kind='activity', meter_state='offline', numerator=43200, denominator=86400))
+        await pilot.pause()
+        footer = strips(pilot.app, card)[-1]
+        assert footer.text == '╰─ OFF ' + '▱' * (card.region.width - 10) + ' ─╯'
+        label = next(segment for segment in footer if 'OFF' in segment.text)
+        assert label.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[1]
+
+
+@pytest.mark.parametrize('status', ['working', 'idle', 'offline'])
+async def test_leaderboard_inner_border_title_and_footer_match_agent_status(status):
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        colors = []
+        for key in ('agent', 'board'):
+            card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
+            card.set_data(dict(primary='420', secondary='0 of 3 slots', status=status))
+        await pilot.pause()
+        for key in ('agent', 'board'):
+            card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
+            rows = strips(pilot.app, card)
+            top = next(row for row in rows if '┌' in row.text)
+            bottom = next(row for row in rows if '└' in row.text)
+            colors.append([segment.style.color for row in (top, bottom)
+                           for segment in row if '┌' in segment.text or '└' in segment.text])
+        assert colors[0] == colors[1]
+        if status != 'idle':
+            expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+                        if status == 'working' else pilot.app.ansi_theme.ansi_colors[1])
+            assert all(color.get_truecolor() == expected for color in colors[1])
+
+
+@pytest.mark.parametrize('key', ['agent', 'board'])
 async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)

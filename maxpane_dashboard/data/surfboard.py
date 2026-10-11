@@ -404,11 +404,15 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
                    meter_kind="sparkline" if points is not None else "ratio",numerator=n if fraction is not None or number(n) is not None and number(d) is not None and n == d == 0 else None,
                    denominator=d if fraction is not None or number(n) is not None and number(d) is not None and n == d == 0 else None,points=points)
         result.append(row)
-    def activity_meter(token):
+    def activity_meter(token, live_state):
         observed = work_activity.project(activity, token, now=now)
-        result[-1].update(meter_kind="activity", meter_state=observed["state"],
+        state = observed["state"]
+        if state == "idle" and live_state == "offline":
+            state = "offline"
+        result[-1].update(meter_kind="activity", meter_state=state,
+                         status="working" if state == "busy" else state,
                          numerator=observed["remaining"], denominator=work_activity.WINDOW_SECONDS)
-        result[-1]["detail"] += (f" · activity {observed['state']} · workers read {hhmm(observed['as_of'])}"
+        result[-1]["detail"] += (f" · activity {state} · workers read {hhmm(observed['as_of'])}"
                                 f" · observed stop {hhmm(observed['stopped_ts'])} · linear 24h decay")
     states=[data.get(f"sig_{name}_state") for name in SIGNAL_NAMES]
     known=sum(s in ("ok","watch","fired") for s in states); fired=states.count("fired")
@@ -451,16 +455,14 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          slot_text, f"{acceptance_text} · summary cache ≤10m · records {(sources.get('records') or {}).get('state','unavailable')}"
          f" · workers {live_state or 'unavailable'} · as of {data.get('swarm_workers_as_of_hhmm') or '—'}",
          "agent",source="records")
-    activity_meter(token)
-    result[-1]["status"]=(live_state if live_state in ("idle","offline","paused") else
-                           "working" if live_state=="working" and active is not None and active>0 else "unavailable")
+    activity_meter(token, live_state)
     leader = next((row for row in data.get("swarm_board_rows") or []
                    if isinstance(row, dict) and row.get("rank") == 1), {})
     card("board","LEADERBOARD",_value(count(leader.get("token_id"))),
          _value(count(leader.get("accepted")), " accepted jobs"),
          f"top #{_value(count(leader.get('token_id')))} · {_value(count(leader.get('accepted')), ' accepted jobs')}"
          " · summary cache ≤10m","board",source="records")
-    activity_meter(leader.get("token_id"))
+    activity_meter(leader.get("token_id"), leader.get("live_state"))
     lp=launchpad or {}; swaps=lp.get("swaps_by_coin");cursor=lp.get("cursor");population=lp.get("coin_count")
     complete=(count(population) is not None and lp.get("launch_count")==population and isinstance(cursor,dict)
               and count(cursor.get("last_block")) is not None and isinstance(cursor.get("launches"),dict) and len(cursor["launches"])==population and isinstance(swaps,dict)
@@ -548,9 +550,10 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
                             f" · {volume.get('known', 0)}/{volume.get('total', '—')} tokens"
                             f" · {volume.get('state', 'unavailable')} · read {hhmm(volume.get('as_of'))}"
                             f" · until {hhmm(volume.get('until'))}")
-    for key,title in (("portfolio","PORTFOLIO"),("earnings","EARNINGS")):
-        row=dict.fromkeys(SURFBOARD_CARD_FIELDS);row.update(key=key,title=title,status="planned",primary="planned",secondary="coming soon",detail=f"{title} · planned dashboard")
-        result.append(row)
+    row=dict.fromkeys(SURFBOARD_CARD_FIELDS)
+    row.update(key="portfolio",title="PORTFOLIO",status="planned",primary="planned",
+               secondary="coming soon",detail="PORTFOLIO · planned dashboard")
+    result.append(row)
     return result
 
 

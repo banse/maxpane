@@ -19,10 +19,10 @@ def hub_payload(kind="normal"):
     cards = []
     for key, title, destination, primary, secondary, numerator, denominator in definitions:
         cards.append(dict(key=key, title=title, destination=destination,
-                          status="experimental" if key == "protocol" else "idle" if key == "agent" else "active",
+                          status="experimental" if key == "protocol" else "idle" if key == "agent" else "working" if key == "board" else "active",
                           primary=primary, secondary=secondary,
                           detail=f"{title} · exact {numerator}/{denominator} · read 22:00 · source cache ≤10m",
-                          meter_kind="sparkline" if key in ("swarm", "swarm-tokens") else "ratio",
+                          meter_kind="sparkline" if key in ("swarm", "swarm-tokens") else "activity" if key in ("agent", "board") else "ratio",
                           meter_state={"agent": "idle", "board": "busy", "swarm-tokens": "ok"}.get(key),
                           share_price=1.3029864737732294 if key == "pool4" else None,
                           numerator=numerator, denominator=denominator,
@@ -41,7 +41,7 @@ def hub_payload(kind="normal"):
         dict(age_s=14400, symbol='RAI', chain='rh', lp_state='one-token', liquidity_state='ok', paired_symbol='IMD'),
         dict(age_s=18000, symbol='TDEMO', chain='eth', lp_state='unknown', liquidity_state='unknown', paired_symbol=None),
     ]
-    for key, title in (("portfolio", "PORTFOLIO"), ("earnings", "EARNINGS")):
+    for key, title in (("portfolio", "PORTFOLIO"),):
         cards.append(dict(key=key, title=title, destination=None, status="planned",
                           primary="coming soon", secondary="future dashboard", detail="planned / coming soon",
                           meter_kind=None, meter_state=None, share_price=None,

@@ -3076,7 +3076,7 @@ SurfboardScreen { background: $background; color: $text; }
 SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $text-muted; padding: 0 1; }
 SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1; overflow: auto auto;
     scrollbar-gutter: stable; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
-SurfboardScreen #surfboard-detail { height: 1; padding: 0 1; color: $text-muted; text-wrap: nowrap; }
+SurfboardScreen #surfboard-detail { height: auto; color: $text-muted; text-wrap: wrap; }
 
 /* SWARM TOKENS mock screen */
 SwarmTokensScreen { background: $background; color: $text; }

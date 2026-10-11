@@ -90,7 +90,8 @@ def test_rack_meters_use_real_denominators_uncapped_population_and_split():
     assert cards['pool4']['numerator'] is cards['pool4']['denominator'] is None
     assert (cards['protocol']['numerator'],cards['protocol']['denominator'])==(2,10)
     assert cards['protocol']['status']=='experimental'
-    assert {c['key'] for c in cards.values() if c['status']=='planned'}=={'portfolio','earnings'}
+    assert {c['key'] for c in cards.values() if c['status']=='planned'}=={'portfolio'}
+    assert 'earnings' not in cards
     lp['launch_count']=24
     assert next(c for c in hub.cards(data,{},now=100,launchpad=lp) if c['key']=='launchpad')['numerator'] is None
 
@@ -182,9 +183,9 @@ def test_protocol_card_rounds_readouts_but_keeps_exact_flow(burn, reward, primar
     ('working', 2, 3, '2 of 3 slots', 'working'),
     ('idle', 0, 3, '0 of 3 slots', 'idle'),
     ('offline', 0, 0, '0 of 0 slots', 'offline'),
-    ('paused', 0, 3, '0 of 3 slots', 'paused'),
-    ('paused', 1, 3, '1 of 3 slots', 'paused'),
-    ('working', 0, 3, '0 of 3 slots', 'unavailable'),
+    ('paused', 0, 3, '0 of 3 slots', 'idle'),
+    ('paused', 1, 3, '1 of 3 slots', 'working'),
+    ('working', 0, 3, '0 of 3 slots', 'idle'),
     ('working', None, 3, '— of 3 slots', 'unavailable'),
     ('working', True, 3, '— of 3 slots', 'unavailable'),
     ('working', 1, None, '1 of — slots', 'working'),
@@ -192,15 +193,17 @@ def test_protocol_card_rounds_readouts_but_keeps_exact_flow(burn, reward, primar
     (None, None, None, '— of — slots', 'unavailable'),
 ])
 def test_agent_card_uses_the_selected_seat_live_slots(state, working, capacity, slots, status):
+    from tests.data.test_surfboard_activity import workers
     outcome = hub.seat_outcome(hub.normalize_records(capture('records')), 420)
     data = dict(swarm_seat_selected={'token_id':420}, swarm_seat_outcome=outcome,
                 swarm_seat_live=dict(live_state=state, working=working, max_concurrency=capacity),
                 swarm_workers_as_of_hhmm='12:34')
-    cards = hub.cards(data, {'records':dict(state='stale', read_ts=100)}, now=200)
+    observed = hub.work_activity.observe(None, workers() if state == 'offline' else workers(working), now=200)
+    cards = hub.cards(data, {'records':dict(state='stale', read_ts=100)}, now=200, activity=observed)
     agent = next(card for card in cards if card['key']=='agent')
     assert agent['primary']=='IDMD #420' and agent['secondary']==slots
     assert agent['status']==status
-    assert (agent['numerator'],agent['denominator'])==(None,86400)
+    assert (agent['numerator'],agent['denominator'])==(86400 if status == 'working' else None,86400)
     assert '95.9% accepted' in agent['detail'] and 'records stale' in agent['detail']
     assert 'workers' in agent['detail'] and '12:34' in agent['detail']
 
@@ -541,6 +544,83 @@ def test_cards_project_selected_and_top_agent_activity_independently():
     assert 'observed stop' in rows['board']['detail'] and 'workers read' in rows['board']['detail']
     rows = {c['key']: c for c in hub.cards(data, {}, now=43701, activity=observed)}
     assert rows['board']['meter_state'] == 'stale' and rows['board']['numerator'] is None
+
+
+@pytest.mark.parametrize('selected_busy, top_busy', [(True, False), (False, True)])
+def test_agent_and_leaderboard_colors_follow_their_own_fresh_activity(selected_busy, top_busy):
+    from tests.data.test_surfboard_activity import workers
+    read = workers(int(selected_busy), token=1836)
+    read['workers'] += workers(int(top_busy), token=420)['workers']
+    read['count'] = 2
+    observed = hub.work_activity.observe(None, read, now=100)
+    # Contradictory legacy states cannot override fresh positive/zero work.
+    data = dict(swarm_seat_selected={'token_id':1836},
+                swarm_seat_live={'live_state':'working'},
+                swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253, live_state='working')])
+    rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed)}
+    for key, busy in [('agent', selected_busy), ('board', top_busy)]:
+        assert rows[key]['status'] == ('working' if busy else 'idle')
+        assert rows[key]['meter_state'] == ('busy' if busy else 'idle')
+    assert rows['board']['primary'] == '420' and rows['board']['secondary'] == '3,253 accepted jobs'
+
+
+@pytest.mark.parametrize('selected_offline', [False, True])
+def test_offline_identity_is_independent_for_selected_seat_and_rank_one(selected_offline):
+    from tests.data.test_surfboard_activity import workers
+    observed = hub.work_activity.observe(None, workers(0, token=420 if selected_offline else 1836), now=100)
+    data = dict(swarm_seat_selected={'token_id':1836},
+                swarm_seat_live={'live_state':'offline' if selected_offline else 'idle'},
+                swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253,
+                                       live_state='idle' if selected_offline else 'offline')])
+    rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed)}
+    for key, expected in [('agent', 'offline' if selected_offline else 'idle'),
+                          ('board', 'idle' if selected_offline else 'offline')]:
+        assert rows[key]['status'] == rows[key]['meter_state'] == expected
+
+
+@pytest.mark.parametrize('card_key', ['agent', 'board'])
+def test_fresh_offline_changes_display_without_rewriting_activity_history(card_key):
+    from copy import deepcopy
+    from tests.data.test_surfboard_activity import workers
+    observed = hub.work_activity.observe(None, workers(1), now=100)
+    observed = hub.work_activity.observe(observed, workers(), now=200)
+    before = deepcopy(observed)
+    data = dict(swarm_seat_selected={'token_id':420},
+                swarm_seat_live={'live_state':'offline'},
+                swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253, live_state='offline')])
+    row = next(c for c in hub.cards(data, {}, now=300, activity=observed) if c['key'] == card_key)
+    assert row['meter_state'] == row['status'] == 'offline'
+    assert row['numerator'] == 86300 and row['denominator'] == 86400
+    assert 'activity offline' in row['detail'] and 'workers read '+hub.hhmm(200) in row['detail']
+    assert 'observed stop '+hub.hhmm(200) in row['detail']
+    assert observed == before
+
+
+@pytest.mark.parametrize('failure, expected', [
+    ('stale', 'stale'), ('failed', 'stale'), ('incomplete', 'unavailable'),
+    ('unknown', 'unavailable'), ('missing', 'unavailable'),
+])
+def test_uncertain_activity_never_certifies_offline_for_agent_or_leaderboard(failure, expected):
+    from tests.data.test_surfboard_activity import workers
+    observed = hub.work_activity.observe(None, workers(), now=100)
+    now = 401 if failure == 'stale' else 200
+    if failure == 'failed':
+        observed = hub.work_activity.observe(observed, None, now=now)
+    elif failure == 'incomplete':
+        partial = workers()
+        partial['count'] = 1
+        observed = hub.work_activity.observe(observed, partial, now=now)
+    elif failure == 'unknown':
+        observed = hub.work_activity.observe(observed, workers(None), now=now)
+    elif failure == 'missing':
+        observed = None
+    data = dict(swarm_seat_selected={'token_id':420},
+                swarm_seat_live={'live_state':'offline'},
+                swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253, live_state='offline')])
+    rows = {c['key']: c for c in hub.cards(data, {}, now=now, activity=observed)}
+    for key in ('agent', 'board'):
+        assert rows[key]['status'] == rows[key]['meter_state'] == expected
+        assert rows[key]['numerator'] is None
 
 
 def test_launch_volume_projection_discloses_coverage_and_currency():

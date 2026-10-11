@@ -17,10 +17,9 @@ def inset_border_color(strip):
 
 
 def neutral_inset_color(app):
-    earnings = app.screen.query_one('#surfboard-card-earnings', SurfboardCard)
-    return next(segment.style.color.get_truecolor()
-                for strip in app.screen._compositor.render_strips()[earnings.region.y:earnings.region.bottom]
-                for segment in strip.crop(earnings.region.x, earnings.region.right) if '┌' in segment.text)
+    # Observed neutral inset ink in the two harness palettes. Empty bays and
+    # outer captions use a darker ink and cannot stand in for the removed EARNINGS face.
+    return Color.parse('#9e9e9e' if app.theme == 'matrix' else '#999999').get_truecolor()
 
 
 @pytest.mark.parametrize('size', [(149,45),(140,36)])
@@ -123,7 +122,7 @@ def painted(app):
 
 
 @pytest.mark.parametrize("key,status,ink", [
-    ("earnings", "planned", None), ("bay-11", "unassigned", None),
+    ("bay-10", "unassigned", None), ("bay-11", "unassigned", None),
 ])
 async def test_status_colors_the_taller_inset_without_a_separate_status_row(key, status, ink):
     async with RackApp().run_test(size=(149, 45)) as pilot:
@@ -226,13 +225,13 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             ("working", "2 of 3 slots", "busy", 86400),
             ("idle", "0 of 3 slots", "idle", 43200),
             ("paused", "0 of 3 slots", "idle", 21600),
-            ("offline", "0 of 0 slots", "idle", 0),
+            ("offline", "0 of 0 slots", "offline", 0),
             ("unavailable", "— of — slots", "unavailable", None),
             ("active", "0 of 3 slots", "idle", 43200),
             ("working", "1 of 3 slots", "busy", 86400),
         ]:
             card.set_data(dict(status=status, primary="IDMD #420", secondary=slots,
-                               meter_state=activity, numerator=remaining, denominator=86400))
+                               meter_kind="activity", meter_state=activity, numerator=remaining, denominator=86400))
             await pilot.pause()
             strips = [strip.crop(card.region.x, card.region.right) for strip in
                       pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
@@ -258,10 +257,11 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             if activity == "unavailable":
                 assert strips[-1].text.startswith("╰─ — — ")
                 assert not any(glyph in strips[-1].text for glyph in "▰▱")
+            elif activity == "offline":
+                assert strips[-1].text == '╰─ OFF ' + '▱' * (card.region.width - 10) + ' ─╯'
             else:
-                cells = 13
-                filled = cells if activity == "busy" else {43200: 6, 21600: 3, 0: 0}[remaining]
-                bar = "▰" * filled + "▱" * (cells - filled)
+                cells = card.region.width - 11
+                bar = "▰" * cells
                 assert strips[-1].text == f"╰─ {activity.upper()} {bar} ─╯"
 
 
@@ -369,16 +369,16 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert len({card.region.y for card in cards}) == 4
         assert len({card.region.y for card in cards[:6]}) == 1
         assert cards[6].region.y == terminal.region.y == cards[7].region.y
-        assert terminal.region.bottom == cards[10].region.bottom == cards[11].region.bottom
+        assert rack.query_one("#surfboard-center").region.bottom == cards[10].region.bottom == cards[11].region.bottom
         assert terminal.region.x > cards[6].region.x
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
         for label in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
-                      "PROTOCOL", "PORTFOLIO", "EARNINGS", "LAUNCHES", "BAY 11", "BAY 12"):
+                      "PROTOCOL", "PORTFOLIO", "BAY 10", "LAUNCHES", "BAY 11", "BAY 12"):
             assert label in text
 
 
-async def test_planned_cards_focus_but_empty_bays_do_not_and_arrows_follow_geometry():
+async def test_empty_bays_do_not_focus_and_arrows_follow_new_geometry():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         rack = pilot.app.query_one(SurfboardRack)
         rack.update_data()
@@ -386,7 +386,7 @@ async def test_planned_cards_focus_but_empty_bays_do_not_and_arrows_follow_geome
         rack.move_focus("down")
         assert rack.focused_card == "launchpad"
         rack.move_focus("right")
-        assert rack.focused_card == "agent"
+        assert rack.focused_card == "portfolio"
         rack.move_focus("up")
         assert rack.focused_card == "board"
         rack.move_focus("left")
@@ -395,17 +395,17 @@ async def test_planned_cards_focus_but_empty_bays_do_not_and_arrows_follow_geome
         assert rack.focused_card == "pool4"
         rack.move_focus("left")
         assert rack.focused_card == "swarm-tokens"
-        rack.focus_card("agent")
+        rack.focus_card("portfolio")
         rack.move_focus("down")
-        assert rack.focused_card == "earnings"
-        rack.move_focus("left")
-        assert rack.focused_card == "portfolio"
+        assert rack.focused_card == "agent"
+        rack.move_focus("right")
+        assert rack.focused_card == "agent"
         rack.move_focus("down")
-        assert rack.focused_card == "portfolio"
+        assert rack.focused_card == "agent"
         assert all(not card.can_focus for card in rack.query(".empty"))
 
 
-async def test_live_tokens_card_routes_while_planned_cards_explain_without_destination():
+async def test_live_cards_route_and_empty_bays_do_not_activate():
     class Messages(RackApp):
         opened = []
 
@@ -414,15 +414,16 @@ async def test_live_tokens_card_routes_while_planned_cards_explain_without_desti
 
     async with Messages().run_test(size=(149, 45)) as pilot:
         rack = pilot.app.query_one(SurfboardRack)
-        for key in ("swarm-tokens", "portfolio", "earnings"):
+        for key in ("swarm-tokens", "portfolio"):
             rack.focus_card(key)
             rack.activate_focused()
         await pilot.pause()
-        assert [event.key for event in pilot.app.opened] == ["swarm-tokens", "portfolio", "earnings"]
-        live, portfolio, *planned = pilot.app.opened
+        rack.query_one("#surfboard-card-bay-10", SurfboardCard).action_activate()
+        await pilot.pause()
+        assert [event.key for event in pilot.app.opened] == ["swarm-tokens", "portfolio"]
+        live, portfolio = pilot.app.opened
         assert live.destination == "swarm-tokens" and "production-chain markets" in live.detail
         assert portfolio.destination == "portfolio" and "holdings and ready claims" in portfolio.detail
-        assert all(event.destination is None and "planned" in event.detail for event in planned)
 
 
 @pytest.mark.parametrize("numerator,denominator,expected", [
@@ -442,16 +443,16 @@ async def test_ratio_meter_never_fakes_zero_or_clamps_invalid_data(numerator, de
         assert expected in painted(pilot.app)
 
 
-async def test_chart_requires_all_eight_buckets_and_planned_cards_stay_unlit():
+async def test_chart_requires_all_eight_buckets_and_empty_bays_stay_unlit():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         rack = pilot.app.query_one(SurfboardRack)
         rack.update_data(surfboard_cards=[dict(key="swarm", status="active", primary="1 online", secondary="0 working",
             meter_kind="sparkline", points=[0, 1, 2, 3, 4, 5, 6, 7]),
-            dict(key="earnings", status="active", numerator=1, denominator=1, destination="fake")])
+            dict(key="bay-10", status="active", numerator=1, denominator=1, destination="fake")])
         await pilot.pause()
         assert "24H ▁▁▂▂▃▃▄▅▅▆▆▇▇█" in painted(pilot.app)
-        planned = rack.query_one("#surfboard-card-earnings", SurfboardCard)
-        assert planned.data["destination"] is None
+        empty = rack.query_one("#surfboard-card-bay-10", SurfboardCard)
+        assert empty.data["destination"] is None
         rack.update_data(surfboard_cards=[dict(key="swarm", meter_kind="sparkline", points=[0, 1])])
         await pilot.pause()
         assert "24H —" in painted(pilot.app)
@@ -486,13 +487,13 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
     from tests.surfboard_fixtures import hub_payload
 
     labels = {"protocol": "BURN", "board": "IDLE",
-              "launchpad": "TRADE", "agent": "IDLE", "portfolio": "ASSETS", "earnings": "EARN",
+              "launchpad": "TRADE", "agent": "IDLE", "portfolio": "ASSETS", "bay-10": "AUX",
               "bay-11": "AUX", "bay-12": "AUX"}
-    placeholders = {"portfolio", "earnings", "bay-11", "bay-12"}
+    placeholders = {"portfolio", "bay-10", "bay-11", "bay-12"}
     payload = hub_payload()
     for data in payload["surfboard_cards"]:
         if data["key"] in labels:
-            data.update(numerator=1, denominator=2)
+            data.update(numerator=1, denominator=2, meter_kind="ratio")
             if data["key"] in ("agent", "board"):
                 data["meter_state"] = "idle"
     app = HubHarness(payload)

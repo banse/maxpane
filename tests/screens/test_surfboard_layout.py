@@ -61,9 +61,9 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
                 if "▰" in segment.text:
                     assert segment.style.color.get_truecolor() == app.ansi_theme.ansi_colors[2]
                 if "SIGNALS" in segment.text:
-                    earnings = app.hub.query_one("#surfboard-card-earnings", SurfboardCard)
-                    caption = next(s for s in app.hub._compositor.render_strips()[earnings.region.bottom - 1]
-                                   .crop(earnings.region.x, earnings.region.right) if "EARN" in s.text)
+                    empty = app.hub.query_one("#surfboard-card-pool4", SurfboardCard)
+                    caption = next(s for s in app.hub._compositor.render_strips()[empty.region.bottom - 1]
+                                   .crop(empty.region.x, empty.region.right) if "sIMD" in s.text)
                     assert segment.style.color == caption.style.color
 
 
@@ -163,7 +163,8 @@ async def test_projected_pool4_value_share_rate_and_source_clocks_fit_owner_size
         app.hub.query_one(SurfboardRack).focus_card("pool4")
         await pilot.pause()
         lines = [strip.text for strip in app.hub._compositor.render_strips()]
-        detail = lines[-2]
+        region = app.hub.query_one("#surfboard-detail").region
+        detail = " ".join(line[region.x:region.right].strip() for line in lines[region.y:region.bottom])
         assert f"market {state} · read {projection.hhmm(STAMP)}" in detail
         assert f"pool4 {state} · read {projection.hhmm(STAMP)}" in detail
         assert "1 sIMD = 1.302986 IMD" in detail
@@ -175,17 +176,92 @@ async def test_projected_pool4_value_share_rate_and_source_clocks_fit_owner_size
         assert "‹ widen" not in str(pool4.border_title)
 
 
-async def test_focused_detail_marks_overflow_until_the_whole_line_fits():
+async def test_focused_detail_wraps_below_terminal_at_matching_width():
     payload = hub_payload()
     payload["surfboard_cards"][0]["detail"] = "Full meter detail " + "1234567890 " * 18
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert "detail ‹ widen" in app.hub._compositor.render_strips()[0].text
-        await pilot.resize_terminal(240, 45)
+        for width in (149, 180, 144):
+            await pilot.resize_terminal(width, 45)
+            await pilot.pause()
+            terminal = app.hub.query_one(SurfboardTerminal)
+            detail = app.hub.query_one('#surfboard-detail')
+            assert detail.region.y == terminal.region.bottom
+            assert detail.region.x == terminal.region.x
+            assert detail.region.right == terminal.region.right
+            assert detail.region.height > 1
+            visible = ' '.join(strip.crop(detail.region.x, detail.region.right).text.strip()
+                               for strip in app.hub._compositor.render_strips()[detail.region.y:detail.region.bottom])
+            assert visible == payload['surfboard_cards'][0]['detail'].strip()
+            assert 'detail ‹ widen' not in app.hub._compositor.render_strips()[0].text
+
+
+async def test_swapped_cards_and_empty_earnings_bay_have_expected_positions():
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert "detail ‹ widen" not in app.hub._compositor.render_strips()[0].text
-        assert payload["surfboard_cards"][0]["detail"].strip() in app.hub._compositor.render_strips()[-2].text
+        rack = app.hub.query_one(SurfboardRack)
+        agent = rack.query_one('#surfboard-card-agent')
+        portfolio = rack.query_one('#surfboard-card-portfolio')
+        bay = rack.query_one('#surfboard-card-bay-10')
+        launchpad = rack.query_one('#surfboard-card-launchpad')
+        assert portfolio.region.y == launchpad.region.y
+        assert agent.region.x == launchpad.region.x
+        assert bay.region.x == portfolio.region.x and bay.region.y == agent.region.y
+        assert not bay.can_focus and bay.data['destination'] is None
+        assert not rack.query('#surfboard-card-earnings')
+
+
+async def test_long_detail_scrolls_without_losing_tail_or_terminal_controls():
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        terminal = app.hub.query_one(SurfboardTerminal)
+        terminal.command_input.value = 'find retained draft'
+        terminal.add_reply('retained reply')
+        app.hub._detail = 'Long detail ' + '測試界面' * 1000 + ' END OF DETAIL'
+        app.hub._render_chrome()
+        await pilot.pause()
+        center = app.hub.query_one('#surfboard-center')
+        assert center.show_vertical_scrollbar
+        assert '‹ taller' in app.hub._compositor.render_strips()[0].text
+        assert terminal.region.height >= 12
+        assert terminal.command_input.region.bottom < terminal.region.bottom
+        footer = terminal.query_one('#surfboard-terminal-footer').region
+        footer_text = '\n'.join(row.crop(footer.x, footer.right).text for row in
+                                app.hub._compositor.render_strips()[footer.y:footer.bottom])
+        assert '$IMD $33.69M' in footer_text and 'tokens used' in footer_text and 'updated' in footer_text
+        assert footer.bottom < terminal.region.bottom
+        center.scroll_end(animate=False)
+        await pilot.pause()
+        assert 'END OF DETAIL' in '\n'.join(strip.text for strip in app.hub._compositor.render_strips())
+        app.hub.query_one(SurfboardRack).focus_card('agent')
+        for _ in range(10):
+            await pilot.pause()
+            visible = '\n'.join(strip.text for strip in app.hub._compositor.render_strips())
+            if 'retained reply' in visible and '‹ taller' not in visible:
+                break
+        assert not center.show_vertical_scrollbar
+        assert terminal.command_input.value == 'find retained draft'
+        assert 'retained reply' in visible and '‹ taller' not in visible
+
+
+async def test_wrapped_detail_preserves_literal_text_and_address_copy_unit():
+    address = '0x1234567890abcdef1234567890abcdef12345678'
+    payload = hub_payload()
+    payload['surfboard_cards'][0]['detail'] = 'detail ' * 13 + address + ' [bold] literal tail'
+    app = HubHarness(payload)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        region = app.hub.query_one('#surfboard-detail').region
+        rows = [row.crop(region.x, region.right) for row in
+                app.hub._compositor.render_strips()[region.y:region.bottom]]
+        row = next(row for row in rows if '0x' in row.text)
+        assert '⧉' in row.text
+        icon = next(segment for segment in row if '⧉' in segment.text)
+        assert address in str(icon.style.meta) and not icon.style.link
+        assert '[bold] literal tail' in ' '.join(row.text.strip() for row in rows)
 
 
 @pytest.mark.parametrize("width", (140, 149))
@@ -266,7 +342,8 @@ async def _render(payload, size):
         bar = screen.query_one(StatusBar)
         right = bar.query_one("#status-right")
         return dict(text=text, size=size, cards=card_regions, card_text=card_text,
-                    terminal=terminal.region, rack=rack.region,
+                    terminal=terminal.region, center=screen.query_one("#surfboard-center").region,
+                    detail=screen.query_one("#surfboard-detail").region, rack=rack.region,
                     horizontal=viewport.show_horizontal_scrollbar,
                     vertical=viewport.show_vertical_scrollbar,
                     clipped=clipped, status_whole=right.region.right <= size[0],
@@ -282,14 +359,14 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert len(r["cards"]) == 12
     assert len({region.y for region in r["cards"].values()}) == 4
     assert len({r["cards"][key].y for key in ("announce", "swarm", "swarm-tokens", "pool4", "protocol", "board")}) == 1
-    assert r["terminal"].y == r["cards"]["launchpad"].y == r["cards"]["agent"].y
-    assert r["terminal"].bottom == r["cards"]["bay-11"].bottom == r["cards"]["bay-12"].bottom
-    assert r["cards"]["launchpad"].right < r["terminal"].x < r["terminal"].right < r["cards"]["agent"].x
+    assert r["terminal"].y == r["cards"]["launchpad"].y == r["cards"]["portfolio"].y
+    assert r["center"].bottom == r["cards"]["bay-11"].bottom == r["cards"]["bay-12"].bottom
+    assert r["cards"]["launchpad"].right < r["terminal"].x < r["terminal"].right < r["cards"]["portfolio"].x
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
         "announce", "swarm", "swarm-tokens", "pool4", "protocol", "board",
-        "launchpad", "agent", "portfolio", "earnings", "bay-11", "bay-12"]
+        "launchpad", "portfolio", "agent", "bay-10", "bay-11", "bay-12"]
     for title in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
-                  "LAUNCHES", "PORTFOLIO", "EARNINGS", "BAY 11", "BAY 12"):
+                  "LAUNCHES", "PORTFOLIO", "BAY 10", "BAY 11", "BAY 12"):
         assert title in r["text"], (title, r["text"])
 
 
@@ -379,8 +456,8 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
 
 
 async def test_width_pin_is_the_measured_scroll_transition():
-    below = await _render(hub_payload(), (SURFBOARD_FULL_LAYOUT_COLUMNS - 1, 35))
-    at = await _render(hub_payload(), (SURFBOARD_FULL_LAYOUT_COLUMNS, 35))
+    below = await _render(hub_payload(), (SURFBOARD_FULL_LAYOUT_COLUMNS - 1, SURFBOARD_FULL_LAYOUT_ROWS - 1))
+    at = await _render(hub_payload(), (SURFBOARD_FULL_LAYOUT_COLUMNS, SURFBOARD_FULL_LAYOUT_ROWS - 1))
     assert below["horizontal"] and not at["horizontal"], (below, at)
     assert "‹ widen" in below["text"].splitlines()[0]
     assert "‹ widen" not in at["text"].splitlines()[0]

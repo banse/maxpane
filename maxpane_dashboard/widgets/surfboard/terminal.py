@@ -71,12 +71,12 @@ def _job_of(row):
 
 
 def fit_prose(value, width, *, style="", explorer=EXPLORER) -> tuple[Text, bool]:
-    """Fit literal served text, preserving address/icon units and safe links."""
+    """Fit literal text; width=None keeps all prose for a wrapping Static."""
     marked, addresses, spans = mark_addresses(flatten(value), width=17)
-    fitted = keep_units(marked, spans, clip(marked, max(0, width)))
-    out = Text(unmark(fitted or ("…" if marked and width else "")), style=style)
+    fitted = marked if width is None else keep_units(marked, spans, clip(marked, max(0, width)))
+    out = Text(fitted if width is None else unmark(fitted or ("…" if marked and width else "")), style=style)
     link_in_order([out], addresses, explorer=explorer)
-    return out, cell_len(marked) > width
+    return out, width is not None and cell_len(marked) > width
 
 
 def fitted_prose(value, width, *, style="") -> Text:
@@ -86,7 +86,7 @@ def fitted_prose(value, width, *, style="") -> Text:
 class SurfboardTerminal(PanelBase):
     TITLE = "IMD TERMINAL"
     DEFAULT_CSS = """
-    SurfboardTerminal { height: 1fr; min-height: 11; border: round #345533; background: $background; color: $foreground; padding: 0 1; }
+    SurfboardTerminal { height: 1fr; min-height: 12; border: round #345533; background: $background; color: $foreground; padding: 0 1; }
     SurfboardTerminal > .panel-title { height: 2; margin: 0; padding: 0; border-bottom: solid #253c24; color: $foreground; text-style: none; text-wrap: nowrap; }
     SurfboardTerminal > RichLog { height: 1fr; min-height: 3; background: $background; scrollbar-size-vertical: 1; scrollbar-gutter: stable; scrollbar-color: #345533; }
     SurfboardTerminal > .terminal-prompt { height: 3; border: round #345533; background: $background; }

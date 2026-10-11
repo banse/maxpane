@@ -289,7 +289,7 @@ async def test_command_result_after_navigation_cannot_reply_or_open_a_body(monke
 
 
 @pytest.mark.asyncio
-async def test_planned_cards_explain_without_navigating_and_draft_survives_visit():
+async def test_empty_bays_do_not_navigate_and_draft_survives_visit():
     from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
     app, _ = hub_app()
     async with app.run_test(size=(149, 45)) as pilot:
@@ -298,11 +298,11 @@ async def test_planned_cards_explain_without_navigating_and_draft_survives_visit
         rack = hub.query_one(SurfboardRack)
         terminal = hub.query_one(SurfboardTerminal)
         terminal.command_input.value = "find unchanged.eth"
-        for key in ("earnings",):
-            rack.focus_card(key)
-            await pilot.press("enter")
+        for card in rack.query(".empty"):
+            card.action_activate()
+            await pilot.pause()
             assert app.screen is hub
-            assert "coming soon" in painted(app)
+            assert not card.can_focus
         rack.focus_card("board")
         await pilot.press("enter", "escape")
         assert app.screen is hub

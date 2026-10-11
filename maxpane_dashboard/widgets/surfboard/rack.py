@@ -6,9 +6,10 @@ import math
 from rich.style import Style
 from rich.text import Text
 from textual.binding import Binding
-from textual.containers import Grid
+from textual.containers import Grid, VerticalScroll
 from textual.message import Message
 from textual.renderables.digits import Digits
+from textual.widgets import Static
 
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.explorer import for_network
@@ -30,13 +31,12 @@ SLOTS = (
     ("announce", "ONCHAIN NEWS", 0, 0), ("swarm", "SWARM", 0, 1),
     ("swarm-tokens", "LAUNCHES", 0, 2), ("pool4", "POOL4", 0, 3),
     ("protocol", "PROTOCOL", 0, 4), ("board", "LEADERBOARD", 0, 5),
-    ("launchpad", "LAUNCHPAD", 1, 0), ("agent", "AGENT", 1, 5),
-    ("portfolio", "PORTFOLIO", 2, 0), ("earnings", "EARNINGS", 2, 5),
+    ("launchpad", "LAUNCHPAD", 1, 0), ("portfolio", "PORTFOLIO", 1, 5),
+    ("agent", "AGENT", 2, 0), ("bay-10", "BAY 10", 2, 5),
     ("bay-11", "BAY 11", 3, 0), ("bay-12", "BAY 12", 3, 5),
 )
-PLANNED = frozenset(("earnings",))
 METER_LABELS = dict(swarm="24H", launchpad="TRADE", protocol="BURN",
-                    **{"swarm-tokens": "24H", "portfolio": "ASSETS", "earnings": "EARN"})
+                    **{"swarm-tokens": "24H", "portfolio": "ASSETS"})
 
 
 def _post_preview(value, width, style):
@@ -119,14 +119,14 @@ def meter_text(card: dict, width: int | None = None, *, accent: str = GREEN) -> 
     label = METER_LABELS.get(key, "AUX")
     label_ink = MUTED
     if key in ("agent", "board"):
-        label = {"busy": "BUSY", "idle": "IDLE"}.get(state, "—")
-        label_ink = accent if state == "idle" else AMBER
+        label = {"busy": "BUSY", "idle": "IDLE", "offline": "OFF"}.get(state, "—")
+        label_ink = accent if state == "idle" else RED if state == "offline" else AMBER
     elif key == "swarm-tokens" and state in ("partial", "stale"):
         label = "~24H"
         label_ink = AMBER
     out = Text().append(label + " ", style=label_ink)
     cells = 8 if width is None else max(0, width - cell_len(label) - 1)
-    if key in PLANNED or key == "portfolio" or str(key).startswith("bay-"):
+    if key == "portfolio" or str(key).startswith("bay-"):
         return out.append("▱" * cells, style=MUTED)
     if card.get("meter_kind") == "sparkline" or key == "swarm-tokens":
         points = card.get("points")
@@ -144,6 +144,8 @@ def meter_text(card: dict, width: int | None = None, *, accent: str = GREEN) -> 
         return out.append("—", style=AMBER)
     numerator, denominator = card.get("numerator"), card.get("denominator")
     if key in ("agent", "board"):
+        if state == "offline":
+            return out.append("▱" * cells, style=MUTED)
         if state == "busy":
             return out.append("▰" * cells, style=GREEN)
         if state != "idle":
@@ -201,7 +203,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         return flatten(self.data.get("detail")) or f"{self.title} · unavailable"
 
     def set_data(self, data):
-        planned, empty = self.key in PLANNED, self.key.startswith("bay-")
+        empty = self.key.startswith("bay-")
         self.data = dict(data) if isinstance(data, dict) else {}
         self.data.update(key=self.key, title=self.title)
         if self.key == "swarm-tokens":
@@ -210,10 +212,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.key == "portfolio":
             self.data.update(status="active", primary="PORTFOLIO", secondary="wallet holdings",
                              destination="portfolio", detail="PORTFOLIO · holdings and ready claims · Enter to open")
-        if planned or empty:
-            self.data.update(status="planned" if planned else "unassigned", primary="coming soon" if planned else "empty slot",
-                             secondary="future dashboard" if planned else "· · ·", destination=None,
-                             detail=f"{self.title} · planned / coming soon" if planned else f"{self.title} · empty expansion slot")
+        if empty:
+            self.data.update(status="unassigned", primary="empty slot", secondary="· · ·", destination=None,
+                             detail=f"{self.title} · empty expansion slot")
         self.border_title = Text("⊙ " + self.title)
         self._update_meter()
         self.refresh()
@@ -233,7 +234,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         width = max(4, self.content_size.width)
         inside = width - 2
         status = flatten(self.data.get("status")) or "unavailable"
-        muted = self.key in PLANNED or not self.can_focus
+        muted = not self.can_focus
         color = MUTED if muted else {"active": GREEN, "working": GREEN, "ready": "bright_yellow",
             "stale": AMBER, "unavailable": AMBER, "paused": AMBER,
             "offline": RED, "error": RED, "failed": RED}.get(status, AMBER)
@@ -367,7 +368,8 @@ class SurfboardRack(Grid):
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
     SurfboardRack > #surfboard-card-protocol { padding: 0; }
     SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
-    SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
+    SurfboardRack > #surfboard-center { column-span: 4; row-span: 3;
+        scrollbar-gutter: stable; scrollbar-size-vertical: 1; }
     """
 
     class CardActivated(Message):
@@ -388,7 +390,9 @@ class SurfboardRack(Grid):
         for index, slot in enumerate(SLOTS):
             yield SurfboardCard(*slot)
             if index == 6:
-                yield SurfboardTerminal(id="surfboard-terminal")
+                with VerticalScroll(id="surfboard-center"):
+                    yield SurfboardTerminal(id="surfboard-terminal")
+                    yield Static(Text(), id="surfboard-detail")
 
     def update_data(self, surfboard_cards=None, surfboard_sources=None, **_kwargs):
         cards = {card["key"]: card for card in surfboard_cards if isinstance(card, dict) and isinstance(card.get("key"), str)} if isinstance(surfboard_cards, list) else {}
