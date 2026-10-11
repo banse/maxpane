@@ -388,7 +388,10 @@ class SurfboardRack(Grid):
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
-        self.styles.grid_rows = (max(7, (self.content_size.height - gaps) // rows),)
+        card_height = max(7, (self.content_size.height - gaps) // rows)
+        self.query(SurfboardCard).set_styles(height=card_height)
+        # The terminal spans the last track and can use its leftover space.
+        self.styles.grid_rows = (card_height,) * (rows - 1) + ("1fr",)
 
     def compose(self):
         for index, slot in enumerate(SLOTS):

@@ -18,7 +18,7 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Re-measured after the 2026-10-11 live 149×45 volume/terminal preview.
+#: Re-measured after the 2026-10-12 live 149×45 full-height terminal preview.
 #: PROTOCOL's label/amount/unit columns bind width: "rewarded 100k IMD"
 #: needs 19 inner cells including one blank at each end, so its card needs
 #: 23 columns. The 141-column rack floor preserves that row. At 143×34 both
@@ -28,8 +28,9 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: scroll at 34. Normal, stress, unavailable and wide-prose composites fit
 #: at 144×35; event prose keeps its own ellipsis marker. Removing the focused
 #: detail restores the terminal's direct four-column, three-row span. Its
-#: measured width is 94 at the pin and 97 at 149×45, with its bottom matching
-#: BAY 11/BAY 12. The 12-row terminal floor keeps the market footer visible.
+#: measured width is 94 at the pin and 97 at 149×45. Cards keep equal whole-row
+#: heights; the terminal reaches the rack bottom, using the last track's spare
+#: rows (two below BAY 11/BAY 12 at 149×45). Its 12-row floor keeps the footer visible.
 #: LAUNCHPAD's 2H and LAUNCHES' 24H charts fit in their existing card footers.
 #: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 144

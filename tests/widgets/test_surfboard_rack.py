@@ -369,7 +369,8 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert len({card.region.y for card in cards}) == 4
         assert len({card.region.y for card in cards[:6]}) == 1
         assert cards[6].region.y == terminal.region.y == cards[7].region.y
-        assert terminal.region.bottom == cards[10].region.bottom == cards[11].region.bottom
+        assert terminal.region.bottom == rack.content_region.bottom
+        assert cards[10].region.bottom == cards[11].region.bottom <= terminal.region.bottom
         assert terminal.region.x > cards[6].region.x
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)

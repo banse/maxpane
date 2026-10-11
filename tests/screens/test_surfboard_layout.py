@@ -191,7 +191,7 @@ async def test_dynamic_detail_is_removed_and_terminal_fills_center_after_focus_a
             assert 'DYNAMIC DETAIL' not in visible and 'long prose' not in visible
             assert 'retained reply' in visible
             assert terminal.command_input.value == 'find retained draft'
-            assert terminal.region.bottom == app.hub.query_one('#surfboard-card-bay-11').region.bottom
+            assert terminal.region.bottom == app.hub.query_one(SurfboardRack).content_region.bottom
             assert terminal.query_one('#surfboard-terminal-footer').region.bottom < terminal.region.bottom
 
 
@@ -312,7 +312,8 @@ async def test_all_cards_keep_equal_whole_row_heights_when_resized(width):
             assert all(start - end == 1 for (_, end), (start, _) in zip(rows, rows[1:]))
             terminal = app.hub.query_one(SurfboardTerminal)
             assert terminal.region.y == rows[1][0]
-            assert terminal.region.bottom == rows[-1][1]
+            assert terminal.region.bottom == app.hub.query_one(SurfboardRack).content_region.bottom
+            assert terminal.region.bottom >= rows[-1][1]
             footer = terminal.query_one("#surfboard-terminal-footer")
             assert footer.region.bottom < terminal.region.bottom
 
@@ -326,7 +327,8 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert len({region.y for region in r["cards"].values()}) == 4
     assert len({r["cards"][key].y for key in ("announce", "swarm", "swarm-tokens", "pool4", "protocol", "board")}) == 1
     assert r["terminal"].y == r["cards"]["launchpad"].y == r["cards"]["portfolio"].y
-    assert r["terminal"].bottom == r["cards"]["bay-11"].bottom == r["cards"]["bay-12"].bottom
+    assert r["terminal"].bottom == r["rack"].bottom
+    assert r["cards"]["bay-11"].bottom == r["cards"]["bay-12"].bottom <= r["terminal"].bottom
     assert r["cards"]["launchpad"].right < r["terminal"].x < r["terminal"].right < r["cards"]["portfolio"].x
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
         "announce", "swarm", "swarm-tokens", "pool4", "protocol", "board",
