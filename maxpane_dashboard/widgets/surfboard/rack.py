@@ -157,6 +157,8 @@ def meter_text(card: dict, width: int | None = None, *, accent: str = GREEN) -> 
     full = int(numerator * cells / denominator)
     if card.get("meter_kind") == "activity":
         return out.append("▰" * full, style=GREEN).append("▰" * (cells - full), style=AMBER)
+    if card.get("meter_kind") == "activity-cooldown":
+        return out.append("▰" * full, style=AMBER).append("▱" * (cells - full), style=MUTED)
     return out.append("▰" * full, style=AMBER if key == "protocol" else GREEN).append("▱" * (cells - full), style=MUTED)
 
 

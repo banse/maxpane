@@ -46,6 +46,48 @@ async def test_leaderboard_inner_border_title_and_footer_match_agent_status(stat
 
 
 @pytest.mark.parametrize('key', ['agent', 'board'])
+async def test_projected_activity_drains_orange_from_24_to_72_hours_and_resets(key):
+    from maxpane_dashboard.data import surfboard as hub
+    from tests.data.test_surfboard_activity import NOW, TOKEN, stopped, workers
+
+    data = dict(swarm_seat_selected={'token_id': TOKEN},
+                swarm_board_rows=[dict(rank=1, token_id=TOKEN, accepted=10)])
+    history = stopped()
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
+        for hours, green_fraction, orange_fraction in [
+            (0, 1, 0), (12, .5, .5), (24, 0, 1), (36, 0, .75),
+            (48, 0, .5), (60, 0, .25), (72, 0, 0), (96, 0, 0),
+        ]:
+            now = NOW + hours * 3600
+            history = hub.work_activity.observe(history, workers(0), now=now)
+            row = next(c for c in hub.cards(data, {}, now=now, activity=history) if c['key'] == key)
+            card.set_data(row)
+            await pilot.pause()
+            cells = card.region.width - 11
+            green = int(cells * green_fraction)
+            orange = cells - green if hours < 24 else int(cells * orange_fraction)
+            footer = strips(pilot.app, card)[-1]
+            assert footer.text == '╰─ IDLE ' + '▰' * (green + orange) + '▱' * (cells - green - orange) + ' ─╯'
+            colors = [segment.style.color.get_truecolor() for segment in footer
+                      for char in segment.text if char == '▰']
+            assert colors == ([pilot.app.ansi_theme.ansi_colors[2]] * green
+                              + [pilot.app.ansi_theme.ansi_colors[3]] * orange)
+            assert next(s.style.color for s in footer if 'IDLE' in s.text) == Color.parse(pilot.app.get_css_variables()['accent'])
+
+        # A later job restores all green; its next stop starts a new first day.
+        for count, label in [(1, 'BUSY'), (0, 'IDLE')]:
+            now += 120
+            history = hub.work_activity.observe(history, workers(count), now=now)
+            card.set_data(next(c for c in hub.cards(data, {}, now=now, activity=history) if c['key'] == key))
+            await pilot.pause()
+            footer = strips(pilot.app, card)[-1]
+            assert footer.text == f'╰─ {label} ' + '▰' * cells + ' ─╯'
+            assert all(s.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
+                       for s in footer if '▰' in s.text)
+
+
+@pytest.mark.parametrize('key', ['agent', 'board'])
 async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
