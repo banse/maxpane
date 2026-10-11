@@ -553,7 +553,9 @@ async def test_tokens_card_latest_rows_and_news_border_refresh(size):
             assert not header.style.bold and header.style.color == inset_border_color(strips[top])
             for strip, words, icon in zip(strips[top+1:top+4],
                     [('2h', 'VERDIGREEN'), ('4h', 'RAI'), ('5h', 'TDEMO')], ['✔', '⚠', '—']):
-                assert strip.text.strip('│ ').split() == [icon, *words]
+                assert strip.text.strip('│ ').split() == [*words, icon]
+                right = strips[top].text.index('┐')
+                assert strip.crop(right-1, right).text == icon
                 for segment in strip:
                     if any(word in segment.text for word in words):
                         assert segment.style.color == card.rich_style.color
@@ -585,7 +587,7 @@ async def test_latest_launch_marker_requires_fresh_matching_quote_and_two_sides(
             strips = [s.crop(card.region.x, card.region.right) for s in
                       pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             row = next(s.text for s in strips if 'SFPT' in s.text)
-            assert row.strip('│ ').split() == [icon, '2h', 'SFPT']
+            assert row.strip('│ ').split() == ['2h', 'SFPT', icon]
 
 
 async def test_latest_launch_empty_short_and_hostile_rows_stay_fitted_on_resize():
@@ -614,5 +616,6 @@ async def test_latest_launch_empty_short_and_hostile_rows_stay_fitted_on_resize(
                 assert '‹' not in strips[0].text
                 assert 'BASE' not in '\n'.join(body)
                 if latest:
-                    assert body[0].startswith('— —') and '…' in body[0]
+                    assert body[0].startswith('— ') and '…' in body[0]
+                    assert strips[top+1].crop(right-1, right).text == '—'
                     assert '[/' in body[0]  # literal markup survived safely

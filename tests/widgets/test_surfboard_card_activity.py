@@ -73,7 +73,10 @@ async def test_projected_activity_drains_orange_from_24_to_72_hours_and_resets(k
                       for char in segment.text if char == '▰']
             assert colors == ([pilot.app.ansi_theme.ansi_colors[2]] * green
                               + [pilot.app.ansi_theme.ansi_colors[3]] * orange)
-            assert next(s.style.color for s in footer if 'IDLE' in s.text) == Color.parse(pilot.app.get_css_variables()['accent'])
+            idle = next(s.style for s in footer if 'IDLE' in s.text)
+            protocol = pilot.app.query_one('#surfboard-card-protocol', SurfboardCard)
+            neutral = next(s.style for s in strips(pilot.app, protocol)[-1] if 'BURN' in s.text)
+            assert (idle.color, idle.dim) == (neutral.color, neutral.dim)
 
         # A later job restores all green; its next stop starts a new first day.
         for count, label in [(1, 'BUSY'), (0, 'IDLE')]:
@@ -104,7 +107,9 @@ async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
             assert 'PASS' not in footer.text
             assert footer.text.startswith('╰─ ' + label + ' ')
             ink = next(segment.style.color.get_truecolor() for segment in footer if label in segment.text)
-            expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+            protocol = pilot.app.query_one('#surfboard-card-protocol', SurfboardCard)
+            neutral = next(s.style for s in strips(pilot.app, protocol)[-1] if 'BURN' in s.text)
+            expected = (neutral.color.get_truecolor()
                         if state == 'idle' else pilot.app.ansi_theme.ansi_colors[color])
             assert ink == expected
             if ratio is None:

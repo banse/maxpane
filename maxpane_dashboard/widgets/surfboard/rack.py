@@ -95,13 +95,13 @@ def _launch_preview(latest, width, style, green):
         symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-6), style=style,
                                  explorer=for_network('MAINNET' if chain == 'ETH' else chain))
         symbol.align('left', max(0, width-6))
-        line = Text(style=style).append(marker, style=ink).append(' ' + clip(age, 3).ljust(3) + ' ')
-        line.append_text(symbol)
+        line = Text(clip(age, 3).ljust(3) + ' ', style=style)
+        line.append_text(symbol).append(' ').append(marker, style=ink)
         lines[index] = line, lost or cell_len(age) > 3
     return lines
 
 
-def meter_text(card: dict, width: int | None = None, *, accent: str = GREEN) -> Text:
+def meter_text(card: dict, width: int | None = None) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
@@ -119,7 +119,7 @@ def meter_text(card: dict, width: int | None = None, *, accent: str = GREEN) -> 
     label_ink = MUTED
     if key in ("agent", "board"):
         label = {"busy": "BUSY", "idle": "IDLE", "offline": "OFF"}.get(state, "—")
-        label_ink = accent if state == "idle" else RED if state == "offline" else AMBER
+        label_ink = MUTED if state == "idle" else RED if state == "offline" else AMBER
     elif key in ("swarm-tokens", "launchpad") and state in ("partial", "stale"):
         label = "~" + label
         label_ink = AMBER
@@ -225,8 +225,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             # Textual reserves six cells for corners, border stubs and padding.
             self.border_subtitle = signal_meter_text(self.data, max(0, self.region.width - 6))
         else:
-            accent = self.app.get_css_variables()["accent"] if self.is_mounted else GREEN
-            self.border_subtitle = meter_text(self.data, max(0, self.region.width - 6), accent=accent)
+            self.border_subtitle = meter_text(self.data, max(0, self.region.width - 6))
 
     def on_resize(self):
         self._update_meter()
