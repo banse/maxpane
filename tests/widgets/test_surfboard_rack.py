@@ -514,6 +514,7 @@ async def test_tokens_card_latest_rows_and_news_border_refresh(size):
     from tests.surfboard_fixtures import hub_payload
     payload = hub_payload()
     data = next(c for c in payload['surfboard_cards'] if c['key'] == 'swarm-tokens')
+    data['latest_launches'][0]['symbol'] = 'VERDIGREEN'
     async with HubHarness(payload).run_test(size=size) as pilot:
         await pilot.pause()
         card = pilot.app.hub.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
@@ -524,13 +525,14 @@ async def test_tokens_card_latest_rows_and_news_border_refresh(size):
                       pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
             assert '⊙ LAUNCHES' in '\n'.join(s.text for s in strips)
+            assert '‹' not in strips[0].text
             assert 'SWARM TOKENS' not in '\n'.join(s.text for s in strips)
             header = next(s for s in strips[top] if 'LATEST' in s.text)
             expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
                         if status == 'active' else neutral_inset_color(pilot.app))
             assert not header.style.bold and header.style.color == inset_border_color(strips[top])
             for strip, words, icon in zip(strips[top+1:top+4],
-                    [('2h', 'SFPT', 'ETH'), ('4h', 'RAI', 'RH'), ('5h', 'TDEMO', 'ETH')], ['✔', '⚠', '—']):
+                    [('2h', 'VERDIGREEN'), ('4h', 'RAI'), ('5h', 'TDEMO')], ['✔', '⚠', '—']):
                 assert strip.text.strip('│ ').split() == [icon, *words]
                 for segment in strip:
                     if any(word in segment.text for word in words):
@@ -563,7 +565,7 @@ async def test_latest_launch_marker_requires_fresh_matching_quote_and_two_sides(
             strips = [s.crop(card.region.x, card.region.right) for s in
                       pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             row = next(s.text for s in strips if 'SFPT' in s.text)
-            assert row.strip('│ ').split() == [icon, '2h', 'SFPT', 'ETH']
+            assert row.strip('│ ').split() == [icon, '2h', 'SFPT']
 
 
 async def test_latest_launch_empty_short_and_hostile_rows_stay_fitted_on_resize():
@@ -576,8 +578,8 @@ async def test_latest_launch_empty_short_and_hostile_rows_stay_fitted_on_resize(
         for width in (149, 180, 140, 149):
             await pilot.resize_terminal(width, 45)
             for latest, expected in [(None, 'unavailable'), ([], 'no launches'), ([dict(
-                age_s=None, symbol='[/x]\n界界界界界界\x1b\u202e', chain='base',
-                lp_state='unknown', liquidity_state='unknown')], 'BASE')]:
+                age_s=None, symbol='[/x]\n' + '界' * 20 + '\x1b\u202e', chain='base',
+                lp_state='unknown', liquidity_state='unknown')], '[/')]:
                 card.set_data(dict(status='idle', secondary='0 new', latest_launches=latest))
                 await pilot.pause()
                 strips = [s.crop(card.region.x, card.region.right) for s in
@@ -589,7 +591,8 @@ async def test_latest_launch_empty_short_and_hostile_rows_stay_fitted_on_resize(
                 assert any(expected in row for row in body)
                 assert '\x1b' not in '\n'.join(body) and '\u202e' not in '\n'.join(body)
                 assert all(s.crop(right, right+1).text == '│' for s in strips[top+1:top+4])
-                assert ('‹' in str(card.border_title)) == bool(latest)
+                assert '‹' not in strips[0].text
+                assert 'BASE' not in '\n'.join(body)
                 if latest:
                     assert body[0].startswith('— —') and '…' in body[0]
                     assert '[/' in body[0]  # literal markup survived safely

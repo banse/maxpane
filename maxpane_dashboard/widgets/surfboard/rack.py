@@ -94,12 +94,12 @@ def _launch_preview(latest, width, style, green):
             marker, ink = '✔', Style.parse(green)
         age = fmt_age(row.get('age_s')) if _number(row.get('age_s')) else '—'
         chain = flatten(row.get('chain')).upper() or '—'
-        symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-11), style=style,
+        symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-6), style=style,
                                  explorer=for_network('MAINNET' if chain == 'ETH' else chain))
-        symbol.align('left', max(0, width-11))
+        symbol.align('left', max(0, width-6))
         line = Text(style=style).append(marker, style=ink).append(' ' + clip(age, 3).ljust(3) + ' ')
-        line.append_text(symbol).append(' ' + clip(chain, 4).ljust(4))
-        lines[index] = line, lost or cell_len(age) > 3 or cell_len(chain) > 4
+        line.append_text(symbol)
+        lines[index] = line, lost or cell_len(age) > 3
     return lines
 
 
@@ -300,7 +300,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             clipped |= lost
             line.align("left" if preview is not None else "center", inside)
             body.append("│", style=border_inset).append_text(line).append("│\n", style=border_inset)
-        self.border_title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, self.size.width - 4)))
+        self.border_title = Text(title_with_hint("⊙ " + self.title,
+            clipped and self.key != "swarm-tokens", max(0, self.size.width - 4)))
         footer = Text("└" + clip(bottom, inside).center(inside, "─") + "┘",
                       style=border_inset + Style(bold=False))
         return body.append_text(footer)
