@@ -18,25 +18,23 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Re-measured after the 2026-10-12 live 149×45 AGENT inset-meter preview.
+#: Re-measured after the 2026-10-12 live 149×45 full-height terminal preview.
 #: PROTOCOL's label/amount/unit columns bind width: "rewarded 100k IMD"
 #: needs 19 inner cells including one blank at each end, so its card needs
-#: 23 columns. The 141-column rack floor preserves that row. At 143×38 both
-#: scrollbars appear; at 144×38 only the vertical bar appears. At 143×39
+#: 23 columns. The 141-column rack floor preserves that row. At 143×34 both
+#: scrollbars appear; at 144×34 only the vertical bar appears. At 143×35
 #: neither appears. The width pin buys the vertical gutter, so 144 also
-#: works at short heights. Four eight-row card floors fit at 39 rows and
-#: scroll at 38. Normal, stress, unavailable and wide-prose composites fit
-#: at 144×39; event prose keeps its own ellipsis marker. Removing the focused
+#: works at short heights. Four seven-row card floors fit at 35 rows and
+#: scroll at 34. Normal, stress, unavailable and wide-prose composites fit
+#: at 144×35; event prose keeps its own ellipsis marker. Removing the focused
 #: detail restores the terminal's direct four-column, three-row span. Its
 #: measured width is 94 at the pin and 97 at 149×45. Cards keep equal whole-row
 #: heights; the terminal reaches the rack bottom, using the last track's spare
 #: rows (two below BAY 11/BAY 12 at 149×45). Its 12-row floor keeps the footer visible.
 #: LAUNCHPAD's 2H and LAUNCHES' 24H charts fit in their existing card footers.
-#: AGENT needs six interior rows for its five-row inset plus activity meter;
-#: the shared eight-row floor keeps every card equal. LEADERBOARD retains its
-#: outer footer. App-wide width stays 143.
+#: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 144
-SURFBOARD_FULL_LAYOUT_ROWS = 39
+SURFBOARD_FULL_LAYOUT_ROWS = 35
 
 
 class SurfboardScreen(DashboardScreen):

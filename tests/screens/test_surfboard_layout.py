@@ -306,7 +306,7 @@ async def test_all_cards_keep_equal_whole_row_heights_when_resized(width):
             await pilot.pause()
             cards = list(app.hub.query(SurfboardCard))
             assert len({card.region.height for card in cards}) == 1
-            assert cards[0].region.height >= 8
+            assert cards[0].region.height >= 7
             rows = sorted({(card.region.y, card.region.bottom) for card in cards})
             assert len(rows) == 4
             assert all(start - end == 1 for (_, end), (start, _) in zip(rows, rows[1:]))
@@ -316,13 +316,6 @@ async def test_all_cards_keep_equal_whole_row_heights_when_resized(width):
             assert terminal.region.bottom >= rows[-1][1]
             footer = terminal.query_one("#surfboard-terminal-footer")
             assert footer.region.bottom < terminal.region.bottom
-            agent = app.hub.query_one('#surfboard-card-agent', SurfboardCard)
-            strips = app.hub._compositor.render_strips()
-            rows = [strip.crop(agent.region.x, agent.region.right).text
-                    for strip in strips[agent.region.y:agent.region.bottom]]
-            bottom = next(i for i, row in enumerate(rows) if '└' in row)
-            assert rows[bottom + 1].startswith('│  IDLE ')
-            assert rows[-1] == '╰' + '─' * (agent.region.width - 2) + '╯'
 
 
 @pytest.mark.parametrize("kind", ("normal", "stress", "unavailable", "wide"))
@@ -366,7 +359,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
     assert r["vertical"] == (height < SURFBOARD_FULL_LAYOUT_ROWS), r
     assert ("‹ taller" in r["text"].splitlines()[0]) == r["vertical"], r
     assert not r["horizontal"] and not r["clipped"] and r["status_whole"], r
-    assert all(value >= 8 for value in r["heights"].values()), r
+    assert all(value >= 7 for value in r["heights"].values()), r
     if height >= SURFBOARD_FULL_LAYOUT_ROWS:
         for card in payload["surfboard_cards"][:8]:
             if card["key"] == "swarm-tokens":

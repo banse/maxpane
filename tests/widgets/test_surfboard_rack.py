@@ -12,15 +12,6 @@ class RackApp(App):
         yield SurfboardRack(id="rack")
 
 
-def activity_strip(app, card):
-    rows = [strip.crop(card.region.x, card.region.right) for strip in
-            app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
-    if card.key == "agent":
-        bottom = next(i for i, row in enumerate(rows) if "└" in row.text)
-        return rows[bottom + 1]
-    return rows[-1]
-
-
 def inset_border_color(strip):
     return next(segment.style.color for segment in strip if '┌' in segment.text)
 
@@ -263,16 +254,15 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             if status == "offline":
                 assert " of " not in strips[top + 4].text
             assert not footer.style.bold and footer.style.color.get_truecolor() == ink
-            meter = strips[top + 5].text
             if activity == "unavailable":
-                assert meter.startswith("│  — — ")
-                assert not any(glyph in meter for glyph in "▰▱")
+                assert strips[-1].text.startswith("╰─ — — ")
+                assert not any(glyph in strips[-1].text for glyph in "▰▱")
             elif activity == "offline":
-                assert meter == '│  OFF ' + '▱' * (card.region.width - 10) + '  │'
+                assert strips[-1].text == '╰─ OFF ' + '▱' * (card.region.width - 10) + ' ─╯'
             else:
                 cells = card.region.width - 11
                 bar = "▰" * cells
-                assert meter == f"│  {activity.upper()} {bar}  │"
+                assert strips[-1].text == f"╰─ {activity.upper()} {bar} ─╯"
 
 
 async def test_card_activity_colors_update_from_current_counts():
@@ -498,7 +488,7 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
     from tests.surfboard_fixtures import hub_payload
 
     labels = {"protocol": "BURN", "board": "IDLE",
-              "portfolio": "ASSETS", "bay-10": "AUX",
+              "agent": "IDLE", "portfolio": "ASSETS", "bay-10": "AUX",
               "bay-11": "AUX", "bay-12": "AUX"}
     placeholders = {"portfolio", "bay-10", "bay-11", "bay-12"}
     payload = hub_payload()
