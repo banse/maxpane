@@ -1,5 +1,6 @@
 """Card footer semantics observed through Textual's compositor."""
 import pytest
+from rich.color import Color
 from maxpane_dashboard.widgets.surfboard.rack import SurfboardCard
 from tests.widgets.test_surfboard_rack import RackApp
 
@@ -16,6 +17,7 @@ async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
         for state, remaining, label, ratio, color in [
             ('busy', 86400, 'BUSY', 1, 3), ('idle', 43200, 'IDLE', .5, 2),
             ('idle', 0, 'IDLE', 0, 2), ('idle', None, 'IDLE', 0, 2),
+            ('busy', 86400, 'BUSY', 1, 3),
             ('stale', None, '—', None, 3), ('unavailable', None, '—', None, 3),
         ]:
             card.set_data(dict(primary='420', secondary='0 of 3 slots', status='active',
@@ -25,15 +27,21 @@ async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
             assert 'PASS' not in footer.text
             assert footer.text.startswith('╰─ ' + label + ' ')
             ink = next(segment.style.color.get_truecolor() for segment in footer if label in segment.text)
-            assert ink == pilot.app.ansi_theme.ansi_colors[color]
+            expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+                        if state == 'idle' else pilot.app.ansi_theme.ansi_colors[color])
+            assert ink == expected
             if ratio is None:
                 assert '▰' not in footer.text and '▱' not in footer.text
             else:
-                cells = footer.text.count('▰') + footer.text.count('▱')
-                assert cells > 0 and footer.text.count('▰') == int(cells * ratio)
+                cells = card.region.width - 11
+                assert footer.text == '╰─ ' + label + ' ' + '▰' * cells + ' ─╯'
+                colors = [segment.style.color.get_truecolor() for segment in footer
+                          for char in segment.text if char == '▰']
+                green = int(cells * ratio)
+                assert colors == ([pilot.app.ansi_theme.ansi_colors[2]] * green
+                                  + [pilot.app.ansi_theme.ansi_colors[3]] * (cells - green))
                 if remaining is None:
                     assert card.data['numerator'] is None
-                    assert footer.text == '╰─ IDLE ' + '▱' * (card.region.width - 11) + ' ─╯'
 
 
 @pytest.mark.parametrize('key', ['announce', 'swarm-tokens'])

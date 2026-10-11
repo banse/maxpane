@@ -102,7 +102,7 @@ def _launch_preview(latest, width, style, green):
     return lines
 
 
-def meter_text(card: dict, width: int | None = None) -> Text:
+def meter_text(card: dict, width: int | None = None, *, accent: str = GREEN) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
@@ -120,7 +120,7 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     label_ink = MUTED
     if key in ("agent", "board"):
         label = {"busy": "BUSY", "idle": "IDLE"}.get(state, "—")
-        label_ink = GREEN if state == "idle" else AMBER
+        label_ink = accent if state == "idle" else AMBER
     elif key == "swarm-tokens" and state in ("partial", "stale"):
         label = "~24H"
         label_ink = AMBER
@@ -150,10 +150,12 @@ def meter_text(card: dict, width: int | None = None) -> Text:
             return out.append("—", style=AMBER)
         if numerator is None and card.get("meter_kind") == "activity":
             # Keep the track visible before the first observed work-to-idle transition.
-            return out.append("▱" * cells, style=MUTED)
+            return out.append("▰" * cells, style=AMBER)
     if not _number(numerator) or not _number(denominator) or denominator == 0 or numerator > denominator:
         return out.append("—", style=AMBER)
     full = int(numerator * cells / denominator)
+    if card.get("meter_kind") == "activity":
+        return out.append("▰" * full, style=GREEN).append("▰" * (cells - full), style=AMBER)
     return out.append("▰" * full, style=AMBER if key == "protocol" else GREEN).append("▱" * (cells - full), style=MUTED)
 
 
@@ -221,7 +223,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             # Textual reserves six cells for corners, border stubs and padding.
             self.border_subtitle = signal_meter_text(self.data, max(0, self.region.width - 6))
         else:
-            self.border_subtitle = meter_text(self.data, max(0, self.region.width - 6))
+            accent = self.app.get_css_variables()["accent"] if self.is_mounted else GREEN
+            self.border_subtitle = meter_text(self.data, max(0, self.region.width - 6), accent=accent)
 
     def on_resize(self):
         self._update_meter()
