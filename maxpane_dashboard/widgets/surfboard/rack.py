@@ -253,12 +253,17 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             stats = str(self.data.get("primary") or "").splitlines()
             if len(stats) != 3:
                 stats = [f"★ {name} — IMD" for name in ("burned", "rewarded", "fees")]
-            for index, line in enumerate(stats):
-                while cell_len(line) > inside and " " in line:
-                    line = line.replace(" ", "", 1)
-                stats[index] = line
-            preview = [fit_prose(line, inside, style=Style(color=self.rich_style.color,
-                       bgcolor=palette["background"])) for line in stats]
+            preview = []
+            for line in stats:
+                name, _, value = flatten(line).removeprefix("★ ").partition(" ")
+                name += ":"
+                available = max(0, inside - 2)
+                if cell_len(name + value) > available:
+                    value = value.replace(" IMD", "IMD")
+                gap = " " * max(0, available - cell_len(name + value))
+                row = name + gap + value
+                preview.append((Text(" " + clip(row, available) + " ", style=Style(
+                    color=self.rich_style.color, bgcolor=palette["background"])), cell_len(row) > available))
         elif self.key == "announce":
             label = " LATEST "
             ink = self.rich_style.color if status == "active" else self.parent.query_one(".empty").rich_style.color
@@ -324,6 +329,7 @@ class SurfboardRack(Grid):
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; border-subtitle-align: left; }
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
+    SurfboardRack > #surfboard-card-protocol { padding: 0; }
     SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
     """

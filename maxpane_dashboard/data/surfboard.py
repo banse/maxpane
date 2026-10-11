@@ -373,9 +373,12 @@ def _protocol_stats(burn, reward, fee) -> str:
     for label, value in (("burned", burn), ("rewarded", reward), ("fees", fee)):
         shown = "—"
         if number(value) is not None:
-            scale, suffix = next(((scale, suffix) for scale, suffix in
-                                 ((1e9, "B"), (1e6, "M"), (1e3, "k")) if value >= scale), (1, ""))
-            shown = f"{value / scale:.0f}{suffix}"
+            amount = value
+            for suffix in ("", "k", "M", "B", "T"):
+                if round(amount) < 1000 or suffix == "T":
+                    break
+                amount /= 1000
+            shown = f"{amount:.0f}{suffix}"
         lines.append(f"★ {label} {shown} IMD")
     return "\n".join(lines)
 

@@ -310,17 +310,18 @@ async def test_pool4_digit_face(size,key,primary,secondary,label,expected,green,
         assert not footer.style.bold and footer.style.color.get_truecolor()==ink
 
 
-@pytest.mark.parametrize('size', [(149,45), (140,36)])
-async def test_protocol_stats_show_three_compact_starred_lines(size):
+@pytest.mark.parametrize('size', [(180,45), (149,45), (140,36)])
+async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
     from maxpane_dashboard.data.surfboard import cards
 
     async with RackApp().run_test(size=size) as pilot:
         card = pilot.app.query_one('#surfboard-card-protocol', SurfboardCard)
         for values, expected in [
-            ((33279, 5873, 3786), ['★ burned 33k IMD', '★ rewarded 6k IMD', '★ fees 4k IMD']),
-            ((1234567, 0, 12.8), ['★ burned 1M IMD', '★ rewarded 0 IMD', '★ fees 13 IMD']),
-            ((None, 5873, float('nan')), ['★ burned — IMD', '★ rewarded 6k IMD', '★ fees — IMD']),
-            ((None, None, None), ['★ burned — IMD', '★ rewarded — IMD', '★ fees — IMD']),
+            ((33279, 5873, 3786), ['33k IMD', '6k IMD', '4k IMD']),
+            ((1234567, 0, 12.8), ['1M IMD', '0 IMD', '13 IMD']),
+            ((999999, 999999, 999999999), ['1M IMD', '1M IMD', '1B IMD']),
+            ((None, 5873, float('nan')), ['— IMD', '6k IMD', '— IMD']),
+            ((None, None, None), ['— IMD', '— IMD', '— IMD']),
         ]:
             data = dict(zip(('pool4_total_burned', 'pool4_total_rewarded', 'pool4_total_fee_token'), values))
             row = next(row for row in cards(data, {}, now=100) if row['key'] == 'protocol')
@@ -331,9 +332,12 @@ async def test_protocol_stats_show_three_compact_starred_lines(size):
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
             assert strips[top].text[left+1:right].strip('─ ') == 'STATS'
-            if size[0] == 140:
-                expected = [line.replace('★ rewarded 6k', '★rewarded 6k') for line in expected]
-            assert [strip.text[left+1:right].rstrip() for strip in strips[top+1:top+4]] == expected
+            for strip, name, value in zip(strips[top+1:top+4], ('burned:', 'rewarded:', 'fees:'), expected):
+                line = strip.text[left+1:right]
+                assert line.startswith(' ' + name)
+                assert line.endswith(value + ' ')
+                assert not line[1+len(name):-1-len(value)].strip()
+                assert '★' not in line
             assert strips[top+4].text[left+1:right].strip('─ ') == '0.47%'
             assert 'BURN' in strips[-1].text
             assert '‹ widen' not in str(card.border_title)
