@@ -482,7 +482,10 @@ async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads(
     now = [1000.]
     manager = SwarmTokensManager(Source(), client=Pages(), market=Market(), clock=lambda: now[0])
     try:
-        assert manager.catalogue_summary() == {'count': None, 'state': 'unavailable', 'as_of': None, 'latest_launches': None}
+        assert manager.catalogue_summary() == {
+            'count': None, 'state': 'unavailable', 'as_of': None, 'latest_launches': None,
+            'volume': {'points': None, 'state': 'unavailable', 'known': 0, 'total': 0,
+                       'as_of': None, 'until': 0}}
         manager.offer_catalogue()
         manager.offer_catalogue()
         await manager.wait_pending()
@@ -768,5 +771,227 @@ async def test_portfolio_priority_reserves_capacity_for_oldest_market_candidates
         await manager.fetch_portfolio(priority_ids=[priority])
         await manager.wait_pending()
         assert len({key for batch in market.calls for key in batch}) == 4
+    finally:
+        await manager.close()
+
+
+def cache_volume(manager, now, amounts, *, pools=None):
+    """Synthetic hourly observations on identities from the captured catalogue."""
+    tokens = manager._tokens({}, now, include_inactive=True)
+    end = int(now//3600)*3600
+    for index, (token, values) in enumerate(zip(tokens, amounts)):
+        pool = pools[index] if pools else '0x'+f'{index+1:040x}'
+        manager._market[token['id']] = ({'state': 'ok', 'market_pool': pool,
+                                        '_expected_pool': None}, now)
+        manager._volume[token['id']] = ({'state': 'ok', '_pool': pool,
+                                        'timestamps': list(range(end-86400, end, 3600)),
+                                        'volume_usd': values}, now)
+    return tokens
+
+
+async def test_hub_volume_sums_all_launches_in_eight_complete_usd_buckets():
+    raw = rows()[:3]
+    raw[2]['status'] = 'retired'
+    now = 1791676810.
+    manager = SwarmTokensManager(Source(), client=Pages(raw), market=Market(), clock=lambda: now)
+    try:
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        cache_volume(manager, now, [[i for i in range(24)], [10]*24, [0]*24])
+        summary = manager.catalogue_summary()
+        assert summary['count'] == 2  # existing live market count is unchanged
+        assert summary['volume'] == {'points': [33, 42, 51, 60, 69, 78, 87, 96],
+                                     'known': 3, 'total': 3, 'state': 'ok',
+                                     'as_of': now, 'until': 1791676800.}
+        assert set(manager._tasks) == {'catalogue'}  # pure cached projection
+        summary['volume']['points'][0] = -1
+        assert manager.catalogue_summary()['volume']['points'][0] == 33
+    finally:
+        await manager.close()
+
+
+async def test_hub_volume_keeps_one_cohort_gaps_and_unknown_coverage():
+    raw = rows()[:3]
+    # No zero is invented before a launch record timestamp, even a future one.
+    raw[1]['createdAt'] = '2029-01-01T00:00:00Z'
+    now = 1791676810.
+    manager = SwarmTokensManager(Source(), client=Pages(raw), market=Market(), clock=lambda: now)
+    try:
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        cache_volume(manager, now, [[1]*24, [None]*3+[2]*21])
+        volume = manager.catalogue_summary()['volume']
+        assert volume == {'points': [None]+[9]*7, 'known': 2, 'total': 3,
+                          'state': 'partial', 'as_of': now, 'until': 1791676800.}
+        manager._complete = False
+        assert manager.catalogue_summary()['volume']['state'] == 'partial'
+    finally:
+        await manager.close()
+
+
+async def test_hub_volume_deduplicates_pool_without_merging_chains():
+    now, pool = 1791676810., '0x'+'a'*40
+    manager = SwarmTokensManager(Source(), client=Pages(rows()[:3]), market=Market(), clock=lambda: now)
+    try:
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        cache_volume(manager, now, [[2]*24]*3, pools=[pool]*3)
+        volume = manager.catalogue_summary()['volume']
+        assert volume['points'] == [12]*8  # one ETH pool + same-address RH pool
+        assert volume['known'] == volume['total'] == 3
+        assert volume['state'] == 'ok'
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize('invalid', ['stale', 'failed', 'pool', 'clock', 'timestamps', 'huge_stamp',
+                                     'negative', 'nan', 'bool', 'huge_volume'])
+async def test_hub_volume_rejects_stale_wrong_pool_and_invalid_cache(invalid):
+    now = 1791676810.
+    manager = SwarmTokensManager(Source(), client=Pages(rows()[:1]), market=Market(), clock=lambda: now)
+    try:
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        token = cache_volume(manager, now, [[1]*24])[0]
+        payload, stamp = manager._volume[token['id']]
+        if invalid == 'stale':
+            manager._volume[token['id']] = (payload, now-manager.HISTORY_TTL-1)
+        elif invalid == 'failed':
+            manager._failed['volume'].add(token['id'])
+        elif invalid == 'pool':
+            payload['_pool'] = '0x'+'f'*40
+        elif invalid == 'clock':
+            manager._volume[token['id']] = (payload, now+1)
+        elif invalid == 'timestamps':
+            payload['timestamps'][-1] = payload['timestamps'][0]
+        elif invalid == 'huge_stamp':
+            payload['timestamps'][0] = 10**400
+        else:
+            payload['volume_usd'] = [{'negative': -1, 'nan': float('nan'), 'bool': True,
+                                      'huge_volume': 10**400}[invalid]]*24
+        volume = manager.catalogue_summary()['volume']
+        assert volume['points'] is None and volume['known'] == 0
+        assert volume['state'] == ('stale' if invalid in ('stale', 'failed') else 'unavailable')
+    finally:
+        await manager.close()
+
+
+async def test_hub_volume_total_includes_unsupported_and_ambiguous_candidates():
+    raw = rows()[:3]
+    raw[1]['chainId'] = 99999
+    raw[2]['artifacts'].append({'role': 'token', 'address': 'broken'})
+    now = 1791676810.
+    manager = SwarmTokensManager(Source(), client=Pages(raw), market=Market(), clock=lambda: now)
+    try:
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        cache_volume(manager, now, [[1]*24])
+        volume = manager.catalogue_summary()['volume']
+        assert volume['state'] == 'partial' and volume['points'] == [3]*8
+        assert volume['known'] == 1 and volume['total'] == 3
+    finally:
+        await manager.close()
+
+
+async def test_hub_volume_offer_is_nonblocking_singleflight_and_never_reads_price_or_trades():
+    gate, entered = asyncio.Event(), asyncio.Event()
+    now = [1791676810.]
+    class Volumes(Market):
+        def __init__(self):
+            self.markets, self.volumes = [], []
+        async def fetch_markets(self, tokens):
+            self.markets.append([t['id'] for t in tokens])
+            return {t['id']: {'state': 'ok', 'market_pool': '0x'+'a'*40} for t in tokens}
+        async def fetch_volume_history(self, token):
+            self.volumes.append(token['id'])
+            entered.set()
+            await gate.wait()
+            end = int(now[0]//3600)*3600
+            return {'state': 'ok', 'timestamps': list(range(end-86400, end, 3600)), 'volume_usd': [1]*24}
+        async def fetch_history(self, token):
+            raise AssertionError('hub must not schedule price history')
+        async def fetch_trades(self, token):
+            raise AssertionError('hub must not schedule trades')
+    market = Volumes()
+    manager = SwarmTokensManager(Source(), client=Pages(rows()[:3]), market=market, clock=lambda: now[0])
+    try:
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        manager.offer_hub_volume()
+        await entered.wait()
+        manager.offer_hub_volume()
+        await asyncio.sleep(0)
+        assert manager.catalogue_summary()['volume']['points'] is None
+        assert len(market.markets) == 1 and len(market.volumes) == 1
+        assert set(manager._tasks) == {'catalogue', 'markets', 'volume'}
+        gate.set()
+        await manager.wait_pending()
+        assert manager.catalogue_summary()['volume']['known'] == 3
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        assert len(market.volumes) == 3
+        # Next completed hour refreshes even if the history TTL has not elapsed.
+        now[0] = 1791680400.
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        assert len(market.volumes) == 6
+    finally:
+        gate.set()
+        await manager.close()
+
+
+async def test_hub_volume_rotates_bounded_batches_before_retrying_old_work():
+    now = [1791676810.]
+    raw = []
+    for i in range(25):
+        row = deepcopy(rows()[0])
+        row.update(id=f'{i:08x}-aaaa-4aaa-aaaa-aaaaaaaaaaaa', launchNumber=2000-i,
+                   status='retired' if i%2 else 'live')
+        next(a for a in row['artifacts'] if a['role'] == 'token')['address'] = '0x'+f'{i+1:040x}'
+        raw.append(row)
+    class Volumes(Market):
+        def __init__(self):
+            self.calls = []
+        async def fetch_markets(self, tokens):
+            return {t['id']: {'state': 'ok', 'market_pool': t['token_address']} for t in tokens}
+        async def fetch_volume_history(self, token):
+            self.calls.append(token['id'])
+            return {'state': 'unavailable'}
+    market = Volumes()
+    manager = SwarmTokensManager(Source(), client=Pages(raw), market=market, clock=lambda: now[0])
+    try:
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        assert len(market.calls) == 10
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        assert len(market.calls) == 20
+        now[0] += manager.HISTORY_TTL
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        assert len(market.calls) == 30 and len(set(market.calls)) == 25
+        assert manager.catalogue_summary()['volume']['points'] is None
+    finally:
+        await manager.close()
+
+
+async def test_hub_volume_conflicting_same_pool_snapshots_are_not_added_or_selected():
+    now = 1791676810.
+    manager = SwarmTokensManager(Source(), client=Pages(rows()[:3]), market=Market(), clock=lambda: now)
+    try:
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        cache_volume(manager, now, [[2]*24, [4]*24, [1]*24], pools=['0x'+'a'*40]*3)
+        volume = manager.catalogue_summary()['volume']
+        assert volume['points'] == [3]*8  # conflicting ETH pool dropped; RH observed
+        assert volume['known'] == 1 and volume['state'] == 'partial'
     finally:
         await manager.close()

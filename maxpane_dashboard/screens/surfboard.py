@@ -19,14 +19,18 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 from maxpane_dashboard.widgets.surfboard.terminal import fit_prose
 
-#: Measured after the 2026-10-09 live 149×45 preview. Normal, stress, unavailable
-#: and wide-prose composites swept at 110–160 columns / 25–55 rows. The rack
-#: is whole from 139×36 without a vertical scrollbar; 140 keeps the same six
-#: columns without horizontal scrolling when the viewport is shorter. At 139×35
-#: both bars appear, at 140×35 only the vertical bar appears. The four seven-row
-#: card floors bind height: 35 scrolls and 36 fits. Event prose may still ellipsise
-#: with its own marker at any width. The app-wide 143-column pin stays unchanged.
-SURFBOARD_FULL_LAYOUT_COLUMNS = 140
+#: Re-measured after the 2026-10-11 live 149×45 preview. PROTOCOL's three spaced,
+#: left-aligned columns bind width: "100k IMD rewarded" needs 19 inner cells with
+#: one blank at each end, so the card needs 23 columns. With the previous rack
+#: floor, the stress row clipped at terminal widths 140–143 and cleared at 144
+#: at heights 35, 36 and 45. The rack's new 141-column floor preserves that row.
+#: At 143×35 both scrollbars appear; at 144×35 only the vertical bar appears.
+#: At 143×36 and 143×45 neither appears. The width pin buys the vertical gutter,
+#: so 144 works regardless of height. Normal, stress, unavailable and wide-prose
+#: composites fit fully at 144×36. The four seven-row card floors still bind
+#: height: 35 scrolls and 36 fits. Event prose may ellipsise with its own marker
+#: at any width. The app-wide 143-column pin stays unchanged.
+SURFBOARD_FULL_LAYOUT_COLUMNS = 144
 SURFBOARD_FULL_LAYOUT_ROWS = 36
 
 

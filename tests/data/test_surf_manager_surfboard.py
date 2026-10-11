@@ -342,7 +342,7 @@ async def test_tokens_card_shares_retained_catalogue_and_ages_news_without_full_
         card = next(c for c in second['surfboard_cards'] if c['key']=='swarm-tokens')
         assert (card['primary'], card['secondary'], card['status']) == ('3', '1 new', 'active')
         assert adapter is m.swarm_tokens_manager()
-        assert set(adapter._tasks) == {'catalogue'}
+        assert set(adapter._tasks) == {'catalogue', 'markets'}
         assert len(card['latest_launches']) == 3
         assert card['latest_launches'][0]['symbol'] == 'SFPT'
         assert card['latest_launches'][0]['lp_state'] == 'two-sided'
@@ -354,3 +354,70 @@ async def test_tokens_card_shares_retained_catalogue_and_ages_news_without_full_
     finally:
         await m.close()
     assert adapter._closed
+
+
+async def test_worker_reads_observe_activity_even_unchanged_or_failed(manager):
+    from maxpane_dashboard.data.surf_cache import SLOT_SURFBOARD_ACTIVITY, SLOT_SWARM_WORKERS, TIER_SWARM_BOARD
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+    m, clock = manager
+    raw = swarm_capture_v3('workers')
+    raw['workers'] = raw['workers'][:1]
+    raw['workers'][0]['seat']['tokenId'] = '420'
+    raw['workers'][0]['working'] = 1
+    raw['count'] = 1
+    m.swarm_client.fetch_contributors = AsyncMock(return_value=None)
+    m.swarm_client.fetch_workers = AsyncMock(return_value=raw)
+    try:
+        await m._pool_swarm_board({TIER_SWARM_BOARD}, clock.now)
+        assert m._project_hub()['surfboard_cards'][2]['meter_state'] == 'busy'
+        clock.now += 120
+        await m._pool_swarm_board({TIER_SWARM_BOARD}, clock.now)
+        assert m.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY).payload['read_ts'] == clock.now
+        assert m.cache.get_last_good(SLOT_SWARM_WORKERS).ts == 1000
+        raw['workers'][0]['working'] = 0
+        clock.now += 120
+        await m._pool_swarm_board({TIER_SWARM_BOARD}, clock.now)
+        stopped = clock.now
+        clock.now += 43200
+        await m._pool_swarm_board({TIER_SWARM_BOARD}, clock.now)
+        row = m._project_hub()['surfboard_cards'][2]
+        assert row['meter_state'] == 'idle' and row['numerator'] == 43200
+        assert m.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY).payload['seats']['420']['stopped_ts'] == stopped
+        m.swarm_client.fetch_workers.return_value = None
+        clock.now += 120
+        await m._pool_swarm_board({TIER_SWARM_BOARD}, clock.now)
+        row = m._project_hub()['surfboard_cards'][2]
+        assert row['meter_state'] == 'stale' and row['numerator'] is None
+    finally:
+        await m.close()
+
+
+async def test_hub_volume_projection_preserves_reader_pool_identity(manager):
+    from tests.data.test_swarm_tokens_live import rows
+    from maxpane_dashboard.data.surf_swarm import launch_rows
+    m, clock = manager
+    clock.now = 90000
+    adapter = m.swarm_tokens_manager()
+    adapter._catalogue = rows()
+    adapter._complete, adapter._cat_as_of = True, clock.now
+    launch = launch_rows(rows())[0]
+    launch['token_address'] = next(a['address'] for a in launch['artifacts'] if a['role']=='token')
+    pool = '0x'+'a'*64
+    m._swarm_launch_keys = lambda: dict(swarm_launch_rows=[launch])
+    facts = {'launches':{launch['launch_id']:dict(pool_initialize={'pool_id':pool},
+        detail_version=[launch['status'], rows()[0].get('updatedAt')], row=rows()[0])}}
+    original_slot = m._launch_slot
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_LAUNCH_FACTS
+    m._launch_slot = lambda slot, fallback: facts if slot==SLOT_SWARM_LAUNCH_FACTS else original_slot(slot,fallback)
+    source = m.swarm_tokens_source()
+    token = next(t for t in adapter._tokens(source, clock.now) if t['launch_uuid']==launch['launch_id'])
+    adapter._market[token['id']] = (dict(state='ok', market_pool=pool, _expected_pool=pool), clock.now)
+    adapter._volume[token['id']] = (dict(state='ok', _pool=pool, timestamps=list(range(3600,90000,3600)), volume_usd=[2]*24),clock.now)
+    try:
+        expected = adapter.catalogue_summary(source)['volume']
+        assert expected['points']==[6]*8
+        row = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
+        assert row['points']==expected['points']
+        assert row['meter_state']==expected['state']
+    finally:
+        await m.close()

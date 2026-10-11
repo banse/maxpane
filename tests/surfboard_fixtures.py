@@ -9,10 +9,10 @@ def hub_payload(kind="normal"):
     definitions = (
         ("announce", "SURFBOARD", "dashboard", "You can now deploy via the swarm on rh and mainnet. More networks soon.", "7 new replies", 4, 11),
         ("swarm", "SWARM", "swarm", "863 online", "9 working", None, None),
-        ("agent", "AGENT", "agent", "IDMD #420", "0 of 3 slots", 3253, 3392),
-        ("board", "LEADERBOARD", "board", "527", "4,176 accepted jobs", 3253, 3392),
+        ("agent", "AGENT", "agent", "IDMD #420", "0 of 3 slots", 43200, 86400),
+        ("board", "LEADERBOARD", "board", "527", "4,176 accepted jobs", 86400, 86400),
         ("launchpad", "LAUNCHPAD", "launchpad", "208", "0 new", 0, 208),
-        ("pool4", "POOL4", "pool4_user", "7.90", "USD", 350, 1000),
+        ("pool4", "POOL4", "pool4_user", "7.90", "USD", None, None),
         ("protocol", "PROTOCOL", "pool4", "★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 4k IMD", "0.47% of supply", 60, 100),
         ("swarm-tokens", "LAUNCHES", "swarm-tokens", "116", "2 new", None, None),
     )
@@ -22,9 +22,20 @@ def hub_payload(kind="normal"):
                           status="experimental" if key == "protocol" else "idle" if key == "agent" else "active",
                           primary=primary, secondary=secondary,
                           detail=f"{title} · exact {numerator}/{denominator} · read 22:00 · source cache ≤10m",
-                          meter_kind="sparkline" if key == "swarm" else "ratio",
+                          meter_kind="sparkline" if key in ("swarm", "swarm-tokens") else "ratio",
+                          meter_state={"agent": "idle", "board": "busy", "swarm-tokens": "ok"}.get(key),
+                          share_price=1.3029864737732294 if key == "pool4" else None,
                           numerator=numerator, denominator=denominator,
-                          points=[1, 2, 3, 4, 3, 2, 1, 8] if key == "swarm" else None))
+                          points=([1, 2, 3, 4, 3, 2, 1, 8] if key == "swarm" else
+                                  [1200, 900, 1500, 2100, 1800, 3600, 2400, 4200]
+                                  if key == "swarm-tokens" else None)))
+        if key in ("agent", "board"):
+            cards[-1]["detail"] = (f"{title} · workers read 22:00 · observed stop 12h ago"
+                                   if key == "agent" else f"{title} · workers read 22:00 · busy")
+        elif key == "pool4":
+            cards[-1]["detail"] = "POOL4 · 1 sIMD = 1.302986 IMD · pool4 ok · read 22:00"
+        elif key == "swarm-tokens":
+            cards[-1]["detail"] = "LAUNCHES · USD volume 24h · 116/116 markets · read 22:00"
     cards[-1]['latest_launches'] = [
         dict(age_s=7200, symbol='SFPT', chain='eth', lp_state='two-sided', liquidity_state='ok', paired_symbol='ETH'),
         dict(age_s=14400, symbol='RAI', chain='rh', lp_state='one-token', liquidity_state='ok', paired_symbol='IMD'),
@@ -33,7 +44,8 @@ def hub_payload(kind="normal"):
     for key, title in (("portfolio", "PORTFOLIO"), ("earnings", "EARNINGS")):
         cards.append(dict(key=key, title=title, destination=None, status="planned",
                           primary="coming soon", secondary="future dashboard", detail="planned / coming soon",
-                          meter_kind=None, numerator=None, denominator=None, points=None))
+                          meter_kind=None, meter_state=None, share_price=None,
+                          numerator=None, denominator=None, points=None))
     overview = dict(agents_online=863, working_now=9, jobs_24h=1094, oracles_24h=237,
                     accepted_24h=32579, seats_enrolled=894,
                     services=dict(verifier=True, publisher=True, deployer=True))
@@ -51,7 +63,8 @@ def hub_payload(kind="normal"):
             card["primary"] = "999.9K units"
             card["secondary"] = "100.0% accepted"
         next(card for card in cards if card["key"] == "agent").update(
-            status="working", primary="IDMD #99999", secondary="99,999 of 99,999 slots")
+            status="working", primary="IDMD #99999", secondary="99,999 of 99,999 slots",
+            meter_state="busy", numerator=86400, denominator=86400)
         next(card for card in cards if card["key"] == "announce").update(
             primary="You can now deploy via the swarm on rh and mainnet. " * 4, secondary="99,999 new replies")
         next(card for card in cards if card["key"] == "board").update(
@@ -73,6 +86,7 @@ def hub_payload(kind="normal"):
         for card in cards[:8]:
             card.update(status="unavailable", primary="unavailable",
                         secondary={"pool4":"USD", "protocol":"unavailable"}.get(card["key"], "unavailable"),
+                        meter_state="unavailable", share_price=None,
                         numerator=None, denominator=None, points=None)
             card['latest_launches'] = None
         overview, events = None, None

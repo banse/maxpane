@@ -11,6 +11,7 @@ import time
 from maxpane_dashboard.analytics.surf_launch_checks import ZERO, address
 from maxpane_dashboard.analytics.swarm_tokens import select_tokens
 from maxpane_dashboard.data.surf_swarm import launch_rows
+from maxpane_dashboard.data.series_points import coerce_points
 from maxpane_dashboard.data.swarm_tokens_client import SwarmTokensClient
 from maxpane_dashboard.data.swarm_tokens_models import TOKEN_KEYS
 
@@ -20,7 +21,10 @@ MARKET_FIELDS = ('price_usd', 'change_24h', 'mcap_usd', 'fdv_usd', 'volume_24h',
 
 
 def _number(value):
-    return value if type(value) in (int, float) and math.isfinite(value) else None
+    try:
+        return value if type(value) in (int, float) and math.isfinite(value) else None
+    except OverflowError:
+        return None
 
 
 def _token_artifacts(row):
@@ -31,12 +35,25 @@ def _token_artifacts(row):
     return valid, bool(artifacts) and (malformed or len(valid) != 1)
 
 
+def _volume_hours(payload, now):
+    stamps, values = payload.get('timestamps'), payload.get('volume_usd')
+    if (not isinstance(stamps, list) or not isinstance(values, list)
+            or len(stamps) != 24 or len(values) != 24
+            or any(_number(t) is None or t <= 0 or t % 3600 for t in stamps)
+            or stamps != list(range(int(stamps[0]), int(stamps[0])+86400, 3600))):
+        return {}
+    points, _ = coerce_points([(stamp, _number(value)) for stamp, value in zip(stamps, values)],
+                             now=now, max_age=86400+3600)
+    return dict(points)
+
+
 class SwarmTokensManager:
     is_mock = False
     _error_count = 0
     CATALOGUE_TTL, MARKET_TTL = 300, 120
     HISTORY_TTL, TRADES_TTL, LIQUIDITY_TTL = 900, 120, 600
     PAGE_SIZE, PAGE_BUDGET, MARKET_BATCH, DETAIL_BATCH = 500, 3, 30, 2
+    VOLUME_BATCH = 10
 
     def __init__(self, surf_manager, *, client=None, market=None, clock=time.time):
         self.surf = surf_manager
@@ -57,11 +74,11 @@ class SwarmTokensManager:
         self._cursor = None
         self._tasks = {}
         self._closed = False
-        self._market, self._history, self._trades = {}, {}, {}
+        self._market, self._history, self._trades, self._volume = {}, {}, {}, {}
         self._market_expectations = {}
-        self._attempts = {name: {} for name in ('markets', 'history', 'trades')}
+        self._attempts = {name: {} for name in ('markets', 'history', 'trades', 'volume')}
         self._failed = {name: set() for name in self._attempts}
-        self._detail_pools = {'history': {}, 'trades': {}}
+        self._detail_pools = {'history': {}, 'trades': {}, 'volume': {}}
         self._portfolio_active = False
         self._portfolio_priority_ids = set()
 
@@ -219,8 +236,8 @@ class SwarmTokensManager:
                 self._failed['markets'].add(key)
 
     async def _refresh_details(self, name, tokens):
-        cache = self._history if name == 'history' else self._trades
-        method = self.market.fetch_history if name == 'history' else self.market.fetch_trades
+        cache = getattr(self, '_'+name)
+        method = getattr(self.market, 'fetch_volume_history' if name == 'volume' else 'fetch_'+name)
         for token in tokens:
             key = token['id']
             self._attempts[name][key] = self._clock()
@@ -236,10 +253,18 @@ class SwarmTokensManager:
                 self._failed[name].add(key)
 
     def offer_catalogue(self):
-        """Schedule only catalogue discovery; the hub needs no market enrichment."""
+        """Schedule only catalogue discovery."""
         now = self._clock()
         if self._cat_attempt is None or self._scan is not None or now-self._cat_attempt >= self.CATALOGUE_TTL:
             self._start('catalogue', self._scan_catalogue())
+
+    def offer_hub_volume(self):
+        """Offer catalogue, shared selected markets and hourly USD volumes only."""
+        now = self._clock()
+        source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
+        tokens = self._tokens(source, now, include_inactive=True)
+        self.offer_catalogue()
+        self._offer_enrichment(tokens, now, hub_volume=True)
 
     def _catalogue_source(self, tokens, source, now, *, portfolio=False):
         state = ('unavailable' if tokens is None else 'stale' if self._complete and self._cat_failed else
@@ -269,7 +294,7 @@ class SwarmTokensManager:
         return result
 
     def catalogue_summary(self, source=None):
-        """Pure cached projection using the dashboard's exact token population."""
+        """Cached live-token summary, plus volume across all launch statuses."""
         now = self._clock()
         source = source or {}
         tokens = self._tokens(source, now)
@@ -283,16 +308,71 @@ class SwarmTokensManager:
                                    **{key: token[key] for key in ('symbol', 'chain', 'lp_state',
                                                                 'liquidity_state', 'paired_symbol')}))
         return {'count': len(tokens) if tokens is not None else None,
-                'state': catalogue['state'], 'as_of': catalogue['as_of'], 'latest_launches': latest}
+                'state': catalogue['state'], 'as_of': catalogue['as_of'], 'latest_launches': latest,
+                'volume': self._volume_summary(source, now, catalogue)}
 
-    def _offer_enrichment(self, tokens, now):
-        for name, ttl, limit in (('markets', self.MARKET_TTL, self.MARKET_BATCH),
-                                  ('history', self.HISTORY_TTL, self.DETAIL_BATCH),
-                                  ('trades', self.TRADES_TTL, self.DETAIL_BATCH)):
+    def _volume_summary(self, source, now, catalogue):
+        """One fixed pool cohort per curve; missing hours stay gaps in its sums."""
+        end = int(now//3600)*3600
+        candidates = set()
+        for row in self._base_rows(source) or []:
+            artifacts, ambiguous = _token_artifacts(row)
+            if ambiguous:
+                candidates.add(('ambiguous', row['launch_id']))
+            elif artifacts:
+                candidates.add((row['chain_id'], next(iter(artifacts))))
+        result = dict(points=None, state='unavailable', known=0, total=len(candidates),
+                      as_of=None, until=float(end))
+        pools, stamps, stale_stamps = {}, [], []
+        for token in self._tokens(source, now, include_inactive=True) or []:
+            point = self._volume.get(token['id'])
+            if not point:
+                continue
+            payload, read_at = point
+            if (payload.get('_pool') != token['market_pool'] or not token['market_pool']
+                    or _number(read_at) is None or read_at > now or payload.get('state') != 'ok'):
+                continue
+            if (now-read_at > self.HISTORY_TTL or token['id'] in self._failed['volume']
+                    or token['market_state'] != 'ok'):
+                stale_stamps.append(read_at)
+                continue
+            hours = _volume_hours(payload, now)
+            values = [hours.get(t) for t in range(end-86400, end, 3600)]
+            if not any(all(v is not None for v in values[i:i+3]) for i in range(0, 24, 3)):
+                continue
+            key = (token['chain'], token['market_pool'])
+            if key in pools:
+                old, ids = pools[key]
+                pools[key] = (old if old == values else None, ids+[token['id']])
+            else:
+                pools[key] = (values, [token['id']])
+            stamps.append(read_at)
+        cohort = [values for values, _ in pools.values() if values is not None]
+        result['known'] = sum(len(ids) for values, ids in pools.values() if values is not None)
+        points = []
+        for start in range(0, 24, 3):
+            values = [value for hours in cohort for value in hours[start:start+3]]
+            total = sum(values) if values and all(v is not None for v in values) else None
+            points.append(total if total is not None and math.isfinite(total) else None)
+        if any(value is not None for value in points):
+            result.update(points=points, as_of=min(stamps), state=(
+                'ok' if result['known'] == result['total'] and catalogue['state'] == 'ok'
+                and all(value is not None for value in points) else 'partial'))
+        elif stale_stamps:
+            result.update(state='stale', as_of=min(stale_stamps))
+        return result
+
+    def _offer_enrichment(self, tokens, now, *, hub_volume=False):
+        tiers = [('markets', self.MARKET_TTL, self.MARKET_BATCH)]
+        tiers += ([('volume', self.HISTORY_TTL, self.VOLUME_BATCH)] if hub_volume else [
+            ('history', self.HISTORY_TTL, self.DETAIL_BATCH),
+            ('trades', self.TRADES_TTL, self.DETAIL_BATCH)])
+        for name, ttl, limit in tiers:
             attempts = self._attempts[name]
             due = [row for row in tokens or []
                    if (name == 'markets' or row.get('market_pool'))
                    and (row['id'] not in attempts or now-attempts[row['id']] >= ttl
+                        or name == 'volume' and now//3600 > attempts[row['id']]//3600
                         or name == 'markets' and self._market_expectations.get(row['id']) != row.get('launch_pool')
                         or name != 'markets' and self._detail_pools[name].get(row['id']) != row['market_pool'])]
             due.sort(key=lambda row: (attempts.get(row['id'], -1), -row['launch_id']))

@@ -1470,7 +1470,10 @@ SURFBOARD_WIDGET_SIGNATURES = {
     "SurfboardTerminal": ("surfboard_overview", "surfboard_events", "surfboard_sources", "surfboard_footer"),
 }
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
-                        "destination", "meter_kind", "numerator", "denominator", "points", "latest_launches")
+                        "destination", "meter_kind", "numerator", "denominator", "points", "latest_launches",
+                        "meter_state", "share_price")
+# meter_state: independent activity (busy/idle/stale/unavailable) or volume coverage;
+# share_price: IMD per whole sIMD from the existing protocol vault read, or None.
 # latest_launches: None (unknown), [] (empty), or up to three rows with age_s,
 # symbol, chain, lp_state, liquidity_state and paired_symbol; other cards use None.
 SWARM_SEAT_OUTCOME_FIELDS = ("token_id", "listed", "attempts", "accepted", "rejected",

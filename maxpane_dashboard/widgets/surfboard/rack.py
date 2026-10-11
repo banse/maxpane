@@ -35,9 +35,8 @@ SLOTS = (
     ("bay-11", "BAY 11", 3, 0), ("bay-12", "BAY 12", 3, 5),
 )
 PLANNED = frozenset(("earnings",))
-METER_LABELS = dict(swarm="24H", agent="PASS", board="PASS",
-                    launchpad="TRADE", pool4="STAKE", protocol="BURN",
-                    **{"swarm-tokens": "TOKENS", "portfolio": "ASSETS", "earnings": "EARN"})
+METER_LABELS = dict(swarm="24H", launchpad="TRADE", protocol="BURN",
+                    **{"swarm-tokens": "24H", "portfolio": "ASSETS", "earnings": "EARN"})
 
 
 def _post_preview(value, width, style):
@@ -106,21 +105,49 @@ def _launch_preview(latest, width, style, green):
 def meter_text(card: dict, width: int | None = None) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
+    state = card.get("meter_state")
+    if key == "pool4":
+        price = card.get("share_price")
+        value = "1 sIMD = — IMD"
+        if _number(price):
+            for decimals in range(6, -1, -1):
+                candidate = f"1 sIMD = {price:,.{decimals}f} IMD"
+                if width is None or cell_len(candidate) <= width:
+                    value = candidate
+                    break
+        return Text(value, style=MUTED)
     label = METER_LABELS.get(key, "AUX")
-    out = Text().append(label + " ", style=MUTED)
+    label_ink = MUTED
+    if key in ("agent", "board"):
+        label = {"busy": "BUSY", "idle": "IDLE"}.get(state, "—")
+        label_ink = GREEN if state == "idle" else AMBER
+    elif key == "swarm-tokens" and state in ("partial", "stale"):
+        label = "~24H"
+        label_ink = AMBER
+    out = Text().append(label + " ", style=label_ink)
     cells = 8 if width is None else max(0, width - cell_len(label) - 1)
-    if key in PLANNED or key in ("swarm-tokens", "portfolio") or str(key).startswith("bay-"):
+    if key in PLANNED or key == "portfolio" or str(key).startswith("bay-"):
         return out.append("▱" * cells, style=MUTED)
-    if card.get("meter_kind") == "sparkline":
+    if card.get("meter_kind") == "sparkline" or key == "swarm-tokens":
         points = card.get("points")
-        if isinstance(points, list) and len(points) == 8 and all(_number(point) for point in points):
-            chart = build_sparkline(points, width=8, pad=False)
+        if (isinstance(points, list) and len(points) == 8
+                and (all(_number(point) for point in points) or key == "swarm-tokens"
+                     and any(_number(point) for point in points)
+                     and all(point is None or _number(point) for point in points))):
+            known = [point for point in points if _number(point)]
+            glyphs = iter(build_sparkline(known, width=len(known), pad=False))
+            chart = "".join(next(glyphs) if _number(point) else "·" for point in points)
             if width is not None:
                 # Stretch each existing time bucket; do not invent more samples.
                 chart = "".join(chart[column * len(chart) // cells] for column in range(cells))
-            return out.append(chart, style=GREEN)
+            return out.append(chart, style=AMBER if key == "swarm-tokens" and state != "ok" else GREEN)
         return out.append("—", style=AMBER)
     numerator, denominator = card.get("numerator"), card.get("denominator")
+    if key in ("agent", "board"):
+        if state == "busy":
+            return out.append("▰" * cells, style=GREEN)
+        if state != "idle":
+            return out.append("—", style=AMBER)
     if not _number(numerator) or not _number(denominator) or denominator == 0 or numerator > denominator:
         return out.append("—", style=AMBER)
     full = int(numerator * cells / denominator)
@@ -253,15 +280,15 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             stats = str(self.data.get("primary") or "").splitlines()
             if len(stats) != 3:
                 stats = [f"★ {name} — IMD" for name in ("burned", "rewarded", "fees")]
+            fields = [flatten(line).removeprefix("★ ").split() for line in stats]
+            amount_width = max((cell_len(row[1]) for row in fields if len(row) == 3), default=1)
             preview = []
-            for line in stats:
-                name, _, value = flatten(line).removeprefix("★ ").partition(" ")
-                name += ":"
+            for parts in fields:
+                name, amount, unit = parts if len(parts) == 3 else ("unavailable", "—", "IMD")
+                row = f"{amount.ljust(amount_width)} {unit} {name}"
                 available = max(0, inside - 2)
-                if cell_len(name + value) > available:
-                    value = value.replace(" IMD", "IMD")
-                gap = " " * max(0, available - cell_len(name + value))
-                row = name + gap + value
+                if cell_len(row) > available:
+                    row = f"{amount} {unit} {name}"
                 preview.append((Text(" " + clip(row, available) + " ", style=Style(
                     color=self.rich_style.color, bgcolor=palette["background"])), cell_len(row) > available))
         elif self.key == "announce":
@@ -277,6 +304,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if label and (start := body.plain.find(label.strip())) >= 0:
             body.stylize(Style(bold=False), start, start + len(label.strip()))
         bottom = f" {secondary} " if label else ""
+        if self.key in ("announce", "swarm-tokens") and secondary == "0 new":
+            bottom = ""
         if len(bottom) > inside:
             bottom = bottom.strip()
         if self.key == "agent" and len(bottom) > inside:
@@ -325,7 +354,7 @@ class SurfboardRack(Grid):
     """Own fixed slots and terminal children; the screen dispatches to both."""
     DEFAULT_CSS = """
     SurfboardRack { layout: grid; grid-size: 6 4; grid-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
-        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 137; }
+        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 141; }
     SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; border-subtitle-align: left; }

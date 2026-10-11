@@ -83,10 +83,11 @@ def test_rack_meters_use_real_denominators_uncapped_population_and_split():
     lp={'coin_count':25,'launch_count':25,'cursor':{'last_block':123,'launches':{str(i):{} for i in range(25)}},'swaps_by_coin':{str(i):1 for i in range(23)}}
     cards={c['key']:c for c in hub.cards(data,{},now=100,launchpad=lp)}
     assert (cards['announce']['numerator'],cards['announce']['denominator'])==(1,len(SIGNAL_NAMES))
-    assert (cards['agent']['numerator'],cards['agent']['denominator'])==(3253,3392)
-    assert (cards['board']['numerator'],cards['board']['denominator'])==(3254,3393)
+    assert (cards['agent']['numerator'],cards['agent']['denominator'])==(None,86400)
+    assert (cards['board']['numerator'],cards['board']['denominator'])==(None,86400)
     assert (cards['launchpad']['numerator'],cards['launchpad']['denominator'])==(23,25)
-    assert (cards['pool4']['numerator'],cards['pool4']['denominator'])==(20,100)
+    assert cards['pool4']['share_price'] is None
+    assert cards['pool4']['numerator'] is cards['pool4']['denominator'] is None
     assert (cards['protocol']['numerator'],cards['protocol']['denominator'])==(2,10)
     assert cards['protocol']['status']=='experimental'
     assert {c['key'] for c in cards.values() if c['status']=='planned'}=={'portfolio','earnings'}
@@ -199,18 +200,17 @@ def test_agent_card_uses_the_selected_seat_live_slots(state, working, capacity, 
     agent = next(card for card in cards if card['key']=='agent')
     assert agent['primary']=='IDMD #420' and agent['secondary']==slots
     assert agent['status']==status
-    assert (agent['numerator'],agent['denominator'])==(3253,3392)
+    assert (agent['numerator'],agent['denominator'])==(None,86400)
     assert '95.9% accepted' in agent['detail'] and 'records stale' in agent['detail']
     assert 'workers' in agent['detail'] and '12:34' in agent['detail']
 
 
-def test_card_zero_denominator_differs_from_invalid_boolean():
-    def pool(assets,supply):
-        return next(c for c in hub.cards({'pool4_vault_assets':assets,'pool4_total_supply':supply},{},now=100) if c['key']=='pool4')
-    zero=pool(0,0)
-    assert zero['numerator']==zero['denominator']==0 and 'no supply' in zero['detail']
-    invalid=pool(False,0)
-    assert invalid['numerator'] is invalid['denominator'] is None
+@pytest.mark.parametrize('price,expected', [(7.963529, 7.963529), (0,0), (None,None), (False,None), (-1,None), (float('inf'),None)])
+def test_pool4_share_rate_uses_protocol_value_with_explicit_unknown(price,expected):
+    row=next(c for c in hub.cards({'pool4_share_price':price},{},now=100) if c['key']=='pool4')
+    assert row['share_price']==expected
+    assert row['numerator'] is row['denominator'] is None
+    assert (f'1 sIMD = {expected:,.6f} IMD' if expected is not None else '1 sIMD = unavailable IMD') in row['detail']
 
 @pytest.mark.parametrize('value',[1e300,-1e300,float('inf'),True])
 def test_unrepresentable_timestamps_are_rejected_and_format_safely(value):
@@ -236,10 +236,10 @@ def test_swarm_stale_hourly_retains_chart_and_discloses_both_read_clocks():
 
 
 def test_degraded_pool4_never_labels_retained_numbers_active():
-    data={'pool4_price_usd':2.0,'pool4_trailing_return_pct':3.0,'pool4_vault_assets':20,'pool4_total_supply':100,'degraded':['p4']}
+    data={'pool4_price_usd':2.0,'pool4_trailing_return_pct':3.0,'pool4_share_price':7.963529,'pool4_vault_assets':20,'pool4_total_supply':100,'degraded':['p4']}
     cards={c['key']:c for c in hub.cards(data,{},now=100)}
     assert cards['pool4']['status']=='stale'
-    assert cards['pool4']['numerator']==20
+    assert cards['pool4']['share_price']==7.963529
 
 
 def test_overview_inference_tokens_uses_captured_network_count():
@@ -522,3 +522,31 @@ def test_protocol_color_uses_recent_burn_signal_then_current_readiness(state, ag
 def test_pool4_missing_price_never_shows_zero_or_green():
     row=next(c for c in hub.cards(dict(imd_change_24h_pct=2.3),{},now=100) if c['key']=='pool4')
     assert (row['primary'],row['secondary'],row['status']) == ('unavailable','USD','unavailable')
+
+
+def test_cards_project_selected_and_top_agent_activity_independently():
+    from maxpane_dashboard.data import surfboard_activity as activity
+    from tests.data.test_surfboard_activity import workers
+    data = dict(swarm_seat_selected={'token_id': 1836},
+                swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253)])
+    observed = activity.observe(None, workers(1), now=100)
+    rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed)}
+    assert rows['board']['meter_state'] == 'busy'
+    assert rows['board']['numerator'] == rows['board']['denominator'] == 86400
+    assert rows['agent']['meter_state'] == 'idle' and rows['agent']['numerator'] is None
+    observed = activity.observe(observed, workers(0), now=200)
+    observed = activity.observe(observed, workers(0), now=43400)
+    rows = {c['key']: c for c in hub.cards(data, {}, now=43400, activity=observed)}
+    assert rows['board']['numerator'] == 43200
+    assert 'observed stop' in rows['board']['detail'] and 'workers read' in rows['board']['detail']
+    rows = {c['key']: c for c in hub.cards(data, {}, now=43701, activity=observed)}
+    assert rows['board']['meter_state'] == 'stale' and rows['board']['numerator'] is None
+
+
+def test_launch_volume_projection_discloses_coverage_and_currency():
+    points = [0, 1, None, 3, 4, 5, 6, 7]
+    source = dict(count=10, state='ok', as_of=100,
+        volume=dict(points=points, state='partial', known=8, total=10, as_of=90, until=80))
+    row = next(c for c in hub.cards({}, {}, now=100, tokens_catalogue=source) if c['key']=='swarm-tokens')
+    assert row['meter_kind']=='sparkline' and row['points']==points and row['meter_state']=='partial'
+    assert 'USD' in row['detail'] and '8/10' in row['detail'] and '3h' in row['detail']

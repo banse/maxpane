@@ -15,6 +15,7 @@ from typing import Any
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_points, compact_age, recent_launch_news
 from maxpane_dashboard.data import surf_swarm as sw
+from maxpane_dashboard.data import surfboard_activity as work_activity
 from maxpane_dashboard.analytics.surf_launch_checks import address
 from maxpane_dashboard.data.surf_models import (
     SURFBOARD_CARD_FIELDS, SURFBOARD_OVERVIEW_FIELDS, SURFBOARD_SUPPLY_FIELDS, SWARM_SEAT_OUTCOME_FIELDS,
@@ -383,7 +384,7 @@ def _protocol_stats(burn, reward, fee) -> str:
     return "\n".join(lines)
 
 
-def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None) -> list[dict]:
+def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, activity: dict | None = None) -> list[dict]:
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES, FIRED_TTL_S, _tx_hash
     result = []
     def card(key,title,primary,secondary,detail,destination,n=None,d=None,points=None,source=None):
@@ -403,6 +404,12 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
                    meter_kind="sparkline" if points is not None else "ratio",numerator=n if fraction is not None or number(n) is not None and number(d) is not None and n == d == 0 else None,
                    denominator=d if fraction is not None or number(n) is not None and number(d) is not None and n == d == 0 else None,points=points)
         result.append(row)
+    def activity_meter(token):
+        observed = work_activity.project(activity, token, now=now)
+        result[-1].update(meter_kind="activity", meter_state=observed["state"],
+                         numerator=observed["remaining"], denominator=work_activity.WINDOW_SECONDS)
+        result[-1]["detail"] += (f" · activity {observed['state']} · workers read {hhmm(observed['as_of'])}"
+                                f" · observed stop {hhmm(observed['stopped_ts'])} · linear 24h decay")
     states=[data.get(f"sig_{name}_state") for name in SIGNAL_NAMES]
     known=sum(s in ("ok","watch","fired") for s in states); fired=states.count("fired")
     latest = None
@@ -441,18 +448,19 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     acceptance_text=(f"{acceptance:.1%} accepted" if acceptance is not None else
                      "no submitted record" if outcome.get("listed") is False else "acceptance unavailable")
     card("agent","AGENT",f"IDMD #{token}" if token is not None else "choose a seat",
-         slot_text, f"PASS · {acceptance_text} · summary cache ≤10m · records {(sources.get('records') or {}).get('state','unavailable')}"
+         slot_text, f"{acceptance_text} · summary cache ≤10m · records {(sources.get('records') or {}).get('state','unavailable')}"
          f" · workers {live_state or 'unavailable'} · as of {data.get('swarm_workers_as_of_hhmm') or '—'}",
-         "agent",outcome.get("accepted"),outcome.get("attempts"),source="records")
+         "agent",source="records")
+    activity_meter(token)
     result[-1]["status"]=(live_state if live_state in ("idle","offline","paused") else
                            "working" if live_state=="working" and active is not None and active>0 else "unavailable")
-    summary=data.get("swarm_board_summary") or {}
     leader = next((row for row in data.get("swarm_board_rows") or []
                    if isinstance(row, dict) and row.get("rank") == 1), {})
     card("board","LEADERBOARD",_value(count(leader.get("token_id"))),
          _value(count(leader.get("accepted")), " accepted jobs"),
-         f"PASS · top #{_value(count(leader.get('token_id')))} · {_value(count(leader.get('accepted')), ' accepted jobs')}"
-         " · recorded-seat fleet · summary cache ≤10m","board",summary.get("accepted"),summary.get("attempts"),source="records")
+         f"top #{_value(count(leader.get('token_id')))} · {_value(count(leader.get('accepted')), ' accepted jobs')}"
+         " · summary cache ≤10m","board",source="records")
+    activity_meter(leader.get("token_id"))
     lp=launchpad or {}; swaps=lp.get("swaps_by_coin");cursor=lp.get("cursor");population=lp.get("coin_count")
     complete=(count(population) is not None and lp.get("launch_count")==population and isinstance(cursor,dict)
               and count(cursor.get("last_block")) is not None and isinstance(cursor.get("launches"),dict) and len(cursor["launches"])==population and isinstance(swaps,dict)
@@ -464,9 +472,12 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     change = data.get("imd_change_24h_pct")
     valid_change = type(change) in (int, float) and number(abs(change)) is not None
     change_text = f"{change:+.2f}%" if valid_change else "unavailable"
+    share_price = number(data.get("pool4_share_price"))
+    share_text = f"{share_price:,.6f}" if share_price is not None else "unavailable"
     card("pool4","POOL4",f"{price:,.2f}" if price is not None else "unavailable","USD",
-         f"STAKE · vault/supply · 24h {change_text}"
-         +f" · {data.get('pool4_network') or 'unknown network'}","pool4_user",data.get("pool4_vault_assets"),data.get("pool4_total_supply"))
+         f"1 sIMD = {share_text} IMD · 24h {change_text}"
+         +f" · {data.get('pool4_network') or 'unknown network'}","pool4_user")
+    result[-1]["share_price"] = share_price
     result[-1]["status"] = ("unavailable" if price is None or not valid_change else
                             "active" if change > 0 else "idle")
     burn=data.get("pool4_total_burned");reward=data.get("pool4_total_rewarded");fee=data.get("pool4_total_fee_token")
@@ -530,6 +541,13 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          f" · launch news 1h · evaluated {hhmm(now)}", "swarm-tokens")
     result[-1]["status"] = "active" if new else "idle"
     result[-1]["latest_launches"] = catalogue.get("latest_launches")
+    volume = catalogue.get("volume") or {}
+    result[-1].update(meter_kind="sparkline", meter_state=volume.get("state", "unavailable"),
+                     points=volume.get("points"))
+    result[-1]["detail"] += (f" · 24H USD volume per 3h · indexed selected pools"
+                            f" · {volume.get('known', 0)}/{volume.get('total', '—')} tokens"
+                            f" · {volume.get('state', 'unavailable')} · read {hhmm(volume.get('as_of'))}"
+                            f" · until {hhmm(volume.get('until'))}")
     for key,title in (("portfolio","PORTFOLIO"),("earnings","EARNINGS")):
         row=dict.fromkeys(SURFBOARD_CARD_FIELDS);row.update(key=key,title=title,status="planned",primary="planned",secondary="coming soon",detail=f"{title} · planned dashboard")
         result.append(row)

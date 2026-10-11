@@ -145,6 +145,7 @@ from maxpane_dashboard.data import surf_pool4_market as mk
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard as hub
+from maxpane_dashboard.data import surfboard_activity as work_activity
 from maxpane_dashboard.analytics import surf_launch_checks as lc
 from maxpane_dashboard.analytics import surf_launch_liquidity as ll, surf_launch_sites as ls
 from maxpane_dashboard.data.keccak import keccak256
@@ -172,6 +173,7 @@ from maxpane_dashboard.data.surf_addresses import (
 from maxpane_dashboard.data.surf_cache import (
     DEFAULT_CACHE_PATH,
     SLOT_ACTIVITY,
+    SLOT_SURFBOARD_ACTIVITY,
     SLOT_CHAIN,
     SLOT_CHANNEL,
     SLOT_LAUNCHPAD,
@@ -1190,6 +1192,7 @@ class SurfManager:
                 SLOT_SWARM_LAUNCHES: lambda value: sw.coerce_launches_slot(value, now=self._clock()),
                 SLOT_SWARM_LAUNCH_FACTS: sw.coerce_launch_facts_slot,
                 SLOT_SWARM_WORKERS: sw.coerce_workers_slot,
+                SLOT_SURFBOARD_ACTIVITY: lambda value: work_activity.coerce(value, now=self._clock()),
                 SLOT_SWARM_SEAT_RANK: hub.coerce_rank_basis,
                 SLOT_SWARM_SEAT_REWARDS: lambda value: sw.coerce_rewards_slot(value, now=self._clock()),
                 SLOT_SWARM_SEAT: lambda value: sw.coerce_seat_slot(value, now=self._clock()),
@@ -5545,15 +5548,18 @@ class SurfManager:
         if not self._closing and self.cache.is_due(TIER_SWARM_LAUNCHES, now):
             self._spawn_swarm_launches({TIER_SWARM_LAUNCHES}, now)
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
-        facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}})
         return {
             'rows': self._swarm_launch_keys()['swarm_launch_rows'],
             'as_of': slot.get('launches_ts'),
-            'pool_ids': {key: point['pool_initialize']['pool_id']
-                         for key, point in facts['launches'].items()
-                         if point.get('pool_initialize') and point.get('detail_version') ==
-                         [point['row']['status'], point['row'].get('updatedAt')]},
+            'pool_ids': self._swarm_token_pool_ids(),
         }
+
+    def _swarm_token_pool_ids(self):
+        facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}})
+        return {key: point['pool_initialize']['pool_id']
+                for key, point in facts['launches'].items()
+                if point.get('pool_initialize') and point.get('detail_version') ==
+                [point['row']['status'], point['row'].get('updatedAt')]}
 
     def _spawn_swarm_launches(self, tiers, now):
         if TIER_SWARM_LAUNCHES not in tiers:
@@ -6300,6 +6306,11 @@ class SurfManager:
                 lambda method=method: getattr(self.swarm_client, method)(), f"swarm {method}",
             )
             payload = normalize(raw)
+            if slot == SLOT_SWARM_WORKERS:
+                observed_at = float(self._clock())
+                prior_activity = self.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY)
+                activity = work_activity.observe(getattr(prior_activity, "payload", None), payload, now=observed_at)
+                self.cache.store_last_good(SLOT_SURFBOARD_ACTIVITY, activity, ts=observed_at)
             if payload is None:
                 continue
             prior = self.cache.get_last_good(slot)
@@ -7198,8 +7209,10 @@ class SurfManager:
                                                  announce_read_ts=getattr(channel_entry, "ts", None),
                                                  announce_items=channel.get("items"),
                                                  family_sources=family_sources,
+                                                 activity=getattr(self.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY), "payload", None),
                                                  tokens_catalogue=(self._swarm_tokens_manager.catalogue_summary(
-                                                     {'rows': data.get('swarm_launch_rows')})
+                                                     {'rows': data.get('swarm_launch_rows'),
+                                                      'pool_ids': self._swarm_token_pool_ids()})
                                                      if getattr(self, '_swarm_tokens_manager', None) is not None else None))
         return data
 
@@ -7208,7 +7221,7 @@ class SurfManager:
         if not self._closing:
             now = float(self._clock())
             self._offer_full(now)
-            self.swarm_tokens_manager().offer_catalogue()
+            self.swarm_tokens_manager().offer_hub_volume()
             self._offer_hub_sources(now)
             self._spawn_swarm_board(set(self.cache.tiers_due(now)), now)
         return self._project_hub()

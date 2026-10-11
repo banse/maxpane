@@ -141,14 +141,15 @@ async def test_terminal_uses_dashboard_background_and_native_text_colors():
 
 
 @pytest.mark.parametrize("state", ("ok", "stale"))
-async def test_projected_pool4_value_period_ratio_and_source_clocks_fit_owner_size(state):
+async def test_projected_pool4_value_share_rate_and_source_clocks_fit_owner_size(state):
     from maxpane_dashboard.data import surfboard as projection
 
     # Public live values retain their real precision; a supplied 24h change
     # covers the border direction independently of the quote source.
     raw = dict(pool4_vault_assets=1795886.4737732294, pool4_total_supply=4143519.145292,
                pool4_network="MAINNET", pool4_as_of_hhmm="01:04",
-               pool4_price_usd=7.878357502256693, imd_change_24h_pct=1.4)
+               pool4_price_usd=7.878357502256693, pool4_share_price=1.3029864737732294,
+               imd_change_24h_pct=1.4)
     families = {name: dict(state=state, read_ts=STAMP)
                 for name in ("pool4", "market")}
     payload = hub_payload()
@@ -165,9 +166,13 @@ async def test_projected_pool4_value_period_ratio_and_source_clocks_fit_owner_si
         detail = lines[-2]
         assert f"market {state} · read {projection.hhmm(STAMP)}" in detail
         assert f"pool4 {state} · read {projection.hhmm(STAMP)}" in detail
-        assert "1,795,886.4737732294 / 4,143,519.145292" in detail
+        assert "1 sIMD = 1.302986 IMD" in detail
         assert "24h +1.40%" in detail
-        assert "‹ widen" not in str(app.hub.query_one("#surfboard-card-pool4").border_title)
+        pool4 = app.hub.query_one("#surfboard-card-pool4")
+        footer = app.hub._compositor.render_strips()[pool4.region.bottom - 1].crop(
+            pool4.region.x, pool4.region.right)
+        assert footer.text == "╰─ 1 sIMD = 1.303 IMD ─╯"
+        assert "‹ widen" not in str(pool4.border_title)
 
 
 async def test_focused_detail_marks_overflow_until_the_whole_line_fits():
@@ -290,7 +295,7 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
 
 @pytest.mark.sweep
 @pytest.mark.parametrize("kind", ("normal", "stress", "unavailable", "wide"))
-@pytest.mark.parametrize("width", boundary_set(SURFBOARD_FULL_LAYOUT_COLUMNS, 110, 160, 139))
+@pytest.mark.parametrize("width", boundary_set(SURFBOARD_FULL_LAYOUT_COLUMNS, 110, 160, 143))
 async def test_width_boundary_reserves_six_columns_even_with_vertical_scrolling(kind, width):
     r = await _render(hub_payload(kind), (width, SURFBOARD_FULL_LAYOUT_ROWS - 1))
     assert r["horizontal"] == (width < SURFBOARD_FULL_LAYOUT_COLUMNS), r
@@ -342,8 +347,8 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
             if card["key"] == "protocol":
                 text = r["card_text"]["protocol"]
                 assert " STATS " in text, r
-                assert all(label in text for label in ("burned:", "rewarded:", "fees:")), r
-                assert "★" not in text, r
+                assert all(label in text for label in ("burned", "rewarded", "fees")), r
+                assert "★" not in text and ":" not in text, r
                 assert card["secondary"].removesuffix(" of supply") in text, r
                 continue
             if card["key"] == "pool4":

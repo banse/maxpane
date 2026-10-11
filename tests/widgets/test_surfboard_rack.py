@@ -218,16 +218,21 @@ async def test_swarm_working_count_overrides_status_color_and_resets_on_refresh(
                     assert edge.style.color.get_truecolor() == expected, (status, secondary)
 
 
-@pytest.mark.parametrize("size", [(149, 45), (140, 36)])
+@pytest.mark.parametrize("size", [(149, 45), (144, 36)])
 async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
     async with RackApp().run_test(size=size) as pilot:
         card = pilot.app.query_one("#surfboard-card-agent", SurfboardCard)
-        for status, slots in [("working", "2 of 3 slots"), ("idle", "0 of 3 slots"),
-                              ("paused", "1 of 3 slots"), ("offline", "0 of 0 slots"),
-                              ("unavailable", "— of — slots"), ("active", "0 of 3 slots"),
-                              ("working", "1 of 3 slots")]:
+        for status, slots, activity, remaining in [
+            ("working", "2 of 3 slots", "busy", 86400),
+            ("idle", "0 of 3 slots", "idle", 43200),
+            ("paused", "0 of 3 slots", "idle", 21600),
+            ("offline", "0 of 0 slots", "idle", 0),
+            ("unavailable", "— of — slots", "unavailable", None),
+            ("active", "0 of 3 slots", "idle", 43200),
+            ("working", "1 of 3 slots", "busy", 86400),
+        ]:
             card.set_data(dict(status=status, primary="IDMD #420", secondary=slots,
-                               numerator=4, denominator=8))
+                               meter_state=activity, numerator=remaining, denominator=86400))
             await pilot.pause()
             strips = [strip.crop(card.region.x, card.region.right) for strip in
                       pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
@@ -250,8 +255,14 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             if status == "offline":
                 assert " of " not in strips[top + 4].text
             assert not footer.style.bold and footer.style.color.get_truecolor() == ink
-            bar = "▰▰▰▰▰▰▱▱▱▱▱▱▱" if size[0] == 149 else "▰▰▰▰▰▰▱▱▱▱▱▱"
-            assert strips[-1].text == f"╰─ PASS {bar} ─╯"
+            if activity == "unavailable":
+                assert strips[-1].text.startswith("╰─ — — ")
+                assert not any(glyph in strips[-1].text for glyph in "▰▱")
+            else:
+                cells = 13
+                filled = cells if activity == "busy" else {43200: 6, 21600: 3, 0: 0}[remaining]
+                bar = "▰" * filled + "▱" * (cells - filled)
+                assert strips[-1].text == f"╰─ {activity.upper()} {bar} ─╯"
 
 
 async def test_card_activity_colors_update_from_current_counts():
@@ -317,11 +328,11 @@ async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
     async with RackApp().run_test(size=size) as pilot:
         card = pilot.app.query_one('#surfboard-card-protocol', SurfboardCard)
         for values, expected in [
-            ((33279, 5873, 3786), ['33k IMD', '6k IMD', '4k IMD']),
-            ((1234567, 0, 12.8), ['1M IMD', '0 IMD', '13 IMD']),
-            ((999999, 999999, 999999999), ['1M IMD', '1M IMD', '1B IMD']),
-            ((None, 5873, float('nan')), ['— IMD', '6k IMD', '— IMD']),
-            ((None, None, None), ['— IMD', '— IMD', '— IMD']),
+            ((33279, 5873, 3786), ['33k', '6k', '4k']),
+            ((1234567, 0, 12.8), ['1M', '0', '13']),
+            ((999999, 999999, 999999999), ['1M', '1M', '1B']),
+            ((None, 5873, float('nan')), ['—', '6k', '—']),
+            ((None, None, None), ['—', '—', '—']),
         ]:
             data = dict(zip(('pool4_total_burned', 'pool4_total_rewarded', 'pool4_total_fee_token'), values))
             row = next(row for row in cards(data, {}, now=100) if row['key'] == 'protocol')
@@ -332,12 +343,16 @@ async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
             assert strips[top].text[left+1:right].strip('─ ') == 'STATS'
-            for strip, name, value in zip(strips[top+1:top+4], ('burned:', 'rewarded:', 'fees:'), expected):
+            unit_columns, label_columns = set(), set()
+            for strip, name, value in zip(strips[top+1:top+4], ('burned', 'rewarded', 'fees'), expected):
                 line = strip.text[left+1:right]
-                assert line.startswith(' ' + name)
-                assert line.endswith(value + ' ')
-                assert not line[1+len(name):-1-len(value)].strip()
-                assert '★' not in line
+                assert line.split() == [value, 'IMD', name]
+                assert line.startswith(' ' + value) and line.endswith(' ')
+                assert not line[line.index(name)+len(name):].strip()
+                unit_columns.add(line.index('IMD'))
+                label_columns.add(line.index(name))
+                assert '★' not in line and ':' not in line
+            assert len(unit_columns) == len(label_columns) == 1
             assert strips[top+4].text[left+1:right].strip('─ ') == '0.47%'
             assert 'BURN' in strips[-1].text
             assert '‹ widen' not in str(card.border_title)
@@ -359,7 +374,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
         for label in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
-                      "PROTOCOL", "PORTFOLIO", "EARNINGS", "TOKENS", "BAY 11", "BAY 12"):
+                      "PROTOCOL", "PORTFOLIO", "EARNINGS", "LAUNCHES", "BAY 11", "BAY 12"):
             assert label in text
 
 
@@ -411,17 +426,18 @@ async def test_live_tokens_card_routes_while_planned_cards_explain_without_desti
 
 
 @pytest.mark.parametrize("numerator,denominator,expected", [
-    (0, 8, "PASS ▱▱▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "PASS ▰▰▰▰▰▰▱▱▱▱▱▱▱"),
-    (8, 8, "PASS ▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "PASS —"),
-    (None, 8, "PASS —"), (True, 8, "PASS —"), (9, 8, "PASS —"),
-    (-1, 8, "PASS —"), (float("inf"), 8, "PASS —"),
+    (0, 8, "IDLE ▱▱▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "IDLE ▰▰▰▰▰▰▱▱▱▱▱▱▱"),
+    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE —"),
+    (None, 8, "IDLE —"), (True, 8, "IDLE —"), (9, 8, "IDLE —"),
+    (-1, 8, "IDLE —"), (float("inf"), 8, "IDLE —"),
 ])
 async def test_ratio_meter_never_fakes_zero_or_clamps_invalid_data(numerator, denominator, expected):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         rack = pilot.app.query_one(SurfboardRack)
         rack.update_data(surfboard_cards=[dict(key="agent", status="active", primary="seat #420",
             secondary="no attempts" if denominator == 0 else "canonical", destination="agent",
-            meter_kind="ratio", numerator=numerator, denominator=denominator, detail="records · read 12:34")])
+            meter_kind="ratio", meter_state="idle", numerator=numerator, denominator=denominator,
+            detail="observed stop · read 12:34")])
         await pilot.pause()
         assert expected in painted(pilot.app)
 
@@ -452,7 +468,7 @@ async def test_swarm_outer_footer_stretches_history_on_resize_and_keeps_unknown_
         await pilot.pause()
         card = app.hub.query_one("#surfboard-card-swarm", SurfboardCard)
         for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
-                             (140, "▁▁▂▃▃▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
+                             (140, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
@@ -469,18 +485,20 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
     from tests.screens.test_surfboard_layout import HubHarness
     from tests.surfboard_fixtures import hub_payload
 
-    labels = {"swarm-tokens": "TOKENS", "pool4": "STAKE", "protocol": "BURN", "board": "PASS",
-              "launchpad": "TRADE", "agent": "PASS", "portfolio": "ASSETS", "earnings": "EARN",
+    labels = {"protocol": "BURN", "board": "IDLE",
+              "launchpad": "TRADE", "agent": "IDLE", "portfolio": "ASSETS", "earnings": "EARN",
               "bay-11": "AUX", "bay-12": "AUX"}
-    placeholders = {"swarm-tokens", "portfolio", "earnings", "bay-11", "bay-12"}
+    placeholders = {"portfolio", "earnings", "bay-11", "bay-12"}
     payload = hub_payload()
     for data in payload["surfboard_cards"]:
         if data["key"] in labels:
             data.update(numerator=1, denominator=2)
+            if data["key"] in ("agent", "board"):
+                data["meter_state"] = "idle"
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        for width in (149, 180, 140, 149):
+        for width in (149, 180, 144, 149):
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             strips = app.hub._compositor.render_strips()
@@ -542,8 +560,8 @@ async def test_tokens_card_latest_rows_and_news_border_refresh(size):
                 expected_ink = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor() if icon == '✔'
                                 else pilot.app.ansi_theme.ansi_colors[3] if icon == '⚠' else card.rich_style.color.get_truecolor())
                 assert marker.style.color.get_truecolor() == expected_ink
-            assert footer in strips[top+4].text
-            bottom = next(s for s in strips[top+4] if footer in s.text)
+            assert strips[top+4].text.strip('│└┘─ ') == (footer if status == 'active' else '')
+            bottom = next(s for s in strips[top+4] if '└' in s.text)
             assert not bottom.style.bold and bottom.style.color.get_truecolor() == expected
 
 

@@ -49,7 +49,7 @@ class SwarmTokensMarketClient(OwnedHttpClient):
     async def _get(self, url, *, params=None, gecko=False):
         try:
             if gecko:
-                # Shared by history and trades: below the public 30/min limit.
+                # Shared by prices, volume and trades: below public 30/min.
                 async with self._gecko_lock:
                     if self._last_gecko is not None:
                         await self._sleep(max(0, 2.1 - (self._clock() - self._last_gecko)))
@@ -138,6 +138,38 @@ class SwarmTokensMarketClient(OwnedHttpClient):
                     return {'state': 'unavailable'}
                 points[stamp] = close
         return {'state': 'ok', 'sparkline': [points.get(t) for t in timestamps], 'timestamps': timestamps}
+
+    async def fetch_volume_history(self, token):
+        """Observed USD volumes of the last 24 completed hourly candles.
+
+        Kept separate from prices: empty-interval filling carries the previous
+        close forward and must not change the existing observed-price gaps.
+        """
+        now = self._clock()
+        body, state = await self._pool(token, 'ohlcv/hour', {
+            'aggregate': 1, 'currency': 'usd', 'token': 'base', 'limit': 25,
+            'before_timestamp': int(now), 'include_empty_intervals': 'true'})
+        if not isinstance(body, dict):
+            return {'state': state}
+        meta = _mapping(body.get('meta'))
+        members = {_hex(_mapping(meta.get(side)).get('address')) for side in ('base', 'quote')}
+        rows = _mapping(_mapping(body.get('data')).get('attributes')).get('ohlcv_list')
+        if _hex(token['token_address']) not in members or not isinstance(rows, list):
+            return {'state': 'unavailable'}
+        end = int(now // 3600) * 3600
+        timestamps = list(range(end - 86400, end, 3600))
+        points = {}
+        for row in rows:
+            if not isinstance(row, list) or len(row) < 6:
+                return {'state': 'unavailable'}
+            stamp, volume = _number(row[0]), _number(row[5])
+            if stamp is None or stamp % 3600:
+                return {'state': 'unavailable'}
+            if stamp in timestamps:
+                # Conflict/invalid volume poisons only this hour, permanently.
+                points[stamp] = None if stamp in points and points[stamp] != volume else volume
+        return {'state': 'ok', 'volume_usd': [points.get(t) for t in timestamps],
+                'timestamps': timestamps}
 
     async def fetch_trades(self, token):
         body, state = await self._pool(token, 'trades')

@@ -193,9 +193,11 @@ SLOT_SWARM_ORACLE_INDEX = "swarm_oracle_index"  # complete request history, neve
 SLOT_SWARM_ORACLE = "swarm_oracle"  # job UUID -> hash -> extracted panel facts
 SLOT_SWARM_JOB_DETAIL = "swarm_job_detail"  # job UUID -> bounded popup job facts
 SLOT_SWARM_ANSWERS = "swarm_answers"  # job UUID -> submission hash -> extracted answer entry
+SLOT_SURFBOARD_ACTIVITY = "surfboard_activity"  # observed worker transitions and independent read clocks
 
 SLOTS: tuple[str, ...] = (
     "surfboard_overview", "surfboard_records", "surfboard_hourly", "surfboard_supply",
+    SLOT_SURFBOARD_ACTIVITY,
     SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS,
     SLOT_CHAIN,
     SLOT_CHANNEL,
@@ -629,7 +631,7 @@ class SurfCache:
         """Timestamp of the freshest successful read across every slot."""
         stamps = []
         for slot, entry in self.last_good.items():
-            if slot in ("surfboard_overview", "surfboard_records", "surfboard_hourly", "surfboard_supply"):
+            if slot in ("surfboard_overview", "surfboard_records", "surfboard_hourly", "surfboard_supply", SLOT_SURFBOARD_ACTIVITY):
                 stamp = entry.payload.get("read_ts") if isinstance(entry.payload, dict) else None
                 if type(stamp) in (int, float) and math.isfinite(stamp):
                     stamps.append(stamp)
@@ -1258,7 +1260,7 @@ class SurfCache:
                             "read_ts": entry.ts,
                         }}}, ts=entry.ts)
                         self._dirty = True
-                    if slot in ("surfboard_overview", "surfboard_records", "surfboard_hourly", "surfboard_supply", SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS, SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS):
+                    if slot in ("surfboard_overview", "surfboard_records", "surfboard_hourly", "surfboard_supply", SLOT_SURFBOARD_ACTIVITY, SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS, SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:
@@ -1437,6 +1439,7 @@ __all__ = [
     "SERIES_POOL4_RESERVE_SEPOLIA",
     "SLOTS",
     "SLOT_ACTIVITY",
+    "SLOT_SURFBOARD_ACTIVITY",
     "SLOT_CHAIN",
     "SLOT_CHANNEL",
     "SLOT_LAUNCHPAD",
