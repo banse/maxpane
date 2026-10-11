@@ -148,6 +148,9 @@ def meter_text(card: dict, width: int | None = None) -> Text:
             return out.append("▰" * cells, style=GREEN)
         if state != "idle":
             return out.append("—", style=AMBER)
+        if numerator is None and card.get("meter_kind") == "activity":
+            # Keep the track visible before the first observed work-to-idle transition.
+            return out.append("▱" * cells, style=MUTED)
     if not _number(numerator) or not _number(denominator) or denominator == 0 or numerator > denominator:
         return out.append("—", style=AMBER)
     full = int(numerator * cells / denominator)

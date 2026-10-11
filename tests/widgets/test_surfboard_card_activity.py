@@ -15,7 +15,7 @@ async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
         card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
         for state, remaining, label, ratio, color in [
             ('busy', 86400, 'BUSY', 1, 3), ('idle', 43200, 'IDLE', .5, 2),
-            ('idle', 0, 'IDLE', 0, 2), ('idle', None, 'IDLE', None, 2),
+            ('idle', 0, 'IDLE', 0, 2), ('idle', None, 'IDLE', 0, 2),
             ('stale', None, '—', None, 3), ('unavailable', None, '—', None, 3),
         ]:
             card.set_data(dict(primary='420', secondary='0 of 3 slots', status='active',
@@ -31,6 +31,9 @@ async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
             else:
                 cells = footer.text.count('▰') + footer.text.count('▱')
                 assert cells > 0 and footer.text.count('▰') == int(cells * ratio)
+                if remaining is None:
+                    assert card.data['numerator'] is None
+                    assert footer.text == '╰─ IDLE ' + '▱' * (card.region.width - 11) + ' ─╯'
 
 
 @pytest.mark.parametrize('key', ['announce', 'swarm-tokens'])
