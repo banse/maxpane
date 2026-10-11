@@ -25,6 +25,11 @@ def hub_payload(kind="normal"):
                           meter_kind="sparkline" if key == "swarm" else "ratio",
                           numerator=numerator, denominator=denominator,
                           points=[1, 2, 3, 4, 3, 2, 1, 8] if key == "swarm" else None))
+    cards[-1]['latest_launches'] = [
+        dict(age_s=7200, symbol='SFPT', chain='eth', lp_state='two-sided', liquidity_state='ok', paired_symbol='ETH'),
+        dict(age_s=14400, symbol='RAI', chain='rh', lp_state='one-token', liquidity_state='ok', paired_symbol='IMD'),
+        dict(age_s=18000, symbol='TDEMO', chain='eth', lp_state='unknown', liquidity_state='unknown', paired_symbol=None),
+    ]
     for key, title in (("portfolio", "PORTFOLIO"), ("earnings", "EARNINGS")):
         cards.append(dict(key=key, title=title, destination=None, status="planned",
                           primary="coming soon", secondary="future dashboard", detail="planned / coming soon",
@@ -69,6 +74,7 @@ def hub_payload(kind="normal"):
             card.update(status="unavailable", primary="unavailable",
                         secondary={"pool4":"USD", "protocol":"unavailable"}.get(card["key"], "unavailable"),
                         numerator=None, denominator=None, points=None)
+            card['latest_launches'] = None
         overview, events = None, None
         footer.update(market_value_usd=None, market_basis=None, market_state="unavailable",
                       market_read_ts=None, inference_tokens=None, overview_state="unavailable",

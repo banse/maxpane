@@ -1470,7 +1470,9 @@ SURFBOARD_WIDGET_SIGNATURES = {
     "SurfboardTerminal": ("surfboard_overview", "surfboard_events", "surfboard_sources", "surfboard_footer"),
 }
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
-                        "destination", "meter_kind", "numerator", "denominator", "points")
+                        "destination", "meter_kind", "numerator", "denominator", "points", "latest_launches")
+# latest_launches: None (unknown), [] (empty), or up to three rows with age_s,
+# symbol, chain, lp_state, liquidity_state and paired_symbol; other cards use None.
 SWARM_SEAT_OUTCOME_FIELDS = ("token_id", "listed", "attempts", "accepted", "rejected",
                            "failed", "pending", "accept_rate", "rank", "ranked_of")
 # Sources are keyed overview/records/hourly/supply. state is ok/stale/unavailable;

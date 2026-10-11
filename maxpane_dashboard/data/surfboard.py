@@ -511,9 +511,10 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     events = data.get("swarm_launch_fired")
     new = len(recent_launch_news(events, now=now)) if isinstance(events, list) else None
     card("swarm-tokens", "LAUNCHES", primary, f"{new:,} new" if new is not None else "unavailable",
-         f"TOKENS · production-chain markets · catalogue {catalogue_state} · read {hhmm(catalogue.get('as_of'))}"
+         f"TOKENS · {primary} tokens · production-chain markets · catalogue {catalogue_state} · read {hhmm(catalogue.get('as_of'))}"
          f" · launch news 1h · evaluated {hhmm(now)}", "swarm-tokens")
     result[-1]["status"] = "active" if new else "idle"
+    result[-1]["latest_launches"] = catalogue.get("latest_launches")
     for key,title in (("portfolio","PORTFOLIO"),("earnings","EARNINGS")):
         row=dict.fromkeys(SURFBOARD_CARD_FIELDS);row.update(key=key,title=title,status="planned",primary="planned",secondary="coming soon",detail=f"{title} · planned dashboard")
         result.append(row)

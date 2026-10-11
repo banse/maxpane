@@ -331,15 +331,26 @@ async def test_tokens_card_shares_retained_catalogue_and_ages_news_without_full_
         assert next(c for c in first['surfboard_cards'] if c['key']=='swarm-tokens')['primary'] == 'unavailable'
         adapter = m.swarm_tokens_manager()
         await adapter.wait_pending()
+        from maxpane_dashboard.data.surf_swarm import launch_rows
+        from tests.data.test_swarm_tokens_live import rows
+        cached = launch_rows(rows())
+        cached[0].update(ticker='SFPT', token_address=next(
+            a['address'] for a in cached[0]['artifacts'] if a['role'] == 'token'),
+            liquidity=dict(state='info', read_ts=1000, token_amount=100, paired_amount=1, paired_symbol='ETH'))
+        m._swarm_launch_keys = lambda: dict(swarm_launch_rows=cached)
         second = await m.fetch_hub_snapshot()
         card = next(c for c in second['surfboard_cards'] if c['key']=='swarm-tokens')
         assert (card['primary'], card['secondary'], card['status']) == ('3', '1 new', 'active')
         assert adapter is m.swarm_tokens_manager()
         assert set(adapter._tasks) == {'catalogue'}
+        assert len(card['latest_launches']) == 3
+        assert card['latest_launches'][0]['symbol'] == 'SFPT'
+        assert card['latest_launches'][0]['lp_state'] == 'two-sided'
         clock.now = 4600
         card = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
         assert (card['primary'], card['secondary'], card['status']) == ('3', '0 new', 'idle')
         assert 'catalogue stale' in card['detail']
+        assert card['latest_launches'][0]['lp_state'] == 'unknown'
     finally:
         await m.close()
     assert adapter._closed

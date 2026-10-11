@@ -482,21 +482,86 @@ async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads(
     now = [1000.]
     manager = SwarmTokensManager(Source(), client=Pages(), market=Market(), clock=lambda: now[0])
     try:
-        assert manager.catalogue_summary() == {'count': None, 'state': 'unavailable', 'as_of': None}
+        assert manager.catalogue_summary() == {'count': None, 'state': 'unavailable', 'as_of': None, 'latest_launches': None}
         manager.offer_catalogue()
         manager.offer_catalogue()
         await manager.wait_pending()
         summary = manager.catalogue_summary()
-        assert summary == {'count': 3, 'state': 'ok', 'as_of': 1000.}
+        assert {key: summary[key] for key in ('count', 'state', 'as_of')} == {'count': 3, 'state': 'ok', 'as_of': 1000.}
+        assert len(summary['latest_launches']) == 3
+        assert all(row['age_s'] is None for row in summary['latest_launches'])  # future fixture dates
         assert set(manager._tasks) == {'catalogue'}
         assert manager.client.calls == [None]
         dashboard = await manager.fetch_and_compute()
         assert summary['count'] == len(dashboard['tokens'])
         assert summary['state'] == dashboard['sources']['catalogue']['state']
         now[0] += 301
-        assert manager.catalogue_summary() == {'count': 3, 'state': 'stale', 'as_of': 1000.}
+        assert manager.catalogue_summary() == dict(summary, state='stale')
         manager._complete = False
         assert manager.catalogue_summary()['state'] == 'partial'
+    finally:
+        await manager.close()
+
+
+async def test_hub_latest_launches_reuse_cached_liquidity_identity_and_freshness():
+    shared = launch_rows(rows())
+    now = [max(row['created_ts'] for row in shared) + 7200]
+    for index, row in enumerate(shared[:3]):
+        row.update(token_address=next(a['address'] for a in row['artifacts'] if a['role'] == 'token'),
+                   ticker=('SFPT', 'RAI', 'TDEMO')[index], liquidity=dict(
+            state='info', read_ts=now[0], paired_symbol='IMD' if index == 1 else 'ETH',
+            paired_amount=0 if index == 2 else 12, token_amount=100))
+    source = Source(shared)
+    manager = SwarmTokensManager(source, client=Pages(), market=Market(), clock=lambda: now[0])
+    try:
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        latest = manager.catalogue_summary(source.data)['latest_launches']
+        assert [r['symbol'] for r in latest] == ['SFPT', 'RAI', 'TDEMO']
+        assert [r['lp_state'] for r in latest] == ['two-sided', 'two-sided', 'one-token']
+        assert [r['chain'] for r in latest] == ['eth', 'eth', 'rh']
+        assert latest[0]['age_s'] == 7200
+        assert all(r['liquidity_state'] == 'ok' for r in latest)
+        assert set(manager._tasks) == {'catalogue'} and source.catalogues == []
+        latest[0]['symbol'] = 'mutated'
+        assert manager.catalogue_summary(source.data)['latest_launches'][0]['symbol'] == 'SFPT'
+        now[0] += 600
+        assert manager.catalogue_summary(source.data)['latest_launches'][0]['lp_state'] == 'two-sided'
+        now[0] += 1
+        stale = manager.catalogue_summary(source.data)['latest_launches']
+        assert all(r['lp_state'] == 'unknown' and r['liquidity_state'] == 'stale' for r in stale)
+        for row in shared[:3]:
+            row['liquidity']['read_ts'] = now[0]
+        shared[0]['updated_ts'] += 1  # evidence belongs to an older launch revision
+        shared[1]['liquidity']['lock'] = 'withdrawn'
+        shared[2]['liquidity'].update(token_amount=0, paired_amount=12)
+        states = manager.catalogue_summary(source.data)['latest_launches']
+        assert [r['lp_state'] for r in states] == ['unknown', 'withdrawn', 'one-quote']
+    finally:
+        await manager.close()
+
+
+async def test_hub_latest_launches_sort_deduplicate_and_distinguish_empty():
+    raw = rows()
+    # An alias shares a deployment; newest timestamp wins across deployments,
+    # even when launch numbers disagree. Unsupported/parked rows stay excluded.
+    raw[2]['createdAt'] = '2026-10-10T00:00:00Z'
+    alias = dict(deepcopy(raw[0]), id='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa', launchNumber=1300)
+    raw.insert(0, alias)
+    older = dict(deepcopy(raw[1]), id='bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb',
+                 launchNumber=1100, createdAt='2026-10-01T00:00:00Z')
+    next(a for a in older['artifacts'] if a['role'] == 'token')['address'] = '0x' + 'f' * 40
+    raw.insert(4, older)
+    manager = SwarmTokensManager(Source(), client=Pages(raw), market=Market(), clock=lambda: 1791676800.)
+    try:
+        assert manager.catalogue_summary()['latest_launches'] is None
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        latest = manager.catalogue_summary()['latest_launches']
+        assert len(latest) == 3 and manager.catalogue_summary()['count'] == 4
+        assert [r['symbol'] for r in latest] == ['SPEPEToken', 'SwarmCoreToken', 'MonkeyToken']
+        manager._catalogue = []
+        assert manager.catalogue_summary()['latest_launches'] == []
     finally:
         await manager.close()
 

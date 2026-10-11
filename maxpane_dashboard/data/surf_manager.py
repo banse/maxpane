@@ -7198,7 +7198,8 @@ class SurfManager:
                                                  announce_read_ts=getattr(channel_entry, "ts", None),
                                                  announce_items=channel.get("items"),
                                                  family_sources=family_sources,
-                                                 tokens_catalogue=(self._swarm_tokens_manager.catalogue_summary()
+                                                 tokens_catalogue=(self._swarm_tokens_manager.catalogue_summary(
+                                                     {'rows': data.get('swarm_launch_rows')})
                                                      if getattr(self, '_swarm_tokens_manager', None) is not None else None))
         return data
 

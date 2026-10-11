@@ -9,6 +9,7 @@ import math
 import time
 
 from maxpane_dashboard.analytics.surf_launch_checks import ZERO, address
+from maxpane_dashboard.analytics.swarm_tokens import select_tokens
 from maxpane_dashboard.data.surf_swarm import launch_rows
 from maxpane_dashboard.data.swarm_tokens_client import SwarmTokensClient
 from maxpane_dashboard.data.swarm_tokens_models import TOKEN_KEYS
@@ -267,13 +268,22 @@ class SwarmTokensManager:
                           reasons=reasons)
         return result
 
-    def catalogue_summary(self):
+    def catalogue_summary(self, source=None):
         """Pure cached projection using the dashboard's exact token population."""
         now = self._clock()
-        tokens = self._tokens({}, now)
-        source = self._catalogue_source(tokens, {}, now)
+        source = source or {}
+        tokens = self._tokens(source, now)
+        catalogue = self._catalogue_source(tokens, source, now)
+        latest = None
+        if tokens is not None:
+            latest = []
+            for token in select_tokens(tokens, sort='newest')[:3]:
+                launched = token['launched_at']
+                latest.append(dict(age_s=now-launched if launched is not None and launched <= now else None,
+                                   **{key: token[key] for key in ('symbol', 'chain', 'lp_state',
+                                                                'liquidity_state', 'paired_symbol')}))
         return {'count': len(tokens) if tokens is not None else None,
-                'state': source['state'], 'as_of': source['as_of']}
+                'state': catalogue['state'], 'as_of': catalogue['as_of'], 'latest_launches': latest}
 
     def _offer_enrichment(self, tokens, now):
         for name, ttl, limit in (('markets', self.MARKET_TTL, self.MARKET_BATCH),

@@ -311,7 +311,13 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
     assert not r["horizontal"] and not r["clipped"] and r["status_whole"], r
     assert all(value >= 7 for value in r["heights"].values()), r
     if height >= SURFBOARD_FULL_LAYOUT_ROWS:
-        for card in payload["surfboard_cards"][:7]:
+        for card in payload["surfboard_cards"][:8]:
+            if card["key"] == "swarm-tokens":
+                text = r["card_text"]["swarm-tokens"]
+                assert "LATEST" in text and card["secondary"] in text
+                expected = ('unavailable',) if kind == 'unavailable' else ('SFPT', 'RAI', 'TDEMO', '✔', '⚠')
+                assert all(word in text for word in expected), r
+                continue
             if card["key"] == "announce":
                 text=r["card_text"]["announce"]
                 assert " LATEST " in text

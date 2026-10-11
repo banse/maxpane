@@ -11,6 +11,8 @@ from textual.message import Message
 from textual.renderables.digits import Digits
 
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
+from maxpane_dashboard.widgets.explorer import for_network
+from maxpane_dashboard.widgets.fmt import fmt_age
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
@@ -75,6 +77,30 @@ def _number(value):
         return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= 0
     except OverflowError:
         return False
+
+
+def _launch_preview(latest, width, style, green):
+    """Three aligned launch rows; only independently verified LP marks get color."""
+    lines = [(Text('', style=style), False) for _ in range(3)]
+    if not latest:
+        lines[1] = fit_prose('unavailable' if latest is None else 'no launches', width, style=style)
+        return lines
+    for index, row in enumerate(latest[:3]):
+        state = row.get('lp_state') if row.get('liquidity_state') == 'ok' else 'unknown'
+        marker, ink = '—', style
+        if state in ('one-token', 'one-quote'):
+            marker, ink = '⚠', Style.parse(AMBER)
+        elif state == 'two-sided' and flatten(row.get('paired_symbol')).upper() in ('ETH', 'IMD'):
+            marker, ink = '✔', Style.parse(green)
+        age = fmt_age(row.get('age_s')) if _number(row.get('age_s')) else '—'
+        chain = flatten(row.get('chain')).upper() or '—'
+        symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-11), style=style,
+                                 explorer=for_network('MAINNET' if chain == 'ETH' else chain))
+        symbol.align('left', max(0, width-11))
+        line = Text(style=style).append(marker, style=ink).append(' ' + clip(age, 3).ljust(3) + ' ')
+        line.append_text(symbol).append(' ' + clip(chain, 4).ljust(4))
+        lines[index] = line, lost or cell_len(age) > 3 or cell_len(chain) > 4
+    return lines
 
 
 def meter_text(card: dict, width: int | None = None) -> Text:
@@ -205,16 +231,15 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "agent", "board", "launchpad", "protocol", "swarm-tokens", "pool4"):
+        if self.key in ("swarm", "agent", "board", "launchpad", "protocol", "pool4"):
             label = {"swarm": " AGENTS ", "agent": " SEAT ",
                      "board": " TOP AGENT ", "launchpad": " COINS ",
-                     "protocol": " IMD BURNED ", "pool4": " IMD PRICE ",
-                     "swarm-tokens": " TOKENS "}[self.key]
+                     "protocol": " IMD BURNED ", "pool4": " IMD PRICE "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
             if self.key == "pool4":
                 digits = digits.replace(".", "", 1)
-            readout = count if self.key in ("protocol", "swarm-tokens", "pool4") else digits
+            readout = count if self.key in ("protocol", "pool4") else digits
             # Use the same native 3x3 renderer as Textual's Digits widget.
             native_digits = digits.isascii() and digits.isdecimal() and Digits.get_width(readout) <= inside
             if native_digits:
@@ -226,7 +251,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.key == "announce":
             label = " LATEST "
             ink = self.rich_style.color if status == "active" else self.parent.query_one(".empty").rich_style.color
-            preview = _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))
+            preview = [(line, False) for line in _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))]
+        elif self.key == "swarm-tokens":
+            label = " LATEST "
+            preview = _launch_preview(self.data.get("latest_launches"), inside,
+                                      Style(color=self.rich_style.color, bgcolor=palette["background"]), palette["accent"])
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
@@ -250,7 +279,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             style = Style(
                 color=self.rich_style.color, bgcolor=palette["background"],
                 bold=bold, dim=muted)
-            line, lost = ((preview[index], False) if preview is not None else
+            line, lost = (preview[index] if preview is not None else
                           (Text(raw, style=style), False) if native_digits else fit_prose(raw, inside, style=style))
             clipped |= lost
             line.align("left" if preview is not None else "center", inside)

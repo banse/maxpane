@@ -17,7 +17,7 @@ def inset_border_color(strip):
 
 
 def neutral_inset_color(app):
-    earnings = app.query_one('#surfboard-card-earnings', SurfboardCard)
+    earnings = app.screen.query_one('#surfboard-card-earnings', SurfboardCard)
     return next(segment.style.color.get_truecolor()
                 for strip in app.screen._compositor.render_strips()[earnings.region.y:earnings.region.bottom]
                 for segment in strip.crop(earnings.region.x, earnings.region.right) if '┌' in segment.text)
@@ -482,23 +482,87 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
 
 
 @pytest.mark.parametrize('size', [(149, 45), (140, 36)])
-async def test_tokens_card_launch_digits_and_news_border_refresh(size):
-    async with RackApp().run_test(size=size) as pilot:
-        card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
+async def test_tokens_card_latest_rows_and_news_border_refresh(size):
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import hub_payload
+    payload = hub_payload()
+    data = next(c for c in payload['surfboard_cards'] if c['key'] == 'swarm-tokens')
+    async with HubHarness(payload).run_test(size=size) as pilot:
+        await pilot.pause()
+        card = pilot.app.hub.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
         for status, footer in [('active', '2 new'), ('idle', '0 new')]:
-            card.set_data(dict(status=status, primary='116', secondary=footer, destination='swarm-tokens'))
+            card.set_data(dict(data, status=status, secondary=footer))
             await pilot.pause()
             strips = [strip.crop(card.region.x, card.region.right) for strip in
                       pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
             assert '⊙ LAUNCHES' in '\n'.join(s.text for s in strips)
             assert 'SWARM TOKENS' not in '\n'.join(s.text for s in strips)
-            header = next(s for s in strips[top] if 'TOKENS' in s.text)
+            header = next(s for s in strips[top] if 'LATEST' in s.text)
             expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
                         if status == 'active' else neutral_inset_color(pilot.app))
             assert not header.style.bold and header.style.color == inset_border_color(strips[top])
-            for strip, digits in zip(strips[top+1:top+4], ['╶╮ ╶╮ ╭─╴', ' │  │ ├─╮', '╶┴╴╶┴╴╰─╯']):
-                assert digits in strip.text
+            for strip, words, icon in zip(strips[top+1:top+4],
+                    [('2h', 'SFPT', 'ETH'), ('4h', 'RAI', 'RH'), ('5h', 'TDEMO', 'ETH')], ['✔', '⚠', '—']):
+                assert strip.text.strip('│ ').split() == [icon, *words]
+                for segment in strip:
+                    if any(word in segment.text for word in words):
+                        assert segment.style.color == card.rich_style.color
+                        assert not segment.style.dim
+                marker = next(s for s in strip if icon in s.text)
+                expected_ink = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor() if icon == '✔'
+                                else pilot.app.ansi_theme.ansi_colors[3] if icon == '⚠' else card.rich_style.color.get_truecolor())
+                assert marker.style.color.get_truecolor() == expected_ink
             assert footer in strips[top+4].text
             bottom = next(s for s in strips[top+4] if footer in s.text)
             assert not bottom.style.bold and bottom.style.color.get_truecolor() == expected
+
+
+async def test_latest_launch_marker_requires_fresh_matching_quote_and_two_sides():
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import hub_payload
+    async with HubHarness(hub_payload()).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        card = pilot.app.hub.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
+        for lp, freshness, quote, icon in [
+            ('two-sided', 'ok', 'ETH', '✔'), ('two-sided', 'ok', 'IMD', '✔'),
+            ('two-sided', 'ok', 'USDC', '—'), ('two-sided', 'stale', 'ETH', '—'),
+            ('withdrawn', 'ok', 'ETH', '—'), ('unknown', 'ok', 'ETH', '—'),
+            ('one-token', 'ok', 'IMD', '⚠'), ('one-quote', 'ok', 'ETH', '⚠'),
+        ]:
+            card.set_data(dict(status='idle', secondary='0 new', latest_launches=[dict(
+                age_s=7200, symbol='SFPT', chain='eth', lp_state=lp, liquidity_state=freshness, paired_symbol=quote)]))
+            await pilot.pause()
+            strips = [s.crop(card.region.x, card.region.right) for s in
+                      pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+            row = next(s.text for s in strips if 'SFPT' in s.text)
+            assert row.strip('│ ').split() == [icon, '2h', 'SFPT', 'ETH']
+
+
+async def test_latest_launch_empty_short_and_hostile_rows_stay_fitted_on_resize():
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import hub_payload
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        card = app.hub.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
+        for width in (149, 180, 140, 149):
+            await pilot.resize_terminal(width, 45)
+            for latest, expected in [(None, 'unavailable'), ([], 'no launches'), ([dict(
+                age_s=None, symbol='[/x]\n界界界界界界\x1b\u202e', chain='base',
+                lp_state='unknown', liquidity_state='unknown')], 'BASE')]:
+                card.set_data(dict(status='idle', secondary='0 new', latest_launches=latest))
+                await pilot.pause()
+                strips = [s.crop(card.region.x, card.region.right) for s in
+                          app.hub._compositor.render_strips()[card.region.y:card.region.bottom]]
+                top = next(i for i, s in enumerate(strips) if '┌' in s.text)
+                left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
+                body = [s.crop(left+1, right).text.strip() for s in strips[top+1:top+4]]
+                assert sum(bool(row) for row in body) == 1
+                assert any(expected in row for row in body)
+                assert '\x1b' not in '\n'.join(body) and '\u202e' not in '\n'.join(body)
+                assert all(s.crop(right, right+1).text == '│' for s in strips[top+1:top+4])
+                assert ('‹' in str(card.border_title)) == bool(latest)
+                if latest:
+                    assert body[0].startswith('— —') and '…' in body[0]
+                    assert '[/' in body[0]  # literal markup survived safely

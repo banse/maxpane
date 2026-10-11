@@ -483,6 +483,16 @@ def test_tokens_card_preserves_unknown_partial_and_stale_catalogue(catalogue, pr
     assert (catalogue or {'state':'unavailable'})['state'] in row['detail']
 
 
+@pytest.mark.parametrize('latest', [None, [], [dict(age_s=7200, symbol='SFPT', chain='eth', lp_state='two-sided', liquidity_state='ok', paired_symbol='ETH')]])
+def test_tokens_card_carries_latest_rows_and_keeps_count_in_detail(latest):
+    cards = hub.cards({}, {}, now=10000, tokens_catalogue=dict(
+        count=116, state='ok', as_of=9900, latest_launches=latest))
+    row = next(r for r in cards if r['key'] == 'swarm-tokens')
+    assert row['latest_launches'] == latest
+    assert '116 tokens' in row['detail']
+    assert all(r['latest_launches'] is None for r in cards if r['key'] != 'swarm-tokens')
+
+
 @pytest.mark.parametrize('change,status', [(2.3,'active'),(-2.3,'idle'),(0,'idle'),
     (None,'unavailable'),(True,'unavailable'),(float('nan'),'unavailable'),(float('inf'),'unavailable')])
 def test_pool4_price_digits_follow_valid_24h_direction(change, status):
