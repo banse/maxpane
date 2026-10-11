@@ -384,6 +384,12 @@ class SurfboardRack(Grid):
         super().__init__(*args, **kwargs)
         self.focused_card = "announce"
 
+    def on_resize(self):
+        # Fractional tracks distribute spare lines unevenly between cards.
+        rows = self.styles.grid_size_rows
+        gaps = (rows - 1) * self.styles.grid_gutter_vertical
+        self.styles.grid_rows = (max(7, (self.content_size.height - gaps) // rows),)
+
     def compose(self):
         for index, slot in enumerate(SLOTS):
             yield SurfboardCard(*slot)

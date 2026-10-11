@@ -297,6 +297,26 @@ async def _render(payload, size):
                     widths={card.key: card.region.width for card in cards})
 
 
+@pytest.mark.parametrize("width", (140, 149))
+async def test_all_cards_keep_equal_whole_row_heights_when_resized(width):
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(width, 45)) as pilot:
+        for height in (45, 46, 47, 48, 35, 34, 55, 45):
+            await pilot.resize_terminal(width, height)
+            await pilot.pause()
+            cards = list(app.hub.query(SurfboardCard))
+            assert len({card.region.height for card in cards}) == 1
+            assert cards[0].region.height >= 7
+            rows = sorted({(card.region.y, card.region.bottom) for card in cards})
+            assert len(rows) == 4
+            assert all(start - end == 1 for (_, end), (start, _) in zip(rows, rows[1:]))
+            terminal = app.hub.query_one(SurfboardTerminal)
+            assert terminal.region.y == rows[1][0]
+            assert terminal.region.bottom == rows[-1][1]
+            footer = terminal.query_one("#surfboard-terminal-footer")
+            assert footer.region.bottom < terminal.region.bottom
+
+
 @pytest.mark.parametrize("kind", ("normal", "stress", "unavailable", "wide"))
 async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind):
     r = await _render(hub_payload(kind), (149, 45))
