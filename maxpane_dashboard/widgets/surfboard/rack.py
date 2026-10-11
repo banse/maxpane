@@ -221,7 +221,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         self.refresh()
 
     def _update_meter(self):
-        if self.key == "announce":
+        if self.key == "agent":
+            self.border_subtitle = Text()
+        elif self.key == "announce":
             # Textual reserves six cells for corners, border stubs and padding.
             self.border_subtitle = signal_meter_text(self.data, max(0, self.region.width - 6))
         else:
@@ -344,7 +346,13 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             clipped and self.key != "swarm-tokens", max(0, self.size.width - 4)))
         footer = Text("└" + clip(bottom, inside).center(inside, "─") + "┘",
                       style=border_inset + Style(bold=False))
-        return body.append_text(footer)
+        body.append_text(footer)
+        if self.key == "agent":
+            # Preserve the inset's centered position; its meter occupies the next row.
+            top = max(0, (self.content_size.height - 5) // 2)
+            meter = meter_text(self.data, max(0, width - 2), accent=palette["accent"])
+            return Text("\n" * top).append_text(body).append("\n ").append_text(meter).append(" ")
+        return body
 
     def on_focus(self):
         self.post_message(self.Focused(self))
@@ -365,11 +373,12 @@ class SurfboardRack(Grid):
     """Own fixed slots and terminal children; the screen dispatches to both."""
     DEFAULT_CSS = """
     SurfboardRack { layout: grid; grid-size: 6 4; grid-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
-        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 141; }
-    SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
+        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 35; min-width: 141; }
+    SurfboardRack > SurfboardCard { height: 1fr; min-height: 8; padding: 0 1;
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; border-subtitle-align: left; }
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
+    SurfboardRack > #surfboard-card-agent { content-align: center top; }
     SurfboardRack > #surfboard-card-protocol { padding: 0; }
     SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
@@ -388,7 +397,7 @@ class SurfboardRack(Grid):
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
-        card_height = max(7, (self.content_size.height - gaps) // rows)
+        card_height = max(8, (self.content_size.height - gaps) // rows)
         self.query(SurfboardCard).set_styles(height=card_height)
         # The terminal spans the last track and can use its leftover space.
         self.styles.grid_rows = (card_height,) * (rows - 1) + ("1fr",)

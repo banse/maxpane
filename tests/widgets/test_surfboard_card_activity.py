@@ -2,12 +2,31 @@
 import pytest
 from rich.color import Color
 from maxpane_dashboard.widgets.surfboard.rack import SurfboardCard
-from tests.widgets.test_surfboard_rack import RackApp
+from tests.widgets.test_surfboard_rack import RackApp, activity_strip
 
 
 def strips(app, card):
     return [line.crop(card.region.x, card.region.right) for line in
             app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+
+
+@pytest.mark.parametrize('state', ['idle', 'busy', 'offline', 'stale'])
+async def test_only_agent_places_activity_immediately_below_inset(state):
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        for key in ('agent', 'board'):
+            card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
+            card.set_data(dict(primary='420', secondary='0 of 3 slots',
+                status='working' if state == 'busy' else state,
+                meter_kind='activity', meter_state=state, numerator=43200, denominator=86400))
+        await pilot.pause()
+        agent = pilot.app.query_one('#surfboard-card-agent', SurfboardCard)
+        rows = strips(pilot.app, agent)
+        bottom = next(i for i, row in enumerate(rows) if '└' in row.text)
+        label = {'idle': 'IDLE', 'busy': 'BUSY', 'offline': 'OFF', 'stale': '—'}[state]
+        assert rows[bottom + 1].text.startswith('│  ' + label + ' ')
+        assert rows[-1].text == '╰' + '─' * (agent.region.width - 2) + '╯'
+        board = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
+        assert strips(pilot.app, board)[-1].text.startswith('╰─ ' + label + ' ')
 
 
 @pytest.mark.parametrize('key', ['agent', 'board'])
@@ -17,8 +36,8 @@ async def test_offline_footer_keeps_a_full_empty_track_and_red_off_label(key):
         card.set_data(dict(primary='420', secondary='0 of 3 slots', status='offline',
             meter_kind='activity', meter_state='offline', numerator=43200, denominator=86400))
         await pilot.pause()
-        footer = strips(pilot.app, card)[-1]
-        assert footer.text == '╰─ OFF ' + '▱' * (card.region.width - 10) + ' ─╯'
+        footer = activity_strip(pilot.app, card)
+        assert footer.text[3:-3] == 'OFF ' + '▱' * (card.region.width - 10)
         label = next(segment for segment in footer if 'OFF' in segment.text)
         assert label.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[1]
 
@@ -67,8 +86,8 @@ async def test_projected_activity_drains_orange_from_24_to_72_hours_and_resets(k
             cells = card.region.width - 11
             green = int(cells * green_fraction)
             orange = cells - green if hours < 24 else int(cells * orange_fraction)
-            footer = strips(pilot.app, card)[-1]
-            assert footer.text == '╰─ IDLE ' + '▰' * (green + orange) + '▱' * (cells - green - orange) + ' ─╯'
+            footer = activity_strip(pilot.app, card)
+            assert footer.text[3:-3] == 'IDLE ' + '▰' * (green + orange) + '▱' * (cells - green - orange)
             colors = [segment.style.color.get_truecolor() for segment in footer
                       for char in segment.text if char == '▰']
             assert colors == ([pilot.app.ansi_theme.ansi_colors[2]] * green
@@ -81,8 +100,8 @@ async def test_projected_activity_drains_orange_from_24_to_72_hours_and_resets(k
             history = hub.work_activity.observe(history, workers(count), now=now)
             card.set_data(next(c for c in hub.cards(data, {}, now=now, activity=history) if c['key'] == key))
             await pilot.pause()
-            footer = strips(pilot.app, card)[-1]
-            assert footer.text == f'╰─ {label} ' + '▰' * cells + ' ─╯'
+            footer = activity_strip(pilot.app, card)
+            assert footer.text[3:-3] == f'{label} ' + '▰' * cells
             assert all(s.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
                        for s in footer if '▰' in s.text)
 
@@ -100,9 +119,9 @@ async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
             card.set_data(dict(primary='420', secondary='0 of 3 slots', status='active',
                 meter_kind='activity', meter_state=state, numerator=remaining, denominator=86400))
             await pilot.pause()
-            footer = strips(pilot.app, card)[-1]
+            footer = activity_strip(pilot.app, card)
             assert 'PASS' not in footer.text
-            assert footer.text.startswith('╰─ ' + label + ' ')
+            assert footer.text[3:].startswith(label + ' ')
             ink = next(segment.style.color.get_truecolor() for segment in footer if label in segment.text)
             expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
                         if state == 'idle' else pilot.app.ansi_theme.ansi_colors[color])
@@ -111,7 +130,7 @@ async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
                 assert '▰' not in footer.text and '▱' not in footer.text
             else:
                 cells = card.region.width - 11
-                assert footer.text == '╰─ ' + label + ' ' + '▰' * cells + ' ─╯'
+                assert footer.text[3:-3] == label + ' ' + '▰' * cells
                 colors = [segment.style.color.get_truecolor() for segment in footer
                           for char in segment.text if char == '▰']
                 green = int(cells * ratio)
