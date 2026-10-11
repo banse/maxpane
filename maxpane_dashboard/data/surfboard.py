@@ -368,6 +368,18 @@ def _value(value: object, suffix: str = "") -> str:
     return f"{value:,.0f}{suffix}" if type(value) is int else f"{value:,.2f}{suffix}"
 
 
+def _protocol_stats(burn, reward, fee) -> str:
+    lines = []
+    for label, value in (("burned", burn), ("rewarded", reward), ("fees", fee)):
+        shown = "—"
+        if number(value) is not None:
+            scale, suffix = next(((scale, suffix) for scale, suffix in
+                                 ((1e9, "B"), (1e6, "M"), (1e3, "k")) if value >= scale), (1, ""))
+            shown = f"{value / scale:.0f}{suffix}"
+        lines.append(f"★ {label} {shown} IMD")
+    return "\n".join(lines)
+
+
 def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None) -> list[dict]:
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES, FIRED_TTL_S, _tx_hash
     result = []
@@ -463,7 +475,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     percent = ("<0.01%" if 0 < fraction < .0001 else f"{fraction:.2%}") if fraction is not None else None
     supply_state = supply_source.get("state", "unavailable")
     supply_text = ("~" if supply_state == "stale" else "") + percent + " of supply" if percent is not None else "unavailable"
-    card("protocol","PROTOCOL",_value(round(burn)) if number(burn) is not None else "unavailable", supply_text,
+    card("protocol","PROTOCOL",_protocol_stats(burn, reward, fee), supply_text,
          f"BURN · global supply {supply_state} · as of {hhmm(supply_source.get('read_ts'))}"
          f" · {_value(burn,' burned')} · {_value(reward,' rewarded')} · measured flow · EXPERIMENTAL"
          +f" · {data.get('pool4_network') or 'unknown network'} · as of {data.get('pool4_as_of_hhmm') or '—'}","pool4",burn,denominator)

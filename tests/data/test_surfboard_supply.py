@@ -59,7 +59,7 @@ def test_protocol_percentage_uses_global_supply_only(supply, expected):
     row = next(c for c in hub.cards(dict(pool4_total_burned=33279.30,
         pool4_total_supply=100000, pool4_network='MAINNET'), sources, now=1000) if c['key']=='protocol')
     assert row['secondary'] == expected
-    assert row['primary'] == '33,279'
+    assert row['primary'].splitlines()[0] == '★ burned 33k IMD'
 
 
 def test_protocol_supply_stale_unknown_and_testnet_do_not_look_current():

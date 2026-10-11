@@ -231,15 +231,15 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "agent", "board", "launchpad", "protocol", "pool4"):
+        if self.key in ("swarm", "agent", "board", "launchpad", "pool4"):
             label = {"swarm": " AGENTS ", "agent": " SEAT ",
                      "board": " TOP AGENT ", "launchpad": " COINS ",
-                     "protocol": " IMD BURNED ", "pool4": " IMD PRICE "}[self.key]
+                     "pool4": " IMD PRICE "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
             if self.key == "pool4":
                 digits = digits.replace(".", "", 1)
-            readout = count if self.key in ("protocol", "pool4") else digits
+            readout = count if self.key == "pool4" else digits
             # Use the same native 3x3 renderer as Textual's Digits widget.
             native_digits = digits.isascii() and digits.isdecimal() and Digits.get_width(readout) <= inside
             if native_digits:
@@ -248,7 +248,18 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             else:
                 rows = [("", False), (count, False), ("", False)]
         preview = None
-        if self.key == "announce":
+        if self.key == "protocol":
+            label = " STATS "
+            stats = str(self.data.get("primary") or "").splitlines()
+            if len(stats) != 3:
+                stats = [f"★ {name} — IMD" for name in ("burned", "rewarded", "fees")]
+            for index, line in enumerate(stats):
+                while cell_len(line) > inside and " " in line:
+                    line = line.replace(" ", "", 1)
+                stats[index] = line
+            preview = [fit_prose(line, inside, style=Style(color=self.rich_style.color,
+                       bgcolor=palette["background"])) for line in stats]
+        elif self.key == "announce":
             label = " LATEST "
             ink = self.rich_style.color if status == "active" else self.parent.query_one(".empty").rich_style.color
             preview = [(line, False) for line in _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))]

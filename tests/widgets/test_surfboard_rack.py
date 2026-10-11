@@ -288,14 +288,8 @@ async def test_card_activity_colors_update_from_current_counts():
 @pytest.mark.parametrize('key,primary,secondary,label,expected,green,footer_text',[
     ('pool4','8.77','USD','IMD PRICE',
      ['╭─╮ ╶─┐╶─┐','├─┤   │  │','╰─╯•  ╵  ╵'],True,'USD'),
-    ('protocol','33,279','0.47% of supply','IMD BURNED',
-     ['╶─╮╶─╮ ╶─╮╶─┐╭─╮',' ─┤ ─┤ ┌─┘  │╰─┤','╶─╯╶─╯,╰─╴  ╵╶─╯'],True,'0.47%'),
-    ('protocol','99,999','~1.41% of supply','IMD BURNED',
-     ['╭─╮╭─╮ ╭─╮╭─╮╭─╮','╰─┤╰─┤ ╰─┤╰─┤╰─┤','╶─╯╶─╯,╶─╯╶─╯╶─╯'],True,'~1.41%'),
-    ('protocol','123,456','1.74% of supply','IMD BURNED',['','123,456',''],True,'1.74%'),
-    ('protocol','1,234,567','17.40% of supply','IMD BURNED',['','1,234,567',''],True,'17.40%'),
 ])
-async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,label,expected,green,footer_text):
+async def test_pool4_digit_face(size,key,primary,secondary,label,expected,green,footer_text):
     async with RackApp().run_test(size=size) as pilot:
         card=pilot.app.query_one(f'#surfboard-card-{key}',SurfboardCard)
         card.set_data(dict(status='active',primary=primary,secondary=secondary))
@@ -314,6 +308,35 @@ async def test_announce_and_protocol_digit_faces(size,key,primary,secondary,labe
         footer=next(segment for segment in strips[top+4] if footer_text in segment.text)
         assert strips[top+4].text[left+1:right].strip('─ ')==footer_text
         assert not footer.style.bold and footer.style.color.get_truecolor()==ink
+
+
+@pytest.mark.parametrize('size', [(149,45), (140,36)])
+async def test_protocol_stats_show_three_compact_starred_lines(size):
+    from maxpane_dashboard.data.surfboard import cards
+
+    async with RackApp().run_test(size=size) as pilot:
+        card = pilot.app.query_one('#surfboard-card-protocol', SurfboardCard)
+        for values, expected in [
+            ((33279, 5873, 3786), ['★ burned 33k IMD', '★ rewarded 6k IMD', '★ fees 4k IMD']),
+            ((1234567, 0, 12.8), ['★ burned 1M IMD', '★ rewarded 0 IMD', '★ fees 13 IMD']),
+            ((None, 5873, float('nan')), ['★ burned — IMD', '★ rewarded 6k IMD', '★ fees — IMD']),
+            ((None, None, None), ['★ burned — IMD', '★ rewarded — IMD', '★ fees — IMD']),
+        ]:
+            data = dict(zip(('pool4_total_burned', 'pool4_total_rewarded', 'pool4_total_fee_token'), values))
+            row = next(row for row in cards(data, {}, now=100) if row['key'] == 'protocol')
+            card.set_data(dict(row, secondary='0.47% of supply'))
+            await pilot.pause()
+            strips = [strip.crop(card.region.x, card.region.right) for strip in
+                      pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+            top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
+            left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
+            assert strips[top].text[left+1:right].strip('─ ') == 'STATS'
+            if size[0] == 140:
+                expected = [line.replace('★ rewarded 6k', '★rewarded 6k') for line in expected]
+            assert [strip.text[left+1:right].rstrip() for strip in strips[top+1:top+4]] == expected
+            assert strips[top+4].text[left+1:right].strip('─ ') == '0.47%'
+            assert 'BURN' in strips[-1].text
+            assert '‹ widen' not in str(card.border_title)
 
 
 async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():

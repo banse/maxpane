@@ -159,11 +159,11 @@ def test_launchpad_face_count_and_new_launch_color(new,status):
 
 
 @pytest.mark.parametrize('burn,reward,primary,secondary', [
-    (33279.30, 5872.82, '33,279', 'unavailable'),
-    (0, 0, '0', 'unavailable'),
-    (12.8, 3.2, '13', 'unavailable'),
-    (None, None, 'unavailable', 'unavailable'),
-    (True, float('nan'), 'unavailable', 'unavailable'),
+    (33279.30, 5872.82, '★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 1 IMD', 'unavailable'),
+    (0, 0, '★ burned 0 IMD\n★ rewarded 0 IMD\n★ fees 1 IMD', 'unavailable'),
+    (12.8, 3.2, '★ burned 13 IMD\n★ rewarded 3 IMD\n★ fees 1 IMD', 'unavailable'),
+    (None, None, '★ burned — IMD\n★ rewarded — IMD\n★ fees 1 IMD', 'unavailable'),
+    (True, float('nan'), '★ burned — IMD\n★ rewarded — IMD\n★ fees 1 IMD', 'unavailable'),
 ])
 def test_protocol_card_rounds_readouts_but_keeps_exact_flow(burn, reward, primary, secondary):
     row=next(c for c in hub.cards(dict(pool4_total_burned=burn,
@@ -514,7 +514,8 @@ def test_protocol_color_uses_recent_burn_signal_then_current_readiness(state, ag
     row = next(c for c in hub.cards(dict(pool4_total_burned=33279.30,
         sig_burn_state=state, sig_burn_age_s=age, burn_ready=ready,
         sig_burnready_state='fired'), {}, now=100000) if c['key']=='protocol')
-    assert (row['primary'], row['secondary'], row['status']) == ('33,279', 'unavailable', expected)
+    assert (row['primary'], row['secondary'], row['status']) == (
+        '★ burned 33k IMD\n★ rewarded — IMD\n★ fees — IMD', 'unavailable', expected)
     assert row['destination'] == 'pool4'
 
 

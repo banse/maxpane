@@ -341,10 +341,8 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 continue
             if card["key"] == "protocol":
                 text = r["card_text"]["protocol"]
-                assert " IMD BURNED " in text, r
-                expected = ((card["primary"],) if kind in ("unavailable", "stress") else
-                    ("╶─╮╶─╮ ╶─╮╶─┐╭─╮", " ─┤ ─┤ ┌─┘  │╰─┤", "╶─╯╶─╯,╰─╴  ╵╶─╯"))
-                assert all(row in text for row in expected), r
+                assert " STATS " in text, r
+                assert all(label in text for label in ("★", "burned", "rewarded", "fees")), r
                 assert card["secondary"].removesuffix(" of supply") in text, r
                 continue
             if card["key"] == "pool4":

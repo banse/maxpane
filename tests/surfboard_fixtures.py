@@ -13,7 +13,7 @@ def hub_payload(kind="normal"):
         ("board", "LEADERBOARD", "board", "527", "4,176 accepted jobs", 3253, 3392),
         ("launchpad", "LAUNCHPAD", "launchpad", "208", "0 new", 0, 208),
         ("pool4", "POOL4", "pool4_user", "7.90", "USD", 350, 1000),
-        ("protocol", "PROTOCOL", "pool4", "33,279", "0.47% of supply", 60, 100),
+        ("protocol", "PROTOCOL", "pool4", "★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 4k IMD", "0.47% of supply", 60, 100),
         ("swarm-tokens", "LAUNCHES", "swarm-tokens", "116", "2 new", None, None),
     )
     cards = []
@@ -61,7 +61,7 @@ def hub_payload(kind="normal"):
         next(card for card in cards if card["key"] == "pool4").update(
             primary="999,999.99", secondary="USD")
         next(card for card in cards if card["key"] == "protocol").update(
-            primary="1,234,567", secondary="17.40% of supply")
+            primary="★ burned 1M IMD\n★ rewarded 100k IMD\n★ fees 10k IMD", secondary="17.40% of supply")
         next(card for card in cards if card["key"] == "swarm-tokens").update(
             primary="1,234,567", secondary="99,999 new")
         overview = dict(agents_online=99999, working_now=99999, jobs_24h=999999,
