@@ -521,6 +521,9 @@ class LaunchpadState:
     cursor: dict | None = None
     activity: tuple[LaunchpadEvent, ...] | None = None
     burnkeepers: tuple[Burnkeeper, ...] | None = None
+    #: Exact closed 15-minute ETH-wei buckets with independent read/head clocks.
+    #: None means the volume read failed; it never means a quiet trading window.
+    volume_2h: dict | None = None
 
 
 # ---------------------------------------------------------------------------

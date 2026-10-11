@@ -6,10 +6,9 @@ import math
 from rich.style import Style
 from rich.text import Text
 from textual.binding import Binding
-from textual.containers import Grid, VerticalScroll
+from textual.containers import Grid
 from textual.message import Message
 from textual.renderables.digits import Digits
-from textual.widgets import Static
 
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.explorer import for_network
@@ -35,7 +34,7 @@ SLOTS = (
     ("agent", "AGENT", 2, 0), ("bay-10", "BAY 10", 2, 5),
     ("bay-11", "BAY 11", 3, 0), ("bay-12", "BAY 12", 3, 5),
 )
-METER_LABELS = dict(swarm="24H", launchpad="TRADE", protocol="BURN",
+METER_LABELS = dict(swarm="24H", launchpad="2H", protocol="BURN",
                     **{"swarm-tokens": "24H", "portfolio": "ASSETS"})
 
 
@@ -121,17 +120,17 @@ def meter_text(card: dict, width: int | None = None, *, accent: str = GREEN) -> 
     if key in ("agent", "board"):
         label = {"busy": "BUSY", "idle": "IDLE", "offline": "OFF"}.get(state, "—")
         label_ink = accent if state == "idle" else RED if state == "offline" else AMBER
-    elif key == "swarm-tokens" and state in ("partial", "stale"):
-        label = "~24H"
+    elif key in ("swarm-tokens", "launchpad") and state in ("partial", "stale"):
+        label = "~" + label
         label_ink = AMBER
     out = Text().append(label + " ", style=label_ink)
     cells = 8 if width is None else max(0, width - cell_len(label) - 1)
     if key == "portfolio" or str(key).startswith("bay-"):
         return out.append("▱" * cells, style=MUTED)
-    if card.get("meter_kind") == "sparkline" or key == "swarm-tokens":
+    if card.get("meter_kind") == "sparkline" or key in ("swarm-tokens", "launchpad"):
         points = card.get("points")
         if (isinstance(points, list) and len(points) == 8
-                and (all(_number(point) for point in points) or key == "swarm-tokens"
+                and (all(_number(point) for point in points) or key in ("swarm-tokens", "launchpad")
                      and any(_number(point) for point in points)
                      and all(point is None or _number(point) for point in points))):
             known = [point for point in points if _number(point)]
@@ -140,7 +139,7 @@ def meter_text(card: dict, width: int | None = None, *, accent: str = GREEN) -> 
             if width is not None:
                 # Stretch each existing time bucket; do not invent more samples.
                 chart = "".join(chart[column * len(chart) // cells] for column in range(cells))
-            return out.append(chart, style=AMBER if key == "swarm-tokens" and state != "ok" else GREEN)
+            return out.append(chart, style=GREEN)
         return out.append("—", style=AMBER)
     numerator, denominator = card.get("numerator"), card.get("denominator")
     if key in ("agent", "board"):
@@ -288,14 +287,15 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if len(stats) != 3:
                 stats = [f"★ {name} — IMD" for name in ("burned", "rewarded", "fees")]
             fields = [flatten(line).removeprefix("★ ").split() for line in stats]
+            label_width = max((cell_len(row[0]) for row in fields if len(row) == 3), default=8)
             amount_width = max((cell_len(row[1]) for row in fields if len(row) == 3), default=1)
             preview = []
             for parts in fields:
                 name, amount, unit = parts if len(parts) == 3 else ("unavailable", "—", "IMD")
-                row = f"{amount.ljust(amount_width)} {unit} {name}"
+                row = f"{name.ljust(label_width)} {amount.ljust(amount_width)} {unit}"
                 available = max(0, inside - 2)
                 if cell_len(row) > available:
-                    row = f"{amount} {unit} {name}"
+                    row = f"{name} {amount} {unit}"
                 preview.append((Text(" " + clip(row, available) + " ", style=Style(
                     color=self.rich_style.color, bgcolor=palette["background"])), cell_len(row) > available))
         elif self.key == "announce":
@@ -311,6 +311,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if label and (start := body.plain.find(label.strip())) >= 0:
             body.stylize(Style(bold=False), start, start + len(label.strip()))
         bottom = f" {secondary} " if label else ""
+        if self.key == "protocol":
+            bottom = ""
         if self.key in ("announce", "swarm-tokens") and secondary == "0 new":
             bottom = ""
         if len(bottom) > inside:
@@ -368,19 +370,13 @@ class SurfboardRack(Grid):
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
     SurfboardRack > #surfboard-card-protocol { padding: 0; }
     SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
-    SurfboardRack > #surfboard-center { column-span: 4; row-span: 3;
-        scrollbar-gutter: stable; scrollbar-size-vertical: 1; }
+    SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
     """
 
     class CardActivated(Message):
         def __init__(self, key, destination, detail):
             super().__init__()
             self.key, self.destination, self.detail = key, destination, detail
-
-    class CardFocused(Message):
-        def __init__(self, key, detail):
-            super().__init__()
-            self.key, self.detail = key, detail
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -390,16 +386,12 @@ class SurfboardRack(Grid):
         for index, slot in enumerate(SLOTS):
             yield SurfboardCard(*slot)
             if index == 6:
-                with VerticalScroll(id="surfboard-center"):
-                    yield SurfboardTerminal(id="surfboard-terminal")
-                    yield Static(Text(), id="surfboard-detail")
+                yield SurfboardTerminal(id="surfboard-terminal")
 
     def update_data(self, surfboard_cards=None, surfboard_sources=None, **_kwargs):
         cards = {card["key"]: card for card in surfboard_cards if isinstance(card, dict) and isinstance(card.get("key"), str)} if isinstance(surfboard_cards, list) else {}
         for card in self.query(SurfboardCard):
             card.set_data(cards.get(card.key))
-            if card.key == self.focused_card:
-                self.post_message(self.CardFocused(card.key, card.detail))
 
     def focus_card(self, key=None):
         key = key or self.focused_card
@@ -427,7 +419,6 @@ class SurfboardRack(Grid):
     def on_surfboard_card_focused(self, event):
         event.stop()
         self.focused_card = event.card.key
-        self.post_message(self.CardFocused(event.card.key, event.card.detail))
 
     def on_surfboard_card_activated(self, event):
         event.stop()

@@ -16,6 +16,7 @@ from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_points, compact_age, recent_launch_news
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard_activity as work_activity
+from maxpane_dashboard.data import surf_launchpad_volume as launch_volume
 from maxpane_dashboard.analytics.surf_launch_checks import address
 from maxpane_dashboard.data.surf_models import (
     SURFBOARD_CARD_FIELDS, SURFBOARD_OVERVIEW_FIELDS, SURFBOARD_SUPPLY_FIELDS, SWARM_SEAT_OUTCOME_FIELDS,
@@ -384,6 +385,37 @@ def _protocol_stats(burn, reward, fee) -> str:
     return "\n".join(lines)
 
 
+def _launchpad_volume(data, launchpad, families, now):
+    snapshot = launch_volume.coerce_snapshot((launchpad or {}).get("volume_2h"), now=now)
+    market = families.get("market") or {}
+    quote, quote_ts = number(data.get("eth_usd")), timestamp(market.get("read_ts"))
+    state, points = "unavailable", None
+    if snapshot is not None:
+        state = snapshot["state"]
+        if state == "ok":
+            state = "unavailable"
+            if (quote is not None and quote > 0 and market.get("state") == "ok"
+                    and quote_ts is not None and 0 <= now - quote_ts <= 90):
+                try:
+                    converted = [number(value / 10**18 * quote) for value in snapshot["points_wei"]]
+                except OverflowError:
+                    converted = [None]
+                if all(value is not None for value in converted):
+                    points = converted
+                    state = "stale" if (
+                        now - snapshot["read_ts"] > launch_volume.SNAPSHOT_TTL
+                        or now - snapshot["head_ts"] > launch_volume.SNAPSHOT_TTL
+                        or now // launch_volume.BUCKET_SECONDS * launch_volume.BUCKET_SECONDS > snapshot["until"]
+                        or (families.get("launchpad") or {}).get("state", "ok") != "ok"
+                        or "pad" in (data.get("degraded") or [])
+                    ) else "ok"
+    observed = snapshot or {}
+    detail = (f"USD volume 2h · 15m buckets · {state} · {observed.get('known', '—')}/{observed.get('total', '—')} pools"
+              f" · read {hhmm(observed.get('read_ts'))} · until {hhmm(observed.get('until'))}"
+              f" · current ETH/USD {_value(quote)} · quote read {hhmm(quote_ts)}")
+    return points, state, detail
+
+
 def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, activity: dict | None = None) -> list[dict]:
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES, FIRED_TTL_S, _tx_hash
     result = []
@@ -463,13 +495,10 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          f"top #{_value(count(leader.get('token_id')))} · {_value(count(leader.get('accepted')), ' accepted jobs')}"
          " · summary cache ≤10m","board",source="records")
     activity_meter(leader.get("token_id"), leader.get("live_state"))
-    lp=launchpad or {}; swaps=lp.get("swaps_by_coin");cursor=lp.get("cursor");population=lp.get("coin_count")
-    complete=(count(population) is not None and lp.get("launch_count")==population and isinstance(cursor,dict)
-              and count(cursor.get("last_block")) is not None and isinstance(cursor.get("launches"),dict) and len(cursor["launches"])==population and isinstance(swaps,dict)
-              and set(swaps)<=set(cursor["launches"]) and all(count(n) is not None for n in swaps.values()))
-    active=sum(n>0 for n in swaps.values()) if complete else None
+    points, volume_state, volume_detail = _launchpad_volume(data, launchpad, family_sources or {}, now)
     card("launchpad","LAUNCHPAD",_value(count(data.get("launchpad_coin_count"))),_value(count(data.get("launchpad_new_24h"))," new"),
-         "TRADE · coins traded / full factory"+(" · incomplete coverage" if not complete else "")+f" · as of {data.get('launchpad_as_of_hhmm') or '—'}","launchpad",active,population if complete else None)
+         volume_detail,"launchpad",points=points)
+    result[-1].update(meter_kind="sparkline", meter_state=volume_state)
     price = number(data.get("pool4_price_usd"))
     change = data.get("imd_change_24h_pct")
     valid_change = type(change) in (int, float) and number(abs(change)) is not None

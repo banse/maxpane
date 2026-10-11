@@ -22,7 +22,7 @@ it. This file is the method; the constants are the record.
 | surf `s` swarm (launches v2, 2026-10-06; WORKFLOWS beside LATEST LAUNCHES, full-width LAUNCHES and SITES; `x` opens the newest launch) | 129 cols · 35 rows (SITES and status bar bind width; nine-line top floor; SITES gives one row to the status gap) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `a` agent (hero and merged seat-card row, RECORD; re-swept 2026-09-24) | 139 cols · 25 rows; RECORD clears at 167 (165 before panel/tok, 2026-09-23; 204 until launch/sub left it, 2026-09-22) | `screens/surf.SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`, `RECORD_NEVER_CLEARS_BELOW` |
 | surf `b` board (LEADERBOARD beside FLEET; FLEET's five contributor lines 2026-09-22) | 141 cols · 33 rows | `screens/surf.SURF_BOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| dashboard 9 `surfboard` (four-row equipment rack, re-swept 2026-10-11) | 144 cols · 35 rows; PROTOCOL's three spaced columns bind width; wrapping detail below terminal; live preview at 149×45 | `screens/surfboard.SURFBOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| dashboard 9 `surfboard` (four-row equipment rack, re-swept 2026-10-11) | 144 cols · 35 rows; PROTOCOL's label/amount/unit columns bind width; terminal fills the center span; live preview at 149×45 | `screens/surfboard.SURFBOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 

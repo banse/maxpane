@@ -85,7 +85,8 @@ def test_rack_meters_use_real_denominators_uncapped_population_and_split():
     assert (cards['announce']['numerator'],cards['announce']['denominator'])==(1,len(SIGNAL_NAMES))
     assert (cards['agent']['numerator'],cards['agent']['denominator'])==(None,86400)
     assert (cards['board']['numerator'],cards['board']['denominator'])==(None,86400)
-    assert (cards['launchpad']['numerator'],cards['launchpad']['denominator'])==(23,25)
+    assert cards['launchpad']['numerator'] is cards['launchpad']['denominator'] is None
+    assert cards['launchpad']['points'] is None  # Counts alone cannot establish volume.
     assert cards['pool4']['share_price'] is None
     assert cards['pool4']['numerator'] is cards['pool4']['denominator'] is None
     assert (cards['protocol']['numerator'],cards['protocol']['denominator'])==(2,10)
@@ -630,3 +631,70 @@ def test_launch_volume_projection_discloses_coverage_and_currency():
     row = next(c for c in hub.cards({}, {}, now=100, tokens_catalogue=source) if c['key']=='swarm-tokens')
     assert row['meter_kind']=='sparkline' and row['points']==points and row['meter_state']=='partial'
     assert 'USD' in row['detail'] and '8/10' in row['detail'] and '3h' in row['detail']
+
+
+def launchpad_volume_snapshot(**changes):
+    return dict(dict(state='ok', points_wei=[i * 10**18 for i in range(8)],
+                     read_ts=18010, head_ts=18000, until=18000, known=25, total=25), **changes)
+
+
+def launchpad_volume_card(snapshot=None, *, now=18020, price=2000, market=None, launch_state='ok'):
+    return next(row for row in hub.cards(
+        dict(eth_usd=price, launchpad_coin_count=25, launchpad_new_24h=2), {}, now=now,
+        launchpad=dict(volume_2h=snapshot), family_sources={
+            'market': market if market is not None else dict(state='ok', read_ts=now),
+            'launchpad': dict(state=launch_state, read_ts=now)}) if row['key'] == 'launchpad')
+
+
+def test_launchpad_volume_projects_eight_usd_buckets_and_retains_source_window():
+    snapshot = launchpad_volume_snapshot()
+    row = launchpad_volume_card(snapshot)
+    assert row['meter_kind'] == 'sparkline' and row['meter_state'] == 'ok'
+    assert row['points'] == [i * 2000 for i in range(8)]
+    assert row['numerator'] is row['denominator'] is None
+    assert row['primary'] == '25' and row['secondary'] == '2 new'
+    for text in ('USD', '15m', 'current ETH/USD', '25/25', hub.hhmm(18000)):
+        assert text in row['detail']
+    assert snapshot == launchpad_volume_snapshot()
+
+
+@pytest.mark.parametrize('snapshot,now,launch_state', [
+    (launchpad_volume_snapshot(), 18611, 'ok'),
+    (launchpad_volume_snapshot(), 18901, 'ok'),
+    (launchpad_volume_snapshot(read_ts=18895, head_ts=18890), 18901, 'ok'),
+    (launchpad_volume_snapshot(read_ts=18620), 18620, 'ok'),
+    (launchpad_volume_snapshot(), 18020, 'stale'),
+])
+def test_launchpad_volume_stays_stale_after_expiry_new_slot_clock_or_failed_read(snapshot, now, launch_state):
+    row = launchpad_volume_card(snapshot, now=now, launch_state=launch_state)
+    assert row['points'] == [i * 2000 for i in range(8)]
+    assert row['meter_state'] == 'stale'
+
+
+@pytest.mark.parametrize('price,market', [
+    (None, None), (True, None), (0, None), (-2, None), (float('inf'), None),
+    (float('nan'), None), (2000, {}), (2000, dict(state='unavailable', read_ts=None)),
+    (2000, dict(state='stale', read_ts=18020)), (2000, dict(state='ok', read_ts=17900)),
+    (2000, dict(state='ok', read_ts=18030)), (1e308, None),
+])
+def test_launchpad_volume_requires_fresh_positive_finite_usd_quote(price, market):
+    row = launchpad_volume_card(launchpad_volume_snapshot(), price=price, market=market)
+    assert row['points'] is None and row['meter_state'] == 'unavailable'
+
+
+@pytest.mark.parametrize('snapshot,state', [
+    (None, 'unavailable'), ({}, 'unavailable'),
+    (launchpad_volume_snapshot(points_wei=[True] * 8), 'unavailable'),
+    (launchpad_volume_snapshot(points_wei=[-1] * 8), 'unavailable'),
+    (launchpad_volume_snapshot(points_wei=[0] * 7), 'unavailable'),
+    (launchpad_volume_snapshot(read_ts=19000), 'unavailable'),
+    (launchpad_volume_snapshot(state='partial', points_wei=None, known=24), 'partial'),
+])
+def test_launchpad_volume_unknown_is_never_a_zero_chart(snapshot, state):
+    row = launchpad_volume_card(snapshot)
+    assert row['points'] is None and row['meter_state'] == state
+
+
+def test_launchpad_volume_complete_empty_intervals_are_real_zero():
+    row = launchpad_volume_card(launchpad_volume_snapshot(points_wei=[0] * 8))
+    assert row['points'] == [0] * 8 and row['meter_state'] == 'ok'

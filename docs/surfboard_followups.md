@@ -39,3 +39,36 @@ Verification: 448 affected/composing tests green across coordinated passes,
 including 188 terminal/rack/layout/screen cases after the floor correction;
 124 guards and 12 docpins. Freshness-gate mutation and both sides of the width
 and height pins were rejected. No full suite run.
+
+## Launchpad volume and reduced chrome — 2026-10-11
+
+PROTOCOL now has aligned label/amount/IMD columns and a blank inset footer.
+Both launch volume charts use SWARM's green; degraded labels retain their amber
+prefix. The focused detail row is removed and the terminal fills its direct
+central span. This supersedes the wrapping-detail presentation above.
+
+LAUNCHPAD uses eight closed UTC 15-minute buckets, exact block timestamps, and
+uncapped CurveSwap ETH quote amounts across the complete pool population. USD
+values use the fresh current ETH/USD quote, not historical execution prices.
+The existing read-only state RPC hydrates at most 256 event-block headers plus
+two boundaries within 20 seconds. Missing headers, malformed identities,
+unknown pools, or exhausted coverage budget yield unavailable data. Factory
+count mismatch yields partial without a complete chart. Snapshot clocks and
+window end remain independent of the launchpad slot's timestamp.
+
+Live keyless preview shown at 149×45 with complete 210/210-pool coverage and a
+nonzero two-hour chart. LAUNCHES volume was unavailable on this refresh and
+rendered a dash. Composited checks cover green fresh/partial/stale charts.
+Measured layout remains 144×35; terminal widths are 94 at the pin and 97 at the
+owner's size, with its bottom aligned to BAY 11/12.
+
+Verification: 981 affected/composing cases green across coordinated passes;
+124 guards and 12 docpins. Seven data/clock mutants rejected: inadequate time
+coverage, open interval inclusion, conflicting event identity, header budget,
+unknown pools, stale USD quote, and expired quarter window. The broader run's
+five failures were outdated model/transport test doubles; their full 438-case
+client/model/manager rerun passed after test-only updates. No full-suite run.
+
+Final review: Approved, no Critical or Important findings. The reviewer ran
+29 focused checks and rejected an additional wrong-quote-leg mutation; all
+files were restored byte-for-byte. No outstanding findings for this change.

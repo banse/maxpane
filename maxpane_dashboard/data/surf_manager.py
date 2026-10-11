@@ -2470,6 +2470,7 @@ class SurfManager:
             "new_24h": _opt_int(_field(launchpad_state, "new_24h")),
             "creator_count": _opt_int(_field(launchpad_state, "creator_count")),
             "cursor": _field(launchpad_state, "cursor"),
+            "volume_2h": _field(launchpad_state, "volume_2h"),
             "activity": SurfManager._launchpad_activity_rows(
                 _field(launchpad_state, "activity")
             ),

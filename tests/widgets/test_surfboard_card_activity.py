@@ -93,7 +93,7 @@ async def test_news_footer_hides_only_known_zero(key):
             assert bottom[bottom.index('└')+1:bottom.index('┘')].strip('─ ') == expected
 
 
-async def test_protocol_columns_are_amount_unit_label_without_colons():
+async def test_protocol_columns_are_label_amount_unit_without_colons_or_inner_footer():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-protocol', SurfboardCard)
         card.set_data(dict(primary='★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 4k IMD', secondary='0.47%'))
@@ -102,27 +102,37 @@ async def test_protocol_columns_are_amount_unit_label_without_colons():
         top = next(i for i, line in enumerate(lines) if '┌' in line.text)
         body = [line.text[line.text.index('│', 1)+1:line.text.rindex('│')].strip('│ ')
                 for line in lines[top+1:top+4]]
-        assert [line.split() for line in body] == [['33k', 'IMD', 'burned'], ['6k', 'IMD', 'rewarded'], ['4k', 'IMD', 'fees']]
+        assert [line.split() for line in body] == [['burned', '33k', 'IMD'], ['rewarded', '6k', 'IMD'], ['fees', '4k', 'IMD']]
         assert len({line.index('IMD') for line in body}) == 1
         assert len({line.index(label) for line, label in zip(body, ('burned', 'rewarded', 'fees'))}) == 1
+        assert len({line.index(amount) for line, amount in zip(body, ('33k', '6k', '4k'))}) == 1
         assert not any(':' in line or '★' in line for line in body)
+        bottom = lines[top+4].text
+        assert bottom[bottom.index('└')+1:bottom.index('┘')].strip('─ ') == ''
 
 
-async def test_launches_volume_has_real_buckets_and_visible_partial_gaps():
+@pytest.mark.parametrize('key,label', [('swarm-tokens', '24H'), ('launchpad', '2H')])
+async def test_volume_has_green_buckets_and_visible_partial_gaps(key, label):
     async with RackApp().run_test(size=(149, 45)) as pilot:
-        card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
-        for state, points in [('ok', list(range(8))), ('partial', [0, 1, None, 3, 4, 5, 6, 7]), ('unavailable', None)]:
+        card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
+        for state, points in [('ok', list(range(8))), ('partial', [0, 1, None, 3, 4, 5, 6, 7]),
+                              ('stale', list(range(8))), ('unavailable', None)]:
             card.set_data(dict(meter_kind='sparkline', meter_state=state, points=points, secondary='0 new'))
             await pilot.pause()
             footer = strips(pilot.app, card)[-1]
             assert 'TOKENS' not in footer.text
             if state == 'ok':
-                assert '24H ' in footer.text and '█' in footer.text and '▁' in footer.text
+                assert label + ' ' in footer.text and '█' in footer.text and '▁' in footer.text
             elif state == 'partial':
-                assert '~24H ' in footer.text and '·' in footer.text and '█' in footer.text
+                assert '~' + label + ' ' in footer.text and '·' in footer.text and '█' in footer.text
+            elif state == 'stale':
+                assert '~' + label + ' ' in footer.text and '█' in footer.text
             else:
-                assert '24H —' in footer.text
+                assert label + ' —' in footer.text
                 assert not any(char in footer.text for char in '▁▂▃▄▅▆▇█')
+            for segment in footer:
+                if any(char in segment.text for char in '▁▂▃▄▅▆▇█'):
+                    assert segment.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
 
 
 async def test_pool4_share_rate_uses_available_precision_and_explicit_unknown():

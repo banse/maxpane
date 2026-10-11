@@ -346,14 +346,14 @@ async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
             unit_columns, label_columns = set(), set()
             for strip, name, value in zip(strips[top+1:top+4], ('burned', 'rewarded', 'fees'), expected):
                 line = strip.text[left+1:right]
-                assert line.split() == [value, 'IMD', name]
-                assert line.startswith(' ' + value) and line.endswith(' ')
-                assert not line[line.index(name)+len(name):].strip()
+                assert line.split() == [name, value, 'IMD']
+                assert line.startswith(' ' + name) and line.endswith(' ')
+                assert not line[line.index('IMD')+3:].strip()
                 unit_columns.add(line.index('IMD'))
                 label_columns.add(line.index(name))
                 assert '★' not in line and ':' not in line
             assert len(unit_columns) == len(label_columns) == 1
-            assert strips[top+4].text[left+1:right].strip('─ ') == '0.47%'
+            assert strips[top+4].text[left+1:right].strip('─ ') == ''
             assert 'BURN' in strips[-1].text
             assert '‹ widen' not in str(card.border_title)
 
@@ -369,7 +369,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert len({card.region.y for card in cards}) == 4
         assert len({card.region.y for card in cards[:6]}) == 1
         assert cards[6].region.y == terminal.region.y == cards[7].region.y
-        assert rack.query_one("#surfboard-center").region.bottom == cards[10].region.bottom == cards[11].region.bottom
+        assert terminal.region.bottom == cards[10].region.bottom == cards[11].region.bottom
         assert terminal.region.x > cards[6].region.x
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
@@ -487,7 +487,7 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
     from tests.surfboard_fixtures import hub_payload
 
     labels = {"protocol": "BURN", "board": "IDLE",
-              "launchpad": "TRADE", "agent": "IDLE", "portfolio": "ASSETS", "bay-10": "AUX",
+              "agent": "IDLE", "portfolio": "ASSETS", "bay-10": "AUX",
               "bay-11": "AUX", "bay-12": "AUX"}
     placeholders = {"portfolio", "bay-10", "bay-11", "bay-12"}
     payload = hub_payload()

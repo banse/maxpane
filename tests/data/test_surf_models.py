@@ -109,7 +109,7 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
         "min_bridge_wei", "bridge_amount_wei", "coins", "swap_count",
         "trader_count",
         "burned_total_wei", "swaps_by_coin", "coin_tickers", "launch_count",
-        "new_24h", "creator_count", "cursor", "activity", "burnkeepers",
+        "new_24h", "creator_count", "cursor", "activity", "burnkeepers", "volume_2h",
     ),
     LaunchpadEvent: ("kind", "ticker", "wallet", "eth", "age_s"),
     Burnkeeper: ("wallet", "imd_burned", "eth_paid", "burns"),

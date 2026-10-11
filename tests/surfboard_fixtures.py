@@ -22,13 +22,13 @@ def hub_payload(kind="normal"):
                           status="experimental" if key == "protocol" else "idle" if key == "agent" else "working" if key == "board" else "active",
                           primary=primary, secondary=secondary,
                           detail=f"{title} · exact {numerator}/{denominator} · read 22:00 · source cache ≤10m",
-                          meter_kind="sparkline" if key in ("swarm", "swarm-tokens") else "activity" if key in ("agent", "board") else "ratio",
-                          meter_state={"agent": "idle", "board": "busy", "swarm-tokens": "ok"}.get(key),
+                          meter_kind="sparkline" if key in ("swarm", "swarm-tokens", "launchpad") else "activity" if key in ("agent", "board") else "ratio",
+                          meter_state={"agent": "idle", "board": "busy", "swarm-tokens": "ok", "launchpad": "ok"}.get(key),
                           share_price=1.3029864737732294 if key == "pool4" else None,
                           numerator=numerator, denominator=denominator,
                           points=([1, 2, 3, 4, 3, 2, 1, 8] if key == "swarm" else
                                   [1200, 900, 1500, 2100, 1800, 3600, 2400, 4200]
-                                  if key == "swarm-tokens" else None)))
+                                  if key in ("swarm-tokens", "launchpad") else None)))
         if key in ("agent", "board"):
             cards[-1]["detail"] = (f"{title} · workers read 22:00 · observed stop 12h ago"
                                    if key == "agent" else f"{title} · workers read 22:00 · busy")

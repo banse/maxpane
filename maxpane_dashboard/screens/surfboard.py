@@ -17,23 +17,21 @@ from maxpane_dashboard.screens.surf import MODE_AGENT
 from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
-from maxpane_dashboard.widgets.surfboard.terminal import fit_prose
 
-#: Re-measured after the 2026-10-11 live 149×45 status/detail preview. PROTOCOL's
-#: three spaced columns still bind width: "100k IMD rewarded" needs 19 inner
-#: cells with one blank at each end, so the card needs 23 columns. The rack's
-#: 141-column floor preserves that row. At 143×34 both scrollbars appear; at
-#: 144×34 only the vertical bar appears. At 143×35 neither appears. The width
-#: pin still buys the vertical gutter, so 144 works regardless of height.
-#: Moving the detail into the center frees one screen row: the four seven-row
-#: card floors now fit at 35 and scroll at 34. Normal, stress, unavailable and
-#: wide-prose composites fit at 144×35. At 149×45 the live three-line detail
-#: sits immediately beneath the terminal with matching bounds. The center's
-#: reserved one-column gutter leaves terminal/detail widths of 93 at the pin
-#: and 96 at the owner's width. Detail wraps at full length; extreme payloads
-#: scroll inside the center with a visible bar and ‹ taller, while the terminal
-#: retains its 12-row floor. Thus unbounded detail has no fixed all-visible row
-#: pin. Event prose keeps its own ellipsis marker. App-wide width stays 143.
+#: Re-measured after the 2026-10-11 live 149×45 volume/terminal preview.
+#: PROTOCOL's label/amount/unit columns bind width: "rewarded 100k IMD"
+#: needs 19 inner cells including one blank at each end, so its card needs
+#: 23 columns. The 141-column rack floor preserves that row. At 143×34 both
+#: scrollbars appear; at 144×34 only the vertical bar appears. At 143×35
+#: neither appears. The width pin buys the vertical gutter, so 144 also
+#: works at short heights. Four seven-row card floors fit at 35 rows and
+#: scroll at 34. Normal, stress, unavailable and wide-prose composites fit
+#: at 144×35; event prose keeps its own ellipsis marker. Removing the focused
+#: detail restores the terminal's direct four-column, three-row span. Its
+#: measured width is 94 at the pin and 97 at 149×45, with its bottom matching
+#: BAY 11/BAY 12. The 12-row terminal floor keeps the market footer visible.
+#: LAUNCHPAD's 2H and LAUNCHES' 24H charts fit in their existing card footers.
+#: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 144
 SURFBOARD_FULL_LAYOUT_ROWS = 35
 
@@ -60,7 +58,6 @@ class SurfboardScreen(DashboardScreen):
     SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $text-muted; padding: 0 1; }
     SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
-    SurfboardScreen #surfboard-detail { height: auto; color: $text-muted; text-wrap: wrap; }
     """
 
     def __init__(self, manager, poll_interval=30, name="surfboard", *, wallet=None, clock=monotonic, **kwargs):
@@ -71,7 +68,6 @@ class SurfboardScreen(DashboardScreen):
         self._command_generation = 0
         self._command_worker = None
         self._command_busy = False
-        self._detail = "ANNOUNCE · waiting for source"
         self._age_clock = clock
         self._age_captured = None
         self._age_timer = None
@@ -130,23 +126,14 @@ class SurfboardScreen(DashboardScreen):
         self.call_after_refresh(self._render_chrome)
 
     def _render_chrome(self) -> None:
-        detail, _ = fit_prose(self._detail, None)
-        self.query_one("#surfboard-detail", Static).update(detail)
-        self.call_after_refresh(self._render_scroll_hints)
-
-    def _render_scroll_hints(self) -> None:
         viewport = self.query_one("#surfboard-viewport", VerticalScroll)
         hints = []
         if viewport.show_horizontal_scrollbar:
             hints.append("‹ widen")
-        if viewport.show_vertical_scrollbar or self.query_one('#surfboard-center').show_vertical_scrollbar:
+        if viewport.show_vertical_scrollbar:
             hints.append("‹ taller")
         self.query_one("#surfboard-title", Static).update(Text(
             "SURFBOARD / DASHBOARD RACK" + (" · " + " · ".join(hints) if hints else "")))
-
-    def on_surfboard_rack_card_focused(self, event: SurfboardRack.CardFocused) -> None:
-        self._detail = event.detail
-        self._render_chrome()
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
         if event.key == "portfolio":
@@ -159,8 +146,6 @@ class SurfboardScreen(DashboardScreen):
             self.app.push_screen(SwarmTokensScreen(self._data_manager.swarm_tokens_manager()))
             return
         if event.destination is None:
-            self._detail = event.detail
-            self._render_chrome()
             return
         self.app.open_surf_mode(event.destination)
 

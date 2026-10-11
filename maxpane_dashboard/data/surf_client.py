@@ -63,7 +63,7 @@ from maxpane_dashboard.data.rpc_classify import (
     is_range_limitation,
     looks_like_endpoint_limitation,
 )
-from maxpane_dashboard.data import ens
+from maxpane_dashboard.data import ens, surf_launchpad_volume
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -779,6 +779,8 @@ class _LaunchpadSweep(NamedTuple):
     #: :data:`_MAX_ACTIVITY_ROWS`. ``None`` on a failed sweep; ``[]`` for
     #: "swept, and the day was quiet".
     activity: list[dict] | None
+    #: Uncapped raw swap logs and their complete scanned range, for exact time bins.
+    volume_inputs: dict | None
 
 
 #: Length cap for the two attacker-chosen strings the launchpad cursor
@@ -834,6 +836,7 @@ def _failed_launchpad_sweep(resume: dict | None) -> _LaunchpadSweep:
         cursor=resume if isinstance(resume, dict) else None,
         burns=None,
         activity=None,
+        volume_inputs=None,
     )
 
 
@@ -1841,6 +1844,13 @@ class SurfClient(OwnedHttpClient):
         ) = await self._launchpad_getters(getters)
 
         sweep = await self._launchpad_logs(resume)
+        volume_2h = None
+        if sweep.volume_inputs is not None:
+            volume_2h = await surf_launchpad_volume.fetch_snapshot(
+                **sweep.volume_inputs, pools=set((sweep.cursor or {}).get('launches', {})),
+                coin_count=coin_count, now=self._now_fn(),
+                read_headers=self._rpc_state_batch, decode_swap=_decode_curve_swap_log,
+            )
 
         rows = surf_launchpad.rank_coins(
             sweep.launches, sweep.day_swaps, sweep.swaps_all,
@@ -1922,6 +1932,7 @@ class SurfClient(OwnedHttpClient):
             cursor=sweep.cursor,
             activity=activity,
             burnkeepers=keepers,
+            volume_2h=volume_2h,
         )
 
     async def _launchpad_getters(
@@ -2293,6 +2304,7 @@ class SurfClient(OwnedHttpClient):
             cursor=cursor,
             burns=burns,
             activity=activity,
+            volume_inputs={'rows': swap_rows, 'start_block': day_from, 'head_block': head},
         )
 
     async def _price_rendered_rows(self, rows: list[dict]) -> list[dict]:

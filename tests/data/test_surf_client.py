@@ -3210,6 +3210,10 @@ def _launchpad_fixture_handler(
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if isinstance(payload, list):
+            headers = _load_launchpad('volume_headers.json')['headers']
+            assert all(p['method'] == 'eth_getBlockByNumber' for p in payload)
+            return httpx.Response(200, json=[_rpc_ok(p, headers.get(str(int(p['params'][0], 16)))) for p in payload])
         method = payload["method"]
         if method == "eth_blockNumber":
             return httpx.Response(
@@ -3307,6 +3311,52 @@ async def test_fetch_launchpad_total_outage_still_returns_a_labelled_state() -> 
     # Fix round 2: mirrors `all_swaps` -- the CurveSwap sweep itself failed,
     # so the full distribution is exactly as unread as the capped one.
     assert state.swaps_by_coin is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_launchpad_carries_uncapped_exact_volume_snapshot(monkeypatch) -> None:
+    reads = _load_launchpad('launchpad_reads.json')
+    logs = _load_launchpad('launchpad_logs.json')
+    capture = _load_launchpad('volume_headers.json')
+    pools = {r['topics'][1] for r in logs['launched']}
+    reads['coin_count'] = len(pools)
+    logs['curve_swap'] = [r for r in logs['curve_swap'] if r['topics'][1] in pools]
+    monkeypatch.setattr(surf_client, '_MAX_ACTIVITY_ROWS', 1)
+    transport = RecordingTransport(_launchpad_fixture_handler(reads, logs, {}))
+    async with _client_on(transport, now_fn=lambda: capture['now']) as client:
+        state = await client.fetch_launchpad()
+    expected = [0]*8
+    until = capture['now']//900*900
+    for row in logs['curve_swap']:
+        ts = int(capture['headers'][str(int(row['blockNumber'], 16))]['timestamp'], 16)
+        if until-7200 <= ts < until:
+            expected[(ts-(until-7200))//900] += surf_client._decode_curve_swap_log(row)['eth_amount_wei']
+    assert state.volume_2h == dict(state='ok', points_wei=expected, read_ts=capture['now'],
+                                  head_ts=capture['now'], until=until, known=13, total=13)
+    assert len(state.activity) == 1
+    assert sum(expected) > 0
+
+
+@pytest.mark.asyncio
+async def test_launchpad_header_failure_keeps_successful_getters_and_log_facts() -> None:
+    reads = _load_launchpad('launchpad_reads.json')
+    logs = _load_launchpad('launchpad_logs.json')
+    pools = {r['topics'][1] for r in logs['launched']}
+    reads['coin_count'] = len(pools)
+    logs['curve_swap'] = [r for r in logs['curve_swap'] if r['topics'][1] in pools]
+    base = _launchpad_fixture_handler(reads, logs, {})
+    header_calls = []
+    def handler(request):
+        payload = json.loads(request.content)
+        if isinstance(payload, list):
+            header_calls.append(payload)
+            return httpx.Response(200, json=[_rpc_ok(p, None) for p in payload])
+        return base(request)
+    async with _client_on(RecordingTransport(handler)) as client:
+        state = await client.fetch_launchpad()
+    assert state.volume_2h is None
+    assert header_calls
+    assert state.coin_count == reads['coin_count'] and state.swap_count == 24
 
 
 @pytest.mark.asyncio
@@ -5414,9 +5464,13 @@ def _client_serving_the_real_burns(
                 return httpx.Response(503, json={})
             return httpx.Response(200, json=fees)
         body = json.loads(request.content)
-        if isinstance(body, list):                 # the batched sender read
+        if isinstance(body, list):                 # batched state reads
             out = []
             for call in body:
+                if call['method'] == 'eth_getBlockByNumber':
+                    # This burns-only capture has no exact block timestamps.
+                    out.append(_rpc_ok(call, None))
+                    continue
                 assert call["method"] == "eth_getTransactionByHash"
                 tx = call["params"][0].lower()
                 # `attribute=False` is the STATE pool being down while the

@@ -71,12 +71,12 @@ def _job_of(row):
 
 
 def fit_prose(value, width, *, style="", explorer=EXPLORER) -> tuple[Text, bool]:
-    """Fit literal text; width=None keeps all prose for a wrapping Static."""
+    """Fit literal served text, preserving address/icon units and safe links."""
     marked, addresses, spans = mark_addresses(flatten(value), width=17)
-    fitted = marked if width is None else keep_units(marked, spans, clip(marked, max(0, width)))
-    out = Text(fitted if width is None else unmark(fitted or ("…" if marked and width else "")), style=style)
+    fitted = keep_units(marked, spans, clip(marked, max(0, width)))
+    out = Text(unmark(fitted or ("…" if marked and width else "")), style=style)
     link_in_order([out], addresses, explorer=explorer)
-    return out, width is not None and cell_len(marked) > width
+    return out, cell_len(marked) > width
 
 
 def fitted_prose(value, width, *, style="") -> Text:

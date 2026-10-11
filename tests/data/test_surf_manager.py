@@ -762,6 +762,14 @@ def _launchpad_state(**overrides) -> LaunchpadState:
     return LaunchpadState(**fields)
 
 
+def test_launchpad_payload_preserves_volume_snapshot_clocks():
+    volume = dict(state='ok', points_wei=[0]*8, read_ts=18010, head_ts=18000,
+                  until=18000, known=12, total=12)
+    state = _launchpad_state(volume_2h=volume)
+    payload = SurfManager._launchpad_payload(None, None, None, state)
+    assert payload['volume_2h'] == volume
+
+
 class FakeSurfClient:
     """A SurfClient-shaped double. Any method set to ``None`` reports failure."""
 
