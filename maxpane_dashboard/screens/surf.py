@@ -259,6 +259,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfLaunchpadHero,
     SurfNewsHero,
     SurfLaunchpadActivity,
     SurfLaunchpadCoins,
@@ -677,6 +678,10 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: COINS table marks below that. The 128–145 capture/ordinary-burn sweep
 #: confirms 138, while complete status text clears from 134 (133 still crops).
 #: Row boundaries 30/31 were checked again at 138 with capture and 20 coins.
+#: 2026-10-12: six nine-row rack cards replace the legacy launchpad hero.
+#: In-situ themed measurements retain 138 columns: COINS marks at 137 and
+#: clears at 138; the hero fits the approved precise fee and volume fields.
+#: Live public-data preview was shown at the owner's 149×45 before this sweep.
 SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
 
 #: The ``l`` LAUNCHPAD body's own measured **height** (2026-08-25) -- new
@@ -752,7 +757,11 @@ SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
 #: column's ``fr`` children inflate while it scrolls** (COINS reads its
 #: 23-row ceiling at 30 rows). That is why the derivation is now asserted at
 #: the pin rather than at 28 rows, where it used to be read off the floors.
-SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31
+#: 2026-10-12: the rack hero adds two rows. The measured boundary is now 33:
+#: both native columns still require 20 rows, while title, hero, margins and
+#: status total 13. Both columns scroll with `‹ taller` at 32 and clear at 33.
+#: The native body and its 2:1 seam are unchanged; only the hero grew.
+SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 33
 
 #: The ``p`` POOL4 body's own measured width (2026-09-01) -- a **separate,
 #: independently-named** constant, never a rewrite of
@@ -1998,26 +2007,9 @@ SURF_BOARD_FULL_LAYOUT_COLUMNS = 143
 #: keep the same nine-row footprint on refresh and mode changes.
 SURF_BOARD_FULL_LAYOUT_ROWS = 35
 
-#: The modes whose hero is :class:`SurfHero` -- **enumerated, not negated**.
-#:
-#: ``_show_mode`` could write ``SurfHero.display = self._mode !=
-#: MODE_POOL4_USER`` and it would be correct today. It is the ``not
-#: launchpad`` shape that docstring warns about, one layer out: the fifth
-#: body to arrive with a hero of its own would inherit ``True`` here and
-#: paint two heroes into one row. Enumerating instead makes that case render
-#: **no** hero, which is loud on screen and red in
-#: ``test_exactly_one_hero_shows_in_every_mode`` either way -- but only one of
-#: the two failures is visible to a reader who is not running the tests.
-#:
-#: **MODE_SWARM, MODE_AGENT and MODE_BOARD are deliberately absent.**
-#: Each is a body with a hero of its own (:class:`SurfSwarmHero`,
-#: :class:`SurfSwarmAgentHero`, toggled in ``_show_mode`` the same way as
-#: :class:`SurfPool4RackHero`), and adding either here would paint two heroes
-#: into one row -- the exact defect enumerating instead of negating exists to
-#: make loud rather than silent.
-#: Default NEWS has its own six-card hero; the legacy row serves only
-#: LAUNCHPAD until its individual design stage is approved.
-_SURF_HERO_MODES = (MODE_LAUNCHPAD,)
+#: Every active mode now has its own hero. The legacy SurfHero remains
+#: mounted and dispatched for its existing contract, but no mode shows it.
+_SURF_HERO_MODES = ()
 
 #: The launchpad body's container id -- exported so the test module and any
 #: future consumer can query it without retyping the literal.
@@ -3483,6 +3475,7 @@ class SurfScreen(DashboardScreen):
         with Horizontal(id="hero-row"):
             yield SurfNewsHero(classes="surf-hero")
             yield SurfHero(classes="surf-hero")
+            yield SurfLaunchpadHero(classes="surf-hero")
             yield SurfPool4RackHero(classes="surf-hero")
             yield SurfProtocolHero(classes="surf-hero")
             yield SurfSwarmRackHero(classes="surf-hero")
@@ -3777,6 +3770,7 @@ class SurfScreen(DashboardScreen):
             self.query_one(SurfSwarmBoardHero).display = self._mode == MODE_BOARD
             self.query_one(SurfNewsHero).display = self._mode == MODE_DASHBOARD
             self.query_one(SurfHero).display = self._mode in _SURF_HERO_MODES
+            self.query_one(SurfLaunchpadHero).display = self._mode == MODE_LAUNCHPAD
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("surf mode toggle failed: %s", exc)
         # Leaving AGENT closes RECORD's filter editor (its draft goes); the
@@ -4406,6 +4400,12 @@ class SurfScreen(DashboardScreen):
             )
         except Exception as exc:
             logger.debug("Failed to update SurfHero: %s", exc)
+
+        try:
+            self.query_one(SurfLaunchpadHero).update_data(
+                surf_launchpad_hero=data.get("surf_launchpad_hero"))
+        except Exception as exc:
+            logger.debug("Failed to update SurfLaunchpadHero: %s", exc)
 
         try:
             self.query_one(SurfNewsHero).update_data(surf_news_hero=data.get("surf_news_hero"))

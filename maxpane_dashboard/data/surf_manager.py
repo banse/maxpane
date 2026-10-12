@@ -148,6 +148,7 @@ from maxpane_dashboard.data import surfboard as hub
 from maxpane_dashboard.data import surf_pool4_hero as pool4_hero
 from maxpane_dashboard.data import surf_protocol_hero as protocol_hero
 from maxpane_dashboard.data import surf_leaderboard_hero as leaderboard_hero
+from maxpane_dashboard.data import surf_launchpad_hero as launchpad_hero
 from maxpane_dashboard.data import surf_news_hero as news_hero
 from maxpane_dashboard.data import surf_swarm_hero as swarm_hero
 from maxpane_dashboard.data import surfboard_activity as work_activity
@@ -2386,6 +2387,28 @@ class SurfManager:
             "launchpad": launchpad_state,
             "ok": ok,
         }
+
+    def _launchpad_keys(self, slot, entry, *, eth_usd):
+        """One captured slot supplies both the native body and rack cards."""
+        data = {'launchpad_' + name: slot.get(name) for name in (
+            'coin_count', 'launch_count', 'new_24h', 'creator_count', 'swap_count',
+            'trader_count', 'activity', 'burnkeepers')}
+        for name, field in (
+            ('burn_accrued', 'imd_to_burn_wei'), ('burn_staged', 'executor_balance_wei'),
+            ('burn_min_bridge', 'min_bridge_wei'), ('burn_bridgeable', 'bridge_amount_wei'),
+            ('launchpad_burned_total', 'burned_total_wei'),
+            ('launchpad_creator_eth_owed', 'creator_eth_owed_wei'),
+        ):
+            data[name] = _tokens(slot.get(field))
+        # previewBridge already applies executor balance, bridge limits and dust.
+        # Hook accrual or the minimum threshold cannot substitute for its answer.
+        amount = data['burn_bridgeable']
+        data['burn_ready'] = None if amount is None else amount > 0
+        data.update(launchpad_coins=self._with_mcap_usd(slot.get('coins'), eth_usd),
+                    launchpad_as_of_hhmm=entry.as_of_hhmm() if entry is not None else None,
+                    pool_fee_bps=slot.get('pool_fee'), pool_id_source=slot.get('pool_id_source'),
+                    decoy_pool_count=slot.get('decoy_pool_count'))
+        return data
 
     @staticmethod
     def _launchpad_payload(
@@ -7254,13 +7277,12 @@ class SurfManager:
             data["surf_protocol_hero"] = protocol_hero.project(data=data, sources=pool4_hero_sources, now=now)
             launch_entry = self.cache.get_last_good(SLOT_LAUNCHPAD)
             launch = getattr(launch_entry, "payload", None) or {}
-            for field in ("coin_count", "launch_count", "new_24h", "creator_count", "swap_count", "trader_count", "activity", "burnkeepers"):
-                data["launchpad_" + field] = launch.get(field)
-            data["launchpad_as_of_hhmm"] = launch_entry.as_of_hhmm() if launch_entry is not None else None
-            data["launchpad_coins"] = self._with_mcap_usd(launch.get("coins"), data.get("eth_usd"))
-            for key in ("pool_id_source", "decoy_pool_count"):
-                data[key] = launch.get(key)
-            data["pool_fee_bps"] = launch.get("pool_fee")
+            data.update(self._launchpad_keys(launch, launch_entry, eth_usd=data.get('eth_usd')))
+            data['surf_launchpad_hero'] = launchpad_hero.project(
+                data=data, launchpad=launch, sources={
+                    'launchpad': self._pool4_hero_source(launch_entry, now=now, tier=TIER_LAUNCHPAD, group=SOURCE_LAUNCHPAD),
+                    'market': pool4_hero_sources['market'],
+                }, now=now)
         if refresh_legacy or (data.get('swarm_seat_selected') or {}).get('token_id') != sw.parse_seat_token(self._seat_saved):
             # A full refresh may have started before the active seat changed.
             # Reproject the complete detail family together, never only its label.
@@ -7583,6 +7605,8 @@ class SurfManager:
             else {}
         )
         real_pool_id = launchpad_slot.get("pool_id")
+        launchpad_hero_sources = {'launchpad': self._pool4_hero_source(
+            launchpad_entry, now=float(self._clock()), tier=TIER_LAUNCHPAD, group=SOURCE_LAUNCHPAD)}
         self._spawn_launchpad(tiers, now)
 
         # The swarm live slot is captured here, ahead of its own spawn, for
@@ -7764,7 +7788,8 @@ class SurfManager:
         # sparklines may not be fed the fallback; see the sampling call below.
         fresh_market = self._market_payload(market) if market is not None else None
         pool4_hero_sources["market"] = self._pool4_hero_source(
-            self.cache.get_last_good(SLOT_MARKET), now=now, tier=None, group=SOURCE_MARKET)
+            self.cache.get_last_good(SLOT_MARKET), now=float(self._clock()),
+            tier=None, group=SOURCE_MARKET)
         market_payload = (
             fresh_market
             if fresh_market is not None
@@ -7808,29 +7833,6 @@ class SurfManager:
             price_source_disagreement_pct = (
                 (dex_imd_price - chain_price_usd) / chain_price_usd * 100.0
             )
-
-        burn_accrued = _tokens(launchpad_slot.get("imd_to_burn_wei"))
-        burn_min_bridge = _tokens(launchpad_slot.get("min_bridge_wei"))
-        # BURN READY is the executor's own answer, not a comparison we make.
-        #
-        # This used to be `burn_accrued >= max(burn_min_bridge, 1)`, and it
-        # reported READY minutes after a burn. Every part of it was wrong.
-        # `imdToBurn` is the *hook's* accrual and the bridge does not spend
-        # it -- `bridgeToBaseBurnReceiver` clamps to the *executor's*
-        # `tokenBalance()`. `minBridgeAmount()` is genuinely `0` on chain, so
-        # the comparison was vacuous and the `max(..., 1)` floor standing in
-        # for it was a whole IMD with no on-chain basis at all -- which LP
-        # fees re-accrue past within minutes of a burn (CLAUDE.md: read
-        # values live, never hardcode a documented one). And even a funded
-        # executor can fail, because the OFT strips shared-decimal dust and
-        # enforces its own minimum, so `amountSentLD` can round to zero.
-        #
-        # `previewBridge()` applies all of that in the contract and answers
-        # zero rather than reverting, so `> 0` is exactly "a burn is callable
-        # right now". Still tri-state: `None` is a failed read, and the row
-        # must render "cannot tell" for it rather than NOT READY.
-        bridge_amount = _tokens(launchpad_slot.get("bridge_amount_wei"))
-        burn_ready = None if bridge_amount is None else bridge_amount > 0
 
         data: dict[str, Any] = {
             "as_of": self.cache.newest_as_of(),
@@ -7890,36 +7892,13 @@ class SurfManager:
             "pool_fee_bps": launchpad_slot.get("pool_fee"),
             "pool_id_source": launchpad_slot.get("pool_id_source"),
             "decoy_pool_count": launchpad_slot.get("decoy_pool_count"),
-            "burn_accrued": burn_accrued,
-            "burn_staged": _tokens(launchpad_slot.get("executor_balance_wei")),
-            "burn_ready": burn_ready,
-            "burn_min_bridge": burn_min_bridge,
-            "burn_bridgeable": bridge_amount,
-            "launchpad_coin_count": launchpad_slot.get("coin_count"),
-            # Task 8: the sweep's own population reads, deliberately published
-            # alongside `launchpad_coin_count` (the factory's claim) rather
-            # than reconciled with it here -- the two agree on a healthy full
-            # sweep and every way of disagreeing (a cursor mid-catch-up, a
-            # truncated provider page, a too-late first block) is a render-
-            # time comparison, per `LaunchpadState`'s own docstring.
-            "launchpad_launch_count": launchpad_slot.get("launch_count"),
-            "launchpad_new_24h": launchpad_slot.get("new_24h"),
-            "launchpad_creator_count": launchpad_slot.get("creator_count"),
-            "launchpad_swap_count": launchpad_slot.get("swap_count"),
-            "launchpad_trader_count": launchpad_slot.get("trader_count"),
-            "launchpad_burned_total": _tokens(launchpad_slot.get("burned_total_wei")),
-            "launchpad_creator_eth_owed": _tokens(
-                launchpad_slot.get("creator_eth_owed_wei")
-            ),
-            "launchpad_coins": self._with_mcap_usd(
-                launchpad_slot.get("coins"), eth_usd
-            ),
-            "launchpad_activity": launchpad_slot.get("activity"),
-            "launchpad_burnkeepers": launchpad_slot.get("burnkeepers"),
-            "launchpad_as_of_hhmm": (
-                launchpad_entry.as_of_hhmm() if launchpad_entry is not None else None
-            ),
+
         }
+
+        data.update(self._launchpad_keys(launchpad_slot, launchpad_entry, eth_usd=eth_usd))
+        launchpad_hero_sources['market'] = pool4_hero_sources['market']
+        data['surf_launchpad_hero'] = launchpad_hero.project(
+            data=data, launchpad=launchpad_slot, sources=launchpad_hero_sources, now=float(self._clock()))
 
         # ---- pool4 (detached sweep, its own slower "as of") ----------------
         # One contiguous block off the slot captured above, never this cycle's

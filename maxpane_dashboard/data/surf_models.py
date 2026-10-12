@@ -1530,6 +1530,16 @@ SURF_LEADERBOARD_HERO_FIELDS = {
     "workers": ("state", "read_ts", "live", "working", "capacity"),
     "effort": ("state", "read_ts", "receipts", "turns", "hours"),
 }
+SURF_LAUNCHPAD_HERO_STATES = ("ok", "partial", "stale", "unavailable")
+SURF_LAUNCHPAD_WIDGET_SIGNATURES = {"SurfLaunchpadHero": {"surf_launchpad_hero": "surf_launchpad_hero"}}
+SURF_LAUNCHPAD_HERO_FIELDS = {
+    "coins": ("state", "read_ts", "count", "new_24h", "swept"),
+    "flow": ("state", "read_ts", "swaps", "traders", "creators"),
+    "volume": ("state", "read_ts", "usd", "points", "until", "known", "total", "quote", "quote_read_ts", "volume_read_ts"),
+    "fees": ("state", "read_ts", "eth"),
+    "queue": ("state", "read_ts", "accrued", "staged", "sendable", "ready"),
+    "burned": ("state", "read_ts", "imd"),
+}
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points", "latest_launches",
                         "meter_state", "share_price", "seat_slot", "token_id")
@@ -1848,6 +1858,7 @@ SURF_KEYS: tuple[str, ...] = (
     "surf_pool4_hero",        # dict — six source-backed native POOL4 market cards
     "surf_protocol_hero",     # dict — six source-backed native PROTOCOL cards
     "surf_leaderboard_hero",  # six rack cards; independent records/worker/receipt clocks
+    "surf_launchpad_hero",    # six rack cards; launchpad observation and current ETH/USD
     # ---- feed ---------------------------------------------------------------
     "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)
     "feed_last_post_age_s",  # float | None

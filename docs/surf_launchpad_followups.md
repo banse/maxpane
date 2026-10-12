@@ -179,3 +179,37 @@ flake is a suite people learn to re-run instead of believe.
 1 → 3 → 2 (correctness in the data layer, root first), then 4, then the cheap
 sweep of 7 / 8 / 9 in one pass over the files they touch, then 5. Leave 6 unless
 something else forces a re-sweep. 10 is independent and can go any time.
+
+## LAUNCHPAD rack hero — 2026-10-12
+
+The approved six-card mockup is connected to existing keyless sources. COINS,
+CURVE FLOW, VOLUME, CREATOR FEES, BURN QUEUE and BURNED replace the legacy hero
+only in the launchpad view. Native panels keep their existing layout. The shared
+manager projection now supplies both cards and panels from the same captured
+launchpad slot, including creator fees and bridge readiness.
+
+Volume reuses the rack's eight completed 15-minute buckets and current ETH/USD
+conversion. Window, coverage and quote clocks remain independent. Unread quotes
+cannot produce USD totals; stale or partial history stays qualified. Burned is
+the launchpad event total, separate from protocol burns. Readiness is the existing
+previewBridge result, not an inference from accrued or staged amounts.
+
+A public-API render at 149×45 was shown before hardening. Its capture reported
+210 coins, 7,614 swaps, 936 traders, 118 creators and $37.8138 of two-hour volume.
+The measured pin is 138×33: the native coin table binds width and the nine-row
+hero increases the former height by two. No new endpoint, schedule or persistent
+cache format is introduced.
+
+Final review: **Approved**, no findings or fix wave. Isolated mutations proved
+that stale volume retains its state, degraded queue cards keep readiness visible,
+and source metadata is captured before detached refresh. Targets were restored
+byte for byte. The manager clock regression also kills the inverse cycle-start
+clock change. Data volume-sum and tiny-fee precision mutations were killed.
+
+The final manager/screen/contract run passed 831 cases with isolated HOME and
+four workers. Fast guards passed 124 cases and documentation pins passed 12.
+No full suite ran.
+The complete LAUNCHPAD screen and widget files passed another 177 cases, including
+six-state width/height boundaries and resize recovery. Both incorrect row-pin
+mutations (33→32 and 33→34) were killed in an isolated copy. No remaining review
+findings or task-specific follow-ups were identified.

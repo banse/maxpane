@@ -40,6 +40,7 @@ from maxpane_dashboard.screens.surf import (
 )
 from maxpane_dashboard.data.surf_models import (
     SURF_NEWS_WIDGET_SIGNATURES,
+    SURF_LAUNCHPAD_WIDGET_SIGNATURES,
     SWARM_PARKED_WIDGET_SIGNATURES,
     POOL4_PARKED_WIDGET_SIGNATURES,
     SWARM_WIDGET_SIGNATURES,
@@ -57,6 +58,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfLaunchpadHero,
     SurfNewsHero,
     SurfLaunchpadActivity,
     SurfLaunchpadCoins,
@@ -113,7 +115,7 @@ _WIDGET_CLASSES = {
 #: as :data:`_ALL_WIDGET_CLASSES` for the dispatch-completeness tests, which
 #: care whether ``update_data`` was called, not whether the widget is shown.
 _LAUNCHPAD_WIDGET_CLASSES = {
-    "SurfHero": SurfHero,
+    "SurfLaunchpadHero": SurfLaunchpadHero,
     "SurfLaunchpadCoins": SurfLaunchpadCoins,
     "SurfLaunchpadActivity": SurfLaunchpadActivity,
     "SurfCurveFlow": SurfCurveFlow,
@@ -243,6 +245,7 @@ def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
         _POOL4_WIDGET_CLASSES,
         _POOL4_USER_WIDGET_CLASSES,
         {"SurfProtocolHero": SurfProtocolHero},
+        {"SurfHero": SurfHero},  # Mounted legacy contract, never shown by a mode.
         _SWARM_WIDGET_CLASSES,
         _PARKED_WIDGET_CLASSES,
     )
@@ -273,6 +276,7 @@ def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
 #: simplify away: it is the (common) case where the coincidence still holds.
 SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
     **SURF_NEWS_WIDGET_SIGNATURES,
+    **SURF_LAUNCHPAD_WIDGET_SIGNATURES,
     # LAUNCHPAD / FLOW / BURN / SUPPLY since 2026-08-24. The POOL and LP boxes
     # this row carried for one day are gone (widgets/surf/hero.py says why),
     # and with them nine kwargs -- see ``META_KEYS`` and
@@ -1835,6 +1839,13 @@ def _frozen_payload(**overrides) -> dict:
     if "surf_swarm_hero" not in overrides:
         from tests.surf_swarm_hero_fixtures import screen_hero
         payload["surf_swarm_hero"] = screen_hero(payload)
+    if "surf_launchpad_hero" not in overrides:
+        from maxpane_dashboard.data.surf_launchpad_hero import project
+        payload["surf_launchpad_hero"] = project(
+            data=payload, launchpad={},
+            sources={"launchpad": {"state": "ok", "read_ts": _TS_POST_13},
+                     "market": {"state": "unavailable", "read_ts": None}},
+            now=_TS_POST_13)
     return payload
 
 
@@ -2831,7 +2842,7 @@ async def test_news_hero_is_six_live_cards_and_only_shown_in_news_mode():
         assert "KNOWN 11/11" in output
         screen.action_toggle_launchpad()
         await pilot.pause()
-        assert not hero.display and screen.query_one(SurfHero).display
+        assert not hero.display and screen.query_one(SurfLaunchpadHero).display
         screen.action_toggle_launchpad()
         await pilot.pause()
         assert hero.display and not screen.query_one(SurfHero).display
@@ -4505,6 +4516,10 @@ async def _hero_text(width: int) -> str:
         await pilot.pause()
         await screen._do_refresh()
         screen.action_toggle_launchpad()
+        await pilot.pause()
+        # Legacy renderer checks explicitly mount its former visible state.
+        screen.query_one(SurfLaunchpadHero).display = False
+        screen.query_one(SurfHero).display = True
         await pilot.pause()
         return _region_text(app, screen.query_one(SurfHero))
 

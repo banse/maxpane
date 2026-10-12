@@ -32,26 +32,36 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 
 | key | mode | body | hero |
 |---|---|---|---|
-| `l` | MODE_LAUNCHPAD | LAUNCHPAD COINS over LAUNCHPAD ACTIVITY left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail | `SurfHero` stays |
+| `l` | MODE_LAUNCHPAD | LAUNCHPAD COINS over LAUNCHPAD ACTIVITY left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail | `SurfLaunchpadHero`: COINS / CURVE FLOW / VOLUME / CREATOR FEES / BURN QUEUE / BURNED |
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
 | `s` | MODE_SWARM | WORKFLOWS beside LATEST LAUNCHES; LAUNCHES and SITES full-width; `x` opens the newest production launch | `SurfSwarmRackHero`: FLEET / OUTPUT / WORKFLOWS / LAUNCHES / LATEST WORKFLOW / SITES |
 | `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED JOBS / WORK / REWARDS / RANK / STATUS |
 | `b` | MODE_BOARD | Recorded-seat LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: TOP SEAT / RECORDED / ACCEPT RATE / OUTCOMES / WORKERS / EFFORT |
 
-`SurfHero`'s fourth box is BOARDS (owner, 2026-09-22; it replaced IMD SUPPLY): `hero.BOARD_KEYS`
-lists `a`/`b`/`s`/`4` in THE LIST filter card's shape, and an agreement test binds each key to
-its `SurfScreen` binding. `imd_supply` is still read and no widget shows it. The `minimal`
-tier writes `b leaderboard` (13 cells, no quotes or dash) so the hero's marker stays dark at 87.
-
-`_SURF_HERO_MODES` **enumerates** the modes that get `SurfHero` rather than negating one: a body
-with a hero of its own would otherwise inherit `True` from a `!=` check and paint two heroes into
-one row. Every alternate hero widget (`4`, `s`, `a`, `b`) is composed once at startup and toggled with the
+The legacy `SurfHero` remains mounted and dispatched for its existing contract,
+but `_SURF_HERO_MODES` is empty: every active mode now has its own hero. The
+legacy BOARDS shortcut agreement remains tested separately. Alternate heroes
+are composed once at startup and toggled with the
 body — curator's per-mode hero, not one widget with a mode branch. `_SCROLL_COLUMNS[mode]` names
 the containers whose scrolling lights `‹ taller`; every swarm and agent container that can scroll
 is registered there, bound by the layout test. Surf's `e` and curator's `e` (export), and the
 two `l`s, are separate bindings on separate screens. The feed threads replies behind an
 expand/collapse toggle, with NEW REPLY on the rail so a collapsed thread still announces itself.
+
+## LAUNCHPAD rack hero (`l`)
+
+`surf_launchpad_hero` projects the existing launchpad slot and current ETH/USD
+quote. Factory and swept counts remain separate; incomplete history qualifies
+COINS, CURVE FLOW and BURNED without degrading independently readable fees or
+queue getters. The queue uses previewBridge readiness. Event-derived burned
+IMD remains distinct from protocol totals.
+
+VOLUME reuses the rack's two-hour conversion over eight completed 15-minute
+buckets. Coverage, window end, volume read and quote read remain independent;
+unavailable quotes show no invented total or chart. Native values and the hero
+share one slot assembly in both full-cycle and hub refresh paths. Source clocks
+are captured with their values before detached reads can replace the cache.
 
 ## Tiers, clocks and degraded groups
 

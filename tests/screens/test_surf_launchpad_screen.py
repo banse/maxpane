@@ -27,6 +27,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfBurnPipeline,
     SurfCurveFlow,
     SurfHero,
+    SurfLaunchpadHero,
     SurfLaunchpadActivity,
     SurfLaunchpadCoins,
 )
@@ -49,11 +50,12 @@ from tests.screens.test_surf_screen import (
 
 
 async def test_l_swaps_the_body_and_keeps_the_hero() -> None:
-    """Body swap on curator's y/f precedent: the hero never leaves."""
+    """The launchpad rack replaces the hidden legacy hero with the body."""
     async with _surf_app().run_test() as pilot:
         await pilot.press("l")
         assert pilot.app.screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is True
-        assert pilot.app.screen.query_one(SurfHero).display is True
+        assert pilot.app.screen.query_one(SurfLaunchpadHero).display is True
+        assert pilot.app.screen.query_one(SurfHero).display is False
         assert pilot.app.screen.query_one("#middle-row").display is False
 
 
@@ -332,12 +334,10 @@ async def test_the_floored_panels_never_thin_out_below_their_floor() -> None:
 
 #: The two heights the gutter proof is measured at, and neither is arbitrary.
 #:
-#: The launchpad rail first overflows at **22** rows (measured: 23 shows no
-#: scrollbar, 22 does), so 46 is comfortably on the roomy side and 22 is the
-#: first row count where the scrollbar actually exists. A pair of heights that
-#: both sit above the crossover cannot fail -- fix round 1 shipped exactly
-#: that mistake with (46, 24), and the reviewer caught it by deleting the
-#: property and watching the "proof" stay green.
+#: 46 is comfortably roomy and 22 stays below the overflow boundary, including
+#: after the nine-row rack moved that boundary to 33 in 2026-10-12. These
+#: samples deliberately straddle it. The earlier rail's (46, 24) proof failed
+#: to exercise a scrollbar; its mutation caught that mistake.
 _RAIL_ROOMY_ROWS = 46
 _RAIL_OVERFLOWING_ROWS = 22
 
@@ -426,14 +426,7 @@ async def test_the_launchpad_rail_reserves_its_scrollbar_gutter() -> None:
 
 
 async def test_the_hero_survives_the_launchpad_body_swap() -> None:
-    """The hero is outside ``#surf-launchpad-body``, so nothing it tracks
-    goes dark when ``l`` swaps the body underneath it.
-
-    Asserted against the hero's **own region**, not the whole screen: three
-    of its four box titles are words the launchpad panels also composite
-    (``LAUNCHPAD COINS``, ``CURVE FLOW``'s numbers, ``BURN PIPELINE``), so a
-    whole-screen substring check would pass with the hero unmounted entirely.
-    """
+    """Read the rack's own region: body panel titles cannot stand in for it."""
     async with _surf_app().run_test(size=(150, 46)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
@@ -442,12 +435,13 @@ async def test_the_hero_survives_the_launchpad_body_swap() -> None:
         screen = pilot.app.screen
         assert screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is True
 
-        hero = _region_text(pilot.app, screen.query_one(SurfHero))
-        for title in ("LAUNCHPAD", "FLOW", "BURN", "BOARDS"):
+        rack = screen.query_one(SurfLaunchpadHero)
+        hero = _region_text(pilot.app, rack)
+        assert len(list(rack.children)) == 6
+        assert {card.region.height for card in rack.children} == {9}
+        for title in ("COINS", "CURVE FLOW", "VOLUME", "CREATOR FEES", "BURN QUEUE", "BURNED"):
             assert title in hero, f"the hero lost its {title} box under `l`"
-        # The live numbers, not just the frame: BURN reads the fast tier and
-        # would go dark if the hero were swapped.
-        assert "'b' - leaderboard" in hero
+        assert "36 new /24h" in hero and "4.683k" in hero
         assert "READY" in hero
 
 _LAUNCHPAD_CSS_SELECTORS = (
@@ -562,6 +556,137 @@ def _clipped_launchpad_lines(app, screen) -> list[str]:
             if line.rstrip().endswith("…"):
                 out.append(line)
     return out
+
+
+_LAUNCHPAD_RACK_STATES = ("healthy", "partial", "stale", "unavailable", "zero", "large")
+
+
+def _launchpad_layout_payload(kind="healthy") -> dict:
+    """Native fixture plus the production projection and a complete 2h snapshot."""
+    from maxpane_dashboard.data.surf_launchpad_hero import project
+
+    data = _frozen_payload(launchpad_creator_eth_owed=.0842, eth_usd=3200.)
+    sources = {"launchpad": dict(state="ok", read_ts=18005), "market": dict(state="ok", read_ts=18015)}
+    volume = dict(state="ok", read_ts=18010, head_ts=18000, until=18000,
+                  known=146, total=146, points_wei=[i * 10**18 for i in range(8)])
+    if kind == "partial":
+        data.update(launchpad_launch_count=145, launchpad_trader_count=None, burn_staged=None)
+        volume.update(state="partial", known=145, points_wei=None)
+    elif kind == "stale":
+        sources["launchpad"]["state"] = "stale"
+    elif kind == "unavailable":
+        data.update({key: None for key in data if key.startswith(("launchpad_", "burn_"))})
+        sources = {}
+        volume = None
+    elif kind == "zero":
+        data.update({key: 0 for key in (
+            "launchpad_coin_count", "launchpad_launch_count", "launchpad_new_24h",
+            "launchpad_swap_count", "launchpad_trader_count", "launchpad_creator_count",
+            "launchpad_creator_eth_owed", "burn_accrued", "burn_staged", "burn_bridgeable", "launchpad_burned_total")})
+        data.update(burn_ready=False, launchpad_coins=[], launchpad_activity=[], launchpad_burnkeepers=[])
+        volume.update(known=0, total=0, points_wei=[0] * 8)
+    elif kind == "large":
+        data.update(launchpad_coin_count=9999, launchpad_launch_count=9999, launchpad_new_24h=999,
+                    launchpad_swap_count=12345678, launchpad_trader_count=123456,
+                    launchpad_creator_count=9999, launchpad_creator_eth_owed=.0000042,
+                    burn_accrued=123456.7, burn_staged=123456.7, burn_bridgeable=123456.7,
+                    launchpad_burned_total=123456789.)
+        volume.update(known=9999, total=9999)
+    data["surf_launchpad_hero"] = project(data=data, launchpad={"volume_2h": volume}, sources=sources, now=18020)
+    return data
+
+
+def _lost_launchpad_card_text(app, card):
+    """Compare complete card facts, including digit glyphs, with composited cells."""
+    from rich.style import Style
+    from textual.renderables.digits import Digits
+    from maxpane_dashboard.widgets.markup_safety import strip_tags
+
+    record = card.data
+    text = _region_text(app, card)
+    footer = card.border_subtitle
+    footer = footer.plain if hasattr(footer, "plain") else strip_tags(footer)
+    expected = [record.title, record.heading, record.subtitle, *record.rows]
+    if record.digits:
+        glyphs = [segment.text for segment in Digits(record.digits).render(Style()) if segment.text != "\n"]
+        inside = max(4, card.content_size.width) - 2
+        if (record.digits != "--" and all(char in "0123456789.," for char in record.digits)
+                and all(len(row) <= inside for row in glyphs)):
+            expected.extend(glyphs)
+        else:
+            expected.append(record.digits)
+    lost = [part for part in expected if part and part not in text]
+    if " ".join(footer.split()) not in " ".join(text.split()):
+        lost.append(footer)
+    lost.extend((label, value) for label, value in record.stats
+                if not any(label in line and value in line for line in text.splitlines()))
+    return lost
+
+
+def _launchpad_rack_geometry(app):
+    screen = app.screen
+    hero = screen.query_one(SurfLaunchpadHero)
+    cards = list(hero.children)
+    return dict(
+        lost={card.data.key: lost for card in cards if (lost := _lost_launchpad_card_text(app, card))},
+        marked={card.data.key for card in cards if "‹" in _region_text(app, card)},
+        heights={card.region.height for card in cards},
+        overflowing=[card.data.key for card in cards if not hero.region.contains_region(card.region)],
+    )
+
+
+@pytest.mark.parametrize("kind", _LAUNCHPAD_RACK_STATES)
+@pytest.mark.parametrize("width", boundary_set(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, 112, 155))
+async def test_launchpad_rack_and_native_body_width_boundary(width, kind):
+    async with _surf_app(_launchpad_layout_payload(kind)).run_test(size=(width, 45)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        geometry = _launchpad_rack_geometry(pilot.app)
+        assert geometry["heights"] == {9} and not geometry["overflowing"]
+        # Cards advertise their own lost labels, independently of the native
+        # coin table's wider boundary and the screen-wide status text.
+        assert set(geometry["lost"]) <= geometry["marked"], (width, kind, geometry)
+        if width >= SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS:
+            assert not geometry["lost"] and not geometry["marked"], (width, kind, geometry)
+            assert not _clipped_launchpad_lines(pilot.app, pilot.app.screen)
+            assert _status_bar_whole(pilot.app)
+
+
+@pytest.mark.parametrize("kind", _LAUNCHPAD_RACK_STATES)
+@pytest.mark.parametrize("rows", boundary_set(SURF_LAUNCHPAD_FULL_LAYOUT_ROWS, 28, 45))
+async def test_launchpad_rack_and_native_body_height_boundary(rows, kind):
+    async with _surf_app(_launchpad_layout_payload(kind)).run_test(
+        size=(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, rows)
+    ) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        screen = pilot.app.screen
+        scrolling = any(screen.query_one(f"#{cid}").show_vertical_scrollbar
+                        for cid in (LAUNCHPAD_LEFT_ID, LAUNCHPAD_RAIL_ID))
+        assert scrolling is (rows < SURF_LAUNCHPAD_FULL_LAYOUT_ROWS), (rows, kind)
+        assert (TALLER_HINT in _screen_text(pilot.app).splitlines()[0]) is scrolling
+        geometry = _launchpad_rack_geometry(pilot.app)
+        assert geometry["heights"] == {9} and not geometry["overflowing"]
+        assert not geometry["lost"] and not geometry["marked"], (rows, kind, geometry)
+
+
+async def test_launchpad_hero_precision_and_resize_preserve_the_measured_body():
+    async with _surf_app(_launchpad_layout_payload()).run_test(size=(112, 28)) as pilot:
+        await pilot.app.screen._do_refresh()
+        await pilot.press("l")
+        await pilot.pause()
+        screen = pilot.app.screen
+        assert _launchpad_rack_geometry(pilot.app)["marked"]
+        assert TALLER_HINT in _screen_text(pilot.app).splitlines()[0]
+        await pilot.resize_terminal(SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, SURF_LAUNCHPAD_FULL_LAYOUT_ROWS)
+        await pilot.pause()
+        await pilot.pause()
+        assert not any(_launchpad_rack_geometry(pilot.app)[key] for key in ("lost", "marked", "overflowing"))
+        assert "╰─╯•╰─╯╰─╯  ╵╰─╴" in _region_text(pilot.app, screen.query_one(SurfLaunchpadHero).query_one("#hero-fees"))
+        assert TALLER_HINT not in _screen_text(pilot.app).splitlines()[0]
+        assert not _clipped_launchpad_lines(pilot.app, screen)
 
 
 @pytest.mark.parametrize(
@@ -746,8 +871,8 @@ async def test_the_launchpad_body_binding_panel_is_the_coins_table() -> None:
 # screen-wide and rides row 0, the one row a short terminal can never push
 # off; ``‹ widen`` rides the binding panel's own title.
 #
-# The sweep runs 24..45 -- seven rows below the measured 31 and fourteen
-# above, never starting at it.
+# The sweep runs 24..45, spanning the measured 33 in both directions. The
+# nine-row rack added two chrome rows on 2026-10-12; native floors stayed 20.
 
 
 #: The coin table at the twenty rows it is capped at (ten until 2026-09-15).
@@ -760,8 +885,8 @@ async def test_the_launchpad_body_binding_panel_is_the_coins_table() -> None:
 #: capture cannot exercise that: its table never has more coins than rows.
 #:
 #: Measured with this payload the left column is 20 and the rail 20 at the
-#: pin, so the pin holds at 31 with **no row of margin** (the gap spent the
-#: one it had). Unlike the capture, this payload fills the table at every
+#: pin, now 33 with **no row of margin** after the nine-row rack arrived.
+#: Unlike the capture, this payload fills the table at every
 #: height, so a blank row under it is the margin and not an unfilled table.
 #: It is the height sweep's counterpart to
 #: :func:`_ordinary_burn_payload` on the width side, and it exists for the

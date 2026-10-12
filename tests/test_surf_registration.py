@@ -1286,6 +1286,8 @@ def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
 _NON_NUMERIC_KEYS = frozenset(
     {
         "degraded", "feed_items", "feed_signal_tx_hashes", "surf_news_hero", "surf_swarm_hero", "surf_pool4_hero", "surf_protocol_hero",
+        # Nested launchpad facts have their own zero/unread compositor coverage.
+        "surf_launchpad_hero",
         # Nested card facts; zero/unread is composited in test_surf_swarm_board_hero.py.
         "surf_leaderboard_hero",
         "sig_post_state", "sig_lp_state", "sig_gate_state",
@@ -1546,6 +1548,8 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     "pool4_price_usd": "POOL4 rack zero vs unread: tests/widgets/test_surf_pool4_hero.py",
     "pool4_trailing_return_pct": "POOL4 rack zero vs unread: tests/widgets/test_surf_pool4_hero.py",
     "pool4_staker_count": "POOL4 rack addresses zero vs unread: tests/widgets/test_surf_pool4_hero.py",
+    "launchpad_new_24h": "SurfHero is hidden; LAUNCHPAD rack zero vs unread: tests/widgets/test_surf_launchpad_hero.py",
+    "launchpad_creator_count": "SurfHero is hidden; LAUNCHPAD rack zero vs unread: tests/widgets/test_surf_launchpad_hero.py",
     # Computed by the manager (surf_manager._market_payload) but never read
     # by screens/surf.py or any widgets/surf/* module -- grep confirms no
     # `data.get("eth_usd")` call exists anywhere in either package. A
@@ -1994,30 +1998,10 @@ _NUMERIC_ZERO_PROBES: dict[str, str] = {
     # `parity_pct` set renders `parity --` and proves nothing. Rendered with
     # `imd_price_usd` and `fp_price_usd` set alongside it.
     "parity_pct": "parity ● +0.00%",        # market.py _fmt_parity
-    # Task 8 (2026-08-23): SurfHero's BURN box. `pool_fee_bps` ("0% fee") and
-    # `decoy_pool_count` ("1 of 1 pools") were beside these two until Task 12
-    # (2026-08-24) and were vacuous the moment the POOL box was retired --
-    # `hero.py::_pool_lines`, the function both needles name, no longer
-    # exists, and the screen no longer dispatches either key. Both moved to
-    # `_NUMERIC_KEYS_EXCLUDED` above, verified by rendering. The two below
-    # survive unchanged: `_burn_lines` is still on the row, and Task 12's
-    # dispatch rewire kept `burn_accrued`/`burn_staged` pointed at it, so
-    # these are now screen-verified rather than box-verified. Re-read off the
-    # real `SurfScreen` at (143, 48) with one key `0` and every other `None`:
-    # `acc 0 · stg --` and `acc -- · stg 0`.
-    "burn_accrued": "acc 0",                     # hero.py _burn_lines
-    "burn_staged": "stg 0",                      # hero.py _burn_lines
-    # Task 12 (2026-08-24): the hero's LAUNCHPAD box, wired through the real
-    # screen at last. Both needles were READ off composited output at the
-    # pinned (143, 48) -- one key `0`, every other key `None` -- not invented:
-    # the box's second line renders `0 new · 24h` and its third `0 creators`,
-    # while the all-`None` baseline collapses both into a single `no read yet`
-    # (the three-state contract `_launchpad_lines` documents), so neither
-    # needle exists in the outage render. `· 24h` is part of the first needle
-    # deliberately: the box drops that suffix at its narrow tiers, so the long
-    # form is what pins the width this test actually renders at.
-    "launchpad_new_24h": "0 new · 24h",          # hero.py _launchpad_lines
-    "launchpad_creator_count": "0 creators",     # hero.py _launchpad_lines
+    # SurfHero is now hidden. These visible native BURN PIPELINE needles
+    # retain scalar coverage; their positive controls are composited below.
+    "burn_accrued": "accrued 0.00 IMD",          # launchpad.py _pipeline_lines
+    "burn_staged": "staged 0.00 IMD",            # launchpad.py _pipeline_lines
     "nft_holders": "0 holders",                  # nft.py _fmt_count
     "nft_transfers_24h": "0 transfers/24h",      # nft.py _fmt_count
     "nft_dev_holdings": "dev holds 0 identities",  # nft.py _dev_row
@@ -2436,6 +2420,9 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 "pressing `l` did not reach the launchpad body -- the sweep "
                 "below would be measuring the dashboard twice"
             )
+            from maxpane_dashboard.widgets.surf import SurfHero, SurfLaunchpadHero
+            assert app.screen.query_one(SurfLaunchpadHero).display
+            assert not app.screen.query_one(SurfHero).display
 
             # ...and the THIRD body (2026-09-01). `p` swaps in the POOL4
             # panels, and all thirty-two `_POOL4_ZERO_PROBES` needles only
@@ -2642,6 +2629,28 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 )
 
     asyncio.run(_run())
+
+
+@pytest.mark.mounts_app
+@pytest.mark.parametrize('key', ['burn_accrued', 'burn_staged'])
+def test_launchpad_pipeline_zero_needles_remain_visible_with_legacy_hero_hidden(key):
+    from tests.screens.test_surf_screen import _all_none_payload, _screen_text as painted, _surf_app
+    from maxpane_dashboard.widgets.surf import SurfHero, SurfLaunchpadHero
+
+    async def render(value):
+        payload = _all_none_payload()
+        payload[key] = value
+        async with _surf_app(payload).run_test(size=(143, 48)) as pilot:
+            await pilot.app.screen._do_refresh()
+            await pilot.press('l')
+            await pilot.pause()
+            assert pilot.app.screen.query_one(SurfLaunchpadHero).display
+            assert not pilot.app.screen.query_one(SurfHero).display
+            return painted(pilot.app)
+
+    needle = _NUMERIC_ZERO_PROBES[key]
+    assert needle in asyncio.run(render(0.0))
+    assert needle not in asyncio.run(render(None))
 
 
 #: The five keys the contract types ``int``; everything else is a float, and

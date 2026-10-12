@@ -143,14 +143,12 @@ decoy pool · burn readiness · hot coin. Each renders `state · age · one-line
 re-fires on a *new* event: baselines advance on the successful read that detected the last one,
 and never on a failed read — an outage cannot fire a burn or un-fire a migration.
 
-The hero (LAUNCHPAD · FLOW · BURN · BOARDS) reads the launchpad: how big the coin population is
-and how fast it is growing, how many distinct creators are behind it, how much of it is actually
-trading, and what the burn pipeline owes — the IMD side under BURN, the ETH side under FLOW.
-BOARDS lists the keys that open the other boards: `'a' - imd agent`, `'b' - leaderboard`,
-`'s' - swarm` and `'4' - pool4` (the narrowest hero tier writes `b leaderboard`, without the quotes and dash).
-LAUNCHPAD and FLOW carry the launchpad tier's own `as of HH:MM` on their titles, because that
-tier refreshes on a slower clock than the title bar's and a failed sweep leaves the last good
-numbers standing behind an older marker rather than blanking them.
+The LAUNCHPAD view has six rack cards: COINS, CURVE FLOW, VOLUME, CREATOR FEES,
+BURN QUEUE and BURNED. They show factory population and new launches, observed
+trading activity, two-hour USD volume, outstanding ETH creator fees, sendable
+IMD and cumulative event burns. Volume covers eight completed 15-minute buckets,
+valued at the current ETH/USD quote; its window end is shown below the value.
+Each card retains its own source status and read time when data is incomplete or stale.
 
 The POOL and LP boxes this row used to carry are gone, and not because the 2026-08-17 v3→v4
 migration reversed: POOL's three facts are each shown elsewhere now (pool liquidity in IMD
@@ -176,9 +174,8 @@ who has actually pushed the button. BURNKEEPERS is the new one: `bridgeToBaseBur
 callable by anyone, so this ranks the wallets that have called it by IMD burned and shows the
 LayerZero fee each really paid — the fee, not the transaction's value, whose surplus the executor
 refunds. maxpane never calls it, and never offers to: it only reports that it is callable and
-what it has cost the people who did. The hero (LAUNCHPAD · FLOW · BURN · BOARDS) stays on screen
-the whole time; `esc` backs out, one-way. The launchpad view is whole from **138 columns**,
-inside the 143 the widest dashboard already asks for, and from **31 rows** — below that it
+what it has cost the people who did. The six LAUNCHPAD hero cards stay above these panels; `esc` backs out, one-way. The launchpad view is whole from **138 columns**,
+inside the 143 the widest dashboard already asks for, and from **33 rows** — below that it
 scrolls and says `‹ taller`.
 
 Press **`e`** for the experimental pool4 protocol view (it is not named on the status bar) — the same trick a third time, a third body under the same hero. pool4
@@ -631,7 +628,7 @@ Some dashboards add their own. FWA, TTT, Talismans and THE LIST bind `c` to swap
 LIST's `l` view it cycles the full-width table through raw, cleaned and filtered. **Surfboard binds `l`** to swap
 the whole dashboard body for the v4 launchpad's own five panels — LAUNCHPAD COINS over LAUNCHPAD
 ACTIVITY on the left, CURVE FLOW, BURN PIPELINE and BURNKEEPERS in a right-hand rail — with the
-hero (LAUNCHPAD · FLOW · BURN · BOARDS) left on screen the whole time; `esc` backs out, one-way.
+six LAUNCHPAD rack cards above them; `esc` backs out, one-way.
 **It binds `e`**, experimental and unadvertised, the same way for the pool4 protocol — THE SPLIT and THE RATCHET on the left,
 HATCHES and sIMD VAULT in the rail, the same hero left where it was. **And it binds `4`** for the
 POOL4 MARKET view — the same protocol read as a market rather than as a machine: RECENT FLOW

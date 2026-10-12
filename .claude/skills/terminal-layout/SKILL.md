@@ -16,7 +16,7 @@ it. This file is the method; the constants are the record.
 |---|---|---|
 | app-wide | 143 | `__main__.FULL_LAYOUT_COLUMNS` |
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
-| surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `l` launchpad (six rack heroes, 2026-10-12) | 138 cols · 33 rows (native COINS table binds width; nine-row hero adds two rows; live preview 149×45) | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `p` pool4 (key `e`, PROTOCOL; six rack heroes, 2026-10-12) | 141 cols · 47 rows (direct-route REWARD SPLIT row binds width; native body remains 99; live preview 149×45) | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `4` pool4 market (hint `4 pl4`; six rack heroes, 2026-10-12) | 148 cols · 38 rows (partial-holder row binds width; native STAKERS remains 119; live preview 149×45) | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `s` swarm (rack heroes, 2026-10-12; WORKFLOWS beside LATEST LAUNCHES, full-width LAUNCHES and SITES; `x` opens the newest launch) | 141 cols · 38 rows (LATEST WORKFLOW outer title binds width; nine-row heroes and nine-line body top floor) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |

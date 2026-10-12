@@ -58,6 +58,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfNewsHero,
     SurfLaunchpadActivity,
     SurfLaunchpadCoins,
+    SurfLaunchpadHero,
     SurfMarket,
     SurfNft,
     SurfPool4Flow,
@@ -201,7 +202,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # check, rather than in `_SHORT_KWARG_WIDGETS` -- which is what that
         # list's own docstring asks of a new widget. `SurfBurnkeepers` was
         # renamed `burnkeepers=` -> `launchpad_burnkeepers=` to earn it.
-        SurfLaunchpadActivity, SurfBurnkeepers,
+        SurfLaunchpadActivity, SurfLaunchpadHero, SurfBurnkeepers,
         # The `p` POOL4 body's five panels (2026-09-01; `SurfPool4Flow` has
         # rendered only in the `4` body since 2026-09-14, and is still
         # exported and still checked). All five are in the
