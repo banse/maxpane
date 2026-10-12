@@ -203,3 +203,24 @@ Validation: 136 affected/composing cases, 124 fast guards, 12 docpins and three
 focused native dispatch/address cases passed. Final review approved with no
 findings after eight additional named checks. No full suite run or outstanding
 findings for this integration.
+
+## POOL4 hero mockup — 2026-10-12
+
+Proposal 1 is available in `scripts/surf_pool4_hero_demo.py`: IMD PRICE,
+sIMD RATE, STAKING, VAULT, DOWNSIDE BID and DRIP QUEUE. The standalone Textual
+app reuses the unchanged rack renderer above the native market panels. All
+figures and holder addresses are fictional, with visible MOCK DATA labels in
+the frame and exported preview. Vault assets/shares, holder totals, queue days
+and the deployed bid reconcile across the hero and body. STAKING explicitly
+labels annualised APR from the trailing seven days; the queue's daily figure
+is a delivery cap.
+
+The 149×45 preview was exported, visually inspected and shown to the owner.
+Six cards share a nine-row baseline, and smaller terminals scroll to retain
+every card. No production data source, cache, configuration, screen, shared
+widget or layout pin changed. API integration follows owner feedback in the
+requested mockup workflow.
+
+Validation: three compositor/data cases, 124 fast guards and 12 docpins passed.
+Both deliberate geometry regressions were detected by named tests and restored
+byte-for-byte. Final review approved with no findings. No full suite run.
