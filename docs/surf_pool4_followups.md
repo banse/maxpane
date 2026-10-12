@@ -1075,3 +1075,29 @@ mutants were killed. Closing validation: 853 composing checks and 158 layout
 checks passed; four stale contract/parked-widget expectations were corrected
 and passed in the subsequent 121-check targeted run. Fast guards:124 passed;
 documentation pins:12 passed. No full-suite run was requested or performed.
+
+## 2026-10-12 — PROTOCOL proposal 1 mockup
+
+Added `scripts/surf_protocol_hero_demo.py`: six rack cards (TOTALS, INVENTORY,
+REWARD SPLIT, UNSETTLED, DELIVERY, CHECKS), above the existing protocol panels.
+This is the owner's selected mockup phase, with conspicuous MOCK DATA labels;
+no production widget, source, cache, theme, registration or layout pin changed.
+At 149×45 the equal nine-row cards fit in one row. Native detail panels keep
+all twelve fictional hatch levers and scroll vertically; narrower windows
+can also scroll horizontally and recover the original layout on resize.
+
+The fictional burned/rewarded totals maintain the configured 15% reward share;
+the hero shows the whole reward leg, and bonding's 40% allocation is marked
+derived. Inventory headroom and the queue/rate calculation agree with the
+native panels. The exported render is `/tmp/maxpane-protocol-hero-mockup.svg`
+(PNG alongside). Interactive preview: `.venv/bin/python scripts/surf_protocol_hero_demo.py`.
+
+Validation: three focused tests passed under isolated HOME with worksteal,
+124 fast guards and twelve documentation pins passed. Reducing the card grid
+from nine rows to eight was killed by the owner-size compositor test and
+restored byte for byte. No full suite. API integration and its live render /
+layout measurements remain the next phase after owner feedback.
+
+Final review approved with no findings. Its three named checks passed in an
+isolated copy, and an incorrect vault-share conversion mutant was killed by
+the accounting test; review left the shared working tree unchanged.
