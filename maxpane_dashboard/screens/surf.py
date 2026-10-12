@@ -82,7 +82,7 @@ mount passes are now vestigial -- filed as F15 in
 to change.** It read "``#hero-row`` is never touched by either swap and stays
 on screen in all three modes" until 2026-09-11, and the ``4`` body is exactly
 the case that makes it false: the row now holds **two** heroes, ``SurfHero``
-and ``SurfPool4UserHero``, and ``_show_mode`` toggles which one shows. The row
+and ``SurfPool4RackHero``, and ``_show_mode`` toggles which one shows. The row
 itself still never hides -- a hero is on screen in every mode, as it always
 was -- but *which* hero is a function of ``self._mode``, on curator's
 per-mode hero pattern. PRD §3 argues the break: surf's own headline metrics
@@ -272,7 +272,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UDepth,
     SurfPool4USignals,
     SurfPool4UStakers,
-    SurfPool4UserHero,
+    SurfPool4RackHero,
     SurfPool4Vault,
     SurfSignals,
     SurfSwarmAgentHero,
@@ -1434,7 +1434,12 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 45
 #: every width. No marker announces the 40: it is a short form, not a shed
 #: column. Re-swept in situ over 114-122 with the mainnet payload: compact
 #: and marked at 118, windowed and unmarked at 119-120, whole from 121.
-SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 119
+#: 2026-10-12: six source-aware rack cards now bind the market width.
+#: In-situ source-state sweep after the live 149×45 preview: the widest
+#: partial-holder row (addresses ≥1000.0K) clips and marks at 147;148–150
+#: stay whole. Normal/stale clears 142; native STAKERS remains 119. Grid
+#: rounding gives isolated fits below 148, so the stable boundary is pinned.
+SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 148
 
 #: The ``4`` POOL4 MARKET body's own full-layout height, swept in situ on
 #: 2026-09-11, re-swept twice on 2026-09-12 for the ``as of`` removal and a
@@ -1554,7 +1559,11 @@ SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 119
 #: different terminals rather than one asking for a subset of the other. In
 #: every case the shortfall is announced by ``‹ taller`` rather than taken
 #: silently.
-SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
+#: 2026-10-12: six nine-row rack cards replace the six-row hero.
+#: Live 149×45 preview preceded the new sweep:149×37 loses the ladder
+#: caption and marks taller;149×38 restores the full ladder and body.
+#: Native row floors remain unchanged.
+SURF_POOL4_USER_FULL_LAYOUT_ROWS = 38
 
 #: The ``s`` SWARM body's own width. Set at 93 on 2026-09-16 when the body
 #: was first wired; 128, 115, 95 and 116 across the 2026-09-17 review rounds
@@ -1988,7 +1997,7 @@ SURF_BOARD_FULL_LAYOUT_ROWS = 33
 #: **MODE_SWARM, MODE_AGENT and MODE_BOARD are deliberately absent.**
 #: Each is a body with a hero of its own (:class:`SurfSwarmHero`,
 #: :class:`SurfSwarmAgentHero`, toggled in ``_show_mode`` the same way as
-#: :class:`SurfPool4UserHero`), and adding either here would paint two heroes
+#: :class:`SurfPool4RackHero`), and adding either here would paint two heroes
 #: into one row -- the exact defect enumerating instead of negating exists to
 #: make loud rather than silent.
 #: Default NEWS has its own six-card hero; the legacy row serves only
@@ -2718,7 +2727,7 @@ class SurfScreen(DashboardScreen):
     #: market`` to read ``4 pool4``. The protocol body is still reachable, under
     #: ``e`` for experimental, and is deliberately not advertised here. The
     #: ``4`` body keeps its internal names (``MODE_POOL4_USER``,
-    #: ``SurfPool4UserHero``) and its docs name, POOL4 MARKET. The hint names
+    #: ``SurfPool4RackHero``) and its docs name, POOL4 MARKET. The hint names
     #: the key, and ``pool4`` is what that key now opens on the bar. The run is
     #: still one markup run and still read back off composited output. It is
     #: eleven columns shorter than the three-part hint, so it fits wherever
@@ -3471,7 +3480,7 @@ class SurfScreen(DashboardScreen):
         with Horizontal(id="hero-row"):
             yield SurfNewsHero(classes="surf-hero")
             yield SurfHero(classes="surf-hero")
-            yield SurfPool4UserHero(classes="surf-hero")
+            yield SurfPool4RackHero(classes="surf-hero")
             yield SurfSwarmRackHero(classes="surf-hero")
             yield SurfSwarmAgentHero(classes="surf-hero")
             yield SurfSwarmBoardHero(classes="surf-hero")
@@ -3709,7 +3718,7 @@ class SurfScreen(DashboardScreen):
         its ``display``, so it is on in every mode."* Every clause of that was
         true when it was written and the ``4`` body made all of it false in one
         commit -- ``#hero-row`` now holds ``SurfHero`` **and**
-        ``SurfPool4UserHero``, and the line below toggles both. The sentence is
+        ``SurfPool4RackHero``, and the line below toggles both. The sentence is
         replaced rather than annotated because a docstring asserting the
         opposite of its own method is what the next reader trusts instead of
         reading the code.
@@ -3731,7 +3740,7 @@ class SurfScreen(DashboardScreen):
         ``self._pool4_user_hero_shown`` flag, or a ``hero.display = not
         body.display``, would each be a second source of truth for the same
         fact. Every visibility here -- ten of them now (seven bodies plus
-        three heroes), ``SurfSwarmHero`` joining ``SurfPool4UserHero`` as the
+        three heroes), ``SurfSwarmHero`` joining ``SurfPool4RackHero`` as the
         second hero swapped with its own body -- is ``self._mode == <one mode
         word>`` and nothing else, which makes the modes exclusive by
         construction rather than by care.
@@ -3755,7 +3764,7 @@ class SurfScreen(DashboardScreen):
             # is the ``not launchpad`` defect one layer out: it would show
             # the wrong hero on a new body rather than no hero, and a wrong
             # hero is the one of those two a reader cannot see is wrong.
-            self.query_one(SurfPool4UserHero).display = (
+            self.query_one(SurfPool4RackHero).display = (
                 self._mode == MODE_POOL4_USER
             )
             self.query_one(SurfSwarmRackHero).display = self._mode == MODE_SWARM
@@ -4810,23 +4819,13 @@ class SurfScreen(DashboardScreen):
         # `pool4_as_of_hhmm` is the 600 s pool4 sweep's; STAKERS carries
         # `pool4_stakers_as_of_hhmm`, the long `Transfer`-fold tier's own and
         # much slower one, which advances only when a new fold lands. The
-        # hero takes NEITHER (contract C4): a hero has no room for a clock
-        # and the title bar carries the fast tier's.
+        # rack hero carries the matching source clocks in its projection.
         try:
-            self.query_one(SurfPool4UserHero).update_data(
-                pool4_price_usd=data.get("pool4_price_usd"),
-                pool4_venue_gap_pct=data.get("pool4_venue_gap_pct"),
-                pool4_cheaper_venue=data.get("pool4_cheaper_venue"),
-                pool4_backstop_state=data.get("pool4_backstop_state"),
-                pool4_backstop_eth=data.get("pool4_backstop_eth"),
-                pool4_backstop_lower_tick=data.get("pool4_backstop_lower_tick"),
-                pool4_current_tick=data.get("pool4_current_tick"),
-                pool4_trailing_return_pct=data.get("pool4_trailing_return_pct"),
-                pool4_vault_assets=data.get("pool4_vault_assets"),
-                pool4_staker_count=data.get("pool4_staker_count"),
+            self.query_one(SurfPool4RackHero).update_data(
+                surf_pool4_hero=data.get("surf_pool4_hero"),
             )
         except Exception as exc:
-            logger.debug("Failed to update SurfPool4UserHero: %s", exc)
+            logger.debug("Failed to update SurfPool4RackHero: %s", exc)
 
         try:
             self.query_one(SurfPool4UStakers).update_data(
@@ -4901,7 +4900,7 @@ class SurfScreen(DashboardScreen):
                 # `band used 0.0%`. `pool4_backstop_state` is the key that
                 # carries the distinction and it has to be dispatched for the
                 # panel to be able to make it. It already reaches
-                # `SurfPool4USignals` and `SurfPool4UserHero`; this is the
+                # `SurfPool4USignals` and `SurfPool4RackHero`; this is the
                 # third and last panel on this body that branches on it.
                 pool4_backstop_state=data.get("pool4_backstop_state"),
                 pool4_network=data.get("pool4_network"),

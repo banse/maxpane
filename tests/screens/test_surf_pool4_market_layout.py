@@ -1,5 +1,12 @@
 """WP10 -- the `4` POOL4 MARKET body's own measured layout.
 
+The rack integration changes the current boundary to 148×38.
+The VAULT's partial holder count binds width; the nine-row hero binds the
+three extra rows. Source/value payloads have independent stable width onsets,
+including measured grid-rounding islands below those onsets. STAKERS retains
+its own 119-column body requirement. The historical measurements below explain
+the unchanged body floors and geometry traps.
+
 Two pins live here and nowhere else: ``SURF_POOL4_USER_FULL_LAYOUT_COLUMNS``
 and ``SURF_POOL4_USER_FULL_LAYOUT_ROWS``. Their measurement method, their
 binding panels and their per-panel derivation are in their own ``#:`` blocks
@@ -88,9 +95,12 @@ both halves rather than simplifying to the marker now that the two agree.
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 
 import pytest
+from rich.text import Text
 
+from maxpane_dashboard.data.surf_pool4_hero import project as project_pool4_hero
 from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.screens.surf import (
     POOL4_USER_BODY_ID,
@@ -112,7 +122,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UDepth,
     SurfPool4USignals,
     SurfPool4UStakers,
-    SurfPool4UserHero,
+    SurfPool4RackHero,
 )
 from maxpane_dashboard.widgets.surf.pool4u_depth import CAPTION as DEPTH_CAPTION
 from maxpane_dashboard.widgets.surf.pool4u_depth import (
@@ -140,8 +150,9 @@ from tests.screens.test_surf_screen import (
 #: Independent literals for the same reason ``MEASURED_POOL4_COLUMNS`` is one
 #: next door: a test that aliased the screen's constant would compare a
 #: number against itself and pin nothing.
-MEASURED_MARKET_COLUMNS = 119
-MEASURED_MARKET_ROWS = 35
+MEASURED_MARKET_COLUMNS = 148
+MEASURED_MARKET_ROWS = 38
+MARKET_BODY_COLUMNS = 119
 
 #: How many address rows ``SurfPool4UStakers`` painted at the body's pinned
 #: height **before** the 2026-09-12 swap, when it sat in the top row against
@@ -208,7 +219,7 @@ MARKET_FLOW_NEED = 52
 #: state-summary line went first, the clock second -- and neither is
 #: recoverable from this table alone, which is why the pin is swept.
 FIXED_PANEL_LINES = {
-    SurfPool4UserHero: 6,
+    SurfPool4RackHero: 9,
     SurfPool4UBurn: 4,
     SurfPool4USignals: 5,
     SurfPool4UDepth: 8,
@@ -222,7 +233,7 @@ _MARKET_CLASSES = {
     "SurfPool4USignals": SurfPool4USignals,
     "SurfPool4Flow": SurfPool4Flow,
     "SurfPool4UDepth": SurfPool4UDepth,
-    "SurfPool4UserHero": SurfPool4UserHero,
+    "SurfPool4RackHero": SurfPool4RackHero,
 }
 
 
@@ -409,9 +420,9 @@ def _market_widgets(screen) -> dict:
     nothing stops a second mount coming back.
     """
     body = screen.query_one(f"#{POOL4_USER_BODY_ID}")
-    out = {"SurfPool4UserHero": screen.query_one(SurfPool4UserHero)}
+    out = {"SurfPool4RackHero": screen.query_one(SurfPool4RackHero)}
     for name, cls in _MARKET_CLASSES.items():
-        if name == "SurfPool4UserHero":
+        if name == "SurfPool4RackHero":
             continue
         found = list(body.query(cls))
         assert len(found) == 1, f"{name}: {len(found)} instances inside the body"
@@ -456,6 +467,18 @@ def _market_clipped(app, screen) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     for name, widget in _market_widgets(screen).items():
         out.extend((name, body) for body in _css_clipped_lines(app, widget))
+        if isinstance(widget, SurfPool4RackHero):
+            # Border titles and fitted inset labels elide before CSS can see
+            # them. Inspect complete painted facts, not only trailing ellipses.
+            for card in widget.query("LocalSourceHeroCard"):
+                painted = _region_text(app, card)
+                record = card.data
+                for text in (record.title, record.heading, record.subtitle, Text.from_markup(str(card.border_subtitle)).plain):
+                    if text and text not in painted:
+                        out.append((name, f"{record.key}: {text}"))
+                for label, value in record.stats:
+                    if not any(label in line and value in line for line in painted.splitlines()):
+                        out.append((name, f"{record.key}: {label} {value}"))
     return out
 
 
@@ -633,9 +656,33 @@ def _staker_rows(app, widget) -> int:
     ])
 
 
+def _layout_payload(payload):
+    """Project the committed flat capture locally; production has no mock fallback."""
+    data = deepcopy(_frozen_payload() if payload is None else payload)
+    now = data["as_of"]
+    if not isinstance(data.get("surf_pool4_hero"), dict):
+        data["surf_pool4_hero"] = project_pool4_hero(data=data, now=now,
+            sources={key: dict(state="ok", read_ts=now-60)
+                     for key in ("pool4", "market", "stakers")})
+    return data
+
+
+def _hero_source_payload(state):
+    data = _layout_payload(_wide_staker_payload())
+    now = data["as_of"]
+    data["surf_pool4_hero"] = project_pool4_hero(data=data, now=now,
+        sources={key: dict(state=state, read_ts=now-60)
+                 for key in ("pool4", "market", "stakers")})
+    return data
+
+
+MARKET_PAYLOADS.update({"hero-" + state: (lambda state=state: _hero_source_payload(state))
+                        for state in ("partial", "stale", "unavailable")})
+
+
 async def _render(payload, size):
     """Open the `4` body at *size* and hand back everything measured from it."""
-    app = _surf_app(payload)
+    app = _surf_app(_layout_payload(payload))
     async with app.run_test(size=size) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
@@ -667,6 +714,8 @@ async def _render(payload, size):
                 pilot.app, widgets["SurfPool4UStakers"]
             ),
             "depth_text": _region_text(pilot.app, widgets["SurfPool4UDepth"]),
+            "hero_sizes": [(card.region.width, card.region.height)
+                           for card in widgets["SurfPool4RackHero"].query("LocalSourceHeroCard")],
         }
 
 
@@ -701,23 +750,24 @@ async def _render(payload, size):
 #: are unchanged; only the sizes they run at are -- see tests/screens/_sweeps.py.
 #: STAKERS is windowed-and-unmarked at the pin and *whole* two columns later
 #: (``pool4u_stakers.py``: "119 and 121 on the `4` body"), so the second tier
-#: threshold is the pin + 2.
-_MARKET_WHOLE_FROM = SURF_POOL4_USER_FULL_LAYOUT_COLUMNS + 2
+#: threshold stays at 121 even though the new hero now binds the overall pin.
+_MARKET_WHOLE_FROM = MARKET_BODY_COLUMNS + 2
+# Stable whole-from widths measured after the live rack preview. Textual's
+# fractional grid allocates one wider VAULT cell at 140/146, then loses it
+# again at 141/147. These real islands must not be mistaken for stable pins.
+_PAYLOAD_COLUMNS = {name: 126 for name in MARKET_PAYLOADS}
+_PAYLOAD_COLUMNS.update({"wide-stakers": 142, "widest": 142,
+                         "hero-stale": 142, "hero-partial": 148,
+                         "hero-unavailable": 123})
+_GRID_WHOLE_ISLANDS = {"wide-stakers": {140}, "widest": {140},
+                       "hero-stale": {140}, "hero-partial": {146}}
 _WIDTH_SWEEP = [
-    ("capture", w)
-    for w in boundary_set(
-        SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, 38, 156, _MARKET_WHOLE_FROM,
-    )
-] + [
-    ("ordinary", w)
-    for w in boundary_set(
-        SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, 109, 129, _MARKET_WHOLE_FROM,
-    )
-] + [
-    ("every-staker", w)
-    for w in boundary_set(
-        SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, 109, 130, _MARKET_WHOLE_FROM,
-    )
+    (name, width)
+    for name in ("capture", "ordinary", "every-staker", "wide-stakers",
+                 "hero-partial", "hero-stale", "hero-unavailable")
+    for width in boundary_set(SURF_POOL4_USER_FULL_LAYOUT_COLUMNS,
+        38 if name == "capture" else 109, 156, MARKET_BODY_COLUMNS,
+        _MARKET_WHOLE_FROM, _PAYLOAD_COLUMNS[name], *_GRID_WHOLE_ISLANDS.get(name, ()))
 ]
 
 
@@ -725,7 +775,7 @@ _WIDTH_SWEEP = [
 async def test_the_market_body_is_whole_from_its_pinned_width(
     width, payload_name
 ) -> None:
-    """The sweep, and it starts sixty-seven columns away from the pin.
+    """Certify each measured source/value boundary and its narrow markers.
 
     **Whole means the whole body, not merely the panels that can say so.** At
     and above the pin both halves are asserted -- no marker anywhere *and* no
@@ -750,7 +800,8 @@ async def test_the_market_body_is_whole_from_its_pinned_width(
     and a payload that cannot move a pin is worth having as a measurement.
     """
     r = await _render(MARKET_PAYLOADS[payload_name](), (width, 50))
-    if width >= SURF_POOL4_USER_FULL_LAYOUT_COLUMNS:
+    whole = width >= _PAYLOAD_COLUMNS[payload_name] or width in _GRID_WHOLE_ISLANDS.get(payload_name, ())
+    if whole:
         assert not r["marked"], (width, sorted(r["marked"]))
         assert not r["clipped"], (
             f"at {width} the 4 body is clipping a line and nothing on screen "
@@ -796,31 +847,29 @@ async def test_the_market_body_is_whole_from_its_pinned_width(
 
 
 @pytest.mark.parametrize("payload_name", sorted(MARKET_PAYLOADS))
-async def test_the_market_column_pin_does_not_move_with_the_payload(
-    payload_name,
-) -> None:
-    """Every payload state, asked at the boundary rather than over the range.
-
-    The parametrised sweep above runs two magnitudes over a hundred widths;
-    this asks the remaining eight the one question a sweep would have to
-    answer differently if a pin moved with the data -- is the body clean at
-    the pin and marked one column under it. Both halves, so a payload that
-    needed *more* columns and one that needed *fewer* would each redden.
-    """
-    pin = SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
+async def test_the_market_payload_has_its_own_measured_boundary(payload_name) -> None:
+    """Each source/value state is complete at its stable boundary and marks just below."""
+    pin = _PAYLOAD_COLUMNS[payload_name]
     at = await _render(MARKET_PAYLOADS[payload_name](), (pin, 50))
     under = await _render(MARKET_PAYLOADS[payload_name](), (pin - 1, 50))
-    assert not at["marked"], (payload_name, sorted(at["marked"]))
-    assert not at["clipped"], (payload_name, at["clipped"])
-    assert under["marked"], (
-        f"{payload_name}: nothing asks for a column at {pin - 1}, so the pin "
-        "is loose for this payload"
-    )
+    assert not at["marked"] and not at["clipped"], (payload_name, at["clipped"])
+    assert under["marked"] and under["clipped"], (payload_name, pin)
+
+
+async def test_the_market_column_pin_is_the_partial_vault_holder_row() -> None:
+    """The independently measured worst-case boundary bites if the pin moves either way."""
+    pin = SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
+    at = await _render(_hero_source_payload("partial"), (pin, 50))
+    under = await _render(_hero_source_payload("partial"), (pin - 1, 50))
+    assert not at["marked"] and not at["clipped"], at["clipped"]
+    assert under["marked"] == {"SurfPool4RackHero"}
+    assert ("SurfPool4RackHero", "vault: addresses ≥1000.0K") in under["clipped"]
+    assert MEASURED_MARKET_COLUMNS == max(_PAYLOAD_COLUMNS.values()) == pin
 
 
 @pytest.mark.parametrize("payload_name", sorted(MARKET_PAYLOADS))
-async def test_the_market_binding_panel_is_the_staker_table(payload_name) -> None:
-    """Pinned by a test, not by a sentence, and under every payload.
+async def test_the_staker_table_retains_its_own_body_boundary(payload_name) -> None:
+    """The pre-rack body boundary stays measured independently of the hero.
 
     The sweep can only see the resulting number, so it stays green if a
     different panel became the binder -- which is the half that matters for
@@ -835,14 +884,14 @@ async def test_the_market_binding_panel_is_the_staker_table(payload_name) -> Non
     """
     r = await _render(
         MARKET_PAYLOADS[payload_name](),
-        (SURF_POOL4_USER_FULL_LAYOUT_COLUMNS - 1, 50),
+        (MARKET_BODY_COLUMNS - 1, 50),
     )
-    assert r["marked"] == {"SurfPool4UStakers"}, (
+    assert r["marked"] - {"SurfPool4RackHero"} == {"SurfPool4UStakers"}, (
         payload_name, sorted(r["marked"])
     )
 
 
-async def test_the_market_column_pin_is_the_bottom_rows_two_needs() -> None:
+async def test_the_staker_body_width_is_the_bottom_rows_two_needs() -> None:
     """The pin's *derivation*, not just its threshold.
 
     **It stopped being "the widest need, doubled" on 2026-09-12.** The top row
@@ -861,7 +910,7 @@ async def test_the_market_column_pin_is_the_bottom_rows_two_needs() -> None:
     """
     app = _surf_app(None)
     async with app.run_test(
-        size=(SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, 50)
+        size=(MARKET_BODY_COLUMNS, 50)
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
@@ -888,19 +937,18 @@ async def test_the_market_column_pin_is_the_bottom_rows_two_needs() -> None:
     )
     # The body really does pay one column for its gutter, which is the whole
     # of the difference between this pin and the bottom row's two needs.
-    assert body == SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
-    assert bottom == SURF_POOL4_USER_FULL_LAYOUT_COLUMNS - 1
+    assert body == MARKET_BODY_COLUMNS
+    assert bottom == MARKET_BODY_COLUMNS - 1
     assert middle == bottom
     assert (
         1 + MARKET_STAKERS_NEED + MARKET_DEPTH_COLUMNS
-        == SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
+        == MARKET_BODY_COLUMNS
     )
     # The top row is still an even seam and still asks for less than the
     # bottom one, which is what "the binder moved downstairs" means.
     assert abs(flow - rail) <= 1
     assert abs(middle - 2 * rail) <= 1
-    assert 1 + 2 * MARKET_FLOW_NEED < SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
-    assert MEASURED_MARKET_COLUMNS == SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
+    assert 1 + 2 * MARKET_FLOW_NEED < MARKET_BODY_COLUMNS
 
 
 async def test_the_ladder_column_is_exactly_the_width_of_its_own_caption() -> None:
@@ -928,9 +976,9 @@ async def test_the_ladder_column_is_exactly_the_width_of_its_own_caption() -> No
        ``pool4u_depth.PANEL_COLUMNS`` rewritten rather than left stale.
     """
     seen: dict[int, tuple[int, int]] = {}
-    for width in (
+    for width in sorted({
         SURF_POOL4_USER_FULL_LAYOUT_COLUMNS, SURF_FULL_LAYOUT_COLUMNS, 200
-    ):
+    }):
         app = _surf_app(None)
         async with app.run_test(size=(width, 50)) as pilot:
             await pilot.app.screen._do_refresh()
@@ -986,37 +1034,20 @@ async def test_the_ladder_column_is_exactly_the_width_of_its_own_caption() -> No
     )
 
 
-def test_the_market_body_fits_inside_the_documented_app_width() -> None:
-    """The standing rule, asserted rather than assumed: a body measured wider
-    than ``__main__.FULL_LAYOUT_COLUMNS`` means shortening a value, never
-    raising the app's number.
-
-    Four bodies, four independently measured pins. They are allowed to be
-    equal -- but if two of them ever ARE it should be because somebody
-    measured it, so the constants stay separate and this is the note that
-    says so rather than a test forbidding the coincidence.
-
-    **This body was the narrowest of the four and is not any more.** At 105 it
-    sat one column under the ``p`` body's 106 with the same panel binding
-    both; at 119 it is thirteen over, and a different panel binds it. The
-    assertion that recorded the old relation is gone rather than inverted: a
-    ``>`` here would pin a fact about two independently swept numbers that
-    nobody has any reason to keep true. What is still asserted is the only
-    relation that decides anything for a reader -- the body fits the width the
-    app documents, so a terminal that can open surf can open this.
-    """
+async def test_the_market_rack_fits_owner_terminal_and_marks_narrow_app_width() -> None:
+    """Six complete nine-row cards at the approved owner size; local pins stay independent."""
     from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 
-    assert SURF_POOL4_USER_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
-    assert SURF_POOL4_USER_FULL_LAYOUT_COLUMNS <= SURF_FULL_LAYOUT_COLUMNS
-    assert (
-        SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
-        < SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
-    ), (
-        "the market body now needs a wider terminal than the `l` launchpad "
-        "body -- that is a real regression for a reader, not a constant to "
-        "adjust"
-    )
+    at = await _render(_hero_source_payload("partial"), (149, 45))
+    assert not at["marked"] and not at["clipped"], at["clipped"]
+    assert TALLER_HINT not in at["text"]
+    assert len(at["hero_sizes"]) == 6
+    assert {height for _, height in at["hero_sizes"]} == {9}
+    widths = [width for width, _ in at["hero_sizes"]]
+    assert max(widths) - min(widths) <= 1
+    assert SURF_POOL4_USER_FULL_LAYOUT_COLUMNS <= 149
+    narrow = await _render(_hero_source_payload("partial"), (FULL_LAYOUT_COLUMNS, 45))
+    assert narrow["clipped"] and "SurfPool4RackHero" in narrow["marked"]
 
 
 # ---------------------------------------------------------------------------
@@ -1041,7 +1072,7 @@ _HEIGHT_SWEEP = [
 ] + [
     (name, r)
     for name in ("mainnet", "widest")
-    for r in boundary_set(SURF_POOL4_USER_FULL_LAYOUT_ROWS, 29, 36)
+    for r in boundary_set(SURF_POOL4_USER_FULL_LAYOUT_ROWS, 32, 42)
 ]
 
 

@@ -35,6 +35,11 @@ committed fixture, and nothing here constructs a client.
 from __future__ import annotations
 
 import pytest
+from rich.style import Style
+from textual.renderables.digits import Digits
+
+from maxpane_dashboard.data.surf_models import SURF_POOL4_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_pool4_hero import project
 
 from maxpane_dashboard.screens.surf import (
     MODE_DASHBOARD,
@@ -63,9 +68,9 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UDepth,
     SurfPool4USignals,
     SurfPool4UStakers,
-    SurfPool4UserHero,
+    SurfPool4RackHero,
     SurfPool4Vault,
-    SurfSwarmHero,
+    SurfSwarmRackHero,
 )
 
 # The screen-test module owns the payload fixture and the harness. Imported
@@ -74,12 +79,35 @@ from maxpane_dashboard.widgets.surf import (
 # contract tests measure.
 from tests.screens.test_surf_screen import (
     SURF_WIDGET_SIGNATURES,
-    _frozen_payload,
-    _mainnet_pool4_payload,
+    _frozen_payload as _base_frozen_payload,
+    _mainnet_pool4_payload as _base_mainnet_pool4_payload,
     _region_text,
     _screen_text,
     _surf_app,
 )
+
+
+def _with_market_projection(payload):
+    """Explicit source observations for the fixture, separate from evaluation."""
+    payload["surf_pool4_hero"] = project(
+        data=payload,
+        sources={"pool4": dict(state="ok", read_ts=1_755_999_900.),
+                 "market": dict(state="ok", read_ts=1_755_999_920.),
+                 "stakers": dict(state="ok", read_ts=1_755_999_940.)},
+        now=1_756_000_000.,
+    )
+    return payload
+
+
+def _frozen_payload(**overrides):
+    payload = _base_frozen_payload(**overrides)
+    return payload if "surf_pool4_hero" in overrides else _with_market_projection(payload)
+
+
+def _mainnet_pool4_payload(**overrides):
+    payload = _base_mainnet_pool4_payload(**overrides)
+    return payload if "surf_pool4_hero" in overrides else _with_market_projection(payload)
+
 
 #: (150, 50) rather than the pinned width: this file is about wiring, not
 #: about the layout pin, and a size that is comfortably larger than anything
@@ -148,7 +176,7 @@ def _market_text(app) -> str:
     """
     screen = app.screen
     return "\n".join((
-        _region_text(app, screen.query_one(SurfPool4UserHero)),
+        _region_text(app, screen.query_one(SurfPool4RackHero)),
         _region_text(app, screen.query_one(f"#{POOL4_USER_BODY_ID}")),
     ))
 
@@ -203,7 +231,7 @@ async def test_a_live_shaped_band_paints_not_reached_on_the_rungs_short_of_it() 
 
 async def test_four_opens_the_market_body_and_escape_backs_out() -> None:
     """``4`` in, ``escape`` out -- one-way, exactly like ``l`` and ``p``."""
-    async with _surf_app().run_test(size=_SIZE) as pilot:
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
         assert screen._mode == MODE_POOL4_USER
         assert screen.query_one(f"#{POOL4_USER_BODY_ID}").display is True
@@ -226,7 +254,7 @@ async def test_pressing_four_twice_returns_to_the_dashboard() -> None:
     reader who pressed it once to look and once to leave would be stuck in a
     body with no visible way out (``escape`` is not on the status bar).
     """
-    async with _surf_app().run_test(size=_SIZE) as pilot:
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
         assert screen._mode == MODE_POOL4_USER
         await pilot.press("4")
@@ -251,7 +279,7 @@ async def test_four_switches_directly_from_either_other_body() -> None:
         f"#{POOL4_USER_BODY_ID}",
         f"#{SWARM_BODY_ID}",
     )
-    async with _surf_app().run_test(size=_SIZE) as pilot:
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
         screen = pilot.app.screen
@@ -287,8 +315,8 @@ _HERO_PER_MODE = (
     (MODE_DASHBOARD, (), SurfNewsHero),
     (MODE_LAUNCHPAD, ("l",), SurfHero),
     (MODE_POOL4, ("e",), SurfHero),
-    (MODE_POOL4_USER, ("4",), SurfPool4UserHero),
-    (MODE_SWARM, ("s",), SurfSwarmHero),
+    (MODE_POOL4_USER, ("4",), SurfPool4RackHero),
+    (MODE_SWARM, ("s",), SurfSwarmRackHero),
 )
 
 
@@ -324,7 +352,7 @@ async def test_exactly_one_hero_shows_in_every_mode(mode, keys, hero_cls) -> Non
     mode, and the wrong hero is the one of those two failures a reader cannot
     see is wrong.
     """
-    async with _surf_app().run_test(size=_SIZE) as pilot:
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
         screen = pilot.app.screen
@@ -362,9 +390,9 @@ async def test_exactly_one_hero_survives_every_transition_between_bodies() -> No
         MODE_DASHBOARD: SurfNewsHero,
         MODE_LAUNCHPAD: SurfHero,
         MODE_POOL4: SurfHero,
-        MODE_POOL4_USER: SurfPool4UserHero,
+        MODE_POOL4_USER: SurfPool4RackHero,
     }
-    async with _surf_app().run_test(size=_SIZE) as pilot:
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
         screen = pilot.app.screen
@@ -397,15 +425,21 @@ async def test_the_market_hero_really_reaches_the_compositor() -> None:
     composite the words ``STAKERS`` and ``SIGNALS`` themselves and a
     whole-screen substring check would pass with the hero unmounted entirely.
     """
-    async with _surf_app().run_test(size=_SIZE) as pilot:
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
-        hero = _region_text(pilot.app, screen.query_one(SurfPool4UserHero))
-        for title in ("IMD PRICE", "DOWNSIDE BID", "STAKING"):
+        hero = _region_text(pilot.app, screen.query_one(SurfPool4RackHero))
+        for title in ("IMD PRICE", "sIMD RATE", "STAKING", "VAULT", "DOWNSIDE BID", "DRIP QUEUE"):
             assert title in hero, f"the market hero lost its {title} card"
-        # The fixture's own numbers, so this cannot pass on a placeholder.
-        assert "$2.845" in hero
-        assert "24.40 ETH" in hero
-        assert "3.4% trailing 7d" in hero
+        # Native digits are checked in each card's composited rectangle, so
+        # a populated-but-hidden record or an incorrect figure cannot pass.
+        for key, figure in (("price", "2.845"), ("bid", "24.40"), ("staking", "3.4")):
+            card = screen.query_one(SurfPool4RackHero).query_one(f"#hero-{key}")
+            pixels = _region_text(pilot.app, card)
+            for segment in Digits(figure).render(Style()):
+                if segment.text.strip():
+                    assert segment.text in pixels, (key, figure, pixels)
+        assert "trailing 7d" in hero
+        assert "per 1 sIMD" in hero
         # ...and surf's own hero is NOT on screen, which is the break itself.
         whole = _screen_text(pilot.app)
         assert "LAUNCHPAD" not in whole, (
@@ -435,7 +469,7 @@ async def test_the_market_body_is_bakerys_two_rows() -> None:
     and in both directions: each row's children **and** the geometry that says
     they are where the ids claim.
     """
-    async with _surf_app().run_test(size=_SIZE) as pilot:
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
         body = screen.query_one(f"#{POOL4_USER_BODY_ID}")
         middle = screen.query_one(f"#{POOL4_USER_MIDDLE_ID}")
@@ -477,7 +511,7 @@ async def test_every_market_panel_reaches_the_compositor() -> None:
     no height -- the ``1fr``-without-a-floor defect -- which leaves it
     mounted, displayed and invisible.
     """
-    async with _surf_app().run_test(size=_SIZE) as pilot:
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         await _open_market(pilot)
         text = _market_text(pilot.app)
         for title in ("STAKERS", "BURN & SUPPLY", "SIGNALS", "POOL4 FLOW",
@@ -506,7 +540,7 @@ async def test_recent_flow_is_mounted_once_in_the_4_body_only() -> None:
 
     ``test_the_p_body_mounts_no_flow_panel`` below is the ``p``-body half.
     """
-    async with _surf_app().run_test(size=_SIZE) as pilot:
+    async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)
         flows = list(screen.query(SurfPool4Flow))
         assert len(flows) == 1, [f.parent.id for f in flows]
@@ -528,10 +562,10 @@ async def test_recent_flow_is_mounted_once_in_the_4_body_only() -> None:
 _MARKET_KEYS = sorted({
     key
     for name in (
-        "SurfPool4UserHero", "SurfPool4UStakers", "SurfPool4UBurn",
+        "SurfPool4RackHero", "SurfPool4UStakers", "SurfPool4UBurn",
         "SurfPool4USignals", "SurfPool4UDepth",
     )
-    for key in SURF_WIDGET_SIGNATURES[name]
+    for key in {**SURF_WIDGET_SIGNATURES, **SURF_POOL4_WIDGET_SIGNATURES}[name]
 })
 
 
@@ -543,7 +577,8 @@ def test_the_market_key_sweep_is_not_empty() -> None:
     this repo keeps finding rather than the shape it keeps fixing.
     """
     assert len(_MARKET_KEYS) >= 20, _MARKET_KEYS
-    assert all(k.startswith("pool4_") for k in _MARKET_KEYS), _MARKET_KEYS
+    assert "surf_pool4_hero" in _MARKET_KEYS
+    assert all(k == "surf_pool4_hero" or k.startswith("pool4_") for k in _MARKET_KEYS), _MARKET_KEYS
 
 
 #: Keys the default probe cannot see, and the payload pair that can.

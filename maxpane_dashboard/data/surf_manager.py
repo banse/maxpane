@@ -145,6 +145,7 @@ from maxpane_dashboard.data import surf_pool4_market as mk
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard as hub
+from maxpane_dashboard.data import surf_pool4_hero as pool4_hero
 from maxpane_dashboard.data import surf_news_hero as news_hero
 from maxpane_dashboard.data import surf_swarm_hero as swarm_hero
 from maxpane_dashboard.data import surfboard_activity as work_activity
@@ -7163,6 +7164,33 @@ class SurfManager:
                           "stale" if degraded or now - stamp > self.poll_interval else "ok"}
         return out
 
+    def _pool4_hero_source(self, entry, *, now, tier, group=None):
+        """Capture confirmed reads beside their slot, before detached work."""
+        stamp = news_hero._stamp(getattr(entry, "ts", None), now)
+        failed = group in (self._failed_groups | self._client_degradation())
+        if tier is not None:
+            confirmed = news_hero._stamp(self.cache.last_fetch_ts(tier), now)
+            if stamp is not None and confirmed is not None:
+                stamp = max(stamp, confirmed)
+            failed = failed or self.cache.last_failure_ts(tier) is not None
+        return news_hero.source(stamp, now=now, ttl=TIER_TTL_SECONDS[tier or TIER_MEDIUM], failed=failed)
+
+    def _pool4_hero_sources(self, pool_entry, stakers_entry, market_entry, now):
+        sources = {
+            "pool4": self._pool4_hero_source(pool_entry, now=now, tier=TIER_POOL4, group=SOURCE_POOL4),
+            "market": self._pool4_hero_source(market_entry, now=now, tier=None, group=SOURCE_MARKET),
+            "stakers": self._pool4_hero_source(stakers_entry, now=now, tier=TIER_POOL4_STAKERS),
+        }
+        pool = getattr(pool_entry, "payload", None) or {}
+        stakers = getattr(stakers_entry, "payload", None) or {}
+        if not pool.get("network") or stakers.get("network") != pool.get("network"):
+            sources["stakers"] = dict(state="unavailable", read_ts=None)
+        elif stakers.get("complete") is not True and sources["stakers"]["state"] != "unavailable":
+            sources["stakers"]["partial"] = True
+            if sources["stakers"]["state"] == "ok":
+                sources["stakers"]["state"] = "partial"
+        return sources
+
     def _project_hub(self, base: dict | None = None, *, refresh_legacy: bool = True) -> dict[str, Any]:
         """Capture independent slots synchronously; never await between families."""
         data = dict(base if base is not None else self._last_full_payload or self._blank_payload())
@@ -7178,7 +7206,8 @@ class SurfManager:
             data.update(self._runtime_keys(now))
             # Keep the card's USD conversion and post age on the same captured
             # source versions as the source clocks shown beside those values.
-            market = getattr(self.cache.get_last_good(SLOT_MARKET), "payload", None) or {}
+            market_entry = self.cache.get_last_good(SLOT_MARKET)
+            market = getattr(market_entry, "payload", None) or {}
             data["eth_usd"] = market.get("eth_usd")
             channel = getattr(self.cache.get_last_good(SLOT_CHANNEL), "payload", None) or {}
             items = channel.get("items")
@@ -7189,6 +7218,8 @@ class SurfManager:
             data.update(self._pool4_keys(pool, pool_entry, now, eth_usd=data.get("eth_usd")))
             stakers_entry = self.cache.get_last_good(SLOT_POOL4_STAKERS)
             data.update(self._pool4_stakers_keys(getattr(stakers_entry, "payload", None) or {}, stakers_entry))
+            data["surf_pool4_hero"] = pool4_hero.project(data=data, sources=self._pool4_hero_sources(
+                pool_entry, stakers_entry, market_entry, now), now=now)
             launch_entry = self.cache.get_last_good(SLOT_LAUNCHPAD)
             launch = getattr(launch_entry, "payload", None) or {}
             for field in ("coin_count", "launch_count", "new_24h", "creator_count", "swap_count", "trader_count", "activity", "burnkeepers"):
@@ -7567,6 +7598,7 @@ class SurfManager:
         # pool4 sweep this one reads nothing from the announce channel, so it
         # has no reason to wait for the channel rows and every reason to start
         # earlier — it is the longest walk this manager makes.
+        pool4_hero_sources = self._pool4_hero_sources(pool4_entry, stakers_entry, None, now)
         self._spawn_pool4_stakers(tiers, now)
 
         # The swarm sweep's own slot and spawn, offered beside the staker
@@ -7697,6 +7729,8 @@ class SurfManager:
         # degradation rule forbids. `fresh_market` stays separate because the
         # sparklines may not be fed the fallback; see the sampling call below.
         fresh_market = self._market_payload(market) if market is not None else None
+        pool4_hero_sources["market"] = self._pool4_hero_source(
+            self.cache.get_last_good(SLOT_MARKET), now=now, tier=None, group=SOURCE_MARKET)
         market_payload = (
             fresh_market
             if fresh_market is not None
@@ -7861,6 +7895,7 @@ class SurfManager:
         # The staker leaderboard's own four, off its own slot and behind its
         # own, slower marker. PRD 7.2.
         data.update(self._pool4_stakers_keys(stakers_slot, stakers_entry))
+        data["surf_pool4_hero"] = pool4_hero.project(data=data, sources=pool4_hero_sources, now=now)
 
         # ---- swarm source slots and their independent clocks ----------------
         # The jobs-seen map, read once for both folds below. It is read

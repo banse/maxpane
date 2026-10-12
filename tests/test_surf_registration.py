@@ -1285,7 +1285,7 @@ def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
 #: distinction ``surf_models.LogWindow``'s own docstring draws for ``()``.
 _NON_NUMERIC_KEYS = frozenset(
     {
-        "degraded", "feed_items", "feed_signal_tx_hashes", "surf_news_hero", "surf_swarm_hero",
+        "degraded", "feed_items", "feed_signal_tx_hashes", "surf_news_hero", "surf_swarm_hero", "surf_pool4_hero",
         "sig_post_state", "sig_lp_state", "sig_gate_state",
         "sig_deploy_state", "sig_bridge_state", "sig_burn_state",
         "sig_post_detail", "sig_lp_detail", "sig_gate_detail",
@@ -1540,6 +1540,10 @@ _SWARM_BARE_COUNT = (
 #: with the specific reason a zero there could never mislead a user (see
 #: task-WP6.8-report.md for the full writeup and how each was verified).
 _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
+    # Native Digits and aligned rows are checked per-card in the rack compositor.
+    "pool4_price_usd": "POOL4 rack zero vs unread: tests/widgets/test_surf_pool4_hero.py",
+    "pool4_trailing_return_pct": "POOL4 rack zero vs unread: tests/widgets/test_surf_pool4_hero.py",
+    "pool4_staker_count": "POOL4 rack addresses zero vs unread: tests/widgets/test_surf_pool4_hero.py",
     # Computed by the manager (surf_manager._market_payload) but never read
     # by screens/surf.py or any widgets/surf/* module -- grep confirms no
     # `data.get("eth_usd")` call exists anywhere in either package. A
@@ -1779,7 +1783,8 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     "sig_swarm_chain_id": "link routing metadata, not a displayed quantity; WP3 installs per-row explorer",
     # -- the `4` POOL4 MARKET body (2026-09-11) --------------------------
     #
-    # NO exclusion: all nine of this body's numeric keys carry a needle.
+    # The rack's native numeric faces and aligned address count are checked
+    # per-card; the remaining native-body values retain text probes below.
     #
     # `pool4_backstop_liquidity` was parked here when WP7 measured it, with
     # its evidence rather than hidden -- a zero band and an UNREAD band both
@@ -1841,15 +1846,12 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
 #: Every needle below was READ OFF composited output through the real
 #: ``SurfScreen`` at (143, 60) with ``4`` pressed. None was guessed.
 _POOL4_USER_ZERO_PROBES: dict[str, tuple[str, dict]] = {
-    # IMD PRICE -- three decimals, not two: this card exists to compare two
-    # venues whose gap is routinely under 2% of a ~$2.85 token.
-    "pool4_price_usd": ("$0.000", {}),
     # The venue clause. With a venue word to name, a zero gap renders as the
     # magnitude; with the gap unread it renders `venue gap --`, and with the
     # gap read but under combined fees it renders `no venue edge`. Three
     # subtitles, three different statements (PRD 8.3).
     "pool4_venue_gap_pct": (
-        "cheaper on reference 0.00%",
+        "REFERENCE −0.00%",
         {"pool4_cheaper_venue": "reference", "pool4_current_tick": -34_567,
          "pool4_reference_pool_tick": -34_000},
     ),
@@ -1875,13 +1877,10 @@ _POOL4_USER_ZERO_PROBES: dict[str, tuple[str, dict]] = {
     # measured against. At tick 0 against a spot of -34567 that distance is
     # 96.85%; unread it is `-- under`.
     "pool4_backstop_lower_tick": (
-        "standing 96.85% under",
+        "96.85% under",
         {"pool4_backstop_state": "deployed", "pool4_backstop_eth": 24.4,
          "pool4_current_tick": -34_567},
     ),
-    # STAKING's second line. `0 addrs` is a real, representable answer -- an
-    # empty vault -- and `None` renders nothing at all.
-    "pool4_staker_count": ("0 addrs", {}),
     # The concentration footer. `top 3 = 0% of vault` against `top 3 = -- of
     # vault`, which is the guard PRD 7.4 asks for: `None` on an INCOMPLETE
     # fold, never a percentage computed from a partial sweep.
@@ -1892,10 +1891,6 @@ _POOL4_USER_ZERO_PROBES: dict[str, tuple[str, dict]] = {
              {"rank": 1, "address": "0x" + "ab" * 20, "imd": 1.0, "pct": 1.0},
          ]},
     ),
-    # PRD 8.1's realised return. `0.0` is a real answer -- the drip is lumpy
-    # and a quiet week genuinely returned nothing -- so the window word is
-    # part of the needle: it is what stops this reading as an APR.
-    "pool4_trailing_return_pct": ("0.0% trailing 7d", {}),
     # IF IMD FALLS' `band used` column, and the entry this dict was WAITING
     # for: this key spent WP7 in `_NUMERIC_KEYS_EXCLUDED` because its zero
     # and its failed read painted the same five cells.

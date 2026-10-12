@@ -1,17 +1,13 @@
 """Six source-aware LAUNCHES cards sharing the approved rack renderer."""
 from __future__ import annotations
 
-from rich.color import Color
-from rich.style import Style
-from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid
 
 from maxpane_dashboard.widgets.address import PROSE_ADDRESS_RE
-from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
-from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, NewsHeroCard, _count, _number
+from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, LocalSourceHeroCard, _count, _number
 
 
 def _quantity(value):
@@ -92,22 +88,8 @@ def token_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     return tuple(records)
 
 
-class TokensHeroCard(NewsHeroCard):
-    """Partial coverage is distinct from both an old read and a failed read."""
-
-    def set_record(self, data: HeroRecord):
-        super().set_record(data)
-        self.tooltip = Text(f"{data.title} · {data.state} · as of {hhmm(data.read_ts, unknown='--:--')} local")
-
-    def _footer(self):
-        if self.data.state in ("partial", "stale", "unavailable"):
-            label = self.data.state
-            if label != "unavailable":
-                label += " " + hhmm(self.data.read_ts, unknown="--:--")
-            orange = Color.from_triplet(self.app.ansi_theme.ansi_colors[3])
-            self.border_subtitle = Text(label, style=Style(color=orange))
-        else:
-            super()._footer()
+class TokensHeroCard(LocalSourceHeroCard):
+    """LAUNCHES card using the shared local source footer."""
 
 
 class TokensHero(Grid):

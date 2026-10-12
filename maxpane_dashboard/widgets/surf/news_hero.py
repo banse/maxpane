@@ -4,12 +4,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+from rich.color import Color
 from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid
 from textual.renderables.digits import Digits
 
+from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip
@@ -203,6 +205,24 @@ class NewsHeroCard(HeroBoxBase):
         subtitle = " " + clip(flatten(data.subtitle), max(0, inside - 2)) + " " if data.subtitle else ""
         result.append("└" + subtitle.center(inside, "─") + "┘", style=frame)
         return result
+
+
+class LocalSourceHeroCard(NewsHeroCard):
+    """Partial coverage is distinct from both an old read and a failed read."""
+
+    def set_record(self, data: HeroRecord):
+        super().set_record(data)
+        self.tooltip = Text(f"{data.title} · {data.state} · as of {hhmm(data.read_ts, unknown='--:--')} local")
+
+    def _footer(self):
+        if self.data.state in ("partial", "stale", "unavailable"):
+            label = self.data.state
+            if label != "unavailable":
+                label += " " + hhmm(self.data.read_ts, unknown="--:--")
+            orange = Color.from_triplet(self.app.ansi_theme.ansi_colors[3])
+            self.border_subtitle = Text(label, style=Style(color=orange))
+        else:
+            super()._footer()
 
 
 class SurfNewsHero(Grid):

@@ -1493,6 +1493,24 @@ SURF_SWARM_HERO_FIELDS = {
     "sites": ("state", "read_ts", "count"),
 }
 SURF_SWARM_HERO_STATUS_FIELDS = ("status", "count")
+SURF_POOL4_HERO_STATES = ("ok", "partial", "stale", "unavailable")
+POOL4_PARKED_WIDGET_SIGNATURES = {
+    "SurfPool4UserHero": (
+        "pool4_price_usd", "pool4_venue_gap_pct", "pool4_cheaper_venue",
+        "pool4_backstop_state", "pool4_backstop_eth", "pool4_backstop_lower_tick",
+        "pool4_current_tick", "pool4_trailing_return_pct", "pool4_vault_assets",
+        "pool4_staker_count",
+    ),
+}
+SURF_POOL4_WIDGET_SIGNATURES = {"SurfPool4RackHero": {"surf_pool4_hero": "surf_pool4_hero"}}
+SURF_POOL4_HERO_FIELDS = {
+    "price": ("state", "read_ts", "usd", "venue", "gap_pct"),
+    "rate": ("state", "read_ts", "imd"),
+    "staking": ("state", "read_ts", "apr"),
+    "vault": ("state", "read_ts", "imd", "simd", "holders", "holders_state", "holders_read_ts", "holders_partial"),
+    "bid": ("state", "read_ts", "status", "eth", "distance_pct"),
+    "queue": ("state", "read_ts", "imd", "per_day", "days"),
+}
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points", "latest_launches",
                         "meter_state", "share_price", "seat_slot", "token_id")
@@ -1808,6 +1826,7 @@ SURF_KEYS: tuple[str, ...] = (
     "eth_usd",               # float | None — CoinGecko via data/price.py
     "surf_news_hero",         # dict — six source-backed native news hero cards
     "surf_swarm_hero",        # dict — six source-backed native SWARM hero cards
+    "surf_pool4_hero",        # dict — six source-backed native POOL4 market cards
     # ---- feed ---------------------------------------------------------------
     "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)
     "feed_last_post_age_s",  # float | None

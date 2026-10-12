@@ -99,6 +99,7 @@ These widgets take primitives only and import nothing from ``data/`` or
 and no network present (pinned by ``tests/widgets/test_surf_widget_contract.py``).
 """
 
+from .pool4_hero import SurfPool4RackHero
 from .activity import SurfDevActivity
 from .burnkeepers import SurfBurnkeepers
 from .feed import FEED_TITLE, SurfFeed
@@ -167,6 +168,7 @@ __all__ = [
     "SurfPool4USignals",
     "SurfPool4UStakers",
     "SurfPool4UserHero",
+    "SurfPool4RackHero",
     "SurfPool4Vault",
     "SurfSignals",
     "SurfSwarmAgentHero",

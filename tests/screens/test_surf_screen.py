@@ -41,6 +41,7 @@ from maxpane_dashboard.screens.surf import (
 from maxpane_dashboard.data.surf_models import (
     SURF_NEWS_WIDGET_SIGNATURES,
     SWARM_PARKED_WIDGET_SIGNATURES,
+    POOL4_PARKED_WIDGET_SIGNATURES,
     SWARM_WIDGET_SIGNATURES,
 )
 from maxpane_dashboard.widgets.status_bar import StatusBar
@@ -69,7 +70,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UDepth,
     SurfPool4USignals,
     SurfPool4UStakers,
-    SurfPool4UserHero,
+    SurfPool4RackHero,
     SurfPool4Vault,
     SurfSignals,
     SurfSwarmAgentHero,
@@ -137,7 +138,7 @@ _POOL4_WIDGET_CLASSES = {
 
 #: The ``4`` POOL4 MARKET body's five widgets (2026-09-11).  A **fourth** role
 #: dict, for the third's own reason, plus one this body is the first to have:
-#: it includes a **hero**.  ``SurfPool4UserHero`` is mounted in ``#hero-row``
+#: it includes a **hero**.  ``SurfPool4RackHero`` is mounted in ``#hero-row``
 #: beside ``SurfHero`` and is hidden in every mode but this one, so it belongs
 #: to a role -- "composed hidden, shown with a body" -- that ``_WIDGET_CLASSES``
 #: ("always mounted and visible") cannot describe.
@@ -154,7 +155,7 @@ _POOL4_WIDGET_CLASSES = {
 #: ``test_recent_flow_is_mounted_once_in_the_4_body_only`` pins the single
 #: instance.
 _POOL4_USER_WIDGET_CLASSES = {
-    "SurfPool4UserHero": SurfPool4UserHero,
+    "SurfPool4RackHero": SurfPool4RackHero,
     "SurfPool4UStakers": SurfPool4UStakers,
     "SurfPool4UBurn": SurfPool4UBurn,
     "SurfPool4USignals": SurfPool4USignals,
@@ -204,12 +205,13 @@ _ALL_WIDGET_CLASSES = _exported_widget_classes()
 #: its own, **read from** ``data/surf_models.SWARM_PARKED_WIDGET_SIGNATURES``
 #: and never typed here: a hand-typed exemption is the one list that could
 #: quietly excuse a widget that should be mounted.
-_PARKED_WIDGET_CLASSES = {name: _ALL_WIDGET_CLASSES[name] for name in SWARM_PARKED_WIDGET_SIGNATURES}
+_PARKED_SIGNATURES = SWARM_PARKED_WIDGET_SIGNATURES | POOL4_PARKED_WIDGET_SIGNATURES
+_PARKED_WIDGET_CLASSES = {name: _ALL_WIDGET_CLASSES[name] for name in _PARKED_SIGNATURES}
 
 #: The contract keys a parked widget's frozen signature names: still read by
 #: the manager and consumed by that widget's signature, though nothing paints
 #: them while it is parked (``swarm_skill_rows`` / ``swarm_skill_summary``).
-_PARKED_KEYS = frozenset(k for keys in SWARM_PARKED_WIDGET_SIGNATURES.values() for k in keys)
+_PARKED_KEYS = frozenset(k for keys in _PARKED_SIGNATURES.values() for k in keys)
 
 
 def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
@@ -496,23 +498,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
     # `POOL4_WIDGET_SIGNATURES` and `POOL4_USER_WIDGET_SIGNATURES` -- so its
     # "exactly one renderer" claim stays a real claim about the `p` body
     # instead of becoming an exception list.
-    "SurfPool4UserHero": {
-        "pool4_price_usd": "pool4_price_usd",
-        "pool4_venue_gap_pct": "pool4_venue_gap_pct",
-        "pool4_cheaper_venue": "pool4_cheaper_venue",
-        "pool4_backstop_state": "pool4_backstop_state",
-        "pool4_backstop_eth": "pool4_backstop_eth",
-        "pool4_backstop_lower_tick": "pool4_backstop_lower_tick",
-        "pool4_current_tick": "pool4_current_tick",
-        "pool4_trailing_return_pct": "pool4_trailing_return_pct",
-        "pool4_vault_assets": "pool4_vault_assets",
-        "pool4_staker_count": "pool4_staker_count",
-        # NO `pool4_network` and NO clock -- carry-over C4. This is the only
-        # panel on either body with no title to hang either on, and the title
-        # bar already carries the fast tier's marker. Pinned from the
-        # contract side by
-        # `test_the_market_hero_takes_no_clock_and_no_network_word`.
-    },
+    "SurfPool4RackHero": {"surf_pool4_hero": "surf_pool4_hero"},
     "SurfPool4UStakers": {
         "pool4_stakers": "pool4_stakers",
         "pool4_staker_count": "pool4_staker_count",
@@ -2803,7 +2789,7 @@ async def test_the_hero_owns_a_full_width_row_of_its_own():
 
     This asserted ``len(hero_row.children) == 1`` until 2026-09-11, which was
     a count of what is mounted. ``#hero-row`` mounts two heroes now --
-    ``SurfHero`` and the ``4`` body's ``SurfPool4UserHero``, toggled together
+    ``SurfHero`` and the ``4`` body's ``SurfPool4RackHero``, toggled together
     with the body on curator's per-mode hero pattern -- so the count is no
     longer the claim. The claim is that the hero showing owns the full width,
     which is what the region assertion below has always really been about,
@@ -5824,7 +5810,7 @@ def test_every_mode_names_its_scrolling_columns() -> None:
 # -- the s body's CSS, in agreement ---------------------------------------
 
 #: Both bodies' containers and every panel, **heroes included** (swarm v2,
-#: WP7): unlike ``SurfPool4UserHero``, whose box geometry is its own
+#: WP7): unlike ``SurfPool4RackHero``, whose box geometry is its own
 #: ``DEFAULT_CSS``, the two swarm heroes state none (``rules/widgets.md``:
 #: ``HeroBoxBase`` leaves every dimension to the stylesheet), so their box
 #: rules live in the two copies compared here and must agree like the rest.

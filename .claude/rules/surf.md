@@ -121,8 +121,11 @@ delta is four fast-tier reads, one pure depth-ladder analytics module, and a lon
 `pool4_stakers_as_of_hhmm`. A digit key on a *screen* is an established pattern (curator's filter
 presets) and collides with nothing app-level.
 
-**Three hero cards, not four**: surf's own hero said `BURN` and `SUPPLY` when this was decided, and a pool4
-card called BURN would show hook trim burns, so burn lives in the chart panel.
+**Six rack hero cards** (2026-10-12): IMD PRICE, sIMD RATE, STAKING, VAULT,
+DOWNSIDE BID and DRIP QUEUE. The manager projects existing sources into
+`surf_pool4_hero`; source clocks belong to the captured values. Holders retain
+the separate staker fold clock; incomplete folds show a lower bound and another
+network's count is unavailable. Burn remains in the chart panel.
 
 **`SurfPool4Flow` lives in this body only** (since 2026-09-14). `_do_refresh` dispatches RECENT
 FLOW with `self.query(SurfPool4Flow)` rather than `query_one` — `query_one` does **not** raise on
@@ -130,7 +133,9 @@ multiple matches in this Textual version, it returns the first — and the loop 
 per-instance keywords (`quiet_mainnet`, `quiet_as_of`, `classes="market"`) are vestigial and
 filed as F15 in `docs/surf_pool4_followups.md`.
 
-**No panel on this body renders an `as of` marker.** STAKERS instead gains `stale` in its
+**The native body panels omit `as of` markers.** Rack heroes show dated partial
+or stale reads in their outer footer, with independent source details on hover.
+STAKERS instead gains `stale` in its
 concentration footer only when its 1800 s fold and the title bar drift further apart than healthy
 operation explains — `QUIET_NETWORK`'s shape applied to time, costing no row. The `e` body keeps
 all of its markers.

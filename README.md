@@ -630,7 +630,7 @@ HATCHES and sIMD VAULT in the rail, the same hero left where it was. **And it bi
 POOL4 MARKET view — the same protocol read as a market rather than as a machine: RECENT FLOW
 beside BURN & SUPPLY over SIGNALS, then STAKERS — whole 42-character addresses, no shortening —
 beside IF IMD FALLS, a ladder of what the hook bids as IMD falls. `4` swaps the **hero** too, for
-IMD PRICE, DOWNSIDE BID and STAKING. **And it binds `s`** (2026-09-16, rebuilt 2026-09-21) for the
+IMD PRICE, sIMD RATE, STAKING, VAULT, DOWNSIDE BID and DRIP QUEUE. The cards use independent source clocks; STAKING reports realised trailing APR. **And it binds `s`** (2026-09-16, rebuilt 2026-09-21) for the
 IMD swarm's own control plane — the agent workforce this repo's own branches are built by, watched
 live: WORKFLOWS beside THROUGHPUT, then full-width LAUNCHES and SITES. **`x`** opens throughput
 details; workflow or launch Enter/row-click opens that row's snapshot. `s` swaps the **hero** for

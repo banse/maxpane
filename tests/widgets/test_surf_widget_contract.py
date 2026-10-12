@@ -69,6 +69,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4USignals,
     SurfPool4UStakers,
     SurfPool4UserHero,
+    SurfPool4RackHero,
     SurfPool4Vault,
     SurfSignals,
     SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet,
@@ -213,7 +214,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # in here too: it is a render-only widget taking contract keys like
         # every other entry, and the fact that it happens to be a hero row
         # rather than a panel changes nothing about what this list is for.
-        SurfPool4UserHero, SurfPool4UStakers, SurfPool4UBurn,
+        SurfPool4UserHero, SurfPool4RackHero, SurfPool4UStakers, SurfPool4UBurn,
         SurfPool4USignals, SurfPool4UDepth,
         # The `s` SWARM body's six and the `a` AGENT body's four (swarm v2,
         # WP7, 2026-09-21; the 2026-09-16 five -- THE FIELD, QUEUE, JUST
@@ -272,8 +273,8 @@ def test_no_pool4_widget_needs_a_kwarg_alias():
     Three assertions, because each catches a different way of arriving there.
     """
     pool4 = _pool4_widgets()
-    assert len(pool4) == 10, (
-        f"expected ten pool4 panels, found {[w.__name__ for w in pool4]} -- "
+    assert len(pool4) == 11, (
+        f"expected eleven pool4 widgets, found {[w.__name__ for w in pool4]} -- "
         "a derived sweep over an empty tuple proves nothing"
     )
     for cls in pool4:
@@ -296,6 +297,9 @@ def test_no_pool4_widget_needs_a_kwarg_alias():
             "already stands for `launchpad_as_of_hhmm` in "
             "_PREFIXED_KWARG_ALIASES and cannot stand for two keys"
         )
+        if cls is SurfPool4RackHero:
+            assert kwargs == ("surf_pool4_hero",)
+            continue
         if cls is SurfPool4UserHero:
             # THE ONE EXEMPTION, and it is from the clock rather than from
             # the naming rule (carry-over C4). A hero card has no title to

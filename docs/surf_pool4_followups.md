@@ -1048,3 +1048,30 @@ HATCHES whole at 99 is the screen-level sweep (`test_the_pool4_body_is_whole_fro
 The literal should be **re-measured** (49), not re-derived, and its comment's container corrected. It
 was not changed in the removal commit because doing so moves a widget test's premise in a file that
 diff has no other reason to touch.
+
+
+## 2026-10-12 — approved POOL4 rack hero, proposal 1
+
+Connected six nine-row hero cards to the existing POOL4, market and staker
+reads. No endpoints, cache format or polling changed. Snapshot-matched clocks
+keep older pool values separate from newer detached reads; partial holder folds
+show lower bounds and another network's holder count is unavailable. Realised
+APR remains unknown when the delivered-event window is unread. The live 149×45
+preview returned price, rate, vault, bid and queue facts; APR was unavailable.
+
+Re-measured market layout: 148×38. Partial-holder labels bind the width; STAKERS
+retains its independent 119-column boundary. At147 columns the card marks `‹`;
+at 37 rows the body marks taller. The app-wide 143-column pin is unchanged, as
+with the independent LAUNCHES body. Narrow cards mark elision locally.
+
+Final review R1 corrected: holder completeness is a separate boolean from
+freshness. Expired or failed incomplete folds retain their stale state/date
+and their lower-bound prefix. The replaced legacy hero stays explicitly parked
+with its frozen signature. The focused regression checks cover both expiration
+and failed-read cases.
+
+Scoped re-review approved R1 after five focused checks and both regression
+mutants were killed. Closing validation: 853 composing checks and 158 layout
+checks passed; four stale contract/parked-widget expectations were corrected
+and passed in the subsequent 121-check targeted run. Fast guards:124 passed;
+documentation pins:12 passed. No full-suite run was requested or performed.
