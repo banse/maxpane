@@ -72,3 +72,17 @@ client/model/manager rerun passed after test-only updates. No full-suite run.
 Final review: Approved, no Critical or Important findings. The reviewer ran
 29 focused checks and rejected an additional wrong-quote-leg mutation; all
 files were restored byte-for-byte. No outstanding findings for this change.
+
+## ONCHAIN NEWS hero mockup — 2026-10-12
+
+Proposal 3 is available as the standalone six-card Textual demo in
+`scripts/surf_news_hero_demo.py`, with fictional records and no API connection.
+Owner review of the 149×45 preview precedes production/live-data integration.
+Final review approved; three mockup tests, 124 guards and 12 docpins passed with
+`NO_COLOR` unset, and two geometry mutants were rejected.
+
+Minor test-isolation follow-up: the accent assertion in
+`tests/screens/test_surf_news_hero_demo.py` inherits `NO_COLOR`. Clear that setting
+in its test fixture when this file is next touched; until then, run its color
+checks with `env -u NO_COLOR`. The reviewer reproduced monochrome output with
+`NO_COLOR=1` and confirmed both focused render tests pass without it.
