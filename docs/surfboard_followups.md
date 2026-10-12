@@ -109,3 +109,19 @@ Validation: the closing affected/composing run passed 609 cases; the remaining
 137 affected cases passed in the preceding coordinated run. Also passed: 124
 guards, 12 docpins, five address sweeps and the full-outage app check. No full
 suite run. No outstanding review findings for this integration.
+
+## SWARM hero mockup — 2026-10-12
+
+Proposal 2 is available in `scripts/surf_swarm_hero_demo.py`: FLEET, OUTPUT,
+WORKFLOWS, LAUNCHES, LATEST WORKFLOW and SITES. The standalone demo reuses the
+existing rack renderer above the native SWARM tables. All figures and records
+are fictional, with visible MOCK DATA labels; production data and screens are
+unchanged. Owner feedback on the 149×45 preview precedes API integration.
+
+The six cards share a nine-row height. Narrow terminals scroll to retain every
+card. Six mockup/composing tests passed, and both deliberate layout regressions
+(wrapping the cards and removing the narrow-screen width floor) were detected
+by their named tests and restored byte-for-byte.
+
+Final review approved with no findings. The 124 fast guards and 12 docpins also
+passed. No full suite run.
