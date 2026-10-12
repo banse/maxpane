@@ -343,11 +343,18 @@ local paths to filenames before display. A review that passed and work that won 
 SEAT names `#N never paired` for a seat that has never paired; a failed read says `unavailable`.
 `esc` backs out of either body, one-way.
 
-Press **`b`** for BOARD: aggregated lifetime contributors beside the live worker fleet.
-SEATS, ACCEPT RATE and RECEIPTS come from contributors; LIVE, PAUSED and CAPACITY come
-from workers. LEADERBOARD includes every fully parsed contributor seat and scrolls; runtime/state and
-FLEET metadata keep their own source clocks. One failed endpoint leaves the other's facts
-visible. FLEET groups metadata under aligned labels, including an **advertised** model mix,
+Press **`b`** for BOARD: recorded-seat rankings beside the live worker fleet. Six rack cards
+show TOP SEAT, RECORDED, ACCEPT RATE, OUTCOMES, WORKERS and EFFORT. RECORDED displays the
+seat count as large digits and attempts on its inner bottom border. The first four cards
+use canonical `/seats/records` outcomes; WORKERS uses the served live count and concurrent
+working/capacity slots; EFFORT uses independent contributor receipts, turns and hours.
+The top seat keeps its canonical rank when the table is sorted. Known empty records and
+zero attempts remain distinct from an outage. Partial and stale cards carry their own read
+clock; an incomplete worker roster preserves the served live count but leaves slot sums unknown.
+Restored worker/receipt values remain dated until the existing endpoint confirms them.
+LEADERBOARD includes every recorded seat and scrolls; runtime/state and FLEET metadata
+keep their own source clocks. One failed endpoint leaves the other's facts visible.
+FLEET groups metadata under aligned labels, including an **advertised** model mix,
 with whole entries followed by exact `+N` omissions. Its CONTRIBUTORS group has a separate
 clock, a blank row, then devices and seats, accepted of attempts, rejected and pending, turns
 and wall-clock hours (rounded; minutes under half an hour), input and output tokens, and the served tokens-per-completed-job

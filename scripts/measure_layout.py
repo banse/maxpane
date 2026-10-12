@@ -33,7 +33,8 @@ sys.path.insert(0, str(REPO))
 
 from tests.screens import test_surf_swarm_layout as layout  # noqa: E402
 
-BOARD_KINDS = ("capture", "v4", "worst", "workers-unread", "contributors-unread", "unread")
+BOARD_KINDS = ("capture", "v4", "worst", "workers-unread", "contributors-unread", "unread",
+               "records-unread", "all-unread", "empty", "stale")
 
 
 def payloads() -> dict:

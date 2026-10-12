@@ -1521,6 +1521,15 @@ SURF_PROTOCOL_HERO_FIELDS = {
     "delivery": ("state", "read_ts", "queued", "ready", "per_day"),
     "checks": ("state", "read_ts", "counters", "drift_bps", "path"),
 }
+SURF_LEADERBOARD_HERO_STATES = ("ok", "partial", "stale", "unavailable")
+SURF_LEADERBOARD_HERO_FIELDS = {
+    "top": ("state", "read_ts", "token_id", "accepted", "rank", "empty"),
+    "recorded": ("state", "read_ts", "seats", "attempts"),
+    "rate": ("state", "read_ts", "accepted", "attempts", "percent"),
+    "outcomes": ("state", "read_ts", "rejected", "failed", "pending"),
+    "workers": ("state", "read_ts", "live", "working", "capacity"),
+    "effort": ("state", "read_ts", "receipts", "turns", "hours"),
+}
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points", "latest_launches",
                         "meter_state", "share_price", "seat_slot", "token_id")
@@ -1627,7 +1636,7 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     # Card rows two and three (2026-09-22), replacing SEAT and BY NODE.
     "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates", "swarm_seat_owner_ens", "swarm_seat_node_rows", "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon"),
     "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_read"),
-    "SurfSwarmBoardHero": ("swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
+    "SurfSwarmBoardHero": ("surf_leaderboard_hero",),
     "SurfSwarmLeaderboard": ("swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
     "SurfSwarmFleet": ("swarm_fleet", "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
 }
@@ -1838,6 +1847,7 @@ SURF_KEYS: tuple[str, ...] = (
     "surf_swarm_hero",        # dict — six source-backed native SWARM hero cards
     "surf_pool4_hero",        # dict — six source-backed native POOL4 market cards
     "surf_protocol_hero",     # dict — six source-backed native PROTOCOL cards
+    "surf_leaderboard_hero",  # six rack cards; independent records/worker/receipt clocks
     # ---- feed ---------------------------------------------------------------
     "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)
     "feed_last_post_age_s",  # float | None

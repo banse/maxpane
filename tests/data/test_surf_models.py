@@ -599,14 +599,14 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
         POOL4_KEYS, POOL4_STAKERS_KEYS, SWARM_KEYS,
     )
 
-    assert set(SURF_KEYS) == EXPECTED_KEYS | {"surfboard_cards", "surfboard_overview", "surfboard_events", "surfboard_hourly", "surfboard_sources", "surfboard_footer", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm", "surf_news_hero", "surf_swarm_hero", "surf_pool4_hero", "surf_protocol_hero"}
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 221
+    assert set(SURF_KEYS) == EXPECTED_KEYS | {"surfboard_cards", "surfboard_overview", "surfboard_events", "surfboard_hourly", "surfboard_sources", "surfboard_footer", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm", "surf_news_hero", "surf_swarm_hero", "surf_pool4_hero", "surf_protocol_hero", "surf_leaderboard_hero"}
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 222
     # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
     assert len(SWARM_KEYS) == 46
-    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 99
+    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 100
 
 
 def test_every_signal_has_all_three_facets() -> None:

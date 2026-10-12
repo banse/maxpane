@@ -1951,59 +1951,52 @@ SURF_MODES = (MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER,
               MODE_SWARM, MODE_AGENT, MODE_BOARD)
 BOARD_BODY_ID = "surf-board-body"
 
-#: BOARD width, measured 2026-09-22: every integer 60–225 at 80 rows, with
-#: v3 capture, 999-seat stress, workers-unread, contributors-unread and both
-#: unread. Stress carries five-digit counters, 64-character runtime/daemon
-#: names, 99 paused seats and 20 daemon versions. All twelve LEADERBOARD
-#: columns are installed from 141; §11 complete status text clears from 134.
-#: Compact begins 121; selected tight columns stop clipping at 94 with rows
-#: and 92 without rows. Independent source-clock footer clears 86 on capture,
-#: 92 with one unread source and 98 with both unread. Hero clears 97 on capture,
-#: 126 on stress, 132 with workers unread and 133 with contributors/both unread.
-#: The earlier region-only status check falsely passed 141 while surf lost
-#: its final f. The gate now compares expected and composited right text.
-#: No horizontal region overflow was observed. FLEET is 37 outer cells,
-#: 35 panel cells and 33 content cells; it preserves whole metadata values
-#: and accounts for every omitted entry with +N.
+#: BOARD rack hero, re-measured 2026-10-12 after the owner approved the
+#: live 149×45 preview. Six equal nine-row cards replace the seven-row hero:
+#: TOP SEAT / RECORDED / ACCEPT RATE / OUTCOMES / WORKERS / EFFORT. The native
+#: LEADERBOARD and 37-column FLEET remain beside one another below them.
+#: The existing b-body sweep and scripts/measure_layout.py measured capture
+#: and stress whole from 143 columns; at 142 TOP SEAT still advertises loss
+#: of its accepted-count subtitle. The hero therefore binds two cells above
+#: the native table's full twelve-column onset (141, unchanged).
+#: Record-source, worker-source and contributor-source outages retain
+#: independent dated cards. Empty records and zero attempts are known states.
+#: The boundary fixtures cover those states plus all-unread and stale values;
+#: the inset and footer content and outer-title markers enter the geometry
+#: assertions, not only CSS text-overflow. Under the width pin, the card may
+#: advertise loss after the table itself has already reached full width.
 #:
-#: Named content exception: stress runtime names exceed their eleven-cell
-#: column and retain visible ellipsis plus widen even at the full-tier pin.
-#: Only runtime may clip in that stress case; capture and source-failure
-#: labels, all fixed counters, clocks and all twelve columns fit whole.
-#: Owner 119 x 35 fits vertically (138 x 31 did until the 33-row pin, below); LEADERBOARD is tight at
-#: 119 and compact at 138. Both mark widen; status is cropped only at 119. App-wide
-#: 143 is unchanged.
-SURF_BOARD_FULL_LAYOUT_COLUMNS = 141
+#: Named content exception remains the stress table's 64-character runtime:
+#: its eleven-cell column keeps ellipsis and widen at and above the pin.
+#: No other stress column may clip, and every installed table column remains
+#: reachable. Source labels, unknown values and the six-card titles fit.
+#: A ten-digit seat ID may use a normal text face, never a rounded identifier.
+#: Four-digit native table ranks can still mark widen; that pre-existing
+#: table counter limit is not changed by this hero integration.
+#: App-wide 143 stays unchanged. The owner's 149 columns fit the complete
+#: hero and native body. Each body still owns its independent measured pin.
+SURF_BOARD_FULL_LAYOUT_COLUMNS = 143
 
-#: BOARD height, 27 -> 33 on 2026-09-22 (owner: a blank row under
-#: CONTRIBUTORS and "more data about the contributors" -- five lines:
-#: devices · seats, accepted of attempts, rejected · pending, turns · hours,
-#: tokens in · out). FLEET went 16 -> 22 rows with pauses (21 without), and
-#: the body followed it one for one. Re-measured at 141 columns through
-#: heights 45 down to 21 on capture, v4, stress and all three source-failure
-#: states: ``‹ taller`` lit through 32 and dark from 33 on capture, stress and
-#: contributors-unread; v4, workers-unread and both-unread are whole from 32.
-#: The width did not move (every payload marks first at 140; stress's named
-#: runtime exception marks at 141 as before). The owner's 35 rows fit; 31
-#: now shows ``‹ taller`` -- the price of the five lines, not a margin.
+#: BOARD height, 33 -> 35 on 2026-10-12: the approved rack adds two hero
+#: rows while leaving the native body unchanged. Measured through the same
+#: in-situ b-body sweep: capture and stress fit from 35; v4, without a paused
+#: detail row, fits from 34. At 34 the capture body scrolls and says taller;
+#: at 35 it does neither. FLEET retains its 22-row floor with paused detail,
+#: and LEADERBOARD retains every row and scrolls internally.
+#: Nine hero rows + 22 body rows + four chrome rows give the measured edge.
+#: Measurements at 143 columns include capture, v4, 999-seat stress and
+#: independently unread record/worker/contributor snapshots, known-empty
+#: records and stale data. At the owner size 149×45 all six cards and the
+#: native body fit; spare height goes to the scrollable table.
 #:
-#: Before that, remeasured 2026-09-22 for polish WP3: every row 23–32 at
-#: 141 columns, with v3 capture, v4 workers, 999-seat/five-digit stress and
-#: all three source-failure states. FLEET now has aligned labels, the model
-#: mix plus its advertised/omitted-count continuation, separate paused count
-#: and detail, two group spacers and the independent contributor sub-header.
-#: With pauses, fourteen body lines plus title and mandatory blank make 16;
-#: seven hero rows and four chrome rows make the measured worst-case 27.
-#: Without pauses (v4 capture) or without workers the detail is hidden: 15
-#: panel rows, whole from 26. Contributors-unread retains the 27-row bound.
-#: At 26 the v3/stress body scrolls and says taller; at 27 it does neither.
-#: LEADERBOARD retains all 999 stress seats and scrolls internally. The width
-#: was re-swept 60–225 on v4/stress and at source-state boundaries: all twelve
-#: columns still begin at 141; 140 sheds three. FLEET remains 37 outer cells,
-#: 35 panel cells and 33 content cells, with no silent clipping at the pin.
-#: Both owner heights (31 and 35) fitted then. AGENT remained 138×32: its exact
-#: approved polish grouping measured 37 rows and was skipped under the owner budget.
-SURF_BOARD_FULL_LAYOUT_ROWS = 33
+#: Previous height history: 27 -> 33 on 2026-09-22 when the independent
+#: contributor group gained a blank row and five effort/token lines. This
+#: integration does not remove those lines or transfer their source clock.
+#: The width and height assertions remain separate: a title marker is not
+#: evidence that the table gained or lost a row, and an internal table scroll
+#: is not the body's taller condition. Known empty versus unavailable cards
+#: keep the same nine-row footprint on refresh and mode changes.
+SURF_BOARD_FULL_LAYOUT_ROWS = 35
 
 #: The modes whose hero is :class:`SurfHero` -- **enumerated, not negated**.
 #:
@@ -3415,19 +3408,7 @@ class SurfScreen(DashboardScreen):
     }
 
     SurfSwarmBoardHero {
-        height: 7;
-    }
-    SurfSwarmBoardHero > SurfSwarmBoardHeroBox {
-        width: 1fr;
-        height: 7;
-        padding: 0 1;
-        margin: 0 1;
-        border: solid $panel;
-        background: $surface;
-        content-align: center top;
-        text-align: center;
-        text-wrap: nowrap;
-        text-overflow: ellipsis;
+        height: 9;
     }
     SurfScreen #surf-board-body {
         height: 1fr;

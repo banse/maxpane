@@ -1,47 +1,88 @@
-"""BOARD facts: canonical outcomes, contributor receipts and worker clocks."""
-from rich.text import Text
-from maxpane_dashboard.widgets.panels import HeroBoxBase, HeroRow
-from maxpane_dashboard.widgets.fmt import fmt_int
-from maxpane_dashboard.widgets.surf._fmt import fmt_win_rate, source_clock
-from maxpane_dashboard.widgets.surf._swarm_seat import seat_token, outcomes_clock
+"""Leaderboard rack cards over independently observed projected facts."""
+from __future__ import annotations
 
-class SurfSwarmBoardHeroBox(HeroBoxBase):
-    """Geometry is supplied by the two screen stylesheets."""
+from textual.app import ComposeResult
+from textual.containers import Grid
 
-class SurfSwarmBoardHero(HeroRow):
-    BOX_CLASS = SurfSwarmBoardHeroBox
-    BOXES = tuple((f'surf-board-{key}',label) for key,label in (
-        ('seats','RECORDED SEATS'),('live','LIVE'),('paused','PAUSED'),('capacity','CAPACITY'),
-        ('rate','ACCEPT RATE'),('receipts','RECEIPTS')))
+from ._swarm_seat import seat_token
+from .news_hero import HeroRecord, _count, _number
+from .pool4_hero import Pool4HeroCard, _amount, _face
 
-    def update_data(self, swarm_board_summary=None, swarm_board_as_of_hhmm=None,
-                    swarm_workers_as_of_hhmm=None, swarm_outcomes_source=None,
-                    swarm_contributors_as_of_hhmm=None, **_kwargs):
-        summary=swarm_board_summary if isinstance(swarm_board_summary,dict) else {}
-        for key,label in self.BOXES:
-            field=key.removeprefix('surf-board-')
-            if field in ('live','paused','capacity'):
-                clock='as of ' + source_clock(swarm_workers_as_of_hhmm)
-            elif field=='receipts':
-                clock='read ' + source_clock(swarm_contributors_as_of_hhmm)
+
+def leaderboard_records(payload: dict | None) -> tuple[HeroRecord, ...]:
+    payload = payload if isinstance(payload, dict) else {}
+    records = []
+    for key, title, heading, footer in (
+        ("top", "TOP SEAT", "SEAT", "RANK --"),
+        ("recorded", "RECORDED", "SEATS", "RECORDS"),
+        ("rate", "ACCEPT RATE", "%", "ACCEPTED"),
+        ("outcomes", "OUTCOMES", "RECORDS", "RECORDS"),
+        ("workers", "WORKERS", "NOW", "CURRENT"),
+        ("effort", "EFFORT", "RECEIPTS", "CONTRIBUTORS"),
+    ):
+        source = payload.get(key)
+        source = source if isinstance(source, dict) else {}
+        state = source.get("state")
+        state = state if state in ("ok", "partial", "stale", "unavailable") else "unavailable"
+        section = source if state != "unavailable" else {}
+        fields = dict(key=key, title=title, heading=heading, footer=footer, state=state,
+                      read_ts=_number(source.get("read_ts")), accent=state == "ok")
+        if key == "top":
+            token = seat_token(section.get("token_id"))
+            accepted = _amount(seat_token(section.get("accepted")))
+            rank = _count(seat_token(section.get("rank")))
+            if section.get("empty") is True:
+                fields.update(preview="no recorded seats", footer="NO RECORDS", accent=False)
             else:
-                clock=outcomes_clock(swarm_outcomes_source)
-            self.render_box(f'#{key}',label,lambda field=field,clock=clock: self._body(field,summary,clock))
+                # The canonical identifier never passes through a compact or
+                # floating-point formatter; a long ID uses the normal text face.
+                fields["digits"] = str(token) if token is not None and _number(token) is not None else "--"
+                fields["subtitle"] = f"{accepted} accepted"
+                fields["footer"] = f"RANK {rank}"
+                fields["accent"] &= fields["digits"] != "--" and accepted != "--" and rank != "--"
+        elif key == "recorded":
+            seats = seat_token(section.get("seats"))
+            fields["digits"] = str(seats) if seats is not None and seats < 10000 else _amount(seats)
+            attempts = _amount(seat_token(section.get("attempts")))
+            fields["subtitle"] = f"{attempts} attempts"
+            fields["accent"] &= fields["digits"] != "--" and attempts != "--"
+        elif key == "rate":
+            accepted, attempts = (seat_token(section.get(field)) for field in ("accepted", "attempts"))
+            if accepted == 0 and attempts == 0:
+                fields.update(preview="no attempts", accent=False)
+            else:
+                percent = _number(section.get("percent"))
+                if (percent is None or percent > 100 or accepted is None or attempts is None
+                        or attempts == 0 or accepted > attempts):
+                    percent = None
+                fields["digits"] = _face(percent, 1)
+                fields["accent"] &= percent is not None
+            fields["subtitle"] = f"{_amount(accepted)} / {_amount(attempts)}"
+        else:
+            columns = {"outcomes": ("rejected", "failed", "pending"),
+                       "workers": ("live", "working", "capacity"),
+                       "effort": ("receipts", "turns", "hours")}[key]
+            stats = []
+            for column in columns:
+                value = section.get(column)
+                value = _number(value) if column == "hours" else seat_token(value)
+                stats.append((column, _count(value) if key == "workers" else _amount(value)))
+            fields["stats"] = tuple(stats)
+            fields["accent"] &= all(value != "--" for _, value in stats)
+        records.append(HeroRecord(**fields))
+    return tuple(records)
 
-    @staticmethod
-    def _body(field,summary,clock):
-        value=seat_token(summary.get(field))
-        body='unavailable' if value is None else fmt_int(value)
-        if field=='live' and value is not None:
-            body += ' workers'
-        elif field=='capacity':
-            working=seat_token(summary.get('working'))
-            if working is not None and value is not None:
-                body=f'{fmt_int(working)} of {fmt_int(value)}\nworking'
-        elif field=='rate':
-            accepted,attempts=seat_token(summary.get('accepted')),seat_token(summary.get('attempts'))
-            if attempts==0 and accepted==0: body='no attempts'
-            elif accepted is not None and attempts is not None and accepted <= attempts:
-                failed=seat_token(summary.get('failed'))
-                body=fmt_win_rate(accepted/attempts)+'\n'+(f'{fmt_int(failed)} failed' if failed is not None else 'failed unavailable')
-        return Text(body+'\n'+clock)
+
+class SurfSwarmBoardHero(Grid):
+    DEFAULT_CSS = """
+    SurfSwarmBoardHero { width: 1fr; height: 9; grid-size: 6 1; grid-columns: 1fr;
+        grid-rows: 9; grid-gutter: 0 1; }
+    """
+
+    def compose(self) -> ComposeResult:
+        for record in leaderboard_records(None):
+            yield Pool4HeroCard(record)
+
+    def update_data(self, *, surf_leaderboard_hero=None, **kwargs):
+        for record in leaderboard_records(surf_leaderboard_hero):
+            self.query_one(f"#hero-{record.key}", Pool4HeroCard).set_record(record)

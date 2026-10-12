@@ -1286,6 +1286,8 @@ def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
 _NON_NUMERIC_KEYS = frozenset(
     {
         "degraded", "feed_items", "feed_signal_tx_hashes", "surf_news_hero", "surf_swarm_hero", "surf_pool4_hero", "surf_protocol_hero",
+        # Nested card facts; zero/unread is composited in test_surf_swarm_board_hero.py.
+        "surf_leaderboard_hero",
         "sig_post_state", "sig_lp_state", "sig_gate_state",
         "sig_deploy_state", "sig_bridge_state", "sig_burn_state",
         "sig_post_detail", "sig_lp_detail", "sig_gate_detail",

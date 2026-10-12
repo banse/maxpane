@@ -1369,7 +1369,7 @@ async def test_the_swarm_folds_emit_exactly_the_swarm_block(tmp_path):
         ),
     ]
     emitted = Counter(k for part in parts for k in part)
-    assert set(emitted) == set(SWARM_KEYS), (
+    assert set(emitted) == set(SWARM_KEYS) | {"surf_leaderboard_hero"}, (
         sorted(set(emitted) ^ set(SWARM_KEYS))
     )
     assert all(n == 1 for n in emitted.values()), (
@@ -1453,7 +1453,7 @@ async def test_node_rows_distinguish_unread_children_from_served_lists(tmp_path,
 _BOARD_KEYS = (
     "swarm_board_summary", "swarm_board_rows", "swarm_fleet", "swarm_fleet_daemon", "swarm_board_as_of_hhmm",
     "swarm_contributors_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_seat_live", "swarm_seat_contrib",
-    "swarm_seat_outcome", "swarm_outcomes_source", "swarm_seat_rank_delta",
+    "swarm_seat_outcome", "swarm_outcomes_source", "swarm_seat_rank_delta", "surf_leaderboard_hero",
 )
 
 
@@ -1471,7 +1471,8 @@ async def test_board_keys_are_exact_before_finalization_and_survive_cold_start(t
     assert tuple(cold) == _BOARD_KEYS
     assert cold["swarm_board_summary"] and all(value is None for value in cold["swarm_board_summary"].values())
     assert all(value is None for key, value in cold.items()
-               if key not in ("swarm_board_summary", "swarm_outcomes_source"))
+               if key not in ("swarm_board_summary", "swarm_outcomes_source", "surf_leaderboard_hero"))
+    assert all(card["state"] == "unavailable" for card in cold["surf_leaderboard_hero"].values())
     assert cold["swarm_outcomes_source"]["payload"] is None
     assert cold["swarm_outcomes_source"]["state"] == "unavailable"
     await manager.fetch_and_compute()

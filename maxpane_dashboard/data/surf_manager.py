@@ -147,6 +147,7 @@ from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard as hub
 from maxpane_dashboard.data import surf_pool4_hero as pool4_hero
 from maxpane_dashboard.data import surf_protocol_hero as protocol_hero
+from maxpane_dashboard.data import surf_leaderboard_hero as leaderboard_hero
 from maxpane_dashboard.data import surf_news_hero as news_hero
 from maxpane_dashboard.data import surf_swarm_hero as swarm_hero
 from maxpane_dashboard.data import surfboard_activity as work_activity
@@ -1147,6 +1148,7 @@ class SurfManager:
         self._swarm_task: Any = None
         self._swarm_scores_task: Any = None
         self._swarm_board_task: Any = None
+        self._swarm_board_observations: dict[str, dict] = {}
         #: The `/health` counters the last live read saw, so the 27.5 KB job
         #: list is only paid for when one of them moved (spec §3).
         self._swarm_counters: dict[str, Any] | None = None
@@ -6325,16 +6327,20 @@ class SurfManager:
                 lambda method=method: getattr(self.swarm_client, method)(), f"swarm {method}",
             )
             payload = normalize(raw)
+            observed_at = float(self._clock())
             if slot == SLOT_SWARM_WORKERS:
-                observed_at = float(self._clock())
                 prior_activity = self.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY)
                 activity = work_activity.observe(getattr(prior_activity, "payload", None), payload, now=observed_at)
                 self.cache.store_last_good(SLOT_SURFBOARD_ACTIVITY, activity, ts=observed_at)
-            if payload is None:
-                continue
             prior = self.cache.get_last_good(slot)
+            if payload is None:
+                source = self._swarm_board_source(slot, prior, now=observed_at)
+                self._swarm_board_observations[slot] = dict(entry=prior, read_ts=source['read_ts'], failed=True)
+                continue
             if coerce(getattr(prior, "payload", None)) != payload:
                 self.cache.store_last_good(slot, payload, ts=now)
+            self._swarm_board_observations[slot] = dict(
+                entry=self.cache.get_last_good(slot), read_ts=observed_at, failed=False)
             succeeded += 1
         if records_task is not None:
             await asyncio.shield(records_task)
@@ -6370,8 +6376,26 @@ class SurfManager:
         prev = point["prev"]
         return prev - rank if prev is not None else None
 
+    def _swarm_board_source(self, slot, entry, *, now):
+        """A confirmation belongs to this exact version, never a sibling endpoint."""
+        observation = self._swarm_board_observations.get(slot, {})
+        matched = observation.get('entry') is entry and bool(observation)
+        stamp = observation['read_ts'] if matched else getattr(entry, 'ts', None)
+        return news_hero.source(stamp, now=now, ttl=TIER_TTL_SECONDS[TIER_SWARM_BOARD],
+                                failed=observation['failed'] if matched else True)
+
+    def _swarm_board_hero_sources(self, contributors_entry, workers_entry, *, now):
+        sources = {name: self._swarm_board_source(slot, entry, now=now)
+                   for name, slot, entry in (
+                       ('contributors', SLOT_SWARM_CONTRIBUTORS, contributors_entry),
+                       ('workers', SLOT_SWARM_WORKERS, workers_entry))}
+        workers = sw.coerce_workers_slot(getattr(workers_entry, 'payload', None))
+        sources['workers']['partial'] = workers is not None and (
+            workers['count'] != len(workers['workers']) or bool(workers['malformed_tokens']))
+        return sources
+
     def _swarm_board_keys(self, contributors_entry: Any, workers_entry: Any, token: int | None,
-                          *, records_source: dict | None = None) -> dict[str, Any]:
+                          *, records_source: dict | None = None, hero_sources: dict | None = None) -> dict[str, Any]:
         contributors = sw.coerce_contributors_slot(getattr(contributors_entry, "payload", None))
         workers = sw.coerce_workers_slot(getattr(workers_entry, "payload", None))
         source = records_source or self._hub_sources()["records"]
@@ -6380,7 +6404,7 @@ class SurfManager:
         effort_rows = sw._board_rows_from_slots(contributors, workers)
         contrib = sw._seat_contrib_from_rows(effort_rows, token, contributors)
         outcome = hub.seat_outcome(records, token)
-        return {
+        data = {
             "swarm_board_summary": summary, "swarm_board_rows": rows,
             "swarm_fleet": sw._fleet_from_slot(workers),
             "swarm_fleet_daemon": fleet_majority([row["daemon"] for row in workers["workers"]]) if workers is not None else None,
@@ -6391,6 +6415,12 @@ class SurfManager:
             "swarm_seat_outcome": outcome, "swarm_outcomes_source": source,
             "swarm_seat_rank_delta": self._seat_rank_delta(token, outcome),
         }
+        now = float(self._clock())
+        sources = hero_sources if hero_sources is not None else self._swarm_board_hero_sources(
+            contributors_entry, workers_entry, now=now)
+        data['surf_leaderboard_hero'] = leaderboard_hero.project(
+            data=data, sources=dict(sources, records=source), now=now)
+        return data
 
     # -- the AGENT body's selected seat: /seats/{token} ----------------------
 
@@ -7626,6 +7656,8 @@ class SurfManager:
         # completion cannot misdate this cycle's data with another version's clock.
         contributors_entry = self.cache.get_last_good(SLOT_SWARM_CONTRIBUTORS)
         workers_entry = self.cache.get_last_good(SLOT_SWARM_WORKERS)
+        board_hero_sources = self._swarm_board_hero_sources(
+            contributors_entry, workers_entry, now=float(self._clock()))
         self._spawn_swarm_board(tiers, now)
 
         market, logs, channel, nft, activity = await asyncio.gather(
@@ -7937,6 +7969,7 @@ class SurfManager:
         data.update(self._swarm_board_keys(
             contributors_entry, workers_entry,
             selected_seat["token_id"] if selected_seat is not None else None,
+            hero_sources=board_hero_sources,
         ))
         await self._offer_swarm_seat(
             tiers,

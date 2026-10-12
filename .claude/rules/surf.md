@@ -37,7 +37,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
 | `s` | MODE_SWARM | WORKFLOWS beside LATEST LAUNCHES; LAUNCHES and SITES full-width; `x` opens the newest production launch | `SurfSwarmRackHero`: FLEET / OUTPUT / WORKFLOWS / LAUNCHES / LATEST WORKFLOW / SITES |
 | `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED JOBS / WORK / REWARDS / RANK / STATUS |
-| `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
+| `b` | MODE_BOARD | Recorded-seat LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: TOP SEAT / RECORDED / ACCEPT RATE / OUTCOMES / WORKERS / EFFORT |
 
 `SurfHero`'s fourth box is BOARDS (owner, 2026-09-22; it replaced IMD SUPPLY): `hero.BOARD_KEYS`
 lists `a`/`b`/`s`/`4` in THE LIST filter card's shape, and an agreement test binds each key to

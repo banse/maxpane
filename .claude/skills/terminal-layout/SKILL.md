@@ -21,7 +21,7 @@ it. This file is the method; the constants are the record.
 | surf `4` pool4 market (hint `4 pl4`; six rack heroes, 2026-10-12) | 148 cols · 38 rows (partial-holder row binds width; native STAKERS remains 119; live preview 149×45) | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `s` swarm (rack heroes, 2026-10-12; WORKFLOWS beside LATEST LAUNCHES, full-width LAUNCHES and SITES; `x` opens the newest launch) | 141 cols · 38 rows (LATEST WORKFLOW outer title binds width; nine-row heroes and nine-line body top floor) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `a` agent (hero and merged seat-card row, RECORD; re-swept 2026-09-24) | 139 cols · 25 rows; RECORD clears at 167 (165 before panel/tok, 2026-09-23; 204 until launch/sub left it, 2026-09-22) | `screens/surf.SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`, `RECORD_NEVER_CLEARS_BELOW` |
-| surf `b` board (LEADERBOARD beside FLEET; FLEET's five contributor lines 2026-09-22) | 141 cols · 33 rows | `screens/surf.SURF_BOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `b` board (six rack heroes, 2026-10-12; LEADERBOARD beside FLEET) | 143 cols · 35 rows; TOP SEAT subtitle binds width, native table remains 141; live preview at 149×45 | `screens/surf.SURF_BOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | dashboard 9 `surfboard` (four-row equipment rack with four AGENT seats, re-swept 2026-10-12) | 144 cols · 35 rows; PROTOCOL's label/amount/unit columns bind width; empty seat inputs keep the five-line inset; terminal fills the center span; live preview at 149×45 | `screens/surfboard.SURFBOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |

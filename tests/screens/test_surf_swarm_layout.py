@@ -69,7 +69,6 @@ from maxpane_dashboard.screens.surf import (
     SURF_AGENT_FULL_LAYOUT_ROWS,
     RECORD_NEVER_CLEARS_BELOW,
     SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS,
-    SURF_POOL4_USER_FULL_LAYOUT_COLUMNS,
     SURF_SWARM_FULL_LAYOUT_COLUMNS,
     SURF_SWARM_FULL_LAYOUT_ROWS,
     SWARM_BODY_ID,
@@ -684,6 +683,35 @@ def _measure(pilot, key: str) -> dict:
             painted = _region_text(pilot.app, card)
             if card.data.title not in painted:
                 clipped.append((type(hero).__name__, card.data.title))
+    if key == "b":
+        from maxpane_dashboard.widgets.markup_safety import strip_tags
+        from rich.style import Style
+        from textual.renderables.digits import Digits
+        # Rack borders and fitted rows bypass CSS-overflow detection. Compare
+        # each unfitted fact with its actual pixels, including the footer.
+        for card in hero.query("Pool4HeroCard"):
+            painted = _region_text(pilot.app, card)
+            if "‹" in painted:
+                marked.add(type(hero).__name__)
+            footer = card.border_subtitle
+            footer = footer.plain if hasattr(footer, "plain") else strip_tags(footer)
+            expected = [card.data.title, card.data.heading, footer, card.data.subtitle, *card.data.rows]
+            if card.data.digits:
+                digits = [segment.text for segment in Digits(card.data.digits).render(Style()) if segment.text != "\n"]
+                inside = max(4, card.content_size.width) - 2
+                if (card.data.digits != "--" and all(c in "0123456789.," for c in card.data.digits)
+                        and all(len(row) <= inside for row in digits)):
+                    expected.extend(digits)
+                else:
+                    expected.append(card.data.digits)
+            for label, value in card.data.stats:
+                if not any(label in line and value in line for line in painted.splitlines()):
+                    clipped.append((type(hero).__name__, f"{label} {value}"))
+            if card.data.preview:
+                prose = " ".join(painted.replace("│", " ").split())
+                if card.data.preview not in prose:
+                    clipped.append((type(hero).__name__, card.data.preview))
+            clipped.extend((type(hero).__name__, text) for text in expected if text and text not in painted)
     scroll = {
         cid: screen.query_one(f"#{cid}").show_vertical_scrollbar
         for cid in set(_CONTAINER_OF[key].values())
@@ -694,18 +722,27 @@ def _measure(pilot, key: str) -> dict:
     right = bar.query_one("#status-right")
     line = _screen_text(pilot.app).split("\n")[bar.region.y]
     status_whole = KEY_HINT_PHRASE in line and _status_bar_whole(pilot.app)
+    widths = {name: w.size.width for name, w in widgets.items()}
+    heights = {name: w.region.height for name, w in widgets.items()}
+    overflow = _overflow(screen, key, widgets)
+    if key == "b":
+        widths[type(hero).__name__] = hero.region.width
+        heights[type(hero).__name__] = hero.region.height
+        for card in hero.query("Pool4HeroCard"):
+            if not hero.region.contains_region(card.region):
+                overflow.append((card.id, card.region.width))
     return {
         "status_whole": status_whole,
         "marked": marked,
         "marked_besides_exceptions": marked - _EXCLUDED_FROM_WHOLE[key],
         "tiers": {name: getattr(w, "_tier", None) for name, w in widgets.items()},
-        "widths": {name: w.size.width for name, w in widgets.items()},
-        "heights": {name: w.region.height for name, w in widgets.items()},
+        "widths": widths,
+        "heights": heights,
         "hidden": hidden,
         "hscroll": hscroll,
         "columns": {name: tuple(str(c.label) for c in w.query_one(DataTable).columns.values()) for name,w in widgets.items() if list(w.query(DataTable))},
         "clipped": clipped,
-        "overflow": _overflow(screen, key, widgets),
+        "overflow": overflow,
         "taller": TALLER_HINT in _screen_text(pilot.app).split("\n")[0],
         "scroll": scroll,
         "top_height": top.region.height,
@@ -915,7 +952,6 @@ def test_the_pins_are_the_measured_numbers_and_fit_the_app() -> None:
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
     assert SURF_AGENT_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS > SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
-    assert SURF_SWARM_FULL_LAYOUT_COLUMNS > SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
     assert LAUNCHES_HIDES_NO_COLUMN_FROM < SURF_SWARM_FULL_LAYOUT_COLUMNS
     assert STATUS_BAR_WHOLE_FROM <= SURF_SWARM_FULL_LAYOUT_COLUMNS
     assert SURF_AGENT_FULL_LAYOUT_ROWS < SURF_SWARM_FULL_LAYOUT_ROWS
@@ -1060,34 +1096,47 @@ async def test_the_status_bar_edge_is_where_it_was_measured() -> None:
 
 def _board_payload(kind="capture"):
     from tests.surf_swarm_fixtures import swarm_board_payload, swarm_capture_v3
+    from maxpane_dashboard.data import surfboard as hub
+    from maxpane_dashboard.data.surf_leaderboard_hero import project
     payload=_capture_payload()
     payload.update(swarm_board_payload())
-    if kind == "v4":
-        from tests.surf_swarm_fixtures import swarm_capture_v4
-        payload["swarm_fleet"] = sw.fleet(swarm_capture_v4("workers"))
-    if kind in ("workers-unread", "contributors-unread", "unread"):
-        contributors=None if kind in ("contributors-unread","unread") else swarm_capture_v3("contributors")
-        workers=None if kind in ("workers-unread","unread") else swarm_capture_v3("workers")
-        payload.update(swarm_board_summary=sw.board_summary(contributors,workers),
-                       swarm_board_rows=sw.board_rows(contributors,workers),swarm_fleet=sw.fleet(workers),
-                       swarm_board_as_of_hhmm=None if contributors is None else "03:01",
-                       swarm_workers_as_of_hhmm=None if workers is None else "04:02")
+    source = dict(payload["swarm_outcomes_source"])
+    contributors = None if kind in ("contributors-unread", "unread", "all-unread") else swarm_capture_v3("contributors")
+    workers = None if kind in ("workers-unread", "unread", "all-unread") else (
+        swarm_capture_v4("workers") if kind == "v4" else swarm_capture_v3("workers"))
+    records = None if kind in ("records-unread", "all-unread") else source["payload"]
+    if kind == "empty":
+        records = dict(records, count=0, seats=[])
+    source.update(state="unavailable" if records is None else "stale" if kind == "stale" else "ok", payload=records)
+    rows, summary = hub.canonical_board(records, sw.normalize_contributors(contributors), sw.normalize_workers(workers))
+    payload.update(swarm_board_summary=summary, swarm_board_rows=rows, swarm_fleet=sw.fleet(workers),
+                   swarm_outcomes_source=source,
+                   swarm_board_as_of_hhmm=None if contributors is None else "03:01",
+                   swarm_contributors_as_of_hhmm=None if contributors is None else "05:03",
+                   swarm_workers_as_of_hhmm=None if workers is None else "04:02")
     if kind=="worst":
         payload=copy.deepcopy(payload)
         row=payload["swarm_board_rows"][0]
         payload["swarm_board_rows"]=[dict(row,rank=i+1,token_id=i,runtime="r"*64,
-            devices=99,attempts=99999,accepted=55555,rejected=11111,pending=33333,
+            devices=99,attempts=99999,accepted=55555,rejected=11111,failed=0,pending=33333,
             accept_rate=55555/99999,turns=99999,wall_clock_s=99999,
             live_state="working",working=99999) for i in range(999)]
         payload["swarm_board_summary"].update(seats=999,live=99999,paused=99,
             working=99999,capacity=99999,attempts=99999*999,accepted=55555*999,
-            rejected=11111*999,pending=33333*999,receipts=99999,tokens_per_completed_job=99999)
+            rejected=11111*999,failed=0,pending=33333*999,receipts=99999,tokens_per_completed_job=99999)
         payload["swarm_fleet"].update(
             daemons=[{"value":str(i)+"d"*64,"count":99999-i} for i in range(20)],
             runtimes=[{"value":"r"*64,"count":99999}],
             models=[{"model":"m"*64,"effort":"xhigh","count":99999},
                     {"model":None,"effort":None,"count":99999}],
             paused=[{"token_id":i,"until_ts":1758456000+i,"failures":99999} for i in range(99)])
+    stamp = source["read_ts"]
+    observations = {
+        "records": source,
+        "workers": dict(state="ok" if workers is not None else "unavailable", read_ts=stamp + 60),
+        "contributors": dict(state="ok" if contributors is not None else "unavailable", read_ts=stamp + 120),
+    }
+    payload["surf_leaderboard_hero"] = project(data=payload, sources=observations, now=stamp + 180)
     return payload
 
 
@@ -1101,11 +1150,16 @@ def _assert_board_whole(result,where):
     assert result["clipped_fields"]["SurfSwarmLeaderboard"] <= allowed,result
 
 
-@pytest.mark.parametrize("kind",["capture","v4","worst","workers-unread","contributors-unread","unread"])
+_BOARD_KINDS = ("capture", "v4", "worst", "workers-unread", "contributors-unread", "unread",
+                "records-unread", "all-unread", "empty", "stale")
+
+
+@pytest.mark.parametrize("kind", _BOARD_KINDS)
 async def test_board_full_layout_pin_has_all_columns_and_source_labels(kind):
     result=await _render(_board_payload(kind),(SURF_BOARD_FULL_LAYOUT_COLUMNS,SURF_BOARD_FULL_LAYOUT_ROWS),'b')
     _assert_board_whole(result,kind)
     assert not result['overflow'] and not result['taller'],result
+    assert result['heights']['SurfSwarmBoardHero'] == 9
 
 @pytest.mark.parametrize('width',boundary_set(SURF_BOARD_FULL_LAYOUT_COLUMNS,60,225,86,92,94,97,98,121,126,132,133,141))
 @pytest.mark.parametrize('kind',['capture','v4','worst'])
@@ -1113,9 +1167,12 @@ async def test_board_width_boundaries(width,kind):
     result=await _render(_board_payload(kind),(width,80),'b')
     assert not result['overflow'],result
     if width>=SURF_BOARD_FULL_LAYOUT_COLUMNS:_assert_board_whole(result,kind)
-    else:
+    elif width < 141:  # The native table retains its independent full-tier edge.
         assert 'SurfSwarmLeaderboard' in result['marked'], result
         assert len(result['columns']['SurfSwarmLeaderboard']) < 12, result
+    else:
+        assert 'SurfSwarmBoardHero' in result['marked'], result
+        assert any(name == 'SurfSwarmBoardHero' for name, _ in result['clipped']), result
 
 @pytest.mark.parametrize('height',boundary_set(SURF_BOARD_FULL_LAYOUT_ROWS,20,61,31,35))
 @pytest.mark.parametrize('kind',['capture','v4','worst'])
@@ -1126,8 +1183,11 @@ async def test_board_height_boundaries(height,kind):
 
 async def test_board_width_pin_is_not_loose():
     result=await _render(_board_payload(),(SURF_BOARD_FULL_LAYOUT_COLUMNS-1,80),'b')
-    assert 'SurfSwarmLeaderboard' in result['marked'], result
-    assert len(result['columns']['SurfSwarmLeaderboard']) < 12, result
+    assert result['marked'] == {'SurfSwarmBoardHero'}, result
+    assert ('SurfSwarmBoardHero', '3.253k accepted') in result['clipped'], result
+    assert len(result['columns']['SurfSwarmLeaderboard']) == 12, result
+    at = await _render(_board_payload(), (SURF_BOARD_FULL_LAYOUT_COLUMNS,80), 'b')
+    _assert_board_whole(at, 'capture')
 
 
 @pytest.mark.parametrize("kind", ["v3","pending","seats-unavailable","workers-unavailable","contributors-unavailable","absent","no-seat"])

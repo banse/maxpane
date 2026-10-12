@@ -2501,19 +2501,7 @@ SurfScreen #surf-swarm-card-nodes { width: 28fr; }
 
 
 SurfSwarmBoardHero {
-    height: 7;
-}
-SurfSwarmBoardHero > SurfSwarmBoardHeroBox {
-    width: 1fr;
-    height: 7;
-    padding: 0 1;
-    margin: 0 1;
-    border: solid $panel;
-    background: $surface;
-    content-align: center top;
-    text-align: center;
-    text-wrap: nowrap;
-    text-overflow: ellipsis;
+    height: 9;
 }
 SurfScreen #surf-board-body {
     height: 1fr;

@@ -216,7 +216,7 @@ def test_every_signature_key_is_a_swarm_key():
     not a contract key would be a widget reading a value nothing emits."""
     for widget, kwargs in SWARM_WIDGET_SIGNATURES.items():
         for key in kwargs:
-            assert key in (*SWARM_KEYS, *models.SURFBOARD_KEYS, "surf_swarm_hero", "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
+            assert key in (*SWARM_KEYS, *models.SURFBOARD_KEYS, "surf_swarm_hero", "surf_leaderboard_hero", "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
 
 
 def test_every_signature_kwarg_is_unique_within_its_widget():
@@ -360,13 +360,23 @@ def test_board_nested_fields_and_vocabularies_are_frozen_literals(name, expected
     assert len(actual) == len(set(actual))
 
 
+def test_leaderboard_hero_nested_contract_is_frozen():
+    assert models.SURF_LEADERBOARD_HERO_STATES == ("ok", "partial", "stale", "unavailable")
+    assert models.SURF_LEADERBOARD_HERO_FIELDS == {
+        "top": ("state", "read_ts", "token_id", "accepted", "rank", "empty"),
+        "recorded": ("state", "read_ts", "seats", "attempts"),
+        "rate": ("state", "read_ts", "accepted", "attempts", "percent"),
+        "outcomes": ("state", "read_ts", "rejected", "failed", "pending"),
+        "workers": ("state", "read_ts", "live", "working", "capacity"),
+        "effort": ("state", "read_ts", "receipts", "turns", "hours"),
+    }
+
+
 def test_board_signatures_carry_each_source_clock():
     assert {name: SWARM_WIDGET_SIGNATURES[name] for name in (
         "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
     )} == {
-        "SurfSwarmBoardHero": (
-            "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm",
-        ),
+        "SurfSwarmBoardHero": ("surf_leaderboard_hero",),
         "SurfSwarmLeaderboard": (
             "swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm",
             "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm",

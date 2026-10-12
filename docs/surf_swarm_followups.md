@@ -1348,3 +1348,38 @@ Final review: **Approved**, no findings or fix wave. Its receipt-time unit mutan
 by the accounting and compositor tests. All 12 documentation pins passed; no full suite was
 run. The native table's three-cell rank column still advertises `widen` for four-digit ranks;
 that existing production behavior remains outside this mockup's scope.
+
+## LEADERBOARD hero live integration — 2026-10-12
+
+The approved six-card rack now uses the existing canonical seat records, worker
+roster and contributor receipts. RECORDED shows seats as digits and attempts on
+the inner bottom border. TOP SEAT remains canonical rank one through table sorting.
+Known-empty records, no attempts, genuine zeros, partial observations and source
+outages remain distinct. Incomplete worker coverage retains the served live count
+without presenting partial slot sums as totals.
+
+Worker and contributor confirmations have independent manager-memory clocks tied
+to the captured cache entry. Successful unchanged reads confirm freshness; failed
+reads retain their own last-good clock. Restored cache values remain dated until
+confirmed. The existing requests, schedules and persisted formats are unchanged.
+
+The public-API render at 149×45 was shown before layout hardening. It reported seat
+527, 1,028 recorded seats and 95.7% accepted. The measured BOARD pin is 143×35;
+TOP SEAT's accepted-count subtitle binds width, while the nine-row hero and native
+fleet floor bind height. The native table still fits from 141 columns. The existing
+four-digit rank-column `widen` indication remains outside this change's scope.
+
+Final review found one Important timing edge: a board response arriving during
+the cycle's earlier chain await was validated against cycle-start time and could
+briefly appear unavailable. The single fix wave validates at the capture's current
+injected clock, before detached spawning. Its regression failed before the fix;
+the scoped re-review marked it ADDRESSED and killed the inverse-clock mutation.
+No remaining review findings were filed.
+
+Verification covered the projection, widget, contracts, manager and composing
+screen files. The final manager run passed 192 cases; the registration file passed
+83. The layout file passed 587 cases, with its sole failure an obsolete cross-body
+ordering assertion from POOL4's earlier resize; removing that comparison left the
+named case green. All BOARD boundaries passed, including both-direction width and
+height mutation proofs. Colour-dependent screen cases passed with NO_COLOR unset.
+Fast guards passed 124 cases and documentation pins passed 12. No full suite ran.
