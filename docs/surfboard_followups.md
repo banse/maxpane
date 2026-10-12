@@ -155,3 +155,22 @@ corrections replace the old SWARM geometry, the pre-rack default rail boundary
 (now measured whole from 45 rows), and the retired hero's title assumptions.
 Also passed: 124 fast guards, 12 docpins and two SWARM address sweeps. No full
 suite run and no outstanding findings for this integration.
+
+## LAUNCHES hero mockup — 2026-10-12
+
+Proposal 1 is available in `scripts/surf_launches_hero_demo.py`: TOKENS, VOLUME,
+LIQUIDITY, POOLS, MOMENTUM and TOP VOLUME. It reuses the existing rack renderer
+above native token panels. The fixed fictional 48-token snapshot agrees with the
+hero totals, coverage and leaders. VOLUME uses native Digits with an explicit
+`kUSD / 24H` scale; paired IMD and ETH amounts stay separate and retain the
+partial-coverage marker. The frame and export are visibly marked MOCK DATA.
+
+The 149×45 Textual preview was exported, inspected and shown to the owner.
+All cards share nine-row geometry; smaller terminals expose scrolling and retain
+every card. No production screen, source, cache, configuration or layout pin
+changed. Owner feedback precedes API integration, following the requested loop.
+
+Validation: 21 mockup/native-screen cases, 124 fast guards and 12 docpins passed.
+Both deliberate layout regressions (wrapped heroes and a removed width floor)
+were detected by named compositor tests and restored byte-for-byte. No full suite.
+Final review approved with no findings.
