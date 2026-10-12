@@ -1328,3 +1328,23 @@ fix wave addressed all three, with four focused regressions and inverse-mutation
 Scoped re-review: **Approved**; no remaining review findings. The initial integrated run passed
 574 scoped cases, then 127 UI/composing cases after chain-link support; guards, docpins and hub
 address checks passed. Nine targeted mutants were killed and restored. No full suite was run.
+
+## LEADERBOARD hero proposal 1 mockup — 2026-10-12
+
+The standalone `scripts/surf_leaderboard_hero_demo.py` implements the selected six-card
+ranking overview with fictional data. It reuses the rack cards above the native LEADERBOARD
+and FLEET panels. The 1,024 seat records reconcile to 100,000 attempts and 96,000 accepted;
+worker slots and contributor receipt totals retain their independent meanings. No runtime
+screen, API, configuration, cache, theme or layout pin changed in this mockup phase.
+
+The 149×45 preview was shown at `/tmp/maxpane-leaderboard-hero-mockup.png`. Three compositor
+and accounting tests passed with isolated HOME and four workers; the 100×30 scroll/resize
+case recovers all six cards. A three-column layout mutant was killed by the owner-size
+compositor test and restored byte for byte. All 124 fast guards passed. The next phase,
+after owner feedback, is integration with the existing independent records, workers and
+contributor sources.
+
+Final review: **Approved**, no findings or fix wave. Its receipt-time unit mutant was killed
+by the accounting and compositor tests. All 12 documentation pins passed; no full suite was
+run. The native table's three-cell rank column still advertises `widen` for four-digit ranks;
+that existing production behavior remains outside this mockup's scope.
