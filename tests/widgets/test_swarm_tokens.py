@@ -36,8 +36,7 @@ class Probe(App):
     CSS = """
     TokensTable { width: 145; height: 22; }
     TokensTable DataTable { height: 1fr; scrollbar-size: 1 1; }
-    TokensHero { height: 8; }
-    TokensHeroBox { width: 1fr; height: 7; }
+    TokensHero { height: 9; }
     NewlyLaunched, BestPlays, TokenActivity { width: 47; height: 12; }
     RichLog { min-width: 1; height: 1fr; scrollbar-size: 1 1; }
     """
@@ -117,32 +116,37 @@ async def test_newly_launched_reuses_paired_amounts_and_keeps_markup_literal():
 async def test_liquidity_hero_displays_imd_then_eth_and_marks_partial_totals():
     hero=TokensHero()
     async with Probe(hero).run_test(size=(149,45)) as pilot:
-        hero.update_data(metrics=dict(liquidity_imd=788,liquidity_eth=2.5,liquidity_partial=True))
+        hero.update_data(tokens_hero={'liquidity': dict(state='partial', read_ts=NOW,
+            imd=788, eth=2.5, partial=True, known=2, total=3)})
         await pilot.pause()
         lines=painted(pilot.app).splitlines()
-        imd=next(i for i,line in enumerate(lines) if '≥ 788 IMD' in line)
-        assert '≥ 2.5 ETH' in lines[imd+1]
-        assert 'one-sided' not in '\n'.join(lines)
-        hero.update_data(metrics=dict(liquidity_imd=0,liquidity_eth=None,liquidity_partial=False))
+        imd=next(i for i,line in enumerate(lines) if '788 IMD' in line)
+        assert '2.5 ETH' in lines[imd+1]
+        assert '≥' in lines[imd] and '≥' in lines[imd+1]
+        hero.update_data(tokens_hero={'liquidity': dict(state='ok', read_ts=NOW,
+            imd=0, eth=None, partial=False, known=1, total=1)})
         await pilot.pause()
         assert '0 IMD' in painted(pilot.app) and '-- ETH' in painted(pilot.app)
         assert '≥' not in painted(pilot.app)
 
 
 async def test_hero_distinguishes_empty_from_unknown_coverage():
+    from tests.screens.test_surf_news_hero_demo import painted as card_text
     hero = TokensHero()
     async with Probe(hero).run_test(size=(149, 45)) as pilot:
-        hero.update_data(metrics=dict(total=0, new_24h=0, volume_24h=None,
-            volume_known=0, two_sided=0, one_sided=0, unknown=0, other=0))
+        hero.update_data(tokens_hero={
+            'tokens': dict(state='ok', read_ts=NOW, tracked=0, new_24h=0, chains=0),
+            'volume': dict(state='unavailable', read_ts=None, amount=None, known=0, total=2)})
         await pilot.pause()
-        assert "0 deployed" in painted(pilot.app)
-        assert "0 launches" in painted(pilot.app)
-        assert "$0" not in painted(pilot.app)
-        hero.update_data(metrics=dict(total=2, new_24h=1, volume_24h=0,
-            volume_known=1, two_sided=1, one_sided=1, unknown=0, other=0))
+        tokens_text = card_text(pilot.app, hero.query_one('#hero-tokens'))
+        assert any('tracked' in row and '0' in row for row in tokens_text.splitlines())
+        assert any('new 24h' in row and '0' in row for row in tokens_text.splitlines())
+        assert 'unavailable' in card_text(pilot.app, hero.query_one('#hero-volume'))
+        hero.update_data(tokens_hero={'volume': dict(state='partial', read_ts=NOW,
+            amount=0, known=1, total=2)})
         await pilot.pause()
-        assert "$0" in painted(pilot.app)
-        assert "1/2 volumes known" in painted(pilot.app)
+        volume_text = card_text(pilot.app, hero.query_one('#hero-volume'))
+        assert '╭─╮' in volume_text and '1/2 known' in volume_text
 
 
 @pytest.mark.parametrize("widget,kwargs,expected", [

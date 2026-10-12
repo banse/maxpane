@@ -72,3 +72,38 @@ async def test_live_unavailable_does_not_paint_zero_tokens():
         text = painted(app)
         assert 'unavailable' in text.lower()
         assert '0 deployed' not in text and 'No matching tokens' not in text
+
+
+async def test_rack_heroes_follow_native_chain_filter_and_source_clocks():
+    from maxpane_dashboard.widgets.surf.news_hero import NewsHeroCard
+
+    provider = LiveProvider()
+    now = provider.snapshot['as_of']
+    rows = provider.snapshot['tokens']
+    provider.snapshot['tokens'] = [rows[0], rows[1], rows[3]]
+    for row in provider.snapshot['tokens']:
+        row.update(market_state='ok', market_read_at=now-60,
+                   liquidity_state='ok', liquidity_read_at=now-120)
+    app = LiveApp(provider)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        cards = list(app.screen.query(NewsHeroCard))
+        assert len(cards) == 6 and {card.region.height for card in cards} == {9}
+        assert len({card.region.y for card in cards}) == 1
+        assert set(app.screen.snapshot['tokens_hero']) == {
+            'tokens', 'volume', 'liquidity', 'pools', 'momentum', 'top_volume'}
+        from tests.screens.test_surf_news_hero_demo import painted as card_text
+        assert any('tracked' in line and '3' in line
+                   for line in card_text(app, cards[0]).splitlines())
+        assert '3/3 known' in card_text(app, cards[1])
+        assert cards[1].data.read_ts == now-60
+        assert cards[2].data.read_ts == now-120
+        await pilot.press('c', 'c')  # all -> Ethereum -> Base
+        await pilot.pause()
+        assert [row['symbol'] for row in app.screen.snapshot['tokens']] == ['TESTER']
+        assert any('tracked' in line and '1' in line
+                   for line in card_text(app, cards[0]).splitlines())
+        assert '1/1 known' in card_text(app, cards[1])
+        assert 'TESTER' in card_text(app, cards[5])
+        assert 'MEAT' not in card_text(app, cards[5]) and 'SC' not in card_text(app, cards[5])
+        assert app.screen.snapshot['tokens_hero']['volume']['amount'] == 14800

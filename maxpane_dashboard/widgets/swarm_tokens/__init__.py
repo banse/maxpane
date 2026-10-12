@@ -8,10 +8,11 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.fmt import as_float, fmt_age, fmt_int, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
-from maxpane_dashboard.widgets.panels import HeroBoxBase, HeroRow, PanelBase, RichLogFeed, TableLeaderboard
+from maxpane_dashboard.widgets.panels import PanelBase, RichLogFeed, TableLeaderboard
 from maxpane_dashboard.widgets.rowfit import clip, pad
 from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_compact
 from maxpane_dashboard.widgets.explorer import is_address
+from .hero import TokensHero
 
 __all__ = ["TokensHero", "TokensTable", "NewlyLaunched", "BestPlays", "TokenActivity"]
 
@@ -79,34 +80,6 @@ def _chart(token, width):
         return 'new' if known else '--'
     glyphs = iter(build_sparkline(known, width=len(known), pad=False))
     return ''.join(next(glyphs) if point is not None else ' ' for point in points).rjust(width)
-
-
-class TokensHeroBox(HeroBoxBase):
-    """Dashboard-owned hero geometry is supplied by its screen."""
-
-
-class TokensHero(HeroRow):
-    BOX_CLASS = TokensHeroBox
-    BOXES = (("st-hero-total", "TOKENS"), ("st-hero-new", "NEW / 24H"),
-             ("st-hero-volume", "VOLUME / 24H"), ("st-hero-liquidity", "LIQUIDITY"))
-
-    def update_data(self, metrics=None):
-        data = metrics or {}
-        total = fmt_int(data.get("total"))
-        liquidity = []
-        for asset in ('IMD', 'ETH'):
-            value = data.get('liquidity_' + asset.lower())
-            prefix = '≥ ' if data.get('liquidity_partial') and value is not None else ''
-            liquidity.append(f'{prefix}{_quantity(value)} {asset}')
-        bodies = (
-            (f"{total} deployed", f"{fmt_int(data.get('two_sided'))} two-sided"),
-            (f"{fmt_int(data.get('new_24h'))} launches", "last 24 hours"),
-            (_usd(data.get("volume_24h")), f"{fmt_int(data.get('volume_known'))}/{total} volumes known"),
-            tuple(liquidity),
-        )
-        for (widget_id, label), (main, sub) in zip(self.BOXES, bodies):
-            self.render_box(f"#{widget_id}", label,
-                lambda main=main, sub=sub: Text(main, style="bold white") + Text("\n" + sub, style="dim white"))
 
 
 class TokensTable(TableLeaderboard):

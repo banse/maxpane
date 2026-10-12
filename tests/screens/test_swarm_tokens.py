@@ -35,14 +35,21 @@ async def test_measured_layout_boundary_matches_composited_content(axis,delta):
         await pilot.pause()
         viewport=app.screen.query_one('#st-viewport',VerticalScroll)
         text=painted(app)
-        cut=viewport.show_horizontal_scrollbar or viewport.show_vertical_scrollbar
+        cut=viewport.max_scroll_x > 0 or viewport.max_scroll_y > 0
         assert cut == (delta<0)
-        assert ('‹ widen' in text)==viewport.show_horizontal_scrollbar
-        assert ('‹ taller' in text)==viewport.show_vertical_scrollbar
+        assert ('‹ widen' in text)==(viewport.max_scroll_x > 0)
+        assert ('‹ taller' in text)==(viewport.max_scroll_y > 0)
         table=app.screen.query_one(DataTable)
         assert table.row_count==24
         assert not table.show_horizontal_scrollbar
         if not cut:
+            from maxpane_dashboard.widgets.surf.news_hero import NewsHeroCard
+            cards=list(app.screen.query(NewsHeroCard))
+            assert len(cards)==6
+            assert {card.region.height for card in cards}=={9}
+            assert len({card.region.y for card in cards})==1
+            assert cards[-1].region.right <= viewport.scrollable_content_region.right
+            assert text.splitlines()[cards[0].region.y].count('╮')==6
             for label in ('NEWLY LAUNCHED','BEST PLAYS','ACTIVITY','PAIRED LP',
                           'PRICE 24H','VERDICT'):
                 assert label in text

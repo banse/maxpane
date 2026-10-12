@@ -3,6 +3,8 @@
 from copy import deepcopy
 from math import isfinite
 
+from maxpane_dashboard.analytics.swarm_tokens_hero import project as project_hero
+
 
 def select_tokens(tokens: list[dict], *, chain: str = 'all', query: str = '',
                   lp_state: str = 'all', sort: str = 'volume') -> list[dict]:
@@ -31,7 +33,9 @@ def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
     if snapshot['tokens'] is None:
         return dict(tokens=None, metrics=None, newly_launched=None, gainers=None,
                     losers=None, activity=None, as_of=snapshot['as_of'],
-                    is_mock=snapshot['is_mock'], **extra)
+                    is_mock=snapshot['is_mock'], tokens_hero=project_hero(
+                        None, catalogue=extra.get('sources', {}).get('catalogue'),
+                        now=snapshot['as_of'], is_mock=snapshot['is_mock']), **extra)
     tokens = select_tokens(snapshot['tokens'], chain=chain, query=query,
                            lp_state=lp_state, sort=sort)
     now = snapshot['as_of']
@@ -75,5 +79,7 @@ def project_snapshot(snapshot: dict, *, chain: str = 'all', query: str = '',
     return {
         'tokens': tokens, 'metrics': metrics, 'newly_launched': new,
         'gainers': gainers, 'losers': losers, 'activity': deepcopy(activity),
-        'as_of': now, 'is_mock': snapshot['is_mock'], **extra,
+        'as_of': now, 'is_mock': snapshot['is_mock'],
+        'tokens_hero': project_hero(tokens, catalogue=extra.get('sources', {}).get('catalogue'),
+                                    now=now, is_mock=snapshot['is_mock']), **extra,
     }

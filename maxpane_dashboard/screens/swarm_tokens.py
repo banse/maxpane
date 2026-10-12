@@ -24,8 +24,17 @@ from maxpane_dashboard.widgets.swarm_tokens.filter import SwarmTokensFilterEdito
 #: The table keeps all 24 rows and scrolls internally at every measured size.
 #: Widgets retain a 143-column body and 31-row content floor; a vertical
 #: scrollbar below the row pin can also require a horizontal one.
-SWARM_TOKENS_FULL_LAYOUT_COLUMNS = 145
-SWARM_TOKENS_FULL_LAYOUT_ROWS = 32
+#: Rack hero integration, measured after the live 149x45 preview (2026-10-12):
+#: six equal nine-row heroes require a 33-row body; 146x34 paints all six
+#: outer frames and the native panel/table headers without viewport overflow.
+#: At 145x34 the last frame loses one column to the reserved gutter, even
+#: though Textual's horizontal scrollbar flag is false. Chrome therefore uses
+#: actual scroll extent; 145 advertises widen and 146/147 show complete frames.
+#: At 146x33 the body scrolls and advertises taller; 34/35 fit. At 149x45 the
+#: table retains all 24 fixture rows and shows eighteen internally scrollable
+#: data rows. The width floor remains 143; its gutter is now counted honestly.
+SWARM_TOKENS_FULL_LAYOUT_COLUMNS = 146
+SWARM_TOKENS_FULL_LAYOUT_ROWS = 34
 
 
 class DemoStatusBar(StatusBar):
@@ -42,7 +51,7 @@ class SwarmTokensScreen(DashboardScreen):
     # This provider schedules its own sources independently of SURF's prefetch.
     JOIN_STARTUP_PREFETCH = False
     PANELS = (
-        (TokensHero, keys('metrics')),
+        (TokensHero, keys('tokens_hero')),
         (TokensTable, keys('tokens', 'as_of')),
         (NewlyLaunched, keys('newly_launched', 'as_of')),
         (BestPlays, keys('gainers', 'losers')),
@@ -58,11 +67,8 @@ class SwarmTokensScreen(DashboardScreen):
     SwarmTokensScreen { background: $background; color: $text; }
     SwarmTokensScreen #st-viewport { height: 1fr; padding: 0 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size: 1 1; }
-    SwarmTokensScreen #st-body { width: 1fr; min-width: 143; height: 1fr; min-height: 31; }
-    SwarmTokensScreen TokensHero { height: 7; margin: 1 0; }
-    SwarmTokensScreen TokensHeroBox { width: 1fr; height: 7; border: solid $panel;
-        background: $surface; padding: 0 1; margin: 0 1; content-align: center middle;
-        text-align: center; }
+    SwarmTokensScreen #st-body { width: 1fr; min-width: 143; height: 1fr; min-height: 33; }
+    SwarmTokensScreen TokensHero { height: 9; margin: 1 0; }
     SwarmTokensScreen #st-content { height: 1fr; min-height: 22; }
     SwarmTokensScreen #st-market { height: 1fr; }
     SwarmTokensScreen TokensTable { height: 1fr; min-height: 10; border: none; }
@@ -133,8 +139,8 @@ class SwarmTokensScreen(DashboardScreen):
             # width after Resize was delivered. Reuse the base's compact rule
             # once the visible editor has its final content geometry.
             self.call_after_refresh(editor.on_resize)
-        suffix = (' · ‹ widen' if viewport.show_horizontal_scrollbar else '')
-        suffix += ' · ‹ taller' if viewport.show_vertical_scrollbar else ''
+        suffix = (' · ‹ widen' if viewport.max_scroll_x > 0 else '')
+        suffix += ' · ‹ taller' if viewport.max_scroll_y > 0 else ''
         chain={'all':'all chains','eth':'Ethereum','base':'Base','rh':'Robinhood'}[self.chain]
         selection=f' · {self.lp_state}' if self.lp_state!='all' else ''
         selection+=f' · search: {flatten(self.search_query)}' if self.search_query else ''

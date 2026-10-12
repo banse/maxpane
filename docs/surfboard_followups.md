@@ -174,3 +174,32 @@ Validation: 21 mockup/native-screen cases, 124 fast guards and 12 docpins passed
 Both deliberate layout regressions (wrapped heroes and a removed width floor)
 were detected by named compositor tests and restored byte-for-byte. No full suite.
 Final review approved with no findings.
+
+## LAUNCHES live rack heroes — 2026-10-12
+
+The approved six-card row now receives `tokens_hero` from the existing live
+provider through the native filtered projection. TOKENS uses the catalogue;
+VOLUME, MOMENTUM and TOP VOLUME use eligible market observations; LIQUIDITY and
+POOLS use their own liquidity observations. Coverage and oldest contributing
+read clocks stay separate, stale quotes do not enter fresh totals, and known
+zero/empty selections remain distinct from unavailable data. No endpoint,
+scheduler, cache format or configuration write was added.
+
+The keyless 149×45 live preview was shown before layout hardening. It displayed
+164 selected tokens, 29 new within 24 hours, and $1.565M measured volume with
+39/164 coverage. Paired liquidity was at least 4.3k IMD and 4.798 ETH, with
+79/164 coverage. Partial source footers use orange and the dashboard's local
+time. USD scaling is explicit and small nonzero figures retain precision.
+
+The six equal nine-row cards measure 146×34 in the native layout. The 143-column
+body floor is unchanged; the old 145-column pin missed one clipped frame column
+at the reserved scrollbar gutter. Chrome now detects actual scroll extent,
+including this case when Textual's scrollbar flag is false. Width 145 marks;
+146/147 show all frames. Height 33 marks; 34/35 fit. The 24 fixture rows remain
+internally scrollable. Six data/source mutants and five geometry/marker mutants
+were rejected and restored byte-for-byte.
+
+Validation: 136 affected/composing cases, 124 fast guards, 12 docpins and three
+focused native dispatch/address cases passed. Final review approved with no
+findings after eight additional named checks. No full suite run or outstanding
+findings for this integration.

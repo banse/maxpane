@@ -28,10 +28,22 @@ METRIC_KEYS = (
 )
 PROJECTION_KEYS = (
     'tokens', 'metrics', 'newly_launched', 'gainers', 'losers',
-    'activity', 'as_of', 'is_mock',
+    'activity', 'as_of', 'is_mock', 'tokens_hero',
 )
+# Source state and successful read clock belong to each section. No I/O or
+# rendering types cross this seam; live timestamps never use evaluation time.
+HERO_STATES = ('ok', 'partial', 'stale', 'unavailable')
+HERO_FIELDS = {
+    'tokens': ('state', 'read_ts', 'tracked', 'new_24h', 'chains'),
+    'volume': ('state', 'read_ts', 'amount', 'known', 'total'),
+    'liquidity': ('state', 'read_ts', 'imd', 'eth', 'known', 'total', 'partial'),
+    'pools': ('state', 'read_ts', 'two_sided', 'one_sided', 'unknown', 'other'),
+    'momentum': ('state', 'read_ts', 'rising', 'falling', 'flat', 'known', 'total'),
+    'top_volume': ('state', 'read_ts', 'rows', 'known', 'total'),
+}
+HERO_VOLUME_ROW_FIELDS = ('symbol', 'volume_usd')
 WIDGET_SIGNATURES = {
-    'TokensHero': ('metrics',),
+    'TokensHero': ('tokens_hero',),
     'TokensTable': ('tokens', 'as_of'),
     'NewlyLaunched': ('newly_launched', 'as_of'),
     'BestPlays': ('gainers', 'losers'),
