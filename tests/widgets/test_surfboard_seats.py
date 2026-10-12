@@ -43,14 +43,24 @@ async def test_four_empty_agent_seats_keep_black_face_and_five_line_inset(size):
             assert painted[-1].text == "╰─ EMPTY " + "▱" * (card.region.width - 12) + " ─╯"
             assert card.can_focus and card.data["seat_slot"] == slot
             assert card.data["token_id"] is None and card.data["destination"] is None
-            assert field.display and field.region.height == 1
-            assert field.region.y == card.region.y + top + 2
+            assert field.display and field.region.height == 3
+            assert field.region.y == card.region.y + top + 1
             assert field.region.x > card.content_region.x
             assert field.region.right < card.content_region.right
             background = Color.parse(pilot.app.get_css_variables()["background"])
             assert card.styles.background == field.styles.background
             assert all(segment.style.bgcolor == background for row in painted[1:-1]
                        for segment in row.crop(1, card.region.width - 1))
+            accent = Color.parse(pilot.app.get_css_variables()["accent"])
+            for focused in (False, True):
+                if focused:
+                    field.focus()
+                    await pilot.pause()
+                strips = pilot.app.screen._compositor.render_strips()
+                for y in (field.region.y, field.region.bottom - 1):
+                    edge = strips[y].crop(field.region.x, field.region.right)
+                    assert any(segment.text.strip() for segment in edge)
+                    assert all(segment.style.color == accent for segment in edge if segment.text.strip())
 
 
 async def test_inline_drafts_survive_polling_and_submit_only_their_own_slot():

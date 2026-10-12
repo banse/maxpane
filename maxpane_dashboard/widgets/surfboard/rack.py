@@ -210,7 +210,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
     def compose(self):
         if self.seat_slot is not None:
             yield Input(placeholder="seat no", restrict=r"#?[0-9]*", max_length=11,
-                        compact=True, id=f"surfboard-seat-{self.seat_slot}", classes="seat-input")
+                        id=f"surfboard-seat-{self.seat_slot}", classes="seat-input")
 
     def on_mount(self):
         self._update_input()
@@ -220,10 +220,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if not self.empty_seat and field.has_focus:
                 self.focus()
             field.display = self.empty_seat
-            width = min(11, max(1, self.content_size.width - 4))
+            width = min(13, max(3, self.content_size.width - 4))
             field.styles.width = width
             field.styles.offset = (max(1, (self.content_size.width - width) // 2),
-                                   max(0, (self.content_size.height - 5) // 2) + 2)
+                                   max(0, (self.content_size.height - 5) // 2) + 1)
 
     @property
     def detail(self):
@@ -315,7 +315,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             else:
                 rows = [("", False), (count, False), ("", False)]
         if self.empty_seat:
-            label, rows = " EMPTY SEAT ", [("", False), ("", False), (self._seat_error, False)]
+            label, rows = " EMPTY SEAT ", [("", False)] * 3
+            secondary = self._seat_error or secondary
         preview = None
         if self.key == "protocol":
             label = " STATS "
@@ -369,8 +370,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             style = Style(
                 color=self.rich_style.color, bgcolor=palette["background"],
                 bold=bold, dim=muted)
-            if self.empty_seat and index == 2 and self._seat_error:
-                style += Style(color=RED, dim=False)
             line, lost = (preview[index] if preview is not None else
                           (Text(raw, style=style), False) if native_digits else fit_prose(raw, inside, style=style))
             clipped |= lost
@@ -380,6 +379,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             clipped and self.key != "swarm-tokens", max(0, self.size.width - 4)))
         footer = Text("└" + clip(bottom, inside).center(inside, "─") + "┘",
                       style=border_inset + Style(bold=False))
+        if self.empty_seat and self._seat_error:
+            footer.stylize(Style(color=RED, dim=False), 1, len(footer) - 1)
         return body.append_text(footer)
 
     def on_focus(self):
@@ -426,8 +427,8 @@ class SurfboardRack(Grid):
     SurfboardRack > #surfboard-card-protocol { padding: 0; }
     SurfboardRack > SurfboardCard.empty { color: $text-muted; background: $background; }
     SurfboardCard .surfboard-card--muted { color: $text-muted; background: $background; }
-    SurfboardCard > Input.seat-input { position: absolute; height: 1; margin: 0; padding: 0;
-        border: none; background: $background; background-tint: transparent; color: $text; }
+    SurfboardCard > Input.seat-input { position: absolute; height: 3; margin: 0; padding: 0;
+        border: tall $accent; background: $background; background-tint: transparent; color: $text; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
     """
 
