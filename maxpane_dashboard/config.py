@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from maxpane_dashboard.analytics.surfboard import SURFBOARD_AGENT_KEYS, seat_token
+
 _CONFIG_DIR = Path.home() / ".maxpane"
 _CONFIG_FILE = _CONFIG_DIR / "config.toml"
 
@@ -88,4 +90,23 @@ def save_seat(token_id: int) -> None:
     """Save the IDMD seat's token id to the config file."""
     config = _read_config()
     config["seat"] = {**_section(config, "seat"), "token_id": token_id}
+    _write_config(config)
+
+
+def get_surfboard_seats() -> tuple[int | None, ...]:
+    """Four independent saved cards; malformed individual values stay empty."""
+    section = _section(_read_config(), 'surfboard')
+    return (seat_token(get_seat()), *(seat_token(section.get(f'seat_{slot+1}'))
+            for slot in range(1, len(SURFBOARD_AGENT_KEYS))))
+
+
+def save_surfboard_seat(slot: int, token: int) -> None:
+    """Persist one assignment, preserving the native primary-seat alias."""
+    if type(slot) is not int or not 0 <= slot < len(SURFBOARD_AGENT_KEYS) or seat_token(token) is None:
+        raise ValueError('invalid Surfboard seat slot or token')
+    if slot == 0:
+        save_seat(token)
+        return
+    config = _read_config()
+    config['surfboard'] = {**_section(config, 'surfboard'), f'seat_{slot+1}': token}
     _write_config(config)

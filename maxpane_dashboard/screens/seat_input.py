@@ -36,8 +36,13 @@ class SeatInputScreen(WalletInputScreen):
     styled by the rules that already style the wallet prompt.
     """
 
+    def __init__(self, *, current=None, saver=None, **kwargs):
+        super().__init__(**kwargs)
+        self._current_seat = current
+        self._seat_saver = saver
+
     def compose(self) -> ComposeResult:
-        current = get_seat()
+        current = get_seat() if self._seat_saver is None else self._current_seat
         with Vertical(id="wi-wrap"):
             yield Static(
                 "[bold]IDENTITY.MD SEAT[/]",
@@ -78,7 +83,11 @@ class SeatInputScreen(WalletInputScreen):
         if token is None:
             error.update("[red]Invalid seat — digits only, e.g. 1548[/]")
             return
-        save_seat(token)
+        try:
+            (self._seat_saver or save_seat)(token)
+        except OSError:
+            error.update("[red]Could not save seat. Try again.[/]")
+            return
         self.dismiss(token)
 
     def on_key(self, event) -> None:

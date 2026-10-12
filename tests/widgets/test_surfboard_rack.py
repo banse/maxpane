@@ -26,7 +26,7 @@ def neutral_inset_color(app):
 async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
     async with RackApp().run_test(size=size) as pilot:
         card=pilot.app.query_one('#surfboard-card-announce',SurfboardCard)
-        empty=pilot.app.query_one('#surfboard-card-bay-11',SurfboardCard)
+        empty=pilot.app.query_one('#surfboard-card-agent-3',SurfboardCard)
         text='0123456789'*10
         for status in ('active','idle','stale','working','failed','active'):
             card.set_data(dict(primary=text,secondary='7 new replies',status=status))
@@ -44,7 +44,7 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
             assert strips[top+4].text[left+1:right].strip('─ ') == '7 new'
             ink=next(iter(strips[top+1].crop(left+1,left+2))).style
             empty_ink=next(seg.style.color for strip in pilot.app.screen._compositor.render_strips()[empty.region.y:empty.region.bottom]
-                           for seg in strip.crop(empty.region.x,empty.region.right) if 'empty slot' in seg.text)
+                           for seg in strip.crop(empty.region.x,empty.region.right) if 'EMPTY SEAT' in seg.text)
             assert ink.color==(card.rich_style.color if status=='active' else empty_ink)
             edge=next(iter(strips[top].crop(left,left+1))).style.color.get_truecolor()
             neutral=neutral_inset_color(pilot.app)
@@ -121,41 +121,6 @@ def painted(app):
                      for strip in app.screen._compositor.render_strips())
 
 
-@pytest.mark.parametrize("key,status,ink", [
-    ("bay-10", "unassigned", None), ("bay-11", "unassigned", None),
-])
-async def test_status_colors_the_taller_inset_without_a_separate_status_row(key, status, ink):
-    async with RackApp().run_test(size=(149, 45)) as pilot:
-        rack = pilot.app.query_one(SurfboardRack)
-        rack.update_data(surfboard_cards=[dict(key=key, status=status,
-            primary="IDMD #420", secondary="95.9% accepted")])
-        rack.focus_card("announce")
-        await pilot.pause()
-        card = rack.query_one(f"#surfboard-card-{key}", SurfboardCard)
-        strips = [strip.crop(card.region.x, card.region.right) for strip in
-                  pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
-        lines = [strip.text for strip in strips]
-        assert not any(label in "\n".join(lines) for label in
-                       ("active", "stale", "unavailable", "experimental", "planned", "unassigned"))
-        top = next(i for i, line in enumerate(lines) if "┌" in line)
-        left, right = lines[top].index("┌"), lines[top].index("┐")
-        assert lines[top + 1][left:right + 1] == "│" + " " * (right - left - 1) + "│"
-        assert card.data["primary"] in lines[top + 2]
-        assert card.data["secondary"] in lines[top + 3]
-        assert lines[top + 4][left:right + 1] == "└" + "─" * (right - left - 1) + "┘"
-        border = next(segment for segment in strips[top] if "┌" in segment.text)
-        expected = pilot.app.ansi_theme.ansi_colors[ink] if ink is not None else border.style.color.get_truecolor()
-        if ink == 2:
-            outer = rack.query_one("#surfboard-card-announce", SurfboardCard)
-            expected = Color.parse(outer.styles.border_top[1].hex).get_truecolor()
-        if ink is None:
-            assert expected.red == expected.green == expected.blue < 200
-        for strip in strips[top:top + 5]:
-            for segment in strip.crop(left, right + 1):
-                if any(char in "┌┐└┘─│" for char in segment.text):
-                    assert segment.style.color.get_truecolor() == expected
-
-
 @pytest.mark.parametrize("size", [(149, 45), (140, 36)])
 @pytest.mark.parametrize("primary,expected", [
     ("894 online", ["╭─╮╭─╮╷ ╷", "├─┤╰─┤╰─┤", "╰─╯╶─╯  ╵"]),
@@ -230,7 +195,7 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             ("active", "0 of 3 slots", "idle", 43200),
             ("working", "1 of 3 slots", "busy", 86400),
         ]:
-            card.set_data(dict(status=status, primary="IDMD #420", secondary=slots,
+            card.set_data(dict(token_id=420, seat_slot=0, status=status, primary="IDMD #420", secondary=slots,
                                meter_kind="activity", meter_state=activity, numerator=remaining, denominator=86400))
             await pilot.pause()
             strips = [strip.crop(card.region.x, card.region.right) for strip in
@@ -284,7 +249,7 @@ async def test_card_activity_colors_update_from_current_counts():
             ('protocol','experimental','33,279','IMD',3),
         ]:
             card=pilot.app.query_one(f'#surfboard-card-{key}',SurfboardCard)
-            card.set_data(dict(status=status,primary=primary,secondary=secondary))
+            card.set_data(dict(token_id=420 if key == "agent" else None, status=status,primary=primary,secondary=secondary))
             await pilot.pause()
             strips=[strip.crop(card.region.x,card.region.right) for strip in
                     pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
@@ -375,11 +340,11 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
         for label in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
-                      "PROTOCOL", "PORTFOLIO", "BAY 10", "LAUNCHES", "BAY 11", "BAY 12"):
+                      "PROTOCOL", "PORTFOLIO", "LAUNCHES", "EMPTY SEAT"):
             assert label in text
 
 
-async def test_empty_bays_do_not_focus_and_arrows_follow_new_geometry():
+async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         rack = pilot.app.query_one(SurfboardRack)
         rack.update_data()
@@ -398,15 +363,17 @@ async def test_empty_bays_do_not_focus_and_arrows_follow_new_geometry():
         assert rack.focused_card == "swarm-tokens"
         rack.focus_card("portfolio")
         rack.move_focus("down")
-        assert rack.focused_card == "agent"
-        rack.move_focus("right")
+        assert rack.focused_card == "agent-2"
+        rack.move_focus("left")
         assert rack.focused_card == "agent"
         rack.move_focus("down")
-        assert rack.focused_card == "agent"
-        assert all(not card.can_focus for card in rack.query(".empty"))
+        assert rack.focused_card == "agent-3"
+        rack.move_focus("right")
+        assert rack.focused_card == "agent-4"
+        assert all(card.can_focus for card in rack.query(".empty"))
 
 
-async def test_live_cards_route_and_empty_bays_do_not_activate():
+async def test_live_cards_route_and_empty_seats_focus_input_without_opening():
     class Messages(RackApp):
         opened = []
 
@@ -419,7 +386,7 @@ async def test_live_cards_route_and_empty_bays_do_not_activate():
             rack.focus_card(key)
             rack.activate_focused()
         await pilot.pause()
-        rack.query_one("#surfboard-card-bay-10", SurfboardCard).action_activate()
+        rack.query_one("#surfboard-card-agent-2", SurfboardCard).action_activate()
         await pilot.pause()
         assert [event.key for event in pilot.app.opened] == ["swarm-tokens", "portfolio"]
         live, portfolio = pilot.app.opened
@@ -436,7 +403,7 @@ async def test_live_cards_route_and_empty_bays_do_not_activate():
 async def test_ratio_meter_never_fakes_zero_or_clamps_invalid_data(numerator, denominator, expected):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         rack = pilot.app.query_one(SurfboardRack)
-        rack.update_data(surfboard_cards=[dict(key="agent", status="active", primary="seat #420",
+        rack.update_data(surfboard_cards=[dict(key="agent", token_id=420, seat_slot=0, status="active", primary="seat #420",
             secondary="no attempts" if denominator == 0 else "canonical", destination="agent",
             meter_kind="ratio", meter_state="idle", numerator=numerator, denominator=denominator,
             detail="observed stop · read 12:34")])
@@ -444,15 +411,15 @@ async def test_ratio_meter_never_fakes_zero_or_clamps_invalid_data(numerator, de
         assert expected in painted(pilot.app)
 
 
-async def test_chart_requires_all_eight_buckets_and_empty_bays_stay_unlit():
+async def test_chart_requires_all_eight_buckets_and_empty_seats_stay_unlit():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         rack = pilot.app.query_one(SurfboardRack)
         rack.update_data(surfboard_cards=[dict(key="swarm", status="active", primary="1 online", secondary="0 working",
             meter_kind="sparkline", points=[0, 1, 2, 3, 4, 5, 6, 7]),
-            dict(key="bay-10", status="active", numerator=1, denominator=1, destination="fake")])
+            dict(key="agent-2", token_id=None, status="active", numerator=1, denominator=1, destination="fake")])
         await pilot.pause()
         assert "24H ▁▁▂▂▃▃▄▅▅▆▆▇▇█" in painted(pilot.app)
-        empty = rack.query_one("#surfboard-card-bay-10", SurfboardCard)
+        empty = rack.query_one("#surfboard-card-agent-2", SurfboardCard)
         assert empty.data["destination"] is None
         rack.update_data(surfboard_cards=[dict(key="swarm", meter_kind="sparkline", points=[0, 1])])
         await pilot.pause()
@@ -488,9 +455,9 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
     from tests.surfboard_fixtures import hub_payload
 
     labels = {"protocol": "BURN", "board": "IDLE",
-              "agent": "IDLE", "portfolio": "ASSETS", "bay-10": "AUX",
-              "bay-11": "AUX", "bay-12": "AUX"}
-    placeholders = {"portfolio", "bay-10", "bay-11", "bay-12"}
+              "agent": "IDLE", "portfolio": "ASSETS", "agent-2": "EMPTY",
+              "agent-3": "EMPTY", "agent-4": "EMPTY"}
+    placeholders = {"portfolio", "agent-2", "agent-3", "agent-4"}
     payload = hub_payload()
     for data in payload["surfboard_cards"]:
         if data["key"] in labels:
@@ -507,7 +474,7 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
             for key, label in labels.items():
                 card = app.hub.query_one(f"#surfboard-card-{key}", SurfboardCard)
                 footer = strips[card.region.bottom - 1].crop(card.region.x, card.region.right)
-                prefix, suffix = ("┗╍ ", " ╍┛") if key.startswith("bay-") else ("╰─ ", " ─╯")
+                prefix, suffix = "╰─ ", " ─╯"
                 assert footer.text.startswith(prefix + label + " ")
                 assert footer.text.endswith(suffix)
                 bar = footer.text[len(prefix + label + " "):-len(suffix)]

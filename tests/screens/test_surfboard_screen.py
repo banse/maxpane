@@ -29,6 +29,7 @@ class HubManager:
         self.agent_active = False
         self.hub_active = False
         self.seat = None
+        self.hub_seats = (420, None, None, None)
         self.commands = []
         self.command_entered = asyncio.Event()
         self.command_release = asyncio.Event()
@@ -43,8 +44,16 @@ class HubManager:
 
     async def fetch_hub_snapshot(self):
         self.hub_reads += 1
-        return {"surfboard_cards": [dict(key=key, destination=mode, status="live")
+        return {"surfboard_cards": [dict(key=key, destination=mode, status="live",
+                                        seat_slot=0 if key == "agent" else None,
+                                        token_id=self.hub_seats[0] if key == "agent" else None)
                                    for key, mode in zip(CARD_KEYS, MODES)]}
+
+    def get_hub_seats(self):
+        return self.hub_seats
+
+    def set_hub_seats(self, seats):
+        self.hub_seats = tuple(seats)
 
     def set_agent_active(self, active):
         self.agent_active = active
@@ -289,7 +298,7 @@ async def test_command_result_after_navigation_cannot_reply_or_open_a_body(monke
 
 
 @pytest.mark.asyncio
-async def test_empty_bays_do_not_navigate_and_draft_survives_visit():
+async def test_empty_seats_focus_input_without_navigating_and_terminal_draft_survives_visit():
     from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
     app, _ = hub_app()
     async with app.run_test(size=(149, 45)) as pilot:
@@ -302,7 +311,8 @@ async def test_empty_bays_do_not_navigate_and_draft_survives_visit():
             card.action_activate()
             await pilot.pause()
             assert app.screen is hub
-            assert not card.can_focus
+            assert card.can_focus
+            assert app.focused is card.query_one(Input)
         rack.focus_card("board")
         await pilot.press("enter", "escape")
         assert app.screen is hub

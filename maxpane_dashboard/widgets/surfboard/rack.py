@@ -9,7 +9,9 @@ from textual.binding import Binding
 from textual.containers import Grid
 from textual.message import Message
 from textual.renderables.digits import Digits
+from textual.widgets import Input
 
+from maxpane_dashboard.analytics.surfboard import SURFBOARD_AGENT_KEYS as AGENT_KEYS
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.explorer import for_network
 from maxpane_dashboard.widgets.fmt import fmt_age
@@ -25,14 +27,14 @@ MUTED = "dim"
 AMBER = "yellow"
 RED = "red"
 
-# Layout identities, not data: future and empty bays deliberately have no route.
+# Fixed rack identities; the four agent cards carry independent assignments.
 SLOTS = (
     ("announce", "ONCHAIN NEWS", 0, 0), ("swarm", "SWARM", 0, 1),
     ("swarm-tokens", "LAUNCHES", 0, 2), ("pool4", "POOL4", 0, 3),
     ("protocol", "PROTOCOL", 0, 4), ("board", "LEADERBOARD", 0, 5),
     ("launchpad", "LAUNCHPAD", 1, 0), ("portfolio", "PORTFOLIO", 1, 5),
-    ("agent", "AGENT", 2, 0), ("bay-10", "BAY 10", 2, 5),
-    ("bay-11", "BAY 11", 3, 0), ("bay-12", "BAY 12", 3, 5),
+    ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
+    ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
 )
 METER_LABELS = dict(swarm="24H", launchpad="2H", protocol="BURN",
                     **{"swarm-tokens": "24H", "portfolio": "ASSETS"})
@@ -117,15 +119,15 @@ def meter_text(card: dict, width: int | None = None) -> Text:
         return Text(value, style=MUTED)
     label = METER_LABELS.get(key, "AUX")
     label_ink = MUTED
-    if key in ("agent", "board"):
-        label = {"busy": "BUSY", "idle": "IDLE", "offline": "OFF"}.get(state, "—")
-        label_ink = MUTED if state == "idle" else RED if state == "offline" else AMBER
+    if key in (*AGENT_KEYS, "board"):
+        label = {"busy": "BUSY", "idle": "IDLE", "offline": "OFF", "empty": "EMPTY"}.get(state, "—")
+        label_ink = MUTED if state in ("idle", "empty") else RED if state == "offline" else AMBER
     elif key in ("swarm-tokens", "launchpad") and state in ("partial", "stale"):
         label = "~" + label
         label_ink = AMBER
     out = Text().append(label + " ", style=label_ink)
     cells = 8 if width is None else max(0, width - cell_len(label) - 1)
-    if key == "portfolio" or str(key).startswith("bay-"):
+    if key == "portfolio" or state == "empty":
         return out.append("▱" * cells, style=MUTED)
     if card.get("meter_kind") == "sparkline" or key in ("swarm-tokens", "launchpad"):
         points = card.get("points")
@@ -142,7 +144,7 @@ def meter_text(card: dict, width: int | None = None) -> Text:
             return out.append(chart, style=GREEN)
         return out.append("—", style=AMBER)
     numerator, denominator = card.get("numerator"), card.get("denominator")
-    if key in ("agent", "board"):
+    if key in (*AGENT_KEYS, "board"):
         if state == "offline":
             return out.append("▱" * cells, style=MUTED)
         if state == "busy":
@@ -181,6 +183,7 @@ def signal_meter_text(card: dict, width: int) -> Text:
 class SurfboardCard(HeroBoxBase, can_focus=True):
     """A focusable faceplate with an inset readout."""
     BINDINGS = [Binding("enter", "activate", "Open", show=False)]
+    COMPONENT_CLASSES = {"surfboard-card--muted"}
 
     class Activated(Message):
         def __init__(self, card):
@@ -193,31 +196,60 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self.card = card
 
     def __init__(self, key, title, row, column):
-        super().__init__(id=f"surfboard-card-{key}", classes="empty" if key.startswith("bay-") else "populated")
+        super().__init__(id=f"surfboard-card-{key}")
         self.key, self.title, self.rack_row, self.rack_column = key, title, row, column
-        self.can_focus = not key.startswith("bay-")
+        self.seat_slot = AGENT_KEYS.index(key) if key in AGENT_KEYS else None
         self.data = {}
+        self._seat_error = ""
         self.set_data(None)
+
+    @property
+    def empty_seat(self):
+        return self.seat_slot is not None and self.data.get("token_id") is None
+
+    def compose(self):
+        if self.seat_slot is not None:
+            yield Input(placeholder="seat no", restrict=r"#?[0-9]*", max_length=11,
+                        compact=True, id=f"surfboard-seat-{self.seat_slot}", classes="seat-input")
+
+    def on_mount(self):
+        self._update_input()
+
+    def _update_input(self):
+        for field in self.query(Input):
+            if not self.empty_seat and field.has_focus:
+                self.focus()
+            field.display = self.empty_seat
+            width = min(11, max(1, self.content_size.width - 4))
+            field.styles.width = width
+            field.styles.offset = (max(1, (self.content_size.width - width) // 2),
+                                   max(0, (self.content_size.height - 5) // 2) + 2)
 
     @property
     def detail(self):
         return flatten(self.data.get("detail")) or f"{self.title} · unavailable"
 
     def set_data(self, data):
-        empty = self.key.startswith("bay-")
         self.data = dict(data) if isinstance(data, dict) else {}
         self.data.update(key=self.key, title=self.title)
+        if self.seat_slot is not None:
+            self.data["seat_slot"] = self.seat_slot
+            self.data.setdefault("token_id", None)
         if self.key == "swarm-tokens":
             self.data["destination"] = "swarm-tokens"
             self.data.setdefault("detail", "TOKENS · production-chain markets · unavailable · Enter to open")
         if self.key == "portfolio":
             self.data.update(status="active", primary="PORTFOLIO", secondary="wallet holdings",
                              destination="portfolio", detail="PORTFOLIO · holdings and ready claims · Enter to open")
-        if empty:
-            self.data.update(status="unassigned", primary="empty slot", secondary="· · ·", destination=None,
-                             detail=f"{self.title} · empty expansion slot")
+        if self.empty_seat:
+            self.data.update(status="empty", primary="", secondary="type in seat no", destination=None,
+                             meter_state="empty", detail="AGENT · empty seat · Enter to type a seat number")
+        else:
+            self._seat_error = ""
+        self.set_class(self.empty_seat, "empty")
         self.border_title = Text("⊙ " + self.title)
         self._update_meter()
+        self._update_input()
         self.refresh()
 
     def _update_meter(self):
@@ -229,12 +261,13 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
 
     def on_resize(self):
         self._update_meter()
+        self._update_input()
 
     def render(self):
         width = max(4, self.content_size.width)
         inside = width - 2
         status = flatten(self.data.get("status")) or "unavailable"
-        muted = not self.can_focus
+        muted = self.empty_seat
         color = MUTED if muted else {"active": GREEN, "working": GREEN, "ready": "bright_yellow",
             "stale": AMBER, "unavailable": AMBER, "paused": AMBER,
             "offline": RED, "error": RED, "failed": RED}.get(status, AMBER)
@@ -246,7 +279,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             color = GREEN
         elif self.key == "swarm" and status == "active":
             color = AMBER
-        if self.key == "agent":
+        if self.seat_slot is not None:
             if status == "active":
                 color = AMBER
             secondary = "offline" if status == "offline" else secondary.removesuffix(" slots")
@@ -265,8 +298,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "agent", "board", "launchpad", "pool4"):
-            label = {"swarm": " AGENTS ", "agent": " SEAT ",
+        if self.key in ("swarm", "board", "launchpad", "pool4") or self.seat_slot is not None:
+            label = " SEAT " if self.seat_slot is not None else {"swarm": " AGENTS ",
                      "board": " TOP AGENT ", "launchpad": " COINS ",
                      "pool4": " IMD PRICE "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
@@ -281,6 +314,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                         if segment.text != "\n"]
             else:
                 rows = [("", False), (count, False), ("", False)]
+        if self.empty_seat:
+            label, rows = " EMPTY SEAT ", [("", False), ("", False), (self._seat_error, False)]
         preview = None
         if self.key == "protocol":
             label = " STATS "
@@ -301,7 +336,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                     color=self.rich_style.color, bgcolor=palette["background"])), cell_len(row) > available))
         elif self.key == "announce":
             label = " LATEST "
-            ink = self.rich_style.color if status == "active" else self.parent.query_one(".empty").rich_style.color
+            ink = self.rich_style.color if status == "active" else self.get_component_rich_style("surfboard-card--muted").color
             preview = [(line, False) for line in _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))]
         elif self.key == "swarm-tokens":
             label = " LATEST "
@@ -318,7 +353,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             bottom = ""
         if len(bottom) > inside:
             bottom = bottom.strip()
-        if self.key == "agent" and len(bottom) > inside:
+        if self.seat_slot is not None and len(bottom) > inside:
             bottom = bottom.replace(" of ", "/")
         if self.key == "board" and len(bottom) > inside:
             bottom = bottom.replace(",", "")
@@ -334,6 +369,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             style = Style(
                 color=self.rich_style.color, bgcolor=palette["background"],
                 bold=bold, dim=muted)
+            if self.empty_seat and index == 2 and self._seat_error:
+                style += Style(color=RED, dim=False)
             line, lost = (preview[index] if preview is not None else
                           (Text(raw, style=style), False) if native_digits else fit_prose(raw, inside, style=style))
             clipped |= lost
@@ -348,12 +385,29 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
     def on_focus(self):
         self.post_message(self.Focused(self))
 
+    def on_descendant_focus(self):
+        self.post_message(self.Focused(self))
+
     def action_activate(self):
-        if self.can_focus:
+        if self.empty_seat:
+            self.query_one(Input).focus()
+        elif self.can_focus:
             self.post_message(self.Activated(self))
+
+    def on_input_submitted(self, event: Input.Submitted):
+        event.stop()
+        if self.empty_seat:
+            self.post_message(SurfboardRack.SeatSubmitted(self.seat_slot, event.value))
+
+    def on_input_changed(self, event: Input.Changed):
+        if self._seat_error:
+            self._seat_error = ""
+            self.refresh()
 
     def on_click(self, event):
         if is_copy_click(event) or is_explorer_click(event):
+            return
+        if isinstance(event.widget, Input):
             return
         if self.can_focus:
             self.focus()
@@ -370,14 +424,23 @@ class SurfboardRack(Grid):
         border-title-color: $text-muted; border-subtitle-color: $text-muted; border-subtitle-align: left; }
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
     SurfboardRack > #surfboard-card-protocol { padding: 0; }
-    SurfboardRack > SurfboardCard.empty { border: dashed $panel; color: $text-muted; background: $background; }
+    SurfboardRack > SurfboardCard.empty { color: $text-muted; background: $background; }
+    SurfboardCard .surfboard-card--muted { color: $text-muted; background: $background; }
+    SurfboardCard > Input.seat-input { position: absolute; height: 1; margin: 0; padding: 0;
+        border: none; background: $background; background-tint: transparent; color: $text; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
     """
 
     class CardActivated(Message):
-        def __init__(self, key, destination, detail):
+        def __init__(self, key, destination, detail, seat_slot=None, token_id=None):
             super().__init__()
             self.key, self.destination, self.detail = key, destination, detail
+            self.seat_slot, self.token_id = seat_slot, token_id
+
+    class SeatSubmitted(Message):
+        def __init__(self, seat_slot, value):
+            super().__init__()
+            self.seat_slot, self.value = seat_slot, value
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -411,6 +474,11 @@ class SurfboardRack(Grid):
                 card.focus()
                 return
 
+    def set_seat_error(self, slot, message):
+        card = self.query_one(f"#surfboard-card-{AGENT_KEYS[slot]}", SurfboardCard)
+        card._seat_error = flatten(message)
+        card.refresh()
+
     def move_focus(self, direction):
         cards = [card for card in self.query(SurfboardCard) if card.can_focus]
         current = next((card for card in cards if card.key == self.focused_card), cards[0])
@@ -432,4 +500,5 @@ class SurfboardRack(Grid):
 
     def on_surfboard_card_activated(self, event):
         event.stop()
-        self.post_message(self.CardActivated(event.card.key, event.card.data.get("destination"), event.card.detail))
+        self.post_message(self.CardActivated(event.card.key, event.card.data.get("destination"), event.card.detail,
+                                            event.card.seat_slot, event.card.data.get("token_id")))

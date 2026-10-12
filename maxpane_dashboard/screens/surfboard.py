@@ -18,7 +18,7 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Re-measured after the 2026-10-12 live 149×45 full-height terminal preview.
+#: Re-measured after the 2026-10-12 live 149×45 four-agent-seat preview.
 #: PROTOCOL's label/amount/unit columns bind width: "rewarded 100k IMD"
 #: needs 19 inner cells including one blank at each end, so its card needs
 #: 23 columns. The 141-column rack floor preserves that row. At 143×34 both
@@ -30,7 +30,9 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: detail restores the terminal's direct four-column, three-row span. Its
 #: measured width is 94 at the pin and 97 at 149×45. Cards keep equal whole-row
 #: heights; the terminal reaches the rack bottom, using the last track's spare
-#: rows (two below BAY 11/BAY 12 at 149×45). Its 12-row floor keeps the footer visible.
+#: rows (two below the bottom AGENT cards at 149×45). Its 12-row floor keeps the footer visible.
+#: All four empty inputs and assigned ten-digit seats fit at 144×35 and 149×45;
+#: the five-line inset preserves the seven-row card floor.
 #: LAUNCHPAD's 2H and LAUNCHES' 24H charts fit in their existing card footers.
 #: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 144
@@ -137,6 +139,9 @@ class SurfboardScreen(DashboardScreen):
             "SURFBOARD / DASHBOARD RACK" + (" · " + " · ".join(hints) if hints else "")))
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
+        if event.seat_slot is not None:
+            self.app.open_surf_mode(MODE_AGENT, token_id=event.token_id, seat_slot=event.seat_slot)
+            return
         if event.key == "portfolio":
             from maxpane_dashboard.config import get_wallet
             from maxpane_dashboard.screens.portfolio import PortfolioScreen
@@ -149,6 +154,27 @@ class SurfboardScreen(DashboardScreen):
         if event.destination is None:
             return
         self.app.open_surf_mode(event.destination)
+
+    def on_surfboard_rack_seat_submitted(self, event: SurfboardRack.SeatSubmitted) -> None:
+        from maxpane_dashboard import config
+        from maxpane_dashboard.screens.seat_input import parse_seat
+
+        event.stop()
+        token = parse_seat(event.value)
+        if token is None:
+            self.query_one(SurfboardRack).set_seat_error(event.seat_slot, "invalid seat no")
+            return
+        try:
+            config.save_surfboard_seat(event.seat_slot, token)
+        except OSError:
+            self.query_one(SurfboardRack).set_seat_error(event.seat_slot, "save failed")
+            return
+        seats = list(self._data_manager.get_hub_seats())
+        seats[event.seat_slot] = token
+        self._data_manager.set_hub_seats(seats)
+        if event.seat_slot == 0:
+            self._data_manager.set_seat(token)
+        self.start_refresh()
 
     def action_command_input(self) -> None:
         self.query_one(SurfboardTerminal).focus_input()

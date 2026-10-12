@@ -3422,6 +3422,7 @@ class SurfScreen(DashboardScreen):
         #: part of either -- it stays mounted and visible regardless.
         self._mode: str = MODE_DASHBOARD
         self._return_context: str | None = None
+        self._agent_slot = 0
         self.record_cap = SurfSwarmSeatRecord.ROW_CAP
         self.record_open_only = False
         self._record_seat_token = None
@@ -3618,15 +3619,23 @@ class SurfScreen(DashboardScreen):
 
     def clear_return_context(self) -> None:
         self._return_context = None
+        if self._agent_slot:
+            self._data_manager.set_seat(self._data_manager.get_hub_seats()[0])
+        self._agent_slot = 0
 
-    def open_mode(self, mode: str, *, return_context: str | None = None) -> None:
+    def open_mode(self, mode: str, *, return_context: str | None = None,
+                  seat_slot: int | None = None) -> None:
         """Select a native body before or after mounting without a private route."""
         if mode not in SURF_MODES:
             raise ValueError(f"Unknown SURFBOARD mode: {mode!r}")
         if return_context not in (None, "surfboard"):
             raise ValueError("Unknown SURFBOARD return context")
+        if seat_slot is not None and (type(seat_slot) is not int or not 0 <= seat_slot < 4
+                                      or return_context != "surfboard" or mode != MODE_AGENT):
+            raise ValueError("Invalid AGENT slot context")
         self._mode = mode
         self._return_context = return_context
+        self._agent_slot = seat_slot if seat_slot is not None else 0
         if self.is_mounted:
             self._show_mode()
 
@@ -3890,14 +3899,19 @@ class SurfScreen(DashboardScreen):
         ``~/.maxpane/config.toml``, so the next launch opens on it too
         (``__main__`` reads it into ``SurfManager(seat=)``).
         """
-        self.app.push_screen(SeatInputScreen(), callback=self._seat_entered)
+        slot = self._agent_slot
+        prompt = (SeatInputScreen(current=self._data_manager.get_hub_seats()[slot],
+                                  saver=lambda token: config.save_surfboard_seat(slot, token))
+                  if slot else SeatInputScreen())
+        self.app.push_screen(prompt, callback=self._seat_entered)
 
-    def select_seat(self, token: int) -> None:
+    def select_seat(self, token: int, *, persist: bool = True) -> None:
         """Persist a validated public selection using the native seat behavior."""
         parsed = parse_seat(str(token)) if isinstance(token, int) and not isinstance(token, bool) else None
         if parsed is None:
             raise ValueError("Invalid IDMD seat")
-        config.save_seat(parsed)
+        if persist:
+            config.save_surfboard_seat(self._agent_slot, parsed)
         self._seat_entered(parsed)
 
     def _seat_entered(self, token: int | None) -> None:
@@ -3910,6 +3924,11 @@ class SurfScreen(DashboardScreen):
         """
         if token is None:
             return
+        get_seats = getattr(self._data_manager, "get_hub_seats", None)
+        if get_seats is not None:
+            seats = list(get_seats())
+            seats[self._agent_slot] = token
+            self._data_manager.set_hub_seats(seats)
         set_seat = getattr(self._data_manager, "set_seat", None)
         if set_seat is not None:
             set_seat(token)

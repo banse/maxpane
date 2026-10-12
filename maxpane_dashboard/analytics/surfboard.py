@@ -4,6 +4,14 @@ from __future__ import annotations
 import math
 import re
 
+SURFBOARD_AGENT_KEYS = ('agent', 'agent-2', 'agent-3', 'agent-4')
+SEAT_TOKEN_MAX = 9_999_999_999
+
+
+def seat_token(value: object) -> int | None:
+    """A saved seat number within the existing ten-digit input bound."""
+    return value if type(value) is int and 0 <= value <= SEAT_TOKEN_MAX else None
+
 
 def count(value: object) -> int | None:
     return value if type(value) is int and value >= 0 else None

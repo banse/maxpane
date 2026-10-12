@@ -120,7 +120,7 @@ async def test_terminal_uses_dashboard_background_and_native_text_colors():
                         strips[face.region.y:face.region.bottom]]
                 top = next(i for i, row in enumerate(rows) if "┌" in row.text)
                 left, right = rows[top].text.index("┌"), rows[top].text.index("┐")
-                outer = theme.background if face.key.startswith("bay-") else theme.surface
+                outer = theme.background if face.data.get("status") == "empty" else theme.surface
                 assert all(segment.style.bgcolor == Color.parse(outer)
                            for segment in rows[top-1].crop(left, right+1))
                 assert all(segment.style.bgcolor == Color.parse(theme.background)
@@ -195,19 +195,19 @@ async def test_dynamic_detail_is_removed_and_terminal_fills_center_after_focus_a
             assert terminal.query_one('#surfboard-terminal-footer').region.bottom < terminal.region.bottom
 
 
-async def test_swapped_cards_and_empty_earnings_bay_have_expected_positions():
+async def test_portfolio_and_four_agent_seats_have_expected_positions():
     app = HubHarness(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         rack = app.hub.query_one(SurfboardRack)
         agent = rack.query_one('#surfboard-card-agent')
         portfolio = rack.query_one('#surfboard-card-portfolio')
-        bay = rack.query_one('#surfboard-card-bay-10')
+        bay = rack.query_one('#surfboard-card-agent-2')
         launchpad = rack.query_one('#surfboard-card-launchpad')
         assert portfolio.region.y == launchpad.region.y
         assert agent.region.x == launchpad.region.x
         assert bay.region.x == portfolio.region.x and bay.region.y == agent.region.y
-        assert not bay.can_focus and bay.data['destination'] is None
+        assert bay.can_focus and bay.data['destination'] is None
         assert not rack.query('#surfboard-card-earnings')
 
 
@@ -328,13 +328,13 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert len({r["cards"][key].y for key in ("announce", "swarm", "swarm-tokens", "pool4", "protocol", "board")}) == 1
     assert r["terminal"].y == r["cards"]["launchpad"].y == r["cards"]["portfolio"].y
     assert r["terminal"].bottom == r["rack"].bottom
-    assert r["cards"]["bay-11"].bottom == r["cards"]["bay-12"].bottom <= r["terminal"].bottom
+    assert r["cards"]["agent-3"].bottom == r["cards"]["agent-4"].bottom <= r["terminal"].bottom
     assert r["cards"]["launchpad"].right < r["terminal"].x < r["terminal"].right < r["cards"]["portfolio"].x
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
         "announce", "swarm", "swarm-tokens", "pool4", "protocol", "board",
-        "launchpad", "portfolio", "agent", "bay-10", "bay-11", "bay-12"]
+        "launchpad", "portfolio", "agent", "agent-2", "agent-3", "agent-4"]
     for title in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
-                  "LAUNCHES", "PORTFOLIO", "BAY 10", "BAY 11", "BAY 12"):
+                  "LAUNCHES", "PORTFOLIO", "EMPTY SEAT", "type in seat no"):
         assert title in r["text"], (title, r["text"])
 
 

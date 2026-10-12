@@ -10,11 +10,11 @@ def strips(app, card):
             app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
 
 
-@pytest.mark.parametrize('key', ['agent', 'board'])
+@pytest.mark.parametrize('key', ['agent', 'agent-2', 'agent-3', 'agent-4', 'board'])
 async def test_offline_footer_keeps_a_full_empty_track_and_red_off_label(key):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
-        card.set_data(dict(primary='420', secondary='0 of 3 slots', status='offline',
+        card.set_data(dict(token_id=420 if key != 'board' else None, primary='420', secondary='0 of 3 slots', status='offline',
             meter_kind='activity', meter_state='offline', numerator=43200, denominator=86400))
         await pilot.pause()
         footer = strips(pilot.app, card)[-1]
@@ -27,18 +27,18 @@ async def test_offline_footer_keeps_a_full_empty_track_and_red_off_label(key):
 async def test_leaderboard_inner_border_title_and_footer_match_agent_status(status):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         colors = []
-        for key in ('agent', 'board'):
+        for key in ('agent', 'agent-2', 'agent-3', 'agent-4', 'board'):
             card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
-            card.set_data(dict(primary='420', secondary='0 of 3 slots', status=status))
+            card.set_data(dict(token_id=420 if key != 'board' else None, primary='420', secondary='0 of 3 slots', status=status))
         await pilot.pause()
-        for key in ('agent', 'board'):
+        for key in ('agent', 'agent-2', 'agent-3', 'agent-4', 'board'):
             card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
             rows = strips(pilot.app, card)
             top = next(row for row in rows if '┌' in row.text)
             bottom = next(row for row in rows if '└' in row.text)
             colors.append([segment.style.color for row in (top, bottom)
                            for segment in row if '┌' in segment.text or '└' in segment.text])
-        assert colors[0] == colors[1]
+        assert all(color == colors[0] for color in colors[1:])
         if status != 'idle':
             expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
                         if status == 'working' else pilot.app.ansi_theme.ansi_colors[1])
@@ -90,7 +90,7 @@ async def test_projected_activity_drains_orange_from_24_to_72_hours_and_resets(k
                        for s in footer if '▰' in s.text)
 
 
-@pytest.mark.parametrize('key', ['agent', 'board'])
+@pytest.mark.parametrize('key', ['agent', 'agent-2', 'agent-3', 'agent-4', 'board'])
 async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
@@ -100,7 +100,7 @@ async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
             ('busy', 86400, 'BUSY', 1, 3),
             ('stale', None, '—', None, 3), ('unavailable', None, '—', None, 3),
         ]:
-            card.set_data(dict(primary='420', secondary='0 of 3 slots', status='active',
+            card.set_data(dict(token_id=420 if key != 'board' else None, primary='420', secondary='0 of 3 slots', status='active',
                 meter_kind='activity', meter_state=state, numerator=remaining, denominator=86400))
             await pilot.pause()
             footer = strips(pilot.app, card)[-1]

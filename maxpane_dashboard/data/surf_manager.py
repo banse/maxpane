@@ -1153,6 +1153,7 @@ class SurfManager:
         #: retired 2026-09-21 for the seat prompt. An IDMD token id, not a
         #: secret. Stored as given: ``sw.parse_seat_token`` parses it.
         self._seat_saved: str | int | None = seat
+        self._hub_seats = (hub.seat_token(sw.parse_seat_token(seat)), None, None, None)
         #: Screen-owned RECORD view, bounded to 40..400; resets on a seat change.
         #: ``record_spec`` is RECORD's ``f`` filter in force (an active
         #: ``RecordFilter``, else ``None``): its NODE / STATE / WHEN shape the
@@ -6125,8 +6126,19 @@ class SurfManager:
             self.cache.store_last_good(SLOT_SWARM_JOBS_SEEN, seen, ts=now)
         return seen
 
+    def get_hub_seats(self) -> tuple[int | None, ...]:
+        """Saved rack assignments, separate from the currently opened detail seat."""
+        return self._hub_seats
+
+    def set_hub_seats(self, tokens) -> None:
+        """Replace four validated assignments in memory, without selecting a seat."""
+        if (not isinstance(tokens, (list, tuple)) or len(tokens) != len(hub.SURFBOARD_AGENT_KEYS)
+                or any(token is not None and hub.seat_token(token) is None for token in tokens)):
+            raise ValueError('four valid Surfboard seat assignments required')
+        self._hub_seats = tuple(tokens)
+
     def set_seat(self, token: str | int | None) -> None:
-        """Replace the saved seat with ``token`` (the seat prompt's seam).
+        """Select ``token`` for the AGENT detail view, leaving rack assignments alone.
 
         An attribute write, no I/O and no await. Persisting the choice is
         the caller's job. Mark the seat tier due so the next cycle reads it.
@@ -7149,16 +7161,11 @@ class SurfManager:
         if refresh_legacy:
             swarm_entry = self.cache.get_last_good(SLOT_SWARM)
             scores_entry = self.cache.get_last_good(SLOT_SWARM_SCORES)
-            seat_entry = self.cache.get_last_good(SLOT_SWARM_SEAT)
-            answers_entry = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
-            oracle_entry = self.cache.get_last_good(SLOT_SWARM_ORACLE)
             seen = getattr(self.cache.get_last_good(SLOT_SWARM_JOBS_SEEN), "payload", None)
             scores = getattr(scores_entry, "payload", None) or {}
             data.update(self._swarm_keys(getattr(swarm_entry, "payload", None) or {}, swarm_entry, now, seen))
             data.update(self._swarm_scores_keys(scores, scores_entry, swarm_entry, now))
             data.update(self._swarm_launch_keys())
-            data.update(self._swarm_seat_keys(scores, scores_entry, seen, seat_entry, answers_entry, now, oracle_entry))
-            data.update(self._seat_rewards_keys(data, data.get("imd_price_usd"), now))
             data.update(self._runtime_keys(now))
             # Keep the card's USD conversion and post age on the same captured
             # source versions as the source clocks shown beside those values.
@@ -7182,6 +7189,17 @@ class SurfManager:
             for key in ("pool_id_source", "decoy_pool_count"):
                 data[key] = launch.get(key)
             data["pool_fee_bps"] = launch.get("pool_fee")
+        if refresh_legacy or (data.get('swarm_seat_selected') or {}).get('token_id') != sw.parse_seat_token(self._seat_saved):
+            # A full refresh may have started before the active seat changed.
+            # Reproject the complete detail family together, never only its label.
+            scores_entry = self.cache.get_last_good(SLOT_SWARM_SCORES)
+            data.update(self._swarm_seat_keys(
+                getattr(scores_entry, 'payload', None) or {}, scores_entry,
+                getattr(self.cache.get_last_good(SLOT_SWARM_JOBS_SEEN), 'payload', None),
+                self.cache.get_last_good(SLOT_SWARM_SEAT),
+                self.cache.get_last_good(SLOT_SWARM_ANSWERS), now,
+                self.cache.get_last_good(SLOT_SWARM_ORACLE)))
+            data.update(self._seat_rewards_keys(data, data.get('imd_price_usd'), now))
         sources = self._hub_sources()
         overview_slot = sources["overview"]["payload"] or {}
         overview = overview_slot.get("overview")
@@ -7206,7 +7224,16 @@ class SurfManager:
         data["surfboard_footer"] = hub.footer(market, family_sources["market"], sources["overview"], now=now)
         channel_entry = self.cache.get_last_good(SLOT_CHANNEL)
         channel = getattr(channel_entry, "payload", None) or {}
+        workers = sw.coerce_workers_slot(getattr(self.cache.get_last_good(SLOT_SWARM_WORKERS), 'payload', None))
+        agent_seats = [dict(token_id=assigned, live=sw._seat_live_from_slot(workers, assigned),
+                            outcome=hub.seat_outcome(sources['records']['payload'], assigned))
+                       for assigned in self._hub_seats]
+        if workers is not None and (workers['count'] != len(workers['workers']) or workers['malformed_tokens']):
+            for seat in agent_seats:
+                if (seat['live'] or {}).get('live_state') == 'offline':
+                    seat['live'] = None  # an incomplete roster cannot prove absent capacity
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
+                                                 agent_seats=agent_seats,
                                                  announce_read_ts=getattr(channel_entry, "ts", None),
                                                  announce_items=channel.get("items"),
                                                  family_sources=family_sources,

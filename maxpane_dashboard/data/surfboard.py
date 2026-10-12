@@ -13,7 +13,7 @@ from functools import cmp_to_key
 from typing import Any
 
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
-from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_points, compact_age, recent_launch_news
+from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_points, compact_age, recent_launch_news, SURFBOARD_AGENT_KEYS, seat_token
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard_activity as work_activity
 from maxpane_dashboard.data import surf_launchpad_volume as launch_volume
@@ -416,7 +416,7 @@ def _launchpad_volume(data, launchpad, families, now):
     return points, state, detail
 
 
-def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, activity: dict | None = None) -> list[dict]:
+def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, activity: dict | None = None, agent_seats: list[dict] | None = None) -> list[dict]:
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES, FIRED_TTL_S, _tx_hash
     result = []
     def card(key,title,primary,secondary,detail,destination,n=None,d=None,points=None,source=None):
@@ -478,22 +478,36 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         spark_detail+=f" · range {min(points):,}–{max(points):,} · until {hhmm(hourly.get('until'))}"
         if not any(points):spark_detail+=" · quiet 24h"
     card("swarm","SWARM",_value(overview.get("agents_online")," online"),_value(overview.get("working_now")," working"),spark_detail,"swarm",points=points,source="overview")
-    outcome=data.get("swarm_seat_outcome") or {}; selected=data.get("swarm_seat_selected") or {}
-    token=selected.get("token_id"); acceptance=outcome.get("accept_rate")
-    live=data.get("swarm_seat_live") or {}
-    active,capacity=count(live.get("working")),count(live.get("max_concurrency"))
-    live_state=live.get("live_state")
-    slot_text=f"{active:,}" if active is not None else "—"
-    slot_text+=f" of {capacity:,} slots" if capacity is not None else " of — slots"
-    if active is not None and capacity is not None and active>capacity:
-        slot_text=f"{active:,} working"  # Oracle work may exceed maxConcurrency, as on AGENT.
-    acceptance_text=(f"{acceptance:.1%} accepted" if acceptance is not None else
-                     "no submitted record" if outcome.get("listed") is False else "acceptance unavailable")
-    card("agent","AGENT",f"IDMD #{token}" if token is not None else "choose a seat",
-         slot_text, f"{acceptance_text} · summary cache ≤10m · records {(sources.get('records') or {}).get('state','unavailable')}"
-         f" · workers {live_state or 'unavailable'} · as of {data.get('swarm_workers_as_of_hhmm') or '—'}",
-         "agent",source="records")
-    activity_meter(token, live_state)
+    if agent_seats is None:
+        agent_seats = [dict(token_id=(data.get('swarm_seat_selected') or {}).get('token_id'),
+                            live=data.get('swarm_seat_live'), outcome=data.get('swarm_seat_outcome'))] + [{}]*3
+    for slot, key in enumerate(SURFBOARD_AGENT_KEYS):
+        seat = agent_seats[slot] if isinstance(agent_seats, (list, tuple)) and slot < len(agent_seats) else {}
+        seat = seat if isinstance(seat, dict) else {}
+        token = seat_token(seat.get('token_id'))
+        if token is None:
+            card(key, 'AGENT', '', 'type in seat no', 'EMPTY SEAT', None)
+            result[-1].update(seat_slot=slot, status='empty', meter_state='empty', meter_kind='activity')
+            continue
+        outcome = seat.get('outcome') if isinstance(seat.get('outcome'), dict) else {}
+        if outcome.get('token_id') != token:
+            outcome = {}
+        live = seat.get('live') if isinstance(seat.get('live'), dict) else {}
+        acceptance = outcome.get('accept_rate')
+        active,capacity=count(live.get('working')),count(live.get('max_concurrency'))
+        live_state=live.get('live_state')
+        slot_text=f'{active:,}' if active is not None else '—'
+        slot_text+=f' of {capacity:,} slots' if capacity is not None else ' of — slots'
+        if active is not None and capacity is not None and active>capacity:
+            slot_text=f'{active:,} working'  # Oracle work may exceed maxConcurrency.
+        acceptance_text=(f'{acceptance:.1%} accepted' if acceptance is not None else
+                         'no submitted record' if outcome.get('listed') is False else 'acceptance unavailable')
+        card(key,'AGENT',f'IDMD #{token}',slot_text,
+             f"{acceptance_text} · summary cache ≤10m · records {(sources.get('records') or {}).get('state','unavailable')}"
+             f" · workers {live_state or 'unavailable'} · as of {data.get('swarm_workers_as_of_hhmm') or '—'}",
+             'agent',source='records')
+        result[-1].update(seat_slot=slot, token_id=token)
+        activity_meter(token, live_state)
     leader = next((row for row in data.get("swarm_board_rows") or []
                    if isinstance(row, dict) and row.get("rank") == 1), {})
     card("board","LEADERBOARD",_value(count(leader.get("token_id"))),

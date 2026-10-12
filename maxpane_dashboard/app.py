@@ -78,6 +78,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         initial_game: str = "surf",
         wallet_address: str | None = None,
         seat: int | None = None,
+        surfboard_seats: tuple[int | None, ...] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -112,6 +113,9 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         # handed in rather than read here: a bare ``MaxPaneApp()`` in a test
         # must not pick up the developer's own ``~/.maxpane/config.toml``.
         self._surf_manager = SurfManager(poll_interval=poll_interval, seat=seat)
+        if surfboard_seats is not None:
+            self._surf_manager.set_hub_seats(surfboard_seats)
+            self._surf_manager.set_seat(self._surf_manager.get_hub_seats()[0])
         self._surfboard_wallet_address = wallet_address
         # THE LIST's YOU row is wallet-scoped, so the curator manager is one of
         # the few that takes the address.  It normalises with ``wallet or None``,
@@ -371,17 +375,21 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         if setter is not None:
             setter(False)
 
-    def open_surf_mode(self, mode: str, *, token_id: int | None = None) -> None:
+    def open_surf_mode(self, mode: str, *, token_id: int | None = None,
+                       seat_slot: int | None = None) -> None:
         """Open the installed native SURF body on behalf of dashboard nine."""
+        if seat_slot is not None and (type(seat_slot) is not int or not 0 <= seat_slot < 4
+                                      or mode != MODE_AGENT or token_id is None):
+            raise ValueError("A seat slot needs a valid AGENT seat")
         if token_id is not None:
             from maxpane_dashboard.screens.seat_input import parse_seat
             token = parse_seat(str(token_id)) if not isinstance(token_id, bool) else None
             if token is None or mode != MODE_AGENT:
                 raise ValueError("A seat route needs a valid AGENT seat")
         screen = self._ensure_surf_screen()
-        screen.open_mode(mode, return_context="surfboard")
+        screen.open_mode(mode, return_context="surfboard", seat_slot=seat_slot)
         if token_id is not None:
-            screen.select_seat(token)
+            screen.select_seat(token, persist=seat_slot is None)
         self._current_game = "surfboard"
         self.switch_screen("surf")
 

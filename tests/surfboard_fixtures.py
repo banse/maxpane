@@ -19,6 +19,8 @@ def hub_payload(kind="normal"):
     cards = []
     for key, title, destination, primary, secondary, numerator, denominator in definitions:
         cards.append(dict(key=key, title=title, destination=destination,
+                          seat_slot=0 if key == "agent" else None,
+                          token_id=420 if key == "agent" else None,
                           status="experimental" if key == "protocol" else "idle" if key == "agent" else "working" if key == "board" else "active",
                           primary=primary, secondary=secondary,
                           detail=f"{title} · exact {numerator}/{denominator} · read 22:00 · source cache ≤10m",
@@ -43,9 +45,15 @@ def hub_payload(kind="normal"):
     ]
     for key, title in (("portfolio", "PORTFOLIO"),):
         cards.append(dict(key=key, title=title, destination=None, status="planned",
+                          seat_slot=None, token_id=None,
                           primary="coming soon", secondary="future dashboard", detail="planned / coming soon",
                           meter_kind=None, meter_state=None, share_price=None,
                           numerator=None, denominator=None, points=None))
+    for slot, key in enumerate(("agent-2", "agent-3", "agent-4"), start=1):
+        cards.append(dict(key=key, title="AGENT", destination=None, status="empty",
+                          primary="", secondary="type in seat no", detail="AGENT · empty seat",
+                          seat_slot=slot, token_id=None, meter_kind="activity", meter_state="empty",
+                          share_price=None, numerator=None, denominator=None, points=None))
     overview = dict(agents_online=863, working_now=9, jobs_24h=1094, oracles_24h=237,
                     accepted_24h=32579, seats_enrolled=894,
                     services=dict(verifier=True, publisher=True, deployer=True))
@@ -63,7 +71,7 @@ def hub_payload(kind="normal"):
             card["primary"] = "999.9K units"
             card["secondary"] = "100.0% accepted"
         next(card for card in cards if card["key"] == "agent").update(
-            status="working", primary="IDMD #99999", secondary="99,999 of 99,999 slots",
+            status="working", primary="IDMD #99999", token_id=99999, secondary="99,999 of 99,999 slots",
             meter_state="busy", numerator=86400, denominator=86400)
         next(card for card in cards if card["key"] == "announce").update(
             primary="You can now deploy via the swarm on rh and mainnet. " * 4, secondary="99,999 new replies")
