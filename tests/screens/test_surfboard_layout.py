@@ -87,7 +87,7 @@ async def test_news_signal_footer_refresh_and_overflow_remain_exact():
 
 async def test_terminal_uses_dashboard_background_and_native_text_colors():
     from rich.color import Color
-    from textual.widgets import RichLog
+    from textual.widgets import Input, RichLog
 
     app = HubHarness(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
@@ -118,17 +118,18 @@ async def test_terminal_uses_dashboard_background_and_native_text_colors():
             for face in rack.query(SurfboardCard):
                 rows = [strip.crop(face.region.x, face.region.right) for strip in
                         strips[face.region.y:face.region.bottom]]
-                if face.empty_seat:
-                    assert not any(char in row.text for row in rows for char in "┌┐└┘")
-                    assert all(segment.style.bgcolor == Color.parse(theme.surface)
-                               for row in rows[1:-1] for segment in row.crop(1, face.region.width - 1))
-                    continue
                 top = next(i for i, row in enumerate(rows) if "┌" in row.text)
                 left, right = rows[top].text.index("┌"), rows[top].text.index("┐")
                 assert all(segment.style.bgcolor == Color.parse(theme.surface)
                            for segment in rows[top-1].crop(left, right+1))
-                assert all(segment.style.bgcolor == Color.parse(theme.background)
-                           for row in rows[top:top+5] for segment in row.crop(left, right+1))
+                field = face.query_one(Input) if face.empty_seat else None
+                for y, row in enumerate(rows[top:top+5], start=face.region.y + top):
+                    spans = [(left, right + 1)]
+                    if field is not None and y == field.region.y:
+                        spans = [(left, field.region.x - face.region.x),
+                                 (field.region.right - face.region.x, right + 1)]
+                    assert all(segment.style.bgcolor == Color.parse(theme.background)
+                               for start, end in spans for segment in row.crop(start, end))
             rack.focus_card("board")
             await pilot.pause()
             assert card.styles.border_top[1].hex.casefold() == theme.accent.casefold()

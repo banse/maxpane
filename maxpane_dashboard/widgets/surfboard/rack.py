@@ -210,7 +210,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
     def compose(self):
         if self.seat_slot is not None:
             yield Input(placeholder="seat no", restrict=r"#?[0-9]*", max_length=11,
-                        id=f"surfboard-seat-{self.seat_slot}", classes="seat-input")
+                        id=f"surfboard-seat-{self.seat_slot}", classes="seat-input", compact=True)
 
     def on_mount(self):
         self._update_input()
@@ -220,10 +220,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if not self.empty_seat and field.has_focus:
                 self.focus()
             field.display = self.empty_seat
-            width = min(13, max(3, self.content_size.width - 4))
+            width = min(11, max(3, self.content_size.width - 4))
             field.styles.width = width
             field.styles.offset = (max(1, (self.content_size.width - width) // 2),
-                                   max(0, (self.content_size.height - 5) // 2) + 1)
+                                   max(0, (self.content_size.height - 5) // 2) + 2)
 
     @property
     def detail(self):
@@ -266,10 +266,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
     def render(self):
         width = max(4, self.content_size.width)
         inside = width - 2
-        if self.empty_seat:
-            hint = clip(self._seat_error or "type in seat no", width).center(width)
-            return Text("EMPTY SEAT".center(width) + "\n" * 4, style=MUTED).append(
-                hint, style=Style(color=RED, dim=False) if self._seat_error else MUTED)
         status = flatten(self.data.get("status")) or "unavailable"
         muted = self.empty_seat
         color = MUTED if muted else {"active": GREEN, "working": GREEN, "ready": "bright_yellow",
@@ -318,6 +314,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                         if segment.text != "\n"]
             else:
                 rows = [("", False), (count, False), ("", False)]
+        if self.empty_seat:
+            label, rows = " EMPTY SEAT ", [("", False)] * 3
+            secondary = self._seat_error or secondary
         preview = None
         if self.key == "protocol":
             label = " STATS "
@@ -380,6 +379,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             clipped and self.key != "swarm-tokens", max(0, self.size.width - 4)))
         footer = Text("└" + clip(bottom, inside).center(inside, "─") + "┘",
                       style=border_inset + Style(bold=False))
+        if self.empty_seat and self._seat_error:
+            footer.stylize(Style(color=RED, dim=False), 1, len(footer) - 1)
         return body.append_text(footer)
 
     def on_focus(self):
@@ -426,8 +427,8 @@ class SurfboardRack(Grid):
     SurfboardRack > #surfboard-card-protocol { padding: 0; }
     SurfboardRack > SurfboardCard.empty { color: $text-muted; }
     SurfboardCard .surfboard-card--muted { color: $text-muted; background: $background; }
-    SurfboardCard > Input.seat-input { position: absolute; height: 3; margin: 0; padding: 0;
-        border: tall $accent; background: $surface; color: $foreground; }
+    SurfboardCard > Input.seat-input { position: absolute; height: 1; margin: 0; padding: 0;
+        border: none; background: $surface; color: $foreground; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
     """
 

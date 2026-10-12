@@ -30,7 +30,7 @@ class SeatApp(RackApp):
 
 
 @pytest.mark.parametrize("size", [(149, 45), (144, 35)])
-async def test_four_empty_agent_seats_have_unframed_native_colored_inputs(size):
+async def test_four_empty_agent_seats_have_inner_frames_and_borderless_inputs(size):
     async with SeatApp().run_test(size=size) as pilot:
         pilot.app.register_theme(THEMES["matrix"])
         pilot.app.theme = "matrix"
@@ -54,20 +54,21 @@ async def test_four_empty_agent_seats_have_unframed_native_colored_inputs(size):
             top = next(i for i, row in enumerate(painted) if "EMPTY SEAT" in row.text)
             assert "⊙ AGENT" in painted[0].text
             assert "EMPTY SEAT" in painted[top].text
-            assert not any(char in row.text for row in painted for char in "┌┐└┘")
+            assert "┌" in painted[top].text and "┐" in painted[top].text
+            assert "└" in painted[top + 4].text and "┘" in painted[top + 4].text
             assert "type in seat no" in painted[top + 4].text
             assert painted[-1].text == "╰─ EMPTY " + "▱" * (card.region.width - 12) + " ─╯"
             assert card.can_focus and card.data["seat_slot"] == slot
             assert card.data["token_id"] is None and card.data["destination"] is None
-            assert field.display and field.region.height == 3
-            assert field.region.y == card.region.y + top + 1
+            assert field.display and field.region.height == 1
+            assert field.region.y == card.region.y + top + 2
             assert field.region.x > card.content_region.x
             assert field.region.right < card.content_region.right
-            background = Color.parse(pilot.app.get_css_variables()["surface"])
+            background = Color.parse(pilot.app.get_css_variables()["background"])
             assert card.styles.background == field.styles.background == native_background
             assert field.styles.color == native_color
-            assert all(segment.style.bgcolor == background for segment in painted[top].crop(1, card.region.width - 1))
-            accent = Color.parse(pilot.app.get_css_variables()["accent"])
+            left, right = painted[top].text.index("┌"), painted[top].text.index("┐")
+            assert all(segment.style.bgcolor == background for segment in painted[top].crop(left, right + 1))
             for focused in (False, True):
                 if focused:
                     field.focus()
@@ -78,10 +79,9 @@ async def test_four_empty_agent_seats_have_unframed_native_colored_inputs(size):
                     fill = next(iter(strips[field.content_region.y]
                                      .crop(field.content_region.right - 1, field.content_region.right)))
                     assert fill.style.bgcolor == native_fill
-                for y in (field.region.y, field.region.bottom - 1):
-                    edge = strips[y].crop(field.region.x, field.region.right)
-                    assert any(segment.text.strip() for segment in edge)
-                    assert all(segment.style.color == accent for segment in edge if segment.text.strip())
+                assert all(edge[0] in ("", "none") for edge in field.styles.border)
+                for y in (field.region.y - 1, field.region.bottom):
+                    assert not strips[y].crop(field.region.x, field.region.right).text.strip()
 
 
 async def test_inline_drafts_survive_polling_and_submit_only_their_own_slot():
