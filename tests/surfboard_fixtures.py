@@ -14,7 +14,7 @@ def hub_payload(kind="normal"):
         ("launchpad", "LAUNCHPAD", "launchpad", "208", "0 new", 0, 208),
         ("pool4", "POOL4", "pool4_user", "7.90", "USD", None, None),
         ("protocol", "PROTOCOL", "pool4", "★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 4k IMD", "0.47% of supply", 60, 100),
-        ("swarm-tokens", "LAUNCHES", "swarm-tokens", "116", "2 new", None, None),
+        ("swarm-tokens", "TOKENS", "swarm-tokens", "116", "2 new", None, None),
     )
     cards = []
     for key, title, destination, primary, secondary, numerator, denominator in definitions:
@@ -22,38 +22,39 @@ def hub_payload(kind="normal"):
                           seat_slot=0 if key == "agent" else None,
                           token_id=420 if key == "agent" else None,
                           status="experimental" if key == "protocol" else "idle" if key == "agent" else "working" if key == "board" else "active",
-                          primary=primary, secondary=secondary,
+                          primary=primary, secondary=secondary, token_ranking=None,
                           detail=f"{title} · exact {numerator}/{denominator} · read 22:00 · source cache ≤10m",
-                          meter_kind="sparkline" if key in ("swarm", "swarm-tokens", "launchpad") else "activity" if key in ("agent", "board") else "ratio",
-                          meter_state={"agent": "idle", "board": "busy", "swarm-tokens": "ok", "launchpad": "ok"}.get(key),
+                          meter_kind="sparkline" if key in ("swarm", "launchpad") else "activity" if key in ("agent", "board") else "ratio" if key != "swarm-tokens" else None,
+                          meter_state={"agent": "idle", "board": "busy", "launchpad": "ok"}.get(key),
                           share_price=1.3029864737732294 if key == "pool4" else None,
                           numerator=numerator, denominator=denominator,
                           points=([1, 2, 3, 4, 3, 2, 1, 8] if key == "swarm" else
                                   [1200, 900, 1500, 2100, 1800, 3600, 2400, 4200]
-                                  if key in ("swarm-tokens", "launchpad") else None)))
+                                  if key == "launchpad" else None)))
         if key in ("agent", "board"):
             cards[-1]["detail"] = (f"{title} · workers read 22:00 · observed stop 12h ago"
                                    if key == "agent" else f"{title} · workers read 22:00 · busy")
         elif key == "pool4":
             cards[-1]["detail"] = "POOL4 · 1 sIMD = 1.302986 IMD · pool4 ok · read 22:00"
         elif key == "swarm-tokens":
-            cards[-1]["detail"] = "LAUNCHES · USD volume 24h · 116/116 markets · read 22:00"
-    cards[-1]['latest_launches'] = [
-        dict(age_s=7200, symbol='SFPT', chain='eth', lp_state='two-sided', liquidity_state='ok', paired_symbol='ETH'),
-        dict(age_s=14400, symbol='RAI', chain='rh', lp_state='one-token', liquidity_state='ok', paired_symbol='IMD'),
-        dict(age_s=18000, symbol='TDEMO', chain='eth', lp_state='unknown', liquidity_state='unknown', paired_symbol=None),
-    ]
+            cards[-1]["detail"] = "TOKENS · USD volume 24h · 3/3 eligible markets · ok · source 22:00 · SFPT $300 · RAI $200 · TDEMO $0"
+    cards[-1]['token_ranking'] = dict(rows=[
+        dict(id='eth:sfpt', age_s=7200, symbol='SFPT', chain='eth', volume_usd=300., price_direction='up'),
+        dict(id='rh:rai', age_s=18000, symbol='RAI', chain='rh', volume_usd=200., price_direction='down'),
+        dict(id='eth:tdemo', age_s=14400, symbol='TDEMO', chain='eth', volume_usd=0., price_direction=None),
+    ], newest=dict(id='eth:new', age_s=300, symbol='FRESH', chain='eth'),
+        state='ok', read_ts=STAMP, known=3, total=3)
     for key, title in (("portfolio", "PORTFOLIO"),):
         cards.append(dict(key=key, title=title, destination=None, status="planned",
                           seat_slot=None, token_id=None,
                           primary="coming soon", secondary="future dashboard", detail="planned / coming soon",
                           meter_kind=None, meter_state=None, share_price=None,
-                          numerator=None, denominator=None, points=None))
+                          numerator=None, denominator=None, points=None, token_ranking=None))
     for slot, key in enumerate(("agent-2", "agent-3", "agent-4"), start=1):
         cards.append(dict(key=key, title="AGENT", destination=None, status="empty",
                           primary="", secondary="type in seat no", detail="AGENT · empty seat",
                           seat_slot=slot, token_id=None, meter_kind="activity", meter_state="empty",
-                          share_price=None, numerator=None, denominator=None, points=None))
+                          share_price=None, numerator=None, denominator=None, points=None, token_ranking=None))
     overview = dict(agents_online=863, working_now=9, jobs_24h=1094, oracles_24h=237,
                     accepted_24h=32579, seats_enrolled=894,
                     services=dict(verifier=True, publisher=True, deployer=True))
@@ -96,7 +97,7 @@ def hub_payload(kind="normal"):
                         secondary={"pool4":"USD", "protocol":"unavailable"}.get(card["key"], "unavailable"),
                         meter_state="unavailable", share_price=None,
                         numerator=None, denominator=None, points=None)
-            card['latest_launches'] = None
+            card['token_ranking'] = None
         overview, events = None, None
         footer.update(market_value_usd=None, market_basis=None, market_state="unavailable",
                       market_read_ts=None, inference_tokens=None, overview_state="unavailable",

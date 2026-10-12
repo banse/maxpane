@@ -76,6 +76,8 @@ class SwarmTokensManager:
         self._closed = False
         self._market, self._history, self._trades, self._volume = {}, {}, {}, {}
         self._market_expectations = {}
+        self._price_baselines = {}
+        self._first_launch = {}
         self._attempts = {name: {} for name in ('markets', 'history', 'trades', 'volume')}
         self._failed = {name: set() for name in self._attempts}
         self._detail_pools = {'history': {}, 'trades': {}, 'volume': {}}
@@ -222,6 +224,9 @@ class SwarmTokensManager:
         for token in tokens:
             self._attempts['markets'][token['id']] = now
             self._market_expectations[token['id']] = token.get('launch_pool')
+            baseline = self._price_baselines.get(token['id'])
+            if baseline and baseline[0][0] != token.get('launch_pool'):
+                self._price_baselines.pop(token['id'])
         try:
             response = await self.market.fetch_markets(tokens)
         except Exception:
@@ -230,7 +235,19 @@ class SwarmTokensManager:
             key = token['id']
             point = response.get(key) if isinstance(response, dict) else None
             if point is not None and point.get('state') not in ('unavailable', 'error'):
-                self._market[key] = (dict(point, _expected_pool=token.get('launch_pool')), self._clock())
+                direction = None
+                identity = (token.get('launch_pool'), point.get('market_pool'), point.get('market_source'))
+                baseline = self._price_baselines.get(key)
+                if point.get('market_pool') and baseline and baseline[0] != identity:
+                    self._price_baselines.pop(key)
+                    baseline = None
+                price = _number(point.get('price_usd'))
+                if point.get('state') == 'ok' and identity[1] and price is not None and price > 0:
+                    if baseline:
+                        direction = 'up' if price > baseline[1] else 'down' if price < baseline[1] else 'flat'
+                    self._price_baselines[key] = (identity, price)
+                self._market[key] = (dict(point, _expected_pool=token.get('launch_pool'),
+                                         _price_direction=direction), self._clock())
                 self._failed['markets'].discard(key)
             else:
                 self._failed['markets'].add(key)
@@ -265,6 +282,13 @@ class SwarmTokensManager:
         tokens = self._tokens(source, now, include_inactive=True)
         self.offer_catalogue()
         self._offer_enrichment(tokens, now, hub_volume=True)
+
+    def offer_hub_markets(self):
+        """Offer only shared catalogue and bounded selected-market reads."""
+        now = self._clock()
+        source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
+        self.offer_catalogue()
+        self._offer_enrichment(self._tokens(source, now, include_inactive=True), now, markets_only=True)
 
     def _catalogue_source(self, tokens, source, now, *, portfolio=False):
         state = ('unavailable' if tokens is None else 'stale' if self._complete and self._cat_failed else
@@ -309,7 +333,77 @@ class SwarmTokensManager:
                                                                 'liquidity_state', 'paired_symbol')}))
         return {'count': len(tokens) if tokens is not None else None,
                 'state': catalogue['state'], 'as_of': catalogue['as_of'], 'latest_launches': latest,
-                'volume': self._volume_summary(source, now, catalogue)}
+                'volume': self._volume_summary(source, now, catalogue),
+                'ranking': self._ranking_summary(source, now, catalogue)}
+
+    def _ranking_summary(self, source, now, catalogue):
+        """Rank canonical launches; retain independent successful source clocks."""
+        tokens = self._tokens(source, now, include_inactive=True)
+        result = dict(rows=None, newest=None, state='unavailable',
+                      read_ts=catalogue['as_of'], known=0, total=None)
+        if tokens is None:
+            return result
+        incomplete = False
+        for row in self._base_rows(source) or []:
+            if row.get('chain_id') not in CHAINS:
+                continue
+            artifacts, ambiguous = _token_artifacts(row)
+            if ambiguous:
+                incomplete = True
+                continue
+            stamp = _number(row.get('created_ts'))
+            if artifacts and stamp is not None and stamp > 0:
+                key = f"{row['chain_id']}:{next(iter(artifacts))}"
+                self._first_launch[key] = min(stamp, self._first_launch.get(key, stamp))
+        launched = []
+        for token in tokens:
+            stamp = self._first_launch.get(token['id'])
+            if stamp is None:
+                incomplete = True
+            elif stamp <= now:
+                launched.append(dict(token, launched_at=stamp))
+        launched.sort(key=lambda t: (-t['launched_at'], t['id']))
+
+        def launch_fields(token):
+            return dict(id=token['id'], age_s=now-token['launched_at'],
+                        symbol=token['symbol'], chain=token['chain'])
+
+        if launched:
+            result['newest'] = launch_fields(launched[0])
+        eligible = [t for t in launched if 0 <= now-t['launched_at'] < 86400]
+        result['total'] = len(eligible)
+        fresh, stale = [], []
+        stamps = [catalogue['as_of']] if _number(catalogue['as_of']) is not None else []
+        for token in eligible:
+            volume, stamp = _number(token['volume_24h']), _number(token['market_read_at'])
+            if (volume is None or volume < 0 or stamp is None or not 0 < stamp <= now
+                    or not token['market_pool'] or token['market_state'] not in ('ok', 'stale')):
+                continue
+            row = dict(launch_fields(token), volume_usd=volume, price_direction=None)
+            if token['market_state'] == 'ok':
+                row['price_direction'] = self._market[token['id']][0].get('_price_direction')
+                fresh.append(row)
+            else:
+                stale.append(row)
+            stamps.append(stamp)
+        result['known'] = len(fresh)
+        if fresh or stale:
+            chosen = fresh or stale
+            chosen.sort(key=lambda r: (-r['volume_usd'], r['age_s'], r['id']))
+            result['rows'] = chosen[:3]
+            result['state'] = ('stale' if not fresh or catalogue['state'] == 'stale' else
+                               'ok' if len(fresh) == len(eligible) and not incomplete
+                               and catalogue['state'] == 'ok' else 'partial')
+        elif not eligible:
+            result['state'] = ('stale' if catalogue['state'] == 'stale' else
+                               'partial' if incomplete or catalogue['state'] != 'ok' else 'ok')
+            if not incomplete and catalogue['complete']:
+                result['rows'] = []
+        if result['state'] == 'stale':
+            for row in result['rows'] or []:
+                row['price_direction'] = None
+        result['read_ts'] = min(stamps) if stamps else None
+        return result
 
     def _volume_summary(self, source, now, catalogue):
         """One fixed pool cohort per curve; missing hours stay gaps in its sums."""
@@ -362,9 +456,9 @@ class SwarmTokensManager:
             result.update(state='stale', as_of=min(stale_stamps))
         return result
 
-    def _offer_enrichment(self, tokens, now, *, hub_volume=False):
+    def _offer_enrichment(self, tokens, now, *, hub_volume=False, markets_only=False):
         tiers = [('markets', self.MARKET_TTL, self.MARKET_BATCH)]
-        tiers += ([('volume', self.HISTORY_TTL, self.VOLUME_BATCH)] if hub_volume else [
+        tiers += ([] if markets_only else [('volume', self.HISTORY_TTL, self.VOLUME_BATCH)] if hub_volume else [
             ('history', self.HISTORY_TTL, self.DETAIL_BATCH),
             ('trades', self.TRADES_TTL, self.DETAIL_BATCH)])
         for name, ttl, limit in tiers:

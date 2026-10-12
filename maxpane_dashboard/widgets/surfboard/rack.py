@@ -14,13 +14,11 @@ from textual.widgets import Input
 from maxpane_dashboard.analytics.surfboard import SURFBOARD_AGENT_KEYS as AGENT_KEYS
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.explorer import for_network
-from maxpane_dashboard.widgets.fmt import fmt_age
+from maxpane_dashboard.widgets.fmt import fmt_age, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
 from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_compact
-from maxpane_dashboard.widgets.surf._icons import post_preview as _post_preview
-from .terminal import SurfboardTerminal, fitted_prose, fit_prose
 
 GREEN = "green"
 MUTED = "dim"
@@ -30,14 +28,13 @@ RED = "red"
 # Fixed rack identities; the four agent cards carry independent assignments.
 SLOTS = (
     ("announce", "ONCHAIN NEWS", 0, 0), ("swarm", "SWARM", 0, 1),
-    ("swarm-tokens", "LAUNCHES", 0, 2), ("pool4", "POOL4", 0, 3),
+    ("swarm-tokens", "TOKENS", 0, 2), ("pool4", "POOL4", 0, 3),
     ("protocol", "PROTOCOL", 0, 4), ("board", "LEADERBOARD", 0, 5),
     ("launchpad", "LAUNCHPAD", 1, 0), ("portfolio", "PORTFOLIO", 1, 5),
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
 )
-METER_LABELS = dict(swarm="24H", launchpad="2H", protocol="BURN",
-                    **{"swarm-tokens": "24H", "portfolio": "ASSETS"})
+METER_LABELS = dict(swarm="24H", launchpad="2H", protocol="BURN", portfolio="ASSETS")
 
 
 def _number(value):
@@ -47,27 +44,37 @@ def _number(value):
         return False
 
 
-def _launch_preview(latest, width, style, green):
-    """Three aligned launch rows; only independently verified LP marks get color."""
+def _token_line(row, width, style):
+    """Fit age and literal ticker while preserving address copy/link units."""
+    age = fmt_age(row.get('age_s')) if _number(row.get('age_s')) else '—'
+    chain = flatten(row.get('chain')).upper()
+    symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-4), style=style,
+                             explorer=for_network('MAINNET' if chain == 'ETH' else chain))
+    line = Text(clip(clip(age, 3).ljust(3) + ' ', width), style=style).append_text(symbol)
+    return line, lost or cell_len(age) > 3
+
+
+def _newest_token(ranking, width):
+    newest = ranking.get('newest')
+    if isinstance(newest, dict):
+        return _token_line(newest, width, MUTED)
+    empty = ranking.get('rows') == [] and ranking.get('state') == 'ok'
+    return fit_prose('no launches' if empty else 'unavailable', width, style=MUTED)
+
+
+def _token_preview(rows, width, style):
+    """Three ranked rows; the data layer owns ordering and price comparison."""
     lines = [(Text('', style=style), False) for _ in range(3)]
-    if not latest:
-        lines[1] = fit_prose('unavailable' if latest is None else 'no launches', width, style=style)
+    if not rows:
+        lines[1] = fit_prose('unavailable' if rows is None else 'no launches', width, style=style)
         return lines
-    for index, row in enumerate(latest[:3]):
-        state = row.get('lp_state') if row.get('liquidity_state') == 'ok' else 'unknown'
-        marker, ink = '—', style
-        if state in ('one-token', 'one-quote'):
-            marker, ink = '⚠', Style.parse(AMBER)
-        elif state == 'two-sided' and flatten(row.get('paired_symbol')).upper() in ('ETH', 'IMD'):
-            marker, ink = '✔', Style.parse(green)
-        age = fmt_age(row.get('age_s')) if _number(row.get('age_s')) else '—'
-        chain = flatten(row.get('chain')).upper() or '—'
-        symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-6), style=style,
-                                 explorer=for_network('MAINNET' if chain == 'ETH' else chain))
-        symbol.align('left', max(0, width-6))
-        line = Text(clip(age, 3).ljust(3) + ' ', style=style)
-        line.append_text(symbol).append(' ').append(marker, style=ink)
-        lines[index] = line, lost or cell_len(age) > 3
+    for index, row in enumerate(rows[:3]):
+        marker, ink = {'up': ('▲', Style.parse(GREEN)), 'down': ('▼', Style.parse(RED))}.get(
+            row.get('price_direction'), ('—', style))
+        line, lost = _token_line(row, max(0, width-2), style)
+        line.align('left', max(0, width-2))
+        line.append(' ').append(marker, style=ink)
+        lines[index] = line, lost
     return lines
 
 
@@ -75,6 +82,8 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
+    if key == "swarm-tokens":
+        return _newest_token(card.get("token_ranking") or {}, 20 if width is None else width)[0]
     if key == "pool4":
         price = card.get("share_price")
         value = "1 sIMD = — IMD"
@@ -90,17 +99,17 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     if key in (*AGENT_KEYS, "board"):
         label = {"busy": "BUSY", "idle": "IDLE", "offline": "OFF", "empty": "EMPTY"}.get(state, "—")
         label_ink = MUTED if state in ("idle", "empty") else RED if state == "offline" else AMBER
-    elif key in ("swarm-tokens", "launchpad") and state in ("partial", "stale"):
+    elif key == "launchpad" and state in ("partial", "stale"):
         label = "~" + label
         label_ink = AMBER
     out = Text().append(label + " ", style=label_ink)
     cells = 8 if width is None else max(0, width - cell_len(label) - 1)
     if key == "portfolio" or state == "empty":
         return out.append("▱" * cells, style=MUTED)
-    if card.get("meter_kind") == "sparkline" or key in ("swarm-tokens", "launchpad"):
+    if card.get("meter_kind") == "sparkline" or key == "launchpad":
         points = card.get("points")
         if (isinstance(points, list) and len(points) == 8
-                and (all(_number(point) for point in points) or key in ("swarm-tokens", "launchpad")
+                and (all(_number(point) for point in points) or key == "launchpad"
                      and any(_number(point) for point in points)
                      and all(point is None or _number(point) for point in points))):
             known = [point for point in points if _number(point)]
@@ -146,6 +155,10 @@ def signal_meter_text(card: dict, width: int) -> Text:
         return Text(f"{label} {full}", style=MUTED)
     return (Text().append(label + gap, style=MUTED).append("▰" * full, style=GREEN)
             .append("▱" * (cells - full), style=MUTED))
+
+
+# Surf's agent rack imports meter_text while terminal loads the Surf icon helpers.
+from .terminal import SurfboardTerminal, fit_prose
 
 
 class SurfboardCard(HeroBoxBase, can_focus=True):
@@ -206,6 +219,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.key == "swarm-tokens":
             self.data["destination"] = "swarm-tokens"
             self.data.setdefault("detail", "TOKENS · production-chain markets · unavailable · Enter to open")
+            self.tooltip = Text(self.detail)
         if self.key == "portfolio":
             self.data.update(status="active", primary="PORTFOLIO", secondary="wallet holdings",
                              destination="portfolio", detail="PORTFOLIO · holdings and ready claims · Enter to open")
@@ -241,6 +255,13 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             "offline": RED, "error": RED, "failed": RED}.get(status, AMBER)
         primary = flatten(self.data.get("primary")) or "unavailable"
         secondary = flatten(self.data.get("secondary")) or "unavailable"
+        ranking = self.data.get("token_ranking") or {}
+        if self.key == "swarm-tokens":
+            state = ranking.get("state", "unavailable")
+            if state != "ok":
+                color = AMBER
+                secondary = (f"{state} {hhmm(ranking.get('read_ts'))}" if state in ("partial", "stale")
+                             else f"as of {hhmm(ranking['read_ts'])}" if ranking.get("read_ts") else "")
         working = secondary.removesuffix(" working").replace(",", "")
         if (self.key == "swarm" and secondary.endswith(" working")
                 and working.isascii() and working.isdecimal() and working.strip("0")):
@@ -304,13 +325,14 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 preview.append((Text(" " + clip(row, available) + " ", style=Style(
                     color=self.rich_style.color, bgcolor=palette["background"])), cell_len(row) > available))
         elif self.key == "announce":
+            from maxpane_dashboard.widgets.surf._icons import post_preview as _post_preview
             label = " LATEST "
             ink = self.rich_style.color if status == "active" else self.get_component_rich_style("surfboard-card--muted").color
             preview = [(line, False) for line in _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))]
         elif self.key == "swarm-tokens":
-            label = " LATEST "
-            preview = _launch_preview(self.data.get("latest_launches"), inside,
-                                      Style(color=self.rich_style.color, bgcolor=palette["background"]), palette["accent"])
+            label = " LAST 24h "
+            preview = _token_preview(ranking.get("rows"), inside,
+                                     Style(color=self.rich_style.color, bgcolor=palette["background"]))
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
@@ -334,6 +356,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if len(bottom) > inside:
                 bottom = bottom.replace(" new ", " ")
         clipped = len(label) > inside or len(bottom) > inside
+        if self.key == "swarm-tokens":
+            clipped |= _newest_token(ranking, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
             style = Style(
                 color=self.rich_style.color, bgcolor=palette["background"],
@@ -344,7 +368,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             line.align("left" if preview is not None else "center", inside)
             body.append("│", style=border_inset).append_text(line).append("│\n", style=border_inset)
         self.border_title = Text(title_with_hint("⊙ " + self.title,
-            clipped and self.key != "swarm-tokens", max(0, self.size.width - 4)))
+            clipped, max(0, self.size.width - 4)))
         footer = Text("└" + clip(bottom, inside).center(inside, "─") + "┘",
                       style=border_inset + Style(bold=False))
         if self.empty_seat and self._seat_error:

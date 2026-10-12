@@ -871,7 +871,7 @@ def test_surfboard_contract_freezes_plain_data_and_independent_clocks():
         'SurfboardRack': ('surfboard_cards','surfboard_sources'),
         'SurfboardTerminal': ('surfboard_overview','surfboard_events','surfboard_sources','surfboard_footer'),
     }
-    assert m.SURFBOARD_CARD_FIELDS == ('key','title','status','primary','secondary','detail','destination','meter_kind','numerator','denominator','points','latest_launches','meter_state','share_price','seat_slot','token_id')
+    assert m.SURFBOARD_CARD_FIELDS == ('key','title','status','primary','secondary','detail','destination','meter_kind','numerator','denominator','points','token_ranking','meter_state','share_price','seat_slot','token_id')
     assert m.SWARM_SEAT_OUTCOME_FIELDS == ('token_id','listed','attempts','accepted','rejected','failed','pending','accept_rate','rank','ranked_of')
     assert m.SURFBOARD_SOURCE_FIELDS == ('payload','read_ts','provider_ts','version','attempt_ts','state')
     assert m.SURFBOARD_EVENT_FIELDS == ('key','timestamp','kind','job_id','token_id','agent_id','role','step','state','objective','details')

@@ -1486,3 +1486,20 @@ widget and live-screen cases passed.
 Scoped re-review: **Approved — ADDRESSED**. The reviewer killed the inverse
 stale-negative mutation with the named manager/compositor regression and
 restored the file byte for byte. No residual review findings remain.
+
+
+## Rack TOKENS volume ranking — 2026-10-13
+
+Replaced LAUNCHES with TOKENS / LAST 24h: three recent canonical deployments
+ranked by selected-pool USD volume, same-market price-load arrows, and an
+independent newest-launch footer. Hub offers markets without the removed hourly
+chart reads. Live 149×45 preview showed SNITCH, SCOOP and PUPATE, with BITES
+in the footer; indexed volume coverage was explicitly partial (18/30).
+The existing 144×35 pin and equal card heights remain valid.
+
+Verification: the affected/composing run passed 564 cases; its two obsolete
+footer expectations were corrected and the complete activity file passed 20
+cases under isolated-home worksteal. Guards 124, doc pins 12 and address sweeps
+2 passed. Ten implementation mutations were killed. Final review: Approved,
+no findings; 23 focused checks and an additional price-baseline mutation passed.
+No full suite was run. No residual follow-ups.

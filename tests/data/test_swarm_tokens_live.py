@@ -485,7 +485,9 @@ async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads(
         assert manager.catalogue_summary() == {
             'count': None, 'state': 'unavailable', 'as_of': None, 'latest_launches': None,
             'volume': {'points': None, 'state': 'unavailable', 'known': 0, 'total': 0,
-                       'as_of': None, 'until': 0}}
+                       'as_of': None, 'until': 0},
+            'ranking': {'rows': None, 'newest': None, 'state': 'unavailable',
+                        'read_ts': None, 'known': 0, 'total': None}}
         manager.offer_catalogue()
         manager.offer_catalogue()
         await manager.wait_pending()
@@ -499,7 +501,8 @@ async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads(
         assert summary['count'] == len(dashboard['tokens'])
         assert summary['state'] == dashboard['sources']['catalogue']['state']
         now[0] += 301
-        assert manager.catalogue_summary() == dict(summary, state='stale')
+        assert manager.catalogue_summary() == dict(summary, state='stale',
+                                                   ranking=dict(summary['ranking'], state='stale'))
         manager._complete = False
         assert manager.catalogue_summary()['state'] == 'partial'
     finally:

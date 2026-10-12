@@ -33,7 +33,9 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: rows (two below the bottom AGENT cards at 149×45). Its 12-row floor keeps the footer visible.
 #: All four empty inputs and assigned ten-digit seats fit at 144×35 and 149×45;
 #: the five-line inset preserves the seven-row card floor.
-#: LAUNCHPAD's 2H and LAUNCHES' 24H charts fit in their existing card footers.
+#: Rechecked 2026-10-13 after the live TOKENS preview at 149×45: LAST 24h,
+#: three ranked rows and newest-launch footer preserve these floors. Partial
+#: and stale source times fit the inset footer; LAUNCHPAD retains its 2H chart.
 #: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 144
 SURFBOARD_FULL_LAYOUT_ROWS = 35

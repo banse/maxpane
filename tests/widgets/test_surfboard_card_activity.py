@@ -3,6 +3,7 @@ import pytest
 from rich.color import Color
 from maxpane_dashboard.widgets.surfboard.rack import SurfboardCard
 from tests.widgets.test_surfboard_rack import RackApp
+from tests.surfboard_fixtures import hub_payload
 
 
 def strips(app, card):
@@ -133,7 +134,8 @@ async def test_news_footer_hides_only_known_zero(key):
         for value, expected in [('0 new replies' if key == 'announce' else '0 new', ''),
                                 ('2 new replies' if key == 'announce' else '2 new', '2 new'),
                                 ('unavailable', 'unavailable')]:
-            card.set_data(dict(primary='post', secondary=value))
+            ranking = next(row['token_ranking'] for row in hub_payload()['surfboard_cards'] if row['key']=='swarm-tokens')
+            card.set_data(dict(primary='post', secondary=value, token_ranking=ranking if key=='swarm-tokens' else None))
             await pilot.pause()
             lines = strips(pilot.app, card)
             bottom = next(line.text for line in lines if '└' in line.text)
@@ -158,7 +160,7 @@ async def test_protocol_columns_are_label_amount_unit_without_colons_or_inner_fo
         assert bottom[bottom.index('└')+1:bottom.index('┘')].strip('─ ') == ''
 
 
-@pytest.mark.parametrize('key,label', [('swarm-tokens', '24H'), ('launchpad', '2H')])
+@pytest.mark.parametrize('key,label', [('launchpad', '2H')])
 async def test_volume_has_green_buckets_and_visible_partial_gaps(key, label):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)

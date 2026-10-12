@@ -578,18 +578,18 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         primary = "≥" + primary
     events = data.get("swarm_launch_fired")
     new = len(recent_launch_news(events, now=now)) if isinstance(events, list) else None
-    card("swarm-tokens", "LAUNCHES", primary, f"{new:,} new" if new is not None else "unavailable",
+    card("swarm-tokens", "TOKENS", primary, f"{new:,} new" if new is not None else "unavailable",
          f"TOKENS · {primary} tokens · production-chain markets · catalogue {catalogue_state} · read {hhmm(catalogue.get('as_of'))}"
          f" · launch news 1h · evaluated {hhmm(now)}", "swarm-tokens")
     result[-1]["status"] = "active" if new else "idle"
-    result[-1]["latest_launches"] = catalogue.get("latest_launches")
-    volume = catalogue.get("volume") or {}
-    result[-1].update(meter_kind="sparkline", meter_state=volume.get("state", "unavailable"),
-                     points=volume.get("points"))
-    result[-1]["detail"] += (f" · 24H USD volume per 3h · indexed selected pools"
-                            f" · {volume.get('known', 0)}/{volume.get('total', '—')} tokens"
-                            f" · {volume.get('state', 'unavailable')} · read {hhmm(volume.get('as_of'))}"
-                            f" · until {hhmm(volume.get('until'))}")
+    ranking = catalogue.get("ranking") or {}
+    result[-1].update(token_ranking=catalogue.get("ranking"), meter_kind=None, points=None)
+    volumes = [number(row.get("volume_usd")) for row in ranking.get("rows") or []]
+    result[-1]["detail"] += (f" · launched in last 24h · ranked by selected-pool 24h USD volume"
+                            f" · {ranking.get('known', 0)}/{ranking.get('total') if ranking.get('total') is not None else '—'} tokens"
+                            f" · {ranking.get('state', 'unavailable')} · read {hhmm(ranking.get('read_ts'))}"
+                            f" · ranked USD volumes {', '.join(f'{v:,.2f}' for v in volumes if v is not None) or '—'}"
+                            " · price arrows compare successive loads · footer newest launch")
     row=dict.fromkeys(SURFBOARD_CARD_FIELDS)
     row.update(key="portfolio",title="PORTFOLIO",status="planned",primary="planned",
                secondary="coming soon",detail="PORTFOLIO · planned dashboard")

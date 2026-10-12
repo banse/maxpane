@@ -467,7 +467,7 @@ def test_tokens_card_uses_same_launch_news_window_as_swarm_header(events, expect
     data = dict(as_of=10000, swarm_launch_fired=events)
     row = next(r for r in hub.cards(data, {}, now=10000,
         tokens_catalogue=dict(count=116, state='ok', as_of=9900)) if r['key']=='swarm-tokens')
-    assert (row['title'], row['primary'], row['secondary']) == ('LAUNCHES', '116', f'{expected} new')
+    assert (row['title'], row['primary'], row['secondary']) == ('TOKENS', '116', f'{expected} new')
     assert row['destination'] == 'swarm-tokens'
     assert (row['status'] == 'active') == bool(_launch_news(data)) == (expected > 0)
     assert 'catalogue ok' in row['detail'] and hub.hhmm(9900) in row['detail']
@@ -487,14 +487,18 @@ def test_tokens_card_preserves_unknown_partial_and_stale_catalogue(catalogue, pr
     assert (catalogue or {'state':'unavailable'})['state'] in row['detail']
 
 
-@pytest.mark.parametrize('latest', [None, [], [dict(age_s=7200, symbol='SFPT', chain='eth', lp_state='two-sided', liquidity_state='ok', paired_symbol='ETH')]])
-def test_tokens_card_carries_latest_rows_and_keeps_count_in_detail(latest):
+@pytest.mark.parametrize('ranked', [None, [], [dict(id='eth:token', age_s=7200,
+    symbol='SFPT', chain='eth', volume_usd=12500, price_direction='up')]])
+def test_tokens_card_carries_ranking_and_keeps_count_in_detail(ranked):
+    ranking = dict(rows=ranked, newest=dict(id='eth:new', age_s=120,
+        symbol='NEW', chain='eth'), state='ok', read_ts=9900, known=1, total=1)
     cards = hub.cards({}, {}, now=10000, tokens_catalogue=dict(
-        count=116, state='ok', as_of=9900, latest_launches=latest))
+        count=116, state='ok', as_of=9900, ranking=ranking))
     row = next(r for r in cards if r['key'] == 'swarm-tokens')
-    assert row['latest_launches'] == latest
+    assert row['token_ranking'] == ranking
     assert '116 tokens' in row['detail']
-    assert all(r['latest_launches'] is None for r in cards if r['key'] != 'swarm-tokens')
+    assert all(r['token_ranking'] is None for r in cards if r['key'] != 'swarm-tokens')
+    assert row['points'] is None and row['meter_kind'] is None
 
 
 @pytest.mark.parametrize('change,status', [(2.3,'active'),(-2.3,'idle'),(0,'idle'),
@@ -624,13 +628,18 @@ def test_uncertain_activity_never_certifies_offline_for_agent_or_leaderboard(fai
         assert rows[key]['numerator'] is None
 
 
-def test_launch_volume_projection_discloses_coverage_and_currency():
-    points = [0, 1, None, 3, 4, 5, 6, 7]
-    source = dict(count=10, state='ok', as_of=100,
-        volume=dict(points=points, state='partial', known=8, total=10, as_of=90, until=80))
+def test_token_ranking_projection_discloses_coverage_and_source_clock():
+    ranking = dict(rows=[dict(id='eth:token', age_s=7200, symbol='SFPT', chain='eth',
+                             volume_usd=12500, price_direction='up')],
+                   newest=None, state='partial', read_ts=90, known=8, total=10)
+    source = dict(count=10, state='ok', as_of=100, ranking=ranking,
+        volume=dict(points=[1]*8, state='ok', known=10, total=10, as_of=100))
     row = next(c for c in hub.cards({}, {}, now=100, tokens_catalogue=source) if c['key']=='swarm-tokens')
-    assert row['meter_kind']=='sparkline' and row['points']==points and row['meter_state']=='partial'
-    assert 'USD' in row['detail'] and '8/10' in row['detail'] and '3h' in row['detail']
+    assert row['token_ranking'] == ranking
+    assert row['meter_kind'] is None and row['points'] is None
+    assert 'USD' in row['detail'] and '8/10' in row['detail']
+    assert 'partial' in row['detail'] and f'read {hub.hhmm(90)}' in row['detail']
+    assert '12,500' in row['detail'] and '3h' not in row['detail']
 
 
 def launchpad_volume_snapshot(**changes):

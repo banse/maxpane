@@ -379,6 +379,8 @@ async def test_tokens_card_shares_retained_catalogue_and_ages_news_without_full_
     m, clock = manager
     m._last_full_payload = dict(as_of=1000, swarm_launch_fired=[dict(ts=1000., number=1210)])
     m._offer_full = lambda now: None
+    for raw in m.swarm_tokens_manager().client.data:
+        raw['createdAt'] = '1970-01-01T00:15:00Z'
     try:
         first = await m.fetch_hub_snapshot()
         assert next(c for c in first['surfboard_cards'] if c['key']=='swarm-tokens')['primary'] == 'unavailable'
@@ -386,7 +388,7 @@ async def test_tokens_card_shares_retained_catalogue_and_ages_news_without_full_
         await adapter.wait_pending()
         from maxpane_dashboard.data.surf_swarm import launch_rows
         from tests.data.test_swarm_tokens_live import rows
-        cached = launch_rows(rows())
+        cached = launch_rows(adapter.client.data)
         cached[0].update(ticker='SFPT', token_address=next(
             a['address'] for a in cached[0]['artifacts'] if a['role'] == 'token'),
             liquidity=dict(state='info', read_ts=1000, token_amount=100, paired_amount=1, paired_symbol='ETH'))
@@ -396,14 +398,24 @@ async def test_tokens_card_shares_retained_catalogue_and_ages_news_without_full_
         assert (card['primary'], card['secondary'], card['status']) == ('3', '1 new', 'active')
         assert adapter is m.swarm_tokens_manager()
         assert set(adapter._tasks) == {'catalogue', 'markets'}
-        assert len(card['latest_launches']) == 3
-        assert card['latest_launches'][0]['symbol'] == 'SFPT'
-        assert card['latest_launches'][0]['lp_state'] == 'two-sided'
+        await adapter.wait_pending()
+        for i, token in enumerate(adapter._tokens(m.swarm_tokens_source(), clock.now, include_inactive=True)):
+            adapter._market[token['id']] = (dict(state='ok', market_pool='pool',
+                _expected_pool=token['launch_pool'], volume_24h=1000-i*10, price_usd=1), clock.now)
+            adapter._failed['markets'].discard(token['id'])
+        card = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
+        assert card['title'] == 'TOKENS'
+        assert len(card['token_ranking']['rows']) == 3
+        assert card['token_ranking']['rows'][0]['symbol'] == 'SFPT'
+        assert card['token_ranking']['rows'][0]['volume_usd'] == 1000
+        assert card['token_ranking']['newest']['age_s'] == 100
+        assert card['points'] is None
         clock.now = 4600
         card = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
         assert (card['primary'], card['secondary'], card['status']) == ('3', '0 new', 'idle')
         assert 'catalogue stale' in card['detail']
-        assert card['latest_launches'][0]['lp_state'] == 'unknown'
+        assert card['token_ranking']['state'] == 'stale'
+        assert all(row['price_direction'] is None for row in card['token_ranking']['rows'])
     finally:
         await m.close()
     assert adapter._closed
@@ -445,11 +457,11 @@ async def test_worker_reads_observe_activity_even_unchanged_or_failed(manager):
         await m.close()
 
 
-async def test_hub_volume_projection_preserves_reader_pool_identity(manager):
+async def test_hub_ranking_projection_preserves_reader_pool_identity(manager):
     from tests.data.test_swarm_tokens_live import rows
     from maxpane_dashboard.data.surf_swarm import launch_rows
     m, clock = manager
-    clock.now = 90000
+    clock.now = launch_rows(rows())[0]['created_ts'] + 1
     adapter = m.swarm_tokens_manager()
     adapter._catalogue = rows()
     adapter._complete, adapter._cat_as_of = True, clock.now
@@ -464,13 +476,16 @@ async def test_hub_volume_projection_preserves_reader_pool_identity(manager):
     m._launch_slot = lambda slot, fallback: facts if slot==SLOT_SWARM_LAUNCH_FACTS else original_slot(slot,fallback)
     source = m.swarm_tokens_source()
     token = next(t for t in adapter._tokens(source, clock.now) if t['launch_uuid']==launch['launch_id'])
-    adapter._market[token['id']] = (dict(state='ok', market_pool=pool, _expected_pool=pool), clock.now)
-    adapter._volume[token['id']] = (dict(state='ok', _pool=pool, timestamps=list(range(3600,90000,3600)), volume_usd=[2]*24),clock.now)
+    adapter._market[token['id']] = (dict(state='ok', market_pool=pool, _expected_pool=pool, volume_24h=12500, price_usd=2), clock.now)
     try:
-        expected = adapter.catalogue_summary(source)['volume']
-        assert expected['points']==[6]*8
+        expected = adapter.catalogue_summary(source)['ranking']
+        assert expected['rows'][0]['volume_usd'] == 12500
         row = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
-        assert row['points']==expected['points']
-        assert row['meter_state']==expected['state']
+        assert row['token_ranking'] == expected
+        assert row['points'] is None and row['meter_kind'] is None
+        facts['launches'][launch['launch_id']]['pool_initialize']['pool_id'] = '0x'+'b'*64
+        changed = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
+        assert not changed['token_ranking']['rows']
+        assert changed['token_ranking']['state'] == 'unavailable'
     finally:
         await m.close()

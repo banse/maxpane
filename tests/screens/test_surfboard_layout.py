@@ -339,7 +339,7 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
         "announce", "swarm", "swarm-tokens", "pool4", "protocol", "board",
         "launchpad", "portfolio", "agent", "agent-2", "agent-3", "agent-4"]
     for title in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
-                  "LAUNCHES", "PORTFOLIO", "EMPTY SEAT", "type in seat no"):
+                  "TOKENS", "PORTFOLIO", "EMPTY SEAT", "type in seat no"):
         assert title in r["text"], (title, r["text"])
 
 
@@ -369,8 +369,10 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
         for card in payload["surfboard_cards"][:8]:
             if card["key"] == "swarm-tokens":
                 text = r["card_text"]["swarm-tokens"]
-                assert "LATEST" in text and card["secondary"] in text
-                expected = ('unavailable',) if kind == 'unavailable' else ('SFPT', 'RAI', 'TDEMO', '✔', '⚠')
+                assert "LAST 24h" in text
+                if kind != "unavailable":
+                    assert card["secondary"] in text and "FRESH" in text
+                expected = ('unavailable',) if kind == 'unavailable' else ('SFPT', 'RAI', 'TDEMO', '▲', '▼')
                 assert all(word in text for word in expected), r
                 continue
             if card["key"] == "announce":

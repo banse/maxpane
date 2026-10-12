@@ -32,8 +32,10 @@ Use arrows and Enter to open a card, `/` to type, and Escape to leave the input 
 the menu. Outside the input, Tab continues cycling dashboards. Type `?` for commands:
 `status`, `jobs`, `seat #420`, `find <ENS/address/#seat>`, `me`, `grep <text>`,
 `open <#seat/job-id>` and `clear`. These commands only read public data or open an existing
-view. Swarm Tokens opens live markets; Portfolio opens the offline mock preview below.
-Earnings remains planned, with two empty bays available.
+view. TOKENS opens live markets; its LAST 24h inset ranks recent launches by USD volume,
+with price arrows comparing successive loads. The outer footer shows the newest launch.
+Partial market coverage is labelled. Portfolio opens the offline mock preview below;
+the four lower AGENT cards keep their independently saved seats.
 
 Acceptance and rank in HUB, AGENT and BOARD share one validated `/seats/records` snapshot.
 Its upstream cache can lag by ten minutes. Device effort and worker presence keep separate

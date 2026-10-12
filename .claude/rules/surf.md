@@ -746,17 +746,18 @@ guarantee, not a promise that arbitrary notes fit; measured content limits are i
 
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
 Seven launchers route to the native modes; Escape returns to the retained rack, while menu/Tab
-clear the return context. LAUNCHES opens the retained SWARM TOKENS dashboard and previews
-three latest launches without a chain column. Hub polling offers catalogue, shared market and
-hourly USD volume reads; price history and trades remain token-screen work. Its 24H footer
-sums indexed selected pools across all catalogue deployments, including inactive ones, without
-double-counting a chain/pool. Eight three-hour buckets cover the last 24 completed hours.
-Partial coverage is amber `~24H`, missing buckets are dots, and unavailable volume is `—`;
-detail discloses coverage and source clocks. Its positive `x new` footer and green inset share
-the SWARM header's one-hour detected-launch news predicate; known zero-new text is hidden on
-LAUNCHES and ONCHAIN NEWS, while unknown remains explicit. Cold/partial/stale catalogue states
-remain explicit. Portfolio and Earnings cards
-do no feature reads.
+clear the return context. TOKENS opens the retained SWARM TOKENS dashboard. Its LAST 24h
+inset ranks the top three supported, unambiguous deployments by selected-pool 24h USD volume,
+including inactive deployments. Chain/address aliases share their earliest known launch time;
+only ages from zero through less than 24 hours qualify. Missing volume never means zero.
+Green ▲ and red ▼ compare consecutive successful prices for the same token and expected/selected
+pool; first, unchanged or stale prices show a neutral dash. The outer footer shows the newest
+canonical launch's age and ticker independently of volume rank. Hub polling offers catalogue
+and bounded shared market reads only; price history, hourly volume history and trades keep their
+existing dedicated-reader paths. Partial/stale ranking replaces positive x new with a dated
+state marker; the literal tooltip discloses coverage and source clocks. Healthy positive x new
+and the green inset retain the SWARM header's one-hour detected-launch predicate; known zero-new
+text remains hidden on TOKENS and ONCHAIN NEWS. Portfolio opens its existing preview.
 The terminal supports bounded read-only commands and replaces its recent `/swarm` event window
 without duplicating events or losing replies, draft or scroll anchor. Source polling and full
 collection are manager-owned single-flight tasks; only the hub skips the startup prefetch join.
