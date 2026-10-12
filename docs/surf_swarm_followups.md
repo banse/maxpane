@@ -1383,3 +1383,27 @@ ordering assertion from POOL4's earlier resize; removing that comparison left th
 named case green. All BOARD boundaries passed, including both-direction width and
 height mutation proofs. Colour-dependent screen cases passed with NO_COLOR unset.
 Fast guards passed 124 cases and documentation pins passed 12. No full suite ran.
+
+## LAUNCHPAD hero proposal 1 mockup — 2026-10-12
+
+The standalone `scripts/surf_launchpad_hero_demo.py` implements the approved
+six-card overview: COINS, CURVE FLOW, VOLUME, CREATOR FEES, BURN QUEUE and BURNED.
+It reuses unchanged rack cards over the existing native launchpad panels, with
+clearly fictional figures and addresses. The 2h volume uses eight completed
+15-minute buckets totaling $42,600 at a mock current ETH/USD quote of 3,200.
+Creator fees preserve 0.0842 ETH; event burns total 15,700 IMD, independently of
+the protocol's burn accounting. Factory and swept counts are both 210; the native
+coin table is a top-twenty excerpt, not the whole population.
+
+The 149×45 mock render was shown at `/tmp/maxpane-launchpad-hero-mockup.png`.
+The three compositor/accounting cases cover the exact fee digits, matching body
+facts, nine-row card geometry, black/green inset and narrow scroll/resize recovery.
+A three-column layout mutation was killed by the owner-size compositor case and
+restored byte for byte. The standalone app performs no API, cache or configuration
+access; no production screen, widget, theme, source contract or layout pin changed.
+API integration is the next phase after owner approval of this mockup.
+
+Final review: **Approved**, no findings or fix wave. Rounding the creator fee to
+three decimals was killed by both the compositor and accounting tests and restored
+byte for byte. The three mock tests passed with isolated HOME and four workers;
+all 124 fast guards and 12 documentation pins passed. No full suite was run.
