@@ -146,6 +146,7 @@ from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard as hub
 from maxpane_dashboard.data import surf_news_hero as news_hero
+from maxpane_dashboard.data import surf_swarm_hero as swarm_hero
 from maxpane_dashboard.data import surfboard_activity as work_activity
 from maxpane_dashboard.analytics import surf_launch_checks as lc
 from maxpane_dashboard.analytics import surf_launch_liquidity as ll, surf_launch_sites as ls
@@ -870,6 +871,7 @@ SWARM_STALE_AFTER_S = 1860.0
 #: The live tier re-reads the job list at least this often even when no
 #: `/health` counter moved, so a silent list change cannot age forever.
 SWARM_LIST_CEILING_S = 300.0
+SWARM_SITE_REFRESH_S = 300.0
 
 #: RECORD enrichment reads at most four unique jobs after the selected seat.
 #: Canonical pacing costs 4 × 0.12 = 0.48 s before transport time; the WP0 live
@@ -1084,6 +1086,7 @@ class SurfManager:
         self._last_full_payload = None
         self._last_full_read_ts = None
         self._hub_active = False
+        self._swarm_active = False
         self._hub_source_tasks = {}
         self._hub_lookup_lock = asyncio.Lock()
         self._hub_identities = {}
@@ -5606,7 +5609,7 @@ class SurfManager:
         legacy_policies = (slot.get('policies_schema') != 1
                            and any(not policy.get('kind') for policy in slot.get('policies') or []))
         failed, refreshed_policy, policy_read_ok = False, False, True
-        for route, cadence, method in (('launches', 0, 'fetch_launches'), ('sites', 300, 'fetch_sites'), ('policies', 1800, 'fetch_launch_policies')):
+        for route, cadence, method in (('launches', 0, 'fetch_launches'), ('sites', SWARM_SITE_REFRESH_S, 'fetch_sites'), ('policies', 1800, 'fetch_launch_policies')):
             if cadence and not (route == 'policies' and legacy_policies) and slot.get(route + '_ts') is not None and now - slot[route + '_ts'] < cadence:
                 continue
             value = await self._guard(lambda method=method: getattr(self.swarm_client, method)(), 'swarm ' + method)
@@ -7064,6 +7067,10 @@ class SurfManager:
         """Visibility changes eligibility; manager tasks retain their owner."""
         self._hub_active = bool(active)
 
+    def set_swarm_active(self, active: bool) -> None:
+        """Native SWARM visibility offers the existing hourly source, without I/O."""
+        self._swarm_active = bool(active)
+
     def _hub_sources(self) -> dict[str, dict]:
         now = self._clock()
         sources = {}
@@ -7124,8 +7131,9 @@ class SurfManager:
     def _offer_hub_sources(self, now: float) -> None:
         for name in ("overview", "records"):
             self._offer_hub_source(name, now)
-        if self._hub_active:
+        if self._hub_active or self._swarm_active:
             self._offer_hub_source("hourly", now)
+        if self._hub_active:
             self._offer_hub_source("supply", now)
 
     def _hub_card_sources(self, data: dict) -> dict:
@@ -7244,7 +7252,36 @@ class SurfManager:
                                                       'pool_ids': self._swarm_token_pool_ids()})
                                                      if getattr(self, '_swarm_tokens_manager', None) is not None else None))
         data["surf_news_hero"] = self._news_hero(data, now)
+        data["surf_swarm_hero"] = self._swarm_hero(sources, now)
         return data
+
+    def _swarm_hero(self, sources: dict, now: float) -> dict:
+        """Project one synchronous cache snapshot, including each route's clock."""
+        scores_entry = self.cache.get_last_good(SLOT_SWARM_SCORES)
+        scores = getattr(scores_entry, "payload", None)
+        scores = scores if isinstance(scores, dict) else {}
+        workflows_ts = news_hero._stamp(scores.get("workflows_ts"), now)
+        scores_ts = news_hero._stamp(getattr(scores_entry, "ts", None), now)
+        workflow_source = news_hero.source(workflows_ts, now=now, ttl=TIER_TTL_SECONDS[TIER_SWARM_SCORES],
+            failed=self.cache.last_failure_ts(TIER_SWARM_SCORES) is not None or
+            (workflows_ts is not None and scores_ts is not None and scores_ts > workflows_ts))
+        launches = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
+        launch_keys = self._swarm_launch_keys()
+        launch_source = news_hero.source(launches.get("launches_ts"), now=now, ttl=TIER_TTL_SECONDS[TIER_SWARM_LAUNCHES],
+            failed=self._swarm_launch_read_ok is False or self.cache.last_failure_ts(TIER_SWARM_LAUNCHES) is not None)
+        sites_ts = news_hero._stamp(launches.get("sites_ts"), now)
+        site_source = news_hero.source(sites_ts, now=now, ttl=SWARM_SITE_REFRESH_S,
+            failed=sites_ts is not None and now - sites_ts >= SWARM_SITE_REFRESH_S)
+        workflows = scores.get("workflows")
+        workflow_rows = sw.workflow_rows(workflows) if isinstance(workflows, list) else None
+        if workflows and not workflow_rows:
+            workflow_rows = None  # malformed nonempty cache is not a known-empty catalogue
+        return swarm_hero.project(
+            overview=sources["overview"], hourly=sources["hourly"],
+            workflow_rows=workflow_rows,
+            workflow_source=workflow_source, launch_summary=launch_keys.get("swarm_launch_summary"),
+            launch_source=launch_source, site_rows=launch_keys.get("swarm_site_rows"),
+            site_source=site_source, now=now)
 
     def _news_hero(self, data: dict, now: float) -> dict:
         """Synchronous snapshot projection only: this hero adds no network work."""

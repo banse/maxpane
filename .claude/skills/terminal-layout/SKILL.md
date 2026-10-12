@@ -19,7 +19,7 @@ it. This file is the method; the constants are the record.
 | surf `l` launchpad | 138 cols · 31 rows | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `p` pool4 (key `e`, experimental, since 2026-09-15) | 99 cols · 45 rows | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `4` pool4 market (hint `4 pl4`) | 119 cols · 35 rows | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `s` swarm (launches v2, 2026-10-06; WORKFLOWS beside LATEST LAUNCHES, full-width LAUNCHES and SITES; `x` opens the newest launch) | 129 cols · 35 rows (SITES and status bar bind width; nine-line top floor; SITES gives one row to the status gap) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `s` swarm (rack heroes, 2026-10-12; WORKFLOWS beside LATEST LAUNCHES, full-width LAUNCHES and SITES; `x` opens the newest launch) | 141 cols · 38 rows (LATEST WORKFLOW outer title binds width; nine-row heroes and nine-line body top floor) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `a` agent (hero and merged seat-card row, RECORD; re-swept 2026-09-24) | 139 cols · 25 rows; RECORD clears at 167 (165 before panel/tok, 2026-09-23; 204 until launch/sub left it, 2026-09-22) | `screens/surf.SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`, `RECORD_NEVER_CLEARS_BELOW` |
 | surf `b` board (LEADERBOARD beside FLEET; FLEET's five contributor lines 2026-09-22) | 141 cols · 33 rows | `screens/surf.SURF_BOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | dashboard 9 `surfboard` (four-row equipment rack with four AGENT seats, re-swept 2026-10-12) | 144 cols · 35 rows; PROTOCOL's label/amount/unit columns bind width; empty seat inputs keep the five-line inset; terminal fills the center span; live preview at 149×45 | `screens/surfboard.SURFBOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
@@ -32,7 +32,9 @@ re-sweep. SWARM's top floor stays nine lines with LATEST LAUNCHES beside WORKFLO
 the newest production launch's snapshot. LAUNCHES has an eight-line floor, SITES seven plus a
 one-line bottom margin; both tables scroll internally. The owner approved the offline fixture
 render at 150×46 on 2026-10-06; no new live-network measurement is claimed. The five-payload
-boundary sweep preserves 129×35. LAUNCHES compact/roomy/full start at 112/156/171.
+boundary sweep now measures 141×38 after the approved six-card rack hero;
+the live 149×45 preview was shown before hardening. LATEST WORKFLOW loses
+its outer title at 140, and the body scrolls with a taller marker at 37 rows. LAUNCHES compact/roomy/full start at 112/156/171.
 Liquidity appears at 91 and stays at every wider width: roomy sheds kind; compact also
 sheds repo and site. The capture clears at 171 while longer parked reasons may mark.
 WORKFLOWS remains 109/119. SERVICES left the hero; F55 is closed by removal. Compact title

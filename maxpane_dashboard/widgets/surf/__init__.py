@@ -131,6 +131,7 @@ from .swarm_agent_hero import SurfSwarmAgentHero
 # names it, and every "exported means mounted" test reads its exemption from there).
 from .swarm_capability import SurfSwarmCapability
 from .swarm_hero import SurfSwarmHero
+from .swarm_rack_hero import SurfSwarmRackHero
 from .swarm_inflight import SurfSwarmInFlight
 from .swarm_launches import SurfSwarmLaunches
 from .swarm_seat_record import SurfSwarmSeatRecord
@@ -171,6 +172,7 @@ __all__ = [
     "SurfSwarmAgentHero",
     "SurfSwarmCapability",
     "SurfSwarmHero",
+    "SurfSwarmRackHero",
     "SurfSwarmInFlight",
     "SurfSwarmLaunches",
     "SurfSwarmSeatRecord",

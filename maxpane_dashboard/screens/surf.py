@@ -276,7 +276,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4Vault,
     SurfSignals,
     SurfSwarmAgentHero,
-    SurfSwarmHero,
+    SurfSwarmRackHero,
     SurfSwarmLaunches,
     SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
@@ -1717,7 +1717,13 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 35
 #: in the mounted integer-width sweep. Compact starts 112 (site shed), roomy
 #: 156 (kind shed), full 171. scripts/measure_layout.py checked the onset
 #: neighbours at 35 rows; 129x34 marks taller and 129x35 remains whole.
-SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
+#: 2026-10-12, approved rack heroes: live render shown at 149x45 before
+#: measuring capture, production-s, worst-s, v3-s and extra-states-s with
+#: scripts/measure_layout.py. All five are whole at 141x38 and 142x38;
+#: at 140x38 only the LATEST WORKFLOW outer title is ellipsised. The new
+#: border-title check catches this separately from CSS content clipping.
+#: SITES/status still clear at 129, and all body table tiers remain unchanged.
+SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
 #: the 2x2 grid, 28 on 2026-09-17 (F6, QUEUE's counter block), 42 again on
@@ -1809,7 +1815,12 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 129
 #: preserving 35 while painting a blank row above status. LAUNCHES stays 8.
 #: AGENT 139x25 and BOARD 141x33 rechecked unchanged. The owner approved
 #: the offline 150x46 fixture render after WP4; no live-network remeasurement.
-SURF_SWARM_FULL_LAYOUT_ROWS = 35
+#: 2026-10-12, rack heroes: the six cards are nine rows rather than six.
+#: After the 149x45 live preview, scripts/measure_layout.py measured capture,
+#: production-s and worst-s through 34..40: body scroll/taller through 37,
+#: whole from 38. The nine-line top floor and the body table floors remain
+#: unchanged. Boundary tests also check this at the new 141-column pin.
+SURF_SWARM_FULL_LAYOUT_ROWS = 38
 
 #: AGENT full-layout width, re-swept 2026-09-24: 139 (unchanged).
 #: 2026-09-24: COLLAB lists the top two teammates, NODES takes the last
@@ -2255,7 +2266,7 @@ _SWARM_PANELS = (
     SurfSwarmBoardHero,
     SurfSwarmLeaderboard,
     SurfSwarmFleet,
-    SurfSwarmHero,
+    SurfSwarmRackHero,
     SurfSwarmLatestLaunches,
     SurfSwarmWorkflows,
     SurfSwarmLaunches,
@@ -3461,7 +3472,7 @@ class SurfScreen(DashboardScreen):
             yield SurfNewsHero(classes="surf-hero")
             yield SurfHero(classes="surf-hero")
             yield SurfPool4UserHero(classes="surf-hero")
-            yield SurfSwarmHero(classes="surf-hero")
+            yield SurfSwarmRackHero(classes="surf-hero")
             yield SurfSwarmAgentHero(classes="surf-hero")
             yield SurfSwarmBoardHero(classes="surf-hero")
 
@@ -3647,6 +3658,9 @@ class SurfScreen(DashboardScreen):
         setter = getattr(self._data_manager, "set_agent_active", None)
         if setter is not None:
             setter(self.is_current and self._mode == MODE_AGENT)
+        setter = getattr(self._data_manager, "set_swarm_active", None)
+        if setter is not None:
+            setter(self.is_current and self._mode == MODE_SWARM)
 
     @on(events.ScreenResume)
     def _resume_agent_runtime(self) -> None:
@@ -3655,6 +3669,9 @@ class SurfScreen(DashboardScreen):
     @on(events.ScreenSuspend)
     def _suspend_agent_runtime(self) -> None:
         setter = getattr(self._data_manager, "set_agent_active", None)
+        if setter is not None:
+            setter(False)
+        setter = getattr(self._data_manager, "set_swarm_active", None)
         if setter is not None:
             setter(False)
 
@@ -3741,7 +3758,7 @@ class SurfScreen(DashboardScreen):
             self.query_one(SurfPool4UserHero).display = (
                 self._mode == MODE_POOL4_USER
             )
-            self.query_one(SurfSwarmHero).display = self._mode == MODE_SWARM
+            self.query_one(SurfSwarmRackHero).display = self._mode == MODE_SWARM
             self.query_one(SurfSwarmAgentHero).display = self._mode == MODE_AGENT
             self.query_one(SurfSwarmBoardHero).display = self._mode == MODE_BOARD
             self.query_one(SurfNewsHero).display = self._mode == MODE_DASHBOARD
@@ -3754,7 +3771,7 @@ class SurfScreen(DashboardScreen):
             self._record_filter_open = False
         self._show_record_editor()
         self._sync_agent_runtime()
-        if self.is_current and self._mode == MODE_AGENT:
+        if self.is_current and self._mode in (MODE_AGENT, MODE_SWARM):
             self.start_refresh()
         # The row marker is about whichever body is now showing (only the
         # dashboard body's right rail can scroll), so it has to be re-read --

@@ -2,16 +2,12 @@
 from collections import Counter
 from rich.cells import cell_len
 from rich.text import Text
+from maxpane_dashboard.analytics.surf_launch_sites import is_current_site
 from maxpane_dashboard.widgets.fmt import DASH, fmt_int
 from maxpane_dashboard.widgets.markup_safety import strip_tags
 from maxpane_dashboard.widgets.panels import UNAVAILABLE
 
 SERVICE_NAMES = ("verifier", "publisher", "deployer")
-
-
-def is_current_site(row: object) -> bool:
-    return (isinstance(row, dict) and bool(row.get("ens_name"))
-            and not row.get("superseded_by") and row.get("status") != "superseded")
 
 
 def launch_counts(summary):

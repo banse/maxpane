@@ -80,7 +80,7 @@ from maxpane_dashboard.screens.surf import (
 )
 from maxpane_dashboard.widgets.surf import (
     SurfSwarmAgentHero,
-    SurfSwarmHero,
+    SurfSwarmRackHero,
     SurfSwarmLaunches,
     SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
@@ -111,8 +111,8 @@ from tests.surf_swarm_fixtures import (
 
 #: What the sweeps found, restated by hand so the pins cannot drift on their
 #: own: a pin that moves without a re-sweep reddens the agreement test.
-MEASURED_SWARM_COLUMNS = 129
-MEASURED_SWARM_ROWS = 35
+MEASURED_SWARM_COLUMNS = 141
+MEASURED_SWARM_ROWS = 38
 MEASURED_AGENT_COLUMNS = 139
 MEASURED_AGENT_ROWS = 25
 
@@ -150,9 +150,9 @@ _EXCLUDED_FROM_WHOLE = {
 #: is LAUNCHES since CAPABILITY was parked (2026-10-03): one column under the
 #: pin it hides its last column behind its own horizontal scrollbar.
 #: 2026-10-05: SITES and the full status bar both bind SWARM at 129.
-_BINDING_PANEL = {"s": "SurfSwarmSites", "a": "SurfSwarmSeatCards"}
+_BINDING_PANEL = {"s": "SurfSwarmRackHero", "a": "SurfSwarmSeatCards"}
 #: Binders built from hero-style boxes: they clip with ``…`` and never mark.
-_ELLIPSIS_BINDERS = {"SurfSwarmAgentHero", "SurfSwarmSeatCards"}
+_ELLIPSIS_BINDERS = {"SurfSwarmRackHero", "SurfSwarmAgentHero", "SurfSwarmSeatCards"}
 #: Binders whose loss under the pin is a ``DataTable`` column behind the
 #: table's own horizontal scrollbar. LAUNCHES is also a named exception (its
 #: ``‹`` is lit far past the pin), so its marker cannot be the evidence: the
@@ -164,7 +164,7 @@ _BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
 #: Each body's own hero. Its boxes are ``text-overflow: ellipsis``, so a box
 #: too narrow for its value is a CSS-clipped line like any panel's, and it
 #: counts as one: at and above the pin none may be clipped.
-_HERO = {"s": SurfSwarmHero, "a": SurfSwarmAgentHero, "b": SurfSwarmBoardHero}
+_HERO = {"s": SurfSwarmRackHero, "a": SurfSwarmAgentHero, "b": SurfSwarmBoardHero}
 #: The AGENT body has no top row since its card rows replaced SEAT | BY NODE
 #: (2026-09-22): the cards are fixed-height, so only the body can scroll.
 _TOP_ID = {"s": SWARM_TOP_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
@@ -677,6 +677,13 @@ def _measure(pilot, key: str) -> dict:
     ]
     hero = screen.query_one(_HERO[key])
     clipped += [(type(hero).__name__, line) for line in _css_clipped_lines(pilot.app, hero)]
+    if key == "s":
+        # Borders are fitted by Textual, not CSS text-overflow. Detect a lost
+        # title explicitly; preview prose is intentionally ellipsised.
+        for card in hero.query("NewsHeroCard"):
+            painted = _region_text(pilot.app, card)
+            if card.data.title not in painted:
+                clipped.append((type(hero).__name__, card.data.title))
     scroll = {
         cid: screen.query_one(f"#{cid}").show_vertical_scrollbar
         for cid in set(_CONTAINER_OF[key].values())
@@ -900,14 +907,14 @@ async def test_workflows_tiers_are_the_measured_onsets(width, tier) -> None:
 
 
 def test_the_pins_are_the_measured_numbers_and_fit_the_app() -> None:
-    """Independent measured pins: SWARM 129x35, AGENT unchanged; the app-wide width remains 143."""
+    """Independent measured pins: SWARM 141x38, AGENT unchanged; app width 143."""
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS == MEASURED_SWARM_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_ROWS == MEASURED_SWARM_ROWS
     assert SURF_AGENT_FULL_LAYOUT_COLUMNS == MEASURED_AGENT_COLUMNS
     assert SURF_AGENT_FULL_LAYOUT_ROWS == MEASURED_AGENT_ROWS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
     assert SURF_AGENT_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
-    assert SURF_SWARM_FULL_LAYOUT_COLUMNS < SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
+    assert SURF_SWARM_FULL_LAYOUT_COLUMNS > SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS > SURF_POOL4_USER_FULL_LAYOUT_COLUMNS
     assert LAUNCHES_HIDES_NO_COLUMN_FROM < SURF_SWARM_FULL_LAYOUT_COLUMNS
     assert STATUS_BAR_WHOLE_FROM <= SURF_SWARM_FULL_LAYOUT_COLUMNS

@@ -35,7 +35,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `l` | MODE_LAUNCHPAD | LAUNCHPAD COINS over LAUNCHPAD ACTIVITY left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail | `SurfHero` stays |
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
-| `s` | MODE_SWARM | WORKFLOWS beside LATEST LAUNCHES; LAUNCHES and SITES full-width; `x` opens the newest production launch | `SurfSwarmHero`: AGENTS / WORKING / ACCEPTED 24h / LAUNCHES / WORKFLOWS / SITES |
+| `s` | MODE_SWARM | WORKFLOWS beside LATEST LAUNCHES; LAUNCHES and SITES full-width; `x` opens the newest production launch | `SurfSwarmRackHero`: FLEET / OUTPUT / WORKFLOWS / LAUNCHES / LATEST WORKFLOW / SITES |
 | `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED JOBS / WORK / REWARDS / RANK / STATUS |
 | `b` | MODE_BOARD | Lifetime LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: SEATS / LIVE / PAUSED / CAPACITY / ACCEPT RATE / RECEIPTS |
 
@@ -413,6 +413,13 @@ share `is_current_site`; superseded or unnamed builds are excluded. LAUNCHES and
 one blank footer row. SITES gives one row of its height to a bottom margin, leaving a blank line
 above status at the pin. Its label is 32 cells plus layout pad, and its job column uses
 `job_text(..., explorer=JOB_EXPLORER)`. Screen and minimal-theme CSS stay identical.
+
+**Rack heroes (2026-10-12):** the approved balanced overview uses six nine-row
+cards through `surf_swarm_hero`, reusing `NewsHeroCard`. Overview counts, hourly
+accepted steps, workflows, launches and named sites keep independent source clocks.
+The hourly source is eligible while the rack or native SWARM is visible. The old
+`SurfSwarmHero` is parked. The live 149×45 preview preceded measurement of 141×38;
+LATEST WORKFLOW's outer title binds width, while the larger hero adds three rows.
 
 **LATEST LAUNCHES** shows the five newest production launches by `createdAt` descending, with
 launch number descending as the tiebreak. It uses the launch tier marker and ages against the

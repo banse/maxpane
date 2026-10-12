@@ -1484,6 +1484,15 @@ SURF_NEWS_HERO_FIELDS = {
     "boards": ("state", "read_ts", "holders", "written", "moves_24h"),
 }
 SURF_NEWS_ACTIVITY_FIELDS = ("age_s", "wallet_label", "kind")
+SURF_SWARM_HERO_FIELDS = {
+    "fleet": ("state", "read_ts", "online", "working", "enrolled"),
+    "output": ("state", "read_ts", "steps", "jobs", "oracles", "points", "points_state", "points_read_ts"),
+    "workflows": ("state", "read_ts", "total", "statuses"),
+    "launches": ("state", "read_ts", "total", "statuses"),
+    "workflow": ("state", "read_ts", "objective", "age_s", "status"),
+    "sites": ("state", "read_ts", "count"),
+}
+SURF_SWARM_HERO_STATUS_FIELDS = ("status", "count")
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points", "latest_launches",
                         "meter_state", "share_price", "seat_slot", "token_id")
@@ -1578,7 +1587,7 @@ SWARM_LATEST_LAUNCHES_SIGNATURE = ("swarm_launch_rows", "swarm_launches_as_of_hh
 SWARM_THROUGHPUT_SIGNATURE = ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale")
 
 SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
-    "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows", "surfboard_sources"),
+    "SurfSwarmRackHero": ("surf_swarm_hero",),
     "SurfSwarmLatestLaunches": SWARM_LATEST_LAUNCHES_SIGNATURE,
     # WORKFLOWS took CAPABILITY's place on SWARM (2026-10-03, docs/surf_swarm_workflows_spec.md
     # §2); CAPABILITY's frozen signature moved to SWARM_PARKED_WIDGET_SIGNATURES below.
@@ -1725,6 +1734,7 @@ SWARM_LIQUIDITY_KEYS = (
 )
 
 SWARM_PARKED_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
+    "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows", "surfboard_sources"),
     "SurfSwarmThroughput": SWARM_THROUGHPUT_SIGNATURE,
     "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
     "SurfSwarmCapability": ("swarm_skill_rows", "swarm_skill_summary", "swarm_scores_as_of_hhmm"),
@@ -1797,6 +1807,7 @@ SURF_KEYS: tuple[str, ...] = (
     "degraded",              # list[str] — source-group names currently failing
     "eth_usd",               # float | None — CoinGecko via data/price.py
     "surf_news_hero",         # dict — six source-backed native news hero cards
+    "surf_swarm_hero",        # dict — six source-backed native SWARM hero cards
     # ---- feed ---------------------------------------------------------------
     "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)
     "feed_last_post_age_s",  # float | None

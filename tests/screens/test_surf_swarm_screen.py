@@ -34,7 +34,7 @@ from maxpane_dashboard.widgets.surf.swarm_agent_cards import SEAT_BOX_IDS
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import BOX_IDS as AGENT_HERO_BOX_IDS
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import ONLINE_LINE, WORKING_GLYPH
 from maxpane_dashboard.widgets.surf import (
-    SurfSwarmAgentHero, SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet, SurfSwarmHero, SurfSwarmInFlight,
+    SurfSwarmAgentHero, SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet, SurfSwarmRackHero, SurfSwarmInFlight,
     SurfSwarmLaunches,
     SurfSwarmSeatRecord, SurfSwarmSeatCards, SurfSwarmSites,
     SurfSwarmLatestLaunches, SurfSwarmWorkflows,
@@ -53,7 +53,7 @@ _SIZE = (150, 45)
 _S_PANELS = tuple(cls for cls in (SurfSwarmWorkflows, SurfSwarmLatestLaunches, SurfSwarmInFlight,
              SurfSwarmLaunches, SurfSwarmSites) if cls.__name__ not in SWARM_PARKED_WIDGET_SIGNATURES)
 _A_PANELS = (SurfSwarmSeatCards, SurfSwarmSeatRecord)
-_BODIES = {"s": (SWARM_BODY_ID, _S_PANELS, SurfSwarmHero),
+_BODIES = {"s": (SWARM_BODY_ID, _S_PANELS, SurfSwarmRackHero),
            "a": (AGENT_BODY_ID, _A_PANELS, SurfSwarmAgentHero),
            "b": (BOARD_BODY_ID, (SurfSwarmLeaderboard,SurfSwarmFleet), SurfSwarmBoardHero)}
 
@@ -65,6 +65,63 @@ async def _open(pilot, key="s"):
     await pilot.pause()
     await pilot.pause()
     return pilot.app.screen
+
+
+async def test_swarm_rack_cards_dispatch_live_contract_and_stay_mode_specific():
+    source = dict(state="ok", read_ts=1_790_000_000.)
+    payload = _frozen_payload(surf_swarm_hero={
+        "fleet": dict(source, online=966, working=8, enrolled=1972),
+        "output": dict(source, steps=2621, jobs=224, oracles=48,
+                       points=[1, 2, 4, 3], points_state="ok", points_read_ts=source["read_ts"]),
+        "workflows": dict(source, total=149, statuses=[dict(status="completed", count=142),
+                         dict(status="running", count=4), dict(status="blocked", count=3)]),
+        "launches": dict(source, total=49, statuses=[dict(status="live", count=47), dict(status="parked", count=2)]),
+        "workflow": dict(source, objective="Build a shared workspace for agent reviews", age_s=480, status="running"),
+        "sites": dict(source, count=63),
+    })
+    async with _surf_app(payload).run_test(size=(149, 45)) as pilot:
+        screen = await _open(pilot)
+        hero = screen.query_one("SurfSwarmRackHero")
+        cards = list(hero.query("NewsHeroCard"))
+        assert len(cards) == 6
+        assert {card.region.height for card in cards} == {9}
+        assert len({card.region.y for card in cards}) == 1
+        assert cards[-1].region.right <= 149
+        text = _region_text(pilot.app, hero)
+        for word in ("FLEET", "966", "OUTPUT", "2,621", "149 cached", "49 cached", "LATEST WORKFLOW", "named sites"):
+            assert word in text
+        assert screen.query_one(f"#{SWARM_BODY_ID}").region.y > hero.region.bottom
+        for key in ("a", "b", "l", "escape"):
+            await pilot.press(key)
+            await pilot.pause()
+            assert not hero.display
+        await pilot.press("s")
+        await pilot.pause()
+        assert hero.display and "2,621" in _region_text(pilot.app, hero)
+
+
+async def test_swarm_hourly_eligibility_follows_visibility_without_inline_io(monkeypatch):
+    from unittest.mock import Mock
+    from textual.screen import Screen
+
+    manager = _FakeManager(_frozen_payload())
+    manager.set_swarm_active = Mock()
+    screen = SurfScreen(manager, poll_interval=30, name="surf")
+    monkeypatch.setattr(screen, "start_refresh", Mock())
+    async with _ThemedHarness(screen).run_test(size=(149, 45)) as pilot:
+        before = manager.calls
+        await pilot.press("s")
+        manager.set_swarm_active.assert_called_with(True)
+        screen.start_refresh.assert_called()
+        await pilot.app.push_screen(Screen())
+        await pilot.pause()
+        manager.set_swarm_active.assert_called_with(False)
+        pilot.app.pop_screen()
+        await pilot.pause()
+        manager.set_swarm_active.assert_called_with(True)
+        await pilot.press("a")
+        manager.set_swarm_active.assert_called_with(False)
+        assert manager.calls == before
 
 
 @pytest.mark.parametrize("key,mode", [("s", MODE_SWARM), ("a", MODE_AGENT), ("b", MODE_BOARD)])

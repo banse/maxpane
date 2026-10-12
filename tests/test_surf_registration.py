@@ -1285,7 +1285,7 @@ def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
 #: distinction ``surf_models.LogWindow``'s own docstring draws for ``()``.
 _NON_NUMERIC_KEYS = frozenset(
     {
-        "degraded", "feed_items", "feed_signal_tx_hashes", "surf_news_hero",
+        "degraded", "feed_items", "feed_signal_tx_hashes", "surf_news_hero", "surf_swarm_hero",
         "sig_post_state", "sig_lp_state", "sig_gate_state",
         "sig_deploy_state", "sig_bridge_state", "sig_burn_state",
         "sig_post_detail", "sig_lp_detail", "sig_gate_detail",
@@ -2567,7 +2567,11 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 if cls.__name__ not in SWARM_PARKED_WIDGET_SIGNATURES:
                     assert cls.TITLE in swarm_text, f"{cls.TITLE} vanished under outage"
             for parked in SWARM_PARKED_WIDGET_SIGNATURES:
-                title = getattr(surf_widgets, parked).TITLE
+                cls = getattr(surf_widgets, parked)
+                assert not list(app.screen.query(cls)), f"{parked} is still mounted"
+                title = getattr(cls, "TITLE", None)
+                if title is None:
+                    continue  # A composite hero has several card titles.
                 assert title not in swarm_text, f"the parked {parked} ({title}) is mounted"
             # Both markers this body reads (`swarm_as_of_hhmm`,
             # `swarm_scores_as_of_hhmm`) are `None` under a full outage, so
@@ -2603,7 +2607,7 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
             # surf precedent on the `4` body's own precedent -- and a swap
             # that did not happen would leave the swarm needles being swept
             # against LAUNCHPAD/FLOW/BURN or DOWNSIDE BID/STAKING.
-            assert "AGENTS" in swarm_text, (
+            assert "FLEET" in swarm_text and "OUTPUT" in swarm_text, (
                 "the swarm hero did not swap in with the `s` body"
             )
             assert "LAUNCHPAD" not in swarm_text, (

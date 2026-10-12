@@ -7,6 +7,13 @@ from maxpane_dashboard.analytics.surf_launch_checks import address, mappings, is
 
 _OBJECTIVE_ADDRESS = re.compile(r'(?<![0-9a-fA-F])0x[0-9a-fA-F]{40}(?![0-9a-fA-F])', re.I)
 
+
+def is_current_site(row: object) -> bool:
+    """The named, unsuperseded site scope shared by the panel and hero."""
+    return (isinstance(row, dict) and bool(row.get("ens_name"))
+            and not row.get("superseded_by") and row.get("status") != "superseded")
+
+
 def site_job_facts(job):
     project = job.get('project')
     if project is not None and not isinstance(project, dict):

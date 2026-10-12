@@ -77,6 +77,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmLeaderboard,
     SurfSwarmFleet,
     SurfSwarmHero,
+    SurfSwarmRackHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
     SurfSwarmLatestLaunches,
@@ -167,7 +168,7 @@ _SWARM_WIDGET_CLASSES = {
     "SurfSwarmBoardHero": SurfSwarmBoardHero,
     "SurfSwarmLeaderboard": SurfSwarmLeaderboard,
     "SurfSwarmFleet": SurfSwarmFleet,
-    "SurfSwarmHero": SurfSwarmHero,
+    "SurfSwarmRackHero": SurfSwarmRackHero,
     "SurfSwarmLatestLaunches": SurfSwarmLatestLaunches,
     "SurfSwarmWorkflows": SurfSwarmWorkflows,
     "SurfSwarmLaunches": SurfSwarmLaunches,
@@ -1842,6 +1843,9 @@ def _frozen_payload(**overrides) -> dict:
     sample = _sample_data()
     payload = {key: sample.get(key) for key in SURF_KEYS}
     payload.update(overrides)
+    if "surf_swarm_hero" not in overrides:
+        from tests.surf_swarm_hero_fixtures import screen_hero
+        payload["surf_swarm_hero"] = screen_hero(payload)
     return payload
 
 

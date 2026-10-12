@@ -75,6 +75,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfSwarmAgentHero,
     SurfSwarmCapability,
     SurfSwarmHero,
+    SurfSwarmRackHero,
     SurfSwarmInFlight,
     SurfSwarmLaunches,
     SurfSwarmSeatCards,
@@ -225,7 +226,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # took CAPABILITY's place on SWARM on 2026-10-03; CAPABILITY is
         # parked (mounted nowhere) and still exported, so it stays in the
         # strict check against its parked signature (below).
-        SurfSwarmHero, SurfSwarmInFlight, SurfSwarmThroughput, SurfSwarmLatestLaunches,
+        SurfSwarmHero, SurfSwarmRackHero, SurfSwarmInFlight, SurfSwarmThroughput, SurfSwarmLatestLaunches,
         SurfSwarmWorkflows, SurfSwarmCapability, SurfSwarmLaunches, SurfSwarmSites,
         SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet,
     SurfSwarmAgentHero, SurfSwarmSeatCards,
@@ -399,6 +400,7 @@ def test_every_widget_accepts_the_whole_flat_dict(cls):
 #: which is how two panels on one screen come to disagree (carry-over C1).
 _PURE_ANALYTICS_ALLOWED = frozenset({
     "maxpane_dashboard.analytics.surfboard",  # rack seat keys and pure arithmetic
+    "maxpane_dashboard.analytics.surf_launch_sites",  # shared current-site predicate
     "maxpane_dashboard.analytics.surf_swarm_signals",
     "maxpane_dashboard.analytics.surf_feed",
     "maxpane_dashboard.analytics.surf_pool4_depth",

@@ -125,3 +125,33 @@ by their named tests and restored byte-for-byte.
 
 Final review approved with no findings. The 124 fast guards and 12 docpins also
 passed. No full suite run.
+
+## SWARM live rack heroes — 2026-10-12
+
+The approved six-card overview now receives `surf_swarm_hero` through native
+SWARM dispatch. FLEET and OUTPUT use the overview; OUTPUT's accepted-step chart
+has its own hourly clock. Cached workflows, production launches and current
+named sites retain their independent successful-read times. Empty collections,
+unavailable fields and stale last-good observations remain distinct. Native
+SWARM visibility enables the existing hourly scheduler; no new endpoint or
+parallel poller was introduced. The previous hero is parked.
+
+The 149×45 keyless live preview was shown before layout hardening. It displayed
+977 online / 9 working, 2,501 accepted steps, 157 cached workflows, 219 cached
+production launches and 68 named sites. The older sites observation was marked
+stale. API-derived workflow status and objective came from the same record.
+
+All five SWARM layout payloads measure 141×38. LATEST WORKFLOW's outer title
+is ellipsised at 140 columns, while 141/142 are whole. The body scrolls with a
+taller marker at 37 rows and clears from 38; the four contextual panels retain
+their existing floors and tiers. The six larger hero cards add three rows.
+Six data/source/scheduler mutants and four two-sided width/height mutants were
+rejected and restored byte-for-byte.
+
+Final review: Approved, no findings; seven additional named checks passed.
+Validation covered 1,582 affected/composing cases across the closing run and
+the two corrected screen-file reruns, plus all 86 registration cases. The
+corrections replace the old SWARM geometry, the pre-rack default rail boundary
+(now measured whole from 45 rows), and the retired hero's title assumptions.
+Also passed: 124 fast guards, 12 docpins and two SWARM address sweeps. No full
+suite run and no outstanding findings for this integration.

@@ -12,7 +12,7 @@ import inspect
 
 from textual.app import App
 
-from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import SWARM_PARKED_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.surf.swarm_hero import (
     BOX_IDS,
     SurfSwarmHeroBox,
@@ -91,7 +91,7 @@ async def _box(box_id: str, **kwargs) -> str:
 
 
 def test_update_data_takes_exactly_the_frozen_keys_in_order():
-    expected = SWARM_WIDGET_SIGNATURES["SurfSwarmHero"]
+    expected = SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmHero"]
     params = inspect.signature(SurfSwarmHero.update_data).parameters
     named = tuple(
         name for name, p in params.items()

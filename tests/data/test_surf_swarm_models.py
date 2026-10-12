@@ -132,7 +132,7 @@ AGENT_WIDGETS = (
 #: (``SWARM_PARKED_WIDGET_SIGNATURES``, read from the export below).
 SWARM_TARGET_WIDGETS = {
     "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
-    "SurfSwarmHero",
+    "SurfSwarmRackHero",
     "SurfSwarmLatestLaunches",
     "SurfSwarmWorkflows",
     "SurfSwarmLaunches",
@@ -216,7 +216,7 @@ def test_every_signature_key_is_a_swarm_key():
     not a contract key would be a widget reading a value nothing emits."""
     for widget, kwargs in SWARM_WIDGET_SIGNATURES.items():
         for key in kwargs:
-            assert key in (*SWARM_KEYS, *models.SURFBOARD_KEYS, "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
+            assert key in (*SWARM_KEYS, *models.SURFBOARD_KEYS, "surf_swarm_hero", "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
 
 
 def test_every_signature_kwarg_is_unique_within_its_widget():
@@ -406,7 +406,8 @@ def test_polish_answer_fetch_window_agrees_with_record_row_cap():
 
 
 def test_layout_v3_hero_contract_uses_summary_sources():
-    assert SWARM_WIDGET_SIGNATURES["SurfSwarmHero"] == (
+    assert SWARM_WIDGET_SIGNATURES["SurfSwarmRackHero"] == ("surf_swarm_hero",)
+    assert models.SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmHero"] == (
         "swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now",
         "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows", "surfboard_sources",
     )
@@ -474,6 +475,9 @@ def test_capability_is_parked_with_its_frozen_signature():
     from maxpane_dashboard.widgets.surf.swarm_capability import SurfSwarmCapability
 
     assert models.SWARM_PARKED_WIDGET_SIGNATURES == {
+        "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now",
+                          "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows",
+                          "swarm_site_rows", "surfboard_sources"),
         "SurfSwarmThroughput": ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale"),
         "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
         "SurfSwarmCapability": (

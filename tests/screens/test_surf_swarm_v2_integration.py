@@ -60,7 +60,7 @@ async def test_launches_liquidity_at_owner_widths(width):
         assert '4.7K IMD' in _screen_text(pilot.app) if shown else '4.7K IMD' not in _screen_text(pilot.app)
 
 
-@pytest.mark.parametrize('size', [(129, 35), (130, 36), (143, 35), (150, 46), (200, 48)])
+@pytest.mark.parametrize('size', [(141, 38), (142, 39), (143, 38), (150, 46), (200, 48)])
 async def test_sites_has_blank_composited_row_above_status(size):
     async with _surf_app(_production_swarm_payload()).run_test(size=size) as pilot:
         screen = await _open(pilot)
