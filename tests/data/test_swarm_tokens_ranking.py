@@ -169,9 +169,10 @@ async def test_unknown_empty_partial_and_stale_keep_successful_source_clock():
         await manager.close()
 
 
-async def test_fresh_subset_excludes_stale_volume_and_neutralizes_catalogue_stale_arrows():
+async def test_mixed_freshness_preserves_volume_rank_and_only_fresh_price_arrows():
     raw = [launch(1), launch(2)]
     manager, now, market = manager_for(raw)
+    market.values = {token_id(raw[0]): 100, token_id(raw[1]): 1}
     try:
         await load(manager)
         now[0] += manager.MARKET_TTL
@@ -179,12 +180,38 @@ async def test_fresh_subset_excludes_stale_volume_and_neutralizes_catalogue_stal
         await load(manager)
         manager._failed['markets'].add(token_id(raw[0]))
         ranking = manager.catalogue_summary()['ranking']
-        assert ranking['state'] == 'partial' and ranking['known'] == 1
-        assert [r['id'] for r in ranking['rows']] == [token_id(raw[1])]
-        assert ranking['rows'][0]['price_direction'] == 'up'
+        assert ranking['state'] == 'stale' and ranking['known'] == 1
+        assert [r['id'] for r in ranking['rows']] == [token_id(raw[0]), token_id(raw[1])]
+        assert [r['price_direction'] for r in ranking['rows']] == [None, 'up']
         manager._cat_failed = True
         stale = manager.catalogue_summary()['ranking']
-        assert stale['state'] == 'stale' and stale['rows'][0]['price_direction'] is None
+        assert stale['state'] == 'stale' and all(r['price_direction'] is None for r in stale['rows'])
+    finally:
+        await manager.close()
+
+
+async def test_rotating_market_batches_do_not_replace_cached_volume_leaders():
+    raw = [launch(i, i * 60) for i in range(1, 7)]
+    manager, now, market = manager_for(raw)
+    market.values = {token_id(item): 1000 - i * 100 for i, item in enumerate(raw)}
+    try:
+        await load(manager)
+        leaders = [token_id(item) for item in raw[:3]]
+        manager.MARKET_BATCH = 2
+        now[0] += manager.MARKET_TTL + 1
+        for batch in range(3):
+            manager.offer_hub_markets()
+            await manager.wait_pending()
+            ranking = manager.catalogue_summary()['ranking']
+            assert [r['id'] for r in ranking['rows']] == leaders
+            assert ranking['known'] == 2 * (batch + 1)
+            assert ranking['state'] == ('ok' if batch == 2 else 'stale')
+        # A genuine volume change still changes the order once its quote arrives.
+        now[0] += manager.MARKET_TTL
+        market.values[token_id(raw[-1])] = 5000
+        manager.offer_hub_markets()
+        await manager.wait_pending()
+        assert manager.catalogue_summary()['ranking']['rows'][0]['id'] == token_id(raw[-1])
     finally:
         await manager.close()
 

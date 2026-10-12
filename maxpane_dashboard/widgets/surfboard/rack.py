@@ -57,7 +57,8 @@ def _token_line(row, width, style):
 def _newest_token(ranking, width):
     newest = ranking.get('newest')
     if isinstance(newest, dict):
-        return _token_line(newest, width, MUTED)
+        line, clipped = _token_line(newest, max(0, width-5), MUTED)
+        return Text(clip('NEW: ', width), style=MUTED).append_text(line), clipped or width < 5
     empty = ranking.get('rows') == [] and ranking.get('state') == 'ok'
     return fit_prose('no launches' if empty else 'unavailable', width, style=MUTED)
 

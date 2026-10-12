@@ -538,7 +538,7 @@ async def test_tokens_ranked_rows_direction_ink_newest_footer_and_activity(size)
             assert strips[top+4].text.strip('│└┘─ ') == (footer if status == 'active' else '')
             bottom = next(s for s in strips[top+4] if '└' in s.text)
             assert not bottom.style.bold and bottom.style.color.get_truecolor() == expected
-            assert strips[-1].text.strip('╰╯─ ').split() == ['5m', 'FRESH']
+            assert strips[-1].text.strip('╰╯─ ').split() == ['NEW:', '5m', 'FRESH']
             assert '24H' not in strips[-1].text and not any(c in strips[-1].text for c in '▁▂▃▄▅▆▇█')
             assert not any(c in ''.join(s.text for s in strips) for c in '✔⚠')
 
@@ -576,7 +576,7 @@ async def test_token_degraded_ranking_has_source_clock_and_literal_tooltip(state
         assert strips[top+4].text.strip('│└┘─ ') == f'{state} {clock}'
         assert '2 new' not in ''.join(s.text for s in strips)
         assert inset_border_color(strips[top]).get_truecolor() == neutral_inset_color(pilot.app)
-        assert strips[-1].text.strip('╰╯─ ').split() == ['5m', 'FRESH']
+        assert strips[-1].text.strip('╰╯─ ').split() == ['NEW:', '5m', 'FRESH']
         assert isinstance(card.tooltip, Text)
         assert card.tooltip.plain == data['detail'].replace('\x1b', '').replace('\u202e', '')
         assert not card.tooltip.spans
@@ -594,9 +594,9 @@ async def test_token_empty_unread_and_unavailable_keep_independent_newest_footer
              'unavailable', 'unavailable', 'as of ' + hhmm(ranking['read_ts'])),
             (dict(ranking, rows=[], newest=None, known=0, total=0), 'no launches', 'no launches', ''),
             (dict(ranking, rows=[], newest=dict(ranking['newest'], age_s=172800), known=0, total=0),
-             'no launches', '2d FRESH', ''),
+             'no launches', 'NEW: 2d FRESH', ''),
             (dict(ranking, rows=None, state='unavailable', known=0, total=3),
-             'unavailable', '5m FRESH', 'as of ' + hhmm(ranking['read_ts'])),
+             'unavailable', 'NEW: 5m FRESH', 'as of ' + hhmm(ranking['read_ts'])),
         ]:
             card.set_data(dict(data, token_ranking=envelope, status='idle', secondary='0 new'))
             await pilot.pause()
@@ -630,12 +630,13 @@ async def test_token_hostile_wide_tickers_preserve_age_marker_and_advertise_clip
         assert all(not s.style.bold for s in row if '[/x]' in s.text)
 
 
-async def test_token_address_tickers_keep_copy_actions_and_known_chain_links():
+@pytest.mark.parametrize('width', [200, 230])
+async def test_token_address_tickers_keep_copy_actions_and_known_chain_links(width):
     address = '0x1234567890abcdef1234567890abcdef12345678'
     data = token_card_data()
     data['token_ranking']['rows'] = [dict(data['token_ranking']['rows'][0], symbol=address)]
     data['token_ranking']['newest']['symbol'] = address
-    async with RackApp().run_test(size=(200, 45)) as pilot:
+    async with RackApp().run_test(size=(width, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
         for chain, site in [('eth', 'etherscan.io'), ('base', 'basescan.org'), ('unknown', None)]:
             data['token_ranking']['rows'][0]['chain'] = chain
@@ -644,7 +645,11 @@ async def test_token_address_tickers_keep_copy_actions_and_known_chain_links():
             await pilot.pause()
             strips = card_strips(pilot.app, card)
             rows = [s for s in strips if '0x' in s.text]
-            assert len(rows) == 2
+            assert len(rows) == (2 if width == 230 else 1)
+            if width == 200:
+                # NEW: uses five cells; omit the whole address/icon unit if it cannot fit.
+                assert 'NEW:' in strips[-1].text and '…' in strips[-1].text
+                assert '‹' in strips[0].text
             for row in rows:
                 icon = next(s for s in row if '⧉' in s.text)
                 assert address in str(icon.style.meta) and not icon.style.link

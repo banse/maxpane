@@ -750,9 +750,12 @@ clear the return context. TOKENS opens the retained SWARM TOKENS dashboard. Its 
 inset ranks the top three supported, unambiguous deployments by selected-pool 24h USD volume,
 including inactive deployments. Chain/address aliases share their earliest known launch time;
 only ages from zero through less than 24 hours qualify. Missing volume never means zero.
+Valid cached volumes stay in the ranking across rotating quote batches; retained stale inputs
+mark the ranking stale rather than temporarily replacing its leaders with fresh lower volumes.
 Green ▲ and red ▼ compare consecutive successful prices for the same token and expected/selected
-pool; first, unchanged or stale prices show a neutral dash. The outer footer shows the newest
-canonical launch's age and ticker independently of volume rank. Hub polling offers catalogue
+pool; first, unchanged or stale prices show a neutral dash. Fresh rows retain their direction
+even when other ranked evidence is stale; a stale catalogue suppresses all directions.
+The outer footer shows `NEW: ` and the newest canonical launch's age and ticker independently of volume rank. Hub polling offers catalogue
 and bounded shared market reads only; price history, hourly volume history and trades keep their
 existing dedicated-reader paths. Partial/stale ranking replaces positive x new with a dated
 state marker; the literal tooltip discloses coverage and source clocks. Healthy positive x new

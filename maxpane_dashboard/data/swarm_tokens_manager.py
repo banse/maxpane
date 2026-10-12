@@ -388,10 +388,12 @@ class SwarmTokensManager:
             stamps.append(stamp)
         result['known'] = len(fresh)
         if fresh or stale:
-            chosen = fresh or stale
+            # Rotating quote batches must not replace leaders with lower-volume
+            # fresh rows. Keep cached volume evidence and qualify its age.
+            chosen = fresh + stale
             chosen.sort(key=lambda r: (-r['volume_usd'], r['age_s'], r['id']))
             result['rows'] = chosen[:3]
-            result['state'] = ('stale' if not fresh or catalogue['state'] == 'stale' else
+            result['state'] = ('stale' if stale or catalogue['state'] == 'stale' else
                                'ok' if len(fresh) == len(eligible) and not incomplete
                                and catalogue['state'] == 'ok' else 'partial')
         elif not eligible:
@@ -399,7 +401,7 @@ class SwarmTokensManager:
                                'partial' if incomplete or catalogue['state'] != 'ok' else 'ok')
             if not incomplete and catalogue['complete']:
                 result['rows'] = []
-        if result['state'] == 'stale':
+        if catalogue['state'] == 'stale':
             for row in result['rows'] or []:
                 row['price_direction'] = None
         result['read_ts'] = min(stamps) if stamps else None

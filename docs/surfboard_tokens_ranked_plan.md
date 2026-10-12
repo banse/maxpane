@@ -12,7 +12,7 @@ Python/Textual/Rich architecture applies.
   the last 24 hours by descending selected-pool 24-hour USD trading volume.
 - Replace liquidity markers with green `▲` or red `▼`, comparing consecutive
   successful price reads. First, equal, missing, or incomparable prices show `—`.
-- Replace this card's outer volume footer with the newest launch's age and ticker.
+- Replace this card's outer volume footer with `NEW: ` and the newest launch's age and ticker.
   It is independent of the volume ranking and may be older than 24 hours.
   Remove this card's outer `24H` text and sparkline.
 - Preserve navigation, card geometry, neighboring cards, and existing launch
@@ -49,9 +49,12 @@ read time. `read_ts` belongs to source evidence, never to repaint or failure.
 - Reuse existing selected-pool `volume_24h`, `price_usd`, and independent 120-second
   market freshness. Zero volume is valid; missing, negative, boolean, or nonfinite
   volume is unknown and cannot enter a claimed ranking.
-- Rank fresh known volumes first. Incomplete catalogue/market coverage must show
-  `partial` or `unavailable`, not imply an exhaustive top three. A retained ranking
-  may render only with explicit stale qualification and neutral price markers.
+- Correction after the owner's rotating-token report: rank all valid fresh and
+  retained volumes together. Rotating quote batches must not replace cached leaders
+  with fresh lower-volume rows. Any retained stale input marks the ranking `stale`;
+  incomplete fresh coverage remains `partial` or `unavailable`. Stale rows have
+  neutral price markers, while fresh rows retain their own direction. A stale
+  catalogue neutralizes every row.
 - Compare prices only across distinct successful market fetches for the same
   chain/address and expected/selected pool identity. Prices must be valid and
   positive. Pool changes reset comparison; projections never advance it. Failed
