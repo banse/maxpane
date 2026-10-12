@@ -1407,3 +1407,28 @@ Final review: **Approved**, no findings or fix wave. Rounding the creator fee to
 three decimals was killed by both the compositor and accounting tests and restored
 byte for byte. The three mock tests passed with isolated HOME and four workers;
 all 124 fast guards and 12 documentation pins passed. No full suite was run.
+
+## AGENT hero proposal 4 mockup — 2026-10-12
+
+The standalone `scripts/surf_agent_hero_demo.py` implements the selected twelve
+topics in two rows of six rack cards, above the native RECORD table. It reuses
+the unchanged shared card, meter and address renderers. All identities, work,
+receipt totals and software/model examples are explicitly fictional. The mock
+history has 1,000 attempts and 960 accepted: 500 reviews, 340 builds and 120
+oracle assessments. Owner receipt share is 38.52 IMD / 3 seats = 12.84 IMD;
+the fictional 9.41 USD quote gives $120.82. Effort remains a separate receipt
+aggregate.
+
+The 149×45 preview was shown at `/tmp/maxpane-agent-hero-mockup.png`. Its twelve
+cards have equal nine-row heights; the native RECORD table fills the remaining
+space. A 100×28 viewport scrolls to the rightmost cards and table, then recovers
+at the owner size. Owner copy/explorer affordances are checked in the compositor
+without touching clipboard or browser. The standalone phase performs no API,
+cache or configuration access and changes no production screen, widget, theme,
+source contract or layout pin. API integration follows owner mockup approval.
+
+Final review: **Approved**, no findings or fix wave. The geometry mutant and
+reviewer's owner-link and BUSY/capacity mutants were killed by the named
+compositor test and restored byte for byte. All three mock tests passed with
+isolated HOME and four workers; 124 fast guards and 12 documentation pins passed.
+No full suite was run.
