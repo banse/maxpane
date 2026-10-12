@@ -1101,3 +1101,42 @@ layout measurements remain the next phase after owner feedback.
 Final review approved with no findings. Its three named checks passed in an
 isolated copy, and an incorrect vault-share conversion mutant was killed by
 the accounting test; review left the shared working tree unchanged.
+
+## 2026-10-12 — PROTOCOL overview connected to existing reads
+
+The approved six-card overview now replaces the generic hero on PROTOCOL (`e`).
+Its new primitive projection uses the same captured POOL4 values and observation
+clock as the existing market hero, in both the full cycle and synchronous hub
+refresh. No client calls, polling, cache format or configuration changed.
+Unknown amounts remain unknown, measured zeros remain zero, and negative headroom
+keeps its sign. A direct reward route is distinct from a distributor subdivision.
+Bonding remains marked derived when stale/partial footers replace the normal label.
+
+The keyless live production render at 149×45 showed all six cards, real zero
+unsettled/queued balances and limited accounting coverage. CHECKS correctly showed
+`not established` / `window-limited`; fresh source data alone cannot imply a
+reconciled ledger. Mismatch or any nonzero drift is red, including tiny signed
+drift. Temporary live artifacts: `/tmp/maxpane-protocol-hero-live.svg` and `.png`.
+
+After the live render was shown, in-situ measurement found the complete view
+at 141×47: direct routing binds the REWARD SPLIT card's width; the nine-row hero
+adds two rows above the existing worst-case 34-row native column. The native
+body's independent 99-column boundary and its twelve-lever coverage are retained.
+At 149×45 all cards fit and detail columns scroll with the taller marker.
+
+Closing validation: 600 checks passed in the first integration run; its one
+stale widget-export expectation was corrected. The subsequent whole-file run
+for protocol/layout, widget contract and registration passed all 395 checks;
+the main manager file passed 143. Twelve documentation pins passed. Fast
+guards passed 122 checks; the two new-key classification assertions were
+corrected and passed again, including the whole registration-file run.
+Nine isolated data mutations, the widget alarm mutation, and all four
+bidirectional width/height pin mutations were killed. No full suite was run.
+
+Final review approved after eight focused checks and an additional captured-
+clock mutation. **Minor, deferred until the contract test is next touched:**
+`SURF_PROTOCOL_WIDGET_SIGNATURES` is exported, but the widget/screen test copies
+do not explicitly compare their mapping to it. A `wrong_kwarg` mutation in that
+constant survived four named contract/dispatch checks. Current production
+dispatch is correct; add direct agreement coverage when that test area next
+changes. Review used an isolated copy and left the shared working tree unchanged.

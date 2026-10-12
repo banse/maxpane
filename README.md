@@ -738,25 +738,18 @@ the coin table — which does say `‹ widen` when it runs short — is what dec
 width. It also has a **height** requirement of its own — 31 rows — as THE LIST's two swapped
 bodies do.
 
-Surfboard's experimental pool4 protocol view (`e`) is a **third** layout with a third number: **99 columns**, on an
-even 1:1 split, and the narrowest full layout in the app. It is narrow because none of its four
-panels is a table — four label/value summaries — and it was swept on its own rather than
-inherited from the launchpad's 138, which it is deliberately not equal to. It was 106 until
-2026-09-14. That day POOL4 FLOW, the fitted log that decided the width, left the view, because
-the `4` view's RECENT FLOW shows the same rows. The panel that decides the width now is HATCHES in
-the rail, which advertises what it dropped by *appending* to its own title. The even seam used to
-buy that rail a few columns of margin for exactly that reason. It has none now, and that was
-measured to be safe rather than assumed: HATCHES still marks at every width below 99.
+Surfboard's experimental PROTOCOL view (`e`) has six rack cards for cumulative totals,
+inventory, reward allocation, unsettled claims, delivery and accounting checks. They use
+the existing protocol read, retain its source time and distinguish missing values from zero.
+Bonding's share is marked derived; limited accounting coverage is not shown as reconciled.
 
-Where this view asks for more than anything else is **height**: **45 rows**, against the launchpad
-view's 31, and below that the body scrolls and the title bar says `‹ taller`. Unlike the other two
-layouts that 45 is a **worst case over payloads, not a constant**. It was one, briefly, when the
-column that decides the height held only fixed-height panels — but mainnet gave THE SPLIT a third
-leg and a distributor to report, so two of its panels now grow with the data. The practical
-consequence is that this number has to be re-swept when a panel's line count changes, rather than
-assumed to have held. It was re-swept when POOL4 FLOW left on 2026-09-14, and it **did not move**:
-the rail (HATCHES over sIMD VAULT) was already the tallest column, so a 44-row terminal still
-shows `‹ taller`.
+The complete view measures **141 columns × 47 rows**, re-swept on 2026-10-12 after the
+approved live preview at 149×45. The direct-route REWARD SPLIT card sets the width;
+the four native panels retain their even 1:1 split and independent **99-column** boundary,
+with HATCHES setting that boundary. The nine-row hero adds two rows to the former height.
+Height remains a worst case over payloads: mainnet with twelve hatches needs 47 rows.
+Below that, the detail columns scroll and the title bar says `‹ taller`; all six cards
+fit at the owner's 149×45 size. The app-wide width remains 143 columns.
 
 Surfboard's SWARM view (`s`) is a layout of its own too, pinned by `SURF_SWARM_FULL_LAYOUT_COLUMNS`
 and `SURF_SWARM_FULL_LAYOUT_ROWS` (**129 columns × 35 rows**, re-swept 2026-10-06 after the

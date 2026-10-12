@@ -71,6 +71,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4USignals,
     SurfPool4UStakers,
     SurfPool4RackHero,
+    SurfProtocolHero,
     SurfPool4Vault,
     SurfSignals,
     SurfSwarmAgentHero,
@@ -241,6 +242,7 @@ def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
         _LAUNCHPAD_WIDGET_CLASSES,
         _POOL4_WIDGET_CLASSES,
         _POOL4_USER_WIDGET_CLASSES,
+        {"SurfProtocolHero": SurfProtocolHero},
         _SWARM_WIDGET_CLASSES,
         _PARKED_WIDGET_CLASSES,
     )
@@ -499,6 +501,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
     # "exactly one renderer" claim stays a real claim about the `p` body
     # instead of becoming an exception list.
     "SurfPool4RackHero": {"surf_pool4_hero": "surf_pool4_hero"},
+    "SurfProtocolHero": {"surf_protocol_hero": "surf_protocol_hero"},
     "SurfPool4UStakers": {
         "pool4_stakers": "pool4_stakers",
         "pool4_staker_count": "pool4_staker_count",

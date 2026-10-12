@@ -100,6 +100,7 @@ and no network present (pinned by ``tests/widgets/test_surf_widget_contract.py``
 """
 
 from .pool4_hero import SurfPool4RackHero
+from .protocol_hero import SurfProtocolHero
 from .activity import SurfDevActivity
 from .burnkeepers import SurfBurnkeepers
 from .feed import FEED_TITLE, SurfFeed
@@ -169,6 +170,7 @@ __all__ = [
     "SurfPool4UStakers",
     "SurfPool4UserHero",
     "SurfPool4RackHero",
+    "SurfProtocolHero",
     "SurfPool4Vault",
     "SurfSignals",
     "SurfSwarmAgentHero",

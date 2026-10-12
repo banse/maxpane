@@ -46,6 +46,7 @@ from tests.screens._sweeps import boundary_set
 from maxpane_dashboard.widgets.surf import (
     SurfHero,
     SurfNewsHero,
+    SurfProtocolHero,
     SurfPool4Flow,
     SurfPool4Hatches,
     SurfPool4Ratchet,
@@ -107,6 +108,12 @@ def _pool4_app(payload: dict | None = None) -> App:
     ``minimal.tcss`` says in charge and every width number below would be
     measuring the wrong file.
     """
+    from maxpane_dashboard.data.surf_protocol_hero import project
+
+    payload = dict(_pool4_payload() if payload is None else payload)
+    if not isinstance(payload.get("surf_protocol_hero"), dict):
+        payload["surf_protocol_hero"] = project(
+            data=payload, sources={"pool4": {"state": "ok", "read_ts": 990}}, now=1000)
     return _surf_app(payload)
 
 
@@ -136,8 +143,12 @@ POOL4_RAIL_NEED = 50        # SurfPool4Hatches', plus the column's own gutter
 #: is one: a test that aliased the screen's constant would compare a number
 #: against itself and pin nothing. 106 until 2026-09-14; swept 86..125 on
 #: three payloads when POOL4 FLOW left the body.
-MEASURED_POOL4_COLUMNS = 99
-MEASURED_POOL4_ROWS = 45
+#: The four native panels still clear at 99 columns. The six-card overview
+#: makes the whole protocol view 141 columns; its direct-route row binds.
+#: Nine hero rows add two rows over the old hero: 13 chrome + 34 body = 47.
+MEASURED_POOL4_BODY_COLUMNS = 99
+MEASURED_POOL4_COLUMNS = 141
+MEASURED_POOL4_ROWS = 47
 
 
 def _pool4_payload(**overrides) -> dict:
@@ -233,12 +244,13 @@ def test_the_bindings_are_refresh_and_the_two_view_toggles():
         assert hasattr(SurfScreen, action), action
 
 
-async def test_e_swaps_the_body_and_keeps_the_hero() -> None:
+async def test_e_swaps_to_the_protocol_body_and_hero() -> None:
     async with _pool4_app().run_test() as pilot:
         await pilot.press("e")
         screen = pilot.app.screen
         assert screen.query_one(f"#{POOL4_BODY_ID}").display is True
-        assert screen.query_one(SurfHero).display is True
+        assert screen.query_one(SurfProtocolHero).display is True
+        assert screen.query_one(SurfHero).display is False
         assert screen.query_one("#middle-row").display is False
         assert screen.query_one("#separator").display is False
         assert screen.query_one("#bottom-row").display is False
@@ -313,7 +325,8 @@ async def test_the_three_bodies_are_never_showing_at_once() -> None:
             await pilot.pause()
             showing = [b for b in bodies if screen.query_one(b).display]
             assert showing == [expected], (keys, showing)
-            assert screen.query_one(SurfHero).display is (expected != "#middle-row")
+            assert screen.query_one(SurfHero).display is (expected == f"#{LAUNCHPAD_BODY_ID}")
+            assert screen.query_one(SurfProtocolHero).display is (expected == f"#{POOL4_BODY_ID}")
             assert screen.query_one(SurfNewsHero).display is (expected == "#middle-row")
 
 
@@ -823,12 +836,16 @@ async def test_a_quiet_pool4_sweep_is_not_a_dead_one() -> None:
 
 # -- the p body's own measured width (2026-09-01) -------------------------
 #
+# These are the native panels' independent 99-column seam checks. They do
+# not certify the rack hero added on 2026-10-12; the full 141-column view is
+# measured in test_surf_protocol_hero_layout.py.
+#
 # ``SURF_FULL_LAYOUT_COLUMNS`` (this screen, 143),
 # ``SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS`` (the ``l`` body, 138) and
 # ``__main__.FULL_LAYOUT_COLUMNS`` (the app, 143) are all untouched by this
 # task -- the measurement, the binding panel, the per-seam table and why the
 # CLAUDE.md width record is not appended to are in
-# ``SURF_POOL4_FULL_LAYOUT_COLUMNS``' own docstring in ``screens/surf.py``.
+# the historical native-body record beside ``SURF_POOL4_FULL_LAYOUT_COLUMNS``.
 #
 # The sweep runs **86..152**: thirteen columns below the measured 99 and
 # fifty-three above it, never starting at it, and crossing the old 106 and
@@ -847,7 +864,7 @@ async def test_a_quiet_pool4_sweep_is_not_a_dead_one() -> None:
 @pytest.mark.parametrize(
     "width",
     boundary_set(
-        SURF_POOL4_FULL_LAYOUT_COLUMNS, 86, 152,
+        MEASURED_POOL4_BODY_COLUMNS, 86, 152,
         SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS, SURF_FULL_LAYOUT_COLUMNS,
     ),
 )
@@ -883,7 +900,7 @@ async def test_the_pool4_body_is_whole_from_its_pinned_width(
         screen = pilot.app.screen
         marked = _pool4_marked(pilot.app, screen)
         clipped = _clipped_pool4_lines(pilot.app, screen)
-        if width >= SURF_POOL4_FULL_LAYOUT_COLUMNS:
+        if width >= MEASURED_POOL4_BODY_COLUMNS:
             assert not marked, (width, marked)
             assert not clipped, (
                 f"at {width} the p body is clipping a line and nothing on "
@@ -898,7 +915,7 @@ async def test_the_pool4_body_is_whole_from_its_pinned_width(
 @pytest.mark.parametrize(
     "width",
     boundary_set(
-        SURF_POOL4_FULL_LAYOUT_COLUMNS - 1, 80, SURF_POOL4_FULL_LAYOUT_COLUMNS - 1, 96,
+        MEASURED_POOL4_BODY_COLUMNS - 1, 80, MEASURED_POOL4_BODY_COLUMNS - 1, 96,
     ),
 )
 async def test_nothing_below_the_pool4_pin_clips_without_saying_so(
@@ -954,7 +971,7 @@ async def test_the_pool4_binding_panel_is_hatches() -> None:
     gives one up -- the reason the old seam kept it out of the binder role.
     """
     async with _pool4_app().run_test(
-        size=(SURF_POOL4_FULL_LAYOUT_COLUMNS - 1, 50)
+        size=(MEASURED_POOL4_BODY_COLUMNS - 1, 50)
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
@@ -986,7 +1003,7 @@ async def test_the_pool4_pin_is_the_sum_of_the_needs_it_claims() -> None:
     they explain would make this compare a number with itself.
     """
     async with _pool4_app().run_test(
-        size=(SURF_POOL4_FULL_LAYOUT_COLUMNS, 50)
+        size=(MEASURED_POOL4_BODY_COLUMNS, 50)
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
@@ -1008,8 +1025,7 @@ async def test_the_pool4_pin_is_the_sum_of_the_needs_it_claims() -> None:
     )
     # ...and the pin really is what those two needs add up to under this
     # seam, which is the arithmetic the docstring's per-seam table rests on.
-    assert left + rail == SURF_POOL4_FULL_LAYOUT_COLUMNS
-    assert MEASURED_POOL4_COLUMNS == SURF_POOL4_FULL_LAYOUT_COLUMNS
+    assert left + rail == MEASURED_POOL4_BODY_COLUMNS
 
 
 def test_the_pool4_body_fits_inside_the_documented_app_width() -> None:
@@ -1019,16 +1035,21 @@ def test_the_pool4_body_fits_inside_the_documented_app_width() -> None:
     """
     from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 
+    assert MEASURED_POOL4_BODY_COLUMNS <= FULL_LAYOUT_COLUMNS
+    assert MEASURED_POOL4_BODY_COLUMNS <= SURF_FULL_LAYOUT_COLUMNS
     assert SURF_POOL4_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
-    assert SURF_POOL4_FULL_LAYOUT_COLUMNS <= SURF_FULL_LAYOUT_COLUMNS
     # Three bodies, three independently measured pins. They are allowed to
     # be equal -- but if two of them ever ARE equal it should be because
     # somebody measured it, so the constants are kept separate and this is
     # the note that says so rather than a test forbidding the coincidence.
-    assert SURF_POOL4_FULL_LAYOUT_COLUMNS != SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
+    assert MEASURED_POOL4_BODY_COLUMNS != SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
 
 
 # -- the p body's own measured height (2026-09-01, re-swept 2026-09-02) ---
+#
+# Re-swept on 2026-10-12 after the nine-row rack hero: 13 rows of chrome,
+# native content unchanged. No levers needs 38, ten needs 44, twelve on
+# Sepolia needs 46, and the mainnet twelve-lever worst case needs 47.
 #
 # The sweep runs 36..55 -- nine rows below the measured 45 and ten above,
 # never starting at it, and never starting at the 44 it replaced either. It
@@ -1058,10 +1079,9 @@ _POOL4_HEIGHT_PAYLOADS = {
 
 
 @pytest.mark.parametrize("payload_name", sorted(_POOL4_HEIGHT_PAYLOADS))
-#: Boundary set (2026-09-19): 43 is the height every Sepolia body fits in
-#: (the block above). See tests/screens/_sweeps.py.
+#: Include each newly measured payload onset as well as the overall pin.
 @pytest.mark.parametrize(
-    "rows", boundary_set(SURF_POOL4_FULL_LAYOUT_ROWS, 36, 55, 43)
+    "rows", boundary_set(SURF_POOL4_FULL_LAYOUT_ROWS, 34, 57, 38, 44, 46)
 )
 async def test_the_pool4_body_is_whole_from_its_pinned_height(
     rows, payload_name
@@ -1556,14 +1576,7 @@ async def test_the_pool4_columns_reserve_their_scrollbar_gutters() -> None:
 
 
 async def test_the_hero_survives_the_pool4_body_swap() -> None:
-    """The hero is outside ``#surf-pool4-body``, so nothing it tracks goes
-    dark when ``p`` swaps the body underneath it.
-
-    Asserted against the hero's **own region**, not the whole screen: the
-    pool4 panels composite the words ``BURN``, ``FLOW`` and ``SUPPLY``
-    themselves, so a whole-screen substring check would pass with the hero
-    unmounted entirely.
-    """
+    """The protocol's own six cards occupy the shared row when `e` opens."""
     async with _pool4_app().run_test(size=(150, 50)) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.pause()
@@ -1571,11 +1584,9 @@ async def test_the_hero_survives_the_pool4_body_swap() -> None:
         await pilot.pause()
         screen = pilot.app.screen
         assert screen.query_one(f"#{POOL4_BODY_ID}").display is True
-        hero = _region_text(pilot.app, screen.query_one(SurfHero))
-        for title in ("LAUNCHPAD", "FLOW", "BURN", "BOARDS"):
-            assert title in hero, f"the hero lost its {title} box under `p`"
-        assert "'4' - pool4" in hero
-        assert "READY" in hero
+        hero = _region_text(pilot.app, screen.query_one(SurfProtocolHero))
+        for title in ("TOTALS", "INVENTORY", "REWARD SPLIT", "UNSETTLED", "DELIVERY", "CHECKS"):
+            assert title in hero, f"the hero lost its {title} box under `e`"
 
 
 # -- the p body's CSS, in agreement ---------------------------------------

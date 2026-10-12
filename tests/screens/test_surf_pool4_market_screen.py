@@ -40,6 +40,7 @@ from textual.renderables.digits import Digits
 
 from maxpane_dashboard.data.surf_models import SURF_POOL4_WIDGET_SIGNATURES
 from maxpane_dashboard.data.surf_pool4_hero import project
+from maxpane_dashboard.widgets.surf.protocol_hero import SurfProtocolHero
 
 from maxpane_dashboard.screens.surf import (
     MODE_DASHBOARD,
@@ -314,7 +315,7 @@ async def test_four_switches_directly_from_either_other_body() -> None:
 _HERO_PER_MODE = (
     (MODE_DASHBOARD, (), SurfNewsHero),
     (MODE_LAUNCHPAD, ("l",), SurfHero),
-    (MODE_POOL4, ("e",), SurfHero),
+    (MODE_POOL4, ("e",), SurfProtocolHero),
     (MODE_POOL4_USER, ("4",), SurfPool4RackHero),
     (MODE_SWARM, ("s",), SurfSwarmRackHero),
 )
@@ -389,7 +390,7 @@ async def test_exactly_one_hero_survives_every_transition_between_bodies() -> No
     expected = {
         MODE_DASHBOARD: SurfNewsHero,
         MODE_LAUNCHPAD: SurfHero,
-        MODE_POOL4: SurfHero,
+        MODE_POOL4: SurfProtocolHero,
         MODE_POOL4_USER: SurfPool4RackHero,
     }
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:

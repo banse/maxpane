@@ -70,6 +70,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4UStakers,
     SurfPool4UserHero,
     SurfPool4RackHero,
+    SurfProtocolHero,
     SurfPool4Vault,
     SurfSignals,
     SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet,
@@ -208,7 +209,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
         # `test_no_pool4_widget_needs_a_kwarg_alias` below for why that had
         # to be a decision rather than an accident.
         SurfPool4Hatches, SurfPool4Flow, SurfPool4Split, SurfPool4Ratchet,
-        SurfPool4Vault,
+        SurfPool4Vault, SurfProtocolHero,
         # The `4` POOL4 MARKET body's five (2026-09-11), all in the strict
         # check for the same reason and none excused anything. The hero is
         # in here too: it is a render-only widget taking contract keys like

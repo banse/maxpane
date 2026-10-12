@@ -146,6 +146,7 @@ from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard as hub
 from maxpane_dashboard.data import surf_pool4_hero as pool4_hero
+from maxpane_dashboard.data import surf_protocol_hero as protocol_hero
 from maxpane_dashboard.data import surf_news_hero as news_hero
 from maxpane_dashboard.data import surf_swarm_hero as swarm_hero
 from maxpane_dashboard.data import surfboard_activity as work_activity
@@ -7218,8 +7219,9 @@ class SurfManager:
             data.update(self._pool4_keys(pool, pool_entry, now, eth_usd=data.get("eth_usd")))
             stakers_entry = self.cache.get_last_good(SLOT_POOL4_STAKERS)
             data.update(self._pool4_stakers_keys(getattr(stakers_entry, "payload", None) or {}, stakers_entry))
-            data["surf_pool4_hero"] = pool4_hero.project(data=data, sources=self._pool4_hero_sources(
-                pool_entry, stakers_entry, market_entry, now), now=now)
+            pool4_hero_sources = self._pool4_hero_sources(pool_entry, stakers_entry, market_entry, now)
+            data["surf_pool4_hero"] = pool4_hero.project(data=data, sources=pool4_hero_sources, now=now)
+            data["surf_protocol_hero"] = protocol_hero.project(data=data, sources=pool4_hero_sources, now=now)
             launch_entry = self.cache.get_last_good(SLOT_LAUNCHPAD)
             launch = getattr(launch_entry, "payload", None) or {}
             for field in ("coin_count", "launch_count", "new_24h", "creator_count", "swap_count", "trader_count", "activity", "burnkeepers"):
@@ -7896,6 +7898,7 @@ class SurfManager:
         # own, slower marker. PRD 7.2.
         data.update(self._pool4_stakers_keys(stakers_slot, stakers_entry))
         data["surf_pool4_hero"] = pool4_hero.project(data=data, sources=pool4_hero_sources, now=now)
+        data["surf_protocol_hero"] = protocol_hero.project(data=data, sources=pool4_hero_sources, now=now)
 
         # ---- swarm source slots and their independent clocks ----------------
         # The jobs-seen map, read once for both folds below. It is read

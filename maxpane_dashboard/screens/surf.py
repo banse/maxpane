@@ -273,6 +273,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfPool4USignals,
     SurfPool4UStakers,
     SurfPool4RackHero,
+    SurfProtocolHero,
     SurfPool4Vault,
     SurfSignals,
     SurfSwarmAgentHero,
@@ -1052,7 +1053,19 @@ SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 31
 #: beside its icon: its widest line (the distributor row) is 41 cells, under
 #: the grid's 45. Re-swept in situ over 94-102 with the mainnet payload:
 #: HATCHES is unmarked from 99 and marked at 98, as before.
-SURF_POOL4_FULL_LAYOUT_COLUMNS = 99
+#:
+#: **2026-10-12 — approved PROTOCOL rack overview, 99 -> 141.**
+#: The native two-column body still clears at 99; its seam and address
+#: budgets above are unchanged. The six nine-row hero cards now bind the
+#: complete view. Measured in situ after showing the keyless live 149x45
+#: render: the direct-route REWARD SPLIT card loses part of "direct to
+#: stakers" at 140 and marks its own title; all content clears at 141.
+#: Distributor, stale, partial, unavailable and signed-headroom payloads
+#: clear no later. Boundary tests retain 99 as the independent native-body
+#: boundary and check full hero content at 140/141/142. Huge values may
+#: still mark locally, as other data-dependent card rows do. No app-wide
+#: width change: the complete protocol view remains within 143 columns.
+SURF_POOL4_FULL_LAYOUT_COLUMNS = 141
 
 #: The ``p`` POOL4 body's own measured **height**, re-swept 2026-09-02 for
 #: the mainnet deployment, again after the panels were shortened, and again
@@ -1313,7 +1326,16 @@ SURF_POOL4_FULL_LAYOUT_COLUMNS = 99
 #: where a one-row overflow settled a layout pass after the callback that
 #: composed the title, leaving ``‹ taller`` dark on a body that was
 #: scrolling.
-SURF_POOL4_FULL_LAYOUT_ROWS = 45
+#:
+#: **2026-10-12 — approved PROTOCOL rack overview, 45 -> 47.**
+#: The new nine-row hero replaces the seven-row generic row. A production
+#: sweep after the live 149x45 preview measured thirteen rows of chrome
+#: and the same worst-case 34-row native column: mainnet with twelve
+#: hatches is whole at 47 and scrolls with the taller marker at 46.
+#: The two-column native layout, twelve-lever coverage and vault floor
+#: are unchanged. At the owner's 45 rows both columns remain scrollable;
+#: the hero's six cards themselves fit completely.
+SURF_POOL4_FULL_LAYOUT_ROWS = 47
 
 #: The ``4`` POOL4 MARKET body's own full-layout width, swept in situ on
 #: 2026-09-11 and **re-swept on 2026-09-12 after the body was restructured**.
@@ -2001,8 +2023,8 @@ SURF_BOARD_FULL_LAYOUT_ROWS = 33
 #: into one row -- the exact defect enumerating instead of negating exists to
 #: make loud rather than silent.
 #: Default NEWS has its own six-card hero; the legacy row serves only
-#: LAUNCHPAD and protocol until their individual design stages are approved.
-_SURF_HERO_MODES = (MODE_LAUNCHPAD, MODE_POOL4)
+#: LAUNCHPAD until its individual design stage is approved.
+_SURF_HERO_MODES = (MODE_LAUNCHPAD,)
 
 #: The launchpad body's container id -- exported so the test module and any
 #: future consumer can query it without retyping the literal.
@@ -3481,6 +3503,7 @@ class SurfScreen(DashboardScreen):
             yield SurfNewsHero(classes="surf-hero")
             yield SurfHero(classes="surf-hero")
             yield SurfPool4RackHero(classes="surf-hero")
+            yield SurfProtocolHero(classes="surf-hero")
             yield SurfSwarmRackHero(classes="surf-hero")
             yield SurfSwarmAgentHero(classes="surf-hero")
             yield SurfSwarmBoardHero(classes="surf-hero")
@@ -3767,6 +3790,7 @@ class SurfScreen(DashboardScreen):
             self.query_one(SurfPool4RackHero).display = (
                 self._mode == MODE_POOL4_USER
             )
+            self.query_one(SurfProtocolHero).display = self._mode == MODE_POOL4
             self.query_one(SurfSwarmRackHero).display = self._mode == MODE_SWARM
             self.query_one(SurfSwarmAgentHero).display = self._mode == MODE_AGENT
             self.query_one(SurfSwarmBoardHero).display = self._mode == MODE_BOARD
@@ -4820,6 +4844,13 @@ class SurfScreen(DashboardScreen):
         # `pool4_stakers_as_of_hhmm`, the long `Transfer`-fold tier's own and
         # much slower one, which advances only when a new fold lands. The
         # rack hero carries the matching source clocks in its projection.
+        try:
+            self.query_one(SurfProtocolHero).update_data(
+                surf_protocol_hero=data.get("surf_protocol_hero"),
+            )
+        except Exception as exc:
+            logger.debug("Failed to update SurfProtocolHero: %s", exc)
+
         try:
             self.query_one(SurfPool4RackHero).update_data(
                 surf_pool4_hero=data.get("surf_pool4_hero"),

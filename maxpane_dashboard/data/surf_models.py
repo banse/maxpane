@@ -1511,6 +1511,16 @@ SURF_POOL4_HERO_FIELDS = {
     "bid": ("state", "read_ts", "status", "eth", "distance_pct"),
     "queue": ("state", "read_ts", "imd", "per_day", "days"),
 }
+SURF_PROTOCOL_HERO_STATES = ("ok", "partial", "stale", "unavailable")
+SURF_PROTOCOL_WIDGET_SIGNATURES = {"SurfProtocolHero": {"surf_protocol_hero": "surf_protocol_hero"}}
+SURF_PROTOCOL_HERO_FIELDS = {
+    "totals": ("state", "read_ts", "burned", "rewarded", "fees"),
+    "inventory": ("state", "read_ts", "cap", "reserve", "headroom"),
+    "split": ("state", "read_ts", "path", "staking_pct", "nodes_pct", "bonding_pct"),
+    "unsettled": ("state", "read_ts", "burn", "rewards"),
+    "delivery": ("state", "read_ts", "queued", "ready", "per_day"),
+    "checks": ("state", "read_ts", "counters", "drift_bps", "path"),
+}
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points", "latest_launches",
                         "meter_state", "share_price", "seat_slot", "token_id")
@@ -1827,6 +1837,7 @@ SURF_KEYS: tuple[str, ...] = (
     "surf_news_hero",         # dict — six source-backed native news hero cards
     "surf_swarm_hero",        # dict — six source-backed native SWARM hero cards
     "surf_pool4_hero",        # dict — six source-backed native POOL4 market cards
+    "surf_protocol_hero",     # dict — six source-backed native PROTOCOL cards
     # ---- feed ---------------------------------------------------------------
     "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)
     "feed_last_post_age_s",  # float | None
