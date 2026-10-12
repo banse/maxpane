@@ -53,7 +53,6 @@ async def test_leaderboard_heroes_fit_and_paint_selected_content_at_owner_size()
             if card.data.subtitle:
                 assert card.data.subtitle in output
         for index, label, value in (
-            (1, "seats", "1,024"), (1, "attempts", "100k"),
             (3, "rejected", "2k"), (3, "failed", "1k"), (3, "pending", "1k"),
             (4, "live", "966"), (4, "working", "24"), (4, "capacity", "2,880"),
             (5, "receipts", "18.4k"), (5, "turns", "580k"), (5, "hours", "18k"),
@@ -61,10 +60,15 @@ async def test_leaderboard_heroes_fit_and_paint_selected_content_at_owner_size()
             assert any(label in line and value in line for line in painted(app, cards[index]).splitlines())
         # The selected values must reach the compositor as large digit glyphs.
         assert "╭─╴╶─╮╶─┐" in painted(app, cards[0])  # 527
+        recorded = painted(app, cards[1])
+        assert " SEATS " in recorded
+        assert "╶╮ ╭─╮╶─╮╷ ╷" in recorded  # 1024
+        assert any("└" in line and "100k attempts" in line and "┘" in line
+                   for line in recorded.splitlines())
         assert "╰─┤├─╮ │ │" in painted(app, cards[2])  # 96.0 middle row
         strips = app.screen._compositor.render_strips()
         inset = next(strip.crop(cards[1].region.x, cards[1].region.right)
-                     for strip in strips[cards[1].region.y:cards[1].region.bottom] if " RECORDS " in strip.text)
+                     for strip in strips[cards[1].region.y:cards[1].region.bottom] if " SEATS " in strip.text)
         edge = next(segment for segment in inset if "┌" in segment.text)
         assert edge.style.bgcolor == Color.parse(app.get_css_variables()["background"])
         assert edge.style.color == Color.parse(app.get_css_variables()["accent"])

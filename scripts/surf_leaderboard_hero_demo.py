@@ -80,8 +80,8 @@ _TOP = MOCK_DATA["swarm_board_rows"][0]
 MOCK_CARDS = (
     HeroRecord("top-seat", "TOP SEAT", "SEAT", f"RANK {_TOP['rank']}",
                digits=str(_TOP["token_id"]), subtitle=f"{_TOP['accepted'] / 1000:.2f}k accepted"),
-    HeroRecord("recorded", "RECORDED", "RECORDS", "RECORDS", stats=(
-        ("seats", f"{_SUMMARY['seats']:,}"), ("attempts", f"{_SUMMARY['attempts'] / 1000:.0f}k"))),
+    HeroRecord("recorded", "RECORDED", "SEATS", "RECORDS", digits=str(_SUMMARY["seats"]),
+               subtitle=f"{_SUMMARY['attempts'] / 1000:.0f}k attempts"),
     HeroRecord("accept-rate", "ACCEPT RATE", "%", "ACCEPTED",
                digits=f"{_SUMMARY['accepted'] / _SUMMARY['attempts'] * 100:.1f}",
                subtitle=f"{_SUMMARY['accepted'] / 1000:.0f}k / {_SUMMARY['attempts'] / 1000:.0f}k"),
