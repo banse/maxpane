@@ -1,4 +1,4 @@
-"""AGENT merged seat cards: OWNER, RUNTIME, MODEL, FEEDBACK, COLLAB and NODES.
+"""Parked legacy AGENT seat cards: OWNER, RUNTIME, MODEL, FEEDBACK, COLLAB and NODES.
 
 Composited assertions only, under the real stylesheet. The payloads are
 **folded** from the committed ``/seats`` capture
@@ -6,8 +6,7 @@ Composited assertions only, under the real stylesheet. The payloads are
 fold functions, and the expected numbers are read back off that fold, not
 typed by hand. Each row is mounted alone, so the screen-scoped card widths do
 not apply and the cards split the row evenly. That is why the values are read
-at :data:`SIZE`, a wide terminal where no card has to cut a number. Geometry
-at the pin is the layout sweep's job (``tests/screens/test_surf_swarm_layout.py``).
+at :data:`SIZE`, a wide terminal where no card has to cut a number. The standalone narrow-width cases preserve the parked cards' fitting behavior.
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ from textual.app import App
 
 from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.data import surf_swarm as fold
-from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import SWARM_PARKED_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.surf._fmt import fmt_win_rate, mmdd_hhmm
 from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
@@ -98,7 +97,7 @@ async def _seat(**over):
 def test_update_data_names_exactly_the_signature_in_order(cls):
     sig = inspect.signature(cls.update_data)
     params = [n for n, p in sig.parameters.items() if n != "self" and p.kind is not p.VAR_KEYWORD]
-    assert tuple(params) == SWARM_WIDGET_SIGNATURES[cls.__name__]
+    assert tuple(params) == SWARM_PARKED_WIDGET_SIGNATURES[cls.__name__]
 
 
 # -- SEAT row -----------------------------------------------------------------------
@@ -463,18 +462,20 @@ async def test_long_unknown_node_keeps_exact_accepted_count(accepted, attempts, 
 async def test_runtime_card_checks_fit_arrows_and_explain_basis(width, runtime, latest, daemon, majority,
                                                                runtime_up, daemon_up, basis):
     from rich.text import Text
-    from tests.screens.test_surf_screen import _frozen_payload, _surf_app, _region_text
-    payload = _frozen_payload()
+    from tests.screens.test_surf_screen import _region_text
+    payload = _seat_kwargs()
     runtime_id = runtime.partition(' ')[0]
     payload.update(swarm_seat_state='ok',
                    swarm_seat_summary={**SUMMARY, 'runtime':runtime, 'daemon':daemon},
                    swarm_runtime_latest={runtime_id:latest},
                    swarm_runtime_as_of_hhmm={runtime_id:'17:33'}, swarm_fleet_daemon=majority)
-    async with _surf_app(payload).run_test(size=(width, 35)) as pilot:
+    async with _Themed().run_test(size=(width, 7)) as pilot:
+        await pilot.app.mount(SurfSwarmSeatCards())
+        cards = pilot.app.query_one(SurfSwarmSeatCards)
+        cards.update_data(**payload)
+        await pilot.pause()
         screen = pilot.app.screen
-        await screen._do_refresh()
-        await pilot.press('a')
-        box = screen.query_one('#surf-swarm-card-runtime')
+        box = cards.query_one('#surf-swarm-card-runtime')
         assert isinstance(box.tooltip, Text)
         assert basis in box.tooltip.plain
         rows = _region_text(pilot.app, box).splitlines()
@@ -487,7 +488,7 @@ async def test_runtime_card_checks_fit_arrows_and_explain_basis(width, runtime, 
             # Compare the actual painted region against the old, unchecked path.
             before = rows
             cards = screen.query_one(SurfSwarmSeatCards)
-            cards.update_data(**{key:payload.get(key) for key in SWARM_WIDGET_SIGNATURES['SurfSwarmSeatCards']
+            cards.update_data(**{key:payload.get(key) for key in SWARM_PARKED_WIDGET_SIGNATURES['SurfSwarmSeatCards']
                                  if key not in ('swarm_runtime_latest','swarm_runtime_as_of_hhmm','swarm_fleet_daemon')})
             await pilot.pause()
             assert _region_text(pilot.app, box).splitlines() == before

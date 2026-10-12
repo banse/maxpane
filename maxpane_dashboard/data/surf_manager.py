@@ -148,6 +148,7 @@ from maxpane_dashboard.data import surfboard as hub
 from maxpane_dashboard.data import surf_pool4_hero as pool4_hero
 from maxpane_dashboard.data import surf_protocol_hero as protocol_hero
 from maxpane_dashboard.data import surf_leaderboard_hero as leaderboard_hero
+from maxpane_dashboard.data import surf_agent_hero as agent_hero
 from maxpane_dashboard.data import surf_launchpad_hero as launchpad_hero
 from maxpane_dashboard.data import surf_news_hero as news_hero
 from maxpane_dashboard.data import surf_swarm_hero as swarm_hero
@@ -1150,6 +1151,7 @@ class SurfManager:
         self._swarm_scores_task: Any = None
         self._swarm_board_task: Any = None
         self._swarm_board_observations: dict[str, dict] = {}
+        self._agent_seat_observations: dict[int, dict] = {}
         #: The `/health` counters the last live read saw, so the 27.5 KB job
         #: list is only paid for when one of them moved (spec §3).
         self._swarm_counters: dict[str, Any] | None = None
@@ -6254,8 +6256,8 @@ class SurfManager:
         entry = self.cache.get_last_good(SLOT_SWARM_RUNTIME_LATEST)
         return coerce_runtime_slot(getattr(entry, "payload", None), now=now) or {}
 
-    def _runtime_keys(self, now):
-        points = self._runtime_points(now)
+    def _runtime_keys(self, now, *, points=None):
+        points = self._runtime_points(now) if points is None else points
         return {
             "swarm_runtime_latest": {key: point["version"] for key, point in points.items()},
             "swarm_runtime_as_of_hhmm": {key: LastGood(None, point["checked_ts"]).as_of_hhmm() for key, point in points.items()},
@@ -6447,6 +6449,38 @@ class SurfManager:
 
     # -- the AGENT body's selected seat: /seats/{token} ----------------------
 
+    def _agent_seat_source(self, token, point, *, now):
+        observation = self._agent_seat_observations.get(token, {})
+        matched = bool(observation) and observation.get('point') == point
+        stamp = observation['read_ts'] if matched else (point or {}).get('read_ts')
+        return news_hero.source(stamp, now=now, ttl=TIER_TTL_SECONDS[TIER_SWARM_SEAT],
+                                failed=observation['failed'] if matched else True)
+
+    def _agent_hero_capture(self, seat_entry, *, now):
+        """Freeze selected-point confirmations before any detached read can replace them."""
+        seats = (sw.coerce_seat_slot(getattr(seat_entry, 'payload', None), now=now) or {}).get('seats', {})
+        reward_entry = self.cache.get_last_good(SLOT_SWARM_SEAT_REWARDS)
+        return dict(seats={key: self._agent_seat_source(int(key), point, now=now) for key, point in seats.items()},
+                    rewards=sw.coerce_rewards_slot(getattr(reward_entry, 'payload', None), now=now) or {},
+                    rewards_failed=set(self._seat_rewards_failed), runtime=self._runtime_points(now),
+                    activity=getattr(self.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY), 'payload', None))
+
+    def _agent_hero(self, data, capture, board_sources, market_source, *, now):
+        selected = data.get('swarm_seat_selected') or {}
+        token = selected.get('token_id')
+        sources = dict(board_sources, records=data.get('swarm_outcomes_source'),
+                       seat=capture['seats'].get(str(token)), market=market_source)
+        point = capture['rewards'].get(str(token))
+        identity = self._rewards_identity(data.get('swarm_seat_summary') or {})
+        if point is None or (point['owner'], point['paired_ts']) != identity:
+            point = {}
+        sources['rewards'] = news_hero.source(point.get('read_ts'), now=now,
+            ttl=SWARM_SEAT_REWARDS_TTL_S, failed=token in capture['rewards_failed'])
+        sources['runtime'] = {key: news_hero.source(point['checked_ts'], now=now,
+            ttl=TIER_TTL_SECONDS[TIER_SWARM_RUNTIME_LATEST], failed=point['version'] is None)
+            for key, point in capture['runtime'].items()}
+        return agent_hero.project(data=data, sources=sources, now=now, activity=capture['activity'])
+
     async def _offer_swarm_seat(
         self, tiers: set[str], token: int | None, seat_entry: Any, now: float
     ) -> Any:
@@ -6520,6 +6554,10 @@ class SurfManager:
         )
         state = sw.seat_state(result, token)
         if state is None:
+            point = (sw.coerce_seat_slot(getattr(self.cache.get_last_good(SLOT_SWARM_SEAT), 'payload', None),
+                                        now=float(self._clock())) or {}).get('seats', {}).get(str(token))
+            source = self._agent_seat_source(token, point, now=float(self._clock()))
+            self._agent_seat_observations[token] = dict(point=point, read_ts=source['read_ts'], failed=True)
             self._seat_busy_token = token if result == SEAT_BUSY else None
             self._seat_failed_token = None if result == SEAT_BUSY else token
             self.cache.mark_failed(TIER_SWARM_SEAT, now)
@@ -6536,6 +6574,10 @@ class SurfManager:
         slot = sw.coerce_seat_slot(slot, now=now)
         if prior is None or prior.payload != slot:
             self.cache.store_last_good(SLOT_SWARM_SEAT, slot, ts=now)
+        self._agent_seat_observations[token] = dict(point=slot['seats'][str(token)],
+                                                  read_ts=float(self._clock()), failed=False)
+        self._agent_seat_observations = {key: value for key, value in self._agent_seat_observations.items()
+                                         if str(key) in slot['seats']}
         self.cache.mark_fetched(TIER_SWARM_SEAT, now)
         if self._seat_failed_token == token:
             self._seat_failed_token = None
@@ -6630,7 +6672,8 @@ class SurfManager:
         points = sw.coerce_rewards_slot(points, now=now)
         self.cache.store_last_good(SLOT_SWARM_SEAT_REWARDS, points, ts=now)
 
-    def _seat_rewards_keys(self, seat_keys: dict, imd_price: Any, now: float) -> dict[str, Any]:
+    def _seat_rewards_keys(self, seat_keys: dict, imd_price: Any, now: float, *, points=None,
+                           failed_tokens=None) -> dict[str, Any]:
         """``swarm_seat_rewards`` / ``_state`` for the selected seat (F-S5).
 
         The wallet's total split evenly over the IDMD seats it holds (owner,
@@ -6645,8 +6688,10 @@ class SurfManager:
             return out
         token = selected["token_id"]
         identity = self._rewards_identity(summary)
-        entry = self.cache.get_last_good(SLOT_SWARM_SEAT_REWARDS)
-        points = sw.coerce_rewards_slot(getattr(entry, "payload", None), now=now) or {}
+        if points is None:
+            entry = self.cache.get_last_good(SLOT_SWARM_SEAT_REWARDS)
+            points = sw.coerce_rewards_slot(getattr(entry, "payload", None), now=now) or {}
+        failed_tokens = self._seat_rewards_failed if failed_tokens is None else failed_tokens
         point = points.get(str(token))
         if (identity is not None and point is not None
                 and (point["owner"], point["paired_ts"]) == identity
@@ -6657,7 +6702,7 @@ class SurfManager:
             out["swarm_seat_rewards"] = {"imd": imd, "usd": imd * price if price is not None else None,
                                          "seats": point["seats"]}
             out["swarm_seat_rewards_state"] = "ok"
-        elif token not in self._seat_rewards_failed:
+        elif token not in failed_tokens:
             out["swarm_seat_rewards_state"] = "pending"
         return out
 
@@ -7283,17 +7328,20 @@ class SurfManager:
                     'launchpad': self._pool4_hero_source(launch_entry, now=now, tier=TIER_LAUNCHPAD, group=SOURCE_LAUNCHPAD),
                     'market': pool4_hero_sources['market'],
                 }, now=now)
-        if refresh_legacy or (data.get('swarm_seat_selected') or {}).get('token_id') != sw.parse_seat_token(self._seat_saved):
-            # A full refresh may have started before the active seat changed.
-            # Reproject the complete detail family together, never only its label.
+        refresh_agent = (refresh_legacy or not isinstance(data.get('surf_agent_hero'), dict)
+                         or (data.get('swarm_seat_selected') or {}).get('token_id') != sw.parse_seat_token(self._seat_saved))
+        if refresh_agent:
+            # A full cycle retains its frozen detail family; cached repaints and
+            # seat switches capture a new one without borrowing another seat.
+            seat_entry = self.cache.get_last_good(SLOT_SWARM_SEAT)
+            agent_capture = self._agent_hero_capture(seat_entry, now=now)
             scores_entry = self.cache.get_last_good(SLOT_SWARM_SCORES)
             data.update(self._swarm_seat_keys(
                 getattr(scores_entry, 'payload', None) or {}, scores_entry,
                 getattr(self.cache.get_last_good(SLOT_SWARM_JOBS_SEEN), 'payload', None),
-                self.cache.get_last_good(SLOT_SWARM_SEAT),
-                self.cache.get_last_good(SLOT_SWARM_ANSWERS), now,
+                seat_entry, self.cache.get_last_good(SLOT_SWARM_ANSWERS), now,
                 self.cache.get_last_good(SLOT_SWARM_ORACLE)))
-            data.update(self._seat_rewards_keys(data, data.get('imd_price_usd'), now))
+            data.update(self._runtime_keys(now, points=agent_capture['runtime']))
         sources = self._hub_sources()
         overview_slot = sources["overview"]["payload"] or {}
         overview = overview_slot.get("overview")
@@ -7338,6 +7386,14 @@ class SurfManager:
                                                      if getattr(self, '_swarm_tokens_manager', None) is not None else None))
         data["surf_news_hero"] = self._news_hero(data, now)
         data["surf_swarm_hero"] = self._swarm_hero(sources, now)
+        if refresh_agent:
+            quote = data['surf_news_hero']['market']
+            data.update(self._seat_rewards_keys(data, quote.get('price_usd'), now,
+                points=agent_capture['rewards'], failed_tokens=agent_capture['rewards_failed']))
+            agent_sources = self._swarm_board_hero_sources(
+                self.cache.get_last_good(SLOT_SWARM_CONTRIBUTORS),
+                self.cache.get_last_good(SLOT_SWARM_WORKERS), now=now)
+            data['surf_agent_hero'] = self._agent_hero(data, agent_capture, agent_sources, quote, now=now)
         return data
 
     def _swarm_hero(self, sources: dict, now: float) -> dict:
@@ -7439,6 +7495,8 @@ class SurfManager:
             await self._offer_swarm_seat(set(self.cache.tiers_due(self._clock())),
                                         selected["token_id"] if selected else None,
                                         self.cache.get_last_good(SLOT_SWARM_SEAT), self._clock())
+            self._spawn_runtime_latest(self.cache.get_last_good(SLOT_SWARM_SEAT),
+                                       selected['token_id'] if selected else None, self._clock())
         return data
 
     def _hub_cached_identities(self) -> dict[int, dict]:
@@ -7682,6 +7740,7 @@ class SurfManager:
         workers_entry = self.cache.get_last_good(SLOT_SWARM_WORKERS)
         board_hero_sources = self._swarm_board_hero_sources(
             contributors_entry, workers_entry, now=float(self._clock()))
+        agent_capture = self._agent_hero_capture(seat_entry, now=float(self._clock()))
         self._spawn_swarm_board(tiers, now)
 
         market, logs, channel, nft, activity = await asyncio.gather(
@@ -7941,15 +8000,21 @@ class SurfManager:
         # (the /seats plan WP2) -- then that seat's read, offered detached.
         seat_keys = self._swarm_seat_keys(scores_slot, scores_entry, seen, seat_entry, answers_entry, now, oracle_entry)
         data.update(seat_keys)
-        data.update(self._seat_rewards_keys(seat_keys, imd_price, now))
+        data.update(self._seat_rewards_keys(seat_keys, imd_price, now,
+            points=agent_capture['rewards'], failed_tokens=agent_capture['rewards_failed']))
         selected_seat = seat_keys["swarm_seat_selected"]
-        data.update(self._runtime_keys(now))
+        data.update(self._runtime_keys(now, points=agent_capture['runtime']))
         self._spawn_runtime_latest(seat_entry, selected_seat["token_id"] if selected_seat else None, now)
         data.update(self._swarm_board_keys(
             contributors_entry, workers_entry,
             selected_seat["token_id"] if selected_seat is not None else None,
             hero_sources=board_hero_sources,
         ))
+        quote_source = pool4_hero_sources['market']
+        if chain_price_usd is not None:
+            quote_source = pool4_hero._joined([quote_source, launchpad_hero_sources['launchpad']])
+        data['surf_agent_hero'] = self._agent_hero(data, agent_capture, board_hero_sources,
+                                                 quote_source, now=float(self._clock()))
         await self._offer_swarm_seat(
             tiers,
             selected_seat["token_id"] if selected_seat is not None else None,

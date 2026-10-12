@@ -154,4 +154,19 @@ def project(payload: object, token: object, *, now: float) -> dict:
     return result
 
 
-__all__ = ["observe", "coerce", "project"]
+def meter(observed: dict, live_state: object, *, now: float) -> dict:
+    """Shared rack meter: green→orange in 24h, then orange→empty by 72h."""
+    state = observed["state"]
+    if state == "idle" and live_state == "offline":
+        state = "offline"
+    result = dict(meter_kind="activity", meter_state=state,
+                  numerator=observed["remaining"], denominator=WINDOW_SECONDS)
+    if state == "idle" and observed["stopped_ts"] is not None:
+        elapsed = now - observed["stopped_ts"]
+        if elapsed >= WINDOW_SECONDS:
+            result.update(meter_kind="activity-cooldown",
+                          numerator=max(0.0, 3 * WINDOW_SECONDS - elapsed), denominator=2 * WINDOW_SECONDS)
+    return result
+
+
+__all__ = ["observe", "coerce", "project", "meter"]

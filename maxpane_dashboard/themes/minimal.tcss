@@ -2464,6 +2464,7 @@ SurfSwarmHero > SurfSwarmHeroBox {
     text-overflow: ellipsis;
 }
 
+SurfSwarmAgentRackHero { height: 19; }
 SurfSwarmAgentHero {
     height: 7;
     padding: 0 1 0 0;

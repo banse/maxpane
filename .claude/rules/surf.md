@@ -197,7 +197,7 @@ and retains nodes for the internal most-active-seat selection after the host's w
 
 **The AGENT body shows one seat's lifetime record** (`docs/surf_agent_seat_details_handover.md`).
 `i` saves the selected token; without one, `choose_seat` uses the most active seat from the internal
-job-data roster. ROSTER and FEEDBACK are retired, along with Enter-on-roster selection,
+job-data roster. The old ROSTER and FEEDBACK tables are retired, along with Enter-on-roster selection,
 `select_seat` and the cursor path. The roster remains an internal fold, not an emitted contract key.
 `GET /seats/{tokenId}` runs on `TIER_SWARM_SEAT`, one seat per cycle. `set_seat` only marks that
 tier due, with no network await in a handler. `SLOT_SWARM_SEAT` stores
@@ -219,30 +219,46 @@ A busy response is HTTP 503 with a JSON object whose `error` is exactly `"busy"`
 the unchanged host pool; only all hosts answering busy yields `SEAT_BUSY`, from `fetch_seat` and,
 since F-S3, `fetch_job`. Mixed failures stay None. Busy reads use normal failure backoff and preserve last-good. `swarm_seat_read` distinguishes
 `"busy"`, `"failed"` and None independently of the cached record's state. Empty seat-backed
-panels show yellow `busy · retrying` (COLLAB wraps after `·` at the AGENT pin, within its existing
-body height); with a record, RECORD's title appends yellow `busy` after
+cards show `busy`; with a record, RECORD's title appends yellow `busy` after
 its own `as of HH:MM`. Shed the seat hint first if space is tight. Other read failures add no
-title word. Busy without a record gates the RUNTIME tooltip, just like pending.
+title word. Busy without a record gates the runtime facts, just like pending.
 
-SEAT, WORK, REWARDS and RANK originally kept line 2 blank (owner, 2026-09-25). Dashboard 9 renames ACCEPTED JOBS to ACCEPTED WORK and uses the spare acceptance/work/rank line for the independent source clock; SEAT's blank line carries only a rare selection word (`most active`, `never paired`).
-Hero WORK reads wall-clock hours, its effort source clock, then lifetime output tokens (owner
-2026-09-25; turns left WORK and stay on BOARD) from `/contributors` through
-`swarm_seat_contrib` and `_swarm_seat.work_body`. Input and cached-input tokens are excluded;
-missing output tokens say `-- tokens`. WORK distinguishes missing effort from unavailable; ACCEPTED WORK and RANK use only `swarm_seat_outcome` and distinguish no submitted record from unavailable independently of seat-detail state. ACCEPTED combines `accepted of attempts`
-with its independent records clock and the bold percentage; zero attempts displays `no attempts`, while a missing
-counter displays `unavailable`. RECORD's title retains its own seat-detail freshness marker. STATUS's third line is the newest activity (owner,
-2026-09-22): `worked MM-DD HH:MM` (summary `last_worked_ts`, the newest `work[].submittedAt` of
-any status) when it is newer than `last_won_ts` or nothing was accepted, else `accepted MM-DD
-HH:MM` (the newest `work[].acceptedAt`). Feedback `reviews[].sentAt` is a separate timestamp, never seat activity. STATUS reads worker
-capacity/pause/offline independently of seats, with a bare `STATUS` title (its worker clock
-was removed by the owner on 2026-09-22) and exactly three body lines. `swarm_seat_live.live_state` preserves unknown pause evidence as unavailable (F48);
-known zero working is idle, which STATUS writes as a green `● online` (`ONLINE_LINE`; only
-that part green, the counts after it dim); STATUS writes `⚙` (`WORKING_GLYPH`) for the word
-"working" in its counts (owner, 2026-09-22). A working count above `max_concurrency` (oracle jobs do not count
-against it) reads `⚙ N working` without the misleading `of N` (owner, 2026-09-26). STATUS's idle and working lines share one shape: green `● online` / `● working`
-(`WORKING_LINE`, F-S4), then the dim counts; when the whole working line does not fit STATUS's
-measured width the word drops and the green counts stay whole (`MeasuredRow._room`), never a cut
-number. REWARDS (F-S5, 2026-10-02, `docs/surf_agent_rewards_spec.md`) replaced REVIEWED: IMD
+AGENT mounts `SurfSwarmAgentRackHero` (`widgets/surf/agent_rack_hero.py`) above
+native RECORD. The approved rack has two equal rows of six nine-line cards, with
+one blank line between: SEAT / ACCEPTED / EFFORT / REWARDS / RANK / STATUS, then
+OWNER / RUNTIME / MODELS / FEEDBACK / COLLAB / NODES. The old `SurfSwarmAgentHero`
+and `SurfSwarmSeatCards` remain parked; no production body mounts them.
+
+`surf_agent_hero` is a primitive projection with independent state/read timestamps
+for all twelve cards. A successful unchanged detail read confirms only that seat
+in manager memory; persistence still records content changes. Restored detail is
+dated stale until confirmed. Capture detail, rewards, runtime checks and activity
+before detached reads can replace them. A seat switch rebuilds the entire detail
+family together; reward identity remains the current owner plus pairing timestamp.
+Each retained stale/partial card names its state and own source time. Missing,
+pending, busy, never-paired and known-empty data remain distinct from zero. A
+retained never-paired result has an explicit stale state and confirmation time;
+only a successful new read clears that qualification.
+
+ACCEPTED and RANK use the selected token's canonical `/seats/records` outcome.
+ACCEPTED shows accepted attempts as digits, attempts on the inner bottom border,
+and percentage plus a meter outside. Zero attempts says `no attempts`; no record
+says `not recorded`. EFFORT shows contributor wall-clock hours and lifetime output
+tokens; input and cached-input tokens are excluded. Rank change remains in its
+literal tooltip and per-seat persisted history. These sources stay independent of
+seat-detail availability.
+
+STATUS lists working, capacity and device counts from workers. Its inner bottom
+border shows the newest seat activity as `worked HH:MM` or `accepted HH:MM`;
+the full date and independent detail-read clock live in its tooltip. Feedback
+`reviews[].sentAt` is not seat activity. The outer footer uses the shared observed
+stop meter: BUSY has full green segments; IDLE has a grey label and green drains
+to orange over 24h, then orange drains to empty by 72h. OFF is red with empty
+segments; paused and unknown stay explicit. Partial worker coverage never invents
+an offline seat or a complete capacity sum. The shared meter fold is also used by
+the dashboard rack.
+
+REWARDS (F-S5, 2026-10-02, `docs/surf_agent_rewards_spec.md`) replaced REVIEWED: IMD
 paid to the seat's current owner since `pairedAt` by a known payer -- a transfer *from*
 `REWARD_DISPERSE_CONTRACTS` counts only when the transaction's **sender** is in
 `REWARD_DISPERSERS` (Disperse is public), one *from* `REWARD_DIRECT_PAYERS` counts as it is --
@@ -252,24 +268,15 @@ row, an unreadable sender, decimals or balance, or zero seats: a partial total n
 `SLOT_SWARM_SEAT_REWARDS` keeps six seats keyed on owner + pairing (a sold seat never inherits
 a total); a per-seat 600 s clock inside the seat task, 120 s failure backoff.
 `swarm_seat_rewards_state` is `ok` / `pending` / None, so not-read and could-not-read differ.
-RANK (hero column 5 since 2026-09-22) reads only
-`swarm_seat_contrib` through `_swarm_seat.contrib_body` / `rank_body`. RANK's second line is
-`swarm_seat_rank_delta`: previous rank minus current rank, green `▲N` upward or red `▼N`
-downward. `SLOT_SWARM_SEAT_RANK` persists each seat's `{rank, prev}`; validate each point on
-load, update only on an observed valid rank change and keep the delta through unchanged
-reads. A first observation has no delta; unranked/unavailable/not-listed reads show none and
-leave history unchanged. A bad seats state hides its accepted date without hiding valid worker facts.
-AGENT has one seat-card row in `widgets/surf/swarm_agent_cards.py` below its hero and above
-RECORD. `SurfSwarmSeatCards` shows OWNER (address/verified ENS via `address_text` and package
-`EXPLORER`, paired stamp), RUNTIME (runtime, daemon, devices), MODEL, FEEDBACK
-(sent/submitted/queued), COLLAB and NODES. Both rows use the same column weights with a blank
-row between. NODES sits under STATUS. MODEL (F54, 2026-10-03; it replaced SCORE, whose
-mean/scored/entries fields stay in the summary) shows the seat's **advertised**
-`runtimes[].premiumModel` pairs (summary `models`): one a line, bold `short_model` then dim
-effort, fitted with a visible `…`; up to three in full, more show two and `+N more`. Its literal
-`Text` tooltip lists every pair raw and flattened (`claude-fable-5-1 · high`), cleared on every
-paint like RUNTIME's. A served list with no model is dim `not advertised`; no `runtimes` list is
-yellow `unavailable`. RECORD's `model` is the model a submission actually used.
+`SLOT_SWARM_SEAT_RANK` persists each seat's `{rank, prev}`. Update it only on
+an observed valid rank change; unchanged reads keep the delta. A first observation
+has none; unranked/unavailable/not-listed reads hide it without erasing history.
+OWNER uses `address_text` and the package `EXPLORER` for its verified ENS/address,
+copy icon, link and paired date. MODELS shows advertised `runtimes[].premiumModel`
+pairs, fitted with an explicit ellipsis; more than three show two plus `+N more`.
+Its tooltip retains every raw model/effort pair. An empty served list says
+`not advertised`; an unread list is unknown. RECORD's model is what actually ran.
+FEEDBACK lists sent/submitted/queued review messages.
 
 RUNTIME compares only `claude` (`@anthropic-ai/claude-code`) and `codex` (`@openai/codex`)
 against keyless `registry.npmjs.org/<package>/latest`. `NpmRegistryClient` owns the fixed
@@ -283,34 +290,25 @@ restarts. A failure replaces the checked version with None, never an up-to-date 
 `swarm_fleet_daemon` is the unique plurality `(version, count, reporting workers)` from the
 already-read BOARD workers slot; invalid/missing version strings do not vote. Ties and empty
 fleets have no reference. Daemon comparison is equality only, never hash ordering.
-An outdated runtime or differing daemon is yellow with a trailing ` ↑`; reserve its two
-cells within the existing fit budget. All other lines retain their old rendering. The RUNTIME
+An outdated runtime has an explicit update subtitle; a differing daemon keeps a
+trailing `↑` within the fit budget. A valid Claude CLI version drops its display-only
+banner suffix; the full runtime and daemon remain in the literal tooltip. A
+clipped daemon retains its label, ellipsis and update arrow and marks `widen`. The RUNTIME
 box tooltip is a literal `Text`: npm latest/version/check time, fleet reference/count, or
 `update check pending` (runtime id absent from `swarm_runtime_latest`: not yet checked),
 `update check unavailable` (a checked version of None: the read failed), `runtime not checked`,
-`no fleet majority`; a pending, unknown or unavailable seat has no tooltip. No new workers read,
-no new degraded group, no pin change.
+`no fleet majority`; unread details retain no previous version claim. No new workers read,
+no new degraded group. Cached AGENT refreshes also offer the existing guarded
+runtime check, using the same eligibility, TTL and endpoints.
 
-COLLAB keeps its collaborator count and adds the top two teammate tokens, ordered by shared
-jobs descending then token ascending; bold `#token`, dim `×N`, never `+N more`. An empty
-list says `none yet`, an unread list `unavailable`, below the count.
-NODES reads `swarm_seat_node_rows`: include attempts > 0 or accepted > 0, sorted by accepted
-descending, attempts descending, `NODE_TITLES` order, then key. Each line is dim node name,
-bold accepted count (green above zero) and bold `fmt_win_rate(accepted / attempts)`; missing
-or zero attempts show `—`. Known names are ORACLE/REVIEW/BUILD, unknown keys retain their
-flattened, fitted text with a visible `…`. Up to three nodes show in full; more show two and
-`+N more`; then the NODES box carries a literal `Text` tooltip listing every node in card order
-with exact counts (`ORACLE 2,224 of 2,630 · 84.6 %`), cleared on every paint like RUNTIME's
-(owner, 2026-10-02). Empty is `no nodes yet`, unread is `unavailable`. Counts shorten through the
-honest forms in `_swarm_seat.py`: `fmt_int`, `fmt_compact`, whole K/M, never a clipped number.
-Pending/unavailable gate all seats-backed cards; never paired is said once in OWNER, with
-dashes elsewhere. Runtime, daemon and ENS names retain explicit ellipsis fitting.
-
-The third card row and `SurfSwarmNodeCards` module are removed (owner, 2026-09-24): ROLES,
-per-node chain counts and short role names, OTHERS and the contributor BOARD counts leave
-AGENT. Their payload facts remain. `rank_body` and `contrib_body` still supply the hero's
-RANK independently of seat availability; unused `board_body` is deleted. Worker metadata
-remains in the separate BOARD body; STATUS supplies AGENT's liveness.
+COLLAB shows the collaborator count as digits and the top teammate/count in its
+outer footer. Its tooltip retains the ordered teammate list. NODES lists accepted
+counts by node, with two plus `+N more` when there are more than three. Its tooltip
+retains every node's accepted/attempts counts and rate. Node ordering and source
+rows are unchanged; large counts shorten without cutting a number. Runtime, ENS,
+model and node text fit with explicit ellipses. Every refresh clears old tooltips.
+The former third card row (`SurfSwarmNodeCards`) stays removed; worker metadata
+remains in BOARD and RECORD fills all remaining space below the rack.
 
 The AGENT body's title bar reads `SURFBOARD · Identity.md AGENT #<token>` (from
 `swarm_seat_selected`, em dash when none; green, owner 2026-09-22) in place of IMD price and

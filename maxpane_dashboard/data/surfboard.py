@@ -438,18 +438,9 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         result.append(row)
     def activity_meter(token, live_state):
         observed = work_activity.project(activity, token, now=now)
-        state = observed["state"]
-        if state == "idle" and live_state == "offline":
-            state = "offline"
-        result[-1].update(meter_kind="activity", meter_state=state,
-                         status="working" if state == "busy" else state,
-                         numerator=observed["remaining"], denominator=work_activity.WINDOW_SECONDS)
-        if state == "idle" and observed["stopped_ts"] is not None:
-            elapsed = now - observed["stopped_ts"]
-            day = work_activity.WINDOW_SECONDS
-            if elapsed >= day:
-                result[-1].update(meter_kind="activity-cooldown",
-                                 numerator=max(0.0, 3 * day - elapsed), denominator=2 * day)
+        meter = work_activity.meter(observed, live_state, now=now)
+        state = meter["meter_state"]
+        result[-1].update(meter, status="working" if state == "busy" else state)
         result[-1]["detail"] += (f" · activity {state} · workers read {hhmm(observed['as_of'])}"
                                 f" · observed stop {hhmm(observed['stopped_ts'])} · green to orange 0–24h · orange to empty 24–72h")
     states=[data.get(f"sig_{name}_state") for name in SIGNAL_NAMES]

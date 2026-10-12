@@ -1522,6 +1522,27 @@ SURF_PROTOCOL_HERO_FIELDS = {
     "checks": ("state", "read_ts", "counters", "drift_bps", "path"),
 }
 SURF_LEADERBOARD_HERO_STATES = ("ok", "partial", "stale", "unavailable")
+SURF_AGENT_HERO_STATES = ("ok", "partial", "stale", "unavailable", "pending", "busy", "unknown_seat", "stale_unknown_seat", "empty")
+#: Twelve rack cards retain independent records, worker, receipt and selected-seat clocks.
+SURF_AGENT_HERO_FIELDS = {
+    "seat": ("state", "read_ts", "token_id", "selected_by", "read_error"),
+    "accepted": ("state", "read_ts", "listed", "accepted", "attempts", "percent"),
+    "effort": ("state", "read_ts", "listed", "hours", "output_tokens"),
+    "rewards": ("state", "read_ts", "imd", "usd", "seats", "usd_state", "usd_read_ts"),
+    "rank": ("state", "read_ts", "listed", "rank", "ranked_of", "delta"),
+    "status": ("state", "read_ts", "live_state", "working", "capacity", "devices", "paused_until_ts", "failures",
+               "last_work_ts", "last_work_kind", "work_state", "work_read_ts", "meter_kind", "meter_state", "numerator", "denominator"),
+    "owner": ("state", "read_ts", "address", "name", "paired_ts"),
+    "runtime": ("state", "read_ts", "runtime", "daemon", "devices", "update_state", "latest_version", "checked_ts",
+                "fleet_daemon", "fleet_count", "fleet_total", "daemon_differs"),
+    "models": ("state", "read_ts", "rows"),
+    "feedback": ("state", "read_ts", "sent", "submitted", "queued"),
+    "collab": ("state", "read_ts", "count", "rows"),
+    "nodes": ("state", "read_ts", "rows"),
+}
+SURF_AGENT_HERO_MODEL_FIELDS = ("model", "effort")
+SURF_AGENT_HERO_COLLAB_FIELDS = ("token_id", "shared_jobs")
+SURF_AGENT_HERO_NODE_FIELDS = ("node_key", "accepted", "attempts")
 SURF_LEADERBOARD_HERO_FIELDS = {
     "top": ("state", "read_ts", "token_id", "accepted", "rank", "empty"),
     "recorded": ("state", "read_ts", "seats", "attempts"),
@@ -1642,9 +1663,8 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     "SurfSwarmLaunches": ("swarm_launch_rows", "swarm_launch_summary", "swarm_scores_as_of_hhmm", "swarm_network", "swarm_launches_as_of_hhmm"),
     "SurfSwarmSites": ("swarm_site_rows", "swarm_scores_as_of_hhmm", "swarm_launches_as_of_hhmm"),
     # The AGENT body on /seats (docs/surf_agent_seats_plan.md §1.3, flipped in WP5).
-    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta", "swarm_seat_rewards", "swarm_seat_rewards_state", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
+    "SurfSwarmAgentRackHero": ("surf_agent_hero",),
     # Card rows two and three (2026-09-22), replacing SEAT and BY NODE.
-    "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates", "swarm_seat_owner_ens", "swarm_seat_node_rows", "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon"),
     "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_read"),
     "SurfSwarmBoardHero": ("surf_leaderboard_hero",),
     "SurfSwarmLeaderboard": ("swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
@@ -1781,6 +1801,8 @@ SWARM_LIQUIDITY_KEYS = (
 )
 
 SWARM_PARKED_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
+    "SurfSwarmAgentHero": ("swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state", "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta", "swarm_seat_rewards", "swarm_seat_rewards_state", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
+    "SurfSwarmSeatCards": ("swarm_seat_summary", "swarm_seat_state", "swarm_seat_teammates", "swarm_seat_owner_ens", "swarm_seat_node_rows", "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon"),
     "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now", "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows", "swarm_site_rows", "surfboard_sources"),
     "SurfSwarmThroughput": SWARM_THROUGHPUT_SIGNATURE,
     "SurfSwarmInFlight": ("swarm_inflight_rows", "swarm_as_of_hhmm", "swarm_network"),
@@ -1858,6 +1880,7 @@ SURF_KEYS: tuple[str, ...] = (
     "surf_pool4_hero",        # dict — six source-backed native POOL4 market cards
     "surf_protocol_hero",     # dict — six source-backed native PROTOCOL cards
     "surf_leaderboard_hero",  # six rack cards; independent records/worker/receipt clocks
+    "surf_agent_hero",  # twelve rack cards; selected identity and independently dated facts
     "surf_launchpad_hero",    # six rack cards; launchpad observation and current ETH/USD
     # ---- feed ---------------------------------------------------------------
     "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)

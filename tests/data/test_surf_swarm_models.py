@@ -121,13 +121,10 @@ SWARM_V2_ROW_SHAPES = {
     ),
 }
 
-#: The four AGENT-body widgets (AGENT-seats plan §1.3).
-AGENT_WIDGETS = (
-    "SurfSwarmAgentHero", "SurfSwarmSeatCards",
-    "SurfSwarmSeatRecord",
-)
+#: Mounted AGENT rack and native record widgets.
+AGENT_WIDGETS = ("SurfSwarmAgentRackHero", "SurfSwarmSeatRecord")
 
-#: The twelve mounted SWARM, AGENT and BOARD target widgets, by class name.
+#: The ten mounted SWARM, AGENT and BOARD target widgets, by class name.
 #: WORKFLOWS took CAPABILITY's place on 2026-10-03; CAPABILITY is parked
 #: (``SWARM_PARKED_WIDGET_SIGNATURES``, read from the export below).
 SWARM_TARGET_WIDGETS = {
@@ -137,8 +134,7 @@ SWARM_TARGET_WIDGETS = {
     "SurfSwarmWorkflows",
     "SurfSwarmLaunches",
     "SurfSwarmSites",
-    "SurfSwarmAgentHero",
-    "SurfSwarmSeatCards",
+    "SurfSwarmAgentRackHero",
     "SurfSwarmSeatRecord",
 }
 
@@ -216,7 +212,7 @@ def test_every_signature_key_is_a_swarm_key():
     not a contract key would be a widget reading a value nothing emits."""
     for widget, kwargs in SWARM_WIDGET_SIGNATURES.items():
         for key in kwargs:
-            assert key in (*SWARM_KEYS, *models.SURFBOARD_KEYS, "surf_swarm_hero", "surf_leaderboard_hero", "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
+            assert key in (*SWARM_KEYS, *models.SURFBOARD_KEYS, "surf_swarm_hero", "surf_leaderboard_hero", "surf_agent_hero", "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
 
 
 def test_every_signature_kwarg_is_unique_within_its_widget():
@@ -259,9 +255,9 @@ def test_every_v2_key_but_the_marker_reaches_at_least_one_signature():
     assert set(SWARM_KEYS) - named == _KEYS_PENDING_CONSUMERS, sorted(set(SWARM_KEYS) - named)
 
 
-def test_the_signature_names_exactly_the_twelve_target_widgets():
+def test_the_signature_names_exactly_the_ten_target_widgets():
     assert set(SWARM_WIDGET_SIGNATURES) == SWARM_TARGET_WIDGETS
-    assert len(SWARM_WIDGET_SIGNATURES) == 11
+    assert len(SWARM_WIDGET_SIGNATURES) == 10
 
 
 def test_a_parked_widget_is_not_also_a_mounted_target():
@@ -307,9 +303,7 @@ def test_the_seats_permanent_exports_are_the_frozen_literals():
     assert SWARM_SEAT_STATES == ("ok", "unknown_seat", "pending", "busy")
 
 
-def test_the_agent_signatures_are_the_flipped_literals():
-    """AGENT-seats plan §1.3, flipped in WP5 (the screen dispatch reads these)."""
-    assert {k: SWARM_WIDGET_SIGNATURES[k] for k in AGENT_WIDGETS} == {
+PARKED_AGENT_SIGNATURES = {
         "SurfSwarmAgentHero": (
             "swarm_seat_selected", "swarm_seat_summary", "swarm_seat_state",
             "swarm_seat_live", "swarm_seat_contrib", "swarm_seat_rank_delta",
@@ -320,12 +314,21 @@ def test_the_agent_signatures_are_the_flipped_literals():
             "swarm_seat_owner_ens", "swarm_seat_node_rows",
             "swarm_runtime_latest", "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon",
         ),
+}
+
+
+def test_the_agent_rack_and_parked_signatures_are_frozen_literals():
+    assert {k: SWARM_WIDGET_SIGNATURES[k] for k in AGENT_WIDGETS} == {
+        "SurfSwarmAgentRackHero": ("surf_agent_hero",),
         "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_read"),
     }
+    assert {key: models.SWARM_PARKED_WIDGET_SIGNATURES[key]
+            for key in PARKED_AGENT_SIGNATURES} == PARKED_AGENT_SIGNATURES
 
 
 def test_the_agent_signatures_reach_every_seats_key_and_drop_the_window_ones():
     named = {k for w in AGENT_WIDGETS for k in SWARM_WIDGET_SIGNATURES[w]}
+    named.update(k for fields in PARKED_AGENT_SIGNATURES.values() for k in fields)
     assert set(SWARM_SEATS_KEYS) <= named, sorted(set(SWARM_SEATS_KEYS) - named)
     assert "swarm_network" not in named
 
@@ -386,7 +389,7 @@ def test_board_signatures_carry_each_source_clock():
             "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm",
         ),
     }
-    named = {key for signature in SWARM_WIDGET_SIGNATURES.values() for key in signature}
+    named = _consumed_keys()
     assert set(SWARM_BOARD_KEYS) <= named
 
 
@@ -485,6 +488,7 @@ def test_capability_is_parked_with_its_frozen_signature():
     from maxpane_dashboard.widgets.surf.swarm_capability import SurfSwarmCapability
 
     assert models.SWARM_PARKED_WIDGET_SIGNATURES == {
+        **PARKED_AGENT_SIGNATURES,
         "SurfSwarmHero": ("swarm_agents_online", "swarm_agents_enrolled", "swarm_working_now",
                           "swarm_accepted_today", "swarm_launch_summary", "swarm_workflow_rows",
                           "swarm_site_rows", "surfboard_sources"),

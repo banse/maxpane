@@ -279,36 +279,30 @@ are capped at 500 entries, with a high-water mark preventing launch replay after
 
 Press **`a`** for the AGENT body — one seat's **lifetime record** from its own keyless
 `/seats/{tokenId}` page. Press **`i`** to choose and save a seat; without a saved seat, the view
-uses the most active seat found in the job data. The hero shows SEAT, ACCEPTED JOBS, WORK,
-REWARDS, RANK and STATUS. WORK reads turns, hours and lifetime **output tokens** from
-`/contributors` (not input or cached-input tokens). ACCEPTED JOBS shows accepted work out of
-attempts, with the percentage beneath. REWARDS shows the IMD the seat's owner was paid since
-the seat paired (today: dev-sent `disperseToken` payments, read keylessly from Blockscout and
-checked against the transaction's sender), split evenly over the owner's IDMD seats, with its
-USD value at the current IMD price beneath. RANK shows the position and its change since the last
-move: green `▲2` for two places up, red `▼1` for one down. The change stays until the next
-move and is saved per seat; unavailable or unranked reads neither change it nor display it. STATUS shows a green `● online` for a connected, idle
-worker and `● working` while it works, each followed by its capacity, any pause, and the seat's newest activity from `/seats`:
-`worked MM-DD HH:MM` when its newest attempt is newer than its newest accepted work, otherwise
-`accepted MM-DD HH:MM`. The hero has no `as of` line; RECORD's title retains the seat
-read's freshness marker (and the screen title retains its own clock).
+uses the most active seat found in the job data. Twelve rack cards fill two rows
+of six: SEAT, ACCEPTED, EFFORT, REWARDS, RANK, STATUS; then OWNER, RUNTIME, MODELS,
+FEEDBACK, COLLAB and NODES.
 
-One seat-card row sits under the hero, on the same column grid with a blank row between.
-It shows OWNER (the owner's forward-verified ENS name or address, with its copy icon,
-Etherscan link and paired date), RUNTIME (runtime, daemon and devices), MODEL (the models and
-effort levels the seat advertises, from its own `/seats` record), FEEDBACK (sent, submitted and queued),
-COLLAB and NODES. In RUNTIME, a yellow line ending in `↑` means either a newer LLM runtime
-is available on npm's `latest` tag or the daemon differs from the fleet's unique most-common
-version. Daemon hashes have no ordering: this is an equality check, not a claim that a build
-is older. Hover RUNTIME for the comparison basis and npm check time. Claude Code and Codex
-are checked at most hourly per package while AGENT is open; other runtimes, failed checks and
-fleet ties produce no highlight. COLLAB counts the seats worked with and lists the top two teammates by
-shared jobs. NODES lists accepted work and acceptance rate, ordered by accepted count,
-then attempts: up to three nodes, or the first two plus `+N more`; hovering the card then
-lists every node with its exact accepted-of-attempts count. Unknown keys keep their
-own text with a visible `…`; large counts shorten rather than cut. Missing attempts show `—`.
-The separate ROLES, node-chain counts, OTHERS and contributor BOARD card are removed.
-RANK stays in the hero and remains available when the seats read fails.
+ACCEPTED shows lifetime accepted attempts, total attempts and their percentage;
+RANK uses the same canonical records, with rank change in its tooltip. EFFORT
+shows contributor hours and lifetime output tokens. REWARDS shows the owner's
+IMD receipts since pairing, split evenly over their held IDMD seats, plus the USD
+value. Each card tracks its own source time and identifies retained stale or
+unavailable data. Changing seats never borrows another seat's cached figures.
+
+STATUS lists working/capacity/devices and the newest work time. Its outer meter
+is green while BUSY; after work stops, green drains to orange over 24 hours, then
+orange drains to empty by 72 hours. IDLE is grey, OFF red with empty segments;
+paused and unknown states remain explicit.
+
+OWNER keeps its verified ENS name or address, copy icon, Etherscan link and paired
+date. RUNTIME shows software, daemon and devices; a differing fleet daemon retains
+an `↑` even when its hash is shortened. Hover for full versions and npm check time.
+Claude Code and Codex checks remain hourly while AGENT is open. MODELS lists the
+advertised models and effort levels. FEEDBACK lists sent, submitted and queued
+review messages. COLLAB shows the count and top teammate; NODES lists accepted
+work by node. Their tooltips retain full lists and exact node counts/rates.
+
 RECORD runs below the cards, with no blank row under its title: every attempt with date and
 time, job (the first eight characters of its id, linked to its page on `explorer.imd.fun`), node
 (`oracle`, `review`, `build`), state, the model used, duration, output tokens, panel outcome and the seat's own answer.
@@ -364,12 +358,10 @@ column and `O` reverses it. Global ranks and the cursor's seat identity remain s
 selected seat is bold with an accent rank cell, working is green, paused red, offline dim and
 unknown yellow; every state retains its word.
 
-SWARM and AGENT status colours retain their words — except AGENT's STATUS, which writes a green
-`⚙` for "working" (`⚙ 3 of 8`, `● online · ⚙ 0 of 1`) to save width: green means healthy, online, working or accepted;
-red means offline, paused or down; yellow marks unavailable or existing pending counts. Zero
-working is dim `quiet`. Rates and scores are bold without invented thresholds. BOARD's offline
-rows are dim. SEAT stays as it is by owner decision; its larger grouping exceeded the budget
-(F54). SWARM summary counts stay bold without status colour.
+SWARM and AGENT status colours retain their words. AGENT uses BUSY, IDLE, OFF,
+PAUSED or UNKNOWN alongside its worker counts; unavailable readings retain their
+own source marker. BOARD's offline rows are dim. Rates and scores use no invented
+thresholds. SWARM summary counts stay bold without status colour.
 
 The control-plane feed reads one keyless host under two names that
 serve one deployment, rotated per request and never followed off the pool — and never the total it

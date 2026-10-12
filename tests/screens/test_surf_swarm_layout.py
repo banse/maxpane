@@ -78,16 +78,16 @@ from maxpane_dashboard.screens.surf import (
     SurfScreen,
 )
 from maxpane_dashboard.widgets.surf import (
-    SurfSwarmAgentHero,
+    SurfSwarmAgentRackHero,
     SurfSwarmRackHero,
     SurfSwarmLaunches,
-    SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
     SurfSwarmSites,
     SurfSwarmLatestLaunches,
     SurfSwarmWorkflows,
 )
 from tests.screens._sweeps import boundary_set
+from tests.surf_agent_hero_fixtures import project_agent_payload as _project_agent_payload
 from maxpane_dashboard.widgets.surf._swarm_seat import NODE_TITLES
 from tests.screens.test_surf_screen import (
     _css_clipped_lines,
@@ -112,8 +112,8 @@ from tests.surf_swarm_fixtures import (
 #: own: a pin that moves without a re-sweep reddens the agreement test.
 MEASURED_SWARM_COLUMNS = 141
 MEASURED_SWARM_ROWS = 38
-MEASURED_AGENT_COLUMNS = 139
-MEASURED_AGENT_ROWS = 25
+MEASURED_AGENT_COLUMNS = 134
+MEASURED_AGENT_ROWS = 29
 
 #: Full-width LAUNCHES clears the capture's marker at 171 (157 before liq). The production
 #: payload may keep marking a parked reason; that is content, not a hidden column.
@@ -131,12 +131,12 @@ _S_THRESHOLDS = (
     121, 129,     # SITES compact/full; status bar whole from 129
 )
 _A_THRESHOLDS = (
-    99, 107, # RECORD compact/full with panel/tok and short models, 2026-09-23
-    116, 117, 129,  # captured hero, pending RANK, five-digit stress hero
-    126,     # MODEL's 14-cell lines whole (F54, 2026-10-03)
-    129,     # complete status bar (layout v3 hint)
-    139,     # seat row whole: OWNER's address + icon (binds since the grid)
+    99, 107,  # native RECORD compact/full tiers, unchanged
+    129,      # complete status bar
+    132, 134, # STATUS subtitle; ACCEPTED attempts subtitle on seat420
 )
+_AGENT_WHOLE_FROM = {"capture": 132, "capture420": 134, "duplicates420": 134, "worst-a": 132}
+
 
 
 _EXCLUDED_FROM_WHOLE = {
@@ -144,14 +144,15 @@ _EXCLUDED_FROM_WHOLE = {
     "a": {"SurfSwarmSeatRecord"},
     "b": set(),
 }
-#: AGENT's binder is its seat-card row (OWNER), whose cards ellipsise rather
-#: than mark: one column under the pin it is the one clipped widget. SWARM's
+#: AGENT binds on the rack ACCEPTED subtitle of seat420. Capture seat0 and
+#: stress data clear two columns earlier; arbitrary metadata is marked. SWARM's
 #: is LAUNCHES since CAPABILITY was parked (2026-10-03): one column under the
 #: pin it hides its last column behind its own horizontal scrollbar.
 #: 2026-10-05: SITES and the full status bar both bind SWARM at 129.
-_BINDING_PANEL = {"s": "SurfSwarmRackHero", "a": "SurfSwarmSeatCards"}
+_BINDING_PANEL = {"s": "SurfSwarmRackHero", "a": "SurfSwarmAgentRackHero"}
 #: Binders built from hero-style boxes: they clip with ``…`` and never mark.
-_ELLIPSIS_BINDERS = {"SurfSwarmRackHero", "SurfSwarmAgentHero", "SurfSwarmSeatCards"}
+_ELLIPSIS_BINDERS = {"SurfSwarmRackHero"}
+_RACK_BINDERS = {"SurfSwarmAgentRackHero"}
 #: Binders whose loss under the pin is a ``DataTable`` column behind the
 #: table's own horizontal scrollbar. LAUNCHES is also a named exception (its
 #: ``‹`` is lit far past the pin), so its marker cannot be the evidence: the
@@ -163,7 +164,7 @@ _BODY_ID = {"s": SWARM_BODY_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
 #: Each body's own hero. Its boxes are ``text-overflow: ellipsis``, so a box
 #: too narrow for its value is a CSS-clipped line like any panel's, and it
 #: counts as one: at and above the pin none may be clipped.
-_HERO = {"s": SurfSwarmRackHero, "a": SurfSwarmAgentHero, "b": SurfSwarmBoardHero}
+_HERO = {"s": SurfSwarmRackHero, "a": SurfSwarmAgentRackHero, "b": SurfSwarmBoardHero}
 #: The AGENT body has no top row since its card rows replaced SEAT | BY NODE
 #: (2026-09-22): the cards are fixed-height, so only the body can scroll.
 _TOP_ID = {"s": SWARM_TOP_ID, "a": AGENT_BODY_ID, "b": BOARD_BODY_ID}
@@ -182,7 +183,6 @@ _CONTAINER_OF = {
         SurfSwarmSites: SWARM_BODY_ID,
     },
     "a": {
-        SurfSwarmSeatCards: AGENT_BODY_ID,
         SurfSwarmSeatRecord: AGENT_BODY_ID,
     },
 }
@@ -621,7 +621,7 @@ async def _render(payload: dict | None, size: tuple[int, int], key: str) -> dict
     """Open body *key* at *size* and hand back everything measured from it.
 
     THROUGHPUT always paints its short form; x opens a separate modal."""
-    app = _surf_app(payload)
+    app = _surf_app(_project_agent_payload(payload) if key == "a" else payload)
     async with app.run_test(size=size) as pilot:
         await _open_body(pilot, key)
         return _measure(pilot, key)
@@ -637,7 +637,7 @@ async def _walk(payload: dict | None, sizes: list[tuple[int, int]], key: str) ->
     order SWARM's width sweep walks in. A body whose resize leaves something
     behind must not walk in that direction -- RECORD kept a two-row title
     after a shrink until c668e54, so an AGENT walk would go up, not down."""
-    app = _surf_app(payload)
+    app = _surf_app(_project_agent_payload(payload) if key == "a" else payload)
     async with app.run_test(size=sizes[0]) as pilot:
         await _open_body(pilot, key)
         out = [_measure(pilot, key)]
@@ -683,7 +683,8 @@ def _measure(pilot, key: str) -> dict:
             painted = _region_text(pilot.app, card)
             if card.data.title not in painted:
                 clipped.append((type(hero).__name__, card.data.title))
-    if key == "b":
+    content_exceptions = []
+    if key in ("a", "b"):
         from maxpane_dashboard.widgets.markup_safety import strip_tags
         from rich.style import Style
         from textual.renderables.digits import Digits
@@ -691,8 +692,8 @@ def _measure(pilot, key: str) -> dict:
         # each unfitted fact with its actual pixels, including the footer.
         for card in hero.query("Pool4HeroCard"):
             painted = _region_text(pilot.app, card)
-            if "‹" in painted:
-                marked.add(type(hero).__name__)
+            card_clipped = []
+            metadata_cut = key == "a" and card.data.key in ("owner", "runtime") and "…" in painted
             footer = card.border_subtitle
             footer = footer.plain if hasattr(footer, "plain") else strip_tags(footer)
             expected = [card.data.title, card.data.heading, footer, card.data.subtitle, *card.data.rows]
@@ -706,12 +707,26 @@ def _measure(pilot, key: str) -> dict:
                     expected.append(card.data.digits)
             for label, value in card.data.stats:
                 if not any(label in line and value in line for line in painted.splitlines()):
-                    clipped.append((type(hero).__name__, f"{label} {value}"))
+                    # Model/node names are unbounded source text. Their exact
+                    # spelling stays in the tooltip; values must remain whole.
+                    tip = str(card.tooltip)
+                    if (key == "a" and card.data.key in ("models", "nodes")
+                            and "‹" in painted and "…" in painted
+                            and value in painted and label in tip):
+                        metadata_cut = True
+                    else:
+                        card_clipped.append(f"{label} {value}")
             if card.data.preview:
                 prose = " ".join(painted.replace("│", " ").split())
                 if card.data.preview not in prose:
-                    clipped.append((type(hero).__name__, card.data.preview))
-            clipped.extend((type(hero).__name__, text) for text in expected if text and text not in painted)
+                    card_clipped.append(card.data.preview)
+            card_clipped.extend(text for text in expected if text and text not in painted)
+            clipped.extend((type(hero).__name__, text) for text in card_clipped)
+            if "‹" in painted:
+                if metadata_cut and not card_clipped:
+                    content_exceptions.append(card.data.key)
+                else:
+                    marked.add(type(hero).__name__)
     scroll = {
         cid: screen.query_one(f"#{cid}").show_vertical_scrollbar
         for cid in set(_CONTAINER_OF[key].values())
@@ -725,7 +740,7 @@ def _measure(pilot, key: str) -> dict:
     widths = {name: w.size.width for name, w in widgets.items()}
     heights = {name: w.region.height for name, w in widgets.items()}
     overflow = _overflow(screen, key, widgets)
-    if key == "b":
+    if key in ("a", "b"):
         widths[type(hero).__name__] = hero.region.width
         heights[type(hero).__name__] = hero.region.height
         for card in hero.query("Pool4HeroCard"):
@@ -733,6 +748,8 @@ def _measure(pilot, key: str) -> dict:
                 overflow.append((card.id, card.region.width))
     return {
         "status_whole": status_whole,
+        "content_exceptions": content_exceptions,
+        "hero_cards": [(card.data.key, tuple(card.region)) for card in hero.query("Pool4HeroCard")] if key == "a" else [],
         "marked": marked,
         "marked_besides_exceptions": marked - _EXCLUDED_FROM_WHOLE[key],
         "tiers": {name: getattr(w, "_tier", None) for name, w in widgets.items()},
@@ -787,7 +804,8 @@ def _check_width(r: dict, key: str, payload_name: str, width: int) -> None:
     """Every non-exempt panel is whole at the pin; below it a marker, clipping or a hidden column exposes the loss."""
     where = f"{key}/{payload_name} at {width}"
     assert not r["overflow"], f"{where}: a panel's region extends past its container's: {r['overflow']}"
-    if width >= _COLUMN_PIN[key]:
+    need = _AGENT_WHOLE_FROM.get(payload_name, _COLUMN_PIN[key]) if key == "a" else _COLUMN_PIN[key]
+    if width >= need:
         _assert_whole(r, where)
     else:
         assert r["marked_besides_exceptions"] or r["clipped"] or any(
@@ -846,7 +864,7 @@ async def test_the_column_pin_is_whole_for_every_payload(key, payload_name) -> N
         tiers = {name: tier for name, tier in r["tiers"].items()
                  if tier is not None and name not in _EXCLUDED_FROM_WHOLE[key]}
         assert set(tiers.values()) == {"full"}, r["tiers"]
-    elif _BINDING_PANEL[key] != "StatusBar" and _BINDING_PANEL[key] not in _ELLIPSIS_BINDERS:
+    elif _BINDING_PANEL[key] != "StatusBar" and _BINDING_PANEL[key] not in _ELLIPSIS_BINDERS | _RACK_BINDERS:
         assert r["tiers"][_BINDING_PANEL[key]] == "full", r["tiers"]
     assert r["status_whole"]
 
@@ -856,7 +874,7 @@ async def test_the_column_pin_is_not_loose(key) -> None:
     """One column under each pin its named binder loses content on capture and stress payloads. SWARM uses its real row-pin height."""
     pin = _COLUMN_PIN[key]
     height = _S_COLUMN_SWEEP_HEIGHT if key == "s" else _COLUMN_SWEEP_HEIGHT
-    for payload_name in ("capture", _WORST[key]):
+    for payload_name in (("capture420",) if key == "a" else ("capture", _WORST[key])):
         under = await _render(PAYLOADS[payload_name](), (pin - 1, height), key)
         if _BINDING_PANEL[key] == "StatusBar":
             assert not under["status_whole"], "status bar fits below its full-layout pin"
@@ -868,6 +886,10 @@ async def test_the_column_pin_is_not_loose(key) -> None:
             )
             assert not under["marked_besides_exceptions"], under["marked_besides_exceptions"]
             assert under["status_whole"] and not under["overflow"]
+            continue
+        if _BINDING_PANEL[key] in _RACK_BINDERS:
+            assert under["marked_besides_exceptions"] == {_BINDING_PANEL[key]}, under
+            assert under["clipped"] and not under["overflow"], under
             continue
         if _BINDING_PANEL[key] in _HIDDEN_COLUMN_BINDERS:
             binder = _BINDING_PANEL[key]
@@ -944,11 +966,12 @@ async def test_workflows_tiers_are_the_measured_onsets(width, tier) -> None:
 
 
 def test_the_pins_are_the_measured_numbers_and_fit_the_app() -> None:
-    """Independent measured pins: SWARM 141x38, AGENT unchanged; app width 143."""
+    """Independent measured pins: SWARM 141x38, AGENT rack134x29; app width143."""
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS == MEASURED_SWARM_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_ROWS == MEASURED_SWARM_ROWS
     assert SURF_AGENT_FULL_LAYOUT_COLUMNS == MEASURED_AGENT_COLUMNS
     assert SURF_AGENT_FULL_LAYOUT_ROWS == MEASURED_AGENT_ROWS
+    assert max(_AGENT_WHOLE_FROM.values()) == MEASURED_AGENT_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
     assert SURF_AGENT_FULL_LAYOUT_COLUMNS <= FULL_LAYOUT_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS > SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS
@@ -968,7 +991,7 @@ _HEIGHT_SWEEP = (
     + [("a", "capture", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
     + [("a", name, r) for name in ("capture420", "duplicates420")
        for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 61, 31, 35)]
-    + [("a", "worst-a", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 40, 24, 25, 26)]
+    + [("a", "worst-a", r) for r in boundary_set(SURF_AGENT_FULL_LAYOUT_ROWS, 20, 40, 28, 29, 30)]
 )
 
 
@@ -1045,7 +1068,7 @@ KEY_HINT_PHRASE = "x more · 4 pl4 · s swm · a agt · b brd"
 #: Whole status bar measured after §11 abbreviations: cropped through 133,
 #: whole from 134, including poll/errors and full right version/theme/game text.
 #: Body binders are now LAUNCHPAD 138, SWARM 138 (LAUNCHES since 2026-10-03;
-#: CAPABILITY bound 141 before it was parked), AGENT 139 and BOARD 141.
+#: CAPABILITY bound 141 before it was parked), AGENT now134 and BOARD143.
 #: Pool4 protocol 99 and market 119 retain their body-only status exceptions.
 #: 2026-10-05: x more replaces l launchpad; complete from 129, cropped at 128.
 STATUS_BAR_WHOLE_FROM = 129
@@ -1229,7 +1252,7 @@ async def test_polish_record_answer_clearance_matches_committed_v4_window():
     assert name in stress["marked"], "the 500-character answer must still advertise actual clipping"
 
 
-async def test_polish_agent_retains_existing_pin_with_enriched_record():
+async def test_polish_agent_fits_measured_pin_with_enriched_record():
     for rows,taller in ((SURF_AGENT_FULL_LAYOUT_ROWS-1,True),(SURF_AGENT_FULL_LAYOUT_ROWS,False)):
         r=await _render(_polish_agent_payload(),(SURF_AGENT_FULL_LAYOUT_COLUMNS,rows),"a")
         assert r["taller"]==taller
@@ -1250,14 +1273,14 @@ async def test_oracle_record_tier_onsets_in_agent_body(width,tier):
 
 
 @pytest.mark.sweep
-async def test_oracle_latest_seat_fits_existing_agent_pin():
+async def test_oracle_latest_seat_fits_measured_agent_pin():
     payload=_polish_agent_payload()
     payload.update(_seat_keys(swarm_oracle_capture('seat_420')))
     rows=payload['swarm_seat_work_rows']
     payload['swarm_seat_work_rows']=swarm_oracle_rows(rows)
     assert len(rows)==245 and sum(r['node_key']=='oracle_assess' for r in rows)==243
-    for height in (24,25):
-        result=await _render(payload,(139,height),'a')
+    for height in (SURF_AGENT_FULL_LAYOUT_ROWS - 1, SURF_AGENT_FULL_LAYOUT_ROWS):
+        result=await _render(payload,(SURF_AGENT_FULL_LAYOUT_COLUMNS,height),'a')
         assert result['taller']==(height<SURF_AGENT_FULL_LAYOUT_ROWS)
         assert not result['overflow'] and not result['clipped'] and not any(result['hidden'].values())
 
@@ -1265,66 +1288,72 @@ async def test_oracle_latest_seat_fits_existing_agent_pin():
 @pytest.mark.parametrize('kind', ['capture', 'capture420', 'duplicates420', 'worst-a', 'polish',
                                   'v3', 'pending', 'seats-unavailable', 'workers-unavailable',
                                   'contributors-unavailable', 'absent', 'no-seat'])
-@pytest.mark.parametrize('height', [20, 24, 25, 26, 40])
-async def test_agent_merged_rows_boundary(kind, height):
+@pytest.mark.parametrize('height', [20, SURF_AGENT_FULL_LAYOUT_ROWS - 1, SURF_AGENT_FULL_LAYOUT_ROWS, SURF_AGENT_FULL_LAYOUT_ROWS + 1, 40])
+async def test_agent_rack_rows_boundary(kind, height):
     payload = (PAYLOADS[kind]() if kind in PAYLOADS else
                _polish_agent_payload() if kind == 'polish' else _v3_agent_payload(kind))
     result = await _render(payload, (SURF_AGENT_FULL_LAYOUT_COLUMNS, height), 'a')
-    _assert_whole(result, (kind, height))
+    if height >= SURF_AGENT_FULL_LAYOUT_ROWS:
+        _assert_whole(result, (kind, height))
     assert result['taller'] == (height < SURF_AGENT_FULL_LAYOUT_ROWS)
     assert not result['overflow']
+    cards = result['hero_cards']
+    assert [name for name, _ in cards] == ['seat', 'accepted', 'effort', 'rewards', 'rank', 'status',
+                                         'owner', 'runtime', 'models', 'feedback', 'collab', 'nodes']
+    regions = [region for _, region in cards]
+    assert {region[3] for region in regions} == {9}
+    assert max(region[2] for region in regions) - min(region[2] for region in regions) <= 1
+    assert len({region[1] for region in regions[:6]}) == len({region[1] for region in regions[6:]}) == 1
+    assert regions[6][1] == regions[0][1] + 10
+    assert all(top[0] == bottom[0] and top[2] == bottom[2] for top, bottom in zip(regions[:6], regions[6:]))
 
 
 @pytest.mark.parametrize('kind', ['capture', 'capture420', 'duplicates420', 'worst-a', 'polish',
                                   'v3', 'pending', 'seats-unavailable', 'workers-unavailable',
                                   'contributors-unavailable', 'absent', 'no-seat'])
 @pytest.mark.parametrize('width', boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 125, 160, 129, 134))
-async def test_agent_merged_cards_width_boundary(kind, width):
+async def test_agent_rack_cards_width_boundary(kind, width):
     payload = (PAYLOADS[kind]() if kind in PAYLOADS else
                _polish_agent_payload() if kind == 'polish' else _v3_agent_payload(kind))
     result = await _render(payload, (width, 80), 'a')
     assert not result['overflow']
     if width >= SURF_AGENT_FULL_LAYOUT_COLUMNS:
         _assert_whole(result, (kind, width))
-    elif kind in ('capture', 'capture420', 'duplicates420', 'worst-a', 'polish', 'v3'):
-        assert any(name == 'SurfSwarmSeatCards' for name, _ in result['clipped'])
+    elif (kind in ('capture', 'capture420', 'duplicates420', 'worst-a', 'polish', 'v3')
+          and width < _AGENT_WHOLE_FROM.get(kind, 134)):
+        assert 'SurfSwarmAgentRackHero' in result['marked_besides_exceptions']
+        assert any(name == 'SurfSwarmAgentRackHero' for name, _ in result['clipped'])
 
 
-async def test_busy_agent_words_fit_every_seat_box_at_unchanged_pins():
+async def test_busy_agent_cards_keep_independent_records_at_the_pin():
     from rich.color import Color
-    from maxpane_dashboard.widgets.surf.swarm_agent_hero import BOX_IDS
-    from maxpane_dashboard.widgets.surf.swarm_agent_cards import SEAT_BOX_IDS
 
     payload = _v3_agent_payload()
     payload.update(swarm_seat_state='busy', swarm_seat_read='busy')
+    payload = _project_agent_payload(payload)
     size = (SURF_AGENT_FULL_LAYOUT_COLUMNS, SURF_AGENT_FULL_LAYOUT_ROWS)
     result = await _render(payload, size, 'a')
     _assert_whole(result, 'busy')
     assert not result['taller'] and not result['overflow']
     async with _surf_app(payload).run_test(size=size) as pilot:
-        await pilot.app.screen._do_refresh()
-        await pilot.press('a')
-        await pilot.pause()
+        await _open_body(pilot, 'a')
         screen = pilot.app.screen
-        accepted = _region_text(pilot.app, screen.query_one('#' + BOX_IDS['accepted']))
-        # A busy detail endpoint cannot gate the independent records snapshot.
-        assert '3,253 of 3,392' in accepted and '95.9 %' in accepted
-        assert 'busy' not in accepted
-        for id_ in [BOX_IDS['rewards'], *SEAT_BOX_IDS.values()]:
-            box = screen.query_one('#' + id_)
-            region = _region_text(pilot.app, box)
-            if id_ == SEAT_BOX_IDS['collab']:
-                assert 'busy · retrying' not in region
-            else:
-                assert 'busy · retrying' in region
-            assert 'busy · retrying' in ' '.join(region.replace('│', ' ').split()), id_
-            painted = [''.join(s.text for s in strip) for strip in screen._compositor.render_strips()]
-            y = next(y for y in range(box.region.y, box.region.bottom)
-                     if 'busy ·' in painted[y][box.region.x:box.region.right])
-            x = painted[y].index('busy ·', box.region.x)
-            style = screen.get_style_at(x, y)
-            assert style.color.get_truecolor(pilot.app.ansi_theme) == Color.parse('yellow').get_truecolor(pilot.app.ansi_theme)
-        assert screen.query_one('#' + SEAT_BOX_IDS['runtime']).tooltip is None
+        hero = screen.query_one(SurfSwarmAgentRackHero)
+        accepted = hero.query_one('#hero-accepted')
+        painted = _region_text(pilot.app, accepted)
+        # Busy detail cannot gate the independent canonical accepted count.
+        assert accepted.data.digits == '3253'
+        assert '3,392 attempts' in painted and '95.9' in painted
+        assert 'busy' not in painted
+        for key in ('rewards', 'owner', 'runtime', 'models', 'feedback', 'collab', 'nodes'):
+            card = hero.query_one('#hero-' + key)
+            assert 'busy' in _region_text(pilot.app, card), key
+            strips = screen._compositor.render_strips()
+            row = strips[card.region.bottom - 1].crop(card.region.x, card.region.right)
+            style = next(segment.style for segment in row if 'busy' in segment.text)
+            assert style.color.get_truecolor(pilot.app.ansi_theme) == Color.parse('yellow').get_truecolor(pilot.app.ansi_theme), key
+        runtime = hero.query_one('#hero-runtime')
+        assert 'latest --' in str(runtime.tooltip)
 
 
 # ---------------------------------------------------------------------------
@@ -1346,21 +1375,21 @@ async def test_the_record_filter_editor_fits_and_reaches_every_control(payload_n
     from textual.widgets import Button, Checkbox, Input, Select
     from maxpane_dashboard.widgets.filter_editor import APPLY_ID, FilterEditorBase
     from maxpane_dashboard.widgets.surf.swarm_record_filter import SurfRecordFilterEditor
-    app = _surf_app(PAYLOADS[payload_name]())
+    app = _surf_app(_project_agent_payload(PAYLOADS[payload_name]()))
     async with app.run_test(size=(width, SURF_AGENT_FULL_LAYOUT_ROWS)) as pilot:
         screen = await _open_agent_editor(pilot)
         editor = screen.query_one(SurfRecordFilterEditor)
         body = screen.query_one(f"#{AGENT_BODY_ID}")
         assert editor.region.height >= 6 and editor.region.width
         assert body.region.contains_region(editor.region) or body.show_vertical_scrollbar
-        cards = screen.query_one(SurfSwarmSeatCards)
+        cards = screen.query_one(SurfSwarmAgentRackHero)
         assert cards.display and cards.region.height, "the cards stay above the editor"
         assert editor.region.y >= cards.region.bottom, (cards.region, editor.region)
         assert editor.has_class("compact-filter") == (editor.content_size.width < FilterEditorBase.COMPACT_BELOW)
         assert editor.max_scroll_x == 0, "the editor never scrolls sideways"
         assert not _css_clipped_lines(pilot.app, editor), (width, _css_clipped_lines(pilot.app, editor))
         if width >= SURF_AGENT_FULL_LAYOUT_COLUMNS:  # below it the hero ellipsises by design
-            assert not _css_clipped_lines(pilot.app, screen.query_one(SurfSwarmAgentHero))
+            assert not _css_clipped_lines(pilot.app, screen.query_one(SurfSwarmAgentRackHero))
         controls = [*editor.query(Checkbox), *editor.query(Select), *editor.query(Input), *editor.query(Button)]
         assert len(editor.query(Checkbox)) >= 1 and len(controls) >= 9
         left, right = editor.content_region.x, editor.content_region.right

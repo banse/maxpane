@@ -130,6 +130,7 @@ from .pool4u_stakers import SurfPool4UStakers
 from .signals import DETECTOR_LABELS, SurfSignals
 from .swarm_agent_cards import SurfSwarmSeatCards
 from .swarm_agent_hero import SurfSwarmAgentHero
+from .agent_rack_hero import SurfSwarmAgentRackHero
 # Parked since 2026-10-03 (no body mounts it; data/surf_models.SWARM_PARKED_WIDGET_SIGNATURES
 # names it, and every "exported means mounted" test reads its exemption from there).
 from .swarm_capability import SurfSwarmCapability
@@ -176,6 +177,7 @@ __all__ = [
     "SurfPool4Vault",
     "SurfSignals",
     "SurfSwarmAgentHero",
+    "SurfSwarmAgentRackHero",
     "SurfSwarmCapability",
     "SurfSwarmHero",
     "SurfSwarmRackHero",

@@ -277,10 +277,9 @@ from maxpane_dashboard.widgets.surf import (
     SurfProtocolHero,
     SurfPool4Vault,
     SurfSignals,
-    SurfSwarmAgentHero,
+    SurfSwarmAgentRackHero,
     SurfSwarmRackHero,
     SurfSwarmLaunches,
-    SurfSwarmSeatCards,
     SurfSwarmSeatRecord,
     SurfSwarmSites,
     SurfSwarmLatestLaunches,
@@ -1862,36 +1861,39 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: unchanged. Boundary tests also check this at the new 141-column pin.
 SURF_SWARM_FULL_LAYOUT_ROWS = 38
 
-#: AGENT full-layout width, re-swept 2026-09-24: 139 (unchanged).
-#: 2026-09-24: COLLAB lists the top two teammates, NODES takes the last
-#: seat-card slot; the third card row is removed. Both remaining rows use
-#: the same column weights (23 23 20 19 18 28).
-#: In-situ boundary sweep on capture, #420, duplicated reviews, five-digit
-#: stress, v4 RECORD and seven v3 source states: OWNER's 17-cell address
-#: plus copy icon is whole from 139 and visibly cut at 138. The width stays
-#: 139. Free node/runtime/model text fits with an explicit ellipsis; NODES
-#: counts shorten honestly. Status bar whole from 134, stress hero from 129,
-#: captured hero from 116 and pending RANK from 117.
-#: 2026-10-03 (F54): SCORE became MODEL in the same 20fr slot; re-swept in
-#: situ on the same payloads, the stress one now advertising four models
-#: (two shown, ``+2 more``, the first a 60-character unknown id). MODEL's
-#: 14-cell lines (``not advertised``, ``fable 5.1 high``) are whole from 126
-#: (its room is 14 at 124, 13 at 125); pairs fit with ``…`` below that and
-#: never clip from 108 to 140. OWNER still binds: the width stays 139.
-#: Row 1 gives up one right-hand column (padding: 0 1 0 0) to line up with
-#: the seat row inside the body's reserved scrollbar gutter.
-#:
+#: AGENT full-layout width, re-swept 2026-10-13: 139 -> 134.
+#: The approved live rack replaces the weighted seven-line hero and seat
+#: row with twelve equal nine-line cards in two rows of six. One blank
+#: row separates them; native RECORD uses the remaining body space.
+#: The keyless live 149x45 render was shown before this measurement.
+#: In-situ scripts/measure_layout.py uses the real AGENT container,
+#: stylesheet, reserved scrollbar gutter and committed capture payloads.
+#: capture420 at 130..137 columns is whole from 134: ACCEPTED's inner
+#: subtitle "3,392 attempts" still clips at 132/133, then fits at 134+.
+#: Capture and the five-digit stress payload clear from 132, where the
+#: STATUS subtitle "accepted 06:10" fits; neither sets the final maximum.
+#: Pending, busy, unavailable, unknown-seat and missing-source cases use
+#: explicit labels. RUNTIME's fixed unknown-check subtitle is shortened
+#: honestly; fallback text must fit, never count as arbitrary metadata.
+#: Free-form model/node/runtime/ENS text may retain a visible ellipsis
+#: and widen marker, with whole numeric values and complete literal
+#: tooltip context. This exception cannot excuse fixed labels, subtitles,
+#: footers, headings or counts. Owner addresses retain copy and explorer
+#: metadata while using the shared anti-poisoning window.
 #: RECORD remains the named content exception. Full/compact/tight require
-#: 102/94/53 table cells, with five screen cells of gutters/padding:
-#: full from 107, compact from 99. Its content-clearance onset is below.
-SURF_AGENT_FULL_LAYOUT_COLUMNS = 139
+#: 102/94/53 table cells with five screen cells of gutters/padding:
+#: full from 107, compact from 99. Its answer-clearance onset is below.
+SURF_AGENT_FULL_LAYOUT_COLUMNS = 134
 
-#: AGENT height, re-swept 2026-09-24: 33 -> 25 after removing the third
-#: seven-row card row and its blank row. At 139 columns, named capture,
-#: #420, duplicate, five-digit stress, v4 and seven v3 source-state payloads
-#: show taller at 24 and clear it at 25 and 26. RECORD retains its six-row
-#: floor; the body remains the only container scrolling fixed card content.
-SURF_AGENT_FULL_LAYOUT_ROWS = 25
+#: AGENT height, re-swept 2026-10-13: 25 -> 29.
+#: Capture swept 25..36 rows: 25..28 show taller; 29..36 are whole.
+#: Five-digit stress at 27..30 also clears from 29. Twelve nine-line
+#: cards occupy a fixed nineteen-line hero including the inter-row gap;
+#: RECORD retains its six-row floor and scrolls its own unbounded history.
+#: The outer body alone scrolls fixed cards below this measured floor.
+#: Boundary tests bind the independent measured restatement and check
+#: content, geometry and markers on both sides of width and height.
+SURF_AGENT_FULL_LAYOUT_ROWS = 29
 
 #: RECORD answer-clearance onset, re-swept 2026-09-24 in the real AGENT body.
 #: Moving tok before panel leaves tiers 102/94/53 and clearance 167 unchanged.
@@ -2287,8 +2289,7 @@ _SWARM_PANELS = (
     SurfSwarmWorkflows,
     SurfSwarmLaunches,
     SurfSwarmSites,
-    SurfSwarmAgentHero,
-    SurfSwarmSeatCards,
+    SurfSwarmAgentRackHero,
     SurfSwarmSeatRecord,
 )
 
@@ -3273,6 +3274,7 @@ class SurfScreen(DashboardScreen):
         text-wrap: nowrap;
         text-overflow: ellipsis;
     }
+    SurfScreen SurfSwarmAgentRackHero { height: 19; }
     SurfScreen SurfSwarmAgentHero {
         height: 7;
         padding: 0 1 0 0;
@@ -3479,7 +3481,7 @@ class SurfScreen(DashboardScreen):
             yield SurfPool4RackHero(classes="surf-hero")
             yield SurfProtocolHero(classes="surf-hero")
             yield SurfSwarmRackHero(classes="surf-hero")
-            yield SurfSwarmAgentHero(classes="surf-hero")
+            yield SurfSwarmAgentRackHero(classes="surf-hero")
             yield SurfSwarmBoardHero(classes="surf-hero")
 
         with Horizontal(id="middle-row"):
@@ -3612,10 +3614,8 @@ class SurfScreen(DashboardScreen):
                 yield SurfSwarmLaunches()
             yield SurfSwarmSites()
 
-        # The `a` AGENT body: one seat-card row above a full-width RECORD -- see
-        # `AGENT_BODY_ID`.
+        # The AGENT rack lives above the full-width RECORD body.
         with Vertical(id=AGENT_BODY_ID):
-            yield SurfSwarmSeatCards()
             yield SurfSwarmSeatRecord()
             # `f`: takes RECORD's place while open; the hero and cards stay.
             yield SurfRecordFilterEditor()
@@ -3766,7 +3766,7 @@ class SurfScreen(DashboardScreen):
             )
             self.query_one(SurfProtocolHero).display = self._mode == MODE_POOL4
             self.query_one(SurfSwarmRackHero).display = self._mode == MODE_SWARM
-            self.query_one(SurfSwarmAgentHero).display = self._mode == MODE_AGENT
+            self.query_one(SurfSwarmAgentRackHero).display = self._mode == MODE_AGENT
             self.query_one(SurfSwarmBoardHero).display = self._mode == MODE_BOARD
             self.query_one(SurfNewsHero).display = self._mode == MODE_DASHBOARD
             self.query_one(SurfHero).display = self._mode in _SURF_HERO_MODES

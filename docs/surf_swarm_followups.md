@@ -1432,3 +1432,57 @@ reviewer's owner-link and BUSY/capacity mutants were killed by the named
 compositor test and restored byte for byte. All three mock tests passed with
 isolated HOME and four workers; 124 fast guards and 12 documentation pins passed.
 No full suite was run.
+
+## AGENT hero proposal 4 live integration — 2026-10-13
+
+The approved twelve-card rack now uses existing selected-seat, canonical record,
+contributor, worker, reward and runtime reads. Two rows of six equal nine-line
+cards sit above native RECORD, which fills the remaining space. Seat selection,
+saved rack seats, per-seat caches, RECORD filtering and paging are preserved.
+The old hero/seat-card widgets remain parked.
+
+Cards retain independent source clocks. Successful unchanged detail reads confirm
+only their selected seat in memory; restored or failed retained readings remain
+dated. Captured detail/reward/runtime families cannot mix identities across a
+detached read or seat switch. Acceptance/rank use canonical records; contributor
+effort and seat-detail history keep their own meanings. Rewards retain owner and
+pairing identity and an independent USD quote state. STATUS reuses the rack's
+observed-stop meter, including its green/orange/empty progression and offline state.
+
+The real API render at 149×45 showed saved seat 3, 1,288 accepted attempts,
+rank 267, 12.53 IMD owner share and 264 collaborators. The live runtime banner
+prompted a display-only shortening; its full string/hash remain in the tooltip,
+and a differing daemon keeps its visible arrow. The captured API facts are not
+committed as fixtures. No endpoint, polling cadence or persisted schema changed.
+Existing npm checks are now also offered on cached AGENT activation: the former
+missing offer was reproduced against HEAD before fixing its guarded call site.
+
+In-situ measurement gives 134×29: seat420's `3,392 attempts` subtitle binds
+width, while the nineteen-line hero and native RECORD floor bind height.
+The live preview at 149×45 precedes these measurements. Free-form metadata may
+use a visible ellipsis and full tooltip; fixed labels and numeric values must
+fit. RECORD's existing answer-clearance exception remains 167 columns.
+
+Verification: 615 data/manager/activity cases, 181 general screen/registration
+cases, 187 parked-widget cases, 162 widget/contract/initial live-screen cases,
+and 30 final rack/live-screen cases passed. The legacy composing screen passed
+94 cases; its obsolete 25-row behavior-test viewport was raised and the remaining
+case passed serially. Model agreements passed 42 cases plus one corrected parked
+consumer assertion. Both address-sweep sizes passed; fast guards passed 124 and
+documentation pins 12. Identity, source-confirmation, malformed-row and both
+width/height directions have killed mutations. No full suite was run.
+
+
+The complete layout file passed 528 cases; its one colour case passed after
+unsetting NO_COLOR, verifying all 529. Width and height mutations were killed
+in isolated copies at 133/135 columns and 28/30 rows. Final review identified one
+Important stale-negative case: an old never-paired result lost its stale source
+state. The single fix wave preserves that negative and selected ID, shows its
+last confirmation time, and clears the stale label after a successful read.
+Eight manager-to-compositor cases cover failed, busy, expired and restored
+readings at both 134 and 149 columns. All 169 post-fix projection, manager, models,
+widget and live-screen cases passed.
+
+Scoped re-review: **Approved — ADDRESSED**. The reviewer killed the inverse
+stale-negative mutation with the named manager/compositor regression and
+restored the file byte for byte. No residual review findings remain.

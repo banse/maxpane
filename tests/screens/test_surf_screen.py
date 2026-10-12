@@ -76,7 +76,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfProtocolHero,
     SurfPool4Vault,
     SurfSignals,
-    SurfSwarmAgentHero,
+    SurfSwarmAgentRackHero,
     SurfSwarmBoardHero,
     SurfSwarmLeaderboard,
     SurfSwarmFleet,
@@ -177,9 +177,8 @@ _SWARM_WIDGET_CLASSES = {
     "SurfSwarmWorkflows": SurfSwarmWorkflows,
     "SurfSwarmLaunches": SurfSwarmLaunches,
     "SurfSwarmSites": SurfSwarmSites,
-    "SurfSwarmAgentHero": SurfSwarmAgentHero,
+    "SurfSwarmAgentRackHero": SurfSwarmAgentRackHero,
     "SurfSwarmSeatRecord": SurfSwarmSeatRecord,
-    "SurfSwarmSeatCards": SurfSwarmSeatCards,
 }
 
 #: Both halves together -- **derived from the package**, not from the two
@@ -1846,6 +1845,9 @@ def _frozen_payload(**overrides) -> dict:
             sources={"launchpad": {"state": "ok", "read_ts": _TS_POST_13},
                      "market": {"state": "unavailable", "read_ts": None}},
             now=_TS_POST_13)
+    if "surf_agent_hero" not in overrides:
+        from tests.surf_agent_hero_fixtures import project_agent_payload
+        payload = project_agent_payload(payload)
     return payload
 
 

@@ -180,7 +180,8 @@ def _surf_payload() -> dict:
         **workflows[blocked],
         "failure": f"{_SWARM_WORKFLOW} reverted in setUp(): constructor failed",
     }
-    return payload
+    from tests.surf_agent_hero_fixtures import project_agent_payload
+    return project_agent_payload(payload)
 
 
 def _surf_app() -> App:

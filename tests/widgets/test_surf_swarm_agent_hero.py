@@ -1,17 +1,17 @@
-"""The AGENT body's hero: SEAT · ACCEPTED WORK · WORK · REWARDS · RANK · STATUS.
+"""The parked legacy AGENT hero: SEAT · ACCEPTED WORK · WORK · REWARDS · RANK · STATUS.
 
 Composited assertions only. The summaries are **folded** from the committed
 ``/seats`` captures (``tests/fixtures/surf/swarm/seats/``) by
 ``data/surf_swarm.seat_summary_from_seat`` -- the manager's own fold -- and
 every expected number is read back off that fold or the fixture, never
 hand-typed. The per-class contract is imposed against
-``SWARM_WIDGET_SIGNATURES`` (flipped in WP5).
+``SWARM_PARKED_WIDGET_SIGNATURES`` (parked when the twelve-card rack replaced it).
 
-**Composited under the real stylesheet, at the real pins.** The hero states no
+**Composited under the real stylesheet, at its preserved legacy widths.** The hero states no
 geometry of its own (``rules/widgets.md``: ``HeroBoxBase`` leaves every
 dimension to ``minimal.tcss``), so the harness loads
-``maxpane_dashboard.app.CSS_PATH`` and renders at the AGENT body's own column
-pin and at the app-wide ``FULL_LAYOUT_COLUMNS``: six boxes with ~16 content
+``maxpane_dashboard.app.CSS_PATH`` and renders at the former AGENT column
+width and at the app-wide ``FULL_LAYOUT_COLUMNS``: six boxes with ~16 content
 cells each at the former.
 """
 
@@ -25,9 +25,8 @@ from textual.app import App
 
 from maxpane_dashboard.__main__ import FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.app import CSS_PATH
-from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.data.surf_models import SWARM_PARKED_WIDGET_SIGNATURES
 from maxpane_dashboard.data.surf_swarm import seat_summary_from_seat
-from maxpane_dashboard.screens.surf import SURF_AGENT_FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.widgets.fmt import hhmm, mmdd
 from maxpane_dashboard.widgets.surf._swarm_seat import NEVER_PAIRED_WORDS
 from maxpane_dashboard.widgets.surf.swarm_agent_hero import (
@@ -42,7 +41,7 @@ from maxpane_dashboard.widgets.surf.swarm_agent_hero import (
 from tests.surf_swarm_fixtures import swarm_agent_sources, swarm_capture_v5, swarm_seat_capture
 from tests.widgets.surf_compositing import composite_lines
 
-SIGNATURE = SWARM_WIDGET_SIGNATURES["SurfSwarmAgentHero"]
+SIGNATURE = SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmAgentHero"]
 
 SEAT_420 = swarm_seat_capture("seat_420")
 SEAT_0 = swarm_seat_capture("seat_0")
@@ -63,10 +62,11 @@ def _outcome(summary):
 #: Blockscout capture) at a fixed price -- the owner's example, $105.84.
 REWARD_IMD = (7692307692307692307 + 3052147239263803680 + 3121794871794871794) / 1e18
 REWARDS = {"imd": REWARD_IMD, "usd": REWARD_IMD * 7.633, "seats": 1}
-#: The AGENT body's own column pin; every ``_box_text`` renders here by default.
-SIZE = (SURF_AGENT_FULL_LAYOUT_COLUMNS, 9)
-#: The two widths the hero has to be whole at: its body's pin and the app's.
-PINS = (SURF_AGENT_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS)
+#: Fixed legacy width, independent of the new live rack's layout pin.
+LEGACY_COLUMNS = 139
+SIZE = (LEGACY_COLUMNS, 9)
+#: Preserve standalone coverage at the former body width and app width.
+PINS = (LEGACY_COLUMNS, FULL_LAYOUT_COLUMNS)
 #: The seats-gated boxes; RANK reads ``/contributors`` and is not gated.
 STAT_BOXES = ("rewards",)
 
@@ -695,7 +695,7 @@ async def test_status_drops_capacity_when_working_exceeds_it(working, cap, expec
     (99_999, 99_999, '⚙ 99,999 of 99,999', False),
 ])
 async def test_status_working_word_yields_to_whole_counts_at_the_pin(working, cap, expected, word):
-    async with _Themed().run_test(size=(SURF_AGENT_FULL_LAYOUT_COLUMNS, 9)) as pilot:
+    async with _Themed().run_test(size=(LEGACY_COLUMNS, 9)) as pilot:
         pilot.app.query_one(SurfSwarmAgentHero).update_data(**_merged(dict(swarm_seat_live={
             'live': True, 'live_state': 'working', 'working': working, 'max_concurrency': cap})))
         await pilot.pause()
