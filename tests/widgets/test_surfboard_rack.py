@@ -26,7 +26,6 @@ def neutral_inset_color(app):
 async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
     async with RackApp().run_test(size=size) as pilot:
         card=pilot.app.query_one('#surfboard-card-announce',SurfboardCard)
-        empty=pilot.app.query_one('#surfboard-card-agent-3',SurfboardCard)
         text='0123456789'*10
         for status in ('active','idle','stale','working','failed','active'):
             card.set_data(dict(primary=text,secondary='7 new replies',status=status))
@@ -43,9 +42,8 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
                 text[:inside],text[inside:inside*2],text[inside*2:inside*3-3]+'...']
             assert strips[top+4].text[left+1:right].strip('─ ') == '7 new'
             ink=next(iter(strips[top+1].crop(left+1,left+2))).style
-            empty_ink=next(seg.style.color for strip in pilot.app.screen._compositor.render_strips()[empty.region.y:empty.region.bottom]
-                           for seg in strip.crop(empty.region.x,empty.region.right) if 'EMPTY SEAT' in seg.text)
-            assert ink.color==(card.rich_style.color if status=='active' else empty_ink)
+            # Neutral news ink is independent of the editable AGENT card's surface.
+            assert ink.color==(card.rich_style.color if status=='active' else Color.parse('#6f6f6f'))
             edge=next(iter(strips[top].crop(left,left+1))).style.color.get_truecolor()
             neutral=neutral_inset_color(pilot.app)
             status_ink=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()

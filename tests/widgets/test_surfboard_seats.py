@@ -3,6 +3,8 @@ import pytest
 from rich.color import Color
 from textual.widgets import Input
 
+from maxpane_dashboard.screens.seat_input import SeatInputScreen
+from maxpane_dashboard.themes import THEMES
 from maxpane_dashboard.widgets.surfboard.rack import SurfboardCard, SurfboardRack
 from tests.widgets.test_surfboard_rack import RackApp
 
@@ -28,17 +30,31 @@ class SeatApp(RackApp):
 
 
 @pytest.mark.parametrize("size", [(149, 45), (144, 35)])
-async def test_four_empty_agent_seats_keep_black_face_and_five_line_inset(size):
+async def test_four_empty_agent_seats_have_unframed_native_colored_inputs(size):
     async with SeatApp().run_test(size=size) as pilot:
+        pilot.app.register_theme(THEMES["matrix"])
+        pilot.app.theme = "matrix"
         rack = pilot.app.query_one(SurfboardRack)
+        selector = SeatInputScreen(current=3, saver=lambda value: None)
+        await pilot.app.push_screen(selector)
+        await pilot.pause()
+        native = selector.query_one(Input)
+        native.focus()
+        await pilot.pause()
+        native_background, native_color = native.styles.background, native.styles.color
+        native_tint = native.styles.background_tint
+        native_fill = next(iter(pilot.app.screen._compositor.render_strips()[native.content_region.y]
+                                .crop(native.content_region.right - 1, native.content_region.right))).style.bgcolor
+        pilot.app.pop_screen()
         await pilot.pause()
         for slot, key in enumerate(KEYS):
             card = rack.query_one(f"#surfboard-card-{key}", SurfboardCard)
             field = card.query_one(Input)
             painted = rows(pilot.app, card)
-            top = next(i for i, row in enumerate(painted) if "┌" in row.text)
+            top = next(i for i, row in enumerate(painted) if "EMPTY SEAT" in row.text)
             assert "⊙ AGENT" in painted[0].text
             assert "EMPTY SEAT" in painted[top].text
+            assert not any(char in row.text for row in painted for char in "┌┐└┘")
             assert "type in seat no" in painted[top + 4].text
             assert painted[-1].text == "╰─ EMPTY " + "▱" * (card.region.width - 12) + " ─╯"
             assert card.can_focus and card.data["seat_slot"] == slot
@@ -47,16 +63,21 @@ async def test_four_empty_agent_seats_keep_black_face_and_five_line_inset(size):
             assert field.region.y == card.region.y + top + 1
             assert field.region.x > card.content_region.x
             assert field.region.right < card.content_region.right
-            background = Color.parse(pilot.app.get_css_variables()["background"])
-            assert card.styles.background == field.styles.background
-            assert all(segment.style.bgcolor == background for row in painted[1:-1]
-                       for segment in row.crop(1, card.region.width - 1))
+            background = Color.parse(pilot.app.get_css_variables()["surface"])
+            assert card.styles.background == field.styles.background == native_background
+            assert field.styles.color == native_color
+            assert all(segment.style.bgcolor == background for segment in painted[top].crop(1, card.region.width - 1))
             accent = Color.parse(pilot.app.get_css_variables()["accent"])
             for focused in (False, True):
                 if focused:
                     field.focus()
                     await pilot.pause()
+                    assert field.styles.background_tint == native_tint
                 strips = pilot.app.screen._compositor.render_strips()
+                if focused:
+                    fill = next(iter(strips[field.content_region.y]
+                                     .crop(field.content_region.right - 1, field.content_region.right)))
+                    assert fill.style.bgcolor == native_fill
                 for y in (field.region.y, field.region.bottom - 1):
                     edge = strips[y].crop(field.region.x, field.region.right)
                     assert any(segment.text.strip() for segment in edge)
