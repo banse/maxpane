@@ -752,16 +752,21 @@ including inactive deployments. Chain/address aliases share their earliest known
 only ages from zero through less than 24 hours qualify. Missing volume never means zero.
 Valid cached volumes stay in the ranking across rotating quote batches; retained stale inputs
 mark the ranking stale rather than temporarily replacing its leaders with fresh lower volumes.
-Green ▲ and red ▼ compare consecutive successful prices for the same token and expected/selected
+Green ↑ and red ↓ compare consecutive successful prices for the same token and expected/selected
 pool; first, unchanged or stale prices show a neutral dash. Fresh rows retain their direction
 even when other ranked evidence is stale; a stale catalogue suppresses all directions.
-The outer footer shows `NEW: ` and the newest canonical launch's age and ticker independently of volume rank. Hub polling offers catalogue
-and bounded shared market reads only; price history, hourly volume history and trades keep their
-existing dedicated-reader paths. Partial/stale ranking replaces positive x new with a dated
-state marker; the literal tooltip discloses coverage and source clocks. Healthy positive x new
-and the green inset retain the SWARM header's one-hour detected-launch predicate; known zero-new
-text remains hidden on TOKENS and ONCHAIN NEWS. Portfolio opens its existing preview.
-The terminal supports bounded read-only commands and replaces its recent `/swarm` event window
+The outer footer shows `NEWEST ticker age`, with single spaces, independently of volume rank.
+Hub polling offers catalogue and bounded shared market reads only; history/trade readers are unchanged.
+The inset footer shows positive `x new` from the eligible canonical last-24-hour population.
+Per the owner, no partial/stale/clock labels appear there; the literal tooltip retains coverage
+and source clocks. Known zero-new text remains hidden on TOKENS and ONCHAIN NEWS.
+Portfolio opens its existing preview. LEADERBOARD shows TOP AGENTS with three canonical ranked
+seats and accepted counts, led by gold/silver/bronze stars. Its activity footer remains rank one's.
+Empty AGENT insets use a borderless input, centered ↑ and `type in`; their outer footer is
+`Identity.md NFT`. Spare rows below the side cards show centered muted キープ / ビルディング.
+The terminal hides automatic stale labels (including generated command summaries) and V/P/D
+service flags at every width, per the owner; underlying metadata and unavailable states remain.
+It supports bounded read-only commands and replaces its recent `/swarm` event window
 without duplicating events or losing replies, draft or scroll anchor. Source polling and full
 collection are manager-owned single-flight tasks; only the hub skips the startup prefetch join.
 Acceptance/rank in HUB, AGENT and BOARD come from one complete `/seats/records` snapshot
@@ -769,11 +774,12 @@ Acceptance/rank in HUB, AGENT and BOARD come from one complete `/seats/records` 
 retain the prior whole snapshot as stale. Upstream summary cache ≤600s is disclosed. Contributors
 remain effort/receipts; workers remain presence; detail responses never overwrite shared totals.
 AGENT and LEADERBOARD outer footers track selected/rank-one worker activity independently:
-orange BUSY with a full bar, green IDLE with a linear 24-hour decay from the observed stop.
+orange BUSY with a full green bar; gray IDLE drains green to orange over 24 hours,
+then orange to empty over hours 24–72. Offline is red OFF with empty segments.
 Every successful workers read refreshes activity evidence even when content is unchanged;
 failed/stale/unknown evidence has no live bar. Persisted per-token stop history is validated
 on load. Cold idle has an unknown bar until a work-to-idle transition is observed.
-PROTOCOL uses amount / IMD / label columns. POOL4's outer footer reuses the protocol's live
+PROTOCOL uses label / amount / IMD columns and an outer `x% of supply burned` footer. POOL4's outer footer reuses the protocol's live
 sIMD share price, rounded to fit; card detail retains six decimals and source freshness.
 Rank migration resets only contributor-based baselines (`seat-records-v1`). See the hub PRD
 and implementation plan for exact meter formulas, commands and source cadence.

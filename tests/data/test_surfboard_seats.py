@@ -35,7 +35,7 @@ def test_explicit_four_empty_assignments_do_not_borrow_selected_or_leading_seat(
         assert (row['seat_slot'],row['token_id']) == (slot,None)
         assert row['title'] == 'AGENT'
         assert row['status'] == row['meter_state'] == 'empty'
-        assert (row['primary'],row['secondary'],row['destination']) == ('','type in seat no',None)
+        assert (row['primary'],row['secondary'],row['destination']) == ('','type in',None)
         assert row['numerator'] is row['denominator'] is None
     assert all(row['seat_slot'] is row['token_id'] is None for row in rows if row['key'] not in KEYS)
 

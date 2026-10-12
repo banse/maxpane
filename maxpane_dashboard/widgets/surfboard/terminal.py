@@ -180,22 +180,15 @@ class SurfboardTerminal(PanelBase):
     def on_resize(self):
         self.call_after_refresh(self._paint)
 
-    def _overview_source(self):
-        source = self._sources.get("overview")
-        return source if isinstance(source, dict) else {}
-
     def _header(self, width):
         if self._overview is None:
             return Text("network unavailable", style=FAIL), False
         overview = self._overview or {}
         fields = (("agents_online", "online"), ("working_now", "working"),
                   ("jobs_24h", "jobs"), ("oracles_24h", "oracles"), ("accepted_24h", "steps"))
-        source = self._overview_source()
-        services = overview.get("services")
-        services = services if isinstance(services, dict) else {}
         result = Text()
         for compact in (False, True):
-            result = Text("stale · " if source.get("state") == "stale" else "", style=DIM)
+            result = Text(style=DIM)
             for index, (key, label) in enumerate(fields):
                 if index:
                     result.append(" | 24h " if index == 2 else " " if compact else " · ", style=DIM)
@@ -203,14 +196,6 @@ class SurfboardTerminal(PanelBase):
                 valid = isinstance(value, int) and _number(value) is not None
                 shown = (fmt_compact(value) if compact and value >= 1000 else fmt_int(value)) if valid else "—"
                 result.append(shown, style="bold " + LIVE).append(" " + label, style=self.rich_style.color.name)
-            result.append("  ")
-            for index, service in enumerate(("verifier", "publisher", "deployer")):
-                if index:
-                    result.append(" ")
-                state = services.get(service)
-                result.append(service[0].upper(), style=DIM)
-                result.append("*" if state is True else "!" if state is False else "?",
-                              style=LIVE if state is True else FAIL if state is False else DIM)
             if result.cell_len <= width:
                 return result, compact
         result.truncate(width, overflow="ellipsis")
@@ -342,21 +327,17 @@ class SurfboardTerminal(PanelBase):
         prefix = "$IMD " + (_market_money(market) if market_known else "unavailable")
         if market_known and data.get("market_basis") == "fdv":
             prefix += " FDV"
-        if data.get("market_state") == "stale":
-            prefix += " mkt stale"
         tokens = data.get("inference_tokens")
         token_text = fmt_compact(tokens) if isinstance(tokens, int) and _number(tokens) is not None and data.get("overview_state") in ("ok", "stale") else None
-        token_mark = " swarm stale" if data.get("overview_state") == "stale" else ""
         observed, provider = _number(data.get("as_of")), _number(data.get("provider_ts"))
         age_seconds = _number(max(0, observed + self._elapsed - provider)) if observed is not None and provider is not None and self._elapsed is not None else None
         age = fmt_age(age_seconds) if age_seconds is not None else None
         candidates = []
         for compact in (False, True):
             token_part = token_text + (" tokens" if compact else " tokens used") if token_text is not None else "tokens unavailable"
-            token_part += token_mark
             age_part = (age + " ago" if compact else age + " ago last updated") if age is not None else "age unknown"
             tail = " | " + token_part + " | " + age_part
-            # Goal bars shrink before any factual figure or stale qualifier does.
+            # Goal bars shrink before any factual figure does.
             room = max(1, min(24, width - cell_len(prefix + " [] $1B goal" + tail)))
             if market_known:
                 filled = min(room, max(1 if market > 0 else 0, round(market / 1_000_000_000 * room)))

@@ -456,21 +456,18 @@ def test_legacy_event_migration_does_not_bless_corruption(damage):
     assert hub.coerce_source(source, 'overview', now=1001) is None
 
 
-@pytest.mark.parametrize('events,expected', [
-    ([], 0), ([{'ts': 10000, 'number': 1210}], 1),
-    ([{'ts': 6401, 'number': 1210}, {'ts': 9999, 'number': 1211}], 2),
-    ([{'ts': 6400, 'number': 1210}, {'ts': 10001, 'number': 1211},
-      {'ts': True, 'number': 1212}, {'ts': 9999, 'number': True}, None], 0),
-])
-def test_tokens_card_uses_same_launch_news_window_as_swarm_header(events, expected):
-    from maxpane_dashboard.screens.surf import _launch_news
-    data = dict(as_of=10000, swarm_launch_fired=events)
+@pytest.mark.parametrize('total,expected', [(0, '0 new'), (23, '23 new'), (None, 'unavailable')])
+@pytest.mark.parametrize('state', ['ok', 'partial', 'stale'])
+def test_tokens_card_new_count_uses_24h_catalogue_not_one_hour_events(total, expected, state):
+    data = dict(as_of=10000, swarm_launch_fired=[dict(ts=10000, number=1210)])
     row = next(r for r in hub.cards(data, {}, now=10000,
-        tokens_catalogue=dict(count=116, state='ok', as_of=9900)) if r['key']=='swarm-tokens')
-    assert (row['title'], row['primary'], row['secondary']) == ('TOKENS', '116', f'{expected} new')
+        tokens_catalogue=dict(count=116, state=state, as_of=9900,
+                             ranking=dict(total=total, state=state))) if r['key']=='swarm-tokens')
+    assert (row['title'], row['primary'], row['secondary']) == (
+        'TOKENS', '≥116' if state == 'partial' else '116', expected)
     assert row['destination'] == 'swarm-tokens'
-    assert (row['status'] == 'active') == bool(_launch_news(data)) == (expected > 0)
-    assert 'catalogue ok' in row['detail'] and hub.hhmm(9900) in row['detail']
+    assert (row['status'] == 'active') == (total is not None and total > 0)
+    assert 'last 24h' in row['detail'] and 'launch news 1h' not in row['detail']
 
 
 @pytest.mark.parametrize('catalogue,primary', [
@@ -707,3 +704,19 @@ def test_launchpad_volume_unknown_is_never_a_zero_chart(snapshot, state):
 def test_launchpad_volume_complete_empty_intervals_are_real_zero():
     row = launchpad_volume_card(launchpad_volume_snapshot(points_wei=[0] * 8))
     assert row['points'] == [0] * 8 and row['meter_state'] == 'ok'
+
+
+@pytest.mark.parametrize('population,expected', [
+    (None, None), ([], []),
+    ([dict(rank=3, token_id=83, accepted=200), dict(rank=1, token_id=527, accepted=4184),
+      dict(rank=4, token_id=7, accepted=10), dict(rank=2, token_id=420, accepted=3500)],
+     [dict(rank=1, token_id=527, accepted=4184), dict(rank=2, token_id=420, accepted=3500),
+      dict(rank=3, token_id=83, accepted=200)]),
+])
+def test_board_projects_three_canonical_ranks_independent_of_selection(population, expected):
+    cards = hub.cards(dict(swarm_board_rows=population, swarm_seat_selected={'token_id':7}), {}, now=100)
+    board = next(row for row in cards if row['key']=='board')
+    assert board['top_agents'] == expected
+    assert all(row['top_agents'] is None for row in cards if row['key']!='board')
+    if expected:
+        assert board['primary'] == '527'

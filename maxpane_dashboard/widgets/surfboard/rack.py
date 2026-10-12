@@ -9,16 +9,16 @@ from textual.binding import Binding
 from textual.containers import Grid
 from textual.message import Message
 from textual.renderables.digits import Digits
-from textual.widgets import Input
+from textual.widgets import Input, Static
 
 from maxpane_dashboard.analytics.surfboard import SURFBOARD_AGENT_KEYS as AGENT_KEYS
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.explorer import for_network
-from maxpane_dashboard.widgets.fmt import fmt_age, hhmm
+from maxpane_dashboard.widgets.fmt import fmt_age
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
-from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_compact
+from maxpane_dashboard.widgets.sparkline_common import build_sparkline
 
 GREEN = "green"
 MUTED = "dim"
@@ -34,7 +34,7 @@ SLOTS = (
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
 )
-METER_LABELS = dict(swarm="24H", launchpad="2H", protocol="BURN", portfolio="ASSETS")
+METER_LABELS = dict(swarm="24H", launchpad="2H", portfolio="ASSETS")
 
 
 def _number(value):
@@ -57,8 +57,14 @@ def _token_line(row, width, style):
 def _newest_token(ranking, width):
     newest = ranking.get('newest')
     if isinstance(newest, dict):
-        line, clipped = _token_line(newest, max(0, width-5), MUTED)
-        return Text(clip('NEW: ', width), style=MUTED).append_text(line), clipped or width < 5
+        age = fmt_age(newest.get('age_s')) if _number(newest.get('age_s')) else '—'
+        chain = flatten(newest.get('chain')).upper()
+        symbol, clipped = fit_prose(newest.get('symbol') or '—', max(0, width-8-cell_len(age)),
+            style=MUTED, explorer=for_network('MAINNET' if chain == 'ETH' else chain))
+        line = Text('NEWEST ', style=MUTED).append_text(symbol).append(' ' + age)
+        clipped |= cell_len(line.plain) > width
+        line.truncate(width, overflow='ellipsis')
+        return line, clipped
     empty = ranking.get('rows') == [] and ranking.get('state') == 'ok'
     return fit_prose('no launches' if empty else 'unavailable', width, style=MUTED)
 
@@ -70,7 +76,7 @@ def _token_preview(rows, width, style):
         lines[1] = fit_prose('unavailable' if rows is None else 'no launches', width, style=style)
         return lines
     for index, row in enumerate(rows[:3]):
-        marker, ink = {'up': ('▲', Style.parse(GREEN)), 'down': ('▼', Style.parse(RED))}.get(
+        marker, ink = {'up': ('↑', Style.parse(GREEN)), 'down': ('↓', Style.parse(RED))}.get(
             row.get('price_direction'), ('—', style))
         line, lost = _token_line(row, max(0, width-2), style)
         line.align('left', max(0, width-2))
@@ -79,12 +85,44 @@ def _token_preview(rows, width, style):
     return lines
 
 
+def _top_agents_preview(rows, width, style):
+    """One shared column budget for the canonical accepted-job leaders."""
+    lines = [(Text('', style=style), False) for _ in range(3)]
+    if not rows:
+        lines[1] = fit_prose('unavailable' if rows is None else 'no agents', width, style=style)
+        return lines
+    shown = [(str(row['token_id']), f"{row['accepted']:,}" if _number(row.get('accepted')) else '—',
+              row['rank']) for row in rows[:3]]
+    seat_width = max(cell_len(seat) for seat, _, _ in shown)
+    count_width = max(cell_len(count) for _, count, _ in shown)
+    if seat_width + count_width + 3 > width:
+        shown = [(seat, count.replace(',', ''), rank) for seat, count, rank in shown]
+        count_width = max(cell_len(count) for _, count, _ in shown)
+    medals = {1: '#ffd700', 2: '#c0c0c0', 3: '#cd7f32'}
+    for index, (seat, count, rank) in enumerate(shown):
+        numeric = f"{seat.ljust(seat_width)} {count.rjust(count_width)}"
+        line = Text(clip(numeric, max(0, width-2)), style=style)
+        star = Text('★', style=style + Style(color=medals.get(rank, '#999999')))
+        lines[index] = star.append(' ', style=style).append_text(line), cell_len(numeric) > width-2
+    return lines
+
+
+def _protocol_footer(card, width):
+    share = flatten(card.get('secondary'))
+    text = share + ' burned' if share.endswith('% of supply') else 'unavailable'
+    return fit_prose(text, width, style=MUTED)
+
+
 def meter_text(card: dict, width: int | None = None) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
     if key == "swarm-tokens":
         return _newest_token(card.get("token_ranking") or {}, 20 if width is None else width)[0]
+    if key == "protocol":
+        return _protocol_footer(card, 24 if width is None else width)[0]
+    if key in AGENT_KEYS and state == "empty":
+        return Text("Identity.md NFT", style=MUTED)
     if key == "pool4":
         price = card.get("share_price")
         value = "1 sIMD = — IMD"
@@ -225,7 +263,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self.data.update(status="active", primary="PORTFOLIO", secondary="wallet holdings",
                              destination="portfolio", detail="PORTFOLIO · holdings and ready claims · Enter to open")
         if self.empty_seat:
-            self.data.update(status="empty", primary="", secondary="type in seat no", destination=None,
+            self.data.update(status="empty", primary="", secondary="type in", destination=None,
                              meter_state="empty", detail="AGENT · empty seat · Enter to type a seat number")
         else:
             self._seat_error = ""
@@ -257,12 +295,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         primary = flatten(self.data.get("primary")) or "unavailable"
         secondary = flatten(self.data.get("secondary")) or "unavailable"
         ranking = self.data.get("token_ranking") or {}
-        if self.key == "swarm-tokens":
-            state = ranking.get("state", "unavailable")
-            if state != "ok":
-                color = AMBER
-                secondary = (f"{state} {hhmm(ranking.get('read_ts'))}" if state in ("partial", "stale")
-                             else f"as of {hhmm(ranking['read_ts'])}" if ranking.get("read_ts") else "")
+        if self.key == "swarm-tokens" and ranking.get("state", "unavailable") != "ok":
+            color = AMBER
         working = secondary.removesuffix(" working").replace(",", "")
         if (self.key == "swarm" and secondary.endswith(" working")
                 and working.isascii() and working.isdecimal() and working.strip("0")):
@@ -275,8 +309,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             secondary = "offline" if status == "offline" else secondary.removesuffix(" slots")
         if self.key == "announce":
             secondary = secondary.removesuffix(" replies").removesuffix(" reply")
-        elif self.key == "board":
-            secondary = secondary.replace(" accepted", "")
         elif self.key == "protocol":
             secondary = secondary.removesuffix(" of supply")
         if status in ("offline", "error", "failed") and not muted:
@@ -288,9 +320,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "board", "launchpad", "pool4") or self.seat_slot is not None:
+        if self.key in ("swarm", "launchpad", "pool4") or self.seat_slot is not None:
             label = " SEAT " if self.seat_slot is not None else {"swarm": " AGENTS ",
-                     "board": " TOP AGENT ", "launchpad": " COINS ",
+                     "launchpad": " COINS ",
                      "pool4": " IMD PRICE "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
@@ -305,7 +337,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             else:
                 rows = [("", False), (count, False), ("", False)]
         if self.empty_seat:
-            label, rows = " EMPTY SEAT ", [("", False)] * 3
+            label, rows = " EMPTY SEAT ", [("", False), ("", False), ("↑", False)]
             secondary = self._seat_error or secondary
         preview = None
         if self.key == "protocol":
@@ -330,6 +362,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             label = " LATEST "
             ink = self.rich_style.color if status == "active" else self.get_component_rich_style("surfboard-card--muted").color
             preview = [(line, False) for line in _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))]
+        elif self.key == "board":
+            label = " TOP AGENTS "
+            preview = _top_agents_preview(self.data.get("top_agents"), inside,
+                Style(color=self.rich_style.color, bgcolor=palette["background"]))
         elif self.key == "swarm-tokens":
             label = " LAST 24h "
             preview = _token_preview(ranking.get("rows"), inside,
@@ -339,7 +375,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if label and (start := body.plain.find(label.strip())) >= 0:
             body.stylize(Style(bold=False), start, start + len(label.strip()))
         bottom = f" {secondary} " if label else ""
-        if self.key == "protocol":
+        if self.key in ("protocol", "board"):
             bottom = ""
         if self.key in ("announce", "swarm-tokens") and secondary == "0 new":
             bottom = ""
@@ -347,11 +383,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             bottom = bottom.strip()
         if self.seat_slot is not None and len(bottom) > inside:
             bottom = bottom.replace(" of ", "/")
-        if self.key == "board" and len(bottom) > inside:
-            bottom = bottom.replace(",", "")
-            amount = bottom.removesuffix(" jobs")
-            if len(bottom) > inside and amount.isascii() and amount.isdecimal():
-                bottom = fmt_compact(int(amount)) + " jobs"
         if self.key == "announce" and len(bottom) > inside:
             bottom = bottom.replace(",", "")
             if len(bottom) > inside:
@@ -359,6 +390,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         clipped = len(label) > inside or len(bottom) > inside
         if self.key == "swarm-tokens":
             clipped |= _newest_token(ranking, max(0, self.region.width - 6))[1]
+        if self.key == "protocol":
+            clipped |= _protocol_footer(self.data, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
             style = Style(
                 color=self.rich_style.color, bgcolor=palette["background"],
@@ -412,7 +445,7 @@ class SurfboardRack(Grid):
     """Own fixed slots and terminal children; the screen dispatches to both."""
     DEFAULT_CSS = """
     SurfboardRack { layout: grid; grid-size: 6 4; grid-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
-        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 141; }
+        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 145; }
     SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; border-subtitle-align: left; }
@@ -423,6 +456,10 @@ class SurfboardRack(Grid):
     SurfboardCard > Input.seat-input { position: absolute; height: 1; margin: 0; padding: 0;
         border: none; background: $surface; color: $foreground; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
+    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $text-muted;
+        content-align: center middle; }
+    SurfboardRack > #surfboard-keep { layer: keep; }
+    SurfboardRack > #surfboard-building { layer: building; }
     """
 
     class CardActivated(Message):
@@ -441,6 +478,10 @@ class SurfboardRack(Grid):
         self.focused_card = "announce"
 
     def on_resize(self):
+        # Reserve the supply sentence's 23 cells plus the native border gaps;
+        # other columns share the remainder and all grow together on wide screens.
+        equal_width = (self.content_size.width - 5) // 6
+        self.styles.grid_columns = ("1fr", "1fr", "1fr", max(23, equal_width), max(29, equal_width), "1fr")
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
@@ -448,12 +489,25 @@ class SurfboardRack(Grid):
         self.query(SurfboardCard).set_styles(height=card_height)
         # The terminal spans the last track and can use its leftover space.
         self.styles.grid_rows = (card_height,) * (rows - 1) + ("1fr",)
+        self.call_after_refresh(self._position_taglines)
+
+    def _position_taglines(self):
+        for key, label_id in (("agent-3", "keep"), ("agent-4", "building")):
+            card = self.query_one(f"#surfboard-card-{key}", SurfboardCard)
+            label = self.query_one(f"#surfboard-{label_id}", Static)
+            spare = self.content_region.bottom - card.region.bottom
+            label.display = spare > 0
+            label.styles.width = card.region.width
+            label.styles.offset = (card.region.x - self.content_region.x,
+                card.region.bottom - self.content_region.y + max(0, (spare - 1) // 2))
 
     def compose(self):
         for index, slot in enumerate(SLOTS):
             yield SurfboardCard(*slot)
             if index == 6:
                 yield SurfboardTerminal(id="surfboard-terminal")
+        yield Static(Text("キープ"), id="surfboard-keep", classes="rack-tagline")
+        yield Static(Text("ビルディング"), id="surfboard-building", classes="rack-tagline")
 
     def update_data(self, surfboard_cards=None, surfboard_sources=None, **_kwargs):
         cards = {card["key"]: card for card in surfboard_cards if isinstance(card, dict) and isinstance(card.get("key"), str)} if isinstance(surfboard_cards, list) else {}

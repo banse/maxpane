@@ -224,15 +224,15 @@ async def test_footer_age_tick_updates_only_footer_and_keeps_live_log_draft_and_
     ({"market_value_usd": None}, "$IMD unavailable", "[····"),
     ({"market_value_usd": True}, "$IMD unavailable", "$1.00"),
     ({"market_value_usd": float("nan")}, "$IMD unavailable", "nan"),
-    ({"market_state": "stale"}, "mkt stale", ""),
-    ({"overview_state": "stale"}, "swarm stale", ""),
+    ({"market_state": "stale"}, "$33.69M", "stale"),
+    ({"overview_state": "stale"}, "189.1B tokens used", "stale"),
     ({"provider_ts": None}, "age unknown", "10s ago"),
     ({"provider_ts": float("inf")}, "age unknown", "inf"),
     ({"provider_ts": 1_700_000_011}, "0s ago", "-1s"),
     ({"as_of": True}, "age unknown", ""),
     ({"inference_tokens": True}, "tokens unavailable", "1.0 tokens"),
 ])
-async def test_footer_unknown_stale_fdv_and_future_timestamp_are_explicit(changes, expected, excluded):
+async def test_footer_keeps_figures_fdv_and_age_without_stale_labels(changes, expected, excluded):
     async with TerminalApp().run_test(size=(96, 14)) as pilot:
         terminal = pilot.app.query_one(SurfboardTerminal)
         terminal.update_data(surfboard_footer=dict(FOOTER, **changes))
@@ -243,17 +243,25 @@ async def test_footer_unknown_stale_fdv_and_future_timestamp_are_explicit(change
             assert excluded not in text
 
 
-@pytest.mark.parametrize("width", [90, 96])
-async def test_header_keeps_all_network_figures_and_named_service_states_at_rack_widths(width):
+@pytest.mark.parametrize("width", [72, 90, 96, 149])
+@pytest.mark.parametrize("source_state", ["ok", "stale"])
+async def test_header_keeps_network_figures_without_stale_or_service_flags(width, source_state):
     async with TerminalApp().run_test(size=(width, 18)) as pilot:
         terminal = pilot.app.query_one(SurfboardTerminal)
-        overview = dict(agents_online=856, working_now=14, jobs_24h=1271, oracles_24h=32,
-                        accepted_24h=2485, services=dict(verifier=True, publisher=False, deployer=None))
-        terminal.update_data(surfboard_overview=overview, surfboard_footer=FOOTER)
+        overview = dict(agents_online=856, working_now=14, jobs_24h=1_271_000, oracles_24h=32,
+                        accepted_24h=2_485_000, services=dict(verifier=True, publisher=False, deployer=None))
+        sources = {"overview": {"state": source_state}}
+        terminal.update_data(surfboard_overview=overview, surfboard_footer=FOOTER,
+                             surfboard_sources=sources)
         await pilot.pause()
         text = painted(pilot.app)
-        for word in ("856 online", "14 working", "1,271 jobs", "32 oracles", "2,485 steps", "V* P! D?"):
+        for word in ("856 online", "14 working", "32 oracles"):
             assert word in text
+        assert ("1.3M jobs" if width == 72 else "1,271,000 jobs") in text
+        assert ("2.5M steps" if width == 72 else "2,485,000 steps") in text
+        for removed in ("stale", "V*", "P!", "D?"):
+            assert removed not in text
+        assert terminal._sources == sources and terminal._overview == overview
         assert "IMD TERMINAL" not in text  # The web header replaces the separate title.
 
 
@@ -309,7 +317,7 @@ async def test_event_state_has_bold_failure_live_or_theme_foreground(state, expe
         assert style.color.get_truecolor() == color
 
 
-async def test_long_event_hint_keeps_every_stale_header_fact_and_service_at_live_rack_width():
+async def test_long_event_hint_keeps_network_figures_without_stale_or_service_flags():
     async with TerminalApp().run_test(size=(96, 18)) as pilot:
         terminal = pilot.app.query_one(SurfboardTerminal)
         row = dict(events(0, 1)[0], objective="long live objective " * 40)
@@ -319,8 +327,10 @@ async def test_long_event_hint_keeps_every_stale_header_fact_and_service_at_live
                              surfboard_sources={"overview": {"state": "stale"}})
         await pilot.pause()
         header = next(line for line in painted(pilot.app).splitlines() if "869 online" in line)
-        for fact in ("stale", "35 working", "944 jobs", "237 oracles", "V*", "P*", "D*", "‹ widen"):
+        for fact in ("35 working", "944 jobs", "237 oracles", "‹ widen"):
             assert fact in header, header
+        for removed in ("stale", "V*", "P*", "D*"):
+            assert removed not in header
         assert "32,451 steps" in header or "32.5K steps" in header
 
 
@@ -342,9 +352,19 @@ async def test_both_stale_sources_and_fdv_keep_age_visible_at_narrow_rack_footer
         terminal.update_data(surfboard_footer=dict(FOOTER, market_basis="fdv", market_state="stale", overview_state="stale"))
         await pilot.pause()
         line = next(line for line in painted(pilot.app).splitlines() if "$33.69M" in line)
-        for phrase in ("FDV", "mkt stale", "swarm stale", "189.1B", "10s", "$1B goal"):
+        for phrase in ("FDV", "189.1B", "10s", "$1B goal"):
             assert phrase in line, line
+        assert "stale" not in line
         assert "…" not in line and "‹ widen" not in line
+
+
+async def test_hiding_automatic_stale_labels_preserves_literal_replies():
+    async with TerminalApp().run_test(size=(96, 14)) as pilot:
+        terminal = pilot.app.query_one(SurfboardTerminal)
+        terminal.update_data(surfboard_footer=dict(FOOTER, market_state="stale", overview_state="stale"))
+        terminal.add_reply("source stale; V* P* D* are reply text")
+        await pilot.pause()
+        assert "source stale; V* P* D* are reply text" in painted(pilot.app)
 
 
 async def test_joined_agent_ready_is_not_a_called_step_and_unassigned_node_is_queued():

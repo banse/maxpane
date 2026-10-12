@@ -13,7 +13,7 @@ from functools import cmp_to_key
 from typing import Any
 
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
-from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_points, compact_age, recent_launch_news, SURFBOARD_AGENT_KEYS, seat_token
+from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_points, compact_age, SURFBOARD_AGENT_KEYS, seat_token
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard_activity as work_activity
 from maxpane_dashboard.data import surf_launchpad_volume as launch_volume
@@ -477,7 +477,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         seat = seat if isinstance(seat, dict) else {}
         token = seat_token(seat.get('token_id'))
         if token is None:
-            card(key, 'AGENT', '', 'type in seat no', 'EMPTY SEAT', None)
+            card(key, 'AGENT', '', 'type in', 'EMPTY SEAT', None)
             result[-1].update(seat_slot=slot, status='empty', meter_state='empty', meter_kind='activity')
             continue
         outcome = seat.get('outcome') if isinstance(seat.get('outcome'), dict) else {}
@@ -505,6 +505,12 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          _value(count(leader.get("accepted")), " accepted jobs"),
          f"top #{_value(count(leader.get('token_id')))} · {_value(count(leader.get('accepted')), ' accepted jobs')}"
          " · summary cache ≤10m","board",source="records")
+    population = data.get("swarm_board_rows")
+    result[-1]["top_agents"] = (sorted(
+        (dict(rank=row["rank"], token_id=row["token_id"], accepted=count(row.get("accepted")))
+         for row in population if isinstance(row, dict) and count(row.get("rank")) in (1, 2, 3)
+         and seat_token(row.get("token_id")) is not None), key=lambda row: row["rank"])
+        if isinstance(population, list) else None)
     activity_meter(leader.get("token_id"), leader.get("live_state"))
     points, volume_state, volume_detail = _launchpad_volume(data, launchpad, family_sources or {}, now)
     card("launchpad","LAUNCHPAD",_value(count(data.get("launchpad_coin_count"))),_value(count(data.get("launchpad_new_24h"))," new"),
@@ -576,13 +582,12 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     primary = f"{total:,}" if total is not None else "unavailable"
     if total is not None and catalogue_state == "partial":
         primary = "≥" + primary
-    events = data.get("swarm_launch_fired")
-    new = len(recent_launch_news(events, now=now)) if isinstance(events, list) else None
+    ranking = catalogue.get("ranking") or {}
+    new = count(ranking.get("total"))
     card("swarm-tokens", "TOKENS", primary, f"{new:,} new" if new is not None else "unavailable",
          f"TOKENS · {primary} tokens · production-chain markets · catalogue {catalogue_state} · read {hhmm(catalogue.get('as_of'))}"
-         f" · launch news 1h · evaluated {hhmm(now)}", "swarm-tokens")
-    result[-1]["status"] = "active" if new else "idle"
-    ranking = catalogue.get("ranking") or {}
+         f" · launched in last 24h · evaluated {hhmm(now)}", "swarm-tokens")
+    result[-1]["status"] = "unavailable" if new is None else "active" if new else "idle"
     result[-1].update(token_ranking=catalogue.get("ranking"), meter_kind=None, points=None)
     volumes = [number(row.get("volume_usd")) for row in ranking.get("rows") or []]
     result[-1]["detail"] += (f" · launched in last 24h · ranked by selected-pool 24h USD volume"

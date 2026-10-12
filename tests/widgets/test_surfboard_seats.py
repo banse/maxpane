@@ -56,8 +56,11 @@ async def test_four_empty_agent_seats_have_inner_frames_and_borderless_inputs(si
             assert "EMPTY SEAT" in painted[top].text
             assert "┌" in painted[top].text and "┐" in painted[top].text
             assert "└" in painted[top + 4].text and "┘" in painted[top + 4].text
-            assert "type in seat no" in painted[top + 4].text
-            assert painted[-1].text == "╰─ EMPTY " + "▱" * (card.region.width - 12) + " ─╯"
+            assert "type in" in painted[top + 4].text and "seat no" not in painted[top + 4].text
+            assert "Identity.md NFT" in painted[-1].text
+            assert "EMPTY" not in painted[-1].text and "▱" not in painted[-1].text
+            assert painted[top + 3].text.strip("│ ") == "↑"
+            assert abs(painted[top + 3].text.index("↑") - (card.region.width - 1) / 2) <= .5
             assert card.can_focus and card.data["seat_slot"] == slot
             assert card.data["token_id"] is None and card.data["destination"] is None
             assert field.display and field.region.height == 1
@@ -80,7 +83,7 @@ async def test_four_empty_agent_seats_have_inner_frames_and_borderless_inputs(si
                                      .crop(field.content_region.right - 1, field.content_region.right)))
                     assert fill.style.bgcolor == native_fill
                 assert all(edge[0] in ("", "none") for edge in field.styles.border)
-                for y in (field.region.y - 1, field.region.bottom):
+                for y in (field.region.y - 1,):
                     assert not strips[y].crop(field.region.x, field.region.right).text.strip()
 
 

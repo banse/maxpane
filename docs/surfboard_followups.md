@@ -224,3 +224,27 @@ requested mockup workflow.
 Validation: three compositor/data cases, 124 fast guards and 12 docpins passed.
 Both deliberate geometry regressions were detected by named tests and restored
 byte-for-byte. Final review approved with no findings. No full suite run.
+
+
+## Rack content refresh — 2026-10-13
+
+Implemented the owner's TOKENS arrows/newest footer/24h count, TOP AGENTS medal
+rows, supply-burn sentence, empty-seat prompt/NFT footer, and Katakana side captions.
+The terminal no longer paints stale qualifiers or V/P/D flags; generated status
+and seat replies retain read times without stale labels. Metadata and literal
+third-party prose remain intact. Consecutive-load price comparison is unchanged.
+
+Live keyless preview was shown at 149×45 before hardening. The protocol footer
+needs a wider column; all cards retain equal heights and the terminal retains its
+full vertical span. Exact measurements live beside the screen pins. Large accepted
+counts shed comma separators before clipping; ordinary counts retain them.
+
+Regression checks cover the card/data contract, canonical rank order, 24h count
+provenance, terminal variants, empty inputs, caption geometry and address links.
+Four deliberate data/layout mutations were rejected and restored byte-for-byte.
+The full repository suite was not run. Final review findings are recorded below.
+
+Validation: 645 affected/composing tests, 124 fast guards, 12 docpins and two
+address checks passed. Final review: Approved, no findings; 17 focused cases
+passed and an explorer-link mutation was rejected and restored. No outstanding
+findings for this refresh.

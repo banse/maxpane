@@ -7560,7 +7560,8 @@ class SurfManager:
                          "Services: " + " · ".join(f"{name} " + ("up" if (o.get('services') or {}).get(name) is True else
                              "down" if (o.get('services') or {}).get(name) is False else "unavailable")
                              for name in ("verifier", "publisher", "deployer")),
-                         " · ".join(f"{name}: {source['state']} read {hub.hhmm(source['read_ts'])}" for name,source in data['surfboard_sources'].items()))
+                         " · ".join(f"{name}: " + (f"{source['state']} " if source['state'] != 'stale' else '')
+                                    + f"read {hub.hhmm(source['read_ts'])}" for name,source in data['surfboard_sources'].items()))
         if cmd == "jobs":
             return reply(f"Snapshot jobs: {o.get('jobs', 'unavailable')} · states {o.get('job_states') or 'unavailable'}",
                          f"Recent-event window: {len(events)} events" if events is not None else "Recent events unavailable")
@@ -7596,7 +7597,8 @@ class SurfManager:
                           if identity else "Identity unavailable")
             return reply(f"Seat #{token}: accepted {outcome['accepted']:,} / {outcome['attempts']:,}"+(f" ({rate:.1%})" if rate is not None else " · no attempts"),
                          f"Rejected {outcome['rejected']} · failed {outcome['failed']} · pending {outcome['pending']} · rank #{outcome['rank']} of {outcome['ranked_of']}",
-                         f"Summary {source['state']} · read {hub.hhmm(source['read_ts'])} · cache ≤10m",
+                         "Summary" + (f" {source['state']}" if source['state'] != 'stale' else '')
+                         + f" · read {hub.hhmm(source['read_ts'])} · cache ≤10m",
                          f"Presence: {live['live_state'] if live else 'unavailable'} · read {data.get('swarm_workers_as_of_hhmm') or '—'}", owner_line)
         if cmd in ("find", "me"):
             target = arg if cmd == "find" else wallet or (data.get('swarm_seat_summary') or {}).get('owner')

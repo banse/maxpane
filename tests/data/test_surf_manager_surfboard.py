@@ -375,7 +375,7 @@ async def test_old_overview_snapshot_survives_failed_read_until_tokens_arrive(ma
     await m.close()
 
 
-async def test_tokens_card_shares_retained_catalogue_and_ages_news_without_full_read(manager):
+async def test_tokens_card_shares_retained_catalogue_and_counts_24h_without_full_read(manager):
     m, clock = manager
     m._last_full_payload = dict(as_of=1000, swarm_launch_fired=[dict(ts=1000., number=1210)])
     m._offer_full = lambda now: None
@@ -395,7 +395,7 @@ async def test_tokens_card_shares_retained_catalogue_and_ages_news_without_full_
         m._swarm_launch_keys = lambda: dict(swarm_launch_rows=cached)
         second = await m.fetch_hub_snapshot()
         card = next(c for c in second['surfboard_cards'] if c['key']=='swarm-tokens')
-        assert (card['primary'], card['secondary'], card['status']) == ('3', '1 new', 'active')
+        assert (card['primary'], card['secondary'], card['status']) == ('3', '3 new', 'active')
         assert adapter is m.swarm_tokens_manager()
         assert set(adapter._tasks) == {'catalogue', 'markets'}
         await adapter.wait_pending()
@@ -412,10 +412,13 @@ async def test_tokens_card_shares_retained_catalogue_and_ages_news_without_full_
         assert card['points'] is None
         clock.now = 4600
         card = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
-        assert (card['primary'], card['secondary'], card['status']) == ('3', '0 new', 'idle')
+        assert (card['primary'], card['secondary'], card['status']) == ('3', '3 new', 'active')
         assert 'catalogue stale' in card['detail']
         assert card['token_ranking']['state'] == 'stale'
         assert all(row['price_direction'] is None for row in card['token_ranking']['rows'])
+        clock.now = 900 + 86400
+        expired = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
+        assert expired['secondary'] == '0 new' and expired['status'] == 'idle'
     finally:
         await m.close()
     assert adapter._closed
@@ -487,5 +490,20 @@ async def test_hub_ranking_projection_preserves_reader_pool_identity(manager):
         changed = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
         assert not changed['token_ranking']['rows']
         assert changed['token_ranking']['state'] == 'unavailable'
+    finally:
+        await m.close()
+
+
+async def test_terminal_commands_keep_read_times_but_omit_stale_labels(manager):
+    m, clock = manager
+    await ready(m)
+    clock.now += 1000
+    try:
+        assert m._hub_sources()['records']['state'] == 'stale'
+        for command in ('status', 'seat #420'):
+            lines = '\n'.join((await m.execute_hub_command(command))['lines'])
+            assert 'stale' not in lines
+            assert 'read ' in lines
+        assert m._hub_sources()['records']['state'] == 'stale'
     finally:
         await m.close()

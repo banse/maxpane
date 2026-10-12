@@ -1563,7 +1563,9 @@ SURF_LAUNCHPAD_HERO_FIELDS = {
 }
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points", "token_ranking",
-                        "meter_state", "share_price", "seat_slot", "token_id")
+                        "meter_state", "share_price", "seat_slot", "token_id", "top_agents")
+# top_agents: None (unknown) / [] (known empty) / up to three {rank, token_id,
+# accepted} rows in canonical rank order; None on cards other than LEADERBOARD.
 # seat_slot/token_id identify the four saved AGENT cards; None on other cards.
 # meter_state: independent activity (busy/idle/offline/stale/unavailable/empty) or volume coverage;
 # share_price: IMD per whole sIMD from the existing protocol vault read, or None.

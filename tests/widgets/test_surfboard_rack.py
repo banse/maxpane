@@ -83,8 +83,8 @@ async def test_post_preview_keeps_unicode_literal_and_address_copy_units(size):
                 assert not next(s.style for s in content[0] if '[bold]' in s.text).bold
             elif text.startswith('a界'):
                 assert [s.crop(left+1,right).text.rstrip() for s in content]==[
-                    'a'+'界'*(8 if size[0]==149 else 7),
-                    '界'*(9 if size[0]==149 else 8), '界'*(7 if size[0]==149 else 6)+'...']
+                    'a'+'界'*7,
+                    '界'*8, '界'*6+'...']
             elif text=='Short post':
                 assert 'Short post' in content[0].text
                 assert all(not s.crop(left+1,right).text.strip() for s in content[1:])
@@ -93,10 +93,9 @@ async def test_post_preview_keeps_unicode_literal_and_address_copy_units(size):
 
 
 @pytest.mark.parametrize('size', [(149,45),(140,36)])
-async def test_leader_and_coins_digit_labels_exact_counts_and_launch_color(size):
+async def test_coins_digit_labels_exact_counts_and_launch_color(size):
     async with RackApp().run_test(size=size) as pilot:
         for key,primary,footer,label,outer,glyphs in [
-            ('board','527','4,176 accepted jobs','TOP AGENT','LEADERBOARD',['╭─╴╶─╮╶─┐','╰─╮┌─┘  │','╶─╯╰─╴  ╵']),
             ('launchpad','208','0 new','COINS','LAUNCHPAD',['╶─╮╭─╮╭─╮','┌─┘│ │├─┤','╰─╴╰─╯╰─╯']),
         ]:
             card=pilot.app.query_one('#surfboard-card-'+key,SurfboardCard)
@@ -148,7 +147,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         footer = next(segment for segment in strips[top + 4] if "27 working" in segment.text)
         assert not footer.style.bold
         assert footer.style.color.get_truecolor() == Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
-        chart = "▁▁▂▂▃▃▄▅▅▆▆▇▇█" if size[0] == 149 else "▁▁▂▂▃▄▄▅▅▆▇▇█"
+        chart = "▁▁▂▂▃▄▄▅▅▆▇▇█" if size[0] == 149 else "▁▁▂▃▃▄▅▅▆▇▇█"
         assert strips[-1].text == f"╰─ 24H {chart} ─╯"
         header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
         assert not header.style.bold
@@ -317,8 +316,8 @@ async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
                 assert '★' not in line and ':' not in line
             assert len(unit_columns) == len(label_columns) == 1
             assert strips[top+4].text[left+1:right].strip('─ ') == ''
-            assert 'BURN' in strips[-1].text
-            assert '‹ widen' not in str(card.border_title)
+            assert '0.47% of supply' in strips[-1].text and 'BURN' not in strips[-1].text
+            assert ('‹' in str(card.border_title)) == (card.region.width - 6 < 21)
 
 
 async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
@@ -393,8 +392,8 @@ async def test_live_cards_route_and_empty_seats_focus_input_without_opening():
 
 
 @pytest.mark.parametrize("numerator,denominator,expected", [
-    (0, 8, "IDLE ▱▱▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "IDLE ▰▰▰▰▰▰▱▱▱▱▱▱▱"),
-    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE —"),
+    (0, 8, "IDLE ▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "IDLE ▰▰▰▰▰▱▱▱▱▱▱"),
+    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE —"),
     (None, 8, "IDLE —"), (True, 8, "IDLE —"), (9, 8, "IDLE —"),
     (-1, 8, "IDLE —"), (float("inf"), 8, "IDLE —"),
 ])
@@ -416,7 +415,7 @@ async def test_chart_requires_all_eight_buckets_and_empty_seats_stay_unlit():
             meter_kind="sparkline", points=[0, 1, 2, 3, 4, 5, 6, 7]),
             dict(key="agent-2", token_id=None, status="active", numerator=1, denominator=1, destination="fake")])
         await pilot.pause()
-        assert "24H ▁▁▂▂▃▃▄▅▅▆▆▇▇█" in painted(pilot.app)
+        assert "24H ▁▁▂▂▃▄▄▅▅▆▇▇█" in painted(pilot.app)
         empty = rack.query_one("#surfboard-card-agent-2", SurfboardCard)
         assert empty.data["destination"] is None
         rack.update_data(surfboard_cards=[dict(key="swarm", meter_kind="sparkline", points=[0, 1])])
@@ -434,8 +433,8 @@ async def test_swarm_outer_footer_stretches_history_on_resize_and_keeps_unknown_
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         card = app.hub.query_one("#surfboard-card-swarm", SurfboardCard)
-        for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
-                             (140, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
+        for width, chart in [(149, "▁▁▂▃▃▄▅▅▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
+                             (140, "▁▁▂▃▃▄▅▅▆▇▇█"), (149, "▁▁▂▃▃▄▅▅▆▇▇█")]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
@@ -452,10 +451,8 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
     from tests.screens.test_surfboard_layout import HubHarness
     from tests.surfboard_fixtures import hub_payload
 
-    labels = {"protocol": "BURN", "board": "IDLE",
-              "agent": "IDLE", "portfolio": "ASSETS", "agent-2": "EMPTY",
-              "agent-3": "EMPTY", "agent-4": "EMPTY"}
-    placeholders = {"portfolio", "agent-2", "agent-3", "agent-4"}
+    labels = {"board": "IDLE", "agent": "IDLE", "portfolio": "ASSETS"}
+    placeholders = {"portfolio"}
     payload = hub_payload()
     for data in payload["surfboard_cards"]:
         if data["key"] in labels:
@@ -465,7 +462,7 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        for width in (149, 180, 144, 149):
+        for width in (149, 180, 148, 149):
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             strips = app.hub._compositor.render_strips()
@@ -523,7 +520,7 @@ async def test_tokens_ranked_rows_direction_ink_newest_footer_and_activity(size)
             assert strips[top].text.strip('│┌┐─ ') == 'LAST 24h'
             assert not header.style.bold and header.style.color == inset_border_color(strips[top])
             for strip, words, icon in zip(strips[top+1:top+4],
-                    [('2h', 'SFPT'), ('5h', 'RAI'), ('4h', 'TDEMO')], ['▲', '▼', '—']):
+                    [('2h', 'SFPT'), ('5h', 'RAI'), ('4h', 'TDEMO')], ['↑', '↓', '—']):
                 assert strip.text.strip('│ ').split() == [*words, icon]
                 right = strips[top].text.index('┐')
                 assert strip.crop(right-1, right).text == icon
@@ -532,13 +529,13 @@ async def test_tokens_ranked_rows_direction_ink_newest_footer_and_activity(size)
                         assert segment.style.color == card.rich_style.color
                         assert not segment.style.dim
                 marker = next(s for s in strip if icon in s.text)
-                expected_ink = (pilot.app.ansi_theme.ansi_colors[2] if icon == '▲'
-                                else pilot.app.ansi_theme.ansi_colors[1] if icon == '▼' else card.rich_style.color.get_truecolor())
+                expected_ink = (pilot.app.ansi_theme.ansi_colors[2] if icon == '↑'
+                                else pilot.app.ansi_theme.ansi_colors[1] if icon == '↓' else card.rich_style.color.get_truecolor())
                 assert marker.style.color.get_truecolor() == expected_ink
             assert strips[top+4].text.strip('│└┘─ ') == (footer if status == 'active' else '')
             bottom = next(s for s in strips[top+4] if '└' in s.text)
             assert not bottom.style.bold and bottom.style.color.get_truecolor() == expected
-            assert strips[-1].text.strip('╰╯─ ').split() == ['NEW:', '5m', 'FRESH']
+            assert strips[-1].text.strip('╰╯─ ') == 'NEWEST FRESH 5m'
             assert '24H' not in strips[-1].text and not any(c in strips[-1].text for c in '▁▂▃▄▅▆▇█')
             assert not any(c in ''.join(s.text for s in strips) for c in '✔⚠')
 
@@ -547,7 +544,7 @@ async def test_token_price_flat_or_missing_is_neutral_despite_legacy_liquidity()
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
         data = token_card_data()
-        for direction, marker in [('up', '▲'), ('down', '▼'), ('flat', '—'), (None, '—')]:
+        for direction, marker in [('up', '↑'), ('down', '↓'), ('flat', '—'), (None, '—')]:
             data['token_ranking']['rows'] = [dict(data['token_ranking']['rows'][0],
                 price_direction=direction, lp_state='two-sided', liquidity_state='ok', paired_symbol='ETH')]
             card.set_data(data)
@@ -560,11 +557,12 @@ async def test_token_price_flat_or_missing_is_neutral_despite_legacy_liquidity()
 
 
 @pytest.mark.parametrize('state', ['partial', 'stale'])
-async def test_token_degraded_ranking_has_source_clock_and_literal_tooltip(state):
+async def test_token_degraded_ranking_keeps_new_count_and_literal_source_tooltip(state):
     from rich.text import Text
     from maxpane_dashboard.widgets.fmt import hhmm
     data = token_card_data()
     data['token_ranking'].update(state=state, known=2, total=5)
+    data['secondary'] = '5 new'
     clock = hhmm(data['token_ranking']['read_ts'])
     data['detail'] = f'TOKENS · 2/5 eligible markets · {state} · source {clock} · [/x] $300\x1b\u202e'
     async with RackApp().run_test(size=(149, 45)) as pilot:
@@ -573,10 +571,11 @@ async def test_token_degraded_ranking_has_source_clock_and_literal_tooltip(state
         await pilot.pause()
         strips = card_strips(pilot.app, card)
         top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
-        assert strips[top+4].text.strip('│└┘─ ') == f'{state} {clock}'
+        assert strips[top+4].text.strip('│└┘─ ') == '5 new'
+        assert state not in ''.join(s.text for s in strips)
         assert '2 new' not in ''.join(s.text for s in strips)
         assert inset_border_color(strips[top]).get_truecolor() == neutral_inset_color(pilot.app)
-        assert strips[-1].text.strip('╰╯─ ').split() == ['NEW:', '5m', 'FRESH']
+        assert strips[-1].text.strip('╰╯─ ') == 'NEWEST FRESH 5m'
         assert isinstance(card.tooltip, Text)
         assert card.tooltip.plain == data['detail'].replace('\x1b', '').replace('\u202e', '')
         assert not card.tooltip.spans
@@ -591,12 +590,12 @@ async def test_token_empty_unread_and_unavailable_keep_independent_newest_footer
         for envelope, body, footer, inset in [
             (None, 'unavailable', 'unavailable', ''),
             (dict(ranking, rows=None, newest=None, state='unavailable', known=0, total=None),
-             'unavailable', 'unavailable', 'as of ' + hhmm(ranking['read_ts'])),
+             'unavailable', 'unavailable', ''),
             (dict(ranking, rows=[], newest=None, known=0, total=0), 'no launches', 'no launches', ''),
             (dict(ranking, rows=[], newest=dict(ranking['newest'], age_s=172800), known=0, total=0),
-             'no launches', 'NEW: 2d FRESH', ''),
+             'no launches', 'NEWEST FRESH 2d', ''),
             (dict(ranking, rows=None, state='unavailable', known=0, total=3),
-             'unavailable', 'NEW: 5m FRESH', 'as of ' + hhmm(ranking['read_ts'])),
+             'unavailable', 'NEWEST FRESH 5m', ''),
         ]:
             card.set_data(dict(data, token_ranking=envelope, status='idle', secondary='0 new'))
             await pilot.pause()
@@ -622,7 +621,7 @@ async def test_token_hostile_wide_tickers_preserve_age_marker_and_advertise_clip
         left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
         row = strips[top+1].crop(left+1, right)
         assert row.text.startswith('—   [/x]') and '…' in row.text
-        assert row.crop(right-left-2, right-left-1).text == '▲'
+        assert row.crop(right-left-2, right-left-1).text == '↑'
         assert all(s.crop(right, right+1).text == '│' for s in strips[top+1:top+4])
         assert '‹' in strips[0].text
         assert '\x1b' not in ''.join(s.text for s in strips) and '\u202e' not in ''.join(s.text for s in strips)
@@ -630,7 +629,7 @@ async def test_token_hostile_wide_tickers_preserve_age_marker_and_advertise_clip
         assert all(not s.style.bold for s in row if '[/x]' in s.text)
 
 
-@pytest.mark.parametrize('width', [200, 230])
+@pytest.mark.parametrize('width', [200, 250])
 async def test_token_address_tickers_keep_copy_actions_and_known_chain_links(width):
     address = '0x1234567890abcdef1234567890abcdef12345678'
     data = token_card_data()
@@ -645,10 +644,10 @@ async def test_token_address_tickers_keep_copy_actions_and_known_chain_links(wid
             await pilot.pause()
             strips = card_strips(pilot.app, card)
             rows = [s for s in strips if '0x' in s.text]
-            assert len(rows) == (2 if width == 230 else 1)
+            assert len(rows) == (2 if width == 250 else 1)
             if width == 200:
-                # NEW: uses five cells; omit the whole address/icon unit if it cannot fit.
-                assert 'NEW:' in strips[-1].text and '…' in strips[-1].text
+                # Preserve the whole address/icon unit or show a marked ellipsis.
+                assert 'NEWEST' in strips[-1].text and '…' in strips[-1].text
                 assert '‹' in strips[0].text
             for row in rows:
                 icon = next(s for s in row if '⧉' in s.text)
@@ -666,3 +665,75 @@ def test_surfboard_and_surf_widgets_import_in_either_order(module):
         f'import maxpane_dashboard.widgets.{module}; import maxpane_dashboard.widgets.{other}'],
         capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize('state', ['working', 'idle', 'offline'])
+async def test_top_agents_three_aligned_rows_and_medal_stars(state):
+    rows = [dict(rank=1, token_id=527, accepted=4184),
+            dict(rank=2, token_id=12, accepted=3001),
+            dict(rank=3, token_id=3, accepted=987)]
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
+        card.set_data(dict(primary='527', secondary='4,184 accepted jobs',
+                           status=state, top_agents=rows, meter_state='idle',
+                           meter_kind='activity', numerator=43200, denominator=86400))
+        await pilot.pause()
+        strips = card_strips(pilot.app, card)
+        top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
+        assert 'TOP AGENTS' in strips[top].text
+        accepted_ends, seat_starts = [], []
+        for strip, seat, accepted, color in zip(strips[top+1:top+4],
+                ['527', '12', '3'], ['4,184', '3,001', '987'],
+                ['#ffd700', '#c0c0c0', '#cd7f32']):
+            assert strip.text.strip('│ ').split() == ['★', seat, accepted]
+            star = next(segment for segment in strip if '★' in segment.text)
+            assert star.style.color == Color.parse(color)
+            seat_starts.append(strip.text.index(seat))
+            accepted_ends.append(strip.text.index(accepted)+len(accepted))
+        assert len(set(seat_starts)) == len(set(accepted_ends)) == 1
+        assert strips[top+4].text.strip('│└┘─ ') == ''
+        assert 'IDLE' in strips[-1].text
+        assert '‹' not in strips[0].text
+
+
+@pytest.mark.parametrize('top_agents,expected', [(None, 'unavailable'), ([], 'no agents')])
+async def test_top_agents_unknown_and_empty_are_distinct(top_agents, expected):
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
+        card.set_data(dict(top_agents=top_agents))
+        await pilot.pause()
+        strips = card_strips(pilot.app, card)
+        top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
+        assert 'TOP AGENTS' in strips[top].text
+        assert expected in strips[top+2].text
+        assert all(not strip.text.strip('│ ') for strip in [strips[top+1], strips[top+3]])
+
+
+async def test_protocol_supply_footer_is_fitted_and_marks_clipping():
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one('#surfboard-card-protocol', SurfboardCard)
+        card.set_data(dict(primary='★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 4k IMD',
+                           secondary='0.47% of supply', numerator=60, denominator=100))
+        for width in [149, 200]:
+            await pilot.resize_terminal(width, 45)
+            await pilot.pause()
+            strips = card_strips(pilot.app, card)
+            assert 'BURN' not in strips[-1].text and '▰' not in strips[-1].text
+            assert '0.47% of supply burned' in strips[-1].text
+            assert '‹' not in strips[0].text
+        card.set_data(dict(secondary='unavailable'))
+        await pilot.pause()
+        assert 'unavailable' in card_strips(pilot.app, card)[-1].text
+        assert 'unavailable burned' not in card_strips(pilot.app, card)[-1].text
+
+
+@pytest.mark.parametrize('accepted,shown', [(None, '—'), (0, '0')])
+async def test_top_agent_missing_accepted_count_does_not_become_zero(accepted, shown):
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
+        card.set_data(dict(top_agents=[dict(rank=1, token_id=527, accepted=accepted)]))
+        await pilot.pause()
+        strips = card_strips(pilot.app, card)
+        top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
+        assert strips[top+1].text.strip('│ ').split() == ['★', '527', shown]
+        assert all(not strip.text.strip('│ ') for strip in strips[top+2:top+4])

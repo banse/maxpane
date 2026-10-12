@@ -1,5 +1,14 @@
 # SURFBOARD hub dashboard specification
 
+
+> Current rack content update (2026-10-13): the owner-approved behavior in
+> `surfboard_rack_content_refresh_plan.md` supersedes the original card sketches
+> below. TOKENS shows consecutive-load ↑/↓, `NEWEST ticker age`, and a positive
+> canonical last-24-hour count. LEADERBOARD shows three ranked accepted-job rows.
+> PROTOCOL uses the supply-burn sentence. Empty seats use ↑ / `type in` and
+> `Identity.md NFT`; spare side space uses Katakana captions. Terminal stale
+> qualifiers and V/P/D flags are hidden while source metadata remains retained.
+
 ## Scope and acceptance
 
 Add **9 · SURFBOARD HUB**, game ID `surfboard`, to MaxPane's start screen. It uses the approved

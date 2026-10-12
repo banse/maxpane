@@ -18,26 +18,24 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Re-measured after the 2026-10-12 live 149×45 four-agent-seat preview.
-#: PROTOCOL's label/amount/unit columns bind width: "rewarded 100k IMD"
-#: needs 19 inner cells including one blank at each end, so its card needs
-#: 23 columns. The 141-column rack floor preserves that row. At 143×34 both
-#: scrollbars appear; at 144×34 only the vertical bar appears. At 143×35
-#: neither appears. The width pin buys the vertical gutter, so 144 also
-#: works at short heights. Four seven-row card floors fit at 35 rows and
-#: scroll at 34. Normal, stress, unavailable and wide-prose composites fit
-#: at 144×35; event prose keeps its own ellipsis marker. Removing the focused
-#: detail restores the terminal's direct four-column, three-row span. Its
-#: measured width is 94 at the pin and 97 at 149×45. Cards keep equal whole-row
-#: heights; the terminal reaches the rack bottom, using the last track's spare
-#: rows (two below the bottom AGENT cards at 149×45). Its 12-row floor keeps the footer visible.
-#: All four empty inputs and assigned ten-digit seats fit at 144×35 and 149×45;
-#: the five-line inset preserves the seven-row card floor.
-#: Rechecked 2026-10-13 after the live TOKENS preview at 149×45: LAST 24h,
-#: three ranked rows and newest-launch footer preserve these floors. Partial
-#: and stale source times fit the inset footer; LAUNCHPAD retains its 2H chart.
+#: Re-measured after the 2026-10-13 live 149×45 content refresh.
+#: PROTOCOL's "17.40% of supply burned" needs 23 footer cells plus six native
+#: border cells, so that column reserves 29. POOL4 reserves 23 for the share
+#: quote; four remaining columns get at least 22. The 145-column rack plus
+#: viewport padding and the vertical gutter binds the 148-column width pin.
+#: Normal, stress, unavailable and wide composites scroll horizontally at
+#: 147×34, but not 148×34; vertical scrolling clears at 148×35. All card text
+#: fits at 148×35 and 149×45; long event prose retains its own ellipsis marker.
+#: Four seven-row cards plus three gutters keep the row pin at 35. Cards
+#: have equal heights; the terminal fills the center through the rack bottom.
+#: At 149×45 it spans 99 columns and extends two rows below the side cards.
+#: Centered Katakana captions occupy only those spare side rows, hidden when
+#: none remain. Empty seats retain their five-line inset and borderless input.
+#: TOP AGENTS is three rows of stars, seat numbers and accepted counts;
+#: TOKENS retains three ranked rows and a NEWEST footer. Supply precision,
+#: counts, unknown states and Unicode cell widths are checked in composition.
 #: App-wide width stays 143.
-SURFBOARD_FULL_LAYOUT_COLUMNS = 144
+SURFBOARD_FULL_LAYOUT_COLUMNS = 148
 SURFBOARD_FULL_LAYOUT_ROWS = 35
 
 

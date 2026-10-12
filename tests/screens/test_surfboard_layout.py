@@ -37,7 +37,7 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        for width, cells in [(149, 9), (180, 14), (140, 8), (149, 9)]:
+        for width, cells in [(149, 8), (180, 14), (140, 8), (149, 8)]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             card = app.hub.query_one("#surfboard-card-announce", SurfboardCard)
@@ -107,7 +107,7 @@ async def test_terminal_uses_dashboard_background_and_native_text_colors():
             assert terminal.query_one(RichLog).styles.background == app.hub.styles.background
             strips = app.hub._compositor.render_strips()
             value = next(segment for strip in strips for segment in strip
-                         if "╭─╴╶─╮╶─┐" in segment.text)
+                         if "4,176" in segment.text)
             reply = next(segment for strip in strips for segment in strip
                          if "palette reply" in segment.text)
             assert value.style.bgcolor == Color.parse(theme.background)
@@ -171,7 +171,7 @@ async def test_projected_pool4_share_rate_fits_owner_size_without_detail(state):
         pool4 = app.hub.query_one("#surfboard-card-pool4")
         footer = app.hub._compositor.render_strips()[pool4.region.bottom - 1].crop(
             pool4.region.x, pool4.region.right)
-        assert footer.text == "╰─ 1 sIMD = 1.303 IMD ─╯"
+        assert footer.text == "╰─ 1 sIMD = 1.30 IMD ─╯"
         assert "‹ widen" not in str(pool4.border_title)
 
 
@@ -185,7 +185,7 @@ async def test_dynamic_detail_is_removed_and_terminal_fills_center_after_focus_a
         terminal = app.hub.query_one(SurfboardTerminal)
         terminal.command_input.value = 'find retained draft'
         terminal.add_reply('retained reply')
-        for width, focused in ((149, 'announce'), (180, 'agent'), (144, 'board')):
+        for width, focused in ((149, 'announce'), (180, 'agent'), (148, 'board')):
             await pilot.resize_terminal(width, 45)
             app.hub.query_one(SurfboardRack).focus_card(focused)
             await app.hub._do_refresh()
@@ -289,7 +289,7 @@ async def _render(payload, size):
             for strip in strips[max(0, card.region.y):card.region.bottom]) for card in cards}
         clipped = []
         for card in cards:
-            if "‹ widen" in str(card.border_title):
+            if "‹" in str(card.border_title):
                 clipped.append(card.key)
         bar = screen.query_one(StatusBar)
         right = bar.query_one("#status-right")
@@ -339,7 +339,7 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
         "announce", "swarm", "swarm-tokens", "pool4", "protocol", "board",
         "launchpad", "portfolio", "agent", "agent-2", "agent-3", "agent-4"]
     for title in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
-                  "TOKENS", "PORTFOLIO", "EMPTY SEAT", "type in seat no"):
+                  "TOKENS", "PORTFOLIO", "EMPTY SEAT", "type in"):
         assert title in r["text"], (title, r["text"])
 
 
@@ -372,7 +372,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 assert "LAST 24h" in text
                 if kind != "unavailable":
                     assert card["secondary"] in text and "FRESH" in text
-                expected = ('unavailable',) if kind == 'unavailable' else ('SFPT', 'RAI', 'TDEMO', '▲', '▼')
+                expected = ('unavailable',) if kind == 'unavailable' else ('SFPT', 'RAI', 'TDEMO', '↑', '↓')
                 assert all(word in text for word in expected), r
                 continue
             if card["key"] == "announce":
@@ -384,17 +384,25 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                     assert "You can now" in text and "deploy via the" in text and "..." in text
                     assert card["secondary"].removesuffix(" replies") in text
                 continue
-            if card["key"] in ("board", "launchpad"):
-                text=r["card_text"][card["key"]]
-                assert ("TOP AGENT" if card["key"]=="board" else "COINS") in text
-                if kind=="unavailable" or (kind=="stress" and card["key"]=="launchpad"):
-                    assert card["primary"] in text
+            if card["key"] == "board":
+                text = r["card_text"]["board"]
+                assert "TOP AGENTS" in text
+                if kind == "unavailable":
+                    assert "unavailable" in text
                 else:
-                    glyph=("╭─╮"*5 if kind=="stress" else "╭─╴╶─╮╶─┐" if card["key"]=="board" else "╶─╮╭─╮╭─╮")
-                    assert glyph in text
-                footer=(card["secondary"].replace(" accepted", "")
-                        if card["key"]=="board" else card["secondary"])
-                assert footer in text
+                    assert text.count("★") == 3
+                    for row in card['top_agents']:
+                        assert str(row['token_id']) in text
+                        assert (f"{row['accepted']:,}" in text or str(row['accepted']) in text)
+                continue
+            if card["key"] == "launchpad":
+                text = r["card_text"]["launchpad"]
+                assert "COINS" in text
+                if kind in ("unavailable", "stress"):
+                    assert card['primary'] in text
+                else:
+                    assert "╶─╮╭─╮╭─╮" in text
+                assert card['secondary'] in text
                 continue
             if card["key"] == "protocol":
                 text = r["card_text"]["protocol"]
@@ -445,3 +453,32 @@ async def test_height_pin_is_the_measured_scroll_transition():
     assert below["vertical"] and not at["vertical"], (below, at)
     assert "‹ taller" in below["text"].splitlines()[0]
     assert "‹ taller" not in at["text"].splitlines()[0]
+
+
+async def test_translated_side_labels_use_spare_space_without_overlapping_terminal_or_cards():
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        for height in (45, 35, 47, 48, 45):
+            await pilot.resize_terminal(149, height)
+            await pilot.pause()
+            rack = app.hub.query_one(SurfboardRack)
+            strips = app.hub._compositor.render_strips()
+            for word, key in [('キープ', 'agent-3'), ('ビルディング', 'agent-4')]:
+                card = rack.query_one(f'#surfboard-card-{key}')
+                free = rack.content_region.bottom - card.region.bottom
+                side = [strip.crop(card.region.x, card.region.right) for strip in
+                        strips[card.region.bottom:rack.content_region.bottom]]
+                visible = '\n'.join(strip.text for strip in side)
+                assert (word in visible) == (free > 0)
+                if free > 0:
+                    line = next(strip for strip in side if word in strip.text)
+                    assert any(segment.style.color == card.get_component_rich_style(
+                        'surfboard-card--muted').color for segment in line if word in segment.text)
+
+
+@pytest.mark.parametrize('kind', ['normal', 'stress'])
+async def test_protocol_full_supply_footer_fits_at_owner_size(kind):
+    rendered = await _render(hub_payload(kind), (149, 45))
+    expected = '0.47% of supply burned' if kind == 'normal' else '17.40% of supply burned'
+    assert expected in rendered['card_text']['protocol']
+    assert 'protocol' not in rendered['clipped']
