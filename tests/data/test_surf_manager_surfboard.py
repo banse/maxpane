@@ -70,6 +70,59 @@ async def test_announce_card_counts_full_channel_snapshot_not_visible_feed(manag
     finally:
         await m.close()
 
+
+async def test_news_hero_projects_full_cached_channel_and_independent_source_clocks(manager):
+    from maxpane_dashboard.data.surf_cache import SLOT_CHANNEL, SLOT_ACTIVITY, SLOT_NFT, SLOT_MARKET, SLOT_LAUNCHPAD
+    m, clock = manager
+    rows = [dict(kind="reply", ts=999-i, text=f"reply {i}", tx_hash=f"0x{i:064x}") for i in range(30)]
+    rows.append(dict(kind="self", ts=800, text="official announcement", tx_hash="0x" + "f"*64))
+    m._last_full_payload = dict(feed_items=rows[:25], imd_price_usd=123)
+    m.cache.store_last_good(SLOT_CHANNEL, dict(items=rows), ts=980)
+    m.cache.store_last_good(SLOT_ACTIVITY, dict(rows=[]), ts=800)
+    m.cache.store_last_good(SLOT_NFT, dict(nft_holders=12, nft_written=1, nft_transfers_24h=0), ts=800)
+    m.cache.store_last_good(SLOT_MARKET, dict(imd_price_usd=9, eth_usd=2000), ts=990)
+    m.cache.store_last_good(SLOT_LAUNCHPAD, dict(sqrt_price_x96=2**96), ts=300)
+    try:
+        for refresh in (False, True):
+            result = m._project_hub(refresh_legacy=refresh)["surf_news_hero"]
+            assert result["announcement"] == dict(state="ok", read_ts=980, text="official announcement", age_s=200)
+            assert result["reply"]["text"] == "reply 0"
+            assert result["activity"]["rows"] == []
+            assert result["activity"]["wallet_count"] == 2
+            assert result["boards"]["read_ts"] == 800
+            assert result["boards"]["moves_24h"] == 0
+            assert result["market"]["state"] == "stale"
+            assert result["market"]["price_usd"] == 2000
+            assert result["market"]["read_ts"] == 300
+        m._failed_groups.add("channel")
+        result = m._project_hub()["surf_news_hero"]
+        assert result["announcement"]["state"] == result["reply"]["state"] == "stale"
+        assert result["announcement"]["read_ts"] == 980
+        assert result["boards"]["state"] == "ok"
+        clock.now = 1250
+        assert m._project_hub()["surf_news_hero"]["boards"]["state"] == "stale"
+        m._cycle.assert_not_awaited()
+    finally:
+        await m.close()
+
+
+async def test_news_hero_failed_and_truncated_reads_retain_last_good(manager):
+    from maxpane_dashboard.data.surf_cache import SLOT_CHANNEL, SLOT_ACTIVITY, SLOT_NFT
+    m, _ = manager
+    m.cache.store_last_good(SLOT_CHANNEL, dict(items=[]), ts=999)
+    m.cache.store_last_good(SLOT_ACTIVITY, dict(rows=[]), ts=999)
+    m.cache.store_last_good(SLOT_NFT, dict(nft_holders=0, nft_written=0, nft_transfers_24h=0), ts=999)
+    m.client.channel_truncated = m.client.activity_truncated = True
+    try:
+        result = m._project_hub()["surf_news_hero"]
+        assert result["announcement"]["state"] == result["reply"]["state"] == "stale"
+        assert result["activity"]["state"] == "stale"
+        assert result["boards"]["state"] == "ok"
+        assert result["boards"]["holders"] == 0
+        assert result["market"]["state"] == "unavailable"
+    finally:
+        await m.close()
+
 async def test_source_failure_retains_clock_and_backoff(manager):
     m,clock=manager;m.set_hub_active(True)
     await m.fetch_hub_snapshot();await asyncio.gather(*m._hub_source_tasks.values())

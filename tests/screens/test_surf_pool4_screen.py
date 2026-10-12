@@ -45,6 +45,7 @@ from maxpane_dashboard.screens.surf import (
 from tests.screens._sweeps import boundary_set
 from maxpane_dashboard.widgets.surf import (
     SurfHero,
+    SurfNewsHero,
     SurfPool4Flow,
     SurfPool4Hatches,
     SurfPool4Ratchet,
@@ -312,8 +313,8 @@ async def test_the_three_bodies_are_never_showing_at_once() -> None:
             await pilot.pause()
             showing = [b for b in bodies if screen.query_one(b).display]
             assert showing == [expected], (keys, showing)
-            # ...and the hero is never part of any of it.
-            assert screen.query_one(SurfHero).display is True
+            assert screen.query_one(SurfHero).display is (expected != "#middle-row")
+            assert screen.query_one(SurfNewsHero).display is (expected == "#middle-row")
 
 
 async def test_the_status_hint_names_both_views() -> None:
@@ -1422,20 +1423,20 @@ async def test_the_taller_marker_lights_on_the_pool4_body() -> None:
     Three heights, and the trio is what makes this bite rather than any one
     of them:
 
-    * **50 rows** -- whole for the pool4 body (42 for this default Sepolia
-      payload, against a 45 pin measured on mainnet's) and whole for the
-      dashboard body (36). The marker must be dark in both, or the test
+    * **50 rows** -- whole for the mainnet pool4 fixture and the dashboard
+      body. The marker must be dark in both, or the test
       below cannot tell a wired marker from a stuck-on one.
-    * **40 rows** -- short for pool4, whole for the dashboard. This is the
+    * **41 rows** -- measured short for this mainnet pool4 fixture and whole
+      for NEWS with its nine-row hero. This is the
       half a missing ``_SCROLL_COLUMNS`` entry fails: the marker is dark
       before ``p`` and must be **lit** after it.
     * **28 rows** -- short for both. The marker must stay lit through the
       swap, which is what stops the fix being "light it whenever the mode is
-      MODE_POOL4"; that mutation passes the 40-row half on its own.
+      MODE_POOL4"; that mutation passes the 41-row half on its own.
     """
-    for rows, before, after in ((50, False, False), (40, False, True),
+    for rows, before, after in ((50, False, False), (41, False, True),
                                 (28, True, True)):
-        async with _pool4_app().run_test(size=(150, rows)) as pilot:
+        async with _pool4_app(_mainnet_pool4_payload()).run_test(size=(150, rows)) as pilot:
             await pilot.app.screen._do_refresh()
             await pilot.pause()
             assert (TALLER_HINT in _screen_text(pilot.app)) is before, (

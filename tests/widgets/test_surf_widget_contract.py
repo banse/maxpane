@@ -55,6 +55,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfNewsHero,
     SurfLaunchpadActivity,
     SurfLaunchpadCoins,
     SurfMarket,
@@ -192,7 +193,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
     """
     assert set(_ALL_WIDGETS) == set(_WIDGETS) | _SHORT_KWARG_WIDGETS
     assert set(_WIDGETS) == {
-        SurfHero, SurfSignals, SurfFeed, SurfDevActivity, SurfMarket, SurfNft,
+        SurfHero, SurfNewsHero, SurfSignals, SurfFeed, SurfDevActivity, SurfMarket, SurfNft,
         # Wired into the `l` body 2026-08-25. They land here, in the strict
         # check, rather than in `_SHORT_KWARG_WIDGETS` -- which is what that
         # list's own docstring asks of a new widget. `SurfBurnkeepers` was
@@ -397,6 +398,7 @@ def test_every_widget_accepts_the_whole_flat_dict(cls):
 #: ``pool4u_signals`` needed the same number -- two copies of one conversion,
 #: which is how two panels on one screen come to disagree (carry-over C1).
 _PURE_ANALYTICS_ALLOWED = frozenset({
+    "maxpane_dashboard.analytics.surfboard",  # rack seat keys and pure arithmetic
     "maxpane_dashboard.analytics.surf_swarm_signals",
     "maxpane_dashboard.analytics.surf_feed",
     "maxpane_dashboard.analytics.surf_pool4_depth",

@@ -46,6 +46,7 @@ from maxpane_dashboard.widgets.address import (
     short_address,
 )
 from maxpane_dashboard.widgets.explorer import Explorer
+from maxpane_dashboard.widgets.markup_safety import flatten
 
 __all__ = [
     "NBSP",
@@ -54,6 +55,7 @@ __all__ = [
     "link_in_order",
     "link_prose",
     "mark_addresses",
+    "post_preview",
     "unmark",
 ]
 
@@ -221,3 +223,35 @@ def fit_prose(text: str, cols: int, *, style: str | Style | None = None) -> Text
     if cut and not fitted:
         fitted = "…"
     return link_prose(Text(unmark(fitted), style=style), explorer=None)
+
+
+def post_preview(value, width, style):
+    """Three cell-fitted literal lines; address/copy pairs remain indivisible."""
+    marked, addresses, spans = mark_addresses(flatten(value), width=max(5, width-5))
+    lines, cursor = [], 0
+    for index in range(3):
+        remaining = marked[cursor:]
+        truncated = index == 2 and rowfit.cell_len(remaining) > width
+        limit = max(0, width-3 if truncated else width)
+        end, used = cursor, 0
+        for char in remaining:
+            cells = rowfit.cell_len(char)
+            if used + cells > limit:
+                break
+            end += 1
+            used += cells
+        for start, stop in spans:
+            if start < end < stop:
+                end = start
+                break
+        if index < 2 and end < len(marked) and marked[end:end+1] != " ":
+            space = marked.rfind(" ", cursor, end)
+            if space > cursor:
+                end = space
+        line = marked[cursor:end].rstrip() + ("..." if truncated else "")
+        lines.append(Text(unmark(line), style=style))
+        cursor = end
+        while cursor < len(marked) and marked[cursor] == " ":
+            cursor += 1
+    link_in_order(lines, addresses)  # A post can mention addresses on any chain.
+    return lines

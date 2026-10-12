@@ -103,6 +103,7 @@ from .activity import SurfDevActivity
 from .burnkeepers import SurfBurnkeepers
 from .feed import FEED_TITLE, SurfFeed
 from .hero import SurfHero
+from .news_hero import SurfNewsHero
 from .launchpad import SurfBurnPipeline, SurfCurveFlow, SurfLaunchpadCoins
 from .launchpad_activity import (
     EMPTY_LINE,
@@ -151,6 +152,7 @@ __all__ = [
     "SurfDevActivity",
     "SurfFeed",
     "SurfHero",
+    "SurfNewsHero",
     "SurfLaunchpadActivity",
     "SurfLaunchpadCoins",
     "SurfMarket",

@@ -145,6 +145,7 @@ from maxpane_dashboard.data import surf_pool4_market as mk
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard as hub
+from maxpane_dashboard.data import surf_news_hero as news_hero
 from maxpane_dashboard.data import surfboard_activity as work_activity
 from maxpane_dashboard.analytics import surf_launch_checks as lc
 from maxpane_dashboard.analytics import surf_launch_liquidity as ll, surf_launch_sites as ls
@@ -7242,7 +7243,34 @@ class SurfManager:
                                                      {'rows': data.get('swarm_launch_rows'),
                                                       'pool_ids': self._swarm_token_pool_ids()})
                                                      if getattr(self, '_swarm_tokens_manager', None) is not None else None))
+        data["surf_news_hero"] = self._news_hero(data, now)
         return data
+
+    def _news_hero(self, data: dict, now: float) -> dict:
+        """Synchronous snapshot projection only: this hero adds no network work."""
+        payloads, sources = {}, {}
+        failed = self._failed_groups | self._client_degradation()
+        for name, slot, tier, ttl in (
+            (SOURCE_CHAIN, SLOT_CHAIN, None, self.poll_interval),
+            (SOURCE_CHANNEL, SLOT_CHANNEL, None, TIER_TTL_SECONDS[TIER_MEDIUM]),
+            (SOURCE_MARKET, SLOT_MARKET, None, TIER_TTL_SECONDS[TIER_MEDIUM]),
+            (SOURCE_LOGS, SLOT_LOGS, None, TIER_TTL_SECONDS[TIER_MEDIUM]),
+            (SOURCE_NFT, SLOT_NFT, None, TIER_TTL_SECONDS[TIER_SLOW]),
+            (SOURCE_ACTIVITY, SLOT_ACTIVITY, None, TIER_TTL_SECONDS[TIER_SLOW]),
+            (SOURCE_LAUNCHPAD, SLOT_LAUNCHPAD, TIER_LAUNCHPAD, TIER_TTL_SECONDS[TIER_LAUNCHPAD]),
+            ("swarm", SLOT_SWARM_LAUNCHES, TIER_SWARM_LAUNCHES, TIER_TTL_SECONDS[TIER_SWARM_LAUNCHES]),
+        ):
+            entry = self.cache.get_last_good(slot)
+            payloads[name] = getattr(entry, "payload", None)
+            sources[name] = news_hero.source(
+                getattr(entry, "ts", None), now=now, ttl=ttl,
+                failed=name in failed or (tier is not None and self.cache.last_failure_ts(tier) is not None))
+        return news_hero.project(
+            data=data, channel=payloads[SOURCE_CHANNEL], activity=payloads[SOURCE_ACTIVITY],
+            market=payloads[SOURCE_MARKET], launchpad=payloads[SOURCE_LAUNCHPAD],
+            boards=payloads[SOURCE_NFT], sources=sources, now=now,
+            signal_read_ts=self._last_full_read_ts, poll_interval=self.poll_interval,
+            wallet_count=len(DEV_WALLETS))
 
     async def fetch_hub_snapshot(self) -> dict[str, Any]:
         """Offer eligible work and return cached data without waiting on I/O."""

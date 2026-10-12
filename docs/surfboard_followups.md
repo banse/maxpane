@@ -81,8 +81,31 @@ Owner review of the 149×45 preview precedes production/live-data integration.
 Final review approved; three mockup tests, 124 guards and 12 docpins passed with
 `NO_COLOR` unset, and two geometry mutants were rejected.
 
-Minor test-isolation follow-up: the accent assertion in
-`tests/screens/test_surf_news_hero_demo.py` inherits `NO_COLOR`. Clear that setting
-in its test fixture when this file is next touched; until then, run its color
-checks with `env -u NO_COLOR`. The reviewer reproduced monochrome output with
-`NO_COLOR=1` and confirmed both focused render tests pass without it.
+Closed during live integration: the mockup test fixture now clears inherited
+`NO_COLOR`, so its accent assertions exercise the intended palette.
+
+## ONCHAIN NEWS live heroes — 2026-10-12
+
+The approved six-card hero is connected to existing cache/API reads in the
+default NEWS body. LAUNCHPAD and protocol retain their existing hero. Announcement
+and community reply previews use the full cached channel independently of the
+25-row feed window. Each card retains its source clock and distinguishes missing,
+empty and real-zero data. Market freshness includes both the selected pool price
+and its USD conversion source. No new API requests or cache slots were added.
+
+Live keyless preview shown at 149×45. The upstream activity page limit and an
+older pool-price observation appeared explicitly as stale. The six cards are
+nine rows each; measured default width remains 143. The mixed-payload height
+measurement moves from 39 to 41: at 39/40 all fixed content is visible but the
+rail scrolls; 41/42/43 have no scrolling or taller marker. At 37/38 the missing
+activity rows remain advertised by the taller marker.
+
+Final review approved after one fix wave: a genuine zero USD conversion now
+preserves the native onchain-price selection, and the models declare every hero
+section and activity-row field. Both regressions were observed failing before
+their fixes. Eight source/zero/layout/dispatch mutations were rejected and restored.
+
+Validation: the closing affected/composing run passed 609 cases; the remaining
+137 affected cases passed in the preceding coordinated run. Also passed: 124
+guards, 12 docpins, five address sweeps and the full-outage app check. No full
+suite run. No outstanding review findings for this integration.

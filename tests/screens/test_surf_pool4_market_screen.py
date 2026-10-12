@@ -54,6 +54,7 @@ from maxpane_dashboard.screens.surf import (
 )
 from maxpane_dashboard.widgets.surf import (
     SurfHero,
+    SurfNewsHero,
     SurfPool4Flow,
     SurfPool4Hatches,
     SurfPool4Ratchet,
@@ -283,7 +284,7 @@ async def test_four_switches_directly_from_either_other_body() -> None:
 #: ``_SURF_HERO_MODES`` would make the test reconstruct the very mapping it
 #: is checking and it could never fail.
 _HERO_PER_MODE = (
-    (MODE_DASHBOARD, (), SurfHero),
+    (MODE_DASHBOARD, (), SurfNewsHero),
     (MODE_LAUNCHPAD, ("l",), SurfHero),
     (MODE_POOL4, ("e",), SurfHero),
     (MODE_POOL4_USER, ("4",), SurfPool4UserHero),
@@ -358,7 +359,7 @@ async def test_exactly_one_hero_survives_every_transition_between_bodies() -> No
     ways out of the market body (``4`` again, and ``escape``).
     """
     expected = {
-        MODE_DASHBOARD: SurfHero,
+        MODE_DASHBOARD: SurfNewsHero,
         MODE_LAUNCHPAD: SurfHero,
         MODE_POOL4: SurfHero,
         MODE_POOL4_USER: SurfPool4UserHero,

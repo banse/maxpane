@@ -1285,7 +1285,7 @@ def test_offline_launch_of_surf_never_kills_the_app(factory) -> None:
 #: distinction ``surf_models.LogWindow``'s own docstring draws for ``()``.
 _NON_NUMERIC_KEYS = frozenset(
     {
-        "degraded", "feed_items", "feed_signal_tx_hashes",
+        "degraded", "feed_items", "feed_signal_tx_hashes", "surf_news_hero",
         "sig_post_state", "sig_lp_state", "sig_gate_state",
         "sig_deploy_state", "sig_bridge_state", "sig_burn_state",
         "sig_post_detail", "sig_lp_detail", "sig_gate_detail",
@@ -2388,7 +2388,13 @@ def test_a_full_outage_renders_explicit_states_not_zeros() -> None:
                 "HOT COIN",
             ):
                 assert label in text, f"{label} vanished under outage"
-            assert "quiet" not in text, (
+            from maxpane_dashboard.widgets.surf import SurfSignals
+            signal_region = app.screen.query_one(SurfSignals).region
+            signal_text = "\n".join(
+                strip.crop(signal_region.x, signal_region.right).text
+                for strip in app.screen._compositor.render_strips()[signal_region.y:signal_region.bottom]
+            )
+            assert "quiet" not in signal_text, (
                 "an unknown (dead-read) row folded into the quiet summary -- "
                 "unknown rows must never fold"
             )

@@ -19,7 +19,7 @@ from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
 from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_compact
-from maxpane_dashboard.widgets.surf._icons import mark_addresses, unmark, link_in_order
+from maxpane_dashboard.widgets.surf._icons import post_preview as _post_preview
 from .terminal import SurfboardTerminal, fitted_prose, fit_prose
 
 GREEN = "green"
@@ -38,38 +38,6 @@ SLOTS = (
 )
 METER_LABELS = dict(swarm="24H", launchpad="2H", protocol="BURN",
                     **{"swarm-tokens": "24H", "portfolio": "ASSETS"})
-
-
-def _post_preview(value, width, style):
-    """Three cell-fitted literal lines; address/copy pairs remain indivisible."""
-    marked, addresses, spans = mark_addresses(flatten(value), width=max(5, width-5))
-    lines, cursor = [], 0
-    for index in range(3):
-        remaining = marked[cursor:]
-        truncated = index == 2 and cell_len(remaining) > width
-        limit = max(0, width-3 if truncated else width)
-        end, used = cursor, 0
-        for char in remaining:
-            cells = cell_len(char)
-            if used + cells > limit:
-                break
-            end += 1
-            used += cells
-        for start, stop in spans:
-            if start < end < stop:
-                end = start
-                break
-        if index < 2 and end < len(marked) and marked[end:end+1] != " ":
-            space = marked.rfind(" ", cursor, end)
-            if space > cursor:
-                end = space
-        line = marked[cursor:end].rstrip() + ("..." if truncated else "")
-        lines.append(Text(unmark(line), style=style))
-        cursor = end
-        while cursor < len(marked) and marked[cursor] == " ":
-            cursor += 1
-    link_in_order(lines, addresses)  # A post can mention addresses on any chain.
-    return lines
 
 
 def _number(value):

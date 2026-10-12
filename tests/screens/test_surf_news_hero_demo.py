@@ -9,6 +9,7 @@ from scripts.surf_news_hero_demo import MOCK_CARDS, NewsHeroCard, SurfNewsHeroDe
 
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
+    monkeypatch.delenv("NO_COLOR", raising=False)
     async def refuse(*args, **kwargs):
         raise AssertionError("the mockup must not request live data")
     monkeypatch.setattr("httpx.AsyncClient.send", refuse)

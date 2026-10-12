@@ -3,7 +3,7 @@
 Layout: three content rows, every widget on screen at once::
 
     #title-bar         SURFBOARD · IMD $x.xx · parity ±x.x% · as of HH:MM
-    #hero-row          SurfHero (full width, four boxes)
+    #hero-row          SurfNewsHero (full width, six rack cards)
     #middle-row        SurfFeed (7fr)   | #surf-right-rail (6fr)
                                         |   SurfSignals     (auto, +1 margin)
                                         |   SurfDevActivity (1fr)
@@ -259,6 +259,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfNewsHero,
     SurfLaunchpadActivity,
     SurfLaunchpadCoins,
     SurfMarket,
@@ -1979,7 +1980,9 @@ SURF_BOARD_FULL_LAYOUT_ROWS = 33
 #: :class:`SurfPool4UserHero`), and adding either here would paint two heroes
 #: into one row -- the exact defect enumerating instead of negating exists to
 #: make loud rather than silent.
-_SURF_HERO_MODES = (MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4)
+#: Default NEWS has its own six-card hero; the legacy row serves only
+#: LAUNCHPAD and protocol until their individual design stages are approved.
+_SURF_HERO_MODES = (MODE_LAUNCHPAD, MODE_POOL4)
 
 #: The launchpad body's container id -- exported so the test module and any
 #: future consumer can query it without retyping the literal.
@@ -3455,6 +3458,7 @@ class SurfScreen(DashboardScreen):
         # body's hero is covered on the day it is composed rather than on the
         # day somebody remembers to add it to a list.
         with Horizontal(id="hero-row"):
+            yield SurfNewsHero(classes="surf-hero")
             yield SurfHero(classes="surf-hero")
             yield SurfPool4UserHero(classes="surf-hero")
             yield SurfSwarmHero(classes="surf-hero")
@@ -3740,6 +3744,7 @@ class SurfScreen(DashboardScreen):
             self.query_one(SurfSwarmHero).display = self._mode == MODE_SWARM
             self.query_one(SurfSwarmAgentHero).display = self._mode == MODE_AGENT
             self.query_one(SurfSwarmBoardHero).display = self._mode == MODE_BOARD
+            self.query_one(SurfNewsHero).display = self._mode == MODE_DASHBOARD
             self.query_one(SurfHero).display = self._mode in _SURF_HERO_MODES
         except Exception as exc:  # noqa: BLE001 -- a toggle must never crash
             logger.debug("surf mode toggle failed: %s", exc)
@@ -4370,6 +4375,11 @@ class SurfScreen(DashboardScreen):
             )
         except Exception as exc:
             logger.debug("Failed to update SurfHero: %s", exc)
+
+        try:
+            self.query_one(SurfNewsHero).update_data(surf_news_hero=data.get("surf_news_hero"))
+        except Exception as exc:
+            logger.debug("Failed to update SurfNewsHero: %s", exc)
 
         # Signals (right rail, top) -- the nine detectors (Task 9 grew this
         # from six: DECOY POOL, BURN READY, HOT COIN are the v4-launchpad

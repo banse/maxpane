@@ -7,48 +7,26 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from rich.style import Style
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Grid, Horizontal, ScrollableContainer, Vertical
-from textual.renderables.digits import Digits
 from textual.widgets import Static
 
 from maxpane_dashboard.themes import THEMES
-from maxpane_dashboard.widgets.markup_safety import flatten
-from maxpane_dashboard.widgets.panels import HeroBoxBase
-from maxpane_dashboard.widgets.rowfit import clip
-from maxpane_dashboard.widgets.sparkline_common import build_sparkline
 from maxpane_dashboard.widgets.surf.activity import SurfDevActivity
 from maxpane_dashboard.widgets.surf.feed import SurfFeed
 from maxpane_dashboard.widgets.surf.market import SurfMarket
 from maxpane_dashboard.widgets.surf.nft import SurfNft
+from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, NewsHeroCard
 from maxpane_dashboard.widgets.surf.signals import SurfSignals
-from maxpane_dashboard.widgets.surfboard.rack import _post_preview
 from scripts.surf_start_demo import parse_size
-
-
-@dataclass(frozen=True)
-class HeroRecord:
-    key: str
-    title: str
-    heading: str
-    footer: str
-    subtitle: str = ""
-    preview: str = ""
-    rows: tuple[str, ...] = ()
-    stats: tuple[tuple[str, str], ...] = ()
-    digits: str = ""
-    accent: bool = True
-    points: tuple[float, ...] = ()
 
 
 MOCK_PRICE = (9.20, 9.22, 9.21, 9.27, 9.30, 9.28, 9.36, 9.41)
@@ -97,53 +75,6 @@ MOCK_NFT = dict(nft_holders=812, nft_transfers_24h=38, nft_dev_holdings=24, nft_
                 nft_last_sales=[dict(ts=MOCK_TIME - 300, token_id=420, eth=0.042)])
 
 
-class NewsHeroCard(HeroBoxBase):
-    """The rack's five-line inset and footer, driven only by display records."""
-
-    def __init__(self, data: HeroRecord):
-        super().__init__(id=f"hero-{data.key}")
-        self.data = data
-        self.border_title = Text("⊙ " + flatten(data.title))
-        self.border_subtitle = Text(flatten(data.footer), style="dim")
-
-    def on_resize(self):
-        data = self.data
-        footer = Text(flatten(data.footer), style="dim")
-        if data.points:
-            available = max(1, self.size.width - len(data.footer) - 7)
-            footer.append(" " + build_sparkline(list(data.points), width=available), style=Style(color="green", dim=False))
-        self.border_subtitle = footer
-        self.refresh()
-
-    def render(self) -> Text:
-        data = self.data
-        width = max(4, self.content_size.width)
-        inside = width - 2
-        palette = self.app.get_css_variables()
-        frame = Style.parse(palette["accent"] if data.accent else "dim") + Style(bgcolor=palette["background"])
-        text = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
-        if data.preview:
-            rows = _post_preview(data.preview, inside, text)
-        elif data.digits:
-            rows = [Text(segment.text, style=text) for segment in Digits(data.digits).render(Style())
-                    if segment.text != "\n"]
-        elif data.stats:
-            rows = []
-            for label, value in data.stats:
-                gap = max(1, inside - len(label) - len(value))
-                style = text + Style(color="red" if label == "fired" else "yellow") if label in ("fired", "watch") else text
-                rows.append(Text(flatten(label) + " " * gap + flatten(value), style=style))
-        else:
-            rows = [Text(clip(flatten(row), inside), style=text) for row in data.rows]
-        result = Text("┌" + f" {data.heading} ".center(inside, "─") + "┐\n", style=frame)
-        for row in rows:
-            row.align("center" if data.digits else "left", inside)
-            result.append("│", style=frame).append_text(row).append("│\n", style=frame)
-        subtitle = f" {data.subtitle} " if data.subtitle else ""
-        result.append("└" + subtitle.center(inside, "─") + "┘", style=frame)
-        return result
-
-
 class SurfNewsHeroDemo(App):
     """Native news panels below an isolated, mock-only hero design."""
 
@@ -157,9 +88,6 @@ class SurfNewsHeroDemo(App):
     #viewport { height: 1fr; overflow: auto auto; scrollbar-size: 1 1; }
     #layout { height: 1fr; min-height: 41; min-width: 145; padding: 1 1; }
     #news-heroes { height: 9; grid-size: 6 1; grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1; margin-bottom: 1; }
-    NewsHeroCard { height: 9; padding: 0 1; border: round $panel; background: $surface;
-        color: $text; content-align: center middle; border-title-color: $text-muted;
-        border-subtitle-color: $text-muted; border-subtitle-align: left; }
     #news-body { height: 1fr; min-height: 16; }
     #news-body SurfFeed { width: 7fr; padding: 0 1; }
     #news-rail { width: 6fr; height: 1fr; }

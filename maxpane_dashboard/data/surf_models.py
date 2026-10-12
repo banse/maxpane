@@ -1472,6 +1472,18 @@ SURFBOARD_WIDGET_SIGNATURES = {
     "SurfboardRack": ("surfboard_cards", "surfboard_sources"),
     "SurfboardTerminal": ("surfboard_overview", "surfboard_events", "surfboard_sources", "surfboard_footer"),
 }
+# Native ONCHAIN NEWS hero; section values are primitive data with independent
+# state/read_ts provenance. See docs/surf_news_hero_live_plan.md for row fields.
+SURF_NEWS_WIDGET_SIGNATURES = {"SurfNewsHero": {"surf_news_hero": "surf_news_hero"}}
+SURF_NEWS_HERO_FIELDS = {
+    "announcement": ("state", "read_ts", "text", "age_s"),
+    "reply": ("state", "read_ts", "text", "age_s"),
+    "signals": ("state", "read_ts", "fired", "watch", "quiet", "known", "total"),
+    "activity": ("state", "read_ts", "rows", "wallet_count"),
+    "market": ("state", "read_ts", "price_usd", "change_24h_pct", "points"),
+    "boards": ("state", "read_ts", "holders", "written", "moves_24h"),
+}
+SURF_NEWS_ACTIVITY_FIELDS = ("age_s", "wallet_label", "kind")
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points", "latest_launches",
                         "meter_state", "share_price", "seat_slot", "token_id")
@@ -1784,6 +1796,7 @@ SURF_KEYS: tuple[str, ...] = (
     "as_of",                 # float — epoch of the sweep that produced this dict
     "degraded",              # list[str] — source-group names currently failing
     "eth_usd",               # float | None — CoinGecko via data/price.py
+    "surf_news_hero",         # dict — six source-backed native news hero cards
     # ---- feed ---------------------------------------------------------------
     "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)
     "feed_last_post_age_s",  # float | None

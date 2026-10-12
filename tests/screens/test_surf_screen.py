@@ -39,6 +39,7 @@ from maxpane_dashboard.screens.surf import (
     SurfScreen,
 )
 from maxpane_dashboard.data.surf_models import (
+    SURF_NEWS_WIDGET_SIGNATURES,
     SWARM_PARKED_WIDGET_SIGNATURES,
     SWARM_WIDGET_SIGNATURES,
 )
@@ -55,6 +56,7 @@ from maxpane_dashboard.widgets.surf import (
     SurfDevActivity,
     SurfFeed,
     SurfHero,
+    SurfNewsHero,
     SurfLaunchpadActivity,
     SurfLaunchpadCoins,
     SurfMarket,
@@ -95,7 +97,7 @@ _TCSS = _THEMES / "minimal.tcss"
 #: only ``l`` shows it, so folding it into this dict would make that same
 #: "nothing is hidden" check false the moment it was added.
 _WIDGET_CLASSES = {
-    "SurfHero": SurfHero,
+    "SurfNewsHero": SurfNewsHero,
     "SurfSignals": SurfSignals,
     "SurfFeed": SurfFeed,
     "SurfDevActivity": SurfDevActivity,
@@ -108,6 +110,7 @@ _WIDGET_CLASSES = {
 #: as :data:`_ALL_WIDGET_CLASSES` for the dispatch-completeness tests, which
 #: care whether ``update_data`` was called, not whether the widget is shown.
 _LAUNCHPAD_WIDGET_CLASSES = {
+    "SurfHero": SurfHero,
     "SurfLaunchpadCoins": SurfLaunchpadCoins,
     "SurfLaunchpadActivity": SurfLaunchpadActivity,
     "SurfCurveFlow": SurfCurveFlow,
@@ -264,6 +267,7 @@ def test_the_two_hand_typed_widget_dicts_account_for_every_exported_widget():
 #: answers per entry now. Keys equal to their values is not redundancy to
 #: simplify away: it is the (common) case where the coincidence still holds.
 SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
+    **SURF_NEWS_WIDGET_SIGNATURES,
     # LAUNCHPAD / FLOW / BURN / SUPPLY since 2026-08-24. The POOL and LP boxes
     # this row carried for one day are gone (widgets/surf/hero.py says why),
     # and with them nine kwargs -- see ``META_KEYS`` and
@@ -1742,6 +1746,17 @@ def _sample_data() -> dict:
             sub_turns=10, sub_findings=0, sub_artifacts=[], sub_others=[], sub_others_total=0,
             job_read='read', job_read_ts=_AS_OF, job_detail_state='completed', job_nodes=[]),
     ])
+    source = dict(state="ok", read_ts=_AS_OF)
+    data["surf_news_hero"] = {
+        "announcement": dict(source, text="A new announcement", age_s=1200),
+        "reply": dict(source, text="A community reply", age_s=300),
+        "signals": dict(source, fired=2, watch=1, quiet=8, known=11, total=11),
+        "activity": dict(source, rows=[dict(age_s=600, wallet_label="dev", kind="deploy")], wallet_count=2),
+        "market": dict(source, price_usd=data["imd_price_usd"],
+                       change_24h_pct=data["imd_change_24h_pct"], points=[0.70, 0.71, 0.7074]),
+        "boards": dict(source, holders=data["nft_holders"], written=data["nft_written"],
+                       moves_24h=data["nft_transfers_24h"]),
+    }
     return data
 
 
@@ -2159,8 +2174,8 @@ async def test_screen_mounts_all_six_widgets():
             c for c in screen.query_one("#hero-row").children if c.display
         ]
         assert len(shown_heroes) == 1, [type(c).__name__ for c in shown_heroes]
-        assert isinstance(shown_heroes[0], SurfHero), (
-            "MODE_DASHBOARD must show the ordinary hero"
+        assert isinstance(shown_heroes[0], SurfNewsHero), (
+            "MODE_DASHBOARD must show the news hero"
         )
         assert len(screen.query_one("#middle-row").children) == 2
         assert len(screen.query_one("#surf-right-rail").children) == 2
@@ -2550,24 +2565,10 @@ async def test_refresh_renders_title_and_all_panels():
         assert "ANNOUNCE FEED" in text
         assert "MARKET" in text
         assert "IDENTITY.MD" in text
-        # The hero's own titles reach the compositor -- POOL/LP/BURN/SUPPLY,
-        # rebuilt 2026-08-23 for the v4 migration (widgets/surf/hero.py).
-        assert "POOL" in text
-        assert "BOARDS" in text and "'a' - imd agent" in text
-        # The observed burn reached the hero, and PRD §1's all-time ledger is
-        # nowhere on screen — the manager cannot produce it. At 150 columns
-        # the hero owns the full row (unlike the pre-2026-08-09 layout this
-        # comment used to measure, which shared it 3fr:2fr with the signals
-        # panel): swept, a hero box has content columns comfortably past
-        # ``COMPACT_WIDTH`` (22) here, so this renders the *compact* copy,
-        # ``burned 15,745 observed`` -- the quantity whole either way. This
-        # used to assert the prefix ``"burned 15,7"`` because the full copy
-        # was ellipsised here to ``burned 15,74…`` — a number cut mid-digits,
-        # with nothing marking the cut. That was final-review I-2; the shed
-        # field (at narrower widths) replaced it.
-        assert "burned 15,745 observed" in text
-        assert "burned 15,74…" not in text
-        assert "58,848" not in text
+        hero = _region_text(app, screen.query_one(SurfNewsHero))
+        for heading in ("ANNOUNCEMENT", "LATEST REPLY", "SIGNALS", "DEV ACTIVITY", "IMD MARKET", "NFT BOARDS"):
+            assert heading in hero
+        assert "A new announcement" in hero and "KNOWN 11/11" in hero
         # The clipping trap: every detector row that keeps its own line
         # reaches the compositor. SurfSignals now carries ten detectors
         # with quiet-collapse (Task 9): this fixture's lp/gate/deploy/burn
@@ -2808,7 +2809,7 @@ async def test_the_hero_owns_a_full_width_row_of_its_own():
     """
     async with _screen_at(150, 46) as (app, screen, _pilot):
         hero_row = screen.query_one("#hero-row")
-        hero = screen.query_one(SurfHero)
+        hero = screen.query_one(SurfNewsHero)
 
         visible = [c for c in hero_row.children if c.display]
         assert visible == [hero], (
@@ -2816,10 +2817,31 @@ async def test_the_hero_owns_a_full_width_row_of_its_own():
             f"{[type(c).__name__ for c in visible]}"
         )
         assert hero.region.width == hero_row.region.width == 150
-        # All four boxes are laid out inside that full width, in order.
+        # All six boxes are laid out inside that full width, in order.
         xs = [box.region.x for box in hero.children]
-        assert len(xs) == 4 and xs == sorted(xs)
+        assert len(xs) == 6 and xs == sorted(xs)
         assert xs[-1] + hero.children[-1].region.width <= 150
+
+
+async def test_news_hero_is_six_live_cards_and_only_shown_in_news_mode():
+    from maxpane_dashboard.widgets.surf.news_hero import SurfNewsHero
+
+    async with _screen_at(149, 45) as (app, screen, pilot):
+        hero = screen.query_one(SurfNewsHero)
+        assert hero.display and not screen.query_one(SurfHero).display
+        assert len(hero.children) == 6
+        assert {card.region.height for card in hero.children} == {9}
+        output = _region_text(app, hero)
+        for title in ("ANNOUNCEMENT", "LATEST REPLY", "SIGNALS", "DEV ACTIVITY", "IMD MARKET", "NFT BOARDS"):
+            assert title in output
+        assert "A new announcement" in output and "A community reply" in output
+        assert "KNOWN 11/11" in output
+        screen.action_toggle_launchpad()
+        await pilot.pause()
+        assert not hero.display and screen.query_one(SurfHero).display
+        screen.action_toggle_launchpad()
+        await pilot.pause()
+        assert hero.display and not screen.query_one(SurfHero).display
 
 
 async def test_the_right_rail_stacks_the_signals_above_the_dev_activity():
@@ -2868,10 +2890,9 @@ async def test_the_bottom_row_puts_the_market_left_of_the_nft_panel():
         assert market.region.width == feed.region.width
         assert nft.region.x == rail.region.x
 
-        text = _screen_text(app)
+        text = _region_text(app, row)
         assert text.index("IMD MARKET") < text.index("IDENTITY.MD")
-        # ...and both are below the rail's two panels.
-        assert text.index("DEV ACTIVITY") < text.index("IMD MARKET")
+        assert row.region.y >= rail.region.bottom
 
 
 async def test_the_hero_row_is_no_taller_than_the_hero():
@@ -2882,7 +2903,7 @@ async def test_the_hero_row_is_no_taller_than_the_hero():
     """
     async with _screen_at(150, 46) as (app, screen, _pilot):
         hero_row = screen.query_one("#hero-row")
-        hero = screen.query_one(SurfHero)
+        hero = screen.query_one(SurfNewsHero)
         assert hero_row.region.height == hero.region.height
 
         lines = _screen_text(app).split("\n")
@@ -2932,13 +2953,13 @@ async def test_a_taller_terminal_hands_every_new_row_to_the_feed():
     async with _screen_at(150, 46) as (_app, screen, _pilot):
         short = {
             "feed": screen.query_one(SurfFeed).region.height,
-            "hero": screen.query_one(SurfHero).region.height,
+            "hero": screen.query_one(SurfNewsHero).region.height,
             "nft": screen.query_one(SurfNft).region.height,
         }
     async with _screen_at(150, 60) as (_app, screen, _pilot):
         tall = {
             "feed": screen.query_one(SurfFeed).region.height,
-            "hero": screen.query_one(SurfHero).region.height,
+            "hero": screen.query_one(SurfNewsHero).region.height,
             "nft": screen.query_one(SurfNft).region.height,
         }
 
@@ -3068,7 +3089,11 @@ _ACTIVITY_ROWS = ("0x61CC704c…73f14E", "NFPM", "OFT endpoint")
 #: rail scrolls and the title says taller; 143x39 and 143x40 clear both, with
 #: every required row composited. This is the mixed-payload test measurement,
 #: not a production pin or an all-detectors-active claim.
-FIRST_WHOLE_HEIGHT = 39
+#: 39 -> 41 on 2026-10-12 for the approved nine-row NEWS hero. Measured
+#: at 143 columns: 37/38 lose activity rows with taller lit; 39/40 retain
+#: content but scroll; 41/42/43 are whole with no scroll or marker. Width
+#: remains 143: 139/141 mark feed+market, 142 market, 143/144/149 none.
+FIRST_WHOLE_HEIGHT = 41
 
 
 def _visible_panel(app, widget, clip) -> str:
@@ -3738,7 +3763,7 @@ async def _panels_asking_for_width(width: int) -> set[str]:
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        panels = (SurfHero, SurfFeed, SurfSignals, SurfDevActivity,
+        panels = (SurfNewsHero, SurfFeed, SurfSignals, SurfDevActivity,
                   SurfMarket, SurfNft)
         marked = {
             cls.__name__
@@ -4479,13 +4504,14 @@ def _css_clipped_lines(app, widget) -> list[str]:
 
 
 async def _hero_text(width: int) -> str:
-    """Composited text of the hero row alone at *width* columns."""
+    """Composited legacy launchpad/protocol hero at *width* columns."""
     manager = _FakeManager(payload=_widen_sweep_payload())
     screen = SurfScreen(manager, poll_interval=30, name="surf")
     app = _ThemedHarness(screen)
     async with app.run_test(size=(width, 48)) as pilot:
         await pilot.pause()
         await screen._do_refresh()
+        screen.action_toggle_launchpad()
         await pilot.pause()
         return _region_text(app, screen.query_one(SurfHero))
 
