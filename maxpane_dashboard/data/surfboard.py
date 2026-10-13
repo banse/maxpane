@@ -517,6 +517,9 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     oracles = data.get("surf_oracles") or {}
     oracle_rows = oracles.get("rows")
     loaded = len(oracle_rows) if isinstance(oracle_rows, list) else None
+    chain_ids = [row.get('chain_id') for row in oracle_rows or []]
+    chains = (len(set(chain_ids)) if loaded is not None
+              and all(type(chain) is int and chain > 0 for chain in chain_ids) else None)
     counts = Counter(row['status'] for row in oracle_rows) if loaded is not None else Counter()
     assessing, attested = (counts['assessing'], counts['attested']) if loaded is not None else (None, None)
     oracle_state = oracles.get("state", "unavailable") if loaded is not None else "unavailable"
@@ -524,14 +527,15 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         oracle_state = "partial"
     count_names = sorted(set(counts) - {"assessing", "attested"} | {"disagreed", "blocked"})
     subtitle = (f"stale {hhmm(oracles.get('read_ts'))}" if oracle_state == "stale" else
-                f"{loaded:,} loaded" if oracle_state in ("ok", "partial") else "unavailable")
+                "in progress" if oracle_state in ("ok", "partial") else "unavailable")
     card("oracles", "ORACLES", f"{assessing:,}" if assessing is not None else "—", subtitle,
          f"ORACLES · newest {ORACLE_PAGE_LIMIT} requests · counts from loaded rows"
          + f" · {_value(loaded)} loaded · {_value(assessing)} assessing · {_value(attested)} attested"
+         + f" · {_value(chains)} chains"
          + (" · " + " · ".join(f"{counts[state]:,} {state}" for state in count_names)
             if loaded is not None else "")
          + f" · {oracle_state} · read {hhmm(oracles.get('read_ts'))} · Enter to open", "oracles")
-    result[-1].update(meter_kind="oracles", meter_state=oracle_state, numerator=attested, denominator=loaded,
+    result[-1].update(meter_kind="oracles", meter_state=oracle_state, numerator=chains, denominator=loaded,
                      status=("assessing" if assessing else "idle") if oracle_state in ("ok", "partial") else oracle_state)
     price = number(data.get("pool4_price_usd"))
     change = data.get("imd_change_24h_pct")

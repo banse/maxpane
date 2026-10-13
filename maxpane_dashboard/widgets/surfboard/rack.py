@@ -128,7 +128,7 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     if key == "oracles":
         count = card.get("numerator")
         value = f"{int(count):,}" if _number(count) and count == int(count) else "—"
-        return fit_prose(f"{value} attested", 24 if width is None else width, style=MUTED)[0]
+        return fit_prose(f"{value} chains", 24 if width is None else width, style=MUTED)[0]
     if key == "work":
         return _work_footer(card, 24 if width is None else width)[0]
     if key in AGENT_KEYS and state == "empty":
@@ -342,7 +342,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         elif self.key == "announce" and status == "active":
             border_inset = Style(color=self.rich_style.color, bgcolor=palette["background"])
         elif self.key == "oracles" and status == "assessing":
-            border_inset = Style.parse(AMBER) + Style(bgcolor=palette["background"])
+            border_inset = Style.parse(palette["accent"]) + Style(bgcolor=palette["background"])
         elif self.key == "pool4" and status == "falling":
             border_inset = Style.parse(AMBER) + Style(bgcolor=palette["background"])
         label = ""

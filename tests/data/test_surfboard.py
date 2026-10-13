@@ -102,29 +102,41 @@ def test_unknown_detector_prevents_a_false_zero_bar():
 
 @pytest.mark.parametrize('state,partial,rows,primary,secondary,status,meter', [
     ('unavailable', False, None, '—', 'unavailable', 'unavailable', 'unavailable'),
-    ('ok', False, [], '0', '0 loaded', 'idle', 'ok'),
-    ('ok', False, ['assessing', 'attested', 'mismatch'], '1', '3 loaded', 'assessing', 'ok'),
+    ('ok', False, [], '0', 'in progress', 'idle', 'ok'),
+    ('ok', False, ['assessing', 'attested', 'mismatch'], '1', 'in progress', 'assessing', 'ok'),
     ('ok', True, ['assessing'] * 7 + ['attested'] * 86 + ['blocked'] * 7,
-     '7', '100 loaded', 'assessing', 'partial'),
+     '7', 'in progress', 'assessing', 'partial'),
     ('stale', True, ['assessing', 'attested'], '1', 'stale ' + hub.hhmm(900), 'stale', 'stale'),
 ])
 def test_oracle_card_counts_only_loaded_rows_and_retains_source_state(
         state, partial, rows, primary, secondary, status, meter):
     snapshot = dict(state=state, partial=partial, read_ts=900 if rows is not None else None,
-                    rows=[dict(status=s) for s in rows] if rows is not None else None)
+                    rows=[dict(status=s, chain_id=1 if i % 2 == 0 else 8453) for i, s in enumerate(rows)] if rows is not None else None)
     cards = {row['key']: row for row in hub.cards(dict(surf_oracles=snapshot), {}, now=1000)}
     row = cards['oracles']
     assert 'launchpad' not in cards
     assert row['title'] == 'ORACLES' and row['destination'] == 'oracles'
     assert (row['primary'], row['secondary'], row['status']) == (primary, secondary, status)
     assert row['meter_kind'] == 'oracles' and row['meter_state'] == meter
-    assert row['numerator'] == (rows.count('attested') if rows is not None else None)
+    assert row['numerator'] == (min(len(rows), 2) if rows is not None else None)
     assert row['denominator'] == (len(rows) if rows is not None else None)
     assert 'newest 100' in row['detail'] and meter in row['detail']
     if rows is not None:
         assert f'read {hub.hhmm(900)}' in row['detail']
         for name in set(rows):
             assert f'{rows.count(name)} {name}' in row['detail']
+
+
+@pytest.mark.parametrize('chain_ids,expected', [
+    ([1, 1, 8453], 2), ([4663], 1), ([], 0), ([1, None], None),
+    ([1, True], None), ([1, '8453'], None), ([1, 0], None),
+])
+def test_oracle_card_counts_distinct_known_chains(chain_ids, expected):
+    snapshot = dict(state='ok', partial=False, rows=[
+        dict(status='assessing', chain_id=chain) for chain in chain_ids])
+    card = next(row for row in hub.cards(dict(surf_oracles=snapshot), {}, now=1000)
+                if row['key'] == 'oracles')
+    assert card['numerator'] == expected
 
 
 @pytest.mark.parametrize('jobs,workflows,status,subtitle', [

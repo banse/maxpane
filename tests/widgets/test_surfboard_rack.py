@@ -98,14 +98,14 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
     async with RackApp().run_test(size=size) as pilot:
         app = pilot.app
         card = app.query_one('#surfboard-card-oracles', SurfboardCard)
-        for status, primary, subtitle, attested, glyphs in [
-            ('assessing', '7', '100 loaded', 86, ['╶─┐', '  │', '  ╵']),
-            ('idle', '0', '0 loaded', 0, ['╭─╮', '│ │', '╰─╯']),
-            ('stale', '7', 'stale 05:20', 86, ['╶─┐', '  │', '  ╵']),
+        for status, primary, subtitle, chains, glyphs in [
+            ('assessing', '7', 'in progress', 2, ['╶─┐', '  │', '  ╵']),
+            ('idle', '0', 'in progress', 0, ['╭─╮', '│ │', '╰─╯']),
+            ('stale', '7', 'stale 05:20', 2, ['╶─┐', '  │', '  ╵']),
             ('unavailable', '—', 'unavailable', None, ['', '—', '']),
         ]:
             card.set_data(dict(primary=primary, secondary=subtitle, status=status,
-                               numerator=attested, denominator=100, meter_kind='oracles'))
+                               numerator=chains, denominator=100, meter_kind='oracles'))
             await pilot.pause()
             strips = card_strips(app, card)
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
@@ -115,10 +115,10 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
             for strip, expected in zip(strips[top+1:top+4], glyphs):
                 assert strip.text[left+1:right].strip() == expected.strip()
             assert subtitle in strips[top+4].text
-            expected_footer = f'{attested} attested' if attested is not None else '— attested'
+            expected_footer = f'{chains} chains' if chains is not None else '— chains'
             assert expected_footer in strips[-1].text
             assert not any(glyph in strips[-1].text for glyph in '▰▱▁▂▃▄▅▆▇█')
-            tone = app.ansi_theme.ansi_colors[3] if status == 'assessing' else neutral_inset_color(app)
+            tone = Color.parse(app.get_css_variables()['accent']).get_truecolor() if status == 'assessing' else neutral_inset_color(app)
             for strip in strips[top:top+5]:
                 for x in (left, right):
                     assert next(iter(strip.crop(x, x+1))).style.color.get_truecolor() == tone

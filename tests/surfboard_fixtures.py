@@ -11,7 +11,7 @@ def hub_payload(kind="normal"):
         ("swarm", "SWARM", "swarm", "863 online", "9 working", None, None),
         ("agent", "AGENT", "agent", "IDMD #420", "0 of 3 slots", 43200, 86400),
         ("board", "LEADERBOARD", "board", "527", "4,176 accepted jobs", 86400, 86400),
-        ("oracles", "ORACLES", "oracles", "7", "100 loaded", 86, 100),
+        ("oracles", "ORACLES", "oracles", "7", "in progress", 2, 100),
         ("pool4", "POOL4", "pool4_user", "7.90", "USD", None, None),
         ("protocol", "PROTOCOL", "pool4", "★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 4k IMD", "0.47% of supply", 60, 100),
         ("swarm-tokens", "TOKENS", "swarm-tokens", "116", "4 new", None, None),
@@ -83,7 +83,7 @@ def hub_payload(kind="normal"):
                 dict(rank=2, token_id=9999, accepted=9999999),
                 dict(rank=3, token_id=999, accepted=999999)])
         next(card for card in cards if card["key"] == "oracles").update(
-            primary="100", secondary="100 loaded", numerator=0, denominator=100)
+            primary="100", secondary="in progress", numerator=100, denominator=100)
         next(card for card in cards if card["key"] == "pool4").update(
             primary="999,999.99", secondary="USD")
         next(card for card in cards if card["key"] == "protocol").update(

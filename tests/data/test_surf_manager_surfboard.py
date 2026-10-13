@@ -133,7 +133,7 @@ async def test_hub_oracles_share_list_native_detail_and_retained_failure_clock(m
         card = next(c for c in second['surfboard_cards'] if c['key'] == 'oracles')
         assert card['denominator'] == len(second['surf_oracles']['rows']) == 100
         assert card['primary'] == str(sum(r['status'] == 'assessing' for r in second['surf_oracles']['rows']))
-        assert card['secondary'] == '100 loaded' and card['meter_state'] == 'partial'
+        assert card['secondary'] == 'in progress' and card['meter_state'] == 'partial'
         m.set_oracles_active(True); m.set_hub_active(False)
         m._offer_full = lambda _: pytest.fail('unrelated collection in oracle mode')
         native = await m.fetch_and_compute()

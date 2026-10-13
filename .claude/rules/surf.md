@@ -883,7 +883,8 @@ and implementation plan for exact meter formulas, commands and source cadence.
 
 ORACLES is a separate native mode, opened with `Ctrl+o` from Surf or the boardroom,
 or through the ORACLES card replacing LAUNCHPAD. The card uses ASSESSING digits,
-`n loaded` inside and `n attested` outside. Fresh positive counts paint orange; zero,
+`in progress` inside and the distinct loaded chain count (`n chains`) outside. Fresh positive
+assessing counts paint green; zero,
 stale and unavailable paint neutral. Counts cover loaded rows, with page-cap/partial
 coverage and the source clock in the tooltip; stale counts have a dated subtitle.
 The boardroom shares the list reader without selected-detail reads. Either visible
