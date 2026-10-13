@@ -240,6 +240,7 @@ from maxpane_dashboard.screens.submission_detail import SubmissionDetailScreen
 from maxpane_dashboard.widgets.surf._oracle_answer import valid_identity, joined, can_open_submission
 from maxpane_dashboard.status_message import post_status_message
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
+from maxpane_dashboard.widgets.surf.work import SurfWorkBody, SurfWorkHero
 from maxpane_dashboard.widgets.surf._swarm_summary import SERVICE_NAMES
 from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen, WorkflowDetailScreen
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
@@ -1952,6 +1953,40 @@ MODE_POOL4_USER = "pool4_user"
 #: and SITES since 2026-10-03, when WORKFLOWS took the parked CAPABILITY's
 #: place (``docs/surf_swarm_workflows_spec.md``).
 MODE_SWARM = "swarm"
+#: WORK IN PROGRESS, measured after a keyless live preview at 149×45 on
+#: 2026-10-13. Its six rack cards share equal fractional columns and remain
+#: nine rows high. At the owner's size each card receives 24 columns.
+#: The width binder is BLOCKED's outer footer, "needs attention". In the
+#: production compositor it needs a 21-column card, reached at terminal
+#: width 126 because the final fractional column receives the remainder.
+#: At 125 that footer clips and the card explicitly advertises ‹ widen.
+#: The sweep began at 110, then checked 124..130 around the observed edge;
+#: it did not start from a candidate pin. Capture, long/CJK stress and
+#: known-empty payloads all bind at the same width. Stale and unavailable
+#: footers are shorter and clear below it; they do not set the normal pin.
+#: The tree reserves its right-hand status and seat text, fitting objective
+#: previews on the remaining cells. Long unbounded titles may still show
+#: ‹ widen at any width; the full selected objective is in the detail pane.
+#: This is a named exception, not a promise that every objective fits.
+#: The detail pane wraps prose and scrolls independently. Its fixed step
+#: columns fit within the allocated pane at the width pin. Work-tree rows
+#: and detail prose are intentionally unbounded and scroll internally.
+#: The height binder is the two 16-row child panels. The body can shrink
+#: below that floor and scroll, preserving the title and hero row. At 29
+#: terminal rows both panels overflow inside the body and ‹ taller is lit;
+#: at 30 both fit, with the status bar visible and a blank row above it.
+#: The same transition holds for capture, stress, empty, stale and unread.
+#: Keeping the floor on the children avoids scrolling the entire screen
+#: to focus the tree, which previously hid the heroes on a short terminal.
+#: Header 1 + hero margin 1 + hero 9 + body margins 2 + body 16 + status 1
+#: explains the measured 30 rows; the compositor sweep is the authority.
+#: tests/screens/test_surf_work_layout.py certifies both adjacent boundaries
+#: and the owner size. scripts/measure_layout.py w uses that same helper.
+#: App-wide width remains 143; this body does not raise another body's pin.
+SURF_WORK_FULL_LAYOUT_COLUMNS = 126
+SURF_WORK_FULL_LAYOUT_ROWS = 30
+MODE_WORK = "work"
+WORK_BODY_ID = "surf-work-body"
 
 #: The ``a`` AGENT body shows the saved seat (``i``), or the most active
 #: seat in the job window. Two card rows (seat details, work by node) sit
@@ -1959,7 +1994,7 @@ MODE_SWARM = "swarm"
 MODE_AGENT = "agent"
 MODE_BOARD = "board"
 SURF_MODES = (MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER,
-              MODE_SWARM, MODE_AGENT, MODE_BOARD)
+              MODE_SWARM, MODE_AGENT, MODE_BOARD, MODE_WORK)
 BOARD_BODY_ID = "surf-board-body"
 
 #: BOARD rack hero, re-measured 2026-10-12 after the owner approved the
@@ -2281,6 +2316,8 @@ AGENT_BODY_ID = "surf-agent-body"
 #: the export cannot name classes without importing widgets into ``data/``).
 #: 2026-10-05: eleven mounted widgets; IN FLIGHT is parked by the contract.
 _SWARM_PANELS = (
+    SurfWorkHero,
+    SurfWorkBody,
     SurfSwarmBoardHero,
     SurfSwarmLeaderboard,
     SurfSwarmFleet,
@@ -2657,6 +2694,8 @@ class SurfScreen(DashboardScreen):
         # `s` for SWARM (2026-09-16): free on this screen and in the app,
         # verified rather than assumed -- see `action_toggle_swarm`.
         Binding("s", "toggle_swarm", "Swarm", show=False),
+        Binding("w", "toggle_work", "Work in progress", show=False),
+        Binding("slash", "work_find", "Find work", show=False),
         # `a` for AGENT (swarm v2 plan A1, WP7): free on this screen and in
         # the app, verified rather than assumed -- see `action_toggle_agent`.
         Binding("a", "toggle_agent", "Agent", show=False),
@@ -2827,6 +2866,13 @@ class SurfScreen(DashboardScreen):
     SurfScreen #hero-row {
         height: auto;
         margin: 1 0 0 0;
+    }
+    SurfScreen #surf-work-body {
+        height: 1fr;
+        min-height: 1;
+        margin: 1 0 1 0;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
     }
     SurfScreen SurfHero {
         width: 1fr;
@@ -3481,6 +3527,7 @@ class SurfScreen(DashboardScreen):
             yield SurfPool4RackHero(classes="surf-hero")
             yield SurfProtocolHero(classes="surf-hero")
             yield SurfSwarmRackHero(classes="surf-hero")
+            yield SurfWorkHero(classes="surf-hero")
             yield SurfSwarmAgentRackHero(classes="surf-hero")
             yield SurfSwarmBoardHero(classes="surf-hero")
 
@@ -3606,6 +3653,7 @@ class SurfScreen(DashboardScreen):
         # rows and one full-width table -- see `SWARM_BODY_ID` for why this is
         # not the plan's §2 pairing. Composed once and hidden, like every
         # other alternate body.
+        yield SurfWorkBody(id=WORK_BODY_ID)
         with Vertical(id=SWARM_BODY_ID):
             with Horizontal(id=SWARM_TOP_ID):
                 yield SurfSwarmWorkflows()
@@ -3667,6 +3715,9 @@ class SurfScreen(DashboardScreen):
         setter = getattr(self._data_manager, "set_swarm_active", None)
         if setter is not None:
             setter(self.is_current and self._mode == MODE_SWARM)
+        setter = getattr(self._data_manager, "set_work_active", None)
+        if setter is not None:
+            setter(self.is_current and self._mode == MODE_WORK)
 
     @on(events.ScreenResume)
     def _resume_agent_runtime(self) -> None:
@@ -3680,6 +3731,9 @@ class SurfScreen(DashboardScreen):
         setter = getattr(self._data_manager, "set_swarm_active", None)
         if setter is not None:
             setter(False)
+        setter = getattr(self._data_manager, "set_work_active", None)
+        if setter is not None:
+            setter(False)
 
     def _prime_status_bar(self, bar: StatusBar) -> None:
         """The one extra line this screen primes: the body keys.
@@ -3688,7 +3742,8 @@ class SurfScreen(DashboardScreen):
         ``view:`` word on the shared bar would name something that does not
         exist.
         """
-        bar.set_key_hints(self.KEY_HINTS)
+        bar.set_key_hints("↑↓ select · ←→ fold · / find · f filter · esc back"
+                          if self._mode == MODE_WORK else self.KEY_HINTS)
 
     def on_resize(self, _event=None) -> None:
         """Keep the row marker honest when the terminal changes height.
@@ -3754,6 +3809,7 @@ class SurfScreen(DashboardScreen):
                 self._mode == MODE_POOL4_USER
             )
             self.query_one(f"#{SWARM_BODY_ID}").display = self._mode == MODE_SWARM
+            self.query_one(f"#{WORK_BODY_ID}").display = self._mode == MODE_WORK
             self.query_one(f"#{AGENT_BODY_ID}").display = self._mode == MODE_AGENT
             self.query_one(f"#{BOARD_BODY_ID}").display = self._mode == MODE_BOARD
             # The heroes, each answering to ``self._mode`` and never to the
@@ -3766,6 +3822,7 @@ class SurfScreen(DashboardScreen):
             )
             self.query_one(SurfProtocolHero).display = self._mode == MODE_POOL4
             self.query_one(SurfSwarmRackHero).display = self._mode == MODE_SWARM
+            self.query_one(SurfWorkHero).display = self._mode == MODE_WORK
             self.query_one(SurfSwarmAgentRackHero).display = self._mode == MODE_AGENT
             self.query_one(SurfSwarmBoardHero).display = self._mode == MODE_BOARD
             self.query_one(SurfNewsHero).display = self._mode == MODE_DASHBOARD
@@ -3779,7 +3836,10 @@ class SurfScreen(DashboardScreen):
             self._record_filter_open = False
         self._show_record_editor()
         self._sync_agent_runtime()
-        if self.is_current and self._mode in (MODE_AGENT, MODE_SWARM):
+        if self._mode == MODE_WORK:
+            self.call_after_refresh(self.query_one(SurfWorkBody).focus_tree)
+        self._prime_status_bar(self.query_one(StatusBar))
+        if self.is_current and self._mode in (MODE_AGENT, MODE_SWARM, MODE_WORK):
             self.start_refresh()
         # The row marker is about whichever body is now showing (only the
         # dashboard body's right rail can scroll), so it has to be re-read --
@@ -3857,6 +3917,17 @@ class SurfScreen(DashboardScreen):
             return
         self._mode = MODE_SWARM
         self._show_mode()
+
+    def action_toggle_work(self) -> None:
+        if self._mode == MODE_WORK:
+            self.action_show_dashboard()
+            return
+        self._mode = MODE_WORK
+        self._show_mode()
+
+    def action_work_find(self) -> None:
+        if self._mode == MODE_WORK:
+            self.query_one(SurfWorkBody).focus_find()
 
     async def action_toggle_throughput(self) -> None:
         """Open the latest production launch snapshot in SWARM mode."""
@@ -4041,6 +4112,9 @@ class SurfScreen(DashboardScreen):
         rows (plus whatever the stored filter selects) and shows the values
         the stored filter was applied from.
         """
+        if self._mode == MODE_WORK:
+            self.query_one(SurfWorkBody).cycle_filter()
+            return
         if self._mode != MODE_AGENT:
             return
         if self._record_filter_open:
@@ -4093,6 +4167,8 @@ class SurfScreen(DashboardScreen):
 
     def action_back(self) -> None:
         """``escape`` -- close RECORD's filter editor first, else leave the body."""
+        if self._mode == MODE_WORK and self.query_one(SurfWorkBody).close_find():
+            return
         if self._record_filter_open:
             self._record_filter_open = False
             self.query_one(SurfRecordFilterEditor).clear_error()
@@ -4183,6 +4259,7 @@ class SurfScreen(DashboardScreen):
         # directly. Asking a container that cannot scroll is harmless, but
         # naming only the ones that can is what keeps this map a statement.
         MODE_SWARM: (f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}"),
+        MODE_WORK: (f"#{WORK_BODY_ID}",),
         # The AGENT body: its card rows are fixed-height, so the body is the
         # only container on it that can scroll.
         MODE_AGENT: (f"#{AGENT_BODY_ID}",),
@@ -4241,7 +4318,9 @@ class SurfScreen(DashboardScreen):
         another. At most one extra pass, and only when the answer moved.
         """
         cut = self._rail_is_cut()
-        if self._title_data is None:
+        if self._mode == MODE_WORK:
+            line = "WORK IN PROGRESS" + (f" · [yellow]{TALLER_HINT}[/]" if cut else "")
+        elif self._title_data is None:
             # No payload yet -- or the manager raised and there never will
             # be one. The marker simply goes on the end here, and *neither*
             # line carries a version tail since 2026-08-12, so this branch

@@ -44,6 +44,9 @@ def payloads() -> dict:
     from tests.surfboard_fixtures import hub_payload
     out.update({f"hub-{k}": (lambda k=k: hub_payload(k))
                 for k in ("normal", "stress", "unavailable", "wide")})
+    from tests.screens.test_surf_work_layout import work_payload
+    out.update({f"work-{k}": (lambda k=k: work_payload(k))
+                for k in ("capture", "stress", "empty", "unavailable", "stale")})
     return out
 
 
@@ -106,6 +109,17 @@ async def measure(key: str, payload_name: str, sizes: list[tuple[int, int]]) -> 
     build = payloads()[payload_name]
     rows = []
     for size in sizes:
+        if key == "w":
+            from tests.screens.test_surf_work_layout import _render
+            r = await _render(build(), size)
+            found = list(r["missing"]) + list(r["overflow"])
+            if r["taller"]:
+                found.append("‹ taller lit")
+            if not r["status_whole"]:
+                found.append("status bar cropped")
+            rows.append({"size": size, "problems": found, "widths": r["widths"],
+                         "heights": r["heights"], "status_whole": r["status_whole"]})
+            continue
         if key == "hub":
             from tests.screens.test_surfboard_layout import _render
             r = await _render(build(), size)
@@ -143,7 +157,7 @@ def whole_from(rows: list[dict], axis: int) -> int | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("key", choices=("s", "a", "b", "hub"))
+    parser.add_argument("key", choices=("s", "a", "b", "w", "hub"))
     parser.add_argument("payload", help="one of: " + ", ".join(payloads()))
     parser.add_argument("size", help="WxH, either side LO:HI")
     parser.add_argument("--whole-from", action="store_true")

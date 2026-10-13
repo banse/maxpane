@@ -122,6 +122,9 @@ from typing import Any
 
 from maxpane_dashboard.data.npm_registry_client import NpmRegistryClient, RUNTIME_PACKAGES, npm_version
 from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
+from maxpane_dashboard.data.surf_work import coerce_snapshot as coerce_work_snapshot
+from maxpane_dashboard.data.surf_work_reader import WorkReader
+from maxpane_dashboard.data.surf_cache import SLOT_SURF_WORK
 from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS, SLOT_SWARM_RUNTIME_LATEST, TIER_SWARM_RUNTIME_LATEST, TIER_TTL_SECONDS, LastGood
 from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, record_window
 from maxpane_dashboard.analytics.surf_swarm_signals import fleet_majority
@@ -1084,6 +1087,8 @@ class SurfManager:
         self.cache = cache if cache is not None else SurfCache(
             path=self._cache_path, clock=clock
         )
+        self._work_active = False
+        self._work_reader = WorkReader(self.swarm_client, self.cache, clock=clock)
 
         self._closing = False
         self._full_task = None
@@ -1200,6 +1205,7 @@ class SurfManager:
 
         try:
             self.cache.load(slot_coercers={
+                SLOT_SURF_WORK: lambda value: coerce_work_snapshot(value, now=self._clock()),
                 **{slot: (lambda value, name=name: hub.coerce_source(value, name, now=self._clock()))
                    for name, slot in hub.SOURCE_SLOTS.items()},
                 SLOT_SWARM_LAUNCHES: lambda value: sw.coerce_launches_slot(value, now=self._clock()),
@@ -1267,6 +1273,7 @@ class SurfManager:
         if self._closing:
             return
         self._closing = True
+        await self._work_reader.close()
         portfolio_manager = getattr(self, '_portfolio_manager', None)
         if portfolio_manager is not None:
             try:
@@ -7168,6 +7175,12 @@ class SurfManager:
         """Visibility changes eligibility; manager tasks retain their owner."""
         self._hub_active = bool(active)
 
+    def set_work_active(self, active: bool) -> None:
+        """Visibility only; network work is offered by the scheduled refresh."""
+        self._work_active = bool(active)
+        if not self._work_active:
+            self._work_reader.cancel()
+
     def set_swarm_active(self, active: bool) -> None:
         """Native SWARM visibility offers the existing hourly source, without I/O."""
         self._swarm_active = bool(active)
@@ -7409,6 +7422,7 @@ class SurfManager:
                                                      if getattr(self, '_swarm_tokens_manager', None) is not None else None))
         data["surf_news_hero"] = self._news_hero(data, now)
         data["surf_swarm_hero"] = self._swarm_hero(sources, now)
+        data["surf_work"] = self._work_reader.project()
         if refresh_agent:
             quote = data['surf_news_hero']['market']
             data.update(self._seat_rewards_keys(data, quote.get('price_usd'), now,
@@ -7509,6 +7523,10 @@ class SurfManager:
 
     async def fetch_and_compute(self) -> dict[str, Any]:
         """Share full collection across screens; cancelling a waiter preserves it."""
+        if self._work_active:
+            if not self._closing:
+                self._work_reader.offer()
+            return self._project_hub()
         task = self._offer_full(float(self._clock()))
         if task is not None:
             await asyncio.shield(task)

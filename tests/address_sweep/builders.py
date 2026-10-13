@@ -62,6 +62,7 @@ from maxpane_dashboard.screens.portfolio import (
     PortfolioScreen, PORTFOLIO_FULL_LAYOUT_COLUMNS, PORTFOLIO_FULL_LAYOUT_ROWS,
 )
 from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA, ROBINHOOD
+from maxpane_dashboard.screens.surf import SURF_WORK_FULL_LAYOUT_COLUMNS, SURF_WORK_FULL_LAYOUT_ROWS
 from tests.address_sweep.case import SweepCase
 from tests.screens import test_curator_screen as _curator
 from tests.screens import test_frenpet_screens as _frenpet
@@ -153,10 +154,28 @@ _SEAT_OWNER = "0x7A11e2d9C4b3f8E6a5D1c0B9e8F7a6D5c4B3a2E1"
 #: the address is copyable and **unlinked** (``SweepCase.unlinked``), the one
 #: such address on surf.
 _SWARM_WORKFLOW = "0xc0DEc0DE7a5B6c8D9e0F1a2B3c4D5e6F7a8B9c0D"
+_WORK_OBJECTIVE = "0x1313131313131313131313131313131313131313"
 
 
 def _surf_payload() -> dict:
     payload = copy.deepcopy(_surf._mainnet_pool4_payload())
+    payload["surf_work"] = {
+        "state": "ok", "read_ts": 1791856800., "now_ts": 1791856800.,
+        "partial": False, "jobs_loaded": 1, "workflows_loaded": 1,
+        "details_loaded": 1, "details_expected": 1,
+        "summary": dict(jobs=1, workflows=1, seats=0, build=0, review=0, blocked=0),
+        "workflows": [{
+            "id": "4f3f482c-13a0-44c8-bf44-bac397c1b0ac", "status": "executing",
+            "objective": _WORK_OBJECTIVE,
+            "contracts_job_id": "f86155b0-3c89-4d48-82b7-9b9809ce7355",
+            "frontend_job_id": None,
+        }], "jobs": [{
+            "id": "f86155b0-3c89-4d48-82b7-9b9809ce7355", "state": "executing",
+            "template": "contracts", "objective": f"Inspect {_WORK_OBJECTIVE}",
+            "created_ts": 1791856700., "updated_ts": 1791856790.,
+            "blocked_reason": None, "detail_state": "ok", "nodes": [],
+        }],
+    }
     feed = payload["feed_items"]
     feed[0] = {**feed[0], "text": f"new router live at {_SURF_PROSE} go look"}
     # FIRED, because an ``ok`` row folds into "N quiet" and paints no detail.
@@ -202,9 +221,10 @@ SURF_SEEDED: tuple[str, ...] = (
     _SWARM_CONTRACT, _SWARM_BASE, _SWARM_RH,          # s: production token rows, per-chain
     _SEAT_OWNER,                                    # a: SEAT RECORD owner, shortened
     _SWARM_WORKFLOW,                                # s: WORKFLOWS failure, whole, unlinked
+    _WORK_OBJECTIVE,                                # w: selected job objective, unlinked
 )
 #: Of those, the ones rendered with an icon and no link (``SweepCase.unlinked``).
-SURF_UNLINKED: tuple[str, ...] = (_SWARM_WORKFLOW,)
+SURF_UNLINKED: tuple[str, ...] = (_SWARM_WORKFLOW, _WORK_OBJECTIVE)
 
 
 # -- curator -------------------------------------------------------------------
@@ -784,7 +804,7 @@ CASES: tuple[SweepCase, ...] = (
         screen_class=SurfScreen,
         build=_surf_app,
         payload=_surf_payload,
-        views=((), ("l",), ("e",), ("4",), ("s",), ("a",), ("b",)),
+        views=((), ("l",), ("e",), ("4",), ("s",), ("a",), ("b",), ("w",)),
         seeded=SURF_SEEDED,
         pins=(
             (SURF_FULL_LAYOUT_COLUMNS, None),
@@ -794,6 +814,7 @@ CASES: tuple[SweepCase, ...] = (
             (SURF_SWARM_FULL_LAYOUT_COLUMNS, SURF_SWARM_FULL_LAYOUT_ROWS),
             (SURF_AGENT_FULL_LAYOUT_COLUMNS, SURF_AGENT_FULL_LAYOUT_ROWS),
             (SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS),
+            (SURF_WORK_FULL_LAYOUT_COLUMNS, SURF_WORK_FULL_LAYOUT_ROWS),
         ),
     ),
     SweepCase(

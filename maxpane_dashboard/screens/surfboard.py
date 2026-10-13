@@ -13,7 +13,7 @@ from textual.widgets import Input, Static
 
 from maxpane_dashboard.data.surf_models import SURFBOARD_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
-from maxpane_dashboard.screens.surf import MODE_AGENT
+from maxpane_dashboard.screens.surf import MODE_AGENT, MODE_WORK
 from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
@@ -28,7 +28,7 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: at 144×37 and 149×45. TOKENS keeps its leading blank and right-edge arrows.
 #: Four seven-row card floors, three gutters and two extra side-gap rows need
 #: a 33-row rack, restoring the height pin from 35 to 37. The gaps directly below
-#: LAUNCHPAD and PORTFOLIO are three lines, with bold green captions in the
+#: LAUNCHPAD and PORTFOLIO are three lines, with regular muted captions in the
 #: middle line before the AGENT seats. All other card gaps remain one line.
 #: All cards remain equally tall. The terminal fills the center to the rack
 #: bottom, measuring 94 columns at the pin and 97 at 149×45. At owner size all
@@ -47,6 +47,7 @@ class SurfboardScreen(DashboardScreen):
         (SurfboardTerminal, keys(*SURFBOARD_WIDGET_SIGNATURES["SurfboardTerminal"])),
     )
     BINDINGS = [
+        Binding("w", "work", "Work in progress", show=False),
         Binding("slash", "command_input", "Command", show=False),
         Binding("left", "card('left')", show=False),
         Binding("right", "card('right')", show=False),
@@ -118,7 +119,7 @@ class SurfboardScreen(DashboardScreen):
         return await self._data_manager.fetch_hub_snapshot()
 
     def _prime_status_bar(self, bar: StatusBar) -> None:
-        bar.set_key_hints("arrows cards · enter open · / command · esc menu")
+        bar.set_key_hints("arrows cards · enter open · w work · / command · esc menu")
 
     def _update_title(self, data: dict) -> None:
         self._age_captured = self._age_clock()
@@ -177,6 +178,9 @@ class SurfboardScreen(DashboardScreen):
 
     def action_command_input(self) -> None:
         self.query_one(SurfboardTerminal).focus_input()
+
+    def action_work(self) -> None:
+        self.app.open_surf_mode(MODE_WORK)
 
     def action_card(self, direction: str) -> None:
         if not isinstance(self.focused, Input):

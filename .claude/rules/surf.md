@@ -772,7 +772,8 @@ right with one trailing blank; oversized counts drop grouping, then use compact 
 if necessary. Its activity footer remains rank one's.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
 footer is centered `Identity.md`. Three-line gaps below LAUNCHPAD and PORTFOLIO separate them
-from the AGENT seats; bold green キープ / ビルディング are centered on the middle line.
+from the AGENT seats; regular-weight キープ / ビルディング match the muted card-footer
+labels and are centered on the middle line.
 Other card gaps remain one line; all card sizes stay equal.
 The terminal hides automatic stale labels (including generated command summaries) and V/P/D
 service flags at every width, per the owner; underlying metadata and unavailable states remain.
@@ -798,3 +799,24 @@ of the 24h change retained in detail. POOL4's outer footer reuses the protocol's
 share price, rounded to fit; card detail retains six decimals and source freshness.
 Rank migration resets only contributor-based baselines (`seat-records-v1`). See the hub PRD
 and implementation plan for exact meter formulas, commands and source cadence.
+
+## WORK IN PROGRESS (`w`)
+
+The approved tree/detail body is `MODE_WORK`, reachable from Surf and the boardroom.
+It shares SurfScreen and SurfManager; no new top-level game registration. Six rack heroes
+and the body consume only `surf_work`. The work reader owns a separate 60s cache tier,
+120s failure backoff, fresh 100-job/100-workflow pages and at most 24 detail reads.
+Only the visible body offers that reader; leaving cancels it. No history merge or
+unrelated Surf collectors run on its refresh path. Busy stops detail fanout and retains
+the previous snapshot; missing individual details remain explicit partial coverage.
+
+Counts apply to loaded jobs/workflows and every working node of executing jobs. Seats
+are distinct assigned token IDs; missing executing details make step/seat counts unknown.
+Creation age never claims execution duration. Current node state controls activity,
+even when an older verdict says accepted. Job and workflow states have separate meanings.
+
+The tree groups workflow jobs and steps, then other unfinished jobs. Selection and
+collapsed branches survive refreshes. Local `/` search and `f` filters preserve parents;
+heroes remain unfiltered. Enter focuses details, and Escape closes search before leaving.
+Addresses in objective/dependency/note prose use copy helpers without a guessed chain;
+job IDs link to the existing job explorer. See `docs/surf_work_PRD.md` and plan.

@@ -236,6 +236,18 @@ LAUNCHES and SITES in full-width rows beneath. The hero shows AGENTS (online/enr
 WORKING, ACCEPTED 24h, LAUNCHES, WORKFLOWS and SITES. The last three show totals and the largest
 status counts that fit as whole pairs; missing data says `unavailable`, while an empty list is `0`.
 
+Press **`w`** from Surf or the IMD boardroom for **WORK IN PROGRESS**. Six rack cards
+summarize executing jobs, active workflows, working seats, build/review steps and blocked
+jobs. Select a workflow, job or step in the tree to inspect its objective, assignments,
+dependencies, attempts and latest notes. Use arrows to navigate, Enter to focus details,
+`/` to find work and `f` to cycle all/build/review/blocked. Escape closes search first,
+then returns to the view you came from.
+
+These counts describe the loaded window, not network-wide totals. The view reads the newest
+100 jobs and 100 workflows, plus at most 24 job details, while open. Missing details remain
+explicit; unknown assignments never become zero. Reads run at most once a minute, and failed
+reads keep the previous snapshot with its original timestamp and a stale marker.
+
 WORKFLOWS retains up to 1,000 workflows, newest first, and scrolls inside its table. It shows
 start time, status, contracts and frontend jobs linked to the swarm's job explorer, and the
 objective or a non-completed workflow's failure in red. Enter or a row click opens a snapshot
@@ -655,6 +667,9 @@ of any of the six alternate bodies.
 | RECORD `more` click | Show 20 more rows, up to 400 |
 | RECORD `all` / `not completed` click | Filter by the displayed state before the row limit |
 | `f` in AGENT | Open RECORD's filter editor; in the editor, apply it |
+| `w` in Surf or the boardroom | Open WORK IN PROGRESS |
+| Arrows / Enter in WORK | Select and expand work / focus selected details |
+| `/` / `f` in WORK | Find locally / cycle all, build, review and blocked |
 | RECORD `filtered` click | Show the stored filter again after `all` / `not completed` |
 | RECORD `»` click | Open ANSWER (joined oracle value, question and notes) or SUBMISSION (reply, job and usage) |
 | `space` / `esc` in ANSWER or SUBMISSION | Close the popup and return to AGENT |

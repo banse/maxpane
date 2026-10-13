@@ -28,6 +28,8 @@ Four structural guarantees, one place:
 
 from __future__ import annotations
 
+from maxpane_dashboard.widgets.surf.work import SurfWorkBody, SurfWorkHero
+
 import ast
 import inspect
 from pathlib import Path
@@ -197,6 +199,7 @@ def test_the_derived_widget_lists_are_not_empty_and_agree():
     """
     assert set(_ALL_WIDGETS) == set(_WIDGETS) | _SHORT_KWARG_WIDGETS
     assert set(_WIDGETS) == {
+        SurfWorkBody, SurfWorkHero,
         SurfHero, SurfNewsHero, SurfSignals, SurfFeed, SurfDevActivity, SurfMarket, SurfNft,
         # Wired into the `l` body 2026-08-25. They land here, in the strict
         # check, rather than in `_SHORT_KWARG_WIDGETS` -- which is what that

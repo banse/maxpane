@@ -259,7 +259,7 @@ async def test_the_key_hint_names_the_swarm_and_the_agent():
 
 
 async def test_the_bindings_include_board_agent_and_seat_selection():
-    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "f", "x", "escape"}
+    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "f", "x", "w", "slash", "escape"}
     assert hasattr(SurfScreen, "action_toggle_swarm")
     assert hasattr(SurfScreen, "action_toggle_agent")
 

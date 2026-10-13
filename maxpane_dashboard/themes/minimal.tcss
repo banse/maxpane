@@ -1781,6 +1781,13 @@ SurfScreen #hero-row {
     padding: 0 0;
     margin: 1 0 0 0;
 }
+SurfScreen #surf-work-body {
+    height: 1fr;
+    min-height: 1;
+    margin: 1 0 1 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
 
 /* The hero owns the whole top row: four boxes across the full width get ~26
  * content columns each at 139 terminal columns, which reaches the hero's

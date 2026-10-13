@@ -1658,7 +1658,19 @@ SWARM_KEYS: tuple[str, ...] = (
 SWARM_LATEST_LAUNCHES_SIGNATURE = ("swarm_launch_rows", "swarm_launches_as_of_hhmm", "as_of")
 SWARM_THROUGHPUT_SIGNATURE = ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale")
 
+SURF_WORK_WIDGET_SIGNATURES = {"SurfWorkHero": ("surf_work",), "SurfWorkBody": ("surf_work",)}
+SURF_WORK_FIELDS = ("state", "read_ts", "now_ts", "partial", "jobs_loaded", "workflows_loaded",
+                    "details_loaded", "details_expected", "summary", "jobs", "workflows")
+SURF_WORK_SUMMARY_KEYS = ("jobs", "workflows", "seats", "build", "review", "blocked")
+SURF_WORK_JOB_FIELDS = ("id", "state", "template", "objective", "created_ts", "updated_ts",
+                       "blocked_reason", "detail_state", "nodes")
+SURF_WORK_NODE_FIELDS = ("key", "role", "state", "seat", "agent_id", "attempt", "revisions",
+                        "depends_on", "updated_ts", "dispatch_note", "dispatch_ts", "failure", "verdict")
+SURF_WORK_WORKFLOW_FIELDS = ("id", "status", "objective", "failure", "contracts_job_id",
+                            "frontend_job_id", "created_ts", "updated_ts", "waiting_for_hosting")
+
 SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
+    **SURF_WORK_WIDGET_SIGNATURES,
     "SurfSwarmRackHero": ("surf_swarm_hero",),
     "SurfSwarmLatestLaunches": SWARM_LATEST_LAUNCHES_SIGNATURE,
     # WORKFLOWS took CAPABILITY's place on SWARM (2026-10-03, docs/surf_swarm_workflows_spec.md
@@ -1885,6 +1897,7 @@ SURF_KEYS: tuple[str, ...] = (
     "surf_protocol_hero",     # dict — six source-backed native PROTOCOL cards
     "surf_leaderboard_hero",  # six rack cards; independent records/worker/receipt clocks
     "surf_agent_hero",  # twelve rack cards; selected identity and independently dated facts
+    "surf_work",              # coherent bounded jobs, workflows, details and loaded-work counts
     "surf_launchpad_hero",    # six rack cards; launchpad observation and current ETH/USD
     # ---- feed ---------------------------------------------------------------
     "feed_nonce",            # int | None — eth_getTransactionCount(ANNOUNCE)

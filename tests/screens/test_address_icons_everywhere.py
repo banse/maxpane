@@ -107,6 +107,8 @@ _TOKEN_CHARS = frozenset("0123456789abcdefABCDEFx…")
 #: Widget classes that import the helper yet never produce an icon, each with
 #: the reason. A class, never a module or package.
 EXEMPT: dict[str, str] = {
+    "maxpane_dashboard.widgets.surf.work.SurfWorkHero": "Six numeric counts only; shares a module with the prose-bearing work tree.",
+    "maxpane_dashboard.widgets.surf.work._WorkHeroCard": "Fixed labels and numeric counts only; no served objective or address.",
     "maxpane_dashboard.widgets.surf.feed.SurfFeedToggle":
         "a thread's expand/collapse toggle; feed.py imports only is_copy_click /"
         " is_explorer_click for it",
