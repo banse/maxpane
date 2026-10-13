@@ -18,25 +18,26 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Rechecked after the 2026-10-13 ORACLES card live preview at 149×45.
+#: Rechecked after the 2026-10-14 card rotation live preview at 149×45.
 #: Six equal fractional columns retain the standard card widths (at most one
 #: cell of rounding difference). PROTOCOL's "rewarded 100k IMD" row needs 19
 #: inner cells with padding, binding its card to 23 columns and the rack to
-#: 141. The viewport's padding and vertical gutter bind the width pin at 144.
+#: 143 in the leftmost slot. The viewport padding and vertical gutter bind
+#: the width pin at 146 (formerly 144 with PROTOCOL in column five).
 #: Normal, stress, unavailable and wide composites scroll horizontally at
-#: 143×36, but not 144×36; vertical scrolling clears at 144×37. Every card fits
-#: at 144×37 and 149×45. TOKENS keeps its leading blank and right-edge arrows.
+#: 145×36, but not 146×36; vertical scrolling clears at 146×37. Every card fits
+#: at 146×37 and 149×45. TOKENS keeps its leading blank and right-edge arrows.
 #: Four seven-row card floors, three gutters and two extra side-gap rows need
 #: a 33-row rack, restoring the height pin from 35 to 37. The gaps directly below
-#: ORACLES and PROTOCOL are three lines, with regular muted captions in the
+#: PROTOCOL and TOKENS are three lines, with regular muted captions in the
 #: middle line before the AGENT seats. All other card gaps remain one line.
 #: All cards remain equally tall. The terminal fills the center to the rack
-#: bottom, measuring 94 columns at the pin and 97 at 149×45. At owner size all
+#: bottom, measuring 95 columns at the pin and 97 at 149×45. At owner size all
 #: cards remain nine rows tall; the enlarged gaps use the two former spare rows.
 #: WORK IN PROGRESS uses job digits, workflow subtitle and fitted build/review
 #: counts in the former PORTFOLIO slot; its title fits the standard card width.
 #: App-wide width stays 143.
-SURFBOARD_FULL_LAYOUT_COLUMNS = 144
+SURFBOARD_FULL_LAYOUT_COLUMNS = 146
 SURFBOARD_FULL_LAYOUT_ROWS = 37
 
 

@@ -84,8 +84,7 @@ async def test_post_preview_keeps_unicode_literal_and_address_copy_units(size):
                 assert not next(s.style for s in content[0] if '[bold]' in s.text).bold
             elif text.startswith('a界'):
                 assert [s.crop(left+1,right).text.rstrip() for s in content]==[
-                    'a'+'界'*(8 if size[0]==149 else 7),
-                    '界'*(9 if size[0]==149 else 8), '界'*(7 if size[0]==149 else 6)+'...']
+                    'a'+'界'*8, '界'*(9 if size[0]==149 else 8), '界'*7+'...']
             elif text=='Short post':
                 assert 'Short post' in content[0].text
                 assert all(not s.crop(left+1,right).text.strip() for s in content[1:])
@@ -363,15 +362,15 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.update_data()
         rack.focus_card("announce")
         rack.move_focus("down")
-        assert rack.focused_card == "oracles"
+        assert rack.focused_card == "protocol"
         rack.move_focus("right")
         assert rack.focused_card == "swarm-tokens"
         rack.move_focus("up")
         assert rack.focused_card == "board"
         rack.move_focus("left")
-        assert rack.focused_card == "protocol"
-        rack.move_focus("left")
         assert rack.focused_card == "pool4"
+        rack.move_focus("left")
+        assert rack.focused_card == "oracles"
         rack.move_focus("left")
         assert rack.focused_card == "work"
         rack.focus_card("swarm-tokens")
@@ -516,7 +515,7 @@ def card_strips(app, card):
             app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
 
 
-@pytest.mark.parametrize('size', [(149, 45), (140, 36)])
+@pytest.mark.parametrize('size', [(149, 45), (143, 36)])
 async def test_tokens_ranked_rows_direction_ink_volume_footer_and_activity(size):
     data = token_card_data()
     async with RackApp().run_test(size=size) as pilot:
@@ -774,7 +773,7 @@ async def test_all_boardroom_card_footers_center_on_resize():
 
     app = HubHarness(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
-        for width, height in ((149, 45), (180, 45), (144, 37)):
+        for width, height in ((149, 45), (180, 45), (146, 37)):
             await pilot.resize_terminal(width, height)
             await pilot.pause()
             for card in app.hub.query(SurfboardCard):
@@ -862,7 +861,7 @@ async def test_work_card_approved_digits_workflows_and_step_footer(size):
         assert not app.query('#surfboard-card-portfolio')
 
 
-async def test_work_card_unknown_idle_and_stale_reset_activity_ink():
+async def test_work_card_highlights_positive_jobs_across_source_states():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         app = pilot.app
         card = app.query_one('#surfboard-card-work', SurfboardCard)
@@ -870,16 +869,27 @@ async def test_work_card_unknown_idle_and_stale_reset_activity_ink():
             ('active', '5', '1 workflow', dict(build=5, review=4)),
             ('idle', '0', '0 workflows', dict(build=0, review=0)),
             ('stale', '5', '1 workflow', dict(build=5, review=4)),
+            ('stale', '0', '0 workflows', dict(build=0, review=0)),
+            ('active', '0', '0 workflows', dict(build=0, review=0)),
+            ('unavailable', '5', '1 workflow', dict(build=5, review=4)),
+            ('loading', '5', '1 workflow', dict(build=5, review=4)),
+            ('error', '1,000', '1 workflow', dict(build=5, review=4)),
             ('unavailable', '—', '— workflows', dict(build=None, review=None)),
         ]:
             card.set_data(dict(status=state, primary=primary, secondary=secondary, work_summary=counts))
             await pilot.pause()
             strips = card_strips(app, card)
-            top = next(s for s in strips if 'ACTIVE JOBS' in s.text)
-            expected = Color.parse(app.get_css_variables()['accent']).get_truecolor() if state == 'active' else neutral_inset_color(app)
-            assert inset_border_color(top).get_truecolor() == expected
+            top = next(i for i, s in enumerate(strips) if 'ACTIVE JOBS' in s.text)
+            expected = (Color.parse(app.get_css_variables()['accent']).get_truecolor()
+                        if primary in ('5', '1,000') else neutral_inset_color(app))
+            left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
+            for row in strips[top:top+5]:
+                for x in (left, right):
+                    assert next(iter(row.crop(x, x+1))).style.color.get_truecolor() == expected
+            for row, label in ((strips[top], 'ACTIVE JOBS'), (strips[top+4], secondary)):
+                assert next(s for s in row if label in s.text).style.color.get_truecolor() == expected
             assert secondary in '\n'.join(s.text for s in strips)
-            if state == 'unavailable':
+            if primary == '—':
                 assert ('— build · — review' if card.region.width >= 24 else '— build · — rev') in strips[-1].text
             if state == 'idle':
                 assert ('0 build · 0 review' if card.region.width >= 24 else '0 build · 0 rev') in strips[-1].text

@@ -823,6 +823,8 @@ guarantee, not a promise that arbitrary notes fit; measured content limits are i
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
 The title is centered muted gray `IMD BOARDROOM`. ONCHAIN FEED uses white active inset
 borders and border text, matching its body; SWARM BUILDS retains its activity colors.
+The top row is ONCHAIN FEED, BUILT BY SWARM, WIP, ORACLES, POOL4, FLEET.
+PROTOCOL sits below ONCHAIN FEED, opposite TOKENS beside the terminal.
 Per the owner's 2026-10-14 display adjustment, the boardroom omits automatic stale
 and unavailable text. Cached figures remain visible, missing figures use `—`, and
 source states/clocks remain in internal snapshots and card tooltips. All boardroom card
@@ -857,7 +859,7 @@ seats and accepted counts, led by gold/silver/bronze stars with one leading blan
 right with one trailing blank; oversized counts drop grouping, then use compact notation only
 if necessary. Its activity footer remains rank one's.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
-footer is centered `Identity.md`. Three-line gaps below ORACLES and PROTOCOL separate them
+footer is centered `Identity.md`. Three-line gaps below PROTOCOL and TOKENS separate them
 from the AGENT seats; regular-weight キープ / ビルディング match the muted card-footer
 labels and are centered on the middle line.
 Other card gaps remain one line; all card sizes stay equal.
@@ -930,7 +932,9 @@ even when an older verdict says accepted. Job and workflow states have separate 
 The boardroom replaces PORTFOLIO with WORK IN PROGRESS. Its ACTIVE JOBS digits
 and workflow subtitle share `surf_work.summary`; `work_summary` carries the
 build/review footer counts. Unknown values remain em dashes; retained counts keep
-the workflow subtitle. Coverage and read details remain in the card tooltip.
+the workflow subtitle. A positive displayed job count keeps the inset border/title/subtitle
+green, including retained counts during stale or pending reads. Zero and unknown counts
+use the default inset color. Coverage and read details remain in the card tooltip.
 Click/Enter opens Work and Escape returns to the retained boardroom.
 
 The tree groups workflow jobs and steps, then other unfinished jobs. Selection and

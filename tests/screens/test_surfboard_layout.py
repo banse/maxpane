@@ -37,7 +37,7 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        for width, cells in [(149, 9), (180, 14), (140, 8), (149, 9)]:
+        for width, cells in [(149, 9), (180, 14), (140, 9), (149, 9)]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             card = app.hub.query_one("#surfboard-card-announce", SurfboardCard)
@@ -172,7 +172,7 @@ async def test_projected_pool4_share_rate_fits_owner_size_without_detail(state):
         pool4 = app.hub.query_one("#surfboard-card-pool4")
         footer = app.hub._compositor.render_strips()[pool4.region.bottom - 1].crop(
             pool4.region.x, pool4.region.right)
-        assert footer.text == "╰─ 1 sIMD = 1.303 IMD ─╯"
+        assert footer.text == "╰─ 1 sIMD = 1.30 IMD ─╯"
         assert "‹ widen" not in str(pool4.border_title)
 
 
@@ -212,14 +212,15 @@ async def test_wip_tokens_protocol_and_four_agent_seats_have_expected_positions(
         work = rack.query_one('#surfboard-card-work')
         bay = rack.query_one('#surfboard-card-agent-2')
         oracles = rack.query_one('#surfboard-card-oracles')
-        assert tokens.region.y == oracles.region.y
-        assert protocol.region.y == work.region.y
-        assert rack.query_one('#surfboard-card-pool4').region.right < protocol.region.x
-        assert protocol.region.right < rack.query_one('#surfboard-card-board').region.x
+        pool4 = rack.query_one('#surfboard-card-pool4')
+        assert tokens.region.y == protocol.region.y
+        assert oracles.region.y == pool4.region.y == work.region.y
+        assert oracles.region.right < pool4.region.x
+        assert pool4.region.right < rack.query_one('#surfboard-card-board').region.x
         assert work.region.y == rack.query_one('#surfboard-card-swarm').region.y
         assert rack.query_one('#surfboard-card-swarm').region.right < work.region.x
-        assert work.region.right < rack.query_one('#surfboard-card-pool4').region.x
-        assert agent.region.x == oracles.region.x
+        assert work.region.right < oracles.region.x
+        assert agent.region.x == protocol.region.x
         assert bay.region.x == tokens.region.x and bay.region.y == agent.region.y
         assert bay.can_focus and bay.data['destination'] is None
         assert not rack.query('#surfboard-card-earnings')
@@ -339,14 +340,14 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert r["status_whole"], r
     assert len(r["cards"]) == 12
     assert len({region.y for region in r["cards"].values()}) == 4
-    assert len({r["cards"][key].y for key in ("announce", "swarm", "work", "pool4", "protocol", "board")}) == 1
-    assert r["terminal"].y == r["cards"]["oracles"].y == r["cards"]["swarm-tokens"].y
+    assert len({r["cards"][key].y for key in ("announce", "swarm", "work", "oracles", "pool4", "board")}) == 1
+    assert r["terminal"].y == r["cards"]["protocol"].y == r["cards"]["swarm-tokens"].y
     assert r["terminal"].bottom == r["rack"].bottom
     assert r["cards"]["agent-3"].bottom == r["cards"]["agent-4"].bottom <= r["terminal"].bottom
-    assert r["cards"]["oracles"].right < r["terminal"].x < r["terminal"].right < r["cards"]["swarm-tokens"].x
+    assert r["cards"]["protocol"].right < r["terminal"].x < r["terminal"].right < r["cards"]["swarm-tokens"].x
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
-        "announce", "swarm", "work", "pool4", "protocol", "board",
-        "oracles", "swarm-tokens", "agent", "agent-2", "agent-3", "agent-4"]
+        "announce", "swarm", "work", "oracles", "pool4", "board",
+        "protocol", "swarm-tokens", "agent", "agent-2", "agent-3", "agent-4"]
     for title in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "ORACLES", "POOL4", "PROTOCOL",
                   "TOKENS", "WIP", "EMPTY SEAT", "type in"):
         assert title in r["text"], (title, r["text"])
@@ -483,7 +484,7 @@ async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_
             news = rack.query_one('#surfboard-card-announce')
             footer = strips[news.region.bottom - 1].crop(news.region.x, news.region.right)
             label_ink = next(segment.style.color for segment in footer if 'SIGNALS' in segment.text)
-            for word, above, below in [('キープ', 'oracles', 'agent'),
+            for word, above, below in [('キープ', 'protocol', 'agent'),
                                        ('ビルディング', 'swarm-tokens', 'agent-2')]:
                 card = rack.query_one(f'#surfboard-card-{above}')
                 agent = rack.query_one(f'#surfboard-card-{below}')
@@ -498,7 +499,7 @@ async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_
                            for segment in line if word in segment.text)
                 assert sum(word in strip.text for strip in strips) == 1
             terminal = rack.query_one(SurfboardTerminal)
-            assert terminal.region.y == rack.query_one('#surfboard-card-oracles').region.y
+            assert terminal.region.y == rack.query_one('#surfboard-card-protocol').region.y
             assert terminal.region.bottom == rack.content_region.bottom
 
 
