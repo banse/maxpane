@@ -251,8 +251,8 @@ seat-detail availability.
 STATUS lists working, capacity and device counts from workers. Its inner bottom
 border shows the newest seat activity as `worked HH:MM` or `accepted HH:MM`;
 the full date and independent detail-read clock live in its tooltip. Feedback
-`reviews[].sentAt` is not seat activity. The outer footer uses the shared observed
-stop meter: BUSY has full green segments; IDLE has a grey label and green drains
+`reviews[].sentAt` is not seat activity. The outer footer uses the shared last-work
+meter: BUSY has full green segments; IDLE has a grey label and green drains
 to orange over 24h, then orange drains to empty by 72h. OFF is red with empty
 segments; paused and unknown stay explicit. Partial worker coverage never invents
 an offline seat or a complete capacity sum. The shared meter fold is also used by
@@ -789,7 +789,10 @@ orange BUSY with a full green bar; gray IDLE drains green to orange over 24 hour
 then orange to empty over hours 24–72. Offline is red OFF with empty segments.
 Every successful workers read refreshes activity evidence even when content is unchanged;
 failed/stale/unknown evidence has no live bar. Persisted per-token stop history is validated
-on load. Cold idle has an unknown bar until a work-to-idle transition is observed.
+on load. Cached own-work `submittedAt` can seed or advance an idle anchor when
+polling missed the work; a newer observed stop wins. Heartbeat, acceptance and
+feedback timestamps cannot reset it. Without either source, cold idle has a dash,
+not a full orange bar. The last green segment remains until the full 24h expires.
 PROTOCOL uses label / amount / IMD columns, neutral inset borders/title, and a centered
 outer `x% burned` footer. POOL4's inset borders/title/USD label compare consecutive valid
 USD price reads: green up, orange down, neutral on first or unchanged reads. Source clocks

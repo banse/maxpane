@@ -57,7 +57,7 @@ async def test_projected_activity_drains_orange_from_24_to_72_hours_and_resets(k
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
         for hours, green_fraction, orange_fraction in [
-            (0, 1, 0), (12, .5, .5), (24, 0, 1), (36, 0, .75),
+            (0, 1, 0), (12, .5, .5), (23.999, 1 / 24000, 0), (24, 0, 1), (36, 0, .75),
             (48, 0, .5), (60, 0, .25), (72, 0, 0), (96, 0, 0),
         ]:
             now = NOW + hours * 3600
@@ -66,7 +66,7 @@ async def test_projected_activity_drains_orange_from_24_to_72_hours_and_resets(k
             card.set_data(row)
             await pilot.pause()
             cells = card.region.width - 11
-            green = int(cells * green_fraction)
+            green = max(1, int(cells * green_fraction)) if hours < 24 else 0
             orange = cells - green if hours < 24 else int(cells * orange_fraction)
             footer = strips(pilot.app, card)[-1]
             assert footer.text == '╰─ IDLE ' + '▰' * (green + orange) + '▱' * (cells - green - orange) + ' ─╯'
@@ -97,7 +97,7 @@ async def test_activity_footer_labels_colors_and_full_half_empty_unknown(key):
         card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
         for state, remaining, label, ratio, color in [
             ('busy', 86400, 'BUSY', 1, 3), ('idle', 43200, 'IDLE', .5, 2),
-            ('idle', 0, 'IDLE', 0, 2), ('idle', None, 'IDLE', 0, 2),
+            ('idle', 0, 'IDLE', 0, 2), ('idle', None, 'IDLE', None, 2),
             ('busy', 86400, 'BUSY', 1, 3),
             ('stale', None, '—', None, 3), ('unavailable', None, '—', None, 3),
         ]:

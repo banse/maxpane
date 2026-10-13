@@ -1,5 +1,23 @@
 # Surfboard follow-ups
 
+## Seat activity recovery — 2026-10-13
+
+Seat 420's cold idle observation had no stop timestamp and was incorrectly
+rendered full orange despite recent recorded work. Existing cached own-work
+submissions now seed or advance idle history on the next workers read. Unknown
+age renders a dash; the last green segment remains until 24h. No extra API reads
+or layout changes. Cached submissions are validated individually before selecting
+the latest, so a future-dated row cannot hide valid recent work.
+
+Live keyless 149×45 render verified seat 420 with about 20h green remaining.
+544 affected/composing tests, 124 guards and 12 docpins passed; after the review's
+timestamp correction, all 177 affected data/manager tests passed. Four regression
+mutations and the review's monotonic-history mutation were rejected. No full suite
+run. Existing unknown history remains explicitly unknown when no cached own-work
+record or observed transition is available.
+Scoped re-review approved the timestamp correction; both mixed-validity cases
+rejected removal of per-submission validation. No outstanding review findings.
+
 ## Boardroom card tones and consecutive price reads — 2026-10-13
 
 IMD BOARDROOM uses its former muted title color; ONCHAIN FEED has a white active

@@ -6369,7 +6369,8 @@ class SurfManager:
             observed_at = float(self._clock())
             if slot == SLOT_SWARM_WORKERS:
                 prior_activity = self.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY)
-                activity = work_activity.observe(getattr(prior_activity, "payload", None), payload, now=observed_at)
+                activity = work_activity.observe(getattr(prior_activity, "payload", None), payload, now=observed_at,
+                    seat_records=getattr(self.cache.get_last_good(SLOT_SWARM_SEAT), "payload", None))
                 self.cache.store_last_good(SLOT_SURFBOARD_ACTIVITY, activity, ts=observed_at)
             prior = self.cache.get_last_good(slot)
             if payload is None:

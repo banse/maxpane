@@ -33,6 +33,69 @@ def stopped():
     return activity.observe(busy, workers(0), now=NOW)
 
 
+def seat_records(*, worked=NOW - 4 * 3600, token=TOKEN):
+    from datetime import datetime, timezone
+    from tests.surf_swarm_fixtures import swarm_seat_capture
+    stamp = lambda value: datetime.fromtimestamp(value, timezone.utc).isoformat()
+    seat = swarm_seat_capture('seat_420')
+    seat.update(tokenId=str(token), work=[dict(seat['work'][0], submittedAt=stamp(worked),
+        acceptedAt=stamp(NOW))], reviews=[dict(seat['reviews'][0], sentAt=stamp(NOW))])
+    return {"seats": {str(token): {"state": "ok", "read_ts": NOW,
+        "seat": seat}}}
+
+
+def test_cold_idle_recovers_recent_own_work_without_using_acceptance_or_feedback():
+    payload = activity.observe(None, workers(0), now=NOW, seat_records=seat_records())
+    assert activity.project(payload, TOKEN, now=NOW) == {
+        "state": "idle", "remaining": 72000, "as_of": NOW, "stopped_ts": NOW - 14400,
+    }
+    restored = activity.coerce(payload, now=NOW + 120)
+    payload = activity.observe(restored, workers(0), now=NOW + 120)
+    assert activity.project(payload, TOKEN, now=NOW + 120)["remaining"] == 71880
+
+
+@pytest.mark.parametrize('newest, read_ts', [(NOW + 3600, NOW), (NOW - 600, NOW - 1200)])
+def test_invalid_newest_submission_does_not_hide_valid_recent_work(newest, read_ts):
+    records = seat_records()
+    point = records['seats'][str(TOKEN)]
+    point['seat']['work'] += seat_records(worked=newest)['seats'][str(TOKEN)]['seat']['work']
+    point['read_ts'] = read_ts
+    payload = activity.observe(None, workers(0), now=NOW, seat_records=records)
+    assert activity.project(payload, TOKEN, now=NOW)['remaining'] == 72000
+
+
+def test_new_work_between_idle_polls_advances_anchor_but_old_records_never_rewind_it():
+    payload = activity.observe(stopped(), workers(0), now=NOW + 120,
+                               seat_records=seat_records())
+    assert payload["seats"][str(TOKEN)]["stopped_ts"] == NOW
+    records = seat_records(worked=NOW + 180)
+    records['seats'][str(TOKEN)]['read_ts'] = NOW + 240
+    payload = activity.observe(payload, workers(0), now=NOW + 240, seat_records=records)
+    assert activity.project(payload, TOKEN, now=NOW + 240)["remaining"] == 86340
+
+
+@pytest.mark.parametrize('invalid', ['future', 'other-seat', 'feedback-only', 'malformed'])
+def test_record_backfill_rejects_invalid_or_unrelated_work(invalid):
+    records = seat_records(worked=NOW + 1 if invalid == 'future' else NOW - 14400)
+    point = records['seats'][str(TOKEN)]
+    if invalid == 'other-seat':
+        point['seat']['tokenId'] = '421'
+    elif invalid == 'feedback-only':
+        point['seat']['work'] = []
+    elif invalid == 'malformed':
+        point['seat']['work'][0]['submittedAt'] = 'invalid'
+    payload = activity.observe(None, workers(0), now=NOW, seat_records=records)
+    assert activity.project(payload, TOKEN, now=NOW)['remaining'] is None
+
+
+@pytest.mark.parametrize('read, state, remaining', [(workers(1), 'busy', 86400),
+    (workers(None), 'unavailable', None), (None, 'unavailable', None)])
+def test_record_backfill_does_not_override_busy_unknown_or_failed_workers(read, state, remaining):
+    payload = activity.observe(None, read, now=NOW, seat_records=seat_records())
+    shown = activity.project(payload, TOKEN, now=NOW)
+    assert (shown['state'], shown['remaining'], shown['stopped_ts']) == (state, remaining, None)
+
+
 def test_busy_is_full_and_stop_is_the_observation_time_not_heartbeat():
     payload = activity.observe(None, workers(1), now=NOW)
     assert activity.project(payload, TOKEN, now=NOW) == {

@@ -177,13 +177,13 @@ def meter_text(card: dict, width: int | None = None) -> Text:
             return out.append("▰" * cells, style=GREEN)
         if state != "idle":
             return out.append("—", style=AMBER)
-        if numerator is None and card.get("meter_kind") == "activity":
-            # Keep the track visible before the first observed work-to-idle transition.
-            return out.append("▰" * cells, style=AMBER)
     if not _number(numerator) or not _number(denominator) or denominator == 0 or numerator > denominator:
         return out.append("—", style=AMBER)
     full = int(numerator * cells / denominator)
     if card.get("meter_kind") == "activity":
+        # Quantization must not imply a full day idle before 24h has elapsed.
+        if numerator > 0 and cells:
+            full = max(1, full)
         return out.append("▰" * full, style=GREEN).append("▰" * (cells - full), style=AMBER)
     if card.get("meter_kind") == "activity-cooldown":
         return out.append("▰" * full, style=AMBER).append("▱" * (cells - full), style=MUTED)

@@ -714,6 +714,37 @@ async def test_worker_reads_observe_activity_even_unchanged_or_failed(manager):
         await m.close()
 
 
+async def test_worker_read_recovers_each_seats_cached_work_after_restart(manager):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT, SLOT_SURFBOARD_ACTIVITY, TIER_SWARM_BOARD
+    from tests.data.test_surfboard_activity import NOW, seat_records
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+    m, clock = manager
+    clock.now = NOW
+    m.set_hub_seats((3, 7, 420, 650))
+    raw = swarm_capture_v3('workers')
+    source = raw['workers'][0]
+    raw['workers'] = [dict(source, seat=dict(source['seat'], tokenId=str(token)), working=0)
+                      for token in (3, 7, 420, 650)]
+    raw['count'] = 4
+    records = {'seats': {}}
+    for token, hours in ((3, 2), (7, 25), (420, 4), (650, 48)):
+        records['seats'].update(seat_records(token=token, worked=NOW-hours*3600)['seats'])
+    m.cache.store_last_good(SLOT_SWARM_SEAT, records, ts=NOW)
+    m.swarm_client.fetch_contributors = AsyncMock(return_value=None)
+    m.swarm_client.fetch_workers = AsyncMock(return_value=raw)
+    try:
+        await m._pool_swarm_board({TIER_SWARM_BOARD}, clock.now)
+        cards = {c['key']: c for c in m._project_hub()['surfboard_cards']}
+        for key, remaining, kind in (('agent', 22*3600, 'activity'),
+            ('agent-2', 47*3600, 'activity-cooldown'), ('agent-3', 20*3600, 'activity'),
+            ('agent-4', 24*3600, 'activity-cooldown')):
+            row = cards[key]
+            assert (row['meter_state'], row['numerator'], row['meter_kind']) == ('idle', remaining, kind)
+        assert m.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY).payload['seats']['420']['stopped_ts'] == NOW-14400
+    finally:
+        await m.close()
+
+
 async def test_hub_ranking_projection_preserves_reader_pool_identity(manager):
     from tests.data.test_swarm_tokens_live import rows
     from maxpane_dashboard.data.surf_swarm import launch_rows

@@ -3,6 +3,12 @@
 Date: 2026-10-11. Status: accepted implementation direction. Tier 2: data contract,
 persistence, and more than six files. Expected production change: below 1,000 lines.
 
+Activity correction, 2026-10-13: the owner's recent-work requirement supersedes
+the observation-only policy below. Existing cached own-work submissions now seed
+or advance idle history; unknown age stays a dash. The approved two-stage meter
+drains green to orange over 24h, then orange to empty by 72h, with a grey IDLE
+label. See [recovery plan](surfboard_activity_recovery_plan.md).
+
 ## Problem and constraints
 
 The rack's outer footers currently expose acceptance ratios or empty tracks where the

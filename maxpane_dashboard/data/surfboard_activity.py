@@ -1,15 +1,16 @@
-"""Persist observed worker transitions; never infer stop times from heartbeats.
+"""Persist worker transitions and recorded work; never reset on heartbeats.
 
 Only ``observe`` records an actual /workers attempt. ``project`` is a pure clock
 projection, so repainting or switching seats cannot refresh a source or stop.
-The 24-hour window is a display policy, starting at the observed busy→idle read.
+The activity anchor is the latest observed busy→idle read or own-work submission.
+Recorded submissions recover work missed between polls, including before startup.
 """
 from __future__ import annotations
 
 import math
 from collections.abc import Mapping
 
-from .surf_swarm import coerce_workers_slot
+from .surf_swarm import coerce_seat_slot, coerce_workers_slot, seat_work_rows
 
 
 WINDOW_SECONDS = 86400.0
@@ -71,13 +72,15 @@ def coerce(payload: object, *, now: float) -> dict | None:
             "ok": payload["ok"], "complete": complete, "seats": _bounded(seats)}
 
 
-def observe(prior: object, workers: object, *, now: float) -> dict:
+def observe(prior: object, workers: object, *, now: float, seat_records: object = None) -> dict:
     """Fold one normalized workers read (None means failure) into seat history.
 
     ``state`` remembers the last known state through unknown counters. ``known``
     states whether this read actually confirmed it. Positive work on any device
     proves busy; a missing seat proves idle only in a complete successful list.
     ``seen_ts`` bounds the history by most recent presence, including unknowns.
+    Cached own-work submissions can advance an idle anchor without an observed
+    transition. Acceptance and feedback timestamps never count as execution.
     """
     if not _stamp(now, now):
         raise ValueError("activity observation needs a finite nonnegative clock")
@@ -90,6 +93,13 @@ def observe(prior: object, workers: object, *, now: float) -> dict:
     if source is None:
         return result
 
+    recorded = {}
+    records = coerce_seat_slot(seat_records, now=now) or {"seats": {}}
+    for token, record in records["seats"].items():
+        worked = max((row["submitted_ts"] for row in seat_work_rows(record["seat"])
+                      if _stamp(row["submitted_ts"], min(now, record["read_ts"]))), default=None)
+        if worked is not None:
+            recorded[int(token)] = worked
     result["read_ts"] = float(now)
     complete = source["count"] == len(source["workers"]) and not source["malformed_tokens"]
     groups: dict[int, list] = {}
@@ -99,7 +109,7 @@ def observe(prior: object, workers: object, *, now: float) -> dict:
             continue
         groups.setdefault(row["token_id"], []).append(row["working"])
     seats = result["seats"]
-    for token in set(groups) | {int(key) for key in seats}:
+    for token in set(groups) | {int(key) for key in seats} | set(recorded):
         key = str(token)
         point = seats.get(key, {"state": None, "known": False, "stopped_ts": None, "seen_ts": now})
         counts = groups.get(token)
@@ -117,6 +127,8 @@ def observe(prior: object, workers: object, *, now: float) -> dict:
             point["stopped_ts"] = None
         elif state == "idle" and point["state"] == "busy":
             point["stopped_ts"] = float(now)
+        if state == "idle" and token in recorded:
+            point["stopped_ts"] = max(recorded[token], point["stopped_ts"] or 0.0)
         if state is not None:
             point["state"] = state
         seats[key] = point
