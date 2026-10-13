@@ -35,8 +35,19 @@ def accepted_job_ids(seat: object) -> set[str]:
 
 def candidates(seat: object) -> list[str]:
     """Network reads deduplicate jobs; work counts retain individual node rows."""
-    return list(dict.fromkeys(job for row in accepted_rows(seat) or []
-        if row['nodeKey'] not in SWARM_ORACLE_NODE_KEYS
+    return _candidate_jobs(accepted_rows(seat) or [])
+
+
+def record_candidates(seat: object) -> list[str]:
+    """RECORD includes rejected/failed attempts on jobs that eventually launched."""
+    rows = seat.get('work') if isinstance(seat, Mapping) else None
+    return _candidate_jobs(rows if isinstance(rows, list) else [])
+
+
+def _candidate_jobs(rows) -> list[str]:
+    return list(dict.fromkeys(job for row in rows
+        if isinstance(row, Mapping) and isinstance(row.get('nodeKey'), str)
+        and row['nodeKey'].strip() and row['nodeKey'] not in SWARM_ORACLE_NODE_KEYS
         and (job := parse_job_id(row.get('jobId'))) is not None))
 
 
@@ -89,12 +100,30 @@ def coerce_points(value: object, now: float) -> dict:
     return dict(sorted(result.items(), key=lambda item: (-item[1]['read_ts'], item[0]))[:MAX_POINTS])
 
 
-def due(seat: object, points: object, now: float, cap: int = 12) -> list[str]:
+def due(seat: object, points: object, now: float, cap: int = 12, *, include_attempts=False) -> list[str]:
     """Read unknown jobs first; terminal jobs still refresh because they can deploy later."""
     points = coerce_points(points, now)
-    jobs = [job for job in candidates(seat)
+    jobs = [job for job in (record_candidates(seat) if include_attempts else candidates(seat))
             if job not in points or now-points[job]['read_ts'] >= REFRESH_AFTER]
     return sorted(jobs, key=lambda job: (job in points, points.get(job, {}).get('read_ts', 0)))[:cap]
+
+
+def record_rows(rows, points, *, now, failed=()) -> list[dict]:
+    """Join verified job membership; launch intent never proves a launch."""
+    points = coerce_points(points, now)
+    result = []
+    for row in rows:
+        job = parse_job_id(row.get('job_id'))
+        if row.get('node_key') in SWARM_ORACLE_NODE_KEYS:
+            state = 'not_launched'
+        elif job is None or job in failed:
+            state = 'unavailable'
+        elif job not in points:
+            state = 'not_read'
+        else:
+            state = 'launched' if points[job]['launched'] else 'not_launched'
+        result.append(dict(row, launch_state=state))
+    return result
 
 
 def summarize(seat: object, points: object, now: float) -> dict:

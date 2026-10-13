@@ -45,25 +45,62 @@ def _row(**over) -> dict:
     return row
 
 
+@pytest.mark.parametrize("tab", [False, True])
+def test_launch_membership_filters_before_cap_and_keeps_unknowns_without_a_submission(tab):
+    spec = None if tab else parse_record_filter({"launches": "launched"}, now_ts=NOW)
+    excluded = [_row(launch_state="not_launched", launch="evm_project") for _ in range(60)]
+    known = [_row(launch_state="launched", work_status=status)
+             for status in ("accepted", "failed", "rejected")]
+    unknown = [_row(launch_state=state, submission_hash=None)
+               for state in ("not_read", "unavailable")]
+    candidates = known + unknown + [_row(launch_state="launched") for _ in range(40)]
+    rows = excluded + candidates
+    assert record_window(rows, 40, tab, spec) == candidates[:40]
+    view = record_view(rows, 40, tab, spec)
+    assert list(view.rows) == known + candidates[5:40]
+    assert (view.not_read, view.unavailable, view.older) == (1, 1, 5)
+    assert len(record_view(rows, 60, tab, spec).rows) == 43
+
+
+def test_launch_filter_is_active_and_independent_of_attempt_state_and_answer_reads():
+    spec = parse_record_filter({"launches": "launched", "states": ["failed"]}, now_ts=NOW)
+    assert spec.launches == "launched" and spec.active
+    rows = [_row(launch_state="launched", work_status="failed", submission_hash=None),
+            _row(launch_state="launched", work_status="accepted"),
+            _row(launch_state="not_launched", work_status="failed", launch="evm_project")]
+    assert record_view(rows, 40, False, spec).rows == (rows[0],)
+    with pytest.raises(FilterValidationError, match="invalid launches"):
+        parse_record_filter({"launches": "planned"}, now_ts=NOW)
+
+
+def test_launch_unknowns_combine_with_existing_read_filters():
+    spec = parse_record_filter({"launches": "launched", "answer": "replied"}, now_ts=NOW)
+    rows = [_row(launch_state="not_read", answer_state="not_served"),
+            _row(launch_state="unavailable", answer_state="not_read"),
+            _row(launch_state="not_read", answer_state="unavailable")]
+    view = record_view(rows, 40, False, spec)
+    assert view == rf.RecordView((), 0, 2, 0)
+
+
 # -- the window (moved from test_surf_swarm_signals.py) ----------------------
 
 
 @pytest.mark.parametrize("status", ["pending", "failed", "rejected", "cancelled", "blocked", "quarantined", None])
-def test_record_state_and_open_window_keep_every_noncompleted_state(status):
-    row = {"work_status": status, "job_state": None if status is None else "completed"}
+def test_launch_window_keeps_every_attempt_state_of_a_launched_job(status):
+    row = {"work_status": status, "job_state": None if status is None else "completed", "launch_state": "launched"}
     assert record_window([row], 40, True) == [row]
 
 
 @pytest.mark.parametrize("status", ["accepted", None])
-def test_an_accepted_row_takes_its_job_state(status):
-    row = {"work_status": status, "job_state": "completed"}
+def test_launch_window_excludes_confirmed_unlaunched_jobs(status):
+    row = {"work_status": status, "job_state": "completed", "launch_state": "not_launched"}
     assert record_window([row], 40, True) == []
     assert record_window([row], 40, False) == [row]
 
 
 def test_record_window_filters_before_limiting_and_keeps_source_order():
-    completed = [{"work_status": "accepted", "job_state": "completed"} for _ in range(50)]
-    failed = [{"work_status": "failed", "id": i} for i in range(90)]
+    completed = [{"work_status": "accepted", "job_state": "completed", "launch_state": "not_launched"} for _ in range(50)]
+    failed = [{"work_status": "failed", "launch_state": "launched", "id": i} for i in range(90)]
     rows = completed + failed
     assert record_window(rows, 80, True) == failed[:80]
     assert record_window(rows, 80, False) == rows[:80]
@@ -76,21 +113,21 @@ def test_record_window_clamps_to_retained_cache(cap, expected):
 
 
 @pytest.mark.parametrize("rows", [None, "abc", {"work_status": "failed"}])
-@pytest.mark.parametrize("open_only", [False, True])
-def test_record_window_rejects_non_sequences(rows, open_only):
-    assert record_window(rows, 40, open_only) == []
+@pytest.mark.parametrize("launches_only", [False, True])
+def test_record_window_rejects_non_sequences(rows, launches_only):
+    assert record_window(rows, 40, launches_only) == []
 
 
-@pytest.mark.parametrize("open_only", [False, True])
+@pytest.mark.parametrize("launches_only", [False, True])
 @pytest.mark.parametrize("container", [list, tuple])
-def test_record_window_skips_malformed_items(open_only, container):
+def test_record_window_skips_malformed_items(launches_only, container):
     row = {"work_status": "failed"}
-    assert record_window(container([row, "bad", 3, None]), 40, open_only) == [row]
+    assert record_window(container([row, "bad", 3, None]), 40, launches_only) == [row]
 
 
 def test_record_selected_accepts_mappings_without_clamping():
     failed = MappingProxyType({"work_status": "failed"})
-    completed = {"work_status": "accepted", "job_state": "completed"}
+    completed = {"work_status": "accepted", "job_state": "completed", "launch_state": "not_launched"}
     rows = (completed, "bad", *([failed] * 405))
     assert record_selected(rows, True) == [failed] * 405
     assert record_selected(rows, False) == [completed] + [failed] * 405
@@ -347,9 +384,11 @@ def test_the_vocabularies_match_the_data_layer():
         SWARM_ANSWER_STATES,
         SWARM_ORACLE_NODE_KEYS,
         SWARM_PANEL_STATES,
+        SWARM_RECORD_LAUNCH_STATES,
     )
 
     assert rf._ORACLE_NODE_KEYS == SWARM_ORACLE_NODE_KEYS
+    assert tuple(rf.LAUNCH_STATES) == SWARM_RECORD_LAUNCH_STATES
     answer_states = {state for states in rf.ANSWER_STATES.values() for state in states}
     assert answer_states | {"not_read"} == set(SWARM_ANSWER_STATES)
     panel_states = {state for states in rf.PANEL_STATES.values() for state in states}

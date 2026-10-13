@@ -52,6 +52,16 @@ async def test_success_clocks_distinct_assets_and_selected_seat_join(reader):
     assert data['_agent_earnings'] == {} and meta['earnings']['state'] == 'unavailable'
 
 
+async def test_membership_reads_failed_attempt_jobs_without_reclassifying_nodes(reader):
+    r, _, swarm = reader
+    raw = dict(seat(), work=[dict(jobId=JOB, nodeKey='build', status='failed')])
+    await r.read(raw, NOW)
+    swarm.fetch_job.assert_awaited_once_with(JOB)
+    capture = r.capture(NOW)
+    assert capture['work'][JOB]['launched'] is True
+    assert sources.project(capture, raw, now=NOW)[0]['_agent_nodes']['launches'] == 0
+
+
 async def test_failed_refresh_keeps_values_and_clocks_and_backoff(reader):
     r, earnings, swarm = reader
     await r.read(seat(), NOW)

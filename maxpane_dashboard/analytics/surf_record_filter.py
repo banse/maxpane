@@ -1,7 +1,7 @@
 """Surf AGENT RECORD's view: the read window, the ``f`` filter, and what it cannot know yet.
 
 ``docs/surf_record_filter_spec.md``. The window is the **base** filter -- the
-``all`` / ``not completed`` mode plus NODE, STATE and WHEN -- clamped to the
+``all`` / ``launches`` mode plus NODE, STATE, WHEN and known launch membership -- clamped to the
 40..400 cap, and it is the one function both the manager (which reads answers,
 job details and panels only inside it) and RECORD (which paints it) call. The
 read-dependent groups -- MODEL, PANEL, ANSWER, TOOK, TOK -- never decide what is
@@ -28,7 +28,7 @@ from maxpane_dashboard.analytics.range_filters import (
 from maxpane_dashboard.analytics.surf_swarm_signals import count_by, record_state
 
 __all__ = [
-    "ANSWER_STATES", "PANEL_STATES", "WHEN_SECONDS", "MATCH", "NO", "NOT_READ", "UNAVAILABLE",
+    "ANSWER_STATES", "LAUNCH_STATES", "PANEL_STATES", "WHEN_SECONDS", "MATCH", "NO", "NOT_READ", "UNAVAILABLE",
     "RecordFilter", "RecordView", "parse_record_filter", "record_base_match",
     "record_filter_choices", "record_output_tokens", "record_read_match", "record_readable",
     "record_selected", "record_served", "record_time", "record_took_minutes", "record_view",
@@ -64,6 +64,10 @@ ANSWER_STATES = {
 #: One row's verdict under the read-dependent groups.
 MATCH, NO, NOT_READ, UNAVAILABLE = "match", "no", "not_read", "unavailable"
 
+# Job membership is independent of the attempt's answer or submission hash.
+LAUNCH_STATES = {"launched": MATCH, "not_launched": NO,
+                 "not_read": NOT_READ, "unavailable": UNAVAILABLE}
+
 #: The rows the seat cycle can read: a canonical lower-case UUID job id and a
 #: 64-hex submission hash -- ``data/surf_swarm_client.parse_job_id`` and
 #: ``data/surf_swarm._hex64``, restated (analytics may not import ``data/``)
@@ -86,6 +90,7 @@ class RecordFilter:
     #: The reader's WHEN word, kept for the summary; ``since_ts`` is what filters.
     when: str = "any"
     since_ts: float | None = None
+    launches: str = "any"
     models: frozenset[str] = frozenset()
     panel: str = "any"
     answer: str = "any"
@@ -97,11 +102,11 @@ class RecordFilter:
 
     @property
     def base_active(self) -> bool:
-        return bool(self.nodes or self.states or self.since_ts is not None)
+        return bool(self.nodes or self.states or self.since_ts is not None or self.launches != "any")
 
     @property
     def reads_active(self) -> bool:
-        return bool(self.models or self.panel != "any" or self.answer != "any"
+        return bool(self.models or self.panel != "any" or self.answer != "any" or self.launches != "any"
                     or any(v is not None for v in (self.took_min, self.took_max,
                                                    self.tok_min, self.tok_max)))
 
@@ -145,7 +150,7 @@ def parse_record_filter(values: Mapping[str, object], *, now_ts: float) -> Recor
         "tok_max": parse_number("tok_max", values.get("tok_max"), integer=True),
     }
     for field, allowed in (("when", WHEN_SECONDS), ("panel", PANEL_STATES),
-                           ("answer", ANSWER_STATES)):
+                           ("answer", ANSWER_STATES), ("launches", ("launched",))):
         value = values.get(field, "any")
         if not isinstance(value, str) or (value != "any" and value not in allowed):
             raise FilterValidationError(field, f"invalid {field}")
@@ -198,9 +203,11 @@ def record_readable(row: Mapping[str, Any]) -> bool:
 
 
 def record_base_match(row: Mapping[str, Any], spec: RecordFilter | None) -> bool:
-    """NODE, STATE and WHEN: known for every row, so they shape the read window."""
+    """Known facts shape the read window; unread launch membership remains a candidate."""
     if spec is None:
         return True
+    if spec.launches == "launched" and row.get("launch_state") == "not_launched":
+        return False
     if spec.nodes:
         node = row.get("node_key")
         if not isinstance(node, str) or node not in spec.nodes:
@@ -257,23 +264,27 @@ def _select_verdict(state: object, selected: tuple[str, ...], readable: bool) ->
     return NO
 
 
-def record_read_match(row: Mapping[str, Any], spec: RecordFilter | None) -> str:
+def record_read_match(row: Mapping[str, Any], spec: RecordFilter | None, *,
+                      launches_only: bool = False) -> str:
     """:data:`MATCH`, :data:`NO`, :data:`NOT_READ` or :data:`UNAVAILABLE` for one row.
 
     Any ``no`` decides; otherwise any unknown makes the row unknown, and
     *not read yet* wins over *unavailable* (it drains as reads land).
     """
-    if spec is None or not spec.reads_active:
-        return MATCH
-    readable = record_readable(row)
-    verdicts = _usage_verdicts(row, spec, readable)
-    if spec.answer != "any":
-        verdicts.append(_select_verdict(row.get("answer_state"), ANSWER_STATES[spec.answer],
-                                        readable))
-    if spec.panel != "any":
-        oracle = row.get("node_key") in _ORACLE_NODE_KEYS
-        verdicts.append(_select_verdict(row.get("panel_state"), PANEL_STATES[spec.panel],
-                                        readable) if oracle else NO)
+    verdicts = []
+    if launches_only or (spec is not None and spec.launches == "launched"):
+        state = row.get("launch_state", "not_read")
+        verdicts.append(LAUNCH_STATES.get(state, UNAVAILABLE) if isinstance(state, str) else UNAVAILABLE)
+    if spec is not None and spec.reads_active:
+        readable = record_readable(row)
+        verdicts.extend(_usage_verdicts(row, spec, readable))
+        if spec.answer != "any":
+            verdicts.append(_select_verdict(row.get("answer_state"), ANSWER_STATES[spec.answer],
+                                            readable))
+        if spec.panel != "any":
+            oracle = row.get("node_key") in _ORACLE_NODE_KEYS
+            verdicts.append(_select_verdict(row.get("panel_state"), PANEL_STATES[spec.panel],
+                                            readable) if oracle else NO)
     if NO in verdicts:
         return NO
     if NOT_READ in verdicts:
@@ -289,32 +300,32 @@ def _cap(cap: object) -> int:
     return max(_MIN_CAP, min(_MAX_CAP, cap))
 
 
-def record_selected(rows: object, open_only: bool,
+def record_selected(rows: object, launches_only: bool,
                     spec: RecordFilter | None = None) -> list[Mapping[str, Any]]:
     """Valid rows in source order, through the mode and the base filter; unclamped."""
     if not isinstance(rows, (list, tuple)):
         return []
     return [row for row in rows if isinstance(row, Mapping)
-            and (not open_only or record_state(row) != "completed")
+            and (not launches_only or row.get("launch_state") != "not_launched")
             and record_base_match(row, spec)]
 
 
-def record_window(rows: object, cap: int, open_only: bool,
+def record_window(rows: object, cap: int, launches_only: bool,
                   spec: RecordFilter | None = None) -> list[Mapping[str, Any]]:
     """The read window: filter before windowing, source order, 40..400 rows."""
-    return record_selected(rows, open_only, spec)[:_cap(cap)]
+    return record_selected(rows, launches_only, spec)[:_cap(cap)]
 
 
-def record_view(rows: object, cap: int, open_only: bool,
+def record_view(rows: object, cap: int, launches_only: bool,
                 spec: RecordFilter | None = None) -> RecordView:
     """What RECORD paints from the window, with the rows it cannot judge yet counted."""
-    selected = record_selected(rows, open_only, spec)
+    selected = record_selected(rows, launches_only, spec)
     cap = _cap(cap)
     window, older = selected[:cap], max(0, len(selected) - cap)
     shown: list[Mapping[str, Any]] = []
     not_read = unavailable = 0
     for row in window:
-        verdict = record_read_match(row, spec)
+        verdict = record_read_match(row, spec, launches_only=launches_only)
         if verdict == MATCH:
             shown.append(row)
         elif verdict == NOT_READ:

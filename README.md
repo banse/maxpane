@@ -344,21 +344,22 @@ work by node. Their tooltips retain full lists and exact node counts/rates.
 RECORD runs below the cards, with no blank row under its title: every attempt with date and
 time, job (the first eight characters of its id, linked to its page on `explorer.imd.fun`), node
 (`oracle`, `review`, `build`), state, the model used, duration, output tokens, panel outcome and the seat's own answer.
-The title's right end reads `type 'i' to change seat` where it fits whole. Its `all` / `not completed` clicks select the view; the latter includes failed,
-pending, rejected, cancelled, blocked, unknown and unread states. Filtering happens before
-the row limit. Click `more` beneath the table to show another 20 rows, up to 400; older rows
+The title's right end reads `'i' to change seat · 'f' to filter records` where it fits whole.
+Its `all` / `launches` clicks select the view; the latter shows attempts whose jobs belong to
+confirmed live launches, independent of attempt state. Known nonlaunches are removed before
+the row limit; unread or failed membership checks are counted in the footer. Click `more` beneath the table to show another 20 rows, up to 400; older rows
 are counted after filtering. The window starts at 40 again when the seat changes and is not
 saved. New rows fill with cached facts and subsequent normal reads, preserving scroll position.
 **`f`** on AGENT swaps RECORD for a filter editor shaped like THE LIST's (the hero and the
 seat cards stay above it): tick any of the seat's own NODEs, STATEs and MODELs, pick WHEN (last 24 h,
-7 or 30 days), PANEL and ANSWER outcomes, and from/to ranges for TOOK (minutes) and TOK
+7 or 30 days), LAUNCHES (Any / Launched jobs), PANEL and ANSWER outcomes, and from/to ranges for TOOK (minutes) and TOK
 (output tokens). Ticks inside a group are alternatives; groups combine with AND. `f` or
 APPLY FILTER applies, RESET ALL clears the draft, `esc` closes without applying. RECORD's
-title gains `filtered` beside `all` / `not completed`, and its footer states the filter, how
-many rows match, and how many it cannot judge yet — `not read yet` while MODEL to TOK wait
-for the row's reads, `unavailable` when a read failed. Those rows are counted, never shown
-as matches and never silently dropped. NODE, STATE and WHEN narrow which rows are read next;
-the filter is cleared when the seat changes.
+title gains `filtered` beside `all` / `launches`, and its footer states the filter, how
+many rows match, and how many it cannot judge yet — `not read yet` while launch membership or MODEL to TOK wait
+for their reads, `unavailable` when a read failed. Those rows are counted, never shown
+as matches and never silently dropped. NODE, STATE, WHEN and known launch negatives narrow which rows are read next;
+launch membership is discovered independently. The filter is cleared when the seat changes.
 Joined oracle rows show the answer.json value and the start of its notes; the row's `»` opens
 the cached question, full retained value and notes. Failed members show their reason in red.
 Other rows show the first sentence of the reply — in red when the attempt failed. Their `»` opens a
@@ -689,7 +690,7 @@ of any of the six alternate bodies.
 | LEADERBOARD header click | Sort that column; click again to reverse |
 | LEADERBOARD row click or Enter | Save that seat and open AGENT |
 | RECORD `more` click | Show 20 more rows, up to 400 |
-| RECORD `all` / `not completed` click | Filter by the displayed state before the row limit |
+| RECORD `all` / `launches` click | Show all attempts or jobs in confirmed live launches before the row limit |
 | `f` in AGENT | Open RECORD's filter editor; in the editor, apply it |
 | `w` in Surf or the boardroom | Open WORK IN PROGRESS |
 | `ctrl+o` in Surf or the boardroom | Open ORACLES |
@@ -699,7 +700,7 @@ of any of the six alternate bodies.
 | Enter or click on an answer leaf | Open its complete cached answer |
 | Arrows / Enter in WORK | Select and expand work / focus selected details |
 | `/` / `f` in WORK | Find locally / cycle all, build, review and blocked |
-| RECORD `filtered` click | Show the stored filter again after `all` / `not completed` |
+| RECORD `filtered` click | Show the stored filter again after `all` / `launches` |
 | RECORD `»` click | Open ANSWER (joined oracle value, question and notes) or SUBMISSION (reply, job and usage) |
 | `space` / `esc` in ANSWER or SUBMISSION | Close the popup and return to AGENT |
 | `esc` in RECORD's filter editor | Close it without applying |

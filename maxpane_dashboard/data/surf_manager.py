@@ -1187,10 +1187,10 @@ class SurfManager:
         self._hub_seats = (hub.seat_token(sw.parse_seat_token(seat)), None, None, None)
         #: Screen-owned RECORD view, bounded to 40..400; resets on a seat change.
         #: ``record_spec`` is RECORD's ``f`` filter in force (an active
-        #: ``RecordFilter``, else ``None``): its NODE / STATE / WHEN shape the
-        #: read window, so reads go where the filtered table looks.
+        #: ``RecordFilter``, else ``None``): base facts and known launch membership
+        #: shape the read window, so reads go where the filtered table looks.
         self.record_cap = sw.SWARM_ANSWER_ROW_CAP
-        self.record_open_only = False
+        self.record_launches_only = False
         self.record_spec: RecordFilter | None = None
         #: The in-flight detached ``/seats/{token}`` read and the token it is
         #: for (the /seats plan WP2). One seat at a time: a read for a seat
@@ -6207,23 +6207,23 @@ class SurfManager:
         the caller's job. Mark the seat tier due so the next cycle reads it.
         """
         self.record_cap = sw.SWARM_ANSWER_ROW_CAP
-        self.record_open_only = False
+        self.record_launches_only = False
         self.record_spec = None
         self._seat_saved = token
         self._seat_failed_token = None
         self._seat_busy_token = None
         self.cache.mark_due(TIER_SWARM_SEAT)
 
-    def set_record_view(self, cap: int, open_only: bool, spec: RecordFilter | None = None) -> None:
+    def set_record_view(self, cap: int, launches_only: bool, spec: RecordFilter | None = None) -> None:
         """Update eligibility without I/O; the next seat cycle fills this window.
 
         ``spec`` is the filter in force; anything but an active
         ``RecordFilter`` is no filter (``docs/surf_record_filter_spec.md``).
         """
-        if not isinstance(cap, int) or isinstance(cap, bool) or not isinstance(open_only, bool):
+        if not isinstance(cap, int) or isinstance(cap, bool) or not isinstance(launches_only, bool):
             return
         self.record_cap = max(sw.SWARM_ANSWER_ROW_CAP, min(SWARM_ANSWER_CACHE_CAP, cap))
-        self.record_open_only = open_only
+        self.record_launches_only = launches_only
         self.record_spec = spec if isinstance(spec, RecordFilter) and spec.active else None
         self.cache.mark_due(TIER_SWARM_SEAT)
 
@@ -6655,9 +6655,12 @@ class SurfManager:
                 await self._agent_card_sources.read(result, float(self._clock()))
             await self._resolve_seat_owner(result, now)
             await self._pool_swarm_seat_rewards(result, token, now)
-            await self._pool_swarm_answers(result, token, now)
-            await self._pool_swarm_oracle(result, token, now)
-            await self._pool_swarm_job_details(result, now)
+            # Membership completed after the cycle began; all RECORD readers
+            # must see that snapshot instead of discarding its newer timestamps.
+            record_now = max(now, float(self._clock()))
+            await self._pool_swarm_answers(result, token, record_now)
+            await self._pool_swarm_oracle(result, token, record_now)
+            await self._pool_swarm_job_details(result, record_now)
         return slot
 
     async def _resolve_seat_owner(self, seat: dict, now: float) -> None:
@@ -6783,12 +6786,18 @@ class SurfManager:
             return None
         return self._seat_ens.names_fresh(ens.DEFAULT_TTL_SECONDS, now).get(owner.lower())
 
+    def _record_rows(self, seat: dict, now: float) -> list[dict]:
+        """One membership join for RECORD and all of its bounded enrichment windows."""
+        capture = self._agent_card_sources.capture(now)
+        return agent_work.record_rows(sw.seat_work_rows(seat), capture['work'],
+                                      failed=capture['work_failed'], now=now)
+
     async def _pool_swarm_answers(self, seat: dict, token: int, now: float) -> None:
         """Bounded per-job reads after a successful seat; failures stay local."""
         prior = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
         answers = sw.prune_answers(getattr(prior, "payload", None), now_ts=now,
                                   cap=SWARM_ANSWER_CACHE_CAP, max_age_s=SWARM_ANSWER_MAX_AGE_S)
-        rows = record_window(sw.seat_work_rows(seat), self.record_cap, self.record_open_only,
+        rows = record_window(self._record_rows(seat, now), self.record_cap, self.record_launches_only,
                              self.record_spec)
         for row in rows:
             point = answers.get(row["job_id"], {}).get(row["submission_hash"])
@@ -6823,9 +6832,9 @@ class SurfManager:
         answers = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
         oracle = self.cache.get_last_good(SLOT_SWARM_ORACLE)
         rows = sw.enrich_panel_rows(
-            sw.enrich_work_rows(sw.seat_work_rows(seat), getattr(answers, 'payload', None)),
+            sw.enrich_work_rows(self._record_rows(seat, now), getattr(answers, 'payload', None)),
             getattr(oracle, 'payload', None), sw.SWARM_ORACLE_NODE_KEYS)
-        rows = record_window(rows, self.record_cap, self.record_open_only, self.record_spec)
+        rows = record_window(rows, self.record_cap, self.record_launches_only, self.record_spec)
         for job in sw.job_details_due(rows, points, now_ts=now,
                                       cap=SWARM_JOB_DETAIL_PER_CYCLE, due_s=SWARM_JOB_DETAIL_DUE_S):
             detail = await self._guard(lambda: self.swarm_client.fetch_job(job), 'swarm popup job')
@@ -6843,7 +6852,7 @@ class SurfManager:
         prior = self.cache.get_last_good(SLOT_SWARM_ORACLE)
         oracle = sw.prune_oracle(getattr(prior, "payload", None), now_ts=now,
                                  cap=SWARM_ORACLE_CACHE_CAP, max_age_s=SWARM_ORACLE_MAX_AGE_S)
-        rows = record_window(sw.seat_work_rows(seat), self.record_cap, self.record_open_only,
+        rows = record_window(self._record_rows(seat, now), self.record_cap, self.record_launches_only,
                              self.record_spec)
         due = sw.oracle_rows_due(rows, oracle, now_ts=now, due_s=SWARM_ORACLE_DUE_S)
         if not due:
@@ -7182,7 +7191,7 @@ class SurfManager:
         oracle = sw.prune_oracle(getattr(oracle_entry, "payload", None), now_ts=now_ts,
                                  cap=SWARM_ORACLE_CACHE_CAP, max_age_s=SWARM_ORACLE_MAX_AGE_S)
         out["swarm_seat_work_rows"] = sw.enrich_panel_rows(
-            sw.enrich_work_rows(sw.seat_work_rows(seat), answers), oracle, sw.SWARM_ORACLE_NODE_KEYS)
+            sw.enrich_work_rows(self._record_rows(seat, now_ts), answers), oracle, sw.SWARM_ORACLE_NODE_KEYS)
         details = self.cache.get_last_good(SLOT_SWARM_JOB_DETAIL)
         out['swarm_seat_work_rows'] = sw.enrich_job_rows(out['swarm_seat_work_rows'],
             sw.prune_job_details(getattr(details, 'payload', None), now_ts=now_ts,

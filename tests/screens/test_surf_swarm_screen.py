@@ -784,7 +784,8 @@ def _record_view_payload(count=65):
     source = payload['swarm_seat_work_rows'][0]
     payload.update(swarm_seat_state='ok', swarm_seat_as_of_hhmm='17:33',
                    swarm_seat_work_rows=[dict(source, job_id=f'{i:08x}-0000-4000-8000-000000000000',
-                                              work_status='failed', job_state='completed') for i in range(count)])
+                                              work_status='failed', job_state='completed', node_key='build_contract_project',
+                                              launch_state='launched') for i in range(count)])
     return payload
 
 
@@ -807,7 +808,7 @@ async def test_record_more_clicks_preserve_position_show_twenty_then_remainder(m
         screen = await _open(pilot, 'a')
         manager = screen._data_manager
         changes, refreshes = [], []
-        monkeypatch.setattr(manager, 'set_record_view', lambda cap, open_only, spec=None: changes.append((cap, open_only)), raising=False)
+        monkeypatch.setattr(manager, 'set_record_view', lambda cap, launches_only, spec=None: changes.append((cap, launches_only)), raising=False)
         monkeypatch.setattr(screen, 'start_refresh', lambda: refreshes.append(True))
         record = screen.query_one(SurfSwarmSeatRecord); table = record.query_one(DataTable)
         assert table.row_count == 40
@@ -833,17 +834,17 @@ async def test_record_more_clicks_preserve_position_show_twenty_then_remainder(m
         assert table.cursor_row == 7 and table.scroll_y == 5
         screen._seat_entered(421)
         await settled(pilot, lambda: table.row_count == 40)
-        assert screen.record_cap == 40 and not screen.record_open_only
+        assert screen.record_cap == 40 and not screen.record_launches_only
 
 
-async def test_record_filter_click_uses_displayed_state_and_preserves_cap(monkeypatch):
+async def test_record_launches_click_uses_confirmed_membership_and_preserves_cap(monkeypatch):
     from tests.screens.test_oracle_answer import settled
     payload = _record_view_payload(61)
     rows = payload['swarm_seat_work_rows']
-    for row in rows: row['work_status'] = 'accepted'
-    states = ['pending','failed','rejected','cancelled','blocked','novel',None]
+    for row in rows: row.update(work_status='accepted', launch_state='not_launched', launch='evm_project')
+    states = ['accepted','failed','rejected','cancelled','blocked','novel',None]
     for row, state in zip(rows[50:], states):
-        row.update(work_status=state, job_state=None if state is None else 'completed')
+        row.update(work_status=state, job_state=None if state is None else 'completed', launch_state='launched')
     async with _surf_app(payload).run_test(size=(139,40)) as pilot:
         screen = await _open(pilot, 'a'); manager = screen._data_manager
         changes, refreshes = [], []
@@ -853,18 +854,18 @@ async def test_record_filter_click_uses_displayed_state_and_preserves_cap(monkey
         record = screen.query_one(SurfSwarmSeatRecord); table = record.query_one(DataTable)
         x,y,_ = _record_click_target(screen, 'screen.record_more()')
         await pilot.click(offset=(x,y)); await settled(pilot,lambda: table.row_count == 60)
-        x,y,style = _record_click_target(screen,"screen.record_filter('open')")
+        x,y,style = _record_click_target(screen,"screen.record_filter('launches')")
         assert not style.bold
         inactive_color = style.color
         await pilot.click(offset=(x,y)); await settled(pilot,lambda: table.row_count == 7)
-        _,_,style = _record_click_target(screen,"screen.record_filter('open')")
+        _,_,style = _record_click_target(screen,"screen.record_filter('launches')")
         assert style.bold and not style.dim
         from rich.color import Color
         assert style.color == Color.parse(pilot.app.get_css_variables()['accent'])
         assert style.color != inactive_color
         body = _region_text(pilot.app, table)
-        assert 'completed' not in body
-        assert all(state in body for state in states if state is not None)
+        assert 'completed' in body
+        assert all(state in body for state in states if state not in (None, 'accepted'))
         screen.action_record_filter('x')
         assert changes == [(60,False),(60,True)] and len(refreshes) == 2
         x,y,_ = _record_click_target(screen,"screen.record_filter('all')")
@@ -876,15 +877,15 @@ async def test_record_filter_click_uses_displayed_state_and_preserves_cap(monkey
 async def test_record_filtered_empty_footer_and_unread_are_distinct(monkeypatch):
     from tests.screens.test_oracle_answer import settled
     payload = _record_view_payload(3)
-    for row in payload['swarm_seat_work_rows']: row['work_status'] = 'accepted'
+    for row in payload['swarm_seat_work_rows']: row.update(work_status='accepted', launch_state='not_launched')
     async with _surf_app(payload).run_test(size=(139,45)) as pilot:
         screen = await _open(pilot,'a')
         monkeypatch.setattr(screen,'start_refresh',lambda: None)
         record = screen.query_one(SurfSwarmSeatRecord)
-        x,y,_ = _record_click_target(screen,"screen.record_filter('open')")
+        x,y,_ = _record_click_target(screen,"screen.record_filter('launches')")
         await pilot.click(offset=(x,y))
         await settled(pilot,lambda: record.query_one(DataTable).row_count == 0)
-        assert 'no incomplete records' in _region_text(pilot.app,record)
+        assert 'no matching records' in _region_text(pilot.app,record)
         record.update_data(swarm_seat_work_rows=None,swarm_seat_state='ok')
         await pilot.pause()
         assert 'unavailable' in _region_text(pilot.app,record)
@@ -896,12 +897,13 @@ async def test_record_filter_title_is_whole_at_every_tier(width,tier):
         screen = await _open(pilot,'a'); record = screen.query_one(SurfSwarmSeatRecord)
         title = record.query_one('.panel-title')
         text = _region_text(pilot.app,title)
-        assert 'RECORD · all · not completed · as of 17:33' in text
+        assert 'RECORD · all · launches · as of 17:33' in text
         assert title.region.height == 1 and record._tier == tier
         assert ('‹' in text) == (record._widen or record._clipped)
         # The seat hint sits flush right where it fits whole, never on a second line (owner, 2026-09-24).
         from maxpane_dashboard.widgets.surf.swarm_seat_record import SEAT_HINT
         line = text.splitlines()[0].rstrip()
+        assert SEAT_HINT == "'i' to change seat · 'f' to filter records"
         assert (SEAT_HINT in line) is (width >= 99)
         if width >= 99:
             assert line.endswith(SEAT_HINT), line
@@ -924,10 +926,10 @@ async def test_record_view_resets_on_refresh_seat_change_but_not_initial_refresh
     payload = _record_view_payload()
     payload["swarm_seat_selected"] = {**payload["swarm_seat_selected"], "token_id": 420}
     manager = _FakeManager(payload)
-    manager.record_cap, manager.record_open_only = 40, False
+    manager.record_cap, manager.record_launches_only = 40, False
     manager.cache = SimpleNamespace(mark_due=Mock())
-    manager.set_record_view = Mock(side_effect=lambda cap, open_only, spec=None:
-                                  SurfManager.set_record_view(manager, cap, open_only, spec))
+    manager.set_record_view = Mock(side_effect=lambda cap, launches_only, spec=None:
+                                  SurfManager.set_record_view(manager, cap, launches_only, spec))
     screen = SurfScreen(manager, poll_interval=30, name="surf")
     monkeypatch.setattr(screen, "start_refresh", lambda: None)
     async with _ThemedHarness(screen).run_test(size=(139, 35)) as pilot:
@@ -940,17 +942,17 @@ async def test_record_view_resets_on_refresh_seat_change_but_not_initial_refresh
         assert screen._record_seat_token == 420
         manager.set_record_view.assert_not_called()
         manager.cache.mark_due.assert_not_called()
-        for action in ("screen.record_more()", "screen.record_filter('open')"):
+        for action in ("screen.record_more()", "screen.record_filter('launches')"):
             x, y, _ = _record_click_target(screen, action)
             await pilot.click(offset=(x, y))
-        await settled(pilot, lambda: table.row_count == 60 and record._open_only)
-        assert (screen.record_cap, screen.record_open_only) == (60, True)
-        assert (manager.record_cap, manager.record_open_only) == (60, True)
+        await settled(pilot, lambda: table.row_count == 60 and record._launches_only)
+        assert (screen.record_cap, screen.record_launches_only) == (60, True)
+        assert (manager.record_cap, manager.record_launches_only) == (60, True)
         manager._payload = {**payload, "swarm_seat_selected": {**payload["swarm_seat_selected"], "token_id": 421}}
         await screen._do_refresh()
-        await settled(pilot, lambda: table.row_count == 40 and not record._open_only)
-        assert (screen.record_cap, screen.record_open_only) == (40, False)
-        assert (manager.record_cap, manager.record_open_only) == (40, False)
+        await settled(pilot, lambda: table.row_count == 40 and not record._launches_only)
+        assert (screen.record_cap, screen.record_launches_only) == (40, False)
+        assert (manager.record_cap, manager.record_launches_only) == (40, False)
         assert screen._record_seat_token == 421
         manager.set_record_view.assert_called_with(40, False, None)
 
@@ -991,7 +993,7 @@ async def _filter_screen(pilot, monkeypatch):
     screen = await _open(pilot, 'a')
     specs, refreshes = [], []
     monkeypatch.setattr(screen._data_manager, 'set_record_view',
-                        lambda cap, open_only, spec=None: specs.append((cap, open_only, spec)), raising=False)
+                        lambda cap, launches_only, spec=None: specs.append((cap, launches_only, spec)), raising=False)
     monkeypatch.setattr(screen, 'start_refresh', lambda: refreshes.append(True))
     return screen, specs, refreshes
 
@@ -1067,8 +1069,8 @@ async def test_applying_a_node_box_filters_record_and_hands_the_manager_the_spec
         await pilot.press('f')
         await settled(pilot, lambda: _shown(screen)['SurfSwarmSeatRecord'] and table.row_count == 3)
         assert not _shown(screen)['SurfRecordFilterEditor'] and _shown(screen)['SurfSwarmAgentRackHero']
-        ((cap, open_only, spec),) = specs
-        assert (cap, open_only, spec.nodes) == (40, False, frozenset({'adversarial_review'}))
+        ((cap, launches_only, spec),) = specs
+        assert (cap, launches_only, spec.nodes) == (40, False, frozenset({'adversarial_review'}))
         assert spec is screen.record_spec and len(refreshes) == 1
         x, y, style = _record_click_target(screen, "screen.record_filter('filtered')")
         assert style.bold
@@ -1086,6 +1088,41 @@ async def test_applying_a_node_box_filters_record_and_hands_the_manager_the_spec
         await pilot.press('f')
         await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
         assert _editor_box(screen, 'review').value and not _editor_box(screen, 'oracle').value
+
+
+async def test_launch_filter_applies_and_survives_tab_switching_until_reset(monkeypatch):
+    from textual.widgets import Select
+    from tests.screens.test_oracle_answer import settled
+    from maxpane_dashboard.widgets.filter_editor import RESET_ID, field_id
+    payload = _filter_payload()
+    for index, row in enumerate(payload['swarm_seat_work_rows']):
+        row['launch_state'] = 'launched' if index < 3 else 'not_launched'
+        row['node_key'] = 'build_contract_project'
+    async with _surf_app(payload).run_test(size=(149, 45)) as pilot:
+        screen, specs, _ = await _filter_screen(pilot, monkeypatch)
+        record = screen.query_one(SurfSwarmSeatRecord)
+        table = record.query_one(DataTable)
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        screen.query_one(f'#{field_id("launches")}', Select).value = 'launched'
+        await pilot.press('f')
+        await settled(pilot, lambda: table.row_count == 3)
+        spec = screen.record_spec
+        assert spec.launches == 'launched' and specs[-1] == (40, False, spec)
+        assert 'launched jobs · 3 match' in _region_text(pilot.app, record)
+        for mode, count in [('all', 6), ('launches', 3), ('filtered', 3)]:
+            x, y, _ = _record_click_target(screen, f"screen.record_filter('{mode}')")
+            await pilot.click(offset=(x, y))
+            await settled(pilot, lambda: table.row_count == count)
+            assert screen.record_spec is spec
+        await pilot.press('f')
+        await settled(pilot, lambda: _shown(screen)['SurfRecordFilterEditor'])
+        assert screen.query_one(f'#{field_id("launches")}', Select).value == 'launched'
+        await pilot.click(f'#{RESET_ID}')
+        await settled(pilot, lambda: screen.query_one(f'#{field_id("launches")}', Select).value == 'any')
+        await pilot.press('f')
+        await settled(pilot, lambda: table.row_count == 6)
+        assert screen.record_spec is None and not screen.record_launches_only
 
 
 async def test_when_is_fixed_from_the_screen_clock_at_apply(monkeypatch):
@@ -1147,7 +1184,7 @@ async def test_reset_clears_the_draft_and_an_empty_apply_clears_the_filter(monke
         await settled(pilot, lambda: table.row_count == 6)
         assert screen.record_spec is None and not screen.record_filtered and specs[-1] == (40, False, None)
         title = _region_text(pilot.app, screen.query_one(SurfSwarmSeatRecord).query_one('.panel-title'))
-        assert 'RECORD · all · not completed · as of 17:33' in title and 'filtered' not in title
+        assert 'RECORD · all · launches · as of 17:33' in title and 'filtered' not in title
 
 
 async def test_a_seat_change_clears_the_filter_and_leaving_agent_only_closes_the_editor(monkeypatch):
@@ -1175,13 +1212,13 @@ async def test_a_seat_change_clears_the_filter_and_leaving_agent_only_closes_the
         assert screen._record_filter_values == {}
 
 
-@pytest.mark.parametrize('view', ['filter', 'open', 'more'])
+@pytest.mark.parametrize('view', ['filter', 'launches', 'more'])
 async def test_a_view_set_before_the_first_seat_is_reset_in_the_manager_too(monkeypatch, view):
     """Final review I-1: the first seat token must not inherit a pre-seat view.
 
     The screen reset its own copy on the token change but skipped the
-    manager's whenever the old token was None, so a filter (or ``not
-    completed`` / ``more``) chosen before the sweep picked a seat kept
+    manager's whenever the old token was None, so a filter (or
+    ``launches`` / ``more``) chosen before the sweep picked a seat kept
     narrowing that seat's reads while RECORD painted ``all``.
     """
     from types import SimpleNamespace
@@ -1193,10 +1230,10 @@ async def test_a_view_set_before_the_first_seat_is_reset_in_the_manager_too(monk
 
     payload = _record_view_payload()
     manager = _FakeManager({**payload, "swarm_seat_selected": None})
-    manager.record_cap, manager.record_open_only, manager.record_spec = 40, False, None
+    manager.record_cap, manager.record_launches_only, manager.record_spec = 40, False, None
     manager.cache = SimpleNamespace(mark_due=Mock())
-    manager.set_record_view = Mock(side_effect=lambda cap, open_only, spec=None:
-                                  SurfManager.set_record_view(manager, cap, open_only, spec))
+    manager.set_record_view = Mock(side_effect=lambda cap, launches_only, spec=None:
+                                  SurfManager.set_record_view(manager, cap, launches_only, spec))
     screen = SurfScreen(manager, poll_interval=30, name="surf")
     monkeypatch.setattr(screen, "start_refresh", lambda: None)
     async with _ThemedHarness(screen).run_test(size=(139, 35)) as pilot:
@@ -1211,9 +1248,9 @@ async def test_a_view_set_before_the_first_seat_is_reset_in_the_manager_too(monk
             await pilot.press("f")
             await settled(pilot, lambda: not screen._record_filter_open)
             assert manager.record_spec is not None
-        elif view == 'open':
-            screen.action_record_filter('open')
-            assert manager.record_open_only
+        elif view == 'launches':
+            screen.action_record_filter('launches')
+            assert manager.record_launches_only
         else:
             screen.action_record_more()
             assert manager.record_cap == 60
@@ -1221,8 +1258,8 @@ async def test_a_view_set_before_the_first_seat_is_reset_in_the_manager_too(monk
         await screen._do_refresh()
         await pilot.pause()
         assert screen._record_seat_token == 421
-        assert (screen.record_cap, screen.record_open_only, screen.record_spec) == (40, False, None)
-        assert (manager.record_cap, manager.record_open_only, manager.record_spec) == (40, False, None)
+        assert (screen.record_cap, screen.record_launches_only, screen.record_spec) == (40, False, None)
+        assert (manager.record_cap, manager.record_launches_only, manager.record_spec) == (40, False, None)
 
 
 # -- the AGENT title bar and the swarm bodies' stylesheet agreement ------------------------

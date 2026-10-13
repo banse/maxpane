@@ -393,20 +393,24 @@ through `rpc_common.multicall_chunks`), held in an `ens.NameStore` with its name
 so a nameless owner is not re-resolved every tick. A raise or an empty answer is a miss; OWNER
 shows the address.
 RECORD columns are `when · job · node · state · model · took · tok · panel · answer`.
-The title is `RECORD · all · not completed · as of HH:MM`: fixed click actions
-`screen.record_filter('all')` / `screen.record_filter('open')`, revalidated by the screen.
+The title is `RECORD · all · launches · as of HH:MM`: fixed click actions
+`screen.record_filter('all')` / `screen.record_filter('launches')`, revalidated by the screen.
 The active mode is bold accent, the inactive mode dim. A dim, unclickable `SEAT_HINT`
-(`type 'i' to change seat`, owner 2026-09-24) ends flush with the answer column's text, after any
+(`'i' to change seat · 'f' to filter records`, owner 2026-10-13) ends flush with the answer column's text, after any
 widen marker, only where it fits whole; it never adds a title line or moves a pin. `record_state` in pure analytics
-owns the displayed state, shared by widget and manager. `not completed` keeps every state
-except completed, including None. `record_window` (`analytics/surf_record_filter.py`, with
+owns the displayed state. `launches` keeps attempts whose job is confirmed in a live launch,
+including failed or rejected attempts. The independently scheduled membership reader covers all
+nonoracle attempt jobs; NODES still counts accepted work only. Raw `launch` is intent, not proof.
+`launch_state` distinguishes confirmed membership, confirmed absence, unread and failed reads;
+a failed refresh remains unavailable even with a retained last-good point. `record_window` (`analytics/surf_record_filter.py`, with
 `record_selected` / `record_view`) filters first, then clamps the view to
 40..400 and takes its rows. Older counts are after filtering; empty filtered views say
-`no incomplete records`, unread remains unavailable.
+`no matching records` only when there are no outstanding membership reads. Known negatives
+are excluded before the cap; unknown candidates stay in the window and count in its footer.
 `screen.record_more()` adds 20 to screen-owned `record_cap` (initially 40, maximum 400),
 keeping cursor and scroll position. Its footer target is bold dim `more`; at the cap only
 the remaining older count stays. Both actions call the I/O-free `SurfManager.set_record_view`,
-which stores cap/open_only and marks `TIER_SWARM_SEAT` due, repaint cached rows, then schedule
+which stores cap/launches_only and marks `TIER_SWARM_SEAT` due, repaint cached rows, then schedule
 the usual guarded refresh. No handler awaits network. A seat change resets 40/all in manager
 and screen; the view is not persisted, and filter toggles keep the cap.
 
@@ -419,7 +423,7 @@ it first replaced the cards too).
 The editor posts surf's own `RecordFilterApplyRequested` / `RecordFilterResetRequested`, never
 curator's. NODE / STATE / MODEL are checkboxes built from the seat's own rows on every open
 (`record_filter_choices`, most frequent first, plus anything the stored filter selects); WHEN,
-PANEL and ANSWER are dropdowns; TOOK and TOK are from/to ranges validated by
+LAUNCHES (stacked below WHEN), PANEL and ANSWER are dropdowns; TOOK and TOK are from/to ranges validated by
 `analytics/range_filters`. Inside a group options OR; groups AND. `f` or APPLY validates through
 `parse_record_filter` (an invalid range stays open, naming its field), which turns WHEN into a
 fixed `since_ts` from `screen._clock` — the only clock read. An empty filter clears the stored
@@ -428,11 +432,12 @@ the body. Leaving AGENT closes the editor and keeps the applied filter; a seat c
 or a refresh's token change) clears both, in the manager too — also when the view was set before
 the first seat arrived (final review I-1: the manager's copy was skipped while the old token was None).
 The title gains a third mode word, `filtered` (`screen.record_filter('filtered')`), only while a
-filter is stored; `filtered` shows the filter alone (open_only False), `all` / `not completed`
-keep it for a later click. Only the **base** groups (NODE, STATE, WHEN) shape `record_window`
+filter is stored; `filtered` shows the filter alone (launches_only False), `all` / `launches`
+keep it for a later click. The **base** groups (NODE, STATE, WHEN) and known launch negatives shape `record_window`
 and so the manager's answer, job-detail and oracle read windows (`SurfManager.record_spec`, set by
-`set_record_view(cap, open_only, spec)`, I/O-free, cleared by `set_seat`); MODEL / PANEL / ANSWER /
-TOOK / TOK need a row's reads and never narrow what is read. A row they cannot judge yet is
+`set_record_view(cap, launches_only, spec)`, I/O-free, cleared by `set_seat`); MODEL / PANEL / ANSWER /
+TOOK / TOK need a row's reads and never narrow what is read. LAUNCHES uses independently
+read job membership, without requiring a submission hash. A row these groups cannot judge yet is
 counted in the footer as `not read yet`, or yellow `unavailable` when its read failed — never shown
 as a match and never dropped. The footer reads `summary · N match · N not read yet · N
 unavailable · +N older · more`; the summary clips first and goes below 8 cells, then the count

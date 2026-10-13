@@ -135,3 +135,28 @@ def test_helpers_do_not_mutate_raw_payload_or_cache():
     work.summarize(seat, points, NOW)
     work.due(seat, points, NOW)
     assert (raw, seat, points) == before
+
+
+def test_record_membership_discovery_includes_all_attempts_without_changing_nodes_counts():
+    seat = {'work': [row(LIVE), row(BLOCKED, status='failed'), row(BLOCKED, status='rejected'),
+                     row(PLAIN, 'oracle_assess'), row(None), None]}
+    assert work.record_candidates(seat) == [LIVE, BLOCKED]
+    valid = dict(seat, work=seat['work'][:4])
+    assert work.candidates(valid) == [LIVE]
+    assert work.due(valid, {}, NOW, include_attempts=True) == [LIVE, BLOCKED]
+    assert work.summarize(valid, {LIVE: point(True), BLOCKED: point(True)}, NOW)['launches'] == 1
+
+
+def test_record_rows_require_confirmed_launch_and_count_unknowns_without_mutation():
+    rows = [dict(job_id=LIVE, node_key='audit', work_status='failed', launch=None),
+            dict(job_id=BLOCKED, node_key='build', launch='custom_token'),
+            dict(job_id=PLAIN, node_key='build', launch='custom_token'),
+            dict(job_id=LIVE, node_key='oracle_assess'), dict(job_id=None, node_key='build')]
+    points = {LIVE: point(True), BLOCKED: point(False)}
+    original = copy.deepcopy((rows, points))
+    enriched = work.record_rows(rows, points, now=NOW)
+    assert [r['launch_state'] for r in enriched] == [
+        'launched', 'not_launched', 'not_read', 'not_launched', 'unavailable']
+    assert work.record_rows(rows, points, failed={LIVE}, now=NOW)[0]['launch_state'] == 'unavailable'
+    assert work.record_rows(rows, points, now=NOW+48*3600+1)[0]['launch_state'] == 'not_read'
+    assert (rows, points) == original

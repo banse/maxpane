@@ -1598,3 +1598,34 @@ but are hidden while pending or failed. No layout pins or fetch endpoints change
 The single review finding is addressed by state-projection and composited regressions;
 scoped re-review approved with nine focused cases and a killed regression mutation.
 Final affected checks: 393 tests, 124 guards and 12 docpins passed. No residual findings.
+
+## AGENT RECORD launch view — 2026-10-14
+
+RECORD now offers `all` / `launches` and the exact seat/filter shortcut hint.
+The filter editor adds LAUNCHES beneath WHEN. Both launch selectors use verified
+live job membership, including failed or rejected attempts when their job launched.
+The independent bounded membership reader covers all nonoracle attempts; accepted
+NODES/EARNINGS counts retain their existing meaning. Confirmed nonlaunches leave
+the window before its cap; unread and failed checks remain counted in the footer.
+A failed membership refresh never presents a retained point as a fresh decision.
+
+The live native 149×45 capture showed ten matching attempts for seat 3 alongside
+nine accepted launch entries in NODES. The new selector and hint fit; the existing
+editor sweep also passed at compact widths and the AGENT pin. No pin changed.
+Eight implementation mutations were killed: confirmed membership versus intent,
+failed cached refresh, all-attempt discovery, manager window join, filtering before
+the cap, unknown retention, submission independence and unknown footer reporting.
+The first affected run passed 1,095 cases and exposed two obsolete expectations;
+after updating them, both affected files passed all 268 cases (1,098 distinct
+cases covered across the final checks). Guards 124 and docpins 12 passed.
+
+Final review identified one Important timing issue: membership completed after the
+seat cycle began, but answer/detail windows used the older clock and discarded
+those new facts as future data. All three RECORD readers now share a post-read
+snapshot clock. A regression advances the injected clock during 41 membership
+reads and confirms only the launched job receives answer and popup-detail reads,
+for both the tab and custom filter. Reverting the clock fix kills both cases.
+All four affected data files passed again (231 cases). Scoped re-review: ADDRESSED,
+Approved; both permanent clock regressions and the original reproduction passed.
+A further mutation proved popup-detail reads use the same clock and was restored.
+No residual findings. No full suite was run.

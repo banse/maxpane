@@ -14,7 +14,7 @@ submission hash are not columns (owner, 2026-09-22: the answer gets the room);
 a failed attempt's read answer is red. Answer takes the remaining width and
 lights ``‹ widen`` when cut only if there is no popup button. The title has no blank row under it (owner,
 2026-09-22, this panel only). The scrollable table starts at forty rows, grows through `more` up to 400
-and can filter out completed attempts; the seat state hides stale rows before rendering.
+and can select attempts on confirmed launched jobs; the seat state hides stale rows before rendering.
 
 ``f`` (2026-10-02, ``docs/surf_record_filter_spec.md``) stores a filter the
 screen applies through :meth:`SurfSwarmSeatRecord.set_record_view`: the title
@@ -75,7 +75,7 @@ _COUNT_WORDS = (
     ("unread", "unavail", ""),
 )
 #: Right-aligned on the title line where it fits whole; ``i`` is the screen's seat prompt.
-SEAT_HINT = "type 'i' to change seat"
+SEAT_HINT = "'i' to change seat · 'f' to filter records"
 
 #: ``MM-DD HH:MM`` of ``submitted_ts`` (the work entry's ``submittedAt``), else
 #: ``accepted_ts``: since 2026-09-22 ``work[]`` also lists pending, rejected
@@ -183,7 +183,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         self._state: object = None
         self._read: object = None
         self._all_rows = None
-        self._open_only = False
+        self._launches_only = False
         self._spec: RecordFilter | None = None
         self._has_filter = False
         self._view = RecordView((), 0, 0, 0)
@@ -204,24 +204,24 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         self._all_rows = swarm_seat_work_rows if swarm_seat_state == "ok" else None
         self._store_view(swarm_seat_as_of_hhmm)
 
-    def set_record_view(self, cap: int, open_only: bool, spec: RecordFilter | None = None,
+    def set_record_view(self, cap: int, launches_only: bool, spec: RecordFilter | None = None,
                         *, has_filter: bool = False) -> None:
         """Repaint the cached rows; view state is supplied by the screen.
 
         ``spec`` is the filter in force (the ``filtered`` mode); ``has_filter``
         says one is stored, so the title offers ``filtered`` while ``all`` or
-        ``not completed`` shows. An inactive or foreign ``spec`` is no filter.
+        ``launches`` shows. An inactive or foreign ``spec`` is no filter.
         """
-        if not isinstance(cap, int) or isinstance(cap, bool) or not isinstance(open_only, bool):
+        if not isinstance(cap, int) or isinstance(cap, bool) or not isinstance(launches_only, bool):
             return
         if not isinstance(spec, RecordFilter) or not spec.active:
             spec = None
         has_filter = has_filter is True or spec is not None
         cap = max(40, min(self.MAX_CAP, cap))
-        if (self.ROW_CAP, self._open_only, self._spec, self._has_filter) == (cap, open_only, spec, has_filter):
+        if (self.ROW_CAP, self._launches_only, self._spec, self._has_filter) == (cap, launches_only, spec, has_filter):
             return
         self.ROW_CAP = cap
-        self._open_only = open_only
+        self._launches_only = launches_only
         self._spec = spec
         self._has_filter = has_filter
         self._store_view((self._payload or {}).get("as_of"))
@@ -233,7 +233,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
     def _store_view(self, as_of) -> None:
         rows = self._all_rows
         if isinstance(rows, (list, tuple)):
-            self._view = record_view(rows, self.ROW_CAP, self._open_only, self._spec)
+            self._view = record_view(rows, self.ROW_CAP, self._launches_only, self._spec)
             rows = list(self._view.rows)
         else:
             self._view = RecordView((), 0, 0, 0)
@@ -256,14 +256,12 @@ class SurfSwarmSeatRecord(SwarmTableBase):
             words, style = footer
             self._write_footer((words,), style=style)
         elif isinstance(self._all_rows, (list, tuple)):
-            if self._spec is not None:
+            if self._spec is not None or self._launches_only:
                 self._show_footer(self._filtered_footer())
                 return
             tail = self._older_tail()
             if tail.plain:
                 self._show_footer(tail)
-            elif self._open_only and not self._view.rows:
-                self._write_footer(("no incomplete records",))
 
     def _older_tail(self, older_word: str = " older") -> Text:
         """``+N older · more`` for base rows past the cap; empty when all fit."""
@@ -289,7 +287,7 @@ class SurfSwarmSeatRecord(SwarmTableBase):
             if counts.cell_len <= room:
                 break
         summary_room = room - counts.cell_len - len(" · ")
-        summary = filter_summary(self._spec)
+        summary = filter_summary(self._spec) if self._spec is not None else ""
         if summary and summary_room >= _SUMMARY_MIN_COLS:
             return Text().append(rowfit.clip(summary, summary_room) + " · ", style="dim").append_text(counts)
         return counts
@@ -321,8 +319,8 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         title = Text("RECORD · ")
         accent = self.app.get_css_variables().get("accent", "cyan")
         filtered = self._spec is not None
-        modes = [("all", "all", not self._open_only and not filtered),
-                 ("not completed", "open", self._open_only and not filtered)]
+        modes = [("all", "all", not self._launches_only and not filtered),
+                 ("launches", "launches", self._launches_only and not filtered)]
         if self._has_filter:
             modes.append(("filtered", "filtered", filtered))
         for index, (word, mode, active) in enumerate(modes):

@@ -1785,6 +1785,8 @@ SWARM_INFLIGHT_NOTE_KINDS: tuple[str, ...] = ("dispatch", "failure")
 
 # ---- RECORD answer enrichment (polish handover §2.5) -----------------------
 
+SWARM_RECORD_LAUNCH_STATES = ("launched", "not_launched", "not_read", "unavailable")
+
 #: Unfetched is not_read; failed/invalid reads are unavailable; successful absence
 #: (including HTTP 404) is not_served; empty/null summary is no_reply. Only read carries an answer.
 SWARM_ANSWER_STATES: tuple[str, ...] = (
@@ -2258,7 +2260,8 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "work_status",     # str | None; this seat's attempt (accepted/pending/rejected/failed), since 2026-09-22
         "objective", "accepted_ts",
         "submitted_ts",    # float | None; work[].submittedAt (served since 2026-09-22)
-        "launch",          # str | None; null is a real "none"
+        "launch",          # str | None; launch intent, not confirmed membership
+        "launch_state",    # launched/not_launched/not_read/unavailable; verified job membership
         "submission_hash", # str | None; exactly 64 hex chars, no explorer link
         "answer",          # str | None; first cleaned sentence of this hash
         "answer_state",    # SWARM_ANSWER_STATES; queued is not_read

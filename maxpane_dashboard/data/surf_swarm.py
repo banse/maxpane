@@ -938,6 +938,7 @@ def seat_work_rows(payload: object) -> list[dict[str, Any]]:
             "accepted_ts": _ts(work.get("acceptedAt")),
             "submitted_ts": _ts(work.get("submittedAt")),
             "launch": _str(work.get("launch")),
+            "launch_state": "not_launched" if work.get("nodeKey") in SWARM_ORACLE_NODE_KEYS else "not_read",
             "submission_hash": submission_hash,
             "answer": None, "answer_state": "not_read", "model": None, "took_s": None,
             "output_tokens": None,

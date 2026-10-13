@@ -9,6 +9,10 @@ below), the read-dependent groups ship now with a `not read yet` count,
 WHEN is a dropdown. Tier 2: a shared widget hoisted out of curator, two dashboards, > 6 files.
 Branch `feature/surf-record-filter` (from `2541194`).
 
+Updated 2026-10-13: launch membership replaces the incomplete-only shortcut; implementation
+contract and verification are in `surf_record_launches_plan.md`. Original build history below
+remains dated 2026-10-02.
+
 ## What the reader sees
 
 * **`f` on AGENT** hides RECORD and shows the filter editor in its place; the hero and the
@@ -16,12 +20,13 @@ Branch `feature/surf-record-filter` (from `2541194`).
   asked on 2026-10-02 for RECORD only, so the cards stay visible while filtering.) `f` again or APPLY FILTER applies; RESET ALL clears the draft (it does not apply);
   `esc` closes the editor and discards the draft (a second `esc` leaves AGENT as today). Leaving
   AGENT or changing seat closes it too. `f` is a no-op on every other body.
-* **RECORD's title** gains a third mode word: `RECORD · all · not completed · filtered · as of HH:MM`.
+* **RECORD's title** gains a third mode word: `RECORD · all · launches · filtered · as of HH:MM`.
   `filtered` exists only while a filter is stored; it is bold accent when active, dim otherwise, and
-  clicks `screen.record_filter('filtered')`. `all` / `not completed` keep the stored filter for a
+  clicks `screen.record_filter('filtered')`. `all` / `launches` keep the stored filter for a
   later click on `filtered`. Applying an empty filter clears it and shows `all` (THE LIST's rule:
   an empty filter is not an empty result). A seat change clears it.
-* **The footer, in `filtered` mode**, is one line: the summary, then the counts, then the existing
+* **The right title hint** is `'i' to change seat · 'f' to filter records`, shown only when it fits whole.
+* **The footer, in `filtered` or `launches` mode**, is one line: the summary, then the counts, then the existing
   older/more tail — `oracle · outvoted · since 09-25 14:00 · 12 match · 4 not read yet · +183 older · more`.
   The summary is clipped first (`…`); the counts never are. Nothing matching and nothing unread says
   `no matching records`. Seat-state overrides (pending/busy/unavailable) win as today.
@@ -35,6 +40,7 @@ AND across groups; inside a checkbox group the ticked options match any (THE LIS
 | NODE | checkbox per node key in this seat's rows | raw `node_key` | every row |
 | STATE | checkbox per `record_state` present | the state word | every row |
 | WHEN | Select any / last 24 h / last 7 days / last 30 days | `since_ts` | every row |
+| LAUNCHES | Select Any / Launched jobs, below WHEN | `launch_state` | independently verified job membership |
 | MODEL | checkbox per short model among read rows | raw `model` ids | rows with a submission read |
 | PANEL | Select any / agreed / outvoted / no quorum / assessing / blocked / off panel / unavailable | `panel_state` | oracle rows with a panel read |
 | ANSWER | Select any / replied / no reply / not served / unavailable | `answer_state` | rows with a submission read |
@@ -60,11 +66,16 @@ AND across groups; inside a checkbox group the ticked options match any (THE LIS
 MODEL, PANEL, ANSWER, TOOK and TOK exist only for rows whose submission (or panel) has been read, and
 the seat cycle reads at most four jobs per 120 s, only inside RECORD's window. So:
 
-1. **The read window is the base filter.** `record_window(rows, cap, open_only, spec)` applies the
-   mode and NODE/STATE/WHEN, then the 40..400 cap — the same function in the manager (scheduling
-   answer, job-detail and oracle reads) and the widget (painting). The read-dependent groups never
-   decide what gets read: that would be circular.
+1. **The read window uses base facts and known launch membership.** `record_window(rows, cap, launches_only, spec)` applies the
+   mode and NODE/STATE/WHEN, excludes known launch negatives when launch filtering is active, then applies the 40..400 cap — the same function in the manager (scheduling
+   answer, job-detail and oracle reads) and the widget (painting). Unknown launch membership remains
+   in the window. Its independent bounded reader considers all nonoracle attempt jobs, so neither
+   the window nor a missing submission hash can prevent discovery. Other read-dependent groups
+   never decide what gets read: that would be circular.
 2. **Each active read-dependent group answers yes, no or unknown** for a row in that window:
+   * LAUNCHES uses `launched` / `not_launched` / `not_read` / `unavailable`, independent of
+     submission reads. Raw `launch` is intent only. A failed refresh is unavailable even with a
+     retained last-good point; oracle records are a separate work type, never launch records.
    * a read value: compared (`no` when the read served no value, e.g. no model);
    * `not_read` on a row that can be read (canonical lower-case job UUID and 64-hex submission
      hash, `record_readable`) → unknown, *not read yet*; on a row that never can be → `no`;
@@ -106,7 +117,7 @@ the seat cycle reads at most four jobs per 120 s, only inside RECORD's window. S
   `record_selected` / `record_window` move with it (gaining `spec`), so there is still one window
   function. It exports `RecordFilter` (frozen), `WHEN_SECONDS`, `parse_record_filter(values, *,
   now_ts)`, `record_base_match`, `record_read_match`, `record_readable`, `record_view(rows, cap,
-  open_only, spec) -> RecordView(rows, older, not_read, unavailable)`, `record_filter_choices(rows)`.
+  launches_only, spec) -> RecordView(rows, older, not_read, unavailable)`, `record_filter_choices(rows)`.
   `record_readable` restates the canonical job-id and hash patterns (analytics may not import
   `widgets/explorer`); an agreement test binds it to the data layer's own read rule,
   `surf_swarm_client.parse_job_id` and `surf_swarm._hex64` — *built:* the rule the seat cycle
@@ -115,10 +126,10 @@ the seat cycle reads at most four jobs per 120 s, only inside RECORD's window. S
 
 ## Surf pieces
 
-* `SurfManager.set_record_view(cap, open_only, spec=None)` stores a `RecordFilter` (anything else is
+* `SurfManager.set_record_view(cap, launches_only, spec=None)` stores a `RecordFilter` (anything else is
   ignored, as a malformed cap is today) and marks the seat tier due; `set_seat` clears it. Every
   `record_window` call passes it. No I/O, no await.
-* `SurfSwarmSeatRecord.set_record_view(cap, open_only, spec=None)`; `filter_choices()` hands the
+* `SurfSwarmSeatRecord.set_record_view(cap, launches_only, spec=None)`; `filter_choices()` hands the
   screen primitive choices for the editor; title and footer as above.
 * `widgets/surf/swarm_record_filter.py`: `SurfRecordFilterEditor(FilterEditorBase)`; `async
   load(choices, values)` rebuilds the three checkbox groups (awaited, so ids never collide) with
@@ -136,11 +147,11 @@ the seat cycle reads at most four jobs per 120 s, only inside RECORD's window. S
   today; `_clock` seam (`time.time`) used only at apply. CSS for the editor's slot in
   `SurfScreen.DEFAULT_CSS` and `minimal.tcss`. The editor scrolls inside itself; it is not a
   `_SCROLL_COLUMNS` entry (a form, not a fixed-line panel).
-* No new contract key, tier, slot, degraded group or pin. The AGENT layout test gains the editor
+* The 2026-10-13 launch view adds the `launch_state` row key; no new tier, slot, degraded group or pin. The AGENT layout test gains the editor
   state at the pin and below the compact threshold (every control inside the editor, no horizontal
   overflow).
 
-## Work packages (run in order by the session; one reviewer each)
+## Original work packages (2026-10-02)
 
 1. **WP1 hoist** — `analytics/range_filters.py`, `widgets/filter_editor.py`, curator's editor and
    data module on them, the class rename. Tests: `tests/analytics/test_range_filters.py` and

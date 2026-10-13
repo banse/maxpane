@@ -427,21 +427,23 @@ async def test_record_view_80_enriches_old_oracle_rows_with_four_pair_budget(tmp
         await manager.close()
 
 
-async def test_record_open_filter_enriches_old_oracle_attempt(tmp_path):
+@pytest.mark.parametrize('filter_tab', [True, False])
+async def test_record_launches_skips_oracle_reads_regardless_of_attempt_state(tmp_path, filter_tab):
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
     fake = Oracle(81)
     for row in fake.seat['work']: row['status'] = 'accepted'
     fake.seat['work'][80]['status'] = 'rejected'
     manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
-    manager.set_record_view(40, True)
+    manager.set_record_view(40, filter_tab, None if filter_tab else RecordFilter(launches='launched'))
     try:
         await manager._pool_swarm_seat(420, NOW)
-        assert [c[1] for c in fake.oracle_calls if c[0] == 'detail'] == list(fake.details)[80:]
+        assert fake.oracle_calls == []
     finally:
         await manager.close()
 
 
 async def test_record_base_filter_enriches_old_oracle_attempt(tmp_path):
-    """RECORD's ``f`` filter shapes the oracle window the way ``not completed`` does."""
+    """RECORD's base filter shapes the oracle window before limiting its rows."""
     from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
     fake = Oracle(81)
     for row in fake.seat['work']: row['status'] = 'accepted'

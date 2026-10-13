@@ -67,9 +67,9 @@ class AgentCardSources:
 
     async def _work(self, seat, now):
         points = self.capture(now)['work']
-        candidates = work.candidates(seat)
+        candidates = work.record_candidates(seat)
         self.work_attempts = {job: stamp for job, stamp in self.work_attempts.items() if job in candidates}
-        due = work.due(seat, points, now, cap=len(candidates))
+        due = work.due(seat, points, now, cap=len(candidates), include_attempts=True)
         due.sort(key=lambda job: (job in points, self.work_attempts.get(job, 0)))
         async def read_job(job):
             self.work_attempts[job] = now

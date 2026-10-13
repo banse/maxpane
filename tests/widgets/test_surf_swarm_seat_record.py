@@ -352,7 +352,7 @@ async def test_dates_survive_midnight_and_launch_submission_are_not_columns():
     for row in rows:
         assert f"{mmdd(row['accepted_ts'])} {hhmm(row['accepted_ts'])}" in text
     # Owner, 2026-09-22: launch and sub were hidden so the answer gets the room.
-    assert "launch" not in text and "sub" not in text.split()
+    assert "launch" not in text.split() and "sub" not in text.split()
     assert "evm_project" not in text and "abababab" not in text
     assert "⧉" not in text
 
@@ -743,8 +743,8 @@ async def test_bytes32_answer_cell_counts_values():
 
 async def test_record_view_counts_filtered_older_rows_and_stops_at_cache_cap():
     from textual.widgets import DataTable
-    rows = [dict(NEWEST, work_status='accepted', job_state='completed') for _ in range(60)]
-    rows += [dict(NEWEST, work_status='failed', job_state='completed') for _ in range(405)]
+    rows = [dict(NEWEST, work_status='accepted', job_state='completed', launch_state='not_launched') for _ in range(60)]
+    rows += [dict(NEWEST, work_status='failed', job_state='completed', launch_state='launched') for _ in range(405)]
     async with App().run_test(size=(139,20)) as pilot:
         record = SurfSwarmSeatRecord()
         await pilot.app.mount(record)
@@ -759,35 +759,58 @@ async def test_record_view_counts_filtered_older_rows_and_stops_at_cache_cap():
         assert '+5 older' in text and 'more' not in text and record.query_one(DataTable).row_count == 400
 
 
+async def test_launches_tab_counts_unknown_membership_without_showing_unconfirmed_jobs():
+    from textual.widgets import DataTable
+    rows = [dict(NEWEST, launch_state=state, submission_hash=None)
+            for state in ('not_launched', 'not_read', 'unavailable')]
+    async with App().run_test(size=(149, 20)) as pilot:
+        record = SurfSwarmSeatRecord()
+        await pilot.app.mount(record)
+        record.update_data(swarm_seat_work_rows=rows, swarm_seat_state='ok')
+        record.set_record_view(40, True)
+        await pilot.pause()
+        text = '\n'.join(strip.text for strip in pilot.app.screen._compositor.render_strips())
+        assert record.query_one(DataTable).row_count == 0
+        assert '0 match · 1 not read yet · 1 unavailable' in text
+        assert 'no matching records' not in text
+        assert "'i' to change seat · 'f' to filter records" in text
+        rows[1]['launch_state'] = 'launched'
+        record.update_data(swarm_seat_work_rows=rows, swarm_seat_state='ok')
+        await pilot.pause()
+        text = '\n'.join(strip.text for strip in pilot.app.screen._compositor.render_strips())
+        assert record.query_one(DataTable).row_count == 1
+        assert '1 match · 1 unavailable' in text
+
+
 def test_record_view_maximum_agrees_with_retained_data():
     from maxpane_dashboard.data.surf_manager import SWARM_ANSWER_CACHE_CAP
     assert SurfSwarmSeatRecord.MAX_CAP == SWARM_ANSWER_CACHE_CAP == 400
 
 
-@pytest.mark.parametrize("cap,open_only", [
+@pytest.mark.parametrize("cap,launches_only", [
     (None, False), ("x", False), (1.5, False), (True, False), ([], False),
     (60, "yes"), (60, None),
 ])
-def test_record_view_invalid_values_leave_widget_unchanged(monkeypatch, cap, open_only):
+def test_record_view_invalid_values_leave_widget_unchanged(monkeypatch, cap, launches_only):
     from unittest.mock import Mock
     record = SurfSwarmSeatRecord()
     record.set_record_view(80, True)
     store = Mock()
     monkeypatch.setattr(record, "_store_view", store)
-    record.set_record_view(cap, open_only)
-    assert (record.ROW_CAP, record._open_only) == (80, True)
+    record.set_record_view(cap, launches_only)
+    assert (record.ROW_CAP, record._launches_only) == (80, True)
     store.assert_not_called()
 
 
-@pytest.mark.parametrize("open_only", [False, True])
-async def test_record_malformed_items_are_neither_shown_nor_counted(open_only):
+@pytest.mark.parametrize("launches_only", [False, True])
+async def test_record_malformed_items_are_neither_shown_nor_counted(launches_only):
     from textual.widgets import DataTable
-    rows = [dict(NEWEST, work_status="failed") for _ in range(51)]
+    rows = [dict(NEWEST, work_status="failed", launch_state="launched") for _ in range(51)]
     rows[20:20] = ["bad", 3, None] * 5
     async with App().run_test(size=(139, 20)) as pilot:
         record = SurfSwarmSeatRecord()
         await pilot.app.mount(record)
-        record.set_record_view(40, open_only)
+        record.set_record_view(40, launches_only)
         record.update_data(swarm_seat_work_rows=rows, swarm_seat_state="ok")
         await pilot.pause()
         text = "\n".join("".join(seg.text for seg in strip)
@@ -818,7 +841,7 @@ async def test_busy_record_title_is_yellow_and_keeps_its_own_as_of(width):
                 style = pilot.app.screen.get_style_at(title.index('busy'), y)
                 assert style.color.get_truecolor(pilot.app.ansi_theme) == Color.parse('yellow').get_truecolor(pilot.app.ansi_theme)
                 if width == 70:
-                    assert "type 'i'" not in title
+                    assert "'i' to change seat · 'f' to filter records" not in title
             assert _job(NEWEST) in '\n'.join(lines)
 
 
@@ -841,7 +864,7 @@ async def test_a_shrink_paints_what_a_fresh_mount_at_that_size_paints():
             return _lines(pilot.app)
 
     fresh = await painted((149, 20))
-    assert "type 'i'" in fresh[0] and 'when' in fresh[1], fresh[:2]
+    assert "'i' to change seat · 'f' to filter records" in fresh[0] and 'when' in fresh[1], fresh[:2]
     assert await painted((159, 20), (149, 20)) == fresh
 
 
@@ -956,17 +979,17 @@ async def test_the_filtered_word_exists_only_while_a_filter_is_stored():
         record = pilot.app.query_one(SurfSwarmSeatRecord)
         record.update_data(swarm_seat_work_rows=_filter_rows(), swarm_seat_state='ok', swarm_seat_as_of_hhmm=AS_OF)
         await pilot.pause()
-        assert 'RECORD · all · not completed · as of 04:06' in _lines(pilot.app)[0]
+        assert 'RECORD · all · launches · as of 04:06' in _lines(pilot.app)[0]
         record.set_record_view(40, False, None, has_filter=True)
         await pilot.pause()
-        assert 'RECORD · all · not completed · filtered · as of 04:06' in _lines(pilot.app)[0]
+        assert 'RECORD · all · launches · filtered · as of 04:06' in _lines(pilot.app)[0]
         assert _mode_word(pilot.app, 'all') == (True, True)
         assert _mode_word(pilot.app, 'filtered') == (False, False)
         record.set_record_view(40, False, spec)
         await pilot.pause()
         assert _mode_word(pilot.app, 'filtered') == (True, True)
         assert _mode_word(pilot.app, 'all') == (False, False)
-        assert _mode_word(pilot.app, 'not completed') == (False, False)
+        assert _mode_word(pilot.app, 'launches') == (False, False)
         assert _style_of(pilot.app, 'filtered').meta['@click'] == "screen.record_filter('filtered')"
 
 

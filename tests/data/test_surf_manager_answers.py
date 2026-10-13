@@ -368,14 +368,14 @@ async def test_record_view_setter_is_io_free_clamped_and_seat_reset(tmp_path):
     try:
         manager.cache.mark_fetched(TIER_SWARM_SEAT, NOW)
         manager.set_record_view(800, True)
-        assert (manager.record_cap, manager.record_open_only) == (400, True)
+        assert (manager.record_cap, manager.record_launches_only) == (400, True)
         assert TIER_SWARM_SEAT in manager.cache.tiers_due(NOW)
         assert fake.answer_calls == fake.detail_calls == []
         manager.set_record_view(1, False)
         assert manager.record_cap == 40
         manager.set_record_view(80, True)
         manager.set_seat(421)
-        assert (manager.record_cap, manager.record_open_only) == (40, False)
+        assert (manager.record_cap, manager.record_launches_only) == (40, False)
     finally:
         await manager.close()
 
@@ -402,32 +402,77 @@ async def test_record_view_80_enriches_answers_and_job_details_past_forty_with_b
         await manager.close()
 
 
-async def test_record_open_filter_enriches_old_failed_attempt_before_windowing(tmp_path):
+@pytest.mark.parametrize('filter_tab', [True, False])
+async def test_record_launches_enriches_old_confirmed_job_before_windowing(tmp_path, filter_tab):
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
+    from maxpane_dashboard.data.surf_cache import SLOT_AGENT_WORK
     fake = Answers(work(81, 'completed'))
     for row in fake.seat['work']: row.update(nodeKey='hunt_d', status='accepted')
     fake.seat['work'][80]['status'] = 'failed'
     manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
-    manager.set_record_view(40, True)
+    manager.cache.store_last_good(SLOT_AGENT_WORK, {
+        row['jobId']: dict(read_ts=NOW, launched=i == 80) for i, row in enumerate(fake.seat['work'])
+    }, ts=NOW)
+    manager.set_record_view(40, filter_tab, None if filter_tab else RecordFilter(launches='launched'))
     try:
         await manager._pool_swarm_seat(420, NOW)
         assert fake.answer_calls == fake.detail_calls == [fake.seat['work'][80]['jobId']]
+        rendered = data(manager)['swarm_seat_work_rows']
+        assert [row['launch_state'] for row in rendered] == ['not_launched']*80 + ['launched']
     finally:
         await manager.close()
 
 
-@pytest.mark.parametrize("cap,open_only", [
+@pytest.mark.parametrize('filter_tab', [True, False])
+async def test_new_membership_snapshot_shapes_current_cycle_reads(tmp_path, monkeypatch, filter_tab):
+    from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, record_view
+    from tests.data.test_surf_agent_work import capture as work_capture, LIVE
+    fake = Answers(work(41, 'completed'))
+    for row in fake.seat['work']:
+        row.update(nodeKey='hunt_d', status='accepted')
+    target = fake.seat['work'][-1]['jobId']
+    clock = FakeClock(NOW)
+    fixture = work_capture(LIVE)
+
+    async def fetch(job):
+        clock.t = NOW + 1
+        fake.detail_calls.append(job)
+        launch = (dict(fixture['launch']) if job == target else
+                  dict(requested=False, kind=None, id=None, status=None, chainId=None))
+        return dict(fixture, id=job, launch=launch)
+
+    monkeypatch.setattr(fake, 'fetch_job', fetch)
+    manager = _manager(tmp_path, fake, clock=clock)
+    manager.set_seat(420)
+    manager.set_agent_active(True)
+    spec = None if filter_tab else RecordFilter(launches='launched')
+    manager.set_record_view(40, filter_tab, spec)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        visible = record_view(data(manager, now=clock())['swarm_seat_work_rows'], 40, filter_tab, spec)
+        assert len(manager._agent_card_sources.capture(clock())['work']) == 41
+        assert [row['job_id'] for row in visible.rows] == [target]
+        assert fake.answer_calls == [target]
+        # All membership reads, then only the visible launch's popup-detail read.
+        assert fake.detail_calls[41:] == [target]
+        assert visible.rows[0]['answer_state'] == 'read'
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize("cap,launches_only", [
     (None, False), ("x", False), (1.5, False), (True, False), ([], False),
     (60, "yes"), (60, None),
 ])
-async def test_record_view_invalid_values_leave_manager_unchanged(tmp_path, monkeypatch, cap, open_only):
+async def test_record_view_invalid_values_leave_manager_unchanged(tmp_path, monkeypatch, cap, launches_only):
     from unittest.mock import Mock
     manager = _manager(tmp_path, Answers(), clock=FakeClock(NOW))
     try:
         manager.set_record_view(80, True)
         mark_due = Mock()
         monkeypatch.setattr(manager.cache, "mark_due", mark_due)
-        manager.set_record_view(cap, open_only)
-        assert (manager.record_cap, manager.record_open_only) == (80, True)
+        manager.set_record_view(cap, launches_only)
+        assert (manager.record_cap, manager.record_launches_only) == (80, True)
         mark_due.assert_not_called()
     finally:
         await manager.close()

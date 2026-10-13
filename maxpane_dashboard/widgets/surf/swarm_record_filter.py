@@ -67,6 +67,7 @@ def _options(labels: Mapping[str, str], keys) -> tuple[tuple[str, str], ...]:
 
 _SELECTS = {
     "when": _options(WHEN_LABELS, WHEN_SECONDS),
+    "launches": (("Any", "any"), ("Launched jobs", "launched")),
     "panel": _options(PANEL_LABELS, PANEL_STATES),
     "answer": _options(ANSWER_LABELS, ANSWER_STATES),
 }
@@ -79,7 +80,7 @@ BOX_GROUPS = (
 )
 
 #: Under the groups: why MODEL to TOK can leave rows undecided.
-READ_NOTE = "MODEL to TOK need a read: rows not read yet are counted under RECORD, never hidden"
+READ_NOTE = "LAUNCHES and MODEL to TOK need a read: rows not read yet are counted under RECORD, never hidden"
 
 #: A box label's budget: a group is at least 14 cells, the box glyph takes 4.
 _LABEL_COLS = 16
@@ -134,6 +135,8 @@ def filter_summary(spec: RecordFilter) -> str:
             parts.append(" or ".join(sorted({choice_label(field, value) for value in chosen})))
     if spec.since_ts is not None:
         parts.append(f"since {mmdd_hhmm(spec.since_ts)}")
+    if spec.launches == "launched":
+        parts.append("launched jobs")
     if spec.models:
         parts.append(" or ".join(sorted({choice_label("models", value) for value in spec.models})))
     if spec.panel in PANEL_LABELS:
@@ -166,6 +169,12 @@ class SurfRecordFilterEditor(FilterEditorBase):
     SurfRecordFilterEditor .filter-group {
         margin-bottom: 0;
         padding-bottom: 1;
+    }
+    SurfRecordFilterEditor .record-filter-stacked {
+        height: auto;
+    }
+    SurfRecordFilterEditor .record-filter-stacked > .filter-group {
+        padding-bottom: 0;
     }
     SurfRecordFilterEditor .filter-group Select,
     SurfRecordFilterEditor .filter-group .filter-range {
@@ -202,7 +211,9 @@ class SurfRecordFilterEditor(FilterEditorBase):
             for field in ("nodes", "states"):
                 title, box_id = boxes[field]
                 yield self.titled_group(title, Vertical(id=box_id, classes="record-filter-boxes"))
-            yield self.select_group("WHEN", "when")
+            with Vertical(classes="record-filter-stacked"):
+                yield self.select_group("WHEN", "when")
+                yield self.select_group("LAUNCHES", "launches")
             title, box_id = boxes["models"]
             yield self.titled_group(title, Vertical(id=box_id, classes="record-filter-boxes"))
             yield self.select_group("PANEL", "panel")

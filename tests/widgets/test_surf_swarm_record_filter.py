@@ -279,3 +279,24 @@ async def test_a_one_line_dropdown_still_opens_its_options():
         await pilot.pause()
         assert select.expanded
         assert "Last 7 days" in _screen_text(app)
+
+
+async def test_launches_selector_sits_below_when_and_round_trips_and_resets():
+    app = _Harness()
+    async with app.run_test(size=(149, 40)) as pilot:
+        await app.editor.load(CHOICES, {"launches": "launched"})
+        await pilot.pause()
+        when = app.editor.query_one(f"#{field_id('when')}", Select)
+        launches = app.editor.query_one(f"#{field_id('launches')}", Select)
+        panel = app.editor.query_one(f"#{field_id('panel')}", Select)
+        assert when.region.x == launches.region.x
+        assert when.region.bottom < launches.region.y < panel.region.y
+        assert "LAUNCHES" in _screen_text(app) and "Launched jobs" in _screen_text(app)
+        assert app.editor.values()["launches"] == "launched"
+        assert filter_summary(parse_record_filter(app.editor.values(), now_ts=NOW)) == "launched jobs"
+        app.editor.set_values({})
+        await pilot.pause()
+        assert app.editor.values()["launches"] == "any"
+        await pilot.click(f"#{field_id('launches')}")
+        await pilot.pause()
+        assert launches.expanded and "Launched jobs" in _screen_text(app)

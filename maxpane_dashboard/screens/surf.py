@@ -1902,7 +1902,7 @@ SURF_AGENT_FULL_LAYOUT_ROWS = 29
 
 #: RECORD answer-clearance onset, re-swept 2026-09-24 in the real AGENT body.
 #: Moving tok before panel leaves tiers 102/94/53 and clearance 167 unchanged.
-#: Clickable all/not completed and as-of are whole at screen widths 58/99/107/139;
+#: Clickable all/launches and as-of are whole at screen widths 58/99/107/139;
 #: the widen hint remains visible when the tier or reply requires it.
 #: The committed v4 seat420 first40 rows are enriched with exact submission
 #: captures and the new raw oracle corpus: 37 agreed, three off-panel.
@@ -3541,7 +3541,7 @@ class SurfScreen(DashboardScreen):
         self._agent_slot = 0
         self._oracles_timer = None
         self.record_cap = SurfSwarmSeatRecord.ROW_CAP
-        self.record_open_only = False
+        self.record_launches_only = False
         self._record_seat_token = None
         #: RECORD's ``f`` filter (``docs/surf_record_filter_spec.md``): the
         #: stored filter (an active ``RecordFilter``, else ``None``), whether
@@ -4147,7 +4147,7 @@ class SurfScreen(DashboardScreen):
         if set_seat is not None:
             set_seat(token)
         self.record_cap = SurfSwarmSeatRecord.ROW_CAP
-        self.record_open_only = False
+        self.record_launches_only = False
         self._clear_record_filter()
         self._record_seat_token = token
         if not self.is_mounted:
@@ -4163,13 +4163,13 @@ class SurfScreen(DashboardScreen):
 
     def _repaint_record_view(self) -> None:
         self.query_one(SurfSwarmSeatRecord).set_record_view(
-            self.record_cap, self.record_open_only, self._record_spec_in_force(),
+            self.record_cap, self.record_launches_only, self._record_spec_in_force(),
             has_filter=self.record_spec is not None)
 
     def _record_view_changed(self) -> None:
         setter = getattr(self._data_manager, "set_record_view", None)
         if setter is not None:
-            setter(self.record_cap, self.record_open_only, self._record_spec_in_force())
+            setter(self.record_cap, self.record_launches_only, self._record_spec_in_force())
         self._repaint_record_view()
         self.start_refresh()
 
@@ -4180,22 +4180,22 @@ class SurfScreen(DashboardScreen):
         self._record_view_changed()
 
     def action_record_filter(self, mode: str) -> None:
-        """RECORD's title words: ``all`` / ``not completed`` / ``filtered``.
+        """RECORD's title words: ``all`` / ``launches`` / ``filtered``.
 
         ``filtered`` exists only while a filter is stored and shows it alone
-        (its STATE group says what ``not completed`` would); the other two
+        (its LAUNCHES selector can restrict job membership); the other two
         keep the stored filter for a later click.
         """
-        if self._mode != MODE_AGENT or mode not in ("all", "open", "filtered"):
+        if self._mode != MODE_AGENT or mode not in ("all", "launches", "filtered"):
             return
         if mode == "filtered":
             if self.record_spec is None:
                 return
             self.record_filtered = True
-            self.record_open_only = False
+            self.record_launches_only = False
         else:
             self.record_filtered = False
-            self.record_open_only = mode == "open"
+            self.record_launches_only = mode == "launches"
         self._record_view_changed()
 
     # -- RECORD's ``f`` filter editor (THE LIST's shape) --------------------
@@ -4266,7 +4266,7 @@ class SurfScreen(DashboardScreen):
             self.record_spec = None
             self.record_filtered = False
             self._record_filter_values = {}
-        self.record_open_only = False
+        self.record_launches_only = False
         self._record_filter_open = False
         self._show_record_editor()
         self._record_view_changed()
@@ -5138,14 +5138,14 @@ class SurfScreen(DashboardScreen):
             # too -- also when the old view was set before any seat arrived
             # (final review I-1): a filter applied with no seat would
             # otherwise keep narrowing the first seat's reads, unseen.
-            changed = (self.record_cap != SurfSwarmSeatRecord.ROW_CAP or self.record_open_only
+            changed = (self.record_cap != SurfSwarmSeatRecord.ROW_CAP or self.record_launches_only
                        or self.record_spec is not None)
             self.record_cap = SurfSwarmSeatRecord.ROW_CAP
-            self.record_open_only = False
+            self.record_launches_only = False
             self._clear_record_filter()
             setter = getattr(self._data_manager, "set_record_view", None)
             if setter is not None and (self._record_seat_token is not None or changed):
-                setter(self.record_cap, self.record_open_only, None)
+                setter(self.record_cap, self.record_launches_only, None)
             self._record_seat_token = token
         self._repaint_record_view()
         for cls in _SWARM_PANELS:
