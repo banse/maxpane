@@ -466,7 +466,7 @@ async def test_activity_card_footers_fill_width_on_resize():
     from tests.screens.test_surfboard_layout import HubHarness
     from tests.surfboard_fixtures import hub_payload
 
-    labels = {"board": "IDLE", "agent": "IDLE"}
+    labels = {"agent": "IDLE"}
     placeholders = set()
     payload = hub_payload()
     for data in payload["surfboard_cards"]:
@@ -694,7 +694,7 @@ async def test_top_agents_three_aligned_rows_and_medal_stars(state):
         card = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
         card.set_data(dict(primary='527', secondary='4,184 accepted jobs',
                            status=state, top_agents=rows, meter_state='idle',
-                           meter_kind='activity', numerator=43200, denominator=86400))
+                           meter_kind='duration', numerator=51231599999, denominator=None))
         await pilot.pause()
         strips = card_strips(pilot.app, card)
         top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
@@ -713,8 +713,31 @@ async def test_top_agents_three_aligned_rows_and_medal_stars(state):
             accepted_ends.append(strip.text.index(accepted)+len(accepted))
         assert len(set(seat_starts)) == len(set(accepted_ends)) == 1
         assert strips[top+4].text.strip('│└┘─ ') == ''
-        assert 'IDLE' in strips[-1].text
+        assert 'worked 1y 32w 3d' in strips[-1].text
+        assert not any(glyph in strips[-1].text for glyph in '▰▱')
         assert '‹' not in strips[0].text
+
+
+@pytest.mark.parametrize('size', [(149, 45), (146, 37)])
+async def test_fleet_worked_footer_floors_time_and_centers_without_activity_bar(size):
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import hub_payload
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=size) as pilot:
+        card = app.hub.query_one('#surfboard-card-board', SurfboardCard)
+        for ms, label in [(51235199999, 'worked 1y 32w 3d'),
+                          (31535999999, 'worked 0y 52w 0d'),
+                          (31536000000, 'worked 1y 0w 0d'),
+                          (604799999, 'worked 0y 0w 6d'),
+                          (86400000, 'worked 0y 0w 1d'),
+                          (86399999, 'worked 0y 0w 0d'),
+                          (0, 'worked 0y 0w 0d'), (None, 'worked —')]:
+            card.set_data(dict(card.data, meter_kind='duration', numerator=ms, denominator=None))
+            await pilot.pause()
+            footer = card_strips(app, card)[-1].text
+            assert footer.strip('╰╯─ ') == label
+            assert abs(footer.index(label) - (card.region.width-len(label))/2) <= .5
+            assert not any(glyph in footer for glyph in '▰▱')
 
 
 @pytest.mark.parametrize('top_agents,expected', [(None, '—'), ([], 'no agents')])

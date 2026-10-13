@@ -857,7 +857,11 @@ and source clocks. Known zero-new text remains hidden on TOKENS and ONCHAIN FEED
 Portfolio opens its existing preview. LEADERBOARD shows TOP AGENTS with three canonical ranked
 seats and accepted counts, led by gold/silver/bronze stars with one leading blank. Counts align
 right with one trailing blank; oversized counts drop grouping, then use compact notation only
-if necessary. Its activity footer remains rank one's.
+if necessary. Its centered footer is `worked Ny Nw Nd`, using the complete contributor
+summary's `wall_clock_ms` across all devices. Whole days are split into 365-day years,
+seven-day weeks and days; remaining hours are discarded. The existing meter fields
+carry `meter_kind=duration`, milliseconds in `numerator` and no denominator. Unknown
+time is `worked —`; known zero is `worked 0y 0w 0d`. FLEET has no activity label or bar.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
 footer is centered `Identity.md`. Three-line gaps below PROTOCOL and TOKENS separate them
 from the AGENT seats; regular-weight キープ / ビルディング match the muted card-footer
@@ -872,7 +876,7 @@ Acceptance/rank in HUB, AGENT and BOARD come from one complete `/seats/records` 
 (`attempts = accepted + rejected + failed + pending`, unique IDs, matching count). Invalid reads
 retain the prior whole snapshot as stale. Upstream summary cache ≤600s is disclosed. Contributors
 remain effort/receipts; workers remain presence; detail responses never overwrite shared totals.
-AGENT and LEADERBOARD outer footers track selected/rank-one worker activity independently:
+AGENT outer footers track their assigned worker activity independently:
 orange BUSY with a full green bar; gray IDLE drains green to orange over 24 hours,
 then orange to empty over hours 24–72. Offline is red OFF with empty segments.
 Every successful workers read refreshes activity evidence even when content is unchanged;

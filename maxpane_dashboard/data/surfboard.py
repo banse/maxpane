@@ -514,6 +514,11 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          and seat_token(row.get("token_id")) is not None), key=lambda row: row["rank"])
         if isinstance(population, list) else None)
     activity_meter(leader.get("token_id"), leader.get("live_state"))
+    worked_ms = count((data.get('swarm_board_summary') or {}).get('wall_clock_ms'))
+    result[-1].update(meter_kind='duration', numerator=worked_ms, denominator=None)
+    result[-1]['detail'] += (f" · fleet worked {_value(worked_ms)} ms across all contributor devices"
+                            f" · contributors read {data.get('swarm_contributors_as_of_hhmm') or '—'}"
+                            " · 365-day years, whole days only")
     oracles = data.get("surf_oracles") or {}
     oracle_rows = oracles.get("rows")
     loaded = len(oracle_rows) if isinstance(oracle_rows, list) else None

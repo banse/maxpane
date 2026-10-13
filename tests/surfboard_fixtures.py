@@ -45,6 +45,8 @@ def hub_payload(kind="normal"):
     next(card for card in cards if card['key'] == 'board')['top_agents'] = [
         dict(rank=1, token_id=527, accepted=4176), dict(rank=2, token_id=12, accepted=3001),
         dict(rank=3, token_id=3, accepted=987)]
+    next(card for card in cards if card['key'] == 'board').update(
+        meter_kind='duration', numerator=51235199999, denominator=None)
     cards.append(dict(key="work", title="WORK IN PROGRESS", destination="work", status="active",
                       seat_slot=None, token_id=None, primary="5", secondary="1 workflow",
                       detail="WORK IN PROGRESS · 5 jobs · 1 workflow · 5 build · 4 review · read 22:00",

@@ -119,6 +119,16 @@ def _work_footer(card, width):
     return fit_prose(text, width, style=MUTED)
 
 
+def _fleet_footer(card, width):
+    ms = card.get('numerator') if card.get('meter_kind') == 'duration' else None
+    text = 'worked —'
+    if type(ms) is int and ms >= 0:
+        years, days = divmod(ms // 86_400_000, 365)
+        weeks, days = divmod(days, 7)
+        text = f'worked {years}y {weeks}w {days}d'
+    return fit_prose(text, width, style=MUTED)
+
+
 def meter_text(card: dict, width: int | None = None) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
@@ -131,6 +141,8 @@ def meter_text(card: dict, width: int | None = None) -> Text:
         return fit_prose(f"{value} chains", 24 if width is None else width, style=MUTED)[0]
     if key == "work":
         return _work_footer(card, 24 if width is None else width)[0]
+    if key == "board":
+        return _fleet_footer(card, 24 if width is None else width)[0]
     if key in AGENT_KEYS and state == "empty":
         return Text("Identity.md", style=MUTED)
     if key == "pool4":
@@ -431,6 +443,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             clipped |= _protocol_footer(self.data, max(0, self.region.width - 6))[1]
         if self.key == "work":
             clipped |= _work_footer(self.data, max(0, self.region.width - 6))[1]
+        if self.key == "board":
+            clipped |= _fleet_footer(self.data, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
             style = Style(
                 color=self.rich_style.color, bgcolor=palette["background"],

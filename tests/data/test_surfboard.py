@@ -73,6 +73,23 @@ def test_recorded_zero_population_is_a_real_empty():
     assert rows==[] and summary['seats']==summary['attempts']==summary['accepted']==0
 
 
+def test_fleet_work_duration_uses_all_contributors_not_just_ranked_seats():
+    from tests.surf_swarm_fixtures import swarm_board_payload
+    data = swarm_board_payload()  # 101 contributor devices, only two ranked seats
+    card = next(c for c in hub.cards(data, {}, now=100) if c['key'] == 'board')
+    assert card['meter_kind'] == 'duration'
+    assert card['numerator'] == 1614366561
+    assert card['denominator'] is None
+    assert len(card['top_agents']) == 2
+
+
+@pytest.mark.parametrize('value,expected', [(0, 0), (None, None), (-1, None), (True, None), (float('nan'), None)])
+def test_fleet_work_duration_keeps_unknown_distinct_from_zero(value, expected):
+    card = next(c for c in hub.cards({'swarm_board_summary': {'wall_clock_ms': value}}, {}, now=100)
+                if c['key'] == 'board')
+    assert card['numerator'] == expected
+
+
 def test_rack_meters_use_real_denominators_uncapped_population_and_split():
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES
     data={f'sig_{name}_state':'ok' for name in SIGNAL_NAMES}
@@ -83,7 +100,7 @@ def test_rack_meters_use_real_denominators_uncapped_population_and_split():
     cards={c['key']:c for c in hub.cards(data,{},now=100)}
     assert (cards['announce']['numerator'],cards['announce']['denominator'])==(1,len(SIGNAL_NAMES))
     assert (cards['agent']['numerator'],cards['agent']['denominator'])==(None,86400)
-    assert (cards['board']['numerator'],cards['board']['denominator'])==(None,86400)
+    assert (cards['board']['numerator'],cards['board']['denominator'])==(None,None)
     assert cards['oracles']['numerator'] is cards['oracles']['denominator'] is None
     assert cards['oracles']['points'] is None
     assert cards['pool4']['share_price'] is None
@@ -594,20 +611,20 @@ def test_pool4_missing_price_never_shows_zero_or_green():
 def test_cards_project_selected_and_top_agent_activity_independently():
     from maxpane_dashboard.data import surfboard_activity as activity
     from tests.data.test_surfboard_activity import workers
-    data = dict(swarm_seat_selected={'token_id': 1836},
+    data = dict(swarm_seat_selected={'token_id': 1836}, swarm_board_summary={'wall_clock_ms': 1614366561},
                 swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253)])
     observed = activity.observe(None, workers(1), now=100)
     rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed)}
     assert rows['board']['meter_state'] == 'busy'
-    assert rows['board']['numerator'] == rows['board']['denominator'] == 86400
+    assert rows['board']['numerator'] == 1614366561 and rows['board']['denominator'] is None
     assert rows['agent']['meter_state'] == 'idle' and rows['agent']['numerator'] is None
     observed = activity.observe(observed, workers(0), now=200)
     observed = activity.observe(observed, workers(0), now=43400)
     rows = {c['key']: c for c in hub.cards(data, {}, now=43400, activity=observed)}
-    assert rows['board']['numerator'] == 43200
+    assert rows['board']['numerator'] == 1614366561
     assert 'observed stop' in rows['board']['detail'] and 'workers read' in rows['board']['detail']
     rows = {c['key']: c for c in hub.cards(data, {}, now=43701, activity=observed)}
-    assert rows['board']['meter_state'] == 'stale' and rows['board']['numerator'] is None
+    assert rows['board']['meter_state'] == 'stale' and rows['board']['numerator'] == 1614366561
 
 
 @pytest.mark.parametrize('selected_busy, top_busy', [(True, False), (False, True)])
@@ -654,7 +671,7 @@ def test_fresh_offline_changes_display_without_rewriting_activity_history(card_k
                 swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253, live_state='offline')])
     row = next(c for c in hub.cards(data, {}, now=300, activity=observed) if c['key'] == card_key)
     assert row['meter_state'] == row['status'] == 'offline'
-    assert row['numerator'] == 86300 and row['denominator'] == 86400
+    assert (row['numerator'], row['denominator']) == ((86300, 86400) if card_key == 'agent' else (None, None))
     assert 'activity offline' in row['detail'] and 'workers read '+hub.hhmm(200) in row['detail']
     assert 'observed stop '+hub.hhmm(200) in row['detail']
     assert observed == before
