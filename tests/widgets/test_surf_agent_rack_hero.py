@@ -74,7 +74,7 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         assert [(card.region.x, card.region.width) for card in cards[:6]] == [(card.region.x, card.region.width) for card in cards[6:]]
         assert cards[6].region.y - cards[0].region.bottom == 1
         for key, words in {
-            "seat": ("Identity.md", "working", "AGENT #8127"),
+            "seat": ("IDMD", "working", "AGENT #8127"),
             "accepted": ("of 1,000", "96%", "▰"),
             "effort": ("HOURS", "1.8M tokens", "75% premium"),
             "rewards": ("IMD", "$120.82", "paid "),

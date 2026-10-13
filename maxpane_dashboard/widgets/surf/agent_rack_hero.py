@@ -51,7 +51,7 @@ def _status_word(source):
 def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     records = []
     for key, title, heading, footer in (
-        ("seat", "SEAT", "Identity.md", "AGENT #--"),
+        ("seat", "SEAT", "IDMD", "AGENT #--"),
         ("accepted", "ACCEPTED", "WORK", "--%"),
         ("effort", "EFFORT", "HOURS", "--% premium"),
         ("rewards", "REWARDS", "IMD", "paid --"),
