@@ -156,7 +156,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["digits"] = _count(count(section.get("earned")))
             fields["subtitle"] = _count(count(section.get("worked_on"))) + " worked on"
             fields["footer"] = _earnings_footer(section)
-            fields["accent"] = section.get("worked_recent") is True
+            fields["accent"] = False
         elif key == "collab":
             fields["digits"] = _digits(section.get("count"))
             fields["subtitle"] = "collaborators"
@@ -409,8 +409,7 @@ class AgentRackCard(Pool4HeroCard):
             recent, worked = (count(source.get(key)) for key in ("earned_24h", "worked_on_24h"))
             tip.append(f"\nDistinct token assets earned by the owner's wallet: {_count(count(source.get('earned')))} total."
                        f"\nLast 24h: {_count(recent)} earned; {_count(worked)} worked on by this agent."
-                       "\nUses each token's earliest launch/earned timestamp. Worked on requires this agent's accepted builder work."
-                       "\nGreen means a token worked on by this agent launched in the last 24h.")
+                       "\nUses each token's earliest launch/earned timestamp. Worked on requires this agent's accepted builder work.")
             if recent is None or worked is None:
                 tip.append("\n-- means unknown; an unknown worked-on count is omitted from the footer.")
             if is_address(source.get("owner")):

@@ -535,7 +535,7 @@ async def test_runtime_since_uses_connection_time_with_full_hover_context(width)
         assert "since --" in strips(app, "runtime")[-1].text
 
 
-async def test_earnings_counts_distinct_tokens_and_accents_only_recent_work():
+async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
     from rich.color import Color
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
@@ -545,12 +545,15 @@ async def test_earnings_counts_distinct_tokens_and_accents_only_recent_work():
         assert "TOKENS" in text and "7 worked on" in text and "2 new worked on" in text
         assert "╶┴╴╰─╴" in text  # tall 12
         green = Color.parse(app.get_css_variables()["accent"]).get_truecolor()
-        assert border_color(app, "earnings") == green
-        for recent in (False, None):
+        assert border_color(app, "earnings") == border_color(app, "accepted")
+        assert "Green means" not in str(app.query_one("#hero-earnings").tooltip)
+        for recent in (False, None, True):
             data["earnings"]["worked_recent"] = recent
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             assert border_color(app, "earnings") == border_color(app, "accepted")
+            for key in ("seat", "rewards", "rank", "status"):
+                assert border_color(app, key) == green
         data["earnings"].update(earned=None, worked_on=None, earned_24h=None, worked_on_24h=None, state="partial")
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
