@@ -250,6 +250,19 @@ Work dashboard is open. Missing details remain
 explicit; unknown assignments never become zero. Reads run at most once a minute, and failed
 reads keep the previous snapshot with its original timestamp and a stale marker.
 
+Press **Ctrl+o** from Surf or the boardroom to open **ORACLES**. Six cards summarize
+the newest 100 loaded requests; the wider request list sits beside the selected
+question, consensus, quorum and expandable answer tree. Use `/` to search locally,
+`f` to cycle states, `c` to cycle chains, and Enter on a request to focus its answers.
+Click branches or use Space to fold them; open an answer leaf for the complete cached
+AGENT-style record. Escape returns to the previous view.
+
+Oracle counts cover the loaded page. Capped pages say `partial`; unknown source
+statuses remain visible in the list and its `other` count. The list refreshes at most
+once a minute while this view is open. Only selected request details are fetched,
+with up to eight cached requests and 64 answers each. Failed reads preserve the last
+good values with their original timestamp and an explicit stale state.
+
 WORKFLOWS retains up to 1,000 workflows, newest first, and scrolls inside its table. It shows
 start time, status, contracts and frontend jobs linked to the swarm's job explorer, and the
 objective or a non-completed workflow's failure in red. Enter or a row click opens a snapshot
@@ -670,6 +683,11 @@ of any of the six alternate bodies.
 | RECORD `all` / `not completed` click | Filter by the displayed state before the row limit |
 | `f` in AGENT | Open RECORD's filter editor; in the editor, apply it |
 | `w` in Surf or the boardroom | Open WORK IN PROGRESS |
+| `ctrl+o` in Surf or the boardroom | Open ORACLES |
+| `/` / `f` / `c` in ORACLES | Find requests / cycle state / cycle chain |
+| Enter on an oracle request | Focus its answer tree |
+| Space or branch click in oracle answers | Expand or collapse at any depth |
+| Enter or click on an answer leaf | Open its complete cached answer |
 | Arrows / Enter in WORK | Select and expand work / focus selected details |
 | `/` / `f` in WORK | Find locally / cycle all, build, review and blocked |
 | RECORD `filtered` click | Show the stored filter again after `all` / `not completed` |

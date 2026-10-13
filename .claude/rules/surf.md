@@ -800,6 +800,21 @@ share price, rounded to fit; card detail retains six decimals and source freshne
 Rank migration resets only contributor-based baselines (`seat-records-v1`). See the hub PRD
 and implementation plan for exact meter formulas, commands and source cadence.
 
+## ORACLES (`Ctrl+o`)
+
+ORACLES is a separate native mode, opened with `Ctrl+o` from Surf or the boardroom.
+Its six rack cards and 66/34 request/detail body consume only `surf_oracles`.
+The reader has an independent 60s list tier and 120s failure backoff; only the selected
+request's details load, capped at 64 members with an eight-request LRU. Existing AGENT
+filtered reads stay unchanged. Direct validated `tokenId` identifies a member's seat;
+the exact submission hash joins canonical RECORD oracle facts. No wallet-to-seat guess.
+The complete cached RECORD row drives the existing OracleAnswerScreen without reads.
+List and detail have separate clocks; terminal details expire for freshness after 24h
+or a row version change, retaining bounded stale last-good data until replacement.
+Unknown statuses (including mismatch) remain visible; hero counts describe loaded rows.
+Native Tree handles nested click/Space folding. Width/height pins are documented beside
+`SURF_ORACLES_FULL_LAYOUT_{COLUMNS,ROWS}`. See `docs/surf_oracles_PRD.md` and plan.
+
 ## WORK IN PROGRESS (`w`)
 
 The approved tree/detail body is `MODE_WORK`, reachable from Surf and the boardroom.

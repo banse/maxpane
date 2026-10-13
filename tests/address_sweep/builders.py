@@ -46,6 +46,7 @@ from maxpane_dashboard.screens.surf import (
     SURF_AGENT_FULL_LAYOUT_ROWS,
     SURF_SWARM_FULL_LAYOUT_COLUMNS,
     SURF_SWARM_FULL_LAYOUT_ROWS,
+    SURF_ORACLES_FULL_LAYOUT_COLUMNS, SURF_ORACLES_FULL_LAYOUT_ROWS,
     SurfScreen,
 )
 from maxpane_dashboard.screens.talismans import TalismansScreen
@@ -159,6 +160,11 @@ _WORK_OBJECTIVE = "0x1313131313131313131313131313131313131313"
 
 def _surf_payload() -> dict:
     payload = copy.deepcopy(_surf._mainnet_pool4_payload())
+    from tests.screens.test_surf_oracles_layout import oracle_payload
+    oracle = oracle_payload()["surf_oracles"]
+    oracle["rows"][0]["question"] = oracle["detail"]["question"] = f"Inspect {_SURF_PROSE}"
+    oracle["detail"]["members"][0]["oracle_notes"] = f"Proof {_SURF_PROSE}"
+    payload["surf_oracles"] = oracle
     payload["surf_work"] = {
         "state": "ok", "read_ts": 1791856800., "now_ts": 1791856800.,
         "partial": False, "jobs_loaded": 1, "workflows_loaded": 1,
@@ -804,7 +810,7 @@ CASES: tuple[SweepCase, ...] = (
         screen_class=SurfScreen,
         build=_surf_app,
         payload=_surf_payload,
-        views=((), ("l",), ("e",), ("4",), ("s",), ("a",), ("b",), ("w",)),
+        views=((), ("l",), ("e",), ("4",), ("s",), ("a",), ("b",), ("w",), ("ctrl+o",)),
         seeded=SURF_SEEDED,
         pins=(
             (SURF_FULL_LAYOUT_COLUMNS, None),
@@ -815,6 +821,7 @@ CASES: tuple[SweepCase, ...] = (
             (SURF_AGENT_FULL_LAYOUT_COLUMNS, SURF_AGENT_FULL_LAYOUT_ROWS),
             (SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS),
             (SURF_WORK_FULL_LAYOUT_COLUMNS, SURF_WORK_FULL_LAYOUT_ROWS),
+            (SURF_ORACLES_FULL_LAYOUT_COLUMNS, SURF_ORACLES_FULL_LAYOUT_ROWS),
         ),
     ),
     SweepCase(

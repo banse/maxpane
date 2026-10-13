@@ -145,6 +145,8 @@ from .swarm_latest import SurfSwarmLatestLaunches
 from .swarm_workflows import SurfSwarmWorkflows
 
 __all__ = [
+    "SurfOraclesBody",
+    "SurfOraclesHero",
     "SurfWorkBody",
     "SurfWorkHero",
     "SurfSwarmBoardHero", "SurfSwarmLeaderboard", "SurfSwarmFleet",
@@ -199,3 +201,4 @@ from .swarm_board_hero import SurfSwarmBoardHero
 from .swarm_leaderboard import SurfSwarmLeaderboard
 from .swarm_fleet import SurfSwarmFleet
 from .work import SurfWorkBody, SurfWorkHero
+from .oracles import SurfOraclesBody, SurfOraclesHero

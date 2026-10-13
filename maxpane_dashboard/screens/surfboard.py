@@ -13,7 +13,7 @@ from textual.widgets import Input, Static
 
 from maxpane_dashboard.data.surf_models import SURFBOARD_WIDGET_SIGNATURES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
-from maxpane_dashboard.screens.surf import MODE_AGENT, MODE_WORK
+from maxpane_dashboard.screens.surf import MODE_AGENT, MODE_WORK, MODE_ORACLES
 from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
@@ -50,6 +50,7 @@ class SurfboardScreen(DashboardScreen):
     )
     BINDINGS = [
         Binding("w", "work", "Work in progress", show=False),
+        Binding("ctrl+o", "oracles", "Oracles", show=False),
         Binding("slash", "command_input", "Command", show=False),
         Binding("left", "card('left')", show=False),
         Binding("right", "card('right')", show=False),
@@ -178,6 +179,9 @@ class SurfboardScreen(DashboardScreen):
 
     def action_work(self) -> None:
         self.app.open_surf_mode(MODE_WORK)
+
+    def action_oracles(self) -> None:
+        self.app.open_surf_mode(MODE_ORACLES)
 
     def action_card(self, direction: str) -> None:
         if not isinstance(self.focused, Input):

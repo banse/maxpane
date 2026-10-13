@@ -241,6 +241,7 @@ from maxpane_dashboard.widgets.surf._oracle_answer import valid_identity, joined
 from maxpane_dashboard.status_message import post_status_message
 from maxpane_dashboard.data.surf_models import SWARM_WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.surf.work import SurfWorkBody, SurfWorkHero
+from maxpane_dashboard.widgets.surf.oracles import SurfOraclesBody, SurfOraclesHero
 from maxpane_dashboard.widgets.surf._swarm_summary import SERVICE_NAMES
 from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen, WorkflowDetailScreen
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
@@ -1987,6 +1988,41 @@ SURF_WORK_FULL_LAYOUT_COLUMNS = 126
 SURF_WORK_FULL_LAYOUT_ROWS = 30
 MODE_WORK = "work"
 WORK_BODY_ID = "surf-work-body"
+#: ORACLES, measured after the keyless live API render at 149×45 on
+#: 2026-10-13. REQUESTS retains the approved 66% of the body and the
+#: selected detail uses the remaining width. Both panels reserve gutters.
+#: Six equal fractional hero columns remain nine terminal rows high.
+#: The width sweep began at 118 and extended through 139: the final
+#: clipping footer is REQUESTS' "request history" at 130. At 131 every
+#: fixed hero label, heading and footer fits; the adjacent boundary test
+#: checks actual compositor text, not a derived character-width formula.
+#: REQUESTS has a responsive question column, using all remaining cells
+#: after AGE, CHAIN and STATE. Long questions intentionally ellipsise and
+#: light that panel's widen hint. Their full text wraps in the selected
+#: detail, so unbounded request prose does not determine the width pin.
+#: Capped pages show partial with their source clock, while complete-page
+#: and known-empty states retain the descriptive hero footers. The latter
+#: bind width; short unavailable/stale footers do not lower the normal pin.
+#: Numeric/boolean consensus values wrap without float conversion. Address
+#: units keep their copy action and chain-specific explorer in detail text.
+#: Answer-tree leaves fit within their depth and expose the complete cached
+#: RECORD in the existing answer popup. Unbounded answers scroll internally.
+#: The height sweep covered 36..44 rows. The two 28-row child floors bind:
+#: at 41 the body scrolls and the title marks taller, at 42 both fit. The
+#: screen overrides the body's own minimum to one row, preserving the
+#: heroes and footer while the child panels scroll on shorter terminals.
+#: A blank body margin keeps the status row separate at both the pin and
+#: the owner's 149×45 terminal. Long detail prose scrolls independently.
+#: Captured, complete, long/CJK, empty, stale and unavailable payloads are
+#: checked at both sizes by tests/screens/test_surf_oracles_layout.py.
+#: scripts/measure_layout.py o uses the same production-composite helper;
+#: o is its tool selector, while the actual application shortcut is Ctrl+o.
+#: Both pin ±1 mutations must fail the corresponding boundary test.
+#: App-wide width stays 143; this body's new pin changes no other view.
+SURF_ORACLES_FULL_LAYOUT_COLUMNS = 131
+SURF_ORACLES_FULL_LAYOUT_ROWS = 42
+MODE_ORACLES = "oracles"
+ORACLES_BODY_ID = "surf-oracles-body"
 
 #: The ``a`` AGENT body shows the saved seat (``i``), or the most active
 #: seat in the job window. Two card rows (seat details, work by node) sit
@@ -1994,7 +2030,7 @@ WORK_BODY_ID = "surf-work-body"
 MODE_AGENT = "agent"
 MODE_BOARD = "board"
 SURF_MODES = (MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER,
-              MODE_SWARM, MODE_AGENT, MODE_BOARD, MODE_WORK)
+              MODE_SWARM, MODE_AGENT, MODE_BOARD, MODE_WORK, MODE_ORACLES)
 BOARD_BODY_ID = "surf-board-body"
 
 #: BOARD rack hero, re-measured 2026-10-12 after the owner approved the
@@ -2316,6 +2352,8 @@ AGENT_BODY_ID = "surf-agent-body"
 #: the export cannot name classes without importing widgets into ``data/``).
 #: 2026-10-05: eleven mounted widgets; IN FLIGHT is parked by the contract.
 _SWARM_PANELS = (
+    SurfOraclesHero,
+    SurfOraclesBody,
     SurfWorkHero,
     SurfWorkBody,
     SurfSwarmBoardHero,
@@ -2695,6 +2733,8 @@ class SurfScreen(DashboardScreen):
         # verified rather than assumed -- see `action_toggle_swarm`.
         Binding("s", "toggle_swarm", "Swarm", show=False),
         Binding("w", "toggle_work", "Work in progress", show=False),
+        Binding("ctrl+o", "toggle_oracles", "Oracles", show=False),
+        Binding("c", "oracle_chain", "Oracle chain", show=False),
         Binding("slash", "work_find", "Find work", show=False),
         # `a` for AGENT (swarm v2 plan A1, WP7): free on this screen and in
         # the app, verified rather than assumed -- see `action_toggle_agent`.
@@ -2868,6 +2908,13 @@ class SurfScreen(DashboardScreen):
         margin: 1 0 0 0;
     }
     SurfScreen #surf-work-body {
+        height: 1fr;
+        min-height: 1;
+        margin: 1 0 1 0;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+    }
+    SurfScreen #surf-oracles-body {
         height: 1fr;
         min-height: 1;
         margin: 1 0 1 0;
@@ -3489,6 +3536,7 @@ class SurfScreen(DashboardScreen):
         self._mode: str = MODE_DASHBOARD
         self._return_context: str | None = None
         self._agent_slot = 0
+        self._oracles_timer = None
         self.record_cap = SurfSwarmSeatRecord.ROW_CAP
         self.record_open_only = False
         self._record_seat_token = None
@@ -3528,6 +3576,7 @@ class SurfScreen(DashboardScreen):
             yield SurfProtocolHero(classes="surf-hero")
             yield SurfSwarmRackHero(classes="surf-hero")
             yield SurfWorkHero(classes="surf-hero")
+            yield SurfOraclesHero(classes="surf-hero")
             yield SurfSwarmAgentRackHero(classes="surf-hero")
             yield SurfSwarmBoardHero(classes="surf-hero")
 
@@ -3654,6 +3703,7 @@ class SurfScreen(DashboardScreen):
         # not the plan's §2 pairing. Composed once and hidden, like every
         # other alternate body.
         yield SurfWorkBody(id=WORK_BODY_ID)
+        yield SurfOraclesBody(id=ORACLES_BODY_ID)
         with Vertical(id=SWARM_BODY_ID):
             with Horizontal(id=SWARM_TOP_ID):
                 yield SurfSwarmWorkflows()
@@ -3718,6 +3768,30 @@ class SurfScreen(DashboardScreen):
         setter = getattr(self._data_manager, "set_work_active", None)
         if setter is not None:
             setter(self.is_current and self._mode == MODE_WORK)
+        active = self.is_current and self._mode == MODE_ORACLES
+        setter = getattr(self._data_manager, "set_oracles_active", None)
+        if setter is not None:
+            setter(active)
+        if active and self._oracles_timer is None:
+            self._oracles_timer = self.set_interval(1, self._tick_oracles)
+        elif not active:
+            self._stop_oracles_timer()
+
+    def _stop_oracles_timer(self):
+        if self._oracles_timer is not None:
+            self._oracles_timer.stop()
+            self._oracles_timer = None
+
+    def _tick_oracles(self):
+        """Paint completed detached reads promptly; this getter performs no I/O."""
+        getter = getattr(self._data_manager, "get_oracles_snapshot", None)
+        if getter is not None and self.is_current and self._mode == MODE_ORACLES:
+            payload = getter()
+            self.query_one(SurfOraclesHero).update_data(surf_oracles=payload)
+            self.query_one(SurfOraclesBody).update_data(surf_oracles=payload)
+
+    def on_unmount(self):
+        self._stop_oracles_timer()
 
     @on(events.ScreenResume)
     def _resume_agent_runtime(self) -> None:
@@ -3725,6 +3799,10 @@ class SurfScreen(DashboardScreen):
 
     @on(events.ScreenSuspend)
     def _suspend_agent_runtime(self) -> None:
+        self._stop_oracles_timer()
+        setter = getattr(self._data_manager, "set_oracles_active", None)
+        if setter is not None:
+            setter(False)
         setter = getattr(self._data_manager, "set_agent_active", None)
         if setter is not None:
             setter(False)
@@ -3742,6 +3820,9 @@ class SurfScreen(DashboardScreen):
         ``view:`` word on the shared bar would name something that does not
         exist.
         """
+        if self._mode == MODE_ORACLES:
+            bar.set_key_hints("↑↓ select · space fold · / find · f state · c chain · esc back")
+            return
         bar.set_key_hints("↑↓ select · ←→ fold · / find · f filter · esc back"
                           if self._mode == MODE_WORK else self.KEY_HINTS)
 
@@ -3810,6 +3891,7 @@ class SurfScreen(DashboardScreen):
             )
             self.query_one(f"#{SWARM_BODY_ID}").display = self._mode == MODE_SWARM
             self.query_one(f"#{WORK_BODY_ID}").display = self._mode == MODE_WORK
+            self.query_one(f"#{ORACLES_BODY_ID}").display = self._mode == MODE_ORACLES
             self.query_one(f"#{AGENT_BODY_ID}").display = self._mode == MODE_AGENT
             self.query_one(f"#{BOARD_BODY_ID}").display = self._mode == MODE_BOARD
             # The heroes, each answering to ``self._mode`` and never to the
@@ -3823,6 +3905,7 @@ class SurfScreen(DashboardScreen):
             self.query_one(SurfProtocolHero).display = self._mode == MODE_POOL4
             self.query_one(SurfSwarmRackHero).display = self._mode == MODE_SWARM
             self.query_one(SurfWorkHero).display = self._mode == MODE_WORK
+            self.query_one(SurfOraclesHero).display = self._mode == MODE_ORACLES
             self.query_one(SurfSwarmAgentRackHero).display = self._mode == MODE_AGENT
             self.query_one(SurfSwarmBoardHero).display = self._mode == MODE_BOARD
             self.query_one(SurfNewsHero).display = self._mode == MODE_DASHBOARD
@@ -3838,8 +3921,10 @@ class SurfScreen(DashboardScreen):
         self._sync_agent_runtime()
         if self._mode == MODE_WORK:
             self.call_after_refresh(self.query_one(SurfWorkBody).focus_tree)
+        if self._mode == MODE_ORACLES:
+            self.call_after_refresh(self.query_one(SurfOraclesBody).focus_requests)
         self._prime_status_bar(self.query_one(StatusBar))
-        if self.is_current and self._mode in (MODE_AGENT, MODE_SWARM, MODE_WORK):
+        if self.is_current and self._mode in (MODE_AGENT, MODE_SWARM, MODE_WORK, MODE_ORACLES):
             self.start_refresh()
         # The row marker is about whichever body is now showing (only the
         # dashboard body's right rail can scroll), so it has to be re-read --
@@ -3928,6 +4013,31 @@ class SurfScreen(DashboardScreen):
     def action_work_find(self) -> None:
         if self._mode == MODE_WORK:
             self.query_one(SurfWorkBody).focus_find()
+        elif self._mode == MODE_ORACLES:
+            self.query_one(SurfOraclesBody).focus_find()
+
+    def action_toggle_oracles(self) -> None:
+        if self._mode == MODE_ORACLES:
+            self.action_show_dashboard()
+            return
+        self._mode = MODE_ORACLES
+        self._show_mode()
+
+    def action_oracle_chain(self) -> None:
+        if self._mode == MODE_ORACLES:
+            self.query_one(SurfOraclesBody).cycle_chain()
+
+    def on_surf_oracles_body_request_selected(self, event: SurfOraclesBody.RequestSelected):
+        event.stop()
+        setter = getattr(self._data_manager, "set_oracle_request", None)
+        if self._mode == MODE_ORACLES and setter is not None:
+            setter(event.request_id)
+            self.start_refresh()
+
+    def on_surf_oracles_body_answer_selected(self, event: SurfOraclesBody.AnswerSelected):
+        event.stop()
+        if self._mode == MODE_ORACLES:
+            self.app.push_screen(OracleAnswerScreen(event.row))
 
     async def action_toggle_throughput(self) -> None:
         """Open the latest production launch snapshot in SWARM mode."""
@@ -4115,6 +4225,9 @@ class SurfScreen(DashboardScreen):
         if self._mode == MODE_WORK:
             self.query_one(SurfWorkBody).cycle_filter()
             return
+        if self._mode == MODE_ORACLES:
+            self.query_one(SurfOraclesBody).cycle_filter()
+            return
         if self._mode != MODE_AGENT:
             return
         if self._record_filter_open:
@@ -4168,6 +4281,8 @@ class SurfScreen(DashboardScreen):
     def action_back(self) -> None:
         """``escape`` -- close RECORD's filter editor first, else leave the body."""
         if self._mode == MODE_WORK and self.query_one(SurfWorkBody).close_find():
+            return
+        if self._mode == MODE_ORACLES and self.query_one(SurfOraclesBody).close_find():
             return
         if self._record_filter_open:
             self._record_filter_open = False
@@ -4260,6 +4375,7 @@ class SurfScreen(DashboardScreen):
         # naming only the ones that can is what keeps this map a statement.
         MODE_SWARM: (f"#{SWARM_BODY_ID}", f"#{SWARM_TOP_ID}"),
         MODE_WORK: (f"#{WORK_BODY_ID}",),
+        MODE_ORACLES: (f"#{ORACLES_BODY_ID}",),
         # The AGENT body: its card rows are fixed-height, so the body is the
         # only container on it that can scroll.
         MODE_AGENT: (f"#{AGENT_BODY_ID}",),
@@ -4320,6 +4436,8 @@ class SurfScreen(DashboardScreen):
         cut = self._rail_is_cut()
         if self._mode == MODE_WORK:
             line = "WORK IN PROGRESS" + (f" · [yellow]{TALLER_HINT}[/]" if cut else "")
+        elif self._mode == MODE_ORACLES:
+            line = "ORACLES / SURFBOARD" + (f" · [yellow]{TALLER_HINT}[/]" if cut else "")
         elif self._title_data is None:
             # No payload yet -- or the manager raised and there never will
             # be one. The marker simply goes on the end here, and *neither*

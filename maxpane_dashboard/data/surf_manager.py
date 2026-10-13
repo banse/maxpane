@@ -124,7 +124,9 @@ from maxpane_dashboard.data.npm_registry_client import NpmRegistryClient, RUNTIM
 from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
 from maxpane_dashboard.data.surf_work import coerce_snapshot as coerce_work_snapshot
 from maxpane_dashboard.data.surf_work_reader import WorkReader
-from maxpane_dashboard.data.surf_cache import SLOT_SURF_WORK
+from maxpane_dashboard.data.surf_cache import SLOT_SURF_WORK, SLOT_SURF_ORACLES
+from maxpane_dashboard.data.surf_oracles import coerce_snapshot as coerce_oracles_snapshot
+from maxpane_dashboard.data.surf_oracles_reader import OraclesReader
 from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS, SLOT_SWARM_RUNTIME_LATEST, TIER_SWARM_RUNTIME_LATEST, TIER_TTL_SECONDS, LastGood
 from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, record_window
 from maxpane_dashboard.analytics.surf_swarm_signals import fleet_majority
@@ -1087,6 +1089,8 @@ class SurfManager:
         self.cache = cache if cache is not None else SurfCache(
             path=self._cache_path, clock=clock
         )
+        self._oracles_active = False
+        self._oracles_reader = OraclesReader(self.swarm_client, self.cache, clock=clock)
         self._work_active = False
         self._work_reader = WorkReader(self.swarm_client, self.cache, clock=clock)
 
@@ -1205,6 +1209,7 @@ class SurfManager:
 
         try:
             self.cache.load(slot_coercers={
+                SLOT_SURF_ORACLES: lambda value: coerce_oracles_snapshot(value, now=self._clock()),
                 SLOT_SURF_WORK: lambda value: coerce_work_snapshot(value, now=self._clock()),
                 **{slot: (lambda value, name=name: hub.coerce_source(value, name, now=self._clock()))
                    for name, slot in hub.SOURCE_SLOTS.items()},
@@ -1273,6 +1278,7 @@ class SurfManager:
         if self._closing:
             return
         self._closing = True
+        await self._oracles_reader.close()
         await self._work_reader.close()
         portfolio_manager = getattr(self, '_portfolio_manager', None)
         if portfolio_manager is not None:
@@ -7177,6 +7183,21 @@ class SurfManager:
         if not self._hub_active and not self._work_active:
             self._work_reader.cancel()
 
+    def set_oracles_active(self, active: bool) -> None:
+        """Visibility only; scheduled refresh owns the detached read offer."""
+        self._oracles_active = bool(active)
+        if not self._oracles_active:
+            self._oracles_reader.cancel()
+
+    def set_oracle_request(self, request_id: str | None) -> None:
+        """Queue the latest selected request without waiting for network I/O."""
+        self._oracles_reader.select(request_id)
+        if self._oracles_active and not self._closing:
+            self._oracles_reader.offer()
+
+    def get_oracles_snapshot(self) -> dict:
+        return self._oracles_reader.project()
+
     def set_work_active(self, active: bool) -> None:
         """Visibility only; network work is offered by the scheduled refresh."""
         self._work_active = bool(active)
@@ -7412,6 +7433,7 @@ class SurfManager:
                 if (seat['live'] or {}).get('live_state') == 'offline':
                     seat['live'] = None  # an incomplete roster cannot prove absent capacity
         data["surf_work"] = self._work_reader.project()
+        data["surf_oracles"] = self._oracles_reader.project()
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
                                                  agent_seats=agent_seats,
                                                  pool4_price_direction=self._hub_pool4_price_direction(data, family_sources),
@@ -7527,6 +7549,10 @@ class SurfManager:
 
     async def fetch_and_compute(self) -> dict[str, Any]:
         """Share full collection across screens; cancelling a waiter preserves it."""
+        if self._oracles_active:
+            if not self._closing:
+                self._oracles_reader.offer()
+            return self._project_hub()
         if self._work_active:
             if not self._closing:
                 self._work_reader.offer()

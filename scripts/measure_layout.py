@@ -11,6 +11,7 @@ network.
     .venv/bin/python scripts/measure_layout.py a capture 130:150x33 --whole-from
     .venv/bin/python scripts/measure_layout.py b board-worst 140x40 --json
     .venv/bin/python scripts/measure_layout.py hub hub-normal 135:145x36 --whole-from
+    .venv/bin/python scripts/measure_layout.py o oracle-complete 125:139x45 --whole-from
 
 A size is ``WxH``; either side may be a range ``LO:HI`` (inclusive). Each size prints
 ``whole`` or what breaks it: marked panels (besides the body's named exceptions), CSS-clipped
@@ -47,6 +48,9 @@ def payloads() -> dict:
     from tests.screens.test_surf_work_layout import work_payload
     out.update({f"work-{k}": (lambda k=k: work_payload(k))
                 for k in ("capture", "stress", "empty", "unavailable", "stale")})
+    from tests.screens.test_surf_oracles_layout import oracle_payload
+    out.update({f"oracle-{k}": (lambda k=k: oracle_payload(k))
+                for k in ("capture", "complete", "stress", "empty", "unavailable", "stale")})
     return out
 
 
@@ -109,8 +113,11 @@ async def measure(key: str, payload_name: str, sizes: list[tuple[int, int]]) -> 
     build = payloads()[payload_name]
     rows = []
     for size in sizes:
-        if key == "w":
-            from tests.screens.test_surf_work_layout import _render
+        if key in ("w", "o"):
+            if key == "w":
+                from tests.screens.test_surf_work_layout import _render
+            else:
+                from tests.screens.test_surf_oracles_layout import _render
             r = await _render(build(), size)
             found = list(r["missing"]) + list(r["overflow"])
             if r["taller"]:
@@ -157,7 +164,7 @@ def whole_from(rows: list[dict], axis: int) -> int | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("key", choices=("s", "a", "b", "w", "hub"))
+    parser.add_argument("key", choices=("s", "a", "b", "w", "o", "hub"))
     parser.add_argument("payload", help="one of: " + ", ".join(payloads()))
     parser.add_argument("size", help="WxH, either side LO:HI")
     parser.add_argument("--whole-from", action="store_true")

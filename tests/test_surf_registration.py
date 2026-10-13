@@ -1290,7 +1290,7 @@ _NON_NUMERIC_KEYS = frozenset(
         "surf_launchpad_hero",
         # Nested card facts; zero/unread is composited in test_surf_swarm_board_hero.py.
         "surf_leaderboard_hero",
-        "surf_agent_hero", "surf_work",
+        "surf_agent_hero", "surf_work", "surf_oracles",
         "sig_post_state", "sig_lp_state", "sig_gate_state",
         "sig_deploy_state", "sig_bridge_state", "sig_burn_state",
         "sig_post_detail", "sig_lp_detail", "sig_gate_detail",

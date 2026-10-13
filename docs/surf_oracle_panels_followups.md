@@ -18,3 +18,17 @@ carry strict `agreement.answer`; figures never determine YES/NO. Fixtures cover 
 Validation environment: use `.venv311/bin/python` and unset `NO_COLOR` for compositor
 colour assertions (`env -u NO_COLOR .venv311/bin/python -m pytest ...`). The inherited
 `NO_COLOR=1` renders ANSI colours as grayscale and fails existing colour assertions too.
+
+## Native ORACLES dashboard — 2026-10-13
+
+Live integration is complete; final scoped review approved with no findings.
+The dashboard keeps the approved 66/34 split and opens with Ctrl+o. Its newest
+100-request page and selected-only, 64-member details are deliberate bounds;
+unknown statuses and incomplete coverage remain explicit. No pagination or global
+request-total claim is included.
+
+Live API render inspected at 149×45; measured layout is 131×42. Both directions of
+both pin mutations failed as expected, as did exact-hash and selected-request
+identity mutations. Data, native routing/layout, widget contracts, address actions,
+registration and docpin checks passed. No full-suite run was requested or performed
+for this dashboard. No new review follow-ups remain.

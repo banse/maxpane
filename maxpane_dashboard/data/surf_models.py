@@ -1660,6 +1660,13 @@ SWARM_KEYS: tuple[str, ...] = (
 SWARM_LATEST_LAUNCHES_SIGNATURE = ("swarm_launch_rows", "swarm_launches_as_of_hhmm", "as_of")
 SWARM_THROUGHPUT_SIGNATURE = ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale")
 
+SURF_ORACLES_WIDGET_SIGNATURES = {"SurfOraclesHero": ("surf_oracles",), "SurfOraclesBody": ("surf_oracles",)}
+SURF_ORACLES_FIELDS = ("state", "partial", "read_ts", "now_ts", "rows", "selected_id", "detail", "detail_state", "detail_read_ts")
+SURF_ORACLES_ROW_FIELDS = ("id", "job_id", "status", "chain_id", "question", "created_ts", "updated_ts")
+SURF_ORACLES_DETAIL_FIELDS = ("id", "job_id", "status", "chain_id", "question", "panel_answer_type",
+                              "panel_answer_bool", "panel_figure", "agreed", "quorum", "panel_size",
+                              "member_count", "members", "truncated")
+
 SURF_WORK_WIDGET_SIGNATURES = {"SurfWorkHero": ("surf_work",), "SurfWorkBody": ("surf_work",)}
 SURF_WORK_FIELDS = ("state", "read_ts", "now_ts", "partial", "jobs_loaded", "workflows_loaded",
                     "details_loaded", "details_expected", "summary", "jobs", "workflows")
@@ -1673,6 +1680,7 @@ SURF_WORK_WORKFLOW_FIELDS = ("id", "status", "objective", "failure", "contracts_
 
 SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     **SURF_WORK_WIDGET_SIGNATURES,
+    **SURF_ORACLES_WIDGET_SIGNATURES,
     "SurfSwarmRackHero": ("surf_swarm_hero",),
     "SurfSwarmLatestLaunches": SWARM_LATEST_LAUNCHES_SIGNATURE,
     # WORKFLOWS took CAPABILITY's place on SWARM (2026-10-03, docs/surf_swarm_workflows_spec.md
@@ -1899,6 +1907,7 @@ SURF_KEYS: tuple[str, ...] = (
     "surf_protocol_hero",     # dict — six source-backed native PROTOCOL cards
     "surf_leaderboard_hero",  # six rack cards; independent records/worker/receipt clocks
     "surf_agent_hero",  # twelve rack cards; selected identity and independently dated facts
+    "surf_oracles",           # bounded recent requests and selected exact-hash panel facts
     "surf_work",              # coherent bounded jobs, workflows, details and loaded-work counts
     "surf_launchpad_hero",    # six rack cards; launchpad observation and current ETH/USD
     # ---- feed ---------------------------------------------------------------

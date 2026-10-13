@@ -14,6 +14,7 @@ payloads fetched 2026-08-08 -- not invented.
 from __future__ import annotations
 
 from maxpane_dashboard.widgets.surf.work import SurfWorkBody, SurfWorkHero
+from maxpane_dashboard.widgets.surf.oracles import SurfOraclesBody, SurfOraclesHero
 
 from tests.surf_swarm_fixtures import swarm_board_payload, swarm_agent_sources
 
@@ -173,6 +174,8 @@ _POOL4_USER_WIDGET_CLASSES = {
 _SWARM_WIDGET_CLASSES = {
     "SurfWorkBody": SurfWorkBody,
     "SurfWorkHero": SurfWorkHero,
+    "SurfOraclesBody": SurfOraclesBody,
+    "SurfOraclesHero": SurfOraclesHero,
     "SurfSwarmBoardHero": SurfSwarmBoardHero,
     "SurfSwarmLeaderboard": SurfSwarmLeaderboard,
     "SurfSwarmFleet": SurfSwarmFleet,
@@ -5817,7 +5820,7 @@ def test_every_mode_names_its_scrolling_columns() -> None:
     }
     assert modes == {
         MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER, MODE_SWARM,
-        MODE_AGENT, MODE_BOARD, surf.MODE_WORK,
+        MODE_AGENT, MODE_BOARD, surf.MODE_WORK, surf.MODE_ORACLES,
     }, (
         f"a mode was added or removed: {modes}"
     )

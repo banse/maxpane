@@ -236,6 +236,12 @@ class SwarmClient(OwnedHttpClient):
         rows = body.get("requests") if isinstance(body, dict) else None
         return rows if isinstance(rows, list) else None
 
+    async def fetch_oracle_detail(self, request_id: str) -> dict | None:
+        """Full members for the selected ORACLES request, through the shared pool."""
+        if parse_job_id(request_id) is None:
+            return None
+        return await self._dict("/oracle/requests/" + request_id)
+
     async def fetch_oracle_request(self, request_id: str, submission_hash: str) -> dict | None:
         """A removed route or unknown request is an unavailable read, never absence."""
         if (parse_job_id(request_id) is None or not isinstance(submission_hash, str)
