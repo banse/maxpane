@@ -245,7 +245,7 @@ async def test_retained_never_paired_result_keeps_its_stale_clock(agent, reason,
         assert hero['seat']['read_ts'] == NOW
         async with Harness(hero).run_test(size=(width, 45)) as pilot:
             await pilot.pause()
-            for key in ('seat', 'owner', 'runtime', 'models', 'feedback', 'collab', 'nodes', 'rewards'):
+            for key in ('seat', 'owner', 'runtime', 'models', 'earnings', 'collab', 'nodes', 'rewards'):
                 content = painted(pilot.app, key)
                 assert 'never paired' in content, (key, content)
                 assert 'stale' not in content, (key, content)

@@ -1205,6 +1205,7 @@ def normalize_workers(payload: object) -> dict[str, Any] | None:
             "working": working, "max_concurrency": capacity,
             "paused_until_ts": until, "failures": failures, "pause_known": pause_known,
             "heartbeat_ts": _ts(source.get("lastHeartbeatAt")),
+            "connected_ts": _ts(source.get("connectedAt")),
             "runtimes": runtimes, "daemon": _str(source.get("daemonVersion")),
             "advertised_models": _advertised_models(runtime_source),
             "profiles": _string_list(source.get("profiles")),
@@ -1276,6 +1277,10 @@ def coerce_contributors_slot(payload: object) -> dict[str, Any] | None:
 
 def coerce_workers_slot(payload: object) -> dict[str, Any] | None:
     """Validate every normalized worker field and the paired pause timestamp/count."""
+    # Older persisted workers predate the connection-time field.
+    if isinstance(payload, Mapping) and isinstance(payload.get("workers"), list):
+        payload = dict(payload, workers=[dict(connected_ts=None, **row) if isinstance(row, Mapping)
+                                       and "connected_ts" not in row else row for row in payload["workers"]])
     result = _coerce_board_slot(payload, "workers", {
         "count": _optional_count, "malformed_tokens": _valid_malformed_tokens,
     }, {
@@ -1283,7 +1288,7 @@ def coerce_workers_slot(payload: object) -> dict[str, Any] | None:
         "agent_id": _optional_string, "working": _optional_count, "max_concurrency": _optional_count,
         "pause_known": lambda value: isinstance(value, bool),
         "paused_until_ts": _optional_stamp, "failures": _optional_count,
-        "heartbeat_ts": _optional_stamp, "runtimes": _optional_strings,
+        "heartbeat_ts": _optional_stamp, "connected_ts": _optional_stamp, "runtimes": _optional_strings,
         "daemon": _optional_string, "profiles": _optional_strings, "skills": _optional_strings,
         "os": _optional_string, "platform": _optional_string,
         "advertised_models": _valid_advertised_models,

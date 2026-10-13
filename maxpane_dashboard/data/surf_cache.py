@@ -198,12 +198,15 @@ SLOT_SWARM_CONTRIBUTORS = "swarm_contributors"  # normalized /contributors envel
 SLOT_SWARM_ORACLE_INDEX = "swarm_oracle_index"  # complete request history, never age-pruned
 SLOT_SWARM_ORACLE = "swarm_oracle"  # job UUID -> hash -> extracted panel facts
 SLOT_SWARM_JOB_DETAIL = "swarm_job_detail"  # job UUID -> bounded popup job facts
+SLOT_AGENT_EARNINGS = "agent_earnings"  # owner -> explorer token assets and read clock
+SLOT_AGENT_WORK = "agent_work"  # job UUID -> independently refreshed launch membership
 SLOT_SWARM_ANSWERS = "swarm_answers"  # job UUID -> submission hash -> extracted answer entry
 SLOT_SURFBOARD_ACTIVITY = "surfboard_activity"  # observed worker transitions and independent read clocks
 SLOT_SURF_ORACLES = "surf_oracles"  # bounded request list and extracted selected details
 SLOT_SURF_WORK = "surf_work"  # coherent current pages and bounded job details
 
 SLOTS: tuple[str, ...] = (
+    SLOT_AGENT_EARNINGS, SLOT_AGENT_WORK,
     SLOT_SURF_WORK, SLOT_SURF_ORACLES,
     "surfboard_overview", "surfboard_records", "surfboard_hourly", "surfboard_supply",
     SLOT_SURFBOARD_ACTIVITY,
@@ -1269,7 +1272,7 @@ class SurfCache:
                             "read_ts": entry.ts,
                         }}}, ts=entry.ts)
                         self._dirty = True
-                    if slot in (SLOT_SURF_WORK, SLOT_SURF_ORACLES, "surfboard_overview", "surfboard_records", "surfboard_hourly", "surfboard_supply", SLOT_SURFBOARD_ACTIVITY, SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS, SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS):
+                    if slot in (SLOT_AGENT_EARNINGS, SLOT_AGENT_WORK, SLOT_SURF_WORK, SLOT_SURF_ORACLES, "surfboard_overview", "surfboard_records", "surfboard_hourly", "surfboard_supply", SLOT_SURFBOARD_ACTIVITY, SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS, SLOT_SWARM_SEAT, SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS, SLOT_SWARM_ANSWERS, SLOT_SWARM_ORACLE, SLOT_SWARM_ORACLE_INDEX, SLOT_SWARM_JOB_DETAIL, SLOT_SWARM_RUNTIME_LATEST, SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS):
                         coerce = (slot_coercers or {}).get(slot)
                         clean = coerce(entry.payload) if coerce is not None else None
                         if clean is None:
@@ -1468,6 +1471,7 @@ __all__ = [
     "SLOT_SWARM_CONTRIBUTORS",
     "SLOT_SWARM_ANSWERS",
     "SLOT_SWARM_JOB_DETAIL",
+    "SLOT_AGENT_EARNINGS", "SLOT_AGENT_WORK",
     "SLOT_SWARM_ORACLE",
     "SLOT_SWARM_ORACLE_INDEX",
     "SurfCache",

@@ -242,11 +242,11 @@ async def test_the_agent_card_row_keeps_seat_values_and_has_no_third_row():
         screen = await _open(pilot, "a")
         hero = screen.query_one(SurfSwarmAgentRackHero)
         cards = list(hero.children)[6:]
-        assert [card.data.title for card in cards] == ["OWNER", "RUNTIME", "MODELS", "FEEDBACK", "COLLAB", "NODES"]
+        assert [card.data.title for card in cards] == ["OWNER", "RUNTIME", "MODELS", "EARNINGS", "COLLAB", "NODES"]
         assert not screen.query("SurfSwarmNodeCards")
         assert len({card.region.y for card in hero.children}) == 2
         text = _region_text(pilot.app, hero)
-        for needle in ("⧉", "paired 09-20", "daemon", "devices", "sent", "submitted", "queued", "not advertised", "oracle", "188", "TOP #0 x139"):
+        for needle in ("⧉", "paired 09-20", "daemon", "devices", "TOKENS", "not advertised", "oracle", "launches", "other", "TOP #0 x139"):
             assert needle in text, needle
 
 
@@ -259,7 +259,7 @@ async def test_the_key_hint_names_the_swarm_and_the_agent():
 
 
 async def test_the_bindings_include_board_agent_and_seat_selection():
-    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "f", "x", "w", "slash", "escape"}
+    assert {b.key for b in SurfScreen.BINDINGS} == {"r", "l", "e", "4", "s", "a", "b", "i", "o", "O", "f", "x", "w", "c", "ctrl+o", "slash", "escape"}
     assert hasattr(SurfScreen, "action_toggle_swarm")
     assert hasattr(SurfScreen, "action_toggle_agent")
 
@@ -350,16 +350,15 @@ async def test_retired_roster_selection_is_gone():
         assert all(table.cursor_type == "none" for table in screen.query_one(f"#{AGENT_BODY_ID}").query(DataTable))
         text = _region_text(pilot.app,screen.query_one(SurfSwarmAgentRackHero))
         assert "NODES" in text and "ROSTER" not in text
-        # The retired FEEDBACK *panel* is gone; the FEEDBACK card (2026-09-22)
-        # shows the seat's sent/submitted/queued counts, never a feedback list.
-        assert "FEEDBACK" in text and "BY NODE" not in text
+        # EARNINGS replaces the retired FEEDBACK card; no feedback list remains.
+        assert "EARNINGS" in text and "FEEDBACK" not in text and "BY NODE" not in text
 
 
 def _record_needles(seat: dict, outcome: dict) -> list[str]:
     """Distinct canonical outcome and detail strings belonging to one seat."""
     summary = sw.seat_summary_from_seat(seat)
     work = sw.seat_work_rows(seat)
-    needles = [f"{outcome['attempts']:,} attempts", summary["owner"][:6]]
+    needles = [f"of {outcome['attempts']:,}", summary["owner"][:6]]
     needles += [row["job_id"][:8] for row in work[:3]]
     return needles
 
@@ -388,8 +387,8 @@ async def test_a_switch_pending_composite_shows_no_number_of_the_old_seat(tmp_pa
                 assert shown == needles, sorted(set(needles) - set(shown))
             else:
                 assert shown == [], shown
-                assert "AGENT #1836" in _screen_text(pilot.app) and "pending" in hero
-                assert "1 attempts" in hero and "of 2" in hero
+                assert "AGENT #1836" in _screen_text(pilot.app) and "loading" in hero
+                assert "of 1" in hero and "of 2" in hero
                 assert "AGENT #420" not in _screen_text(pilot.app)
 
 
@@ -637,11 +636,11 @@ async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_u
         status = _region_text(pilot.app, hero.query_one("#hero-status"))
         owner = _region_text(pilot.app, hero.query_one("#hero-owner"))
         assert "AGENT #420" in _screen_text(pilot.app)
-        assert "3,392 attempts" in accepted and "of 2" in rank
-        assert "╶─╮╶─╮╭─╴╶─╮" in accepted
-        assert "working" in status and "capacity" in status and "IDLE" in status
+        assert "of 3,392" in accepted and "of 2" in rank
+        assert "╶─╮ ╶─╮╭─╴╶─╮" in accepted
+        assert "WORKER" in status and "IDLE" in status and "unavailable" not in status
         assert "⧉" not in owner
-        assert ("pending" if state else "unavailable") in owner
+        assert ("loading" if state else "unavailable") in owner
 
 @pytest.mark.parametrize("row_index", [0,1])
 async def test_board_first_click_saves_clicked_seat_once_and_opens_agent(monkeypatch,row_index):
@@ -736,17 +735,18 @@ async def test_polish_agent_worker_states_keep_five_digit_counts_whole(live_stat
     from tests.screens.test_surf_swarm_layout import _worst_agent_payload
     payload = _worst_agent_payload()
     payload['swarm_seat_live'].update(live_state=live_state, working=99999 if live_state == 'working' else 0,
-        paused_until_ts=1758456000 if live_state in ('working', 'paused') else None)
+        paused_until_ts=1800000000 if live_state in ('working', 'paused') else None)
     payload = project_agent_payload(payload)
     async with _surf_app(payload).run_test(size=(170, 45)) as pilot:
         screen = await _open(pilot, 'a')
         hero = screen.query_one(SurfSwarmAgentRackHero)
         text = _region_text(pilot.app, hero.query_one('#hero-status'))
-        word = {'working': 'BUSY', 'idle': 'IDLE', 'paused': 'PAUSED'}.get(live_state, 'partial')
+        word = {'working': 'BUSY', 'idle': 'IDLE', 'paused': 'IDLE'}.get(live_state, '— —')
         assert word in text
-        assert 'capacity' in text and '99,999' in text
-        assert 'working' in text and 'devices' in text
+        assert '0F' in text and '99,999' in text
+        assert ('99,999 0F 99,999' if live_state == 'working' else '0 0F 99,999') in text
         if live_state == 'paused':
+            assert 'until ' in text
             assert 'failures' in str(hero.query_one('#hero-status').tooltip)
 
 

@@ -317,6 +317,9 @@ def test_normalized_slots_refuse_every_field_with_a_wrong_type(name):
         assert coerce(corrupt) is None, key
     for key in slot[name][0]:
         corrupt = copy.deepcopy(slot); del corrupt[name][0][key]
+        if name == 'workers' and key == 'connected_ts':
+            assert coerce(corrupt)['workers'][0]['connected_ts'] is None
+            continue
         assert coerce(corrupt) is None, key
 
 

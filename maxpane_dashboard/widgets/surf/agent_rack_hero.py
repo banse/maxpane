@@ -19,7 +19,6 @@ from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
 from maxpane_dashboard.widgets.surfboard.rack import meter_text
 from ._fmt import EXPLORER, mmdd_hhmm, short_model
-from ._swarm_seat import NODE_TITLES
 from .news_hero import HeroRecord, _count, _number
 from .pool4_hero import Pool4HeroCard, _amount, _face
 
@@ -58,9 +57,9 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         ("rank", "RANK", "POSITION", ""),
         ("status", "STATUS", "WORKER", "UNKNOWN"),
         ("owner", "OWNER", "WALLET", "OPEN / COPY"),
-        ("runtime", "RUNTIME", "SOFTWARE", "VERSION"),
+        ("runtime", "RUNTIME", "SOFTWARE", "since --"),
         ("models", "MODELS", "ADVERTISED", "CONFIGURATION"),
-        ("feedback", "FEEDBACK", "DELIVERY", "-- QUEUED"),
+        ("earnings", "EARNINGS", "TOKENS", "-- CLAIMED"),
         ("collab", "COLLAB", "SEATS", "TOP --"),
         ("nodes", "NODES", "ACCEPTED", "HISTORY"),
     ):
@@ -127,7 +126,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         elif key == "owner":
             fields["digits"] = "--"  # Width-fitted address with rich actions in AgentRackCard.
             fields["subtitle"] = "paired " + mmdd(number(section.get("paired_ts")), unknown="--")
-            fields["accent"] &= is_address(section.get("address"))
+            fields["accent"] = False
         elif key == "runtime":
             runtime = flatten(section.get("runtime"))
             runtime_id, _, version = runtime.partition(" ")
@@ -138,15 +137,17 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                                ("devices", _count(count(section.get("devices")))))
             update = section.get("update_state")
             current = state == "ok" and update == "current" and hhmm(number(section.get("checked_ts")), unknown="--") != "--"
-            fields["subtitle"] = "up to date" if current else "update available" if update == "outdated" else "check pending" if update == "pending" else "not checked" if update == "not_checked" else "check unknown"
-            if section.get("daemon_differs") is True:
+            fields["subtitle"] = "up to date" if current else "update available" if update == "outdated" else "check pending" if update == "pending" else "not checked" if update == "not_checked" else ""
+            if section.get("daemon_differs") is True and update in ("current", "outdated"):
                 fields["subtitle"] = "runtime + daemon ↑" if update == "outdated" else "daemon differs"
-            fields["accent"] &= all(value != "--" for _, value in fields["stats"])
-        elif key == "feedback":
-            fields["stats"] = tuple((name, _count(count(section.get(name)))) for name in ("sent", "submitted", "queued"))
-            fields["subtitle"] = "review msgs"
-            fields["footer"] = _count(count(section.get("queued"))) + " QUEUED"
-            fields["accent"] &= all(value != "--" for _, value in fields["stats"])
+            connected = number(section.get("connected_ts"))
+            fields["footer"] = "since " + (mmdd_hhmm(connected) if connected is not None else "--")
+            fields["accent"] = False
+        elif key == "earnings":
+            fields["digits"] = _count(count(section.get("earned")))
+            fields["subtitle"] = _count(count(section.get("worked_on"))) + " worked on"
+            fields["footer"] = _count(count(section.get("claimed"))) + " CLAIMED"
+            fields["accent"] = section.get("worked_recent") is True
         elif key == "collab":
             fields["digits"] = _digits(section.get("count"))
             fields["subtitle"] = "collaborators"
@@ -156,25 +157,25 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                 fields["footer"] = f"TOP #{_count(count(top.get('token_id')))} x{_amount(count(top.get('shared_jobs')))}"
             elif rows == []:
                 fields["footer"] = "NONE YET"
-            fields["accent"] &= fields["digits"] != "--" and rows is not None
+            fields["accent"] = False
+        elif key == "nodes":
+            fields["stats"] = tuple((name, _count(count(section.get(name)))) for name in ("oracle", "launches", "other"))
+            fields["subtitle"] = "work by type"
+            fields["accent"] = False
         else:
             rows = _rows(section)
-            fields["subtitle"] = (f"{len(rows)} model{'s' if len(rows) != 1 else ''}" if rows is not None else "models --") if key == "models" else "work by node"
+            fields["subtitle"] = f"{len(rows)} model{'s' if len(rows) != 1 else ''}" if rows is not None else "models --"
             if rows == []:
-                fields.update(preview="not advertised" if key == "models" else "no nodes yet", accent=False)
+                fields.update(preview="not advertised", accent=False)
             elif rows is None:
                 fields.update(digits="--", accent=False)
             else:
                 shown = rows if len(rows) <= 3 else rows[:2]
-                if key == "models":
-                    stats = [(short_model(row.get("model")) or "--", flatten(row.get("effort")) or "--") for row in shown]
-                else:
-                    stats = [(NODE_TITLES.get(flatten(row.get("node_key")), flatten(row.get("node_key"))).lower() or "--",
-                              _count(count(row.get("accepted")))) for row in shown]
+                stats = [(short_model(row.get("model")) or "--", flatten(row.get("effort")) or "--") for row in shown]
                 if len(rows) > 3:
                     stats.append((f"+{len(rows) - 2} more", ""))
                 fields["stats"] = tuple(stats)
-                fields["accent"] &= all(label != "--" and value != "--" for label, value in stats)
+                fields["accent"] = False
         if state in ("unknown_seat", "stale_unknown_seat"):
             fields["subtitle"] = "never paired"
         records.append(HeroRecord(**fields))
@@ -187,7 +188,6 @@ class AgentRackCard(Pool4HeroCard):
     def __init__(self, record):
         self.source = {}
         self.raw_record = record
-        self.runtime_clipped = False
         self.owner_text = Text()
         super().__init__(record)
 
@@ -202,7 +202,6 @@ class AgentRackCard(Pool4HeroCard):
             label, daemon = record.stats[1]
             suffix = "↑" if self.source.get("daemon_differs") is True and record.state in _AVAILABLE else ""
             room = max(1, self.content_size.width - 3 - len(label) - len(suffix))
-            self.runtime_clipped = cell_len(daemon) > room
             fitted = clip(daemon, room) + suffix
             record = replace(record, stats=(record.stats[0], (label, fitted), record.stats[2]))
         return record
@@ -219,8 +218,8 @@ class AgentRackCard(Pool4HeroCard):
 
     def _update_title(self):
         super()._update_title()
-        if self.data.key == "runtime" and self.runtime_clipped:
-            self.border_title = Text(title_with_hint("⊙ RUNTIME", True, max(0, self.region.width - 6)))
+        if self.data.key == "runtime":
+            self.border_title = Text("⊙ RUNTIME")
         if (self.data.key == "owner" and self.data.state in _AVAILABLE
                 and cell_len(flatten(self.source.get("name"))) > max(1, self.content_size.width - 4)):
             self.border_title = Text(title_with_hint("⊙ OWNER", True, max(0, self.region.width - 6)))
@@ -244,6 +243,11 @@ class AgentRackCard(Pool4HeroCard):
             if cell_len(footer) > max(0, self.region.width - 6):
                 footer = footer.removeprefix("paid ")
             self.border_subtitle = Text().append(footer, style="dim")
+        elif data.key == "runtime":
+            footer = data.footer
+            if cell_len(footer) > max(0, self.region.width - 6):
+                footer = "since " + hhmm(number(self.source.get("connected_ts")), unknown="--")
+            self.border_subtitle = Text().append(footer, style="dim")
         elif data.key == "accepted" and data.footer not in ("NO ATTEMPTS", "--%"):
             label = data.footer + " "
             track = meter_text(dict(key="accepted", numerator=number(self.source.get("accepted")), denominator=number(self.source.get("attempts"))),
@@ -260,6 +264,8 @@ class AgentRackCard(Pool4HeroCard):
         offline = (self.data.key == "seat" and self.data.subtitle == "offline"
                    or self.data.key == "status" and self.source.get("meter_state") == "offline")
         delta = _number(self.source.get("delta"), signed=True) if self.data.key == "rank" else None
+        if self.data.key == "runtime" and self.data.state in _AVAILABLE and self.source.get("update_state") == "outdated":
+            return Style(color=Color.from_triplet(self.app.ansi_theme.ansi_colors[3]), bgcolor=palette["background"], dim=False)
         if offline or delta is not None and delta < 0:
             color = Color.from_triplet(self.app.ansi_theme.ansi_colors[1])
             return Style(color=color, bgcolor=palette["background"], dim=False)
@@ -295,9 +301,35 @@ class AgentRackCard(Pool4HeroCard):
         subtitle = " " + clip(data.subtitle, inside - 2) + " " if data.subtitle else ""
         return content.append("└" + subtitle.center(inside, "─") + "┘", style=frame)
 
+    def _models_content(self):
+        """Center the advertised model and its independently styled effort."""
+        data = self.data
+        inside = max(4, self.content_size.width) - 2
+        frame = self._frame_style()
+        ink = Style(color=self.rich_style.color, bgcolor=self.app.get_css_variables()["background"], dim=False)
+        rows = []
+        for model, effort in data.stats:
+            fitted = clip(model, max(1, inside - cell_len(effort) - bool(effort)))
+            row = Text(fitted, style=ink + Style(bold=bool(effort)))
+            if effort:
+                row.append(" " + effort, style=ink + Style(bold=False))
+            row.truncate(inside, overflow="ellipsis")
+            rows.append(row)
+        if len(rows) == 1:
+            rows.insert(0, Text("", style=ink))
+        rows += [Text("", style=ink)] * (3 - len(rows))
+        heading = " " + clip(data.heading, inside - 2) + " "
+        result = Text("┌" + heading.center(inside, "─") + "┐\n", style=frame)
+        for row in rows[:3]:
+            row.align("center", inside)
+            result.append("│", style=frame).append_text(row).append("│\n", style=frame)
+        subtitle = " " + clip(data.subtitle, inside - 2) + " " if data.subtitle else ""
+        return result.append("└" + subtitle.center(inside, "─") + "┘", style=frame)
+
     def render(self):
-        content = self._status_content() if self.data.key == "status" else super().render()
-        if self.data.key in ("seat", "rank"):
+        content = (self._status_content() if self.data.key == "status" else
+                   self._models_content() if self.data.key == "models" and self.data.stats else super().render())
+        if self.data.key in ("seat", "rank", "runtime"):
             # Recolor only the inset frame and its captions, never the digits.
             frame = self._frame_style()
             offset = 0
@@ -321,6 +353,9 @@ class AgentRackCard(Pool4HeroCard):
         state = "never paired" if record.state == "stale_unknown_seat" else "retained" if record.state == "stale" else record.state
         tip = Text(f"{record.title} · {state} · as of {hhmm(record.read_ts, unknown='--:--')} local")
         rows = _rows(source)
+        if record.key == "nodes":
+            tip.append(f"\nlaunch membership known for {_count(count(source.get('known_jobs')))} of {_count(count(source.get('total_jobs')))} accepted non-oracle jobs")
+            tip.append(f"\nlaunch reads {flatten(source.get('launch_state')) or 'unavailable'} · as of {hhmm(number(source.get('launch_read_ts')), unknown='--:--')} local")
         if record.key == "owner" and record.state in _AVAILABLE and is_address(source.get("address")):
             tip.append("\n").append_text(address_text(source["address"], explorer=EXPLORER))
             tip.append("\npaired " + mmdd_hhmm(number(source.get("paired_ts"))))
@@ -329,6 +364,8 @@ class AgentRackCard(Pool4HeroCard):
             tip.append(f"\nPremium models: {premium}/{known} known-model work attempts; model coverage {known}/{total} recorded attempts. Astra, Opus, Fable.")
         elif record.key == "runtime":
             tip.append(f"\n{flatten(source.get('runtime'))} · daemon {flatten(source.get('daemon'))}"
+                       f"\nlast connected {mmdd_hhmm(number(source.get('connected_ts')))} local; connection time, not a verified restart"
+                       f"\nconnection read {flatten(source.get('connected_state')) or 'unavailable'} · as of {hhmm(number(source.get('connected_read_ts')), unknown='--:--')} local"
                        f"\nlatest {flatten(source.get('latest_version')) or '--'} · checked {hhmm(number(source.get('checked_ts')), unknown='--:--')} local"
                        f"\nfleet daemon {flatten(source.get('fleet_daemon')) or '--'} · {_count(count(source.get('fleet_count')))}/{_count(count(source.get('fleet_total')))} workers")
             if source.get("daemon_differs") is True:
@@ -351,6 +388,11 @@ class AgentRackCard(Pool4HeroCard):
             tip.append("\nrank change " + (f"{delta:+g}" if delta is not None else "--"))
         elif record.key == "accepted":
             tip.append(f"\n{_count(count(source.get('accepted')))} / {_count(count(source.get('attempts')))} · {_face(source.get('percent'), 1)}%")
+        elif record.key == "earnings":
+            tip.append("\nDistinct token assets earned by the owner's wallet; claimed counts assets with a claim."
+                       "\nWorked on counts launches with this agent's work; green means one launched in the last 24h.")
+            if is_address(source.get("owner")):
+                tip.append("\n").append_text(address_text(source["owner"], explorer=EXPLORER))
         elif record.key in ("models", "collab", "nodes") and rows is not None:
             for row in rows:
                 if record.key == "models":

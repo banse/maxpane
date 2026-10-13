@@ -1314,7 +1314,7 @@ async def test_agent_rack_rows_boundary(kind, height):
     assert not result['overflow']
     cards = result['hero_cards']
     assert [name for name, _ in cards] == ['seat', 'accepted', 'effort', 'rewards', 'rank', 'status',
-                                         'owner', 'runtime', 'models', 'feedback', 'collab', 'nodes']
+                                         'owner', 'runtime', 'models', 'earnings', 'collab', 'nodes']
     regions = [region for _, region in cards]
     assert {region[3] for region in regions} == {9}
     assert max(region[2] for region in regions) - min(region[2] for region in regions) <= 1
@@ -1360,7 +1360,7 @@ async def test_busy_agent_cards_keep_independent_records_at_the_pin():
         assert accepted.data.digits == '3,253'
         assert 'of 3,392' in painted and '95.9' in painted
         assert 'busy' not in painted
-        for key in ('rewards', 'owner', 'runtime', 'models', 'feedback', 'collab', 'nodes'):
+        for key in ('rewards', 'owner', 'runtime', 'models', 'earnings', 'collab', 'nodes'):
             card = hero.query_one('#hero-' + key)
             assert 'busy' in _region_text(pilot.app, card), key
             strips = screen._compositor.render_strips()

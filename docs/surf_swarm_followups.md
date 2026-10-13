@@ -1538,3 +1538,34 @@ preserved the existing 132-column boundary. The scoped composing run passed
 defect; the fix passed all 48 widget/native-integration cases. Three data
 mutations and reviewer footer mutations were killed and restored byte-for-byte.
 Scoped re-review: Approved. No residual findings; no full suite run.
+
+## AGENT second-row cards — 2026-10-13
+
+OWNER, MODELS, COLLAB and NODES use neutral frames. RUNTIME omits its widen hint,
+uses orange only for a confirmed software update, hides unknown check captions,
+and shows the owner-approved latest worker connection time with its independent
+clock and restart distinction on hover. MODELS centers the model/effort pair on
+the middle line, retaining the effort when a long model name is ellipsized.
+
+EARNINGS replaces FEEDBACK: distinct wallet token assets, selected-seat accepted
+builder assets, and explicitly claimed assets. Only a builder launch less than
+24 hours old activates green. A bounded GET-only explorer decoder validates the
+served owner and preserves real empty versus failed reads. NODES partitions
+accepted work into oracle, confirmed live launch and other work, with coverage
+and independent clocks on hover. Unread memberships do not become other work.
+Two bounded persisted sources share the cancellable selected-seat read lifecycle;
+their failures retain previous values and timestamps independently.
+
+The native live 149×45 render showed seat 3 with 226 earned, five worked-on and
+11 claimed assets; NODES showed 1,277 oracle, nine launch and 12 other accepted
+work entries. Source dates are observations, not constants. Capture and stress
+checks preserve 132×29. The first touched/composing run passed 1,234 cases;
+21 failures exposed obsolete assertions and the long-model effort clipping.
+After correction, all affected checks passed: 57 widget/native/cache cases,
+43 stress-layout cases and ten screen cases. Guards 124 and docpins 12 passed.
+Eleven implementation mutants were killed, including connection versus heartbeat
+and frozen pending-owner state. No full suite was run.
+
+Final review: Approved, no findings. Sixteen targeted checks passed; two additional
+mutations killed missing wallet validation and missing selected-seat attribution.
+All source bytes were restored. No residual follow-ups from this change.

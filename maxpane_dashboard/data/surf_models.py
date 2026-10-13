@@ -1538,11 +1538,13 @@ SURF_AGENT_HERO_FIELDS = {
                "last_work_ts", "last_work_kind", "work_state", "work_read_ts", "meter_kind", "meter_state", "numerator", "denominator"),
     "owner": ("state", "read_ts", "address", "name", "paired_ts"),
     "runtime": ("state", "read_ts", "runtime", "daemon", "devices", "update_state", "latest_version", "checked_ts",
-                "fleet_daemon", "fleet_count", "fleet_total", "daemon_differs"),
+                "fleet_daemon", "fleet_count", "fleet_total", "daemon_differs",
+                "connected_ts", "connected_state", "connected_read_ts"),
     "models": ("state", "read_ts", "rows"),
-    "feedback": ("state", "read_ts", "sent", "submitted", "queued"),
+    "earnings": ("state", "read_ts", "earned", "worked_on", "claimed", "worked_recent", "owner"),
     "collab": ("state", "read_ts", "count", "rows"),
-    "nodes": ("state", "read_ts", "rows"),
+    "nodes": ("state", "read_ts", "rows", "oracle", "launches", "other", "known_jobs", "total_jobs",
+              "launch_state", "launch_read_ts"),
 }
 SURF_AGENT_HERO_MODEL_FIELDS = ("model", "effort")
 SURF_AGENT_HERO_COLLAB_FIELDS = ("token_id", "shared_jobs")

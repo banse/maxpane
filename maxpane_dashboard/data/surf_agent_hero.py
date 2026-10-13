@@ -84,7 +84,8 @@ def _runtime(data, summary, detail, sources, now):
     result = _detail_facts(detail, runtime=_text(summary.get('runtime')),
                           daemon=_text(summary.get('daemon')), devices=count(summary.get('devices')))
     result.update(update_state=None, latest_version=None, checked_ts=None, fleet_daemon=None,
-                  fleet_count=None, fleet_total=None, daemon_differs=None)
+                  fleet_count=None, fleet_total=None, daemon_differs=None,
+                  connected_ts=None, connected_state=None, connected_read_ts=None)
     if detail['state'] not in ('ok', 'partial', 'stale'):
         return result
     runtime_id, _, version = (result['runtime'] or '').partition(' ')
@@ -105,6 +106,14 @@ def _runtime(data, summary, detail, sources, now):
     result.update(update_state=update, latest_version=newest, checked_ts=check['read_ts'])
     majority = data.get('swarm_fleet_daemon')
     workers = _source(sources, 'workers', now)
+    result.update(connected_state=workers['state'], connected_read_ts=workers['read_ts'])
+    token = _mapping(data.get('swarm_seat_selected')).get('token_id')
+    matching = [row for row in data.get('_agent_workers', []) if row.get('token_id') == token]
+    if (workers['state'] in ('ok', 'stale') and not _mapping(sources.get('workers')).get('partial')
+            and matching and all(isinstance(row.get('runtimes'), list) for row in matching)):
+        stamps = [_stamp(row.get('connected_ts'), now) for row in matching if runtime_id in row['runtimes']]
+        if stamps and all(stamp is not None for stamp in stamps):
+            result['connected_ts'] = max(stamps)
     if (workers['state'] == 'ok' and not _mapping(sources.get('workers')).get('partial')
             and isinstance(majority, (tuple, list)) and len(majority) == 3
             and count(majority[1]) is not None and count(majority[2]) is not None):
@@ -198,12 +207,27 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
     owner = _detail_facts(detail, address=address(summary.get('owner')), paired_ts=_stamp(summary.get('paired_ts'), now))
     owner = dict(state=owner['state'], read_ts=owner['read_ts'], address=owner['address'],
                  name=_text(data.get('swarm_seat_owner_ens')) if owner['address'] is not None else None, paired_ts=owner['paired_ts'])
-    reviews = _mapping(summary.get('review_status'))
+    earnings_source = _source(sources, 'earnings', now)
+    if detail['state'] not in ('ok', 'partial', 'stale'):
+        earnings_source = detail
+    elif detail['state'] == 'stale' and earnings_source['state'] == 'ok':
+        earnings_source = dict(earnings_source, state='stale')
+    earned = _mapping(data.get('_agent_earnings'))
+    earnings = _detail_facts(earnings_source, earned=count(earned.get('earned')),
+        worked_on=count(earned.get('worked_on')), claimed=count(earned.get('claimed')),
+        worked_recent=earned.get('worked_recent') if type(earned.get('worked_recent')) is bool else None,
+        owner=owner['address'])
+    work = _mapping(data.get('_agent_nodes'))
+    nodes = _detail_facts(detail,
+        rows=_rows(data.get('swarm_seat_node_rows'), dict(node_key=_text, accepted=count, attempts=count)),
+        **{key: count(work.get(key)) for key in ('oracle', 'launches', 'other', 'known_jobs', 'total_jobs')})
+    launch_source = _source(sources, 'agent_work', now)
+    nodes.update(launch_state=launch_source['state'], launch_read_ts=launch_source['read_ts'])
     return dict(seat=seat, accepted=acceptance, effort=effort, rewards=rewards, rank=rank,
         status=_status(data, summary, detail, workers, sources, token, now, activity), owner=owner,
         runtime=_runtime(data, summary, detail, sources, now),
         models=_detail_facts(detail, rows=_rows(summary.get('models'), dict(model=_text, effort=_text))),
-        feedback=_detail_facts(detail, **{key: count(reviews.get(key)) for key in ('sent', 'submitted', 'queued')}),
+        earnings=earnings,
         collab=_detail_facts(detail, count=count(summary.get('collaborators')),
             rows=_rows(data.get('swarm_seat_teammates'), dict(token_id=seat_token, shared_jobs=count))),
-        nodes=_detail_facts(detail, rows=_rows(data.get('swarm_seat_node_rows'), dict(node_key=_text, accepted=count, attempts=count))))
+        nodes=nodes)

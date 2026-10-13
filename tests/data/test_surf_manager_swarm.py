@@ -276,6 +276,7 @@ def _manager(tmp_path, swarm, **kw) -> SurfManager:
     """
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
+    kw.setdefault('earnings_client', AsyncMock(fetch=AsyncMock(return_value=None)))
     kw.setdefault("npm_client", SimpleNamespace(fetch_latest=AsyncMock(return_value=None), close=AsyncMock()))
     kw.setdefault("client", FakeSurfClient())
     kw.setdefault("pool4_client", FakePool4Client())

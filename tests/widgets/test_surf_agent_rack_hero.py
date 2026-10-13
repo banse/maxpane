@@ -28,11 +28,14 @@ def payload():
                     work_state="ok", work_read_ts=1791775800., meter_kind="activity", meter_state="busy", numerator=1., denominator=1.),
         owner=dict(source, address="0x0000000000000000000000000000000000000001", name="example.eth", paired_ts=1790812800.),
         runtime=dict(source, runtime="codex v1.2.3", daemon="v1.2", devices=2, update_state="current", latest_version="1.2.3",
-                     checked_ts=1791775800., fleet_daemon="v1.2", fleet_count=900, fleet_total=966, daemon_differs=False),
+                     checked_ts=1791775800., fleet_daemon="v1.2", fleet_count=900, fleet_total=966, daemon_differs=False,
+                     connected_ts=1791774000.),
         models=dict(source, rows=[dict(model="model A", effort="high"), dict(model="model B", effort="medium")]),
-        feedback=dict(source, sent=186, submitted=4, queued=2),
+        earnings=dict(source, earned=12, worked_on=7, claimed=4, worked_recent=True,
+                      owner="0x0000000000000000000000000000000000000001"),
         collab=dict(source, count=12, rows=[dict(token_id=527, shared_jobs=84), dict(token_id=1, shared_jobs=52)]),
-        nodes=dict(source, rows=[dict(node_key="adversarial_review", accepted=500, attempts=510),
+        nodes=dict(source, oracle=120, launches=340, other=500, known_jobs=840, total_jobs=840,
+                   rows=[dict(node_key="adversarial_review", accepted=500, attempts=510),
                                 dict(node_key="build_contract_project", accepted=340, attempts=360),
                                 dict(node_key="oracle_assess", accepted=120, attempts=130)]),
     )
@@ -83,9 +86,9 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             "owner": ("WALLET", "example.eth ⧉", "paired", "OPEN / COPY"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "up to date"),
             "models": ("model A", "high", "model B", "medium", "2 models"),
-            "feedback": ("sent", "186", "submitted", "4", "2 QUEUED"),
+            "earnings": ("EARNINGS", "TOKENS", "7 worked on", "4 CLAIMED"),
             "collab": ("SEATS", "collaborators", "TOP #527 x84"),
-            "nodes": ("review", "500", "build", "340", "oracle", "120"),
+            "nodes": ("other", "500", "launches", "340", "oracle", "120", "work by type"),
         }.items():
             text = painted(app, key)
             assert all(word in text for word in words), (key, text)
@@ -109,7 +112,7 @@ async def test_owner_keeps_copy_and_explorer_links_when_name_is_hostile_or_long(
 @pytest.mark.parametrize("state", ["pending", "busy", "unknown_seat", "empty", "unavailable"])
 async def test_detail_failure_preserves_selected_id_and_independent_records(state):
     data = payload()
-    for key in ("seat", "owner", "runtime", "models", "feedback", "collab", "nodes"):
+    for key in ("seat", "owner", "runtime", "models", "earnings", "collab", "nodes"):
         data[key]["state"] = state
     data["seat"]["token_id"] = 9876543210
     async with Harness(data).run_test(size=(149, 45)) as pilot:
@@ -126,16 +129,16 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
     data = payload()
     data["accepted"].update(accepted=0, attempts=0, percent=None)
     data["models"]["rows"] = []
-    data["nodes"]["rows"] = []
+    data["nodes"].update(rows=[], oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0)
     data["collab"].update(count=0, rows=[])
-    data["feedback"].update(sent=0, submitted=0, queued=0)
+    data["earnings"].update(earned=0, worked_on=0, claimed=0, worked_recent=False)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         assert "no attempts" in painted(app, "accepted") and "0%" not in painted(app, "accepted")
         assert "not advertised" in painted(app, "models")
-        assert "no nodes yet" in painted(app, "nodes") and "NONE YET" in painted(app, "collab")
-        assert "0 QUEUED" in painted(app, "feedback")
+        assert "oracle" in painted(app, "nodes") and "NONE YET" in painted(app, "collab")
+        assert "0 CLAIMED" in painted(app, "earnings")
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=None)
         await pilot.pause()
         assert all("loading" in painted(app, key) for key in data)
@@ -176,7 +179,7 @@ async def test_more_rows_have_visible_count_and_literal_full_tooltips():
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "+3 more" in painted(app, "models") and "+2 more" in painted(app, "nodes")
+        assert "+3 more" in painted(app, "models") and "+2 more" not in painted(app, "nodes")
         assert "model-4[/x]" in str(app.query_one("#hero-models").tooltip)
         assert "unknown[/x]" in str(app.query_one("#hero-nodes").tooltip)
         assert "510 attempts" in str(app.query_one("#hero-nodes").tooltip)
@@ -253,7 +256,7 @@ async def test_malformed_numbers_dates_and_nested_values_clear_old_facts_safely(
     data['status'].update(live_state='[/x]', meter_state='[/x]', last_work_ts=1e300, paused_until_ts=-2)
     data['runtime'].update(runtime='[/x]\x1b suspicious', daemon=None, devices=True, checked_ts=1e300)
     data['models']['rows'] = [None]
-    data['nodes']['rows'] = [False]
+    data['nodes'].update(rows=[False], oracle=True, launches=-1, other=float('nan'))
     async with Harness(payload()).run_test(size=(170, 45)) as pilot:
         await pilot.pause()
         pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
@@ -274,7 +277,9 @@ async def test_unknown_runtime_check_fixed_wording_fits_owner_terminal(state):
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         text = painted(pilot.app, 'runtime')
-        assert ('never paired' if state == 'unknown_seat' else 'check unknown') in text
+        assert 'check unknown' not in text
+        if state == 'unknown_seat':
+            assert 'never paired' in text
         assert '‹' not in text
 
 
@@ -447,3 +452,123 @@ async def test_premium_footer_survives_independent_contributor_failure(state):
         pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
         assert ("loading" if state == "pending" else "unavailable") in strips(pilot.app, "effort")[-1].text
+
+
+async def test_second_row_uses_neutral_frames_except_outdated_runtime():
+    data = payload()
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        neutral = border_color(app, "accepted")
+        for key in ("owner", "runtime", "models", "collab", "nodes"):
+            assert border_color(app, key) == neutral, key
+        for update, differs, orange in (("outdated", False, True), ("current", True, False),
+                                         ("unknown", False, False), ("unavailable", True, False), ("current", False, False)):
+            data["runtime"].update(update_state=update, daemon_differs=differs,
+                                   daemon="0.1.0+long-build-identifier")
+            app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+            await pilot.pause()
+            text = painted(app, "runtime")
+            assert "‹" not in text and "widen" not in text
+            assert "check unknown" not in text
+            if update in ("unknown", "unavailable"):
+                assert "daemon differs" not in text
+            assert border_color(app, "runtime") == (app.ansi_theme.ansi_colors[3] if orange else neutral)
+            assert "0.1.0+long-build-identifier" in str(app.query_one("#hero-runtime").tooltip)
+
+
+async def test_single_model_is_centered_on_middle_row_with_normal_effort():
+    data = payload()
+    data["models"]["rows"] = [dict(model="gpt-5.1-fable", effort="high")]
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        rendered = strips(app, "models")
+        text = [strip.text for strip in rendered]
+        assert "fable 5.1 high" in text[4], text
+        assert "fable" not in text[3] and "high" not in text[5]
+        row = text[4].split("│")[2]
+        assert abs(len(row) - len(row.lstrip()) - (len(row) - len(row.rstrip()))) <= 1
+        model = [segment for segment in rendered[4] if "fable 5.1" in segment.text]
+        effort = [segment for segment in rendered[4] if "high" in segment.text]
+        assert model and all(segment.style.bold for segment in model)
+        assert effort and all(not segment.style.bold for segment in effort)
+
+
+async def test_long_model_keeps_effort_visible_with_ellipsis_and_hover():
+    data = payload()
+    model = 'claude-experimental-frontier-preview-2026-10-01-long-context'
+    data['models']['rows'] = [dict(model=model, effort='xhigh')]
+    async with Harness(data).run_test(size=(132, 45)) as pilot:
+        await pilot.pause()
+        text = painted(pilot.app, 'models')
+        assert 'xhigh' in text and '…' in text and '‹' in text
+        assert model in str(pilot.app.query_one('#hero-models').tooltip)
+
+
+@pytest.mark.parametrize("width", [132, 149, 211])
+async def test_runtime_since_uses_connection_time_with_full_hover_context(width):
+    from maxpane_dashboard.widgets.fmt import hhmm
+    from maxpane_dashboard.widgets.surf._fmt import mmdd_hhmm
+    data = payload()
+    async with Harness(data).run_test(size=(width, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        footer = strips(app, "runtime")[-1].text
+        assert "since " in footer and hhmm(data["runtime"]["connected_ts"]) in footer
+        assert "VERSION" not in footer
+        tip = str(app.query_one("#hero-runtime").tooltip)
+        assert "last connected " + mmdd_hhmm(data["runtime"]["connected_ts"]) in tip
+        assert "not a verified restart" in tip
+        data["runtime"]["connected_ts"] = None
+        app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+        await pilot.pause()
+        assert "since --" in strips(app, "runtime")[-1].text
+
+
+async def test_earnings_counts_distinct_tokens_and_accents_only_recent_work():
+    from rich.color import Color
+    data = payload()
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        text = painted(app, "earnings")
+        assert "TOKENS" in text and "7 worked on" in text and "4 CLAIMED" in text
+        assert "╶┴╴╰─╴" in text  # tall 12
+        green = Color.parse(app.get_css_variables()["accent"]).get_truecolor()
+        assert border_color(app, "earnings") == green
+        for recent in (False, None):
+            data["earnings"]["worked_recent"] = recent
+            app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+            await pilot.pause()
+            assert border_color(app, "earnings") == border_color(app, "accepted")
+        data["earnings"].update(earned=None, worked_on=None, claimed=None, state="partial")
+        app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+        await pilot.pause()
+        text = painted(app, "earnings")
+        assert "-- worked on" in text and "-- CLAIMED" in text
+        assert "0 CLAIMED" not in text
+
+
+async def test_nodes_group_work_by_type_without_guessing_incomplete_launch_membership():
+    data = payload()
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        for values, expected in (
+            (dict(oracle=120, launches=340, other=500, known_jobs=840, total_jobs=840),
+             (("oracle", "120"), ("launches", "340"), ("other", "500"))),
+            (dict(state="partial", oracle=120, launches=None, other=None, known_jobs=17, total_jobs=840),
+             (("oracle", "120"), ("launches", "--"), ("other", "--"))),
+            (dict(state="ok", oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0),
+             (("oracle", "0"), ("launches", "0"), ("other", "0"))),
+        ):
+            data["nodes"].update(values)
+            app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+            await pilot.pause()
+            for row, (label, number) in zip(strips(app, "nodes")[3:6], expected):
+                assert label in row.text and row.text.split("│")[2].strip().endswith(number), row.text
+            assert "work by type" in painted(app, "nodes")
+            assert border_color(app, "nodes") == border_color(app, "accepted")
+            tooltip = str(app.query_one("#hero-nodes").tooltip)
+            assert f"launch membership known for {values['known_jobs']} of {values['total_jobs']} accepted non-oracle jobs" in tooltip

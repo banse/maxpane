@@ -237,6 +237,10 @@ from maxpane_dashboard.data.surf_models import (
 )
 from maxpane_dashboard.data.surf_pool4_client import Pool4Client
 from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY, SwarmClient
+from maxpane_dashboard.data.surf_agent_earnings import AgentEarningsClient
+from maxpane_dashboard.data import surf_agent_card_sources as agent_card_sources
+from maxpane_dashboard.data import surf_agent_work as agent_work
+from maxpane_dashboard.data.surf_cache import SLOT_AGENT_EARNINGS, SLOT_AGENT_WORK
 from maxpane_dashboard.data.surf_v4 import price_eth_per_imd
 
 logger = logging.getLogger(__name__)
@@ -1060,6 +1064,7 @@ class SurfManager:
         pool4_client: Any = None,
         swarm_client: Any = None,
         npm_client: Any = None,
+        earnings_client: Any = None,
         launch_rpc_clients: Any = None,
         seat: str | int | None = None,
     ) -> None:
@@ -1089,6 +1094,9 @@ class SurfManager:
         self.cache = cache if cache is not None else SurfCache(
             path=self._cache_path, clock=clock
         )
+        self.earnings_client = earnings_client if earnings_client is not None else AgentEarningsClient()
+        self._agent_card_sources = agent_card_sources.AgentCardSources(
+            self.cache, self.earnings_client, self.swarm_client, clock=clock)
         self._oracles_active = False
         self._oracles_reader = OraclesReader(self.swarm_client, self.cache, clock=clock)
         self._work_active = False
@@ -1211,6 +1219,8 @@ class SurfManager:
 
         try:
             self.cache.load(slot_coercers={
+                SLOT_AGENT_EARNINGS: lambda value: agent_card_sources.coerce_earnings(value, self._clock()),
+                SLOT_AGENT_WORK: lambda value: agent_work.coerce_points(value, self._clock()),
                 SLOT_SURF_ORACLES: lambda value: coerce_oracles_snapshot(value, now=self._clock()),
                 SLOT_SURF_WORK: lambda value: coerce_work_snapshot(value, now=self._clock()),
                 **{slot: (lambda value, name=name: hub.coerce_source(value, name, now=self._clock()))
@@ -1318,6 +1328,10 @@ class SurfManager:
             except (asyncio.CancelledError, Exception):
                 pass
         self.save_cache()
+        try:
+            await self.earnings_client.close()
+        except Exception as exc:
+            logger.debug("closing the earnings client failed: %s", exc)
         try:
             await self.npm_client.close()
         except Exception as exc:
@@ -6266,6 +6280,8 @@ class SurfManager:
 
     def set_agent_active(self, active: bool) -> None:
         """Screen-owned eligibility; no I/O in the mode-change handler."""
+        if active is True and not self._agent_active:
+            self.cache.mark_due(TIER_SWARM_SEAT)
         self._agent_active = active is True
 
     def _runtime_points(self, now):
@@ -6480,6 +6496,8 @@ class SurfManager:
         seats = (sw.coerce_seat_slot(getattr(seat_entry, 'payload', None), now=now) or {}).get('seats', {})
         reward_entry = self.cache.get_last_good(SLOT_SWARM_SEAT_REWARDS)
         return dict(seats={key: self._agent_seat_source(int(key), point, now=now) for key, point in seats.items()},
+                    seat_points=seats, card_sources=self._agent_card_sources.capture(now),
+                    workers=(sw.coerce_workers_slot(getattr(self.cache.get_last_good(SLOT_SWARM_WORKERS), 'payload', None)) or {}).get('workers', []),
                     rewards=sw.coerce_rewards_slot(getattr(reward_entry, 'payload', None), now=now) or {},
                     rewards_failed=set(self._seat_rewards_failed), runtime=self._runtime_points(now),
                     activity=getattr(self.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY), 'payload', None))
@@ -6506,6 +6524,10 @@ class SurfManager:
                 sources[name] = dict(source, state='pending', read_ts=None)
         hero_data = dict(data, swarm_seat_rank_delta=self._agent_rank_delta(
             token, data.get('swarm_seat_outcome'), sources.get('records'), now=now))
+        selected_point = capture.get('seat_points', {}).get(str(token)) or {}
+        facts, metadata = agent_card_sources.project(capture.get('card_sources', {}), selected_point.get('seat'), now=now)
+        hero_data.update(facts, _agent_workers=capture.get('workers', []))
+        sources.update(metadata)
         return agent_hero.project(data=hero_data, sources=sources, now=now, activity=capture['activity'])
 
     def _agent_rank_delta(self, token, outcome, source, *, now):
@@ -6629,6 +6651,8 @@ class SurfManager:
         if self._seat_busy_token == token:
             self._seat_busy_token = None
         if state == "ok":
+            if self._agent_active:
+                await self._agent_card_sources.read(result, float(self._clock()))
             await self._resolve_seat_owner(result, now)
             await self._pool_swarm_seat_rewards(result, token, now)
             await self._pool_swarm_answers(result, token, now)

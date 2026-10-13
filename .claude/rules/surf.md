@@ -226,7 +226,7 @@ title word. Busy without a record gates the runtime facts, just like pending.
 AGENT mounts `SurfSwarmAgentRackHero` (`widgets/surf/agent_rack_hero.py`) above
 native RECORD. The approved rack has two equal rows of six nine-line cards, with
 one blank line between: SEAT / ACCEPTED / EFFORT / REWARDS / RANK / STATUS, then
-OWNER / RUNTIME / MODELS / FEEDBACK / COLLAB / NODES. The old `SurfSwarmAgentHero`
+OWNER / RUNTIME / MODELS / EARNINGS / COLLAB / NODES. The old `SurfSwarmAgentHero`
 and `SurfSwarmSeatCards` remain parked; no production body mounts them.
 
 `surf_agent_hero` is a primitive projection with independent state/read timestamps
@@ -242,7 +242,7 @@ failures stay unavailable and busy responses stay `busy`. Never-paired and known
 from zero. A retained never-paired result keeps its internal qualification and
 confirmation time until a successful new read.
 
-SEAT uses `Identity.md` as its inner title and keeps the IDMD token as its digits. Its inner caption is `online`, `working`,
+SEAT uses `IDMD` as its inner title and keeps the IDMD token as its digits. Its inner caption is `online`, `working`,
 or `offline` from the independent worker observation; green for online/working,
 red for offline, neutral for unknown. The outer `AGENT #x` uses the ERC-8004
 registration ID from that seat's detail, never the IDMD token as a substitute.
@@ -265,7 +265,7 @@ the next unchanged successful read clears it. Legacy persisted rank history is
 unchanged. These sources stay independent of seat-detail availability.
 
 STATUS shows large active-slot and capacity digits with a static `0F` colored
-exactly like the effective outer card background (also in the compact fallback)
+halfway between the effective outer card background and the original dim text (also in the compact fallback)
 between them. Its inner bottom
 border shows the newest seat activity as `worked HH:MM` or `accepted HH:MM`;
 the full date and independent detail-read clock live in its tooltip. The border
@@ -296,11 +296,27 @@ points keep their amount with an unknown payment date until the next read.
 an observed valid rank change; unchanged reads keep the delta. A first observation
 has none; unranked/unavailable/not-listed reads hide it without erasing history.
 OWNER uses `address_text` and the package `EXPLORER` for its verified ENS/address,
-copy icon, link and paired date. MODELS shows advertised `runtimes[].premiumModel`
-pairs, fitted with an explicit ellipsis; more than three show two plus `+N more`.
+copy icon, link and paired date. OWNER, MODELS, COLLAB and NODES always use neutral
+inset frames and captions. MODELS shows advertised `runtimes[].premiumModel`
+pairs, centered with one blank between the bold model and normal-weight effort;
+a single pair sits on the middle content row. Text fits with an explicit ellipsis;
+more than three show two plus `+N more`.
 Its tooltip retains every raw model/effort pair. An empty served list says
 `not advertised`; an unread list is unknown. RECORD's model is what actually ran.
-FEEDBACK lists sent/submitted/queued review messages.
+EARNINGS replaces FEEDBACK. Its TOKENS digits count distinct `(chainId, tokenAddress)`
+assets in the owner's public explorer earned table; the outer footer counts assets
+with an explicit claimed state. The inner `x worked on` intersects builder allocations
+with this selected seat's accepted job IDs. Green means one of those assets launched
+less than 24 hours ago. Wallet-wide totals are labeled as such on hover. Unknown work
+identity cannot become zero worked-on assets. Legitimate held rows without a token
+address are excluded; malformed or truncated tables fail the whole read.
+`surf_agent_earnings.py` resolves named Next flight exports as JSON, checks the provider
+wallet, and never executes script. GET-only, no redirects, 15 seconds, 4 MiB, 4096 rows.
+`AgentCardSources` runs earnings and membership reads inside the cancellable selected-seat
+task only while AGENT is active. Earnings refreshes after 600 seconds, backs failures off
+120 seconds, and retains eight owner snapshots for 48 hours. Source failures retain values
+and clocks; actual in-flight owner reads alone show loading. Seat switches never borrow
+another owner's snapshot. Entering AGENT makes the seat tier due.
 
 RUNTIME compares only `claude` (`@anthropic-ai/claude-code`) and `codex` (`@openai/codex`)
 against keyless `registry.npmjs.org/<package>/latest`. `NpmRegistryClient` owns the fixed
@@ -317,7 +333,14 @@ fleets have no reference. Daemon comparison is equality only, never hash orderin
 An outdated runtime has an explicit update subtitle; a differing daemon keeps a
 trailing `↑` within the fit budget. A valid Claude CLI version drops its display-only
 banner suffix; the full runtime and daemon remain in the literal tooltip. A
-clipped daemon retains its label, ellipsis and update arrow and marks `widen`. The RUNTIME
+clipped daemon retains its label, ellipsis and update arrow; the RUNTIME widen hint is
+intentionally omitted. Only a confirmed outdated runtime turns the inset orange;
+daemon differences alone stay neutral. Unknown checks have no inner bottom caption.
+The outer `since MM-DD HH:MM` uses the latest matching-seat/runtime worker connection,
+with a compact time at narrow widths. It is not a verified restart receipt. Missing
+connection dates or incomplete worker coverage stay unknown. The independent worker
+read clock and connection-time distinction are on hover. Legacy cached workers migrate
+to an unknown connection date without losing their other metadata. The RUNTIME
 box tooltip is a literal `Text`: npm latest/version/check time, fleet reference/count, or
 `update check pending` (runtime id absent from `swarm_runtime_latest`: not yet checked),
 `update check unavailable` (a checked version of None: the read failed), `runtime not checked`,
@@ -326,10 +349,16 @@ no new degraded group. Cached AGENT refreshes also offer the existing guarded
 runtime check, using the same eligibility, TTL and endpoints.
 
 COLLAB shows the collaborator count as digits and the top teammate/count in its
-outer footer. Its tooltip retains the ordered teammate list. NODES lists accepted
-counts by node, with two plus `+N more` when there are more than three. Its tooltip
-retains every node's accepted/attempts counts and rate. Node ordering and source
-rows are unchanged; large counts shorten without cutting a number. Runtime, ENS,
+outer footer. Its tooltip retains the ordered teammate list. NODES partitions accepted
+work rows into oracle, launches and other, with oracle precedence and `work by type`
+on the inner bottom border. Launch membership comes from validated live launch IDs
+and chain IDs in `/jobs/{id}`; `work[].launch` is only intent and cannot prove membership.
+Twelve unique non-oracle jobs are read per seat cycle, unknown jobs first, with failed
+reads rotated so they cannot starve later jobs. Membership refreshes after 600 seconds,
+including terminal jobs, and retains at most 400 points for 48 hours. Until every
+candidate is checked, launches/other stay unknown and oracle remains visible. Hover
+reports coverage, independent launch-read freshness and the original node breakdown.
+Large counts shorten without cutting a number. Runtime, ENS,
 model and node text fit with explicit ellipses. Every refresh clears old tooltips.
 The former third card row (`SurfSwarmNodeCards`) stays removed; worker metadata
 remains in BOARD and RECORD fills all remaining space below the rack.

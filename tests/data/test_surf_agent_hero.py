@@ -51,7 +51,7 @@ def test_contract_canonical_arithmetic_and_independent_source_clocks(snapshot):
                                     seats=3, usd_state='ok', usd_read_ts=NOW-20, last_paid_ts=None, paid_recent=False)
     assert result['owner']['address'] == '0xe5b1275fb926613d983da33fbfe1f331b7f64f2a'
     assert result['owner']['name'] == 'example.eth'
-    assert result['feedback']['sent'] == 66 and result['feedback']['queued'] == 1
+    assert result['earnings']['earned'] is None and result['earnings']['state'] == 'unavailable'
     assert result['collab']['count'] == 24 and result['collab']['rows'][0] == dict(token_id=1299, shared_jobs=7)
     assert result['nodes']['rows'][0] == dict(node_key='oracle_assess', accepted=10, attempts=None)
     assert result['models']['rows'] == []
@@ -118,7 +118,7 @@ def test_detail_states_leave_canonical_effort_and_worker_reads_independent(snaps
     snapshot['sources']['seat'] = dict(state='ok' if state == 'unknown_seat' else state, read_ts=NOW-50 if state == 'unknown_seat' else None)
     result = hero.project(**snapshot)
     assert result['seat']['token_id'] == 420
-    for key in ('owner', 'runtime', 'models', 'feedback', 'collab', 'nodes', 'rewards'):
+    for key in ('owner', 'runtime', 'models', 'earnings', 'collab', 'nodes', 'rewards'):
         assert result[key]['state'] == (state or 'unavailable')
     for key in ('accepted', 'rank', 'effort'):
         assert result[key] == before[key]
@@ -196,13 +196,14 @@ def test_unknown_lists_stay_unknown_and_empty_lists_are_real_negatives(snapshot)
     snapshot['data'].update(swarm_seat_teammates=None, swarm_seat_node_rows=None)
     result = hero.project(**snapshot)
     assert result['models']['rows'] is result['collab']['rows'] is result['nodes']['rows'] is None
-    assert result['feedback']['sent'] is None
+    assert result['earnings']['earned'] is None
     summary.update(models=[], collaborators=0, review_status=dict(sent=0, submitted=0, queued=0))
     snapshot['data'].update(swarm_seat_teammates=[], swarm_seat_node_rows=[])
+    snapshot['data']['_agent_nodes'] = dict(oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0)
     result = hero.project(**snapshot)
     assert result['models']['rows'] == result['collab']['rows'] == result['nodes']['rows'] == []
     assert result['models']['state'] == result['collab']['state'] == result['nodes']['state'] == 'ok'
-    assert result['feedback']['sent'] == 0
+    assert result['nodes']['oracle'] == result['nodes']['launches'] == result['nodes']['other'] == 0
 
 
 def test_status_uses_newest_work_never_feedback_and_no_date_is_unknown(snapshot):
@@ -272,11 +273,12 @@ def test_bad_source_clocks_cannot_publish_values(snapshot, source, sections, sta
 def test_invalid_and_impossible_counts_never_turn_into_zero(snapshot, bad):
     snapshot['data']['swarm_seat_outcome'].update(accepted=bad, attempts=3)
     snapshot['data']['swarm_seat_contrib'].update(wall_clock_s=bad, output_tokens=bad)
-    snapshot['data']['swarm_seat_summary']['review_status']['sent'] = bad
+    snapshot['data']['_agent_earnings'] = dict(earned=bad, worked_on=0, claimed=1, worked_recent=False)
+    snapshot['sources']['earnings'] = dict(state='ok', read_ts=NOW-25)
     result = hero.project(**snapshot)
     assert result['accepted']['accepted'] is result['accepted']['percent'] is None
     assert result['effort']['hours'] is result['effort']['output_tokens'] is None
-    assert result['feedback']['sent'] is None and result['feedback']['queued'] == 1
+    assert result['earnings']['earned'] is None and result['earnings']['claimed'] == 1
     snapshot['data']['swarm_seat_outcome']['accepted'] = 4
     result = hero.project(**snapshot)
     assert result['accepted']['accepted'] is result['accepted']['percent'] is None
@@ -353,7 +355,7 @@ def test_zero_reward_and_unavailable_reward_source_do_not_signal_recent_payment(
 @pytest.mark.parametrize('source,sections', [
     ('records', ('accepted', 'rank')), ('contributors', ('effort',)),
     ('workers', ('status',)), ('rewards', ('rewards',)),
-    ('seat', ('seat', 'owner', 'runtime', 'models', 'feedback', 'collab', 'nodes', 'rewards')),
+    ('seat', ('seat', 'owner', 'runtime', 'models', 'earnings', 'collab', 'nodes', 'rewards')),
 ])
 def test_first_source_read_keeps_pending_without_inventing_facts(snapshot, source, sections):
     snapshot['sources'][source] = dict(state='pending', read_ts=None)
