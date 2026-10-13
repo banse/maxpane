@@ -405,7 +405,7 @@ async def test_reward_payment_time_fits_narrow_footer_without_losing_date(width)
 
 
 @pytest.mark.parametrize("width,working,glyph", [(149, 2, "╭─╮╭─╴"), (132, None, "0F")])
-async def test_status_separator_matches_outer_card_background_in_tall_and_compact_readouts(width, working, glyph):
+async def test_status_separator_uses_midpoint_gray_in_tall_and_compact_readouts(width, working, glyph):
     data = payload()
     data["status"]["working"] = working
     async with Harness(data).run_test(size=(width, 45)) as pilot:
@@ -416,7 +416,9 @@ async def test_status_separator_matches_outer_card_background_in_tall_and_compac
         background = next(iter(rendered[1].crop(middle, middle + 1))).style.bgcolor.get_truecolor()
         separator = [segment for strip in rendered for segment in strip if glyph in segment.text]
         assert separator, painted(pilot.app, "status")
-        assert all(segment.style.color.get_truecolor() == background for segment in separator)
+        # Matrix outer background #262626, original dim text #9e9e9e.
+        assert background == (38, 38, 38)
+        assert all(segment.style.color.get_truecolor() == (98, 98, 98) for segment in separator)
 
 
 @pytest.mark.parametrize("percent,listed,label", [(75., True, "75% premium"), (0., True, "0% premium"),

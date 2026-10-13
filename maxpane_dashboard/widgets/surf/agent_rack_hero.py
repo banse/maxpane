@@ -3,11 +3,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from rich.color import Color
+from rich.color import Color, blend_rgb
 from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid
+from textual.filter import dim_color
 from textual.renderables.digits import Digits
 
 from maxpane_dashboard.analytics.surfboard import count, number
@@ -272,7 +273,10 @@ class AgentRackCard(Pool4HeroCard):
         frame = self._frame_style()
         ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
         base, surface = self.background_colors
-        separator = ink + Style(color=(base + surface).rich_color)
+        previous = dim_color(ink.bgcolor, ink.color)
+        # Halfway between the card background and the original dim text.
+        middle = blend_rgb((base + surface).rich_color.get_truecolor(), previous.get_truecolor())
+        separator = ink + Style(color=Color.from_triplet(middle))
         values = data.digits.split()
         groups = [[segment.text for segment in Digits(value).render(Style()) if segment.text != "\n"] for value in values]
         rows = []
