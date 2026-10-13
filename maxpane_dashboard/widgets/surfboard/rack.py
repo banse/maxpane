@@ -6,6 +6,7 @@ import math
 from rich.style import Style
 from rich.text import Text
 from textual.binding import Binding
+from textual.constants import DIM_FACTOR
 from textual.containers import Grid
 from textual.message import Message
 from textual.renderables.digits import Digits
@@ -449,7 +450,7 @@ class SurfboardRack(Grid):
     SurfboardCard > Input.seat-input { position: absolute; height: 1; margin: 0; padding: 0;
         border: none; background: $surface; color: $foreground; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
-    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $accent; text-style: bold;
+    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $text-muted; text-style: bold;
         content-align: center middle; }
     SurfboardRack > #surfboard-keep { layer: keep; }
     SurfboardRack > #surfboard-building { layer: building; }
@@ -485,6 +486,14 @@ class SurfboardRack(Grid):
         for key, label_id in (("launchpad", "keep"), ("portfolio", "building")):
             card = self.query_one(f"#surfboard-card-{key}", SurfboardCard)
             label = self.query_one(f"#surfboard-{label_id}", Static)
+            # Match the dim footer ink while leaving the gap background unchanged.
+            base, surface = card.background_colors
+            ink = card.styles.border_subtitle_color
+            if card.styles.auto_border_subtitle_color:
+                ink = base.get_contrast_text(ink.a)
+            background = base + surface
+            label.styles.auto_color = False
+            label.styles.color = background.blend(background + ink, DIM_FACTOR)
             label.styles.width = card.region.width
             label.styles.offset = (card.region.x - self.content_region.x,
                 card.region.bottom - self.content_region.y + 1)

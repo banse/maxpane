@@ -456,9 +456,8 @@ async def test_height_pin_is_the_measured_scroll_transition():
     assert "‹ taller" not in at["text"].splitlines()[0]
 
 
-async def test_translated_side_labels_center_green_in_three_line_gap_above_agent_seats():
+async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_agent_seats():
     from rich.cells import cell_len
-    from rich.color import Color
     app = HubHarness(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
         for height in (45, 37, 35, 47, 48, 45):
@@ -466,6 +465,9 @@ async def test_translated_side_labels_center_green_in_three_line_gap_above_agent
             await pilot.pause()
             rack = app.hub.query_one(SurfboardRack)
             strips = app.hub._compositor.render_strips()
+            news = rack.query_one('#surfboard-card-announce')
+            footer = strips[news.region.bottom - 1].crop(news.region.x, news.region.right)
+            label_ink = next(segment.style.color for segment in footer if 'SIGNALS' in segment.text)
             for word, above, below in [('キープ', 'launchpad', 'agent'),
                                        ('ビルディング', 'portfolio', 'agent-2')]:
                 card = rack.query_one(f'#surfboard-card-{above}')
@@ -477,7 +479,7 @@ async def test_translated_side_labels_center_green_in_three_line_gap_above_agent
                 line = gap[1]
                 assert abs(cell_len(line.text[:line.text.index(word)]) -
                            (card.region.width - cell_len(word)) / 2) <= .5
-                assert any(segment.style.color == Color.parse(app.get_css_variables()['accent']) and segment.style.bold
+                assert any(segment.style.color == label_ink and segment.style.bold
                            for segment in line if word in segment.text)
                 assert sum(word in strip.text for strip in strips) == 1
             terminal = rack.query_one(SurfboardTerminal)
