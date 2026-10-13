@@ -287,3 +287,21 @@ review are recorded in the commit. No new endpoints, contract fields, or layout 
 Validation: 528 affected/composing tests, 124 guards and 12 docpins passed.
 Final review approved with no findings after 13 focused checks and a further
 gap-to-zero mutation was rejected and restored. No full suite or open findings.
+
+
+## Side captions between cards — 2026-10-13
+
+LAUNCHPAD and PORTFOLIO now have three rows before their AGENT cards. キープ and
+ビルディング occupy the middle row, retaining bold card-surface-colored text.
+Other gaps remain one row. The terminal still fills its center span, and all
+cards retain equal dimensions. At 149×45, the two added rows consume the former
+spare space at the bottom; card and terminal sizes remain unchanged.
+
+Fresh keyless live render shown at 149×45. In-situ normal/stress/unavailable/wide
+probes measured the unchanged 144-column minimum and a 37-row height minimum,
+up from 35. No clipping at either the new minimum or the owner size.
+
+Validation: 165 affected/composing tests, 124 guards and 12 docpins passed.
+Four mutations were rejected, including the row pin in both directions.
+Review approved with no findings after five focused cases and a further
+caption-placement mutation. No full suite or outstanding findings.

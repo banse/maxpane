@@ -18,23 +18,25 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Re-measured after the 2026-10-13 equal-width live preview at 149×45.
-#: Six equal fractional columns restore the standard card widths (at most one
+#: Re-measured after the 2026-10-13 three-line-gap live preview at 149×45.
+#: Six equal fractional columns retain the standard card widths (at most one
 #: cell of rounding difference). PROTOCOL's "rewarded 100k IMD" row needs 19
 #: inner cells with padding, binding its card to 23 columns and the rack to
 #: 141. The viewport's padding and vertical gutter bind the width pin at 144.
 #: Normal, stress, unavailable and wide composites scroll horizontally at
-#: 143×34, but not 144×34; vertical scrolling clears at 144×35. Every card fits
-#: at 144×35 and 149×45. The short supply footer is "17.40% burned" at stress.
-#: Four seven-row card floors plus three gutters keep the height pin at 35.
-#: Equal card heights remain; the terminal fills the center to the rack bottom,
-#: measuring 94 columns at the pin and 97 at 149×45. Two spare side rows remain
-#: at the owner size; captions occupy the second, one line below their former
-#: position, in the same color as the card background. No spare rows means hidden
-#: captions. Their placement does not change any card or terminal dimensions.
+#: 143×36, but not 144×36; vertical scrolling clears at 144×37. Every card fits
+#: at 144×37 and 149×45. The short supply footer is "17.40% burned" at stress.
+#: Four seven-row card floors, three gutters and two added side-gap lines
+#: require a 33-row rack and move the height pin from 35 to 37. The second
+#: track reserves the extra lines below LAUNCHPAD/PORTFOLIO, leaving three
+#: lines before AGENT seats. Bold surface-color captions occupy the middle
+#: line; the other gaps stay one line. All cards remain equally tall.
+#: The terminal fills the center to the rack bottom, measuring 94 columns at
+#: the pin and 97 at 149×45. At owner size all cards remain nine rows tall;
+#: the extra gap consumes the former two spare rows below the agent cards.
 #: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 144
-SURFBOARD_FULL_LAYOUT_ROWS = 35
+SURFBOARD_FULL_LAYOUT_ROWS = 37
 
 
 class SurfboardScreen(DashboardScreen):

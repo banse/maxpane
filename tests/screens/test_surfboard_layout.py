@@ -314,7 +314,7 @@ async def test_all_cards_keep_equal_whole_row_heights_when_resized(width):
             assert cards[0].region.height >= 7
             rows = sorted({(card.region.y, card.region.bottom) for card in cards})
             assert len(rows) == 4
-            assert all(start - end == 1 for (_, end), (start, _) in zip(rows, rows[1:]))
+            assert [start - end for (_, end), (start, _) in zip(rows, rows[1:])] == [1, 3, 1]
             terminal = app.hub.query_one(SurfboardTerminal)
             assert terminal.region.y == rows[1][0]
             assert terminal.region.bottom == app.hub.query_one(SurfboardRack).content_region.bottom
@@ -456,26 +456,32 @@ async def test_height_pin_is_the_measured_scroll_transition():
     assert "‹ taller" not in at["text"].splitlines()[0]
 
 
-async def test_translated_side_labels_use_spare_space_without_overlapping_terminal_or_cards():
+async def test_translated_side_labels_center_in_three_line_gap_above_agent_seats():
+    from rich.cells import cell_len
     app = HubHarness(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
-        for height in (45, 35, 47, 48, 45):
+        for height in (45, 37, 35, 47, 48, 45):
             await pilot.resize_terminal(149, height)
             await pilot.pause()
             rack = app.hub.query_one(SurfboardRack)
             strips = app.hub._compositor.render_strips()
-            for word, key in [('キープ', 'agent-3'), ('ビルディング', 'agent-4')]:
-                card = rack.query_one(f'#surfboard-card-{key}')
-                free = rack.content_region.bottom - card.region.bottom
-                side = [strip.crop(card.region.x, card.region.right) for strip in
-                        strips[card.region.bottom:rack.content_region.bottom]]
-                visible = '\n'.join(strip.text for strip in side)
-                assert (word in visible) == (free > 0)
-                if free > 0:
-                    line = side[free // 2]
-                    assert word in line.text
-                    assert any(segment.style.color == card.rich_style.bgcolor and segment.style.bold
-                               for segment in line if word in segment.text)
+            for word, above, below in [('キープ', 'launchpad', 'agent'),
+                                       ('ビルディング', 'portfolio', 'agent-2')]:
+                card = rack.query_one(f'#surfboard-card-{above}')
+                agent = rack.query_one(f'#surfboard-card-{below}')
+                assert agent.region.y - card.region.bottom == 3
+                gap = [strip.crop(card.region.x, card.region.right) for strip in
+                       strips[card.region.bottom:agent.region.y]]
+                assert [line.text.strip() for line in gap] == ['', word, '']
+                line = gap[1]
+                assert abs(cell_len(line.text[:line.text.index(word)]) -
+                           (card.region.width - cell_len(word)) / 2) <= .5
+                assert any(segment.style.color == card.rich_style.bgcolor and segment.style.bold
+                           for segment in line if word in segment.text)
+                assert sum(word in strip.text for strip in strips) == 1
+            terminal = rack.query_one(SurfboardTerminal)
+            assert terminal.region.y == rack.query_one('#surfboard-card-launchpad').region.y
+            assert terminal.region.bottom == rack.content_region.bottom
 
 
 @pytest.mark.parametrize('kind', ['normal', 'stress'])
