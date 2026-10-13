@@ -18,24 +18,24 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Re-measured after the 2026-10-13 one-line-gap live preview at 149×45.
+#: Re-measured after the 2026-10-13 green-caption live preview at 149×45.
 #: Six equal fractional columns retain the standard card widths (at most one
 #: cell of rounding difference). PROTOCOL's "rewarded 100k IMD" row needs 19
 #: inner cells with padding, binding its card to 23 columns and the rack to
 #: 141. The viewport's padding and vertical gutter bind the width pin at 144.
 #: Normal, stress, unavailable and wide composites scroll horizontally at
-#: 143×34, but not 144×34; vertical scrolling clears at 144×35. Every card fits
-#: at 144×35 and 149×45. The short supply footer is "17.40% burned" at stress.
-#: Four seven-row card floors and three gutters require a 31-row rack,
-#: restoring the height pin from 37 to 35. All card gaps are one line.
-#: Bold surface-color captions occupy the gaps directly below LAUNCHPAD and
-#: PORTFOLIO, before the AGENT seats; no additional rows are reserved.
+#: 143×36, but not 144×36; vertical scrolling clears at 144×37. Every card fits
+#: at 144×37 and 149×45. TOKENS keeps its leading blank and right-edge arrows.
+#: Four seven-row card floors, three gutters and two extra side-gap rows need
+#: a 33-row rack, restoring the height pin from 35 to 37. The gaps directly below
+#: LAUNCHPAD and PORTFOLIO are three lines, with bold green captions in the
+#: middle line before the AGENT seats. All other card gaps remain one line.
 #: All cards remain equally tall. The terminal fills the center to the rack
 #: bottom, measuring 94 columns at the pin and 97 at 149×45. At owner size all
-#: cards remain nine rows tall and two spare side rows remain at the bottom.
+#: cards remain nine rows tall; the enlarged gaps use the two former spare rows.
 #: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 144
-SURFBOARD_FULL_LAYOUT_ROWS = 35
+SURFBOARD_FULL_LAYOUT_ROWS = 37
 
 
 class SurfboardScreen(DashboardScreen):

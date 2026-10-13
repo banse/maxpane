@@ -48,9 +48,9 @@ def _token_line(row, width, style):
     """Fit age and literal ticker while preserving address copy/link units."""
     age = fmt_age(row.get('age_s')) if _number(row.get('age_s')) else '—'
     chain = flatten(row.get('chain')).upper()
-    symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-4), style=style,
+    symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-5), style=style,
                              explorer=for_network('MAINNET' if chain == 'ETH' else chain))
-    line = Text(clip(clip(age, 3).ljust(3) + ' ', width), style=style).append_text(symbol)
+    line = Text(clip(' ' + clip(age, 3).ljust(3) + ' ', width), style=style).append_text(symbol)
     return line, lost or cell_len(age) > 3
 
 
@@ -438,7 +438,7 @@ class SurfboardRack(Grid):
     """Own fixed slots and terminal children; the screen dispatches to both."""
     DEFAULT_CSS = """
     SurfboardRack { layout: grid; grid-size: 6 4; grid-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
-        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 141; }
+        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 33; min-width: 141; }
     SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; border-subtitle-align: left; }
@@ -449,7 +449,7 @@ class SurfboardRack(Grid):
     SurfboardCard > Input.seat-input { position: absolute; height: 1; margin: 0; padding: 0;
         border: none; background: $surface; color: $foreground; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
-    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $surface; text-style: bold;
+    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $accent; text-style: bold;
         content-align: center middle; }
     SurfboardRack > #surfboard-keep { layer: keep; }
     SurfboardRack > #surfboard-building { layer: building; }
@@ -474,10 +474,11 @@ class SurfboardRack(Grid):
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
-        card_height = max(7, (self.content_size.height - gaps) // rows)
+        # Reserve two extra side-column lines below LAUNCHPAD and PORTFOLIO.
+        card_height = max(7, (self.content_size.height - gaps - 2) // rows)
         self.query(SurfboardCard).set_styles(height=card_height)
         # The terminal spans the last track and can use its leftover space.
-        self.styles.grid_rows = (card_height,) * (rows - 1) + ("1fr",)
+        self.styles.grid_rows = (card_height, card_height + 2, card_height, "1fr")
         self.call_after_refresh(self._position_taglines)
 
     def _position_taglines(self):
@@ -486,7 +487,7 @@ class SurfboardRack(Grid):
             label = self.query_one(f"#surfboard-{label_id}", Static)
             label.styles.width = card.region.width
             label.styles.offset = (card.region.x - self.content_region.x,
-                card.region.bottom - self.content_region.y)
+                card.region.bottom - self.content_region.y + 1)
 
     def compose(self):
         for index, slot in enumerate(SLOTS):

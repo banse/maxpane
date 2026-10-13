@@ -314,7 +314,7 @@ async def test_all_cards_keep_equal_whole_row_heights_when_resized(width):
             assert cards[0].region.height >= 7
             rows = sorted({(card.region.y, card.region.bottom) for card in cards})
             assert len(rows) == 4
-            assert [start - end for (_, end), (start, _) in zip(rows, rows[1:])] == [1, 1, 1]
+            assert [start - end for (_, end), (start, _) in zip(rows, rows[1:])] == [1, 3, 1]
             terminal = app.hub.query_one(SurfboardTerminal)
             assert terminal.region.y == rows[1][0]
             assert terminal.region.bottom == app.hub.query_one(SurfboardRack).content_region.bottom
@@ -456,8 +456,9 @@ async def test_height_pin_is_the_measured_scroll_transition():
     assert "‹ taller" not in at["text"].splitlines()[0]
 
 
-async def test_translated_side_labels_center_in_one_line_gap_above_agent_seats():
+async def test_translated_side_labels_center_green_in_three_line_gap_above_agent_seats():
     from rich.cells import cell_len
+    from rich.color import Color
     app = HubHarness(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
         for height in (45, 37, 35, 47, 48, 45):
@@ -469,14 +470,14 @@ async def test_translated_side_labels_center_in_one_line_gap_above_agent_seats()
                                        ('ビルディング', 'portfolio', 'agent-2')]:
                 card = rack.query_one(f'#surfboard-card-{above}')
                 agent = rack.query_one(f'#surfboard-card-{below}')
-                assert agent.region.y - card.region.bottom == 1
+                assert agent.region.y - card.region.bottom == 3
                 gap = [strip.crop(card.region.x, card.region.right) for strip in
                        strips[card.region.bottom:agent.region.y]]
-                assert [line.text.strip() for line in gap] == [word]
-                line = gap[0]
+                assert [line.text.strip() for line in gap] == ['', word, '']
+                line = gap[1]
                 assert abs(cell_len(line.text[:line.text.index(word)]) -
                            (card.region.width - cell_len(word)) / 2) <= .5
-                assert any(segment.style.color == card.rich_style.bgcolor and segment.style.bold
+                assert any(segment.style.color == Color.parse(app.get_css_variables()['accent']) and segment.style.bold
                            for segment in line if word in segment.text)
                 assert sum(word in strip.text for strip in strips) == 1
             terminal = rack.query_one(SurfboardTerminal)

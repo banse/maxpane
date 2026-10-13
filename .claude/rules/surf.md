@@ -750,6 +750,7 @@ borders and border text, matching its body; SWARM BUILDS retains its activity co
 Seven launchers route to the native modes; Escape returns to the retained rack, while menu/Tab
 clear the return context. TOKENS opens the retained SWARM TOKENS dashboard. Its LAST 24h
 inset ranks the top three supported, unambiguous deployments by selected-pool 24h USD volume,
+with one leading blank in each token row and price arrows aligned at the right edge,
 including inactive deployments. Chain/address aliases share their earliest known launch time;
 only ages from zero through less than 24 hours qualify. Missing volume never means zero.
 Valid cached volumes stay in the ranking across rotating quote batches; retained stale inputs
@@ -770,9 +771,9 @@ seats and accepted counts, led by gold/silver/bronze stars with one leading blan
 right with one trailing blank; oversized counts drop grouping, then use compact notation only
 if necessary. Its activity footer remains rank one's.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
-footer is centered `Identity.md`. One-line gaps below LAUNCHPAD and PORTFOLIO separate them from
-the AGENT seats; bold centered キープ / ビルディング occupy those lines in the card surface
-color. All card gaps are one line; all card sizes stay equal.
+footer is centered `Identity.md`. Three-line gaps below LAUNCHPAD and PORTFOLIO separate them
+from the AGENT seats; bold green キープ / ビルディング are centered on the middle line.
+Other card gaps remain one line; all card sizes stay equal.
 The terminal hides automatic stale labels (including generated command summaries) and V/P/D
 service flags at every width, per the owner; underlying metadata and unavailable states remain.
 It supports bounded read-only commands and replaces its recent `/swarm` event window

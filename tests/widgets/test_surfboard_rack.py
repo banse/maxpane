@@ -522,6 +522,8 @@ async def test_tokens_ranked_rows_direction_ink_volume_footer_and_activity(size)
             for strip, words, icon in zip(strips[top+1:top+4],
                     [('2h', 'SFPT'), ('5h', 'RAI'), ('4h', 'TDEMO')], ['↑', '↓', '']):
                 assert strip.text.strip('│ ').split() == [*words, *([icon] if icon else [])]
+                left = strips[top].text.index('┌')
+                assert strip.crop(left+1, left+3).text == ' ' + words[0][0]
                 right = strips[top].text.index('┐')
                 assert strip.crop(right-1, right).text == (icon or ' ')
                 for segment in strip:
@@ -625,7 +627,7 @@ async def test_token_hostile_wide_tickers_preserve_age_marker_and_advertise_clip
         top = next(i for i, s in enumerate(strips) if '┌' in s.text)
         left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
         row = strips[top+1].crop(left+1, right)
-        assert row.text.startswith('—   [/x]') and '…' in row.text
+        assert row.text.startswith(' —   [/x]') and '…' in row.text
         assert row.crop(right-left-2, right-left-1).text == '↑'
         assert all(s.crop(right, right+1).text == '│' for s in strips[top+1:top+4])
         assert '‹' in strips[0].text
