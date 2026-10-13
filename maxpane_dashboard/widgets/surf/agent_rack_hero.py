@@ -22,7 +22,7 @@ from ._fmt import EXPLORER, fmt_compact, mmdd_hhmm, short_model
 from .news_hero import HeroRecord, _count, _number
 from .pool4_hero import Pool4HeroCard, _amount, _face
 
-_STATES = ("ok", "partial", "stale", "unavailable", "pending", "busy", "unknown_seat", "stale_unknown_seat", "empty")
+_STATES = ("ok", "partial", "stale", "unavailable", "pending", "busy", "unknown_seat", "stale_unknown_seat", "empty", "failed")
 _AVAILABLE = ("ok", "partial", "stale")
 
 
@@ -49,10 +49,9 @@ def _status_word(source):
 
 def _earnings_footer(source, *, compact=False):
     earned, worked = (count(source.get(key)) for key in ("earned_24h", "worked_on_24h"))
-    labels = [fmt_compact(value).replace("K", "k") if compact and value is not None and value >= 1000
-              else _count(value) for value in (earned, worked)]
-    suffix = f" ({labels[1]}{' worked' if not compact else ''})" if worked else ""
-    return labels[0] + " new" + suffix
+    value = worked if worked else earned
+    label = fmt_compact(value).replace("K", "k") if compact and value is not None and value >= 1000 else _count(value)
+    return label + (" worked on" if compact else " new worked on") if worked else label + " new"
 
 
 def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
@@ -241,6 +240,8 @@ class AgentRackCard(Pool4HeroCard):
             self.border_subtitle = Text().append(data.footer, style="dim")
         elif data.state in ("pending", "busy"):
             self.border_subtitle = Text().append("◌ loading" if data.state == "pending" else "busy", style="yellow")
+        elif data.key == "earnings" and data.state == "failed":
+            self.border_subtitle = Text().append("load failed", style="red")
         elif data.state in ("unknown_seat", "stale_unknown_seat", "empty", "unavailable"):
             word = {"unknown_seat": "never paired", "stale_unknown_seat": "never paired", "empty": "EMPTY"}.get(data.state, "unavailable")
             # The selected identity remains meaningful if only its detail read failed.

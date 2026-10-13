@@ -86,7 +86,7 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             "owner": ("WALLET", "example.eth ⧉", "paired", "OPEN / COPY"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "up to date"),
             "models": ("model A", "high", "model B", "medium", "2 models"),
-            "earnings": ("EARNINGS", "TOKENS", "7 worked on", "4 new (2 worked)"),
+            "earnings": ("EARNINGS", "TOKENS", "7 worked on", "2 new worked on"),
             "collab": ("SEATS", "collaborators", "TOP #527 x84"),
             "nodes": ("other", "500", "launches", "340", "oracle", "120", "work by type"),
         }.items():
@@ -542,7 +542,7 @@ async def test_earnings_counts_distinct_tokens_and_accents_only_recent_work():
         await pilot.pause()
         app = pilot.app
         text = painted(app, "earnings")
-        assert "TOKENS" in text and "7 worked on" in text and "4 new (2 worked)" in text
+        assert "TOKENS" in text and "7 worked on" in text and "2 new worked on" in text
         assert "╶┴╴╰─╴" in text  # tall 12
         green = Color.parse(app.get_css_variables()["accent"]).get_truecolor()
         assert border_color(app, "earnings") == green
@@ -560,8 +560,8 @@ async def test_earnings_counts_distinct_tokens_and_accents_only_recent_work():
 
 
 @pytest.mark.parametrize("new,worked,expected", [
-    (4, 2, "4 new (2 worked)"), (4, 0, "4 new"), (4, None, "4 new"),
-    (0, 0, "0 new"), (None, None, "-- new"), (None, 2, "-- new (2 worked)"),
+    (4, 2, "2 new worked on"), (4, 0, "4 new"), (4, None, "4 new"),
+    (0, 0, "0 new"), (None, None, "-- new"), (None, 2, "2 new worked on"),
 ])
 async def test_earnings_footer_shows_recent_distinct_tokens_and_only_positive_work(new, worked, expected):
     data = payload()
@@ -590,12 +590,38 @@ async def test_earnings_recent_footer_compacts_only_when_needed_and_keeps_exact_
         await pilot.pause()
         app = pilot.app
         footer = strips(app, "earnings")[-1].text
-        assert footer.strip("╰─╯ ") == "4.1k new (4.1k)"
+        assert footer.strip("╰─╯ ") == "4.1k worked on"
         tooltip = str(app.query_one("#hero-earnings").tooltip)
         assert "Last 24h: 4,096 earned" in tooltip and "4,096 worked on by this agent" in tooltip
         await pilot.resize_terminal(211, 45)
         await pilot.pause()
-        assert "4,096 new (4,096 worked)" in strips(app, "earnings")[-1].text
+        assert "4,096 new worked on" in strips(app, "earnings")[-1].text
+
+
+def test_agent_card_states_match_declared_contract():
+    from maxpane_dashboard.data.surf_models import SURF_AGENT_HERO_STATES
+    from maxpane_dashboard.widgets.surf.agent_rack_hero import _STATES
+    assert _STATES == SURF_AGENT_HERO_STATES
+
+
+async def test_earnings_loading_failure_and_recovery_have_distinct_footers():
+    data = payload()
+    data["earnings"]["state"] = "pending"
+    async with Harness(data).run_test(size=(132, 45)) as pilot:
+        app = pilot.app
+        for state, expected, ansi in (("unavailable", "unavailable", 3),
+                                      ("pending", "◌ loading", 3), ("failed", "load failed", 1),
+                                      ("pending", "◌ loading", 3), ("ok", "2 new worked on", None)):
+            data["earnings"]["state"] = state
+            app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+            await pilot.pause()
+            footer = strips(app, "earnings")[-1]
+            assert footer.text.strip("╰─╯ ") == expected
+            if ansi is not None:
+                spans = [span for span in footer if expected in span.text]
+                assert spans and all(span.style.color.get_truecolor() == app.ansi_theme.ansi_colors[ansi]
+                                     for span in spans)
+                assert "7 worked on" not in painted(app, "earnings")
 
 
 async def test_nodes_group_work_by_type_without_guessing_incomplete_launch_membership():

@@ -99,8 +99,10 @@ def project(capture, seat, *, now):
     point = capture.get('earnings', {}).get(owner)
     earned_source = source(point['read_ts'] if point else None, now=now, ttl=TTL,
                            failed=owner in capture.get('earnings_failed', set()))
-    if point is None and owner in capture.get('pending', set()):
+    if owner in capture.get('pending', set()):
         earned_source = dict(state='pending', read_ts=None)
+    elif owner in capture.get('earnings_failed', set()):
+        earned_source['state'] = 'failed'
     earned = earnings.summarize(point['rows'], work.accepted_job_ids(seat), now) if point else {}
     accepted = work.accepted_rows(seat)
     if earned and (accepted is None or any(parse_job_id(row.get('jobId')) is None for row in accepted)):

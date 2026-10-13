@@ -60,14 +60,23 @@ async def test_failed_refresh_keeps_values_and_clocks_and_backoff(reader):
     await r.read(seat(), NOW+601)
     data, meta = sources.project(r.capture(NOW+601), seat(), now=NOW+601)
     assert data['_agent_earnings']['earned'] == 1 and data['_agent_nodes']['launches'] == 1
-    assert meta['earnings'] == dict(read_ts=NOW, state='stale')
+    assert meta['earnings'] == dict(read_ts=NOW, state='failed')
     assert meta['agent_work'] == dict(read_ts=NOW, state='stale')
     await r.read(seat(), NOW+602)
     assert earnings.fetch.await_count == 2
+    earnings.fetch.return_value = earned()
+    r.clock = lambda: NOW+721
+    await r.read(seat(), NOW+721)
+    assert sources.project(r.capture(NOW+721), seat(), now=NOW+721)[1]['earnings']['state'] == 'ok'
 
 
-async def test_pending_is_actual_owner_read_and_cancellation_clears_it(reader):
+@pytest.mark.parametrize('cached', [False, True])
+async def test_pending_is_actual_owner_read_and_cancellation_clears_it(reader, cached):
     r, earnings, _ = reader
+    if cached:
+        r.clock = lambda: NOW-601
+        await r.read(seat(), NOW-601)
+        r.clock = lambda: NOW
     entered, release = asyncio.Event(), asyncio.Event()
     async def hold(owner):
         entered.set()
@@ -82,7 +91,7 @@ async def test_pending_is_actual_owner_read_and_cancellation_clears_it(reader):
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert sources.project(r.capture(NOW), seat(), now=NOW)[1]['earnings']['state'] == 'unavailable'
+    assert sources.project(r.capture(NOW), seat(), now=NOW)[1]['earnings']['state'] == ('stale' if cached else 'unavailable')
     assert sources.project(frozen, seat(), now=NOW)[1]['earnings']['state'] == 'pending'
 
 

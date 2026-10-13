@@ -85,6 +85,18 @@ def test_premium_share_counts_actual_known_models_and_reports_coverage(snapshot)
     assert snapshot == before
 
 
+@pytest.mark.parametrize('state', ['unavailable', 'pending', 'failed', 'ok'])
+def test_earnings_preserves_read_state_without_exposing_cached_values_as_live(snapshot, state):
+    snapshot['sources']['earnings'] = dict(state=state, read_ts=NOW-30 if state in ('failed', 'ok') else None)
+    snapshot['data']['_agent_earnings'] = dict(earned=12, worked_on=2, earned_24h=4,
+                                             worked_on_24h=1, worked_recent=True)
+    result = hero.project(**snapshot)['earnings']
+    assert result['state'] == state
+    assert result['state'] in SURF_AGENT_HERO_STATES
+    assert result['earned'] == (12 if state == 'ok' else None)
+    assert result['worked_on_24h'] == (1 if state == 'ok' else None)
+
+
 @pytest.mark.parametrize('rows,expected', [
     ([], (None, 0, 0, 0)),
     ([dict(model=None, answer_state='read')], (None, 0, 0, 1)),

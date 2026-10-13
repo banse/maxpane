@@ -1586,3 +1586,15 @@ No layout pin changed. Five data and two UI mutations were killed and restored.
 Final verification: 579 affected tests, 124 guards and 12 doc pins passed. Review
 approved with no findings; 17 targeted cases and two additional mutations verified
 unknown-date handling and recent-work projection. No residual follow-ups.
+
+## AGENT EARNINGS footer priority and read status — 2026-10-13
+
+Recent selected-agent builder work now takes priority: `x new worked on`, otherwise
+the total `x new`. Current reads show a loading indicator, including cached refreshes.
+Recorded fetch failures use the distinct `failed` state and red `load failed`.
+Review caught that `unavailable` also includes unread and cancelled first reads;
+those remain unavailable without claiming an error. Cached values survive retries
+but are hidden while pending or failed. No layout pins or fetch endpoints changed.
+The single review finding is addressed by state-projection and composited regressions;
+scoped re-review approved with nine focused cases and a killed regression mutation.
+Final affected checks: 393 tests, 124 guards and 12 docpins passed. No residual findings.

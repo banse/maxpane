@@ -23,8 +23,9 @@ def _positive(value):
 
 
 def _source(sources, name, now):
-    if _mapping(sources.get(name)).get('state') == 'pending':
-        return dict(state='pending', read_ts=None)
+    raw = _mapping(sources.get(name))
+    if raw.get('state') in ('pending', 'failed'):
+        return dict(state=raw['state'], read_ts=_stamp(raw.get('read_ts'), now))
     return _read_source(sources, name, now)
 
 

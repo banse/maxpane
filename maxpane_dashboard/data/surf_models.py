@@ -1523,7 +1523,7 @@ SURF_PROTOCOL_HERO_FIELDS = {
     "checks": ("state", "read_ts", "counters", "drift_bps", "path"),
 }
 SURF_LEADERBOARD_HERO_STATES = ("ok", "partial", "stale", "unavailable")
-SURF_AGENT_HERO_STATES = ("ok", "partial", "stale", "unavailable", "pending", "busy", "unknown_seat", "stale_unknown_seat", "empty")
+SURF_AGENT_HERO_STATES = ("ok", "partial", "stale", "unavailable", "pending", "busy", "unknown_seat", "stale_unknown_seat", "empty", "failed")
 #: Twelve rack cards retain independent records, worker, receipt and selected-seat clocks.
 SURF_AGENT_HERO_FIELDS = {
     "seat": ("state", "read_ts", "token_id", "selected_by", "read_error", "agent_id"),
