@@ -31,7 +31,7 @@ async def test_oracle_preview_replaces_launchpad_without_io_or_saved_state(monke
         assert {item.region.height for item in neighbors} == {9}
         assert max(item.region.width for item in neighbors) - min(item.region.width for item in neighbors) <= 1
         assert card.region.x == app.screen.query_one("#surfboard-card-announce").region.x
-        assert card.region.y == app.screen.query_one("#surfboard-card-protocol").region.y
+        assert card.region.y == app.screen.query_one("#surfboard-card-swarm-tokens").region.y
         assert all(field.disabled for field in app.screen.query(Input))
         await pilot.click(card)
         await pilot.pause()
