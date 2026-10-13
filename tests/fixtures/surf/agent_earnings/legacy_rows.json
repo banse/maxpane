@@ -1,0 +1,41 @@
+[
+  {
+    "launchId": "fc450805-c268-4424-9f99-c008c96b4a72",
+    "chainId": 11155111,
+    "tokenAddress": "0xb786bcd955e15909b67a9419f44329c3825d7313",
+    "cuts": ["early"],
+    "jobId": "a017ded9-6a66-48aa-973e-1c54bc56792a",
+    "at": "2026-10-01T16:08:24.103Z",
+    "claim": {
+      "launchId": "fc450805-c268-4424-9f99-c008c96b4a72",
+      "chainId": 11155111,
+      "state": "claimable"
+    }
+  },
+  {
+    "launchId": "a1cc43f3-0944-4133-a5b6-33efa52178de",
+    "chainId": 11155111,
+    "tokenAddress": "0xd17c25614f1ff5a67b1549c7a79a46e6a1fdf9d2",
+    "cuts": ["builder", "early"],
+    "jobId": "7facd6ef-7a4a-495f-8ce9-a194d025a585",
+    "at": "2026-10-01T11:47:49.736Z",
+    "claim": {
+      "launchId": "a1cc43f3-0944-4133-a5b6-33efa52178de",
+      "chainId": 11155111,
+      "state": "claimable"
+    }
+  },
+  {
+    "launchId": "5af340ea-6022-40a8-b2c0-861d59a51fff",
+    "chainId": 11155111,
+    "tokenAddress": "0xb0bb5c62c2cbff432a0377a0a8b71d1775de77c8",
+    "cuts": ["early"],
+    "jobId": "863dbd0b-e6f3-4dfb-8d20-77eb72e5426f",
+    "at": "2026-09-26T01:02:40.247Z",
+    "claim": {
+      "launchId": "5af340ea-6022-40a8-b2c0-861d59a51fff",
+      "chainId": 11155111,
+      "state": "unknown"
+    }
+  }
+]

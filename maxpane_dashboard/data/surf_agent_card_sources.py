@@ -71,7 +71,7 @@ class AgentCardSources:
         self.work_attempts = {job: stamp for job, stamp in self.work_attempts.items() if job in candidates}
         due = work.due(seat, points, now, cap=len(candidates))
         due.sort(key=lambda job: (job in points, self.work_attempts.get(job, 0)))
-        for job in due[:12]:
+        async def read_job(job):
             self.work_attempts[job] = now
             try:
                 detail = await self.swarm.fetch_job(job)
@@ -81,10 +81,15 @@ class AgentCardSources:
             point = work.membership_point(detail, job, stamp)
             if point is None:
                 self.work_failed.add(job)
-                continue
+                return
             points[job] = point
             self.work_failed.discard(job)
             self.cache.store_last_good(SLOT_AGENT_WORK, work.coerce_points(points, stamp), ts=stamp)
+
+        # Finish typical seat histories on the first read without an unbounded burst.
+        batch = due[:64]
+        for offset in range(0, len(batch), 4):
+            await asyncio.gather(*(read_job(job) for job in batch[offset:offset+4]))
 
 
 def project(capture, seat, *, now):

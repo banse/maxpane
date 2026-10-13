@@ -14,7 +14,7 @@ MAX_BYTES = 4 * 1024 * 1024
 MAX_ROWS = 4096
 _ADDRESS = re.compile(r'0x[0-9a-fA-F]{40}')
 _UUID = re.compile(r'[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}')
-_STATES = {'locked', 'claimable', 'claimed', 'held'}
+_STATES = {'locked', 'claimable', 'claimed', 'held', 'unknown'}
 
 
 def _matches(pattern: re.Pattern, value: object) -> bool:
@@ -38,7 +38,8 @@ def coerce_rows(value: object) -> list[dict] | None:
                 or not _matches(_UUID, row.get('job_id'))
                 or 'launched_ts' not in row
                 or (row['launched_ts'] is not None and not _positive(row['launched_ts']))
-                or type(row.get('builder')) is not bool or type(row.get('claimed')) is not bool):
+                or type(row.get('builder')) is not bool or 'claimed' not in row
+                or row['claimed'] is not None and type(row['claimed']) is not bool):
             return None
         result.append({
             'chain_id': row['chain_id'], 'token_address': row['token_address'].lower(),
@@ -74,14 +75,15 @@ def _normalize(rows: object) -> list[dict] | None:
                 or type(claim.get('chainId')) is not int or claim['chainId'] != row['chainId']
                 or not _matches(_UUID, row.get('jobId'))
                 or not isinstance(cuts, list) or not cuts
-                or any(cut not in ('swarm', 'builder') for cut in cuts)):
+                or any(cut not in ('swarm', 'builder', 'early') for cut in cuts)):
             return None
         if row.get('tokenAddress') is None and 'tokenAddress' in row and claim['state'] == 'held':
             continue  # A held allocation does not identify an earned token yet.
         result.append({
             'chain_id': row['chainId'], 'token_address': row.get('tokenAddress'),
             'job_id': row['jobId'], 'launched_ts': _timestamp(row.get('at')),
-            'builder': 'builder' in cuts, 'claimed': claim['state'] == 'claimed',
+            'builder': 'builder' in cuts,
+            'claimed': None if claim['state'] == 'unknown' else claim['state'] == 'claimed',
         })
     return coerce_rows(result)
 
@@ -188,18 +190,21 @@ def parse_earned_html(html: str, owner: str) -> list[dict] | None:
 def summarize(rows: list[dict], accepted_job_ids: set[str], now: float) -> dict:
     """Wallet asset totals; builder participation belongs to the selected seat."""
     accepted = {job.lower() for job in accepted_job_ids}
-    earned, worked, claimed = set(), set(), set()
+    earned, worked, claimed, unknown_claims = set(), set(), set(), set()
     recent = False
     for row in rows:
         asset = (row['chain_id'], row['token_address'])
         earned.add(asset)
         if row['claimed']:
             claimed.add(asset)
+        elif row['claimed'] is None:
+            unknown_claims.add(asset)
         if row['builder'] and row['job_id'] in accepted:
             worked.add(asset)
             launched = row['launched_ts']
             recent |= launched is not None and 0 <= now - launched < 86400
-    return {'earned': len(earned), 'worked_on': len(worked), 'claimed': len(claimed), 'worked_recent': recent}
+    return {'earned': len(earned), 'worked_on': len(worked),
+            'claimed': None if unknown_claims - claimed else len(claimed), 'worked_recent': recent}
 
 
 class AgentEarningsClient(OwnedHttpClient):

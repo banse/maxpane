@@ -103,13 +103,65 @@ def test_unknown_accepted_job_identity_does_not_claim_zero_worked_on():
 
 async def test_unread_failed_jobs_do_not_starve_later_membership_reads(reader):
     r, _, swarm = reader
-    jobs = [f'{index:08x}-034f-47b3-b204-318734811863' for index in range(13)]
+    jobs = [f'{index:08x}-034f-47b3-b204-318734811863' for index in range(65)]
     raw = dict(seat(), work=[dict(jobId=job, nodeKey='audit_math', status='accepted') for job in jobs])
     swarm.fetch_job.return_value = None
     await r.read(raw, NOW)
-    assert len(swarm.fetch_job.await_args_list) == 12
+    assert len(swarm.fetch_job.await_args_list) == 64
     await r.read(raw, NOW+120)
     assert jobs[-1] in [call.args[0] for call in swarm.fetch_job.await_args_list]
+
+
+async def test_first_read_completes_seat_420_sized_history_with_bounded_concurrency(reader):
+    r, _, swarm = reader
+    jobs = [f'{index:08x}-034f-47b3-b204-318734811863' for index in range(53)]
+    raw = dict(seat(), work=[dict(jobId=job, nodeKey='audit_math', status='accepted') for job in jobs])
+    live, peak = 0, 0
+    fixture = swarm.fetch_job.return_value
+    async def fetch(job):
+        nonlocal live, peak
+        live += 1
+        peak = max(peak, live)
+        try:
+            await asyncio.sleep(0)  # Yield without a wall-clock delay.
+            return dict(fixture, id=job)
+        finally:
+            live -= 1
+    swarm.fetch_job.side_effect = fetch
+    await r.read(raw, NOW)
+    data, meta = sources.project(r.capture(NOW), raw, now=NOW)
+    assert data['_agent_nodes'] == dict(oracle=0, launches=53, other=0, known_jobs=53, total_jobs=53)
+    assert meta['agent_work'] == dict(state='ok', read_ts=NOW)
+    assert peak == 4 and live == 0
+    await r.read(raw, NOW+1)
+    assert swarm.fetch_job.await_count == 53
+
+
+async def test_cancelled_membership_batch_stops_all_in_flight_reads(reader):
+    r, _, swarm = reader
+    started, release = asyncio.Event(), asyncio.Event()
+    live = 0
+    fixture = swarm.fetch_job.return_value
+    async def fetch(job):
+        nonlocal live
+        live += 1
+        started.set()
+        try:
+            await release.wait()
+            return dict(fixture, id=job)
+        finally:
+            live -= 1
+    swarm.fetch_job.side_effect = fetch
+    raw = dict(seat(), work=[dict(jobId=f'{index:08x}-034f-47b3-b204-318734811863',
+                                  nodeKey='audit_math', status='accepted') for index in range(10)])
+    task = asyncio.create_task(r.read(raw, NOW))
+    await started.wait()
+    assert live == 4
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert live == 0 and swarm.fetch_job.await_count == 4
+    assert r.capture(NOW)['work'] == {}
 
 
 async def test_manager_selected_read_persistence_and_switch_never_borrow_other_owner(tmp_path, monkeypatch):

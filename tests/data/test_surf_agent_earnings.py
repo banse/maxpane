@@ -49,6 +49,24 @@ def test_empty_table_is_a_real_zero_but_absent_or_wrong_wallet_is_unknown():
         assert parse_earned_html(html, OWNER) is None
 
 
+def test_legacy_early_rewards_and_unknown_claim_do_not_hide_earned_tokens():
+    # Reduced from the public earned page for seat 420's owner on 2026-10-13:
+    # explorer.imd.fun/wallet/0xe5b1275fb926613d983da33fbfe1f331b7f64f2a/earned
+    rows = json.loads((FIXTURES / 'legacy_rows.json').read_text())
+    parsed = parse_earned_html(page(rows), OWNER)
+    assert parsed is not None and len(parsed) == 3
+    assert [row['builder'] for row in parsed] == [False, True, False]
+    assert [row['claimed'] for row in parsed] == [False, False, None]
+    jobs = {row['jobId'] for row in rows}
+    assert summarize(parsed, jobs, NOW) == dict(earned=3, worked_on=1, claimed=None, worked_recent=False)
+    assert coerce_rows(json.loads(json.dumps(parsed))) == parsed
+    confirmed = dict(parsed[-1], claimed=True)
+    assert summarize(parsed + [confirmed], jobs, NOW)['claimed'] == 1
+    missing = dict(parsed[-1])
+    del missing['claimed']
+    assert coerce_rows([missing]) is None
+
+
 @pytest.mark.parametrize('change', [
     {'launchId': 'not-a-job'}, {'chainId': True}, {'chainId': 0},
     {'tokenAddress': '0x1234'}, {'tokenAddress': None}, {'jobId': '../secret'},

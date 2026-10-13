@@ -310,6 +310,9 @@ with this selected seat's accepted job IDs. Green means one of those assets laun
 less than 24 hours ago. Wallet-wide totals are labeled as such on hover. Unknown work
 identity cannot become zero worked-on assets. Legitimate held rows without a token
 address are excluded; malformed or truncated tables fail the whole read.
+Legacy `early` cuts count toward earned assets, but only `builder` cuts establish
+worked-on assets. An explicit unknown claim state preserves earned/worked counts;
+the claimed total stays unknown unless another row confirms that asset was claimed.
 `surf_agent_earnings.py` resolves named Next flight exports as JSON, checks the provider
 wallet, and never executes script. GET-only, no redirects, 15 seconds, 4 MiB, 4096 rows.
 `AgentCardSources` runs earnings and membership reads inside the cancellable selected-seat
@@ -353,8 +356,9 @@ outer footer. Its tooltip retains the ordered teammate list. NODES partitions ac
 work rows into oracle, launches and other, with oracle precedence and `work by type`
 on the inner bottom border. Launch membership comes from validated live launch IDs
 and chain IDs in `/jobs/{id}`; `work[].launch` is only intent and cannot prove membership.
-Twelve unique non-oracle jobs are read per seat cycle, unknown jobs first, with failed
-reads rotated so they cannot starve later jobs. Membership refreshes after 600 seconds,
+Up to 64 unique non-oracle jobs are read per seat cycle, four concurrent reads at a
+time, unknown jobs first, with failed reads rotated so they cannot starve later jobs.
+Cancelling the seat task cancels every in-flight batch read. Membership refreshes after 600 seconds,
 including terminal jobs, and retains at most 400 points for 48 hours. Until every
 candidate is checked, launches/other stay unknown and oracle remains visible. Hover
 reports coverage, independent launch-read freshness and the original node breakdown.
