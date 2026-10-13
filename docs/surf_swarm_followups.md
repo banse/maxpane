@@ -1503,3 +1503,20 @@ cases under isolated-home worksteal. Guards 124, doc pins 12 and address sweeps
 2 passed. Ten implementation mutations were killed. Final review: Approved,
 no findings; 23 focused checks and an additional price-baseline mutation passed.
 No full suite was run. No residual follow-ups.
+
+## AGENT card state and presentation adjustments — 2026-10-13
+
+Implemented the owner's requested captions, ERC-8004 registration ID, grouped
+accepted count, full-width meters, payout time/24-hour color and consecutive-read
+rank movement. STATUS uses the boardroom activity fold and a grey `0F` separator;
+SEAT uses independent worker presence. Visible stale badges are removed while
+internal clocks and retained-state tooltips remain intact. Loading ends for each
+completed source independently, and failed/busy results stay distinguishable.
+
+The keyless native 149×45 preview was shown before hardening. Capture and stress
+sweeps measured 132×29; the STATUS activity caption binds width. Sixteen
+implementation mutations were killed. The combined run passed 1,387 cases with
+three outdated expectations; after correction, all 178 affected-file cases passed.
+Final review approved with 21 focused tests and a further pending-state mutation;
+the grey separator was also verified in compact and unknown-count output.
+No residual review findings. No full suite was run.

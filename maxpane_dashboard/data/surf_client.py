@@ -3113,7 +3113,7 @@ class SurfClient(OwnedHttpClient):
         direct = {a.lower() for a in A.REWARD_DIRECT_PAYERS} - disperse
         url = f"{self._blockscout}/addresses/{owner}/token-transfers"
         params: dict = {"type": "ERC-20", "filter": "to", "token": A.IMD_TOKEN}
-        rows: list[tuple[str, str, int]] = []      # (tx, from, raw value)
+        rows: list[tuple[float, str, str, int]] = []      # (timestamp, tx, from, raw value)
         for _page in range(SEAT_REWARD_PAGE_BOUND):
             body = await self._get_json(url, params=params)
             if not isinstance(body, dict) or not isinstance(body.get("items"), list):
@@ -3129,7 +3129,7 @@ class SurfClient(OwnedHttpClient):
                     older = True
                     break
                 if sender in direct or sender in disperse:
-                    rows.append((tx, sender, value))
+                    rows.append((ts, tx, sender, value))
             nxt = body.get("next_page_params")
             if older or not nxt:
                 break
@@ -3137,12 +3137,13 @@ class SurfClient(OwnedHttpClient):
         else:
             logger.warning("fetch_seat_rewards: hit the %d-page bound for %s", SEAT_REWARD_PAGE_BOUND, owner)
             return None
-        via_disperse = [tx for tx, sender, _value in rows if sender in disperse]
+        via_disperse = [tx for _ts, tx, sender, _value in rows if sender in disperse]
         senders = await self.fetch_tx_senders(via_disperse) if via_disperse else {}
         if any(tx not in senders for tx in via_disperse):
             return None
         payers = {a.lower() for a in A.REWARD_DISPERSERS}
-        paid = [value for tx, sender, value in rows if sender in direct or senders.get(tx) in payers]
+        paid = [(ts, value) for ts, tx, sender, value in rows
+                if sender in direct or senders.get(tx) in payers]
         try:
             results = await self._rpc_state_batch([
                 ("eth_call", [{"to": A.IMD_TOKEN, "data": _SEL_DECIMALS}, "latest"]),
@@ -3156,7 +3157,9 @@ class SurfClient(OwnedHttpClient):
         decimals, seats = decode_uint(results[0], 0), decode_uint(results[1], 0)
         if not 0 <= decimals <= 36 or seats < 1:
             return None
-        return SeatRewards(raw_total=sum(paid), decimals=decimals, seats_held=seats, transfers=len(paid))
+        return SeatRewards(raw_total=sum(value for _ts, value in paid), decimals=decimals,
+                           seats_held=seats, transfers=len(paid),
+                           last_paid_ts=max((ts for ts, value in paid if value > 0), default=None))
 
     async def fetch_tx_senders(self, tx_hashes: Sequence[str]) -> dict[str, str]:
         """``{tx_hash: signer}``, both lowercased, for the hashes we could read.

@@ -235,22 +235,34 @@ in manager memory; persistence still records content changes. Restored detail is
 dated stale until confirmed. Capture detail, rewards, runtime checks and activity
 before detached reads can replace them. A seat switch rebuilds the entire detail
 family together; reward identity remains the current owner plus pairing timestamp.
-Each retained stale/partial card names its state and own source time. Missing,
-pending, busy, never-paired and known-empty data remain distinct from zero. A
-retained never-paired result has an explicit stale state and confirmation time;
-only a successful new read clears that qualification.
+Per the owner's 2026-10-13 adjustment, cards omit visible stale badges and USD
+stale suffixes. Source states and clocks remain in the projection and literal
+tooltips (old reads say `retained`). Pending reads show `◌ loading`; completed
+failures stay unavailable and busy responses stay `busy`. Never-paired and known-empty data remain distinct
+from zero. A retained never-paired result keeps its internal qualification and
+confirmation time until a successful new read.
+
+SEAT keeps the IDMD token as its digits. Its inner caption is `online`, `working`,
+or `offline` from the independent worker observation; green for online/working,
+red for offline, neutral for unknown. The outer `AGENT #x` uses the ERC-8004
+registration ID from that seat's detail, never the IDMD token as a substitute.
 
 ACCEPTED and RANK use the selected token's canonical `/seats/records` outcome.
-ACCEPTED shows accepted attempts as digits, attempts on the inner bottom border,
-and percentage plus a meter outside. Zero attempts says `no attempts`; no record
+ACCEPTED groups accepted digits with commas, shows `of N` attempts on the inner
+bottom border, and percentage plus a full-width meter outside. Its inner border
+and EFFORT's are always neutral. Zero attempts says `no attempts`; no record
 says `not recorded`. EFFORT shows contributor wall-clock hours and lifetime output
-tokens; input and cached-input tokens are excluded. Rank change remains in its
-literal tooltip and per-seat persisted history. These sources stay independent of
-seat-detail availability.
+tokens; input and cached-input tokens are excluded. Hero RANK compares consecutive
+confirmed records reads per seat: green/up for gained places, red/down for lost
+places, neutral/dash for unchanged or first read. Repaints retain the last delta;
+the next unchanged successful read clears it. Legacy persisted rank history is
+unchanged. These sources stay independent of seat-detail availability.
 
-STATUS lists working, capacity and device counts from workers. Its inner bottom
+STATUS shows large active-slot and capacity digits with a static grey `0F`
+between them. Its inner bottom
 border shows the newest seat activity as `worked HH:MM` or `accepted HH:MM`;
-the full date and independent detail-read clock live in its tooltip. Feedback
+the full date and independent detail-read clock live in its tooltip. The border
+and full-width footer meter follow the boardroom's AGENT card. Feedback
 `reviews[].sentAt` is not seat activity. The outer footer uses the shared last-work
 meter: BUSY has full green segments; IDLE has a grey label and green drains
 to orange over 24h, then orange drains to empty by 72h. OFF is red with empty
@@ -268,6 +280,11 @@ row, an unreadable sender, decimals or balance, or zero seats: a partial total n
 `SLOT_SWARM_SEAT_REWARDS` keeps six seats keyed on owner + pairing (a sold seat never inherits
 a total); a per-seat 600 s clock inside the seat task, 120 s failure backoff.
 `swarm_seat_rewards_state` is `ok` / `pending` / None, so not-read and could-not-read differ.
+The same verified transfer read retains the latest positive payment's timestamp;
+no additional API request is needed. REWARDS shows `paid MM-DD HH:MM` outside and
+uses a green inset only if that payment is less than 24 hours old. Optional
+`last_paid_ts` in the reward cache is bounded by pairing, read time and now; legacy
+points keep their amount with an unknown payment date until the next read.
 `SLOT_SWARM_SEAT_RANK` persists each seat's `{rank, prev}`. Update it only on
 an observed valid rank change; unchanged reads keep the delta. A first observation
 has none; unranked/unavailable/not-listed reads hide it without erasing history.

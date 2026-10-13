@@ -11,6 +11,7 @@ an understated or unverified total must never look like a real one.
 from __future__ import annotations
 
 import copy
+from datetime import datetime
 import json
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ OWNER = "0xe5b1275fb926613d983da33fbfe1f331b7f64f2a"
 PAIRED_TS = 1789882465.536          # 2026-09-20T05:34:25.536Z, /seats pairedAt
 #: The three disperse payments, 09-23 / 09-25 / 09-28 (13.8662 IMD).
 REWARD_RAW = 7692307692307692307 + 3052147239263803680 + 3121794871794871794
+LAST_PAID_TS = datetime.fromisoformat(PAGE["items"][0]["timestamp"]).timestamp()
 STRANGER = "0x" + "ab" * 20
 
 
@@ -86,7 +88,7 @@ async def _read(since_ts: float = PAIRED_TS, **kw) -> SeatRewards | None:
 
 async def test_the_420_capture_sums_the_three_disperse_payments():
     got = await _read()
-    assert got == SeatRewards(raw_total=REWARD_RAW, decimals=18, seats_held=1, transfers=3)
+    assert got == SeatRewards(raw_total=REWARD_RAW, decimals=18, seats_held=1, transfers=3, last_paid_ts=LAST_PAID_TS)
     assert round(got.raw_total / 10 ** got.decimals, 4) == 13.8662
 
 
@@ -214,3 +216,17 @@ def test_the_payer_rule_is_data():
     assert A.REWARD_DISPERSE_CONTRACTS == (A.DISPERSE,)
     assert A.REWARD_DIRECT_PAYERS == ()
     assert A.DISPERSE == "0xd15fE25eD0Dba12fE05e7029C88b10C25e8880E3"
+
+
+async def test_latest_payment_excludes_zero_transfers_and_unverified_disperse_senders():
+    items = copy.deepcopy(PAGE["items"])
+    items[0]["total"]["value"] = "0"
+    got = await _read(page_items=items)
+    assert got.last_paid_ts == datetime.fromisoformat(items[1]["timestamp"]).timestamp()
+    senders = dict(CHAIN["tx_senders"])
+    senders[items[1]["transaction_hash"].lower()] = STRANGER
+    got = await _read(page_items=items, senders=senders)
+    assert got.last_paid_ts == datetime.fromisoformat(items[2]["timestamp"]).timestamp()
+    for item in items:
+        item["total"]["value"] = "0"
+    assert (await _read(page_items=items)).last_paid_ts is None

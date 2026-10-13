@@ -280,6 +280,7 @@ class SeatRewards:
     decimals: int
     seats_held: int
     transfers: int
+    last_paid_ts: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1525,10 +1526,10 @@ SURF_LEADERBOARD_HERO_STATES = ("ok", "partial", "stale", "unavailable")
 SURF_AGENT_HERO_STATES = ("ok", "partial", "stale", "unavailable", "pending", "busy", "unknown_seat", "stale_unknown_seat", "empty")
 #: Twelve rack cards retain independent records, worker, receipt and selected-seat clocks.
 SURF_AGENT_HERO_FIELDS = {
-    "seat": ("state", "read_ts", "token_id", "selected_by", "read_error"),
+    "seat": ("state", "read_ts", "token_id", "selected_by", "read_error", "agent_id"),
     "accepted": ("state", "read_ts", "listed", "accepted", "attempts", "percent"),
     "effort": ("state", "read_ts", "listed", "hours", "output_tokens"),
-    "rewards": ("state", "read_ts", "imd", "usd", "seats", "usd_state", "usd_read_ts"),
+    "rewards": ("state", "read_ts", "imd", "usd", "seats", "usd_state", "usd_read_ts", "last_paid_ts", "paid_recent"),
     "rank": ("state", "read_ts", "listed", "rank", "ranked_of", "delta"),
     "status": ("state", "read_ts", "live_state", "working", "capacity", "devices", "paused_until_ts", "failures",
                "last_work_ts", "last_work_kind", "work_state", "work_read_ts", "meter_kind", "meter_state", "numerator", "denominator"),

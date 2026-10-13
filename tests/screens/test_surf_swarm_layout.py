@@ -112,7 +112,7 @@ from tests.surf_swarm_fixtures import (
 #: own: a pin that moves without a re-sweep reddens the agreement test.
 MEASURED_SWARM_COLUMNS = 141
 MEASURED_SWARM_ROWS = 38
-MEASURED_AGENT_COLUMNS = 134
+MEASURED_AGENT_COLUMNS = 132
 MEASURED_AGENT_ROWS = 29
 
 #: Full-width LAUNCHES clears the capture's marker at 171 (157 before liq). The production
@@ -133,9 +133,9 @@ _S_THRESHOLDS = (
 _A_THRESHOLDS = (
     99, 107,  # native RECORD compact/full tiers, unchanged
     129,      # complete status bar
-    132, 134, # STATUS subtitle; ACCEPTED attempts subtitle on seat420
+    132,      # STATUS subtitle on all three AGENT payloads
 )
-_AGENT_WHOLE_FROM = {"capture": 132, "capture420": 134, "duplicates420": 134, "worst-a": 132}
+_AGENT_WHOLE_FROM = {"capture": 132, "capture420": 132, "duplicates420": 132, "worst-a": 132}
 
 
 
@@ -144,8 +144,8 @@ _EXCLUDED_FROM_WHOLE = {
     "a": {"SurfSwarmSeatRecord"},
     "b": set(),
 }
-#: AGENT binds on the rack ACCEPTED subtitle of seat420. Capture seat0 and
-#: stress data clear two columns earlier; arbitrary metadata is marked. SWARM's
+#: AGENT binds on the rack STATUS subtitle in capture and stress data;
+#: arbitrary metadata is marked. SWARM's
 #: is LAUNCHES since CAPABILITY was parked (2026-10-03): one column under the
 #: pin it hides its last column behind its own horizontal scrollbar.
 #: 2026-10-05: SITES and the full status bar both bind SWARM at 129.
@@ -700,7 +700,14 @@ def _measure(pilot, key: str) -> dict:
             if card.data.digits:
                 digits = [segment.text for segment in Digits(card.data.digits).render(Style()) if segment.text != "\n"]
                 inside = max(4, card.content_size.width) - 2
-                if (card.data.digits != "--" and all(c in "0123456789.," for c in card.data.digits)
+                groups = card.data.digits.split()
+                if key == 'a' and card.data.key == 'status' and len(groups) == 3 and '--' not in groups:
+                    # The STATUS counter uses one cell between independently
+                    # colored glyph groups; Digits' own spaces use three.
+                    parts = [[s.text for s in Digits(value).render(Style()) if s.text != '\n'] for value in groups]
+                    tall = [' '.join(part[row] for part in parts) for row in range(3)]
+                    expected.extend(tall if max(map(len, tall)) <= inside else [card.data.digits])
+                elif (card.data.digits != "--" and all(c in "0123456789.," for c in card.data.digits)
                         and all(len(row) <= inside for row in digits)):
                     expected.extend(digits)
                 else:
@@ -966,7 +973,7 @@ async def test_workflows_tiers_are_the_measured_onsets(width, tier) -> None:
 
 
 def test_the_pins_are_the_measured_numbers_and_fit_the_app() -> None:
-    """Independent measured pins: SWARM 141x38, AGENT rack134x29; app width143."""
+    """Independent measured pins: SWARM 141x38, AGENT rack132x29; app width143."""
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS == MEASURED_SWARM_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_ROWS == MEASURED_SWARM_ROWS
     assert SURF_AGENT_FULL_LAYOUT_COLUMNS == MEASURED_AGENT_COLUMNS
@@ -1204,6 +1211,14 @@ async def test_board_height_boundaries(height,kind):
     measured_rows = SURF_BOARD_FULL_LAYOUT_ROWS - (kind == 'v4')
     assert result['taller']==(height<measured_rows),result
 
+async def test_agent_width_pin_is_not_loose():
+    below = await _render(_capture420_payload(), (SURF_AGENT_FULL_LAYOUT_COLUMNS - 1, 45), 'a')
+    assert ('SurfSwarmAgentRackHero', 'accepted 06:10') in below['clipped'], below
+    assert 'SurfSwarmAgentRackHero' in below['marked_besides_exceptions'], below
+    at = await _render(_capture420_payload(), (SURF_AGENT_FULL_LAYOUT_COLUMNS, 45), 'a')
+    _assert_whole(at, 'agent pin')
+
+
 async def test_board_width_pin_is_not_loose():
     result=await _render(_board_payload(),(SURF_BOARD_FULL_LAYOUT_COLUMNS-1,80),'b')
     assert result['marked'] == {'SurfSwarmBoardHero'}, result
@@ -1311,7 +1326,7 @@ async def test_agent_rack_rows_boundary(kind, height):
 @pytest.mark.parametrize('kind', ['capture', 'capture420', 'duplicates420', 'worst-a', 'polish',
                                   'v3', 'pending', 'seats-unavailable', 'workers-unavailable',
                                   'contributors-unavailable', 'absent', 'no-seat'])
-@pytest.mark.parametrize('width', boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 125, 160, 129, 134))
+@pytest.mark.parametrize('width', boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 125, 160, 129, 132))
 async def test_agent_rack_cards_width_boundary(kind, width):
     payload = (PAYLOADS[kind]() if kind in PAYLOADS else
                _polish_agent_payload() if kind == 'polish' else _v3_agent_payload(kind))
@@ -1320,7 +1335,7 @@ async def test_agent_rack_cards_width_boundary(kind, width):
     if width >= SURF_AGENT_FULL_LAYOUT_COLUMNS:
         _assert_whole(result, (kind, width))
     elif (kind in ('capture', 'capture420', 'duplicates420', 'worst-a', 'polish', 'v3')
-          and width < _AGENT_WHOLE_FROM.get(kind, 134)):
+          and width < _AGENT_WHOLE_FROM.get(kind, 132)):
         assert 'SurfSwarmAgentRackHero' in result['marked_besides_exceptions']
         assert any(name == 'SurfSwarmAgentRackHero' for name, _ in result['clipped'])
 
@@ -1342,8 +1357,8 @@ async def test_busy_agent_cards_keep_independent_records_at_the_pin():
         accepted = hero.query_one('#hero-accepted')
         painted = _region_text(pilot.app, accepted)
         # Busy detail cannot gate the independent canonical accepted count.
-        assert accepted.data.digits == '3253'
-        assert '3,392 attempts' in painted and '95.9' in painted
+        assert accepted.data.digits == '3,253'
+        assert 'of 3,392' in painted and '95.9' in painted
         assert 'busy' not in painted
         for key in ('rewards', 'owner', 'runtime', 'models', 'feedback', 'collab', 'nodes'):
             card = hero.query_one('#hero-' + key)

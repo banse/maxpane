@@ -5,7 +5,7 @@ from maxpane_dashboard.analytics.surfboard import count, number, ratio, seat_tok
 from maxpane_dashboard.data import surfboard_activity as activity_history
 from maxpane_dashboard.data.surf_models import SURF_AGENT_HERO_FIELDS
 from maxpane_dashboard.data.surf_news_hero import _stamp
-from maxpane_dashboard.data.surf_pool4_hero import _facts, _source
+from maxpane_dashboard.data.surf_pool4_hero import _facts as _read_facts, _source as _read_source
 
 
 def _mapping(value):
@@ -18,6 +18,18 @@ def _text(value):
 
 def _positive(value):
     return count(value) or None
+
+
+def _source(sources, name, now):
+    if _mapping(sources.get(name)).get('state') == 'pending':
+        return dict(state='pending', read_ts=None)
+    return _read_source(sources, name, now)
+
+
+def _facts(source, **values):
+    if source['state'] == 'pending':
+        return dict(source, **dict.fromkeys(values))
+    return _read_facts(source, **values)
 
 
 def _detail_source(data, sources, now):
@@ -37,7 +49,7 @@ def _detail_facts(source, **values):
 
 
 def _listed(source, row):
-    if source['state'] == 'unavailable':
+    if source['state'] in ('pending', 'unavailable'):
         return None
     listed = row.get('listed')
     if listed is True:
@@ -95,8 +107,8 @@ def _status(data, summary, detail, workers, sources, token, now, activity):
                     working=None if incomplete else count(live.get('working')),
                     capacity=None if incomplete else count(live.get('max_concurrency')),
                     devices=None if incomplete else count(live.get('devices')))
-    result.update(paused_until_ts=number(live.get('paused_until_ts')) if workers['state'] != 'unavailable' else None,
-                  failures=count(live.get('failures')) if workers['state'] != 'unavailable' else None)
+    result.update(paused_until_ts=number(live.get('paused_until_ts')) if workers['state'] in ('ok', 'partial', 'stale') else None,
+                  failures=count(live.get('failures')) if workers['state'] in ('ok', 'partial', 'stale') else None)
     chronology = _detail_facts(detail, worked=_stamp(summary.get('last_worked_ts'), now),
                                accepted=_stamp(summary.get('last_won_ts'), now))
     newest = max(((stamp, kind) for kind, stamp in (('worked', chronology['worked']),
@@ -105,8 +117,6 @@ def _status(data, summary, detail, workers, sources, token, now, activity):
                   work_read_ts=detail['read_ts'])
     observed = activity_history.project(activity, token, now=now)
     meter = activity_history.meter(observed, result['live_state'], now=now)
-    if result['live_state'] == 'paused' and workers['state'] in ('ok', 'partial'):
-        meter.update(meter_state='paused', numerator=None)
     result.update(meter)
     return result
 
@@ -121,7 +131,8 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
     detail = _detail_source(data, sources, now)
     summary = _mapping(data.get('swarm_seat_summary'))
     seat = dict(detail, token_id=token, selected_by=_text(selected.get('selected_by')),
-                read_error=data.get('swarm_seat_read') if data.get('swarm_seat_read') in ('busy', 'failed') else None)
+                read_error=data.get('swarm_seat_read') if data.get('swarm_seat_read') in ('busy', 'failed') else None,
+                agent_id=_text(summary.get('agent_id')) if detail['state'] in ('ok', 'partial', 'stale') else None)
     records, contributors, workers = (_source(sources, key, now) for key in ('records', 'contributors', 'workers'))
     outcome = _mapping(data.get('swarm_seat_outcome'))
     if seat_token(outcome.get('token_id')) != token:
@@ -135,7 +146,7 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
     fraction = ratio(accepted, attempts)
     acceptance['percent'] = 100 * fraction if fraction is not None else None
     rank = (_facts(records, listed=listed, rank=_positive(outcome.get('rank')), ranked_of=count(outcome.get('ranked_of')))
-            if listed else dict(records, state=records['state'] if listed is False else 'unavailable',
+            if listed else dict(records, state=records['state'] if listed is False or records['state'] == 'pending' else 'unavailable',
                                  listed=listed, rank=None, ranked_of=count(outcome.get('ranked_of')) if listed is False else None))
     delta = data.get('swarm_seat_rank_delta')
     rank['delta'] = delta if type(delta) is int and rank['rank'] is not None else None
@@ -150,7 +161,7 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
         reward_source = detail
     elif data.get('swarm_seat_rewards_state') == 'pending':
         reward_source = dict(state='pending', read_ts=None)
-    elif detail['state'] == 'stale' and reward_source['state'] != 'unavailable':
+    elif detail['state'] == 'stale' and reward_source['state'] in ('ok', 'partial', 'stale'):
         reward_source = dict(reward_source, state='stale')
     reward = _mapping(data.get('swarm_seat_rewards'))
     reward_facts = _detail_facts(reward_source, imd=number(reward.get('imd')), seats=_positive(reward.get('seats')))
@@ -158,8 +169,14 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
     usd = _facts(market, usd=number(reward.get('usd')) if reward_facts['imd'] is not None else None)
     if reward_facts['state'] == 'stale' and usd['usd'] is not None:
         usd['state'] = 'stale'
+    paid = _stamp(reward.get('last_paid_ts'), now)
+    paired = _stamp(summary.get('paired_ts'), now)
+    if (paid is None or paired is None or reward_facts['imd'] is None or reward_facts['imd'] <= 0
+            or reward_facts['read_ts'] is None or not paired <= paid <= reward_facts['read_ts']):
+        paid = None
     rewards = dict(state=reward_facts['state'], read_ts=reward_facts['read_ts'], imd=reward_facts['imd'],
-                   usd=usd['usd'], seats=reward_facts['seats'], usd_state=usd['state'], usd_read_ts=usd['read_ts'])
+                   usd=usd['usd'], seats=reward_facts['seats'], usd_state=usd['state'], usd_read_ts=usd['read_ts'],
+                   last_paid_ts=paid, paid_recent=paid is not None and now-paid < 86400)
     owner = _detail_facts(detail, address=address(summary.get('owner')), paired_ts=_stamp(summary.get('paired_ts'), now))
     owner = dict(state=owner['state'], read_ts=owner['read_ts'], address=owner['address'],
                  name=_text(data.get('swarm_seat_owner_ens')) if owner['address'] is not None else None, paired_ts=owner['paired_ts'])

@@ -73,9 +73,28 @@ async def test_a_live_decimals_is_the_divisor(tmp_path):
 async def test_nothing_received_is_a_real_zero(tmp_path):
     client = _RewardsClient(SeatRewards(raw_total=0, decimals=18, seats_held=1, transfers=0))
     manager, payload = await _seated(tmp_path, _FakeSwarm(), seat=420, client=client)
-    assert payload["swarm_seat_rewards"] == {"imd": 0.0, "usd": 0.0, "seats": 1}
+    assert payload["swarm_seat_rewards"] == {"imd": 0.0, "usd": 0.0, "seats": 1, "last_paid_ts": None}
     assert payload["swarm_seat_rewards_state"] == "ok"
     await manager.close()
+
+
+async def test_last_payment_is_preserved_per_seat_and_survives_cache_reload(tmp_path):
+    now = SUMMARY['paired_ts'] + 86400
+    stamp = now - 3600
+    client = _RewardsClient(SeatRewards(raw_total=RAW, decimals=18, seats_held=4,
+                                       transfers=3, last_paid_ts=stamp))
+    manager, payload = await _seated(tmp_path, _FakeSwarm(), seat=420, client=client, clock=FakeClock(now))
+    assert payload['swarm_seat_rewards']['last_paid_ts'] == stamp
+    manager.save_cache()
+    await manager.close()
+    restored = _manager(tmp_path, _FakeSwarm(), client=_RewardsClient(), clock=FakeClock(now))
+    try:
+        assert restored.cache.get_last_good(SLOT_SWARM_SEAT_REWARDS).payload['420']['last_paid_ts'] == stamp
+        keys = restored._seat_rewards_keys(payload, None, now)
+        assert keys['swarm_seat_rewards']['last_paid_ts'] == stamp
+        assert keys['swarm_seat_rewards']['imd'] == pytest.approx(RAW / 1e18 / 4)
+    finally:
+        await restored.close()
 
 
 async def test_no_price_keeps_the_imd_and_drops_only_the_usd(tmp_path, monkeypatch):

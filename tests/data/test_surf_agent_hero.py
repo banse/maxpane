@@ -47,7 +47,7 @@ def test_contract_canonical_arithmetic_and_independent_source_clocks(snapshot):
         hours=pytest.approx(8.093120833333334), output_tokens=1215919)
     assert result['rank'] == dict(state='ok', read_ts=NOW-60, listed=True, rank=1, ranked_of=2, delta=2)
     assert result['rewards'] == dict(state='ok', read_ts=NOW-40, imd=12.84, usd=120.8244,
-                                    seats=3, usd_state='ok', usd_read_ts=NOW-20)
+                                    seats=3, usd_state='ok', usd_read_ts=NOW-20, last_paid_ts=None, paid_recent=False)
     assert result['owner']['address'] == '0xe5b1275fb926613d983da33fbfe1f331b7f64f2a'
     assert result['owner']['name'] == 'example.eth'
     assert result['feedback']['sent'] == 66 and result['feedback']['queued'] == 1
@@ -191,7 +191,7 @@ def test_status_uses_shared_linear_meter_for_both_drain_windows(snapshot, elapse
     assert status['numerator'] == status['denominator'] == 86400
 
 
-def test_offline_paused_and_stale_activity_have_no_live_green_progress(snapshot):
+def test_offline_paused_and_stale_activity_follow_boardroom_meter(snapshot):
     snapshot['activity'] = activity.observe(None, workers(), now=NOW)
     live = snapshot['data']['swarm_seat_live']
     live.update(live=False, live_state='offline', working=0, devices=0)
@@ -199,10 +199,11 @@ def test_offline_paused_and_stale_activity_have_no_live_green_progress(snapshot)
     assert status['live_state'] == status['meter_state'] == 'offline'
     live.update(live=True, live_state='paused', paused_until_ts=NOW+600, failures=3)
     status = hero.project(**snapshot)['status']
-    assert status['live_state'] == status['meter_state'] == 'paused'
+    assert status['live_state'] == 'paused'
+    assert status['meter_state'] == 'idle'
     assert status['paused_until_ts'] == NOW+600 and status['failures'] == 3
     snapshot['sources']['workers'].update(state='partial', partial=True)
-    assert hero.project(**snapshot)['status']['meter_state'] == 'paused'
+    assert hero.project(**snapshot)['status']['meter_state'] == 'idle'
     snapshot['sources']['workers'].update(state='ok', partial=False)
     live.update(live_state='idle', paused_until_ts=None, failures=None)
     snapshot['activity'] = activity.observe(None, workers(1), now=NOW-301)
@@ -266,3 +267,77 @@ def test_stale_detail_does_not_make_owner_based_rewards_or_usd_look_fresh(snapsh
     assert result['imd'] == 12.84 and result['usd'] == 120.8244
     assert result['state'] == result['usd_state'] == 'stale'
     assert result['read_ts'] == NOW-40 and result['usd_read_ts'] == NOW-20
+
+
+def test_seat_registration_uses_selected_detail_and_never_selection_fallback(snapshot):
+    snapshot['data']['swarm_seat_selected']['agent_id'] = 'wrong-agent'
+    snapshot['data']['swarm_seat_summary']['agent_id'] = '1234567890123456789012345'
+    assert hero.project(**snapshot)['seat']['agent_id'] == '1234567890123456789012345'
+    snapshot['data']['swarm_seat_state'] = 'pending'
+    assert hero.project(**snapshot)['seat']['agent_id'] is None
+    snapshot['data']['swarm_seat_state'] = 'unknown_seat'
+    assert hero.project(**snapshot)['seat']['agent_id'] is None
+
+
+@pytest.mark.parametrize('elapsed,recent', [(40, True), (86399, True), (86400, False), (90000, False)])
+def test_reward_recent_window_uses_verified_payment_time_not_source_clock(snapshot, elapsed, recent):
+    snapshot['data']['swarm_seat_rewards']['last_paid_ts'] = NOW-elapsed
+    result = hero.project(**snapshot)['rewards']
+    assert result['last_paid_ts'] == NOW-elapsed
+    assert result['paid_recent'] is recent
+    assert result['state'] == 'ok'
+
+
+@pytest.mark.parametrize('stamp', [None, True, -1, float('nan'), float('inf'), NOW+1, NOW-39, 1])
+def test_bad_or_unobserved_reward_time_does_not_erase_valid_amount(snapshot, stamp):
+    snapshot['data']['swarm_seat_rewards']['last_paid_ts'] = stamp
+    result = hero.project(**snapshot)['rewards']
+    assert result['imd'] == 12.84 and result['state'] == 'ok'
+    assert result['last_paid_ts'] is None and result['paid_recent'] is False
+
+
+def test_zero_reward_and_unavailable_reward_source_do_not_signal_recent_payment(snapshot):
+    snapshot['data']['swarm_seat_rewards'].update(last_paid_ts=NOW-100, imd=0)
+    result = hero.project(**snapshot)['rewards']
+    assert result['last_paid_ts'] is None and result['paid_recent'] is False
+    snapshot['data']['swarm_seat_rewards']['imd'] = 1
+    snapshot['sources']['rewards']['state'] = 'unavailable'
+    result = hero.project(**snapshot)['rewards']
+    assert result['last_paid_ts'] is None and result['paid_recent'] is False
+
+
+@pytest.mark.parametrize('source,sections', [
+    ('records', ('accepted', 'rank')), ('contributors', ('effort',)),
+    ('workers', ('status',)), ('rewards', ('rewards',)),
+    ('seat', ('seat', 'owner', 'runtime', 'models', 'feedback', 'collab', 'nodes', 'rewards')),
+])
+def test_first_source_read_keeps_pending_without_inventing_facts(snapshot, source, sections):
+    snapshot['sources'][source] = dict(state='pending', read_ts=None)
+    result = hero.project(**snapshot)
+    for section in sections:
+        assert result[section]['state'] == 'pending'
+        assert result[section]['read_ts'] is None
+    for section, field in [('accepted', 'accepted'), ('rank', 'rank'), ('effort', 'hours'),
+                           ('status', 'working'), ('rewards', 'imd'), ('seat', 'agent_id')]:
+        if section in sections:
+            assert result[section][field] is None
+    if source != 'records':
+        assert result['accepted']['state'] == 'ok'
+    if source != 'workers':
+        assert result['status']['working'] == 0
+    if source != 'seat':
+        assert result['owner']['state'] == 'ok'
+
+
+def test_pending_market_keeps_known_imd_reward(snapshot):
+    snapshot['sources']['market'] = dict(state='pending', read_ts=None)
+    result = hero.project(**snapshot)['rewards']
+    assert result['imd'] == 12.84 and result['state'] == 'ok'
+    assert result['usd'] is None and result['usd_state'] == 'pending'
+
+
+def test_first_rewards_read_stays_pending_with_retained_known_seat(snapshot):
+    snapshot['sources']['seat']['state'] = 'stale'
+    snapshot['sources']['rewards'] = dict(state='pending', read_ts=None)
+    result = hero.project(**snapshot)['rewards']
+    assert result['state'] == 'pending' and result['imd'] is None

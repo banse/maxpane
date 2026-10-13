@@ -1161,7 +1161,9 @@ class SurfManager:
         self._swarm_scores_task: Any = None
         self._swarm_board_task: Any = None
         self._swarm_board_observations: dict[str, dict] = {}
+        self._swarm_board_pending: set[str] = set()
         self._agent_seat_observations: dict[int, dict] = {}
+        self._agent_rank_reads: dict[int, dict] = {}
         #: The `/health` counters the last live read saw, so the 27.5 KB job
         #: list is only paid for when one of them moved (spec §3).
         self._swarm_counters: dict[str, Any] | None = None
@@ -6324,6 +6326,7 @@ class SurfManager:
         running = self._swarm_board_task
         if running is not None and not running.done():
             return running
+        self._swarm_board_pending = {'workers', 'contributors'}
         self._swarm_board_task = asyncio.ensure_future(self._swarm_board_detached(tiers, now))
         return self._swarm_board_task
 
@@ -6365,6 +6368,7 @@ class SurfManager:
             raw = await self._guard(
                 lambda method=method: getattr(self.swarm_client, method)(), f"swarm {method}",
             )
+            self._swarm_board_pending.discard(method.removeprefix('fetch_'))
             payload = normalize(raw)
             observed_at = float(self._clock())
             if slot == SLOT_SWARM_WORKERS:
@@ -6494,7 +6498,33 @@ class SurfManager:
         sources['runtime'] = {key: news_hero.source(point['checked_ts'], now=now,
             ttl=TIER_TTL_SECONDS[TIER_SWARM_RUNTIME_LATEST], failed=point['version'] is None)
             for key, point in capture['runtime'].items()}
-        return agent_hero.project(data=data, sources=sources, now=now, activity=capture['activity'])
+        for name, task in (('records', self._hub_source_tasks.get('records')),
+                           ('workers', self._swarm_board_task), ('contributors', self._swarm_board_task)):
+            source = sources.get(name) or {}
+            pending = name == 'records' or name in self._swarm_board_pending
+            if pending and source.get('read_ts') is None and task is not None and not task.done():
+                sources[name] = dict(source, state='pending', read_ts=None)
+        hero_data = dict(data, swarm_seat_rank_delta=self._agent_rank_delta(
+            token, data.get('swarm_seat_outcome'), sources.get('records'), now=now))
+        return agent_hero.project(data=hero_data, sources=sources, now=now, activity=capture['activity'])
+
+    def _agent_rank_delta(self, token, outcome, source, *, now):
+        """Compare confirmed reads per seat; cached repaints retain their arrow."""
+        outcome, source = outcome or {}, source or {}
+        stamp = news_hero._stamp(source.get('read_ts'), now)
+        rank = hub.count(outcome.get('rank'))
+        if (hub.seat_token(token) is None or outcome.get('token_id') != token
+                or outcome.get('listed') is not True or not rank
+                or source.get('state') != 'ok' or stamp is None):
+            return None
+        prior = self._agent_rank_reads.get(token)
+        if prior is not None and stamp <= prior['read_ts']:
+            return prior['delta'] if stamp == prior['read_ts'] and rank == prior['rank'] else None
+        delta = prior['rank'] - rank if prior is not None else None
+        self._agent_rank_reads[token] = dict(read_ts=stamp, rank=rank, delta=delta)
+        self._agent_rank_reads = dict(sorted(self._agent_rank_reads.items(),
+            key=lambda item: (-item[1]['read_ts'], item[0]))[:sw.SEAT_SLOT_CAP])
+        return delta
 
     async def _offer_swarm_seat(
         self, tiers: set[str], token: int | None, seat_entry: Any, now: float
@@ -6683,7 +6713,8 @@ class SurfManager:
         self._seat_rewards_failed.pop(token, None)
         points[str(token)] = {"owner": owner, "paired_ts": paired, "raw": result.raw_total,
                               "decimals": result.decimals, "seats": result.seats_held,
-                              "transfers": result.transfers, "read_ts": now}
+                              "transfers": result.transfers, "read_ts": now,
+                              "last_paid_ts": result.last_paid_ts}
         points = sw.coerce_rewards_slot(points, now=now)
         self.cache.store_last_good(SLOT_SWARM_SEAT_REWARDS, points, ts=now)
 
@@ -6715,7 +6746,7 @@ class SurfManager:
             price = imd_price if (isinstance(imd_price, (int, float)) and not isinstance(imd_price, bool)
                                   and math.isfinite(imd_price) and imd_price >= 0) else None
             out["swarm_seat_rewards"] = {"imd": imd, "usd": imd * price if price is not None else None,
-                                         "seats": point["seats"]}
+                                         "seats": point["seats"], "last_paid_ts": point.get("last_paid_ts")}
             out["swarm_seat_rewards_state"] = "ok"
         elif token not in failed_tokens:
             out["swarm_seat_rewards_state"] = "pending"

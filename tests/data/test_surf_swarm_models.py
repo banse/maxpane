@@ -124,7 +124,7 @@ SWARM_V2_ROW_SHAPES = {
 #: Mounted AGENT rack and native record widgets.
 AGENT_WIDGETS = ("SurfSwarmAgentRackHero", "SurfSwarmSeatRecord")
 
-#: The ten mounted SWARM, AGENT and BOARD target widgets, by class name.
+#: Mounted SWARM, AGENT, BOARD, WORK and ORACLES target widgets, by class name.
 #: WORKFLOWS took CAPABILITY's place on 2026-10-03; CAPABILITY is parked
 #: (``SWARM_PARKED_WIDGET_SIGNATURES``, read from the export below).
 SWARM_TARGET_WIDGETS = {
@@ -136,6 +136,7 @@ SWARM_TARGET_WIDGETS = {
     "SurfSwarmSites",
     "SurfSwarmAgentRackHero",
     "SurfSwarmSeatRecord",
+    "SurfWorkHero", "SurfWorkBody", "SurfOraclesHero", "SurfOraclesBody",
 }
 
 
@@ -212,7 +213,7 @@ def test_every_signature_key_is_a_swarm_key():
     not a contract key would be a widget reading a value nothing emits."""
     for widget, kwargs in SWARM_WIDGET_SIGNATURES.items():
         for key in kwargs:
-            assert key in (*SWARM_KEYS, *models.SURFBOARD_KEYS, "surf_swarm_hero", "surf_leaderboard_hero", "surf_agent_hero", "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
+            assert key in (*SWARM_KEYS, *models.SURFBOARD_KEYS, "surf_work", "surf_oracles", "surf_swarm_hero", "surf_leaderboard_hero", "surf_agent_hero", "as_of"), f"{widget} takes {key!r}, not a declared snapshot key"
 
 
 def test_every_signature_kwarg_is_unique_within_its_widget():
@@ -255,9 +256,9 @@ def test_every_v2_key_but_the_marker_reaches_at_least_one_signature():
     assert set(SWARM_KEYS) - named == _KEYS_PENDING_CONSUMERS, sorted(set(SWARM_KEYS) - named)
 
 
-def test_the_signature_names_exactly_the_ten_target_widgets():
+def test_the_signature_names_exactly_the_fourteen_target_widgets():
     assert set(SWARM_WIDGET_SIGNATURES) == SWARM_TARGET_WIDGETS
-    assert len(SWARM_WIDGET_SIGNATURES) == 10
+    assert len(SWARM_WIDGET_SIGNATURES) == 14
 
 
 def test_a_parked_widget_is_not_also_a_mounted_target():

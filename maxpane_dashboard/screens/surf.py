@@ -1863,17 +1863,19 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: unchanged. Boundary tests also check this at the new 141-column pin.
 SURF_SWARM_FULL_LAYOUT_ROWS = 38
 
-#: AGENT full-layout width, re-swept 2026-10-13: 139 -> 134.
+#: AGENT full-layout width, re-swept 2026-10-13: 134 -> 132.
 #: The approved live rack replaces the weighted seven-line hero and seat
 #: row with twelve equal nine-line cards in two rows of six. One blank
 #: row separates them; native RECORD uses the remaining body space.
 #: The keyless live 149x45 render was shown before this measurement.
 #: In-situ scripts/measure_layout.py uses the real AGENT container,
 #: stylesheet, reserved scrollbar gutter and committed capture payloads.
-#: capture420 at 130..137 columns is whole from 134: ACCEPTED's inner
-#: subtitle "3,392 attempts" still clips at 132/133, then fits at 134+.
-#: Capture and the five-digit stress payload clear from 132, where the
-#: STATUS subtitle "accepted 06:10" fits; neither sets the final maximum.
+#: After the card adjustments, capture and capture420 swept 125..139 and
+#: five-digit stress swept 125..136 are whole from 132. STATUS's inner
+#: subtitle "accepted 06:10" clips through 131 and binds all three cases.
+#: ACCEPTED's shortened "of 3,392" fits sooner; grouped digits remain whole.
+#: STATUS uses three tall groups when they fit, complete inline counts
+#: otherwise. REWARDS sheds only "paid " on narrow footers, keeping its date.
 #: Pending, busy, unavailable, unknown-seat and missing-source cases use
 #: explicit labels. RUNTIME's fixed unknown-check subtitle is shortened
 #: honestly; fallback text must fit, never count as arbitrary metadata.
@@ -1885,7 +1887,7 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 38
 #: RECORD remains the named content exception. Full/compact/tight require
 #: 102/94/53 table cells with five screen cells of gutters/padding:
 #: full from 107, compact from 99. Its answer-clearance onset is below.
-SURF_AGENT_FULL_LAYOUT_COLUMNS = 134
+SURF_AGENT_FULL_LAYOUT_COLUMNS = 132
 
 #: AGENT height, re-swept 2026-10-13: 25 -> 29.
 #: Capture swept 25..36 rows: 25..28 show taller; 29..36 are whole.
@@ -1895,6 +1897,7 @@ SURF_AGENT_FULL_LAYOUT_COLUMNS = 134
 #: The outer body alone scrolls fixed cards below this measured floor.
 #: Boundary tests bind the independent measured restatement and check
 #: content, geometry and markers on both sides of width and height.
+#: 2026-10-13 adjustments: stress re-swept at 132x26..32, whole from 29.
 SURF_AGENT_FULL_LAYOUT_ROWS = 29
 
 #: RECORD answer-clearance onset, re-swept 2026-09-24 in the real AGENT body.

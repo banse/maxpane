@@ -2360,7 +2360,8 @@ _REWARD_RAW_MAX = 500 * 2 ** 256
 def coerce_rewards_slot(payload: object, *, now: float) -> dict | None:
     """F-S5 per-seat rewards; drop malformed points independently, keep the six newest.
 
-    A point is ``{owner, paired_ts, raw, decimals, seats, transfers, read_ts}``:
+    A point is ``{owner, paired_ts, raw, decimals, seats, transfers, read_ts}``
+    with an optional ``last_paid_ts``:
     the owner and pairing it was read for (the manager serves it only while
     both still match the seat), the integer sum, the live ``decimals()``, the
     wallet's seat count (``>= 1``) and when it was read.
@@ -2372,7 +2373,7 @@ def coerce_rewards_slot(payload: object, *, now: float) -> dict | None:
         token = _served_token(key) if isinstance(key, str) else None
         if token is None or str(token) != key or not isinstance(point, Mapping):
             continue
-        if set(point) != {"owner", "paired_ts", "raw", "decimals", "seats", "transfers", "read_ts"}:
+        if set(point) - {"last_paid_ts"} != {"owner", "paired_ts", "raw", "decimals", "seats", "transfers", "read_ts"}:
             continue
         owner, paired, read_ts = point["owner"], point["paired_ts"], point["read_ts"]
         if not (isinstance(owner, str) and len(owner) == 42 and owner == owner.lower()
@@ -2386,9 +2387,12 @@ def coerce_rewards_slot(payload: object, *, now: float) -> dict | None:
             continue
         if read_ts > now + CLOCK_SKEW_TOLERANCE_SECONDS:
             continue
+        paid = point.get("last_paid_ts")
+        paid = (float(paid) if _nonnegative_finite(paid) and paired <= paid <= min(read_ts, now)
+                and point["raw"] > 0 and point["transfers"] > 0 else None)
         clean[key] = {"owner": owner, "paired_ts": float(paired), "raw": point["raw"],
                       "decimals": point["decimals"], "seats": point["seats"],
-                      "transfers": point["transfers"], "read_ts": float(read_ts)}
+                      "transfers": point["transfers"], "read_ts": float(read_ts), "last_paid_ts": paid}
     newest = sorted(clean, key=lambda key: (-clean[key]["read_ts"], int(key)))[:SEAT_SLOT_CAP]
     return {key: clean[key] for key in newest}
 

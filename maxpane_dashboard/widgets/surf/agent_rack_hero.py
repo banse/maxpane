@@ -8,6 +8,7 @@ from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid
+from textual.renderables.digits import Digits
 
 from maxpane_dashboard.analytics.surfboard import count, number
 from maxpane_dashboard.analytics.surf_swarm_signals import runtime_semver
@@ -49,11 +50,11 @@ def _status_word(source):
 def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     records = []
     for key, title, heading, footer in (
-        ("seat", "SEAT", "IDMD", "SELECTED"),
+        ("seat", "SEAT", "IDMD", "AGENT #--"),
         ("accepted", "ACCEPTED", "WORK", "--%"),
         ("effort", "EFFORT", "HOURS", "CONTRIBUTORS"),
-        ("rewards", "REWARDS", "IMD", "OWNER SHARE"),
-        ("rank", "RANK", "POSITION", "RECORDS"),
+        ("rewards", "REWARDS", "IMD", "paid --"),
+        ("rank", "RANK", "POSITION", "—"),
         ("status", "STATUS", "WORKER", "UNKNOWN"),
         ("owner", "OWNER", "WALLET", "OPEN / COPY"),
         ("runtime", "RUNTIME", "SOFTWARE", "VERSION"),
@@ -64,58 +65,61 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     ):
         raw = _source(payload, key)
         state = raw.get("state")
-        state = state if state in _STATES else "unavailable"
+        state = state if state in _STATES else "pending" if payload is None else "unavailable"
         section = raw if state in _AVAILABLE else {}
         fields = dict(key=key, title=title, heading=heading, footer=footer, state=state,
                       read_ts=number(raw.get("read_ts")), accent=state == "ok")
         if key == "seat":
             token = count(raw.get("token_id"))
             fields["digits"] = str(token) if token is not None and number(token) is not None else "--"
-            selected = raw.get("selected_by")
-            fields["subtitle"] = "saved seat" if selected == "saved" else "most active" if selected == "most_active" else "selection --"
+            presence = _source(payload, "status").get("live_state")
+            fields["subtitle"] = {"working": "working", "idle": "online", "paused": "online", "offline": "offline"}.get(presence, "status --")
+            agent_id = raw.get("agent_id")
+            agent_id = agent_id if isinstance(agent_id, str) and agent_id.isascii() and agent_id.isdecimal() else "--"
+            fields["footer"] = f"AGENT #{agent_id}"
             if token is None and state == "empty":
                 fields.update(digits="", preview="no seat selected", subtitle="")
-            fields["accent"] &= token is not None and not raw.get("read_error")
+            fields["accent"] = token is not None and presence in ("working", "idle", "paused")
         elif key in ("accepted", "effort", "rank") and section.get("listed") is False:
             fields.update(preview="no receipts" if key == "effort" else "not recorded", accent=False)
         elif key == "accepted":
             accepted, attempts = (count(section.get(name)) for name in ("accepted", "attempts"))
-            fields["digits"] = _digits(accepted)
-            fields["subtitle"] = f"{_count(attempts)} attempts"
+            fields["digits"] = f"{accepted:,}" if accepted is not None else "--"
+            fields["subtitle"] = f"of {_count(attempts)}"
             percent = number(section.get("percent"))
             if attempts == 0 and accepted == 0:
                 fields.update(digits="", preview="no attempts", footer="NO ATTEMPTS", accent=False)
             else:
                 valid = percent is not None and percent <= 100 and accepted is not None and attempts is not None and 0 <= accepted <= attempts and attempts > 0
                 fields["footer"] = f"{percent:.4g}%" if valid else "--%"
-                fields["accent"] &= valid
+                fields["accent"] = False
         elif key == "effort":
             fields["digits"] = _face(number(section.get("hours")), 0)
             fields["subtitle"] = f"{_amount(count(section.get('output_tokens')))} tokens"
-            fields["accent"] &= fields["digits"] != "--" and not fields["subtitle"].startswith("--")
+            fields["accent"] = False
         elif key == "rewards":
             fields["digits"] = _face(number(section.get("imd")), 2)
             usd_state = section.get("usd_state")
             usd = number(section.get("usd")) if usd_state in _AVAILABLE else None
             fields["subtitle"] = "$" + (f"{usd:.2f}" if usd is not None and (usd == 0 or .01 <= usd < 100000) else _face(usd, 2))
-            if usd_state in ("partial", "stale"):
-                fields["subtitle"] += " " + usd_state
-            fields["accent"] &= fields["digits"] != "--"
+            paid = number(section.get("last_paid_ts"))
+            fields["footer"] = "paid " + mmdd_hhmm(paid) if paid is not None else "paid --"
+            fields["accent"] = section.get("paid_recent") is True
         elif key == "rank":
             fields["digits"] = _digits(section.get("rank"))
             fields["subtitle"] = "of " + _count(count(section.get("ranked_of")))
-            fields["accent"] &= fields["digits"] != "--" and not fields["subtitle"].endswith("--")
+            delta = _number(section.get("delta"), signed=True)
+            fields["footer"] = f"{'↑' if delta > 0 else '↓'} {abs(delta):g}" if delta else "—"
+            fields["accent"] = delta is not None and delta > 0
         elif key == "status":
-            fields["stats"] = tuple((name, _count(count(section.get(name)))) for name in ("working", "capacity", "devices"))
+            fields["digits"] = f"{_count(count(section.get('working')))} 0F {_count(count(section.get('capacity')))}"
             fields["footer"] = _status_word(section)
             kind = section.get("last_work_kind")
             kind = kind if kind in ("worked", "accepted") else "work"
             fields["subtitle"] = f"{kind} {hhmm(number(section.get('last_work_ts')), unknown='--:--')}"
             if section.get("live_state") == "paused":
                 fields["subtitle"] = "until " + hhmm(number(section.get("paused_until_ts")), unknown="--:--")
-            elif state != "ok" and fields["footer"] != "UNKNOWN":
-                fields["subtitle"] = fields["footer"]
-            fields["accent"] &= section.get("live_state") == "working" and all(value != "--" for _, value in fields["stats"])
+            fields["accent"] = section.get("meter_state") == "busy"
         elif key == "owner":
             fields["digits"] = "--"  # Width-fitted address with rich actions in AgentRackCard.
             fields["subtitle"] = "paired " + mmdd(number(section.get("paired_ts")), unknown="--")
@@ -167,7 +171,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                     stats.append((f"+{len(rows) - 2} more", ""))
                 fields["stats"] = tuple(stats)
                 fields["accent"] &= all(label != "--" and value != "--" for label, value in stats)
-        if state == "stale_unknown_seat":
+        if state in ("unknown_seat", "stale_unknown_seat"):
             fields["subtitle"] = "never paired"
         records.append(HeroRecord(**fields))
     return tuple(records)
@@ -219,37 +223,81 @@ class AgentRackCard(Pool4HeroCard):
 
     def _footer(self):
         data = self.data
-        if data.state in ("pending", "busy", "unknown_seat", "empty"):
-            word = {"unknown_seat": "never paired", "empty": "EMPTY"}.get(data.state, data.state)
-            self.border_subtitle = Text().append(word, style="dim" if data.state == "empty" else "yellow")
-        elif data.state == "stale_unknown_seat":
-            self.border_subtitle = Text().append("stale " + hhmm(data.read_ts, unknown="--:--"), style="yellow")
-        elif data.state != "ok":
-            super()._footer()
+        if data.state in ("pending", "busy"):
+            self.border_subtitle = Text().append("◌ loading" if data.state == "pending" else "busy", style="yellow")
+        elif data.state in ("unknown_seat", "stale_unknown_seat", "empty", "unavailable"):
+            word = {"unknown_seat": "never paired", "stale_unknown_seat": "never paired", "empty": "EMPTY"}.get(data.state, "unavailable")
+            # The selected identity remains meaningful if only its detail read failed.
+            self.border_subtitle = Text().append(data.footer if data.key == "seat" else word, style="dim" if data.key == "seat" or data.state == "empty" else "yellow")
         elif data.key == "status":
-            room = max(5, self.size.width - 6)
-            word = _status_word(self.source)
-            if word in ("PAUSED", "UNKNOWN"):
-                self.border_subtitle = Text().append(word, style="red" if word == "PAUSED" else "yellow")
-            else:
-                meter = {key: self.source.get(key) for key in ("meter_kind", "meter_state", "numerator", "denominator")}
-                self.border_subtitle = meter_text(dict(meter, key="agent"), width=room)
+            room = max(5, self.region.width - 6)
+            meter = {key: self.source.get(key) for key in ("meter_kind", "meter_state", "numerator", "denominator")}
+            self.border_subtitle = meter_text(dict(meter, key="agent"), width=room)
+        elif data.key == "rewards":
+            footer = data.footer
+            if cell_len(footer) > max(0, self.region.width - 6):
+                footer = footer.removeprefix("paid ")
+            self.border_subtitle = Text().append(footer, style="dim")
         elif data.key == "accepted" and data.footer not in ("NO ATTEMPTS", "--%"):
             label = data.footer + " "
             track = meter_text(dict(key="accepted", numerator=number(self.source.get("accepted")), denominator=number(self.source.get("attempts"))),
-                               width=max(4, self.size.width - 6 - len(label) + 4))[4:]
-            self.border_subtitle = Text(label, style="dim").append_text(track)
+                               width=max(4, self.region.width - 6 - len(label) + 4))[4:]
+            self.border_subtitle = Text().append(label, style="dim").append_text(track)
         else:
-            super()._footer()
+            delta = _number(self.source.get("delta"), signed=True) if data.key == "rank" else None
+            color = "green" if delta and delta > 0 else "red" if delta and delta < 0 else "dim"
+            self.border_subtitle = Text().append(flatten(data.footer), style=color)
+
+    def _frame_style(self):
+        palette = self.app.get_css_variables()
+        color = palette["accent"] if self.data.accent else "dim"
+        offline = (self.data.key == "seat" and self.data.subtitle == "offline"
+                   or self.data.key == "status" and self.source.get("meter_state") == "offline")
+        delta = _number(self.source.get("delta"), signed=True) if self.data.key == "rank" else None
+        if offline or delta is not None and delta < 0:
+            color = Color.from_triplet(self.app.ansi_theme.ansi_colors[1])
+            return Style(color=color, bgcolor=palette["background"], dim=False)
+        return Style.parse(color) + Style(bgcolor=palette["background"])
+
+    def _status_content(self):
+        """One tall readout with an independently muted 0F separator."""
+        data = self.data
+        inside = max(4, self.content_size.width) - 2
+        palette = self.app.get_css_variables()
+        frame = self._frame_style()
+        ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
+        values = data.digits.split()
+        groups = [[segment.text for segment in Digits(value).render(Style()) if segment.text != "\n"] for value in values]
+        rows = []
+        if len(groups) == 3 and all(value != "--" for value in values) and sum(len(group[0]) for group in groups) + 2 <= inside:
+            for n in range(3):
+                rows.append(Text(groups[0][n] + " ", style=ink).append(groups[1][n], style=ink + Style(dim=True)).append(" " + groups[2][n], style=ink))
+        else:
+            row = Text(values[0] + " ", style=ink).append("0F", style=ink + Style(dim=True)).append(" " + values[-1], style=ink)
+            row.truncate(inside, overflow="ellipsis")
+            rows = [Text(""), row, Text("")]
+        heading = " " + clip(data.heading, inside - 2) + " "
+        content = Text("┌" + heading.center(inside, "─") + "┐\n", style=frame)
+        for row in rows:
+            row.align("center", inside)
+            content.append("│", style=frame).append_text(row).append("│\n", style=frame)
+        subtitle = " " + clip(data.subtitle, inside - 2) + " " if data.subtitle else ""
+        return content.append("└" + subtitle.center(inside, "─") + "┘", style=frame)
 
     def render(self):
-        content = super().render()
-        if self.data.key == "status" and self.data.state in _AVAILABLE:
-            live = self.source.get("live_state")
-            if live in ("offline", "paused"):
-                content.stylize(Style(color=Color.from_triplet(self.app.ansi_theme.ansi_colors[1]), dim=False))
-            elif live == "idle":
-                content.stylize(Style(color=self.rich_style.color, dim=True))
+        content = self._status_content() if self.data.key == "status" else super().render()
+        if self.data.key in ("seat", "rank"):
+            # Recolor only the inset frame and its captions, never the digits.
+            frame = self._frame_style()
+            offset = 0
+            lines = content.plain.splitlines()
+            for n, line in enumerate(lines):
+                if n in (0, len(lines) - 1):
+                    content.stylize(frame, offset, offset + len(line))
+                else:
+                    content.stylize(frame, offset, offset + 1)
+                    content.stylize(frame, offset + len(line) - 1, offset + len(line))
+                offset += len(line) + 1
         if self.data.key == "owner":
             offset = content.plain.find(self.owner_text.plain)
             if offset >= 0:
@@ -259,7 +307,7 @@ class AgentRackCard(Pool4HeroCard):
 
     @staticmethod
     def _source_tooltip(record, source):
-        state = "stale · never paired" if record.state == "stale_unknown_seat" else record.state
+        state = "never paired" if record.state == "stale_unknown_seat" else "retained" if record.state == "stale" else record.state
         tip = Text(f"{record.title} · {state} · as of {hhmm(record.read_ts, unknown='--:--')} local")
         rows = _rows(source)
         if record.key == "owner" and record.state in _AVAILABLE and is_address(source.get("address")):
@@ -273,10 +321,13 @@ class AgentRackCard(Pool4HeroCard):
                 tip.append(" · daemon differs")
         elif record.key == "rewards":
             usd_state = source.get("usd_state") if source.get("usd_state") in _STATES else "unavailable"
+            usd_state = "retained" if usd_state == "stale" else usd_state
             tip.append(f"\nowner share across {_count(count(source.get('seats')))} seats"
+                       f"\nlast paid {mmdd_hhmm(number(source.get('last_paid_ts')))} local"
                        f"\nUSD {usd_state} · as of {hhmm(number(source.get('usd_read_ts')), unknown='--:--')} local")
         elif record.key == "status":
             work_state = source.get("work_state") if source.get("work_state") in _STATES else "unavailable"
+            work_state = "retained" if work_state == "stale" else work_state
             tip.append(f"\nlast work {mmdd_hhmm(number(source.get('last_work_ts')))} · {work_state}"
                        f"\nwork read {hhmm(number(source.get('work_read_ts')), unknown='--:--')} local")
             if source.get("live_state") == "paused":

@@ -12,6 +12,93 @@ from tests.data.test_surf_manager_seat_rewards import _RewardsClient
 NOW = 1791806400.0  # after the committed seat's pairing and work timestamps
 
 
+async def test_rank_color_delta_compares_confirmed_reads_not_repaints(agent):
+    m, clock, _, _ = agent
+    capture = dict(seats={}, rewards={}, rewards_failed=set(), runtime={}, activity=None)
+    data = dict(swarm_seat_selected=dict(token_id=420), swarm_seat_rank_delta=99,
+                swarm_seat_outcome=dict(token_id=420, listed=True, rank=69, ranked_of=1059),
+                swarm_outcomes_source=dict(state='ok', read_ts=NOW))
+    def shown():
+        return m._agent_hero(data, capture, {}, {}, now=clock())['rank']['delta']
+    try:
+        assert shown() is None
+        clock.advance(120)
+        data['swarm_outcomes_source']['read_ts'] = clock()
+        data['swarm_seat_outcome']['rank'] = 67
+        assert shown() == 2
+        assert shown() == 2  # repaint of that same read retains the comparison
+        clock.advance(120)
+        data['swarm_outcomes_source']['read_ts'] = clock()
+        assert shown() == 0
+        clock.advance(120)
+        data['swarm_outcomes_source']['read_ts'] = clock()
+        data['swarm_seat_outcome']['rank'] = 70
+        assert shown() == -3
+        data['swarm_outcomes_source']['state'] = 'stale'
+        assert shown() is None
+        data['swarm_seat_selected']['token_id'] = 7
+        data['swarm_seat_outcome'].update(token_id=7, rank=10)
+        data['swarm_outcomes_source']['state'] = 'ok'
+        assert shown() is None
+        assert data['swarm_seat_rank_delta'] == 99  # legacy card history untouched
+    finally:
+        await m.close()
+
+
+async def test_first_reads_show_loading_only_while_their_own_tasks_are_pending(agent):
+    import asyncio
+    m, clock, _, _ = agent
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def hold():
+        entered.set()
+        await release.wait()
+    task = asyncio.create_task(hold())
+    await entered.wait()
+    m._swarm_board_task = task
+    m._swarm_board_pending = {'workers', 'contributors'}
+    m._hub_source_tasks['records'] = task
+    try:
+        hero = m._project_hub()['surf_agent_hero']
+        for key in ('accepted', 'rank', 'effort', 'status'):
+            assert hero[key]['state'] == 'pending'
+        release.set()
+        await task
+        hero = m._project_hub()['surf_agent_hero']
+        for key in ('accepted', 'rank', 'effort', 'status'):
+            assert hero[key]['state'] == 'unavailable'
+    finally:
+        release.set()
+        await task
+        await m.close()
+
+
+async def test_finished_failure_does_not_keep_loading_while_sibling_read_waits(agent, monkeypatch):
+    import asyncio
+    from maxpane_dashboard.data.surf_manager import TIER_SWARM_BOARD
+    m, clock, swarm, _ = agent
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def workers():
+        entered.set()
+        await release.wait()
+        return None
+    swarm.fetch_contributors = AsyncMock(return_value=None)
+    swarm.fetch_workers = workers
+    monkeypatch.setattr(m, '_offer_hub_source', lambda *args: None)
+    task = m._spawn_swarm_board({TIER_SWARM_BOARD}, clock())
+    try:
+        await entered.wait()
+        hero = m._project_hub()['surf_agent_hero']
+        assert hero['effort']['state'] == 'unavailable'
+        assert hero['status']['state'] == 'pending'
+        release.set()
+        await task
+        assert m._project_hub()['surf_agent_hero']['status']['state'] == 'unavailable'
+    finally:
+        release.set()
+        await task
+        await m.close()
+
+
 @pytest.fixture
 def agent(tmp_path, monkeypatch):
     clock = FakeClock(NOW)
@@ -114,7 +201,6 @@ async def test_full_cycle_captures_seat_source_before_detached_board_mutation(ag
 async def test_retained_never_paired_result_keeps_its_stale_clock(agent, reason, width, monkeypatch):
     from tests.data.test_surf_manager_swarm import UNKNOWN_SEAT
     from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY
-    from maxpane_dashboard.widgets.fmt import hhmm
     from tests.widgets.test_surf_agent_rack_hero import Harness, painted
 
     async def refuse(*args, **kwargs):
@@ -134,12 +220,14 @@ async def test_retained_never_paired_result_keeps_its_stale_clock(agent, reason,
             manager._agent_seat_observations.clear()
         hero = manager._project_hub()['surf_agent_hero']
         assert hero['seat']['token_id'] == 420
+        assert hero['seat']['state'] == 'stale_unknown_seat'
+        assert hero['seat']['read_ts'] == NOW
         async with Harness(hero).run_test(size=(width, 45)) as pilot:
             await pilot.pause()
             for key in ('seat', 'owner', 'runtime', 'models', 'feedback', 'collab', 'nodes', 'rewards'):
                 content = painted(pilot.app, key)
                 assert 'never paired' in content, (key, content)
-                assert 'stale' in content and hhmm(NOW) in content, (key, content)
+                assert 'stale' not in content, (key, content)
             swarm.fetch_seat = AsyncMock(return_value=dict(UNKNOWN_SEAT))
             await manager._pool_swarm_seat(420, clock())
             fresh = manager._project_hub()['surf_agent_hero']
