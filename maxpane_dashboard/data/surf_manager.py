@@ -7527,7 +7527,7 @@ class SurfManager:
         return data
 
     def _hub_loading_state(self, data: dict) -> None:
-        """Transient display states; cached source envelopes remain authoritative."""
+        """Show pending reads only until a card has data, including known zeroes."""
         def running(task):
             return task is not None and not task.done() and not task.cancelling()
 
@@ -7545,17 +7545,35 @@ class SurfManager:
         }
         for card in data['surfboard_cards']:
             key = card['key']
+            known = card.get('primary') not in (None, '', '—', 'unavailable')
+            if key == 'announce':
+                known = card.get('secondary') not in (None, 'unavailable')
+            elif key == 'protocol':
+                known = any(hub.number(data.get(field)) is not None for field in
+                            ('pool4_total_burned', 'pool4_total_rewarded', 'pool4_total_fee_token'))
+            elif key == 'board':
+                known = card.get('top_agents') is not None
+            elif key == 'pool4':
+                known = known or card.get('share_price') is not None
+            elif key == 'swarm':
+                known = known or card.get('secondary') not in (None, 'unavailable')
+            # A loaded chart, empty ranking or zero count is data too.
+            known = known or card.get('points') is not None or card.get('numerator') is not None
             if key in hub.SURFBOARD_AGENT_KEYS:
                 if card.get('token_id') is None:
                     continue
+                # The assigned seat number is input, not evidence of a read.
+                known = card.get('secondary') not in (None, '— of — slots')
                 key = 'board'
-            if any(running(task) for task in reads.get(key, ())):
+            if not known and any(running(task) for task in reads.get(key, ())):
                 card['status'] = 'loading'
         if running(sources.get('overview')):
-            data['surfboard_sources'] = dict(data['surfboard_sources'],
-                overview=dict(data['surfboard_sources']['overview'], state='loading'))
-            data['surfboard_footer']['overview_state'] = 'loading'
-        if running(self._full_task):
+            if data['surfboard_overview'] is None:
+                data['surfboard_sources'] = dict(data['surfboard_sources'],
+                    overview=dict(data['surfboard_sources']['overview'], state='loading'))
+            if data['surfboard_footer']['inference_tokens'] is None:
+                data['surfboard_footer']['overview_state'] = 'loading'
+        if running(self._full_task) and data['surfboard_footer']['market_value_usd'] is None:
             data['surfboard_footer']['market_state'] = 'loading'
 
     def get_hub_snapshot(self) -> dict[str, Any]:

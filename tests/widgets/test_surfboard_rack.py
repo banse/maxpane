@@ -233,7 +233,7 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
                 assert " of " not in strips[top + 4].text
             assert not footer.style.bold and footer.style.color.get_truecolor() == ink
             if activity == "unavailable":
-                assert strips[-1].text.startswith("╰─ — — ")
+                assert strips[-1].text.strip('╰╯─ ') == '— —'
                 assert not any(glyph in strips[-1].text for glyph in "▰▱")
             elif activity == "offline":
                 assert strips[-1].text == '╰─ OFF ' + '▱' * (card.region.width - 10) + ' ─╯'
@@ -459,11 +459,11 @@ async def test_swarm_outer_footer_stretches_history_on_resize_and_keeps_unknown_
         card.set_data(dict(card.data, points=None))
         await pilot.pause()
         footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
-        assert footer.text.startswith("╰─ 24H — ")
+        assert footer.text.strip('╰╯─ ') == '24H —'
         assert not any(char in footer.text for char in "▁▂▃▄▅▆▇█")
 
 
-async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
+async def test_activity_card_footers_fill_width_on_resize():
     from tests.screens.test_surfboard_layout import HubHarness
     from tests.surfboard_fixtures import hub_payload
 
@@ -502,7 +502,7 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
         for key in labels.keys() - placeholders:
             card = app.hub.query_one(f"#surfboard-card-{key}", SurfboardCard)
             footer = strips[card.region.bottom - 1].crop(card.region.x, card.region.right).text
-            assert footer.startswith(f"╰─ {labels[key]} — ")
+            assert footer.strip('╰╯─ ') == f'{labels[key]} —'
             assert "▰" not in footer and "▱" not in footer
 
 
@@ -751,7 +751,7 @@ async def test_protocol_supply_footer_is_fitted_and_marks_clipping():
         assert 'unavailable burned' not in card_strips(pilot.app, card)[-1].text
 
 
-async def test_empty_seat_footer_centers_and_assigned_seat_restores_left_alignment():
+async def test_empty_and_assigned_seat_footers_stay_centered():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-agent-4', SurfboardCard)
         for width in (149, 200):
@@ -764,7 +764,24 @@ async def test_empty_seat_footer_centers_and_assigned_seat_restores_left_alignme
                 if data is None:
                     assert abs(row.index('Identity.md') - (card.region.width - 11) / 2) <= .5
                 else:
-                    assert row.startswith('╰─ IDLE ')
+                    assert row.strip('╰╯─ ') == 'IDLE —'
+                    assert abs(row.index('IDLE —') - (card.region.width - 6) / 2) <= .5
+
+
+async def test_all_boardroom_card_footers_center_on_resize():
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import hub_payload
+
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        for width, height in ((149, 45), (180, 45), (144, 37)):
+            await pilot.resize_terminal(width, height)
+            await pilot.pause()
+            for card in app.hub.query(SurfboardCard):
+                row = card_strips(app, card)[-1].text
+                label = row.strip('╰╯─ ')
+                assert label
+                assert abs(row.index(label) - (card.region.width - len(label)) / 2) <= .5
 
 
 async def test_pool4_price_direction_colors_whole_inset_and_resets_to_neutral():

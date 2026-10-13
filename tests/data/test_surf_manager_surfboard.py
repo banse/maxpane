@@ -649,7 +649,7 @@ async def test_tokens_card_shares_retained_catalogue_and_counts_24h_without_full
         m._swarm_launch_keys = lambda: dict(swarm_launch_rows=cached)
         second = await m.fetch_hub_snapshot()
         card = next(c for c in second['surfboard_cards'] if c['key']=='swarm-tokens')
-        assert (card['primary'], card['secondary'], card['status']) == ('3', '3 new', 'loading')
+        assert (card['primary'], card['secondary'], card['status']) == ('3', '3 new', 'active')
         assert adapter is m.swarm_tokens_manager()
         assert set(adapter._tasks) == {'catalogue', 'markets'}
         await adapter.wait_pending()
@@ -677,6 +677,53 @@ async def test_tokens_card_shares_retained_catalogue_and_counts_24h_without_full
     finally:
         await m.close()
     assert adapter._closed
+
+
+@pytest.mark.parametrize('empty', [False, True])
+async def test_hub_background_reads_preserve_loaded_cards_and_terminal(manager, empty):
+    from copy import deepcopy
+    from tests.surfboard_fixtures import hub_payload
+
+    m, _ = manager
+    data = hub_payload()
+    data.update(pool4_total_burned=0 if empty else 33000)
+    if empty:
+        data['surfboard_overview'] = dict(agents_online=0, working_now=0)
+        data['surfboard_events'] = []
+        data['surfboard_footer'].update(market_value_usd=0, inference_tokens=0)
+        for card in data['surfboard_cards']:
+            key = card['key']
+            if key == 'announce':
+                card.update(primary='—', secondary='0 new replies')
+            elif key == 'swarm':
+                card.update(primary='0 online', secondary='0 working', points=[0]*8)
+            elif key == 'board':
+                card.update(primary='unavailable', top_agents=[])
+            elif key == 'pool4':
+                card.update(primary='0.00', share_price=0)
+            elif key == 'oracles':
+                card.update(primary='0', numerator=0, denominator=0)
+            elif key == 'work':
+                card.update(primary='0', secondary='0 workflows',
+                            work_summary=dict.fromkeys(card['work_summary'], 0))
+            elif key == 'swarm-tokens':
+                card.update(primary='0', secondary='0 new', token_ranking=dict(rows=[], total=0))
+    baseline = deepcopy(data)
+    release = asyncio.Event()
+    task = asyncio.create_task(release.wait())
+    m._full_task = m._pool4_task = m._swarm_board_task = task
+    m._work_reader.task = m._oracles_reader.task = task
+    m._hub_source_tasks = dict.fromkeys(('overview', 'hourly', 'records', 'supply'), task)
+    m._swarm_tokens_manager._tasks = dict.fromkeys(('catalogue', 'markets', 'volume'), task)
+    try:
+        m._hub_loading_state(data)
+        assert data == baseline
+        release.set()
+        await task
+        m._hub_loading_state(data)
+        assert data == baseline
+    finally:
+        await m.close()
 
 
 async def test_worker_reads_observe_activity_even_unchanged_or_failed(manager):

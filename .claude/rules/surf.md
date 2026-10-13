@@ -825,8 +825,10 @@ The title is centered muted gray `IMD BOARDROOM`. ONCHAIN FEED uses white active
 borders and border text, matching its body; SWARM BUILDS retains its activity colors.
 Per the owner's 2026-10-14 display adjustment, the boardroom omits automatic stale
 and unavailable text. Cached figures remain visible, missing figures use `—`, and
-source states/clocks remain in internal snapshots and card tooltips. Actual pending
-reads show `◌ loading` in affected card footers and terminal source summaries.
+source states/clocks remain in internal snapshots and card tooltips. All boardroom card
+footers are centered. Pending reads show `◌ loading` only when that card or terminal
+source has no loaded data yet. Background refreshes retain the previous content,
+colors and footer; known zero counts and empty results count as loaded data.
 The existing one-second age timer requests cache-only repaints while loading, using
 the shared refresh guard; these repaints offer no network work. Success, failure,
 and cancellation clear the indicator. Empty seat inputs and literal feed/reply prose

@@ -294,7 +294,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         self.refresh()
 
     def _update_meter(self):
-        self.styles.border_subtitle_align = "center" if self.key == "protocol" or self.empty_seat else "left"
+        self.styles.border_subtitle_align = "center"
         if self.data.get("status") == "loading":
             self.border_subtitle = Text("◌ loading", style=AMBER)
         elif self.key == "announce":
