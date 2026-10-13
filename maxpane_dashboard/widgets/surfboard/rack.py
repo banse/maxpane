@@ -31,7 +31,7 @@ SLOTS = (
     ("announce", "ONCHAIN FEED", 0, 0), ("swarm", "BUILT BY SWARM", 0, 1),
     ("work", "WIP", 0, 2), ("pool4", "POOL4", 0, 3),
     ("swarm-tokens", "TOKENS", 0, 4), ("board", "FLEET", 0, 5),
-    ("launchpad", "LAUNCHPAD", 1, 0), ("protocol", "PROTOCOL", 1, 5),
+    ("oracles", "ORACLES", 1, 0), ("protocol", "PROTOCOL", 1, 5),
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
 )
@@ -125,6 +125,10 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     state = card.get("meter_state")
     if key == "protocol":
         return _protocol_footer(card, 24 if width is None else width)[0]
+    if key == "oracles":
+        count = card.get("numerator")
+        value = f"{int(count):,}" if _number(count) and count == int(count) else "—"
+        return fit_prose(f"{value} attested", 24 if width is None else width, style=MUTED)[0]
     if key == "work":
         return _work_footer(card, 24 if width is None else width)[0]
     if key in AGENT_KEYS and state == "empty":
@@ -265,6 +269,12 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self.data["destination"] = "swarm-tokens"
             self.data.setdefault("detail", "TOKENS · production-chain markets · unavailable · Enter to open")
             self.tooltip = Text(self.detail)
+        if self.key == "oracles":
+            self.data["destination"] = "oracles"
+            self.data.setdefault("primary", "—")
+            self.data.setdefault("secondary", "unavailable")
+            self.data.setdefault("detail", "ORACLES · unavailable · Enter to open")
+            self.tooltip = Text(self.detail)
         if self.key == "work":
             self.data["destination"] = "work"
             self.data.setdefault("primary", "—")
@@ -331,14 +341,16 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             border_inset = Style.parse(MUTED) + Style(bgcolor=palette["background"])
         elif self.key == "announce" and status == "active":
             border_inset = Style(color=self.rich_style.color, bgcolor=palette["background"])
+        elif self.key == "oracles" and status == "assessing":
+            border_inset = Style.parse(AMBER) + Style(bgcolor=palette["background"])
         elif self.key == "pool4" and status == "falling":
             border_inset = Style.parse(AMBER) + Style(bgcolor=palette["background"])
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "launchpad", "pool4", "work") or self.seat_slot is not None:
+        if self.key in ("swarm", "launchpad", "oracles", "pool4", "work") or self.seat_slot is not None:
             label = " SEAT " if self.seat_slot is not None else {"swarm": " AGENTS ",
-                     "launchpad": " COINS ",
+                     "launchpad": " COINS ", "oracles": " ASSESSING ",
                      "pool4": " IMD PRICE ", "work": " ACTIVE JOBS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
@@ -497,7 +509,7 @@ class SurfboardRack(Grid):
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
-        # Reserve two extra side-column lines below LAUNCHPAD and PROTOCOL.
+        # Reserve two extra side-column lines below ORACLES and PROTOCOL.
         card_height = max(7, (self.content_size.height - gaps - 2) // rows)
         self.query(SurfboardCard).set_styles(height=card_height)
         # The terminal spans the last track and can use its leftover space.
@@ -505,7 +517,7 @@ class SurfboardRack(Grid):
         self.call_after_refresh(self._position_taglines)
 
     def _position_taglines(self):
-        for key, label_id in (("launchpad", "keep"), ("protocol", "building")):
+        for key, label_id in (("oracles", "keep"), ("protocol", "building")):
             card = self.query_one(f"#surfboard-card-{key}", SurfboardCard)
             label = self.query_one(f"#surfboard-{label_id}", Static)
             # Match the dim footer ink while leaving the gap background unchanged.

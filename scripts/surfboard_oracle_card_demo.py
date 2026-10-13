@@ -52,7 +52,7 @@ class OracleMockCard(SurfboardCard):
 class OracleMockRack(SurfboardRack):
     def compose(self):
         for index, slot in enumerate(SLOTS):
-            yield (OracleMockCard if slot[0] == "launchpad" else SurfboardCard)(*slot)
+            yield (OracleMockCard if slot[0] == "oracles" else SurfboardCard)(*slot)
             if index == 6:
                 yield SurfboardTerminal(id="surfboard-terminal")
         yield Static(Text("キープ"), id="surfboard-keep", classes="rack-tagline")

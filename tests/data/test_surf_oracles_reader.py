@@ -51,6 +51,49 @@ async def test_single_flight_list_budget_selected_only_and_getter_no_io(setup):
 
 
 @pytest.mark.asyncio
+async def test_hub_list_only_can_promote_same_flight_to_selected_detail(setup):
+    reader, client, cache, clock, raw = setup
+    entered, release = asyncio.Event(), asyncio.Event()
+    fetch = client.fetch_oracle_requests
+    async def hanging(*, limit):
+        entered.set(); await release.wait()
+        return await fetch(limit=limit)
+    client.fetch_oracle_requests = hanging
+    task = reader.offer(include_detail=False)
+    await entered.wait()
+    assert reader.offer() is task
+    release.set(); await task
+    assert client.calls == [('list', 100), ('detail', raw['requests'][0]['id'])]
+    clock.now += 120
+    await reader.offer(include_detail=False)
+    assert client.calls[-1] == ('list', 100)
+
+
+@pytest.mark.asyncio
+async def test_hub_poll_never_loads_selected_detail_and_native_leave_stops_it(setup):
+    reader, client, cache, clock, raw = setup
+    await reader.offer(include_detail=False)
+    assert client.calls == [('list', 100)]
+    assert reader.project()['rows']
+    assert reader.offer(include_detail=False) is None
+    entered = asyncio.Event()
+    async def hanging(identity):
+        entered.set(); await asyncio.Event().wait()
+    client.fetch_oracle_detail = hanging
+    task = reader.offer()
+    await entered.wait()
+    reader.set_details_active(False)
+    resumed = reader.offer(include_detail=False)
+    assert reader.offer(include_detail=False) is resumed
+    await asyncio.wait_for(resumed, 1)
+    assert task.cancelled()
+    assert cache.get_last_good(SLOT_SURF_ORACLES).payload['details'] == {}
+    clock.now += 60
+    await reader.offer(include_detail=False)
+    assert client.calls == [('list', 100), ('list', 100)]
+
+
+@pytest.mark.asyncio
 async def test_empty_and_failed_lists_are_distinct_and_retry_backoff(setup):
     reader, client, cache, clock, raw = setup
     raw['requests'] = []

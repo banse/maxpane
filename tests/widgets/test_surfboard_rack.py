@@ -93,25 +93,40 @@ async def test_post_preview_keeps_unicode_literal_and_address_copy_units(size):
                 assert content[2].crop(left+1,right).text.rstrip().endswith('...')
 
 
-@pytest.mark.parametrize('size', [(149,45),(140,36)])
-async def test_coins_digit_labels_exact_counts_and_launch_color(size):
+@pytest.mark.parametrize('size', [(149, 45), (144, 37)])
+async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
     async with RackApp().run_test(size=size) as pilot:
-        for key,primary,footer,label,outer,glyphs in [
-            ('launchpad','208','0 new','COINS','LAUNCHPAD',['╶─╮╭─╮╭─╮','┌─┘│ │├─┤','╰─╴╰─╯╰─╯']),
+        app = pilot.app
+        card = app.query_one('#surfboard-card-oracles', SurfboardCard)
+        for status, primary, subtitle, attested, glyphs in [
+            ('assessing', '7', '100 loaded', 86, ['╶─┐', '  │', '  ╵']),
+            ('idle', '0', '0 loaded', 0, ['╭─╮', '│ │', '╰─╯']),
+            ('stale', '7', 'stale 05:20', 86, ['╶─┐', '  │', '  ╵']),
+            ('unavailable', '—', 'unavailable', None, ['', '—', '']),
         ]:
-            card=pilot.app.query_one('#surfboard-card-'+key,SurfboardCard)
-            for status in ('active','idle'):
-                card.set_data(dict(primary=primary,secondary=footer,status=status))
-                await pilot.pause()
-                strips=[s.crop(card.region.x,card.region.right) for s in
-                    pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
-                top=next(i for i,s in enumerate(strips) if '┌' in s.text)
-                assert '⊙ '+outer in '\n'.join(s.text for s in strips)
-                header = next(s for s in strips[top] if label in s.text)
-                assert not header.style.bold and header.style.color == inset_border_color(strips[top])
-                assert all(g in s.text for g,s in zip(glyphs,strips[top+1:top+4]))
-                expected='4,176 jobs' if key=='board' else footer
-                assert strips[top+4].text.strip('│└┘─ ') == expected
+            card.set_data(dict(primary=primary, secondary=subtitle, status=status,
+                               numerator=attested, denominator=100, meter_kind='oracles'))
+            await pilot.pause()
+            strips = card_strips(app, card)
+            top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
+            left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
+            assert '⊙ ORACLES' in strips[0].text
+            assert 'ASSESSING' in strips[top].text
+            for strip, expected in zip(strips[top+1:top+4], glyphs):
+                assert strip.text[left+1:right].strip() == expected.strip()
+            assert subtitle in strips[top+4].text
+            expected_footer = f'{attested} attested' if attested is not None else '— attested'
+            assert expected_footer in strips[-1].text
+            assert not any(glyph in strips[-1].text for glyph in '▰▱▁▂▃▄▅▆▇█')
+            tone = app.ansi_theme.ansi_colors[3] if status == 'assessing' else neutral_inset_color(app)
+            for strip in strips[top:top+5]:
+                for x in (left, right):
+                    assert next(iter(strip.crop(x, x+1))).style.color.get_truecolor() == tone
+            for label in ('ASSESSING', subtitle):
+                segment = next(s for row in strips for s in row if label in s.text)
+                assert segment.style.color.get_truecolor() == tone
+            assert card.data['destination'] == 'oracles'
+        assert not app.query('#surfboard-card-launchpad')
 
 
 def painted(app):
@@ -234,7 +249,7 @@ async def test_card_activity_colors_update_from_current_counts():
             ('pool4','active','8.77','USD',2),
             ('pool4','idle','8.77','USD',3),
             ('board','stale','527','4,176 accepted jobs',3),
-            ('launchpad','idle','208','0 new',3),
+            ('oracles','idle','0','100 loaded',3),
             ('agent','idle','IDMD #420','0 of 3 slots',3),
             ('agent','offline','IDMD #420','0 of 3 slots',1),
             ('swarm-tokens','idle','118','0 new',3),
@@ -337,7 +352,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.x > cards[6].region.x
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
-        for label in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "LAUNCHPAD", "POOL4",
+        for label in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "ORACLES", "POOL4",
                       "PROTOCOL", "WIP", "TOKENS", "EMPTY SEAT"):
             assert label in text
 
@@ -348,7 +363,7 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.update_data()
         rack.focus_card("announce")
         rack.move_focus("down")
-        assert rack.focused_card == "launchpad"
+        assert rack.focused_card == "oracles"
         rack.move_focus("right")
         assert rack.focused_card == "protocol"
         rack.move_focus("up")
@@ -825,7 +840,7 @@ async def test_work_card_approved_digits_workflows_and_step_footer(size):
         footer = strips[-1].text
         assert ('5 build · 4 review' if card.region.width >= 24 else '5 build · 4 rev') in footer
         assert inset_border_color(strips[top]).get_truecolor() == Color.parse(app.get_css_variables()['accent']).get_truecolor()
-        assert card.region.height == app.query_one('#surfboard-card-launchpad').region.height
+        assert card.region.height == app.query_one('#surfboard-card-oracles').region.height
         assert len(app.query(SurfboardCard)) == 12
         assert not app.query('#surfboard-card-portfolio')
 

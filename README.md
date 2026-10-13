@@ -250,7 +250,15 @@ Work dashboard is open. Missing details remain
 explicit; unknown assignments never become zero. Reads run at most once a minute, and failed
 reads keep the previous snapshot with its original timestamp and a stale marker.
 
-Press **Ctrl+o** from Surf or the boardroom to open **ORACLES**. Six cards summarize
+Open the **ORACLES** boardroom card, or press **Ctrl+o** from Surf or the boardroom.
+The card replaces LAUNCHPAD: ASSESSING digits, a loaded-request subtitle and an
+attested-count footer. Its inner frame is orange for positive assessing counts and
+grey at zero. Counts cover the newest loaded page, up to 100 requests; coverage and
+read time are in the tooltip, and stale values carry a timestamp. Click or Enter
+opens the native dashboard, and Escape returns to the rack. LAUNCHPAD remains
+available through `l` in Surf.
+
+In **ORACLES**, six cards summarize
 the newest 100 loaded requests; the wider request list sits beside the selected
 question, consensus, quorum and expandable answer tree. Use `/` to search locally,
 `f` to cycle states, `c` to cycle chains, and Enter on a request to focus its answers.
@@ -259,7 +267,8 @@ AGENT-style record. Escape returns to the previous view.
 
 Oracle counts cover the loaded page. Capped pages say `partial`; unknown source
 statuses remain visible in the list and its `other` count. The list refreshes at most
-once a minute while this view is open. Only selected request details are fetched,
+once a minute while ORACLES or the boardroom is open. The boardroom reads only the
+list; selected request details load while the ORACLES view is open,
 with up to eight cached requests and 64 answers each. Failed reads preserve the last
 good values with their original timestamp and an explicit stale state.
 

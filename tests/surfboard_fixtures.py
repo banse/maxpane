@@ -11,7 +11,7 @@ def hub_payload(kind="normal"):
         ("swarm", "SWARM", "swarm", "863 online", "9 working", None, None),
         ("agent", "AGENT", "agent", "IDMD #420", "0 of 3 slots", 43200, 86400),
         ("board", "LEADERBOARD", "board", "527", "4,176 accepted jobs", 86400, 86400),
-        ("launchpad", "LAUNCHPAD", "launchpad", "208", "0 new", 0, 208),
+        ("oracles", "ORACLES", "oracles", "7", "100 loaded", 86, 100),
         ("pool4", "POOL4", "pool4_user", "7.90", "USD", None, None),
         ("protocol", "PROTOCOL", "pool4", "★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 4k IMD", "0.47% of supply", 60, 100),
         ("swarm-tokens", "TOKENS", "swarm-tokens", "116", "4 new", None, None),
@@ -21,16 +21,14 @@ def hub_payload(kind="normal"):
         cards.append(dict(key=key, title=title, destination=destination,
                           seat_slot=0 if key == "agent" else None,
                           token_id=420 if key == "agent" else None,
-                          status="experimental" if key == "protocol" else "idle" if key == "agent" else "working" if key == "board" else "active",
+                          status="experimental" if key == "protocol" else "assessing" if key == "oracles" else "idle" if key == "agent" else "working" if key == "board" else "active",
                           primary=primary, secondary=secondary, token_ranking=None, top_agents=None,
                           detail=f"{title} · exact {numerator}/{denominator} · read 22:00 · source cache ≤10m",
-                          meter_kind="sparkline" if key in ("swarm", "launchpad") else "activity" if key in ("agent", "board") else "ratio" if key != "swarm-tokens" else None,
-                          meter_state={"agent": "idle", "board": "busy", "launchpad": "ok"}.get(key),
+                          meter_kind="sparkline" if key == "swarm" else "oracles" if key == "oracles" else "activity" if key in ("agent", "board") else "ratio" if key != "swarm-tokens" else None,
+                          meter_state={"agent": "idle", "board": "busy", "oracles": "ok"}.get(key),
                           share_price=1.3029864737732294 if key == "pool4" else None,
                           numerator=numerator, denominator=denominator,
-                          points=([1, 2, 3, 4, 3, 2, 1, 8] if key == "swarm" else
-                                  [1200, 900, 1500, 2100, 1800, 3600, 2400, 4200]
-                                  if key == "launchpad" else None)))
+                          points=([1, 2, 3, 4, 3, 2, 1, 8] if key == "swarm" else None)))
         if key in ("agent", "board"):
             cards[-1]["detail"] = (f"{title} · workers read 22:00 · observed stop 12h ago"
                                    if key == "agent" else f"{title} · workers read 22:00 · busy")
@@ -84,8 +82,8 @@ def hub_payload(kind="normal"):
                 dict(rank=1, token_id=99999, accepted=99999999),
                 dict(rank=2, token_id=9999, accepted=9999999),
                 dict(rank=3, token_id=999, accepted=999999)])
-        next(card for card in cards if card["key"] == "launchpad").update(
-            primary="999,999", secondary="999,999 new")
+        next(card for card in cards if card["key"] == "oracles").update(
+            primary="100", secondary="100 loaded", numerator=0, denominator=100)
         next(card for card in cards if card["key"] == "pool4").update(
             primary="999,999.99", secondary="USD")
         next(card for card in cards if card["key"] == "protocol").update(

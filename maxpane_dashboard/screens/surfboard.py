@@ -18,7 +18,7 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Re-measured after the 2026-10-13 WORK IN PROGRESS card live preview at 149×45.
+#: Rechecked after the 2026-10-13 ORACLES card live preview at 149×45.
 #: Six equal fractional columns retain the standard card widths (at most one
 #: cell of rounding difference). PROTOCOL's "rewarded 100k IMD" row needs 19
 #: inner cells with padding, binding its card to 23 columns and the rack to
@@ -28,7 +28,7 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: at 144×37 and 149×45. TOKENS keeps its leading blank and right-edge arrows.
 #: Four seven-row card floors, three gutters and two extra side-gap rows need
 #: a 33-row rack, restoring the height pin from 35 to 37. The gaps directly below
-#: LAUNCHPAD and WORK IN PROGRESS are three lines, with regular muted captions in the
+#: ORACLES and PROTOCOL are three lines, with regular muted captions in the
 #: middle line before the AGENT seats. All other card gaps remain one line.
 #: All cards remain equally tall. The terminal fills the center to the rack
 #: bottom, measuring 94 columns at the pin and 97 at 149×45. At owner size all

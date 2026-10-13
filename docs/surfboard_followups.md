@@ -335,3 +335,22 @@ Validation: 165 affected/composing tests, 124 guards and 12 docpins passed.
 Four regression mutations were rejected, including the row pin both ways.
 Review approved with no findings after five focused cases and an additional
 caption-overlap mutation. No full suite or outstanding findings.
+
+
+## ORACLES boardroom card — 2026-10-13
+
+Replaced LAUNCHPAD's rack slot with the approved ASSESSING digit card, loaded-page
+subtitle and attested footer. The native LAUNCHPAD view remains accessible in Surf.
+ORACLES uses the existing request reader/cache: the boardroom polls only the list,
+while the native ORACLES view enables selected details. Suspend/resume cancellation
+restarts immediately on the next offer without duplicate in-flight requests.
+
+The live keyless 149×45 render showed 0 assessing, 100 loaded and 70 attested.
+The neutral zero state and unchanged 144×37 minimum were verified in the real rack.
+Capped pages retain the loaded-count scope; tooltip coverage and source clocks
+remain explicit. Stale data has a dated subtitle; missing counts stay unknown.
+
+Validation: 482 affected/composing tests, 124 guards and 12 docpins passed. Three
+implementation mutations and the reviewer's hidden-detail cancellation mutation
+were rejected and restored. Final review approved with no findings after 12 focused
+checks. No full suite, open findings, endpoint additions or layout-pin changes.

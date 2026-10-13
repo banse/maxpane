@@ -18,6 +18,8 @@ def manager(tmp_path):
     swarm.fetch_seat_records=AsyncMock(return_value=capture('records'))
     swarm.fetch_steps_hourly=AsyncMock(return_value=capture('hourly'))
     swarm.fetch_jobs=AsyncMock(return_value=None)
+    swarm.fetch_oracle_requests=AsyncMock(return_value=None)
+    swarm.fetch_oracle_detail=AsyncMock(return_value=None)
     m=SurfManager(clock=lambda:clock.now,cache_path=str(tmp_path/'cache.json'),client=Client(),pool4_client=Client(),swarm_client=swarm,npm_client=Client(),seat=420)
     base=Client(); base.fetch_imd_global_supply=AsyncMock(return_value=None)
     m._launch_rpc_clients[8453]=base
@@ -104,6 +106,113 @@ async def test_inactive_or_closing_hub_does_not_offer_work(manager):
         m.swarm_client.fetch_jobs.assert_not_awaited()
     finally:
         m._closing = False
+        await m.close()
+
+
+async def test_hub_oracles_share_list_native_detail_and_retained_failure_clock(manager):
+    m, clock = manager
+    raw = json.loads(Path('tests/fixtures/surf/oracles/captured.json').read_text())
+    clock.now = raw['read_ts']
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def requests(*, limit):
+        entered.set(); await release.wait()
+        return raw['requests']
+    m.swarm_client.fetch_oracle_requests = AsyncMock(side_effect=requests)
+    m.swarm_client.fetch_oracle_detail = AsyncMock(side_effect=lambda key: raw['details'].get(key))
+    m.set_hub_active(True)
+    try:
+        first = await m.fetch_hub_snapshot()
+        assert next(c for c in first['surfboard_cards'] if c['key'] == 'oracles')['primary'] == '—'
+        await asyncio.wait_for(entered.wait(), 1)
+        task = m._oracles_reader.task
+        await m.fetch_hub_snapshot()
+        assert m._oracles_reader.task is task
+        release.set(); await task
+        m.swarm_client.fetch_oracle_detail.assert_not_awaited()
+        second = await m.fetch_hub_snapshot()
+        card = next(c for c in second['surfboard_cards'] if c['key'] == 'oracles')
+        assert card['denominator'] == len(second['surf_oracles']['rows']) == 100
+        assert card['primary'] == str(sum(r['status'] == 'assessing' for r in second['surf_oracles']['rows']))
+        assert card['secondary'] == '100 loaded' and card['meter_state'] == 'partial'
+        m.set_oracles_active(True); m.set_hub_active(False)
+        m._offer_full = lambda _: pytest.fail('unrelated collection in oracle mode')
+        native = await m.fetch_and_compute()
+        assert native['surf_oracles']['rows'] == second['surf_oracles']['rows']
+        await m._oracles_reader.task
+        m.swarm_client.fetch_oracle_requests.assert_awaited_once_with(limit=100)
+        m.swarm_client.fetch_oracle_detail.assert_awaited_once()
+        clock.now += 60
+        raw['requests'] = None
+        await m.fetch_and_compute(); await m._oracles_reader.task
+        stale = m._project_hub()
+        retained = next(c for c in stale['surfboard_cards'] if c['key'] == 'oracles')
+        assert stale['surf_oracles']['read_ts'] == raw['read_ts']
+        assert retained['primary'] == card['primary']
+        assert retained['meter_state'] == retained['status'] == 'stale'
+        assert retained['secondary'].startswith('stale ')
+        clock.now += 119
+        await m.fetch_and_compute()
+        assert m.swarm_client.fetch_oracle_requests.await_count == 2
+    finally:
+        await m.close()
+
+
+@pytest.mark.parametrize('first', ['hub', 'oracles'])
+async def test_oracle_list_cancels_only_after_both_consumers_leave(manager, first):
+    m, _ = manager
+    entered = asyncio.Event()
+    async def requests(*, limit):
+        entered.set(); await asyncio.Event().wait()
+    m.swarm_client.fetch_oracle_requests = AsyncMock(side_effect=requests)
+    other = 'oracles' if first == 'hub' else 'hub'
+    getattr(m, f'set_{first}_active')(True)
+    try:
+        await (m.fetch_hub_snapshot() if first == 'hub' else m.fetch_and_compute())
+        await asyncio.wait_for(entered.wait(), 1)
+        task = m._oracles_reader.task
+        getattr(m, f'set_{other}_active')(True)
+        getattr(m, f'set_{first}_active')(False)
+        assert not task.cancelling()
+        getattr(m, f'set_{other}_active')(False)
+        await asyncio.gather(task, return_exceptions=True)
+        assert task.cancelled()
+    finally:
+        await m.close()
+
+
+@pytest.mark.parametrize('first', ['hub', 'oracles'])
+async def test_oracle_route_restarts_cancelling_list_without_waiting_for_poll(manager, first):
+    m, clock = manager
+    raw = json.loads(Path('tests/fixtures/surf/oracles/captured.json').read_text())
+    clock.now = raw['read_ts']
+    entered = asyncio.Event()
+    calls = 0
+    async def requests(*, limit):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            entered.set(); await asyncio.Event().wait()
+        return raw['requests']
+    m.swarm_client.fetch_oracle_requests = AsyncMock(side_effect=requests)
+    m.swarm_client.fetch_oracle_detail = AsyncMock(side_effect=lambda key: raw['details'].get(key))
+    other = 'oracles' if first == 'hub' else 'hub'
+    getattr(m, f'set_{first}_active')(True)
+    try:
+        await (m.fetch_hub_snapshot() if first == 'hub' else m.fetch_and_compute())
+        await asyncio.wait_for(entered.wait(), 1)
+        previous = m._oracles_reader.task
+        # Screen suspend precedes the destination screen's resume event.
+        getattr(m, f'set_{first}_active')(False)
+        getattr(m, f'set_{other}_active')(True)
+        await (m.fetch_hub_snapshot() if other == 'hub' else m.fetch_and_compute())
+        replacement = m._oracles_reader.task
+        assert replacement is not previous
+        await asyncio.wait_for(replacement, 1)
+        assert previous.cancelled()
+        assert m.get_oracles_snapshot()['rows']
+        assert calls == 2
+        assert m.swarm_client.fetch_oracle_detail.await_count == (other == 'oracles')
+    finally:
         await m.close()
 
 async def test_shared_full_fetch_cancellation_isolated_and_interval_coalesced(manager):
@@ -347,8 +456,7 @@ async def test_cards_use_legacy_source_failure_and_success_clocks(manager):
     m.cache.mark_fetched(TIER_POOL4,910);m.cache.mark_fetched(TIER_LAUNCHPAD,910)
     m.cache.mark_failed(TIER_POOL4,950);m.cache.mark_failed(TIER_LAUNCHPAD,950)
     cards={c['key']:c for c in m._project_hub(refresh_legacy=False)['surfboard_cards']}
-    assert cards['launchpad']['status']=='idle'  # no new launches; source staleness stays in detail
-    assert 'launchpad stale' in cards['launchpad']['detail']
+    assert 'launchpad' not in cards and cards['oracles']['status']=='unavailable'
     assert cards['pool4']['status']=='stale'
     assert 'pool4 stale · read '+__import__('maxpane_dashboard.data.surfboard',fromlist=['hhmm']).hhmm(910) in cards['pool4']['detail']
     assert 'market' in cards['pool4']['detail'] and 'read' in cards['pool4']['detail']

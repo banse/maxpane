@@ -15,6 +15,8 @@ class OraclesReader:
         self.task = None
         self.selected_id = None
         self._failed = {}
+        self._details_active = True
+        self._reading_detail = False
 
     def _snapshot(self):
         entry = self.cache.get_last_good(SLOT_SURF_ORACLES)
@@ -50,14 +52,30 @@ class OraclesReader:
                 or entry['row']['status'] not in oracle.TERMINAL
                 and self.clock() - entry['read_ts'] >= oracle.DETAIL_TTL)
 
-    def offer(self):
+    def set_details_active(self, active):
+        """Keep shared list polling while stopping hidden selected-detail work."""
+        was_active = self._details_active
+        self._details_active = bool(active)
+        if was_active and not self._details_active and self._reading_detail:
+            self.cancel()
+
+    def offer(self, *, include_detail=True):
+        self.set_details_active(include_detail)
         if self.task is not None and not self.task.done():
+            if self.task.cancelling():
+                self.task = asyncio.create_task(self._read_after_cancel(self.task))
             return self.task
         snapshot = self._snapshot()
-        if not self.cache.is_due(TIER_SURF_ORACLES, self.clock()) and not self._detail_due(snapshot):
+        if not self.cache.is_due(TIER_SURF_ORACLES, self.clock()) and not (
+                self._details_active and self._detail_due(snapshot)):
             return None
         self.task = asyncio.create_task(self._read())
         return self.task
+
+    async def _read_after_cancel(self, prior):
+        # Screen suspend may cancel just before the next screen resumes.
+        await asyncio.gather(prior, return_exceptions=True)
+        await self._read()
 
     def cancel(self):
         if self.task is not None and not self.task.done():
@@ -113,10 +131,11 @@ class OraclesReader:
                 self.cache.mark_failed(TIER_SURF_ORACLES, self.clock())
         # One current selection at a time. A late result may cache its own identity;
         # the loop then drains the latest selection without waiting for a UI poll.
-        while self._detail_due(snapshot := self._snapshot()):
+        while self._details_active and self._detail_due(snapshot := self._snapshot()):
             row, started = self._row(snapshot), self.clock()
             identity = row['id']
             try:
+                self._reading_detail = True
                 raw = await self.client.fetch_oracle_detail(identity)
                 entry = oracle.decode_detail(raw, row, read_ts=started, now=self.clock())
                 if entry is None:
@@ -131,5 +150,7 @@ class OraclesReader:
                 logger.debug('Oracle detail unavailable: %s', exc)
                 self._failed[identity] = self.clock()
                 self._failed = dict(sorted(self._failed.items(), key=lambda item: item[1], reverse=True)[:100])
+            finally:
+                self._reading_detail = False
             if identity == self.selected_id:
                 break

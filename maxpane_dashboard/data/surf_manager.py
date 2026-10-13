@@ -7182,11 +7182,14 @@ class SurfManager:
         self._hub_active = bool(active)
         if not self._hub_active and not self._work_active:
             self._work_reader.cancel()
+        if not self._hub_active and not self._oracles_active:
+            self._oracles_reader.cancel()
 
     def set_oracles_active(self, active: bool) -> None:
         """Visibility only; scheduled refresh owns the detached read offer."""
         self._oracles_active = bool(active)
-        if not self._oracles_active:
+        self._oracles_reader.set_details_active(self._oracles_active)
+        if not self._oracles_active and not self._hub_active:
             self._oracles_reader.cancel()
 
     def set_oracle_request(self, request_id: str | None) -> None:
@@ -7521,6 +7524,7 @@ class SurfManager:
             self._spawn_swarm_board(set(self.cache.tiers_due(now)), now)
             if self._hub_active:
                 self._work_reader.offer()
+                self._oracles_reader.offer(include_detail=self._oracles_active)
         return self._project_hub()
 
     def _offer_full(self, now: float) -> Any:

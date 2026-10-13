@@ -771,7 +771,7 @@ seats and accepted counts, led by gold/silver/bronze stars with one leading blan
 right with one trailing blank; oversized counts drop grouping, then use compact notation only
 if necessary. Its activity footer remains rank one's.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
-footer is centered `Identity.md`. Three-line gaps below LAUNCHPAD and WORK IN PROGRESS separate them
+footer is centered `Identity.md`. Three-line gaps below ORACLES and PROTOCOL separate them
 from the AGENT seats; regular-weight キープ / ビルディング match the muted card-footer
 labels and are centered on the middle line.
 Other card gaps remain one line; all card sizes stay equal.
@@ -802,7 +802,13 @@ and implementation plan for exact meter formulas, commands and source cadence.
 
 ## ORACLES (`Ctrl+o`)
 
-ORACLES is a separate native mode, opened with `Ctrl+o` from Surf or the boardroom.
+ORACLES is a separate native mode, opened with `Ctrl+o` from Surf or the boardroom,
+or through the ORACLES card replacing LAUNCHPAD. The card uses ASSESSING digits,
+`n loaded` inside and `n attested` outside. Fresh positive counts paint orange; zero,
+stale and unavailable paint neutral. Counts cover loaded rows, with page-cap/partial
+coverage and the source clock in the tooltip; stale counts have a dated subtitle.
+The boardroom shares the list reader without selected-detail reads. Either visible
+consumer keeps list polling eligible; only native ORACLES enables selected details.
 Its six rack cards and 66/34 request/detail body consume only `surf_oracles`.
 The reader has an independent 60s list tier and 120s failure backoff; only the selected
 request's details load, capped at 64 members with an eight-request LRU. Existing AGENT

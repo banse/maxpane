@@ -17,6 +17,7 @@ from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_p
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard_activity as work_activity
 from maxpane_dashboard.data import surf_launchpad_volume as launch_volume
+from maxpane_dashboard.data.surf_oracles import PAGE_LIMIT as ORACLE_PAGE_LIMIT
 from maxpane_dashboard.analytics.surf_launch_checks import address
 from maxpane_dashboard.data.surf_models import (
     SURFBOARD_CARD_FIELDS, SURFBOARD_OVERVIEW_FIELDS, SURFBOARD_SUPPLY_FIELDS, SWARM_SEAT_OUTCOME_FIELDS,
@@ -513,10 +514,25 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          and seat_token(row.get("token_id")) is not None), key=lambda row: row["rank"])
         if isinstance(population, list) else None)
     activity_meter(leader.get("token_id"), leader.get("live_state"))
-    points, volume_state, volume_detail = _launchpad_volume(data, launchpad, family_sources or {}, now)
-    card("launchpad","LAUNCHPAD",_value(count(data.get("launchpad_coin_count"))),_value(count(data.get("launchpad_new_24h"))," new"),
-         volume_detail,"launchpad",points=points)
-    result[-1].update(meter_kind="sparkline", meter_state=volume_state)
+    oracles = data.get("surf_oracles") or {}
+    oracle_rows = oracles.get("rows")
+    loaded = len(oracle_rows) if isinstance(oracle_rows, list) else None
+    counts = Counter(row['status'] for row in oracle_rows) if loaded is not None else Counter()
+    assessing, attested = (counts['assessing'], counts['attested']) if loaded is not None else (None, None)
+    oracle_state = oracles.get("state", "unavailable") if loaded is not None else "unavailable"
+    if oracle_state == "ok" and oracles.get("partial"):
+        oracle_state = "partial"
+    count_names = sorted(set(counts) - {"assessing", "attested"} | {"disagreed", "blocked"})
+    subtitle = (f"stale {hhmm(oracles.get('read_ts'))}" if oracle_state == "stale" else
+                f"{loaded:,} loaded" if oracle_state in ("ok", "partial") else "unavailable")
+    card("oracles", "ORACLES", f"{assessing:,}" if assessing is not None else "—", subtitle,
+         f"ORACLES · newest {ORACLE_PAGE_LIMIT} requests · counts from loaded rows"
+         + f" · {_value(loaded)} loaded · {_value(assessing)} assessing · {_value(attested)} attested"
+         + (" · " + " · ".join(f"{counts[state]:,} {state}" for state in count_names)
+            if loaded is not None else "")
+         + f" · {oracle_state} · read {hhmm(oracles.get('read_ts'))} · Enter to open", "oracles")
+    result[-1].update(meter_kind="oracles", meter_state=oracle_state, numerator=attested, denominator=loaded,
+                     status=("assessing" if assessing else "idle") if oracle_state in ("ok", "partial") else oracle_state)
     price = number(data.get("pool4_price_usd"))
     change = data.get("imd_change_24h_pct")
     valid_change = type(change) in (int, float) and number(abs(change)) is not None
@@ -549,7 +565,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     families = family_sources or {}
     for row in result:
         names = {"announce": ("announce", "signals"), "swarm": ("hourly",),
-                 "launchpad": ("launchpad",), "pool4": ("pool4", "market"),
+                 "pool4": ("pool4", "market"),
                  "protocol": ("pool4",)}.get(row["key"], ())
         states = []
         for name in names:
@@ -563,7 +579,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         # The pure projection remains honest when callers only have the
         # legacy degradation list, even before per-family metadata is ready.
         degraded = data.get("degraded") or []
-        relevant = {"announce": ("channel",), "launchpad": ("pad",),
+        relevant = {"announce": ("channel",),
                     "pool4": ("p4", "market"), "protocol": ("p4",)}.get(row["key"], ())
         if any(group in degraded for group in relevant):
             states.append("stale")
@@ -574,9 +590,6 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     # Activity colors describe the event window, independently of source health;
     # retained-source states and observation clocks remain explicit in detail.
     result[0]["status"] = "active" if new_announcement else "idle" if latest else "unavailable"
-    launches = count(data.get("launchpad_new_24h"))
-    next(row for row in result if row["key"] == "launchpad")["status"] = (
-        "unavailable" if launches is None else "active" if launches > 0 else "idle")
     catalogue = tokens_catalogue or {}
     total = count(catalogue.get("count"))
     catalogue_state = catalogue.get("state", "unavailable")

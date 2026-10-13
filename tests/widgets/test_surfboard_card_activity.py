@@ -160,7 +160,7 @@ async def test_protocol_columns_are_label_amount_unit_without_colons_or_inner_fo
         assert bottom[bottom.index('└')+1:bottom.index('┘')].strip('─ ') == ''
 
 
-@pytest.mark.parametrize('key,label', [('launchpad', '2H')])
+@pytest.mark.parametrize('key,label', [('swarm-tokens', '24h')])
 async def test_volume_has_green_buckets_and_visible_partial_gaps(key, label):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
@@ -173,9 +173,9 @@ async def test_volume_has_green_buckets_and_visible_partial_gaps(key, label):
             if state == 'ok':
                 assert label + ' ' in footer.text and '█' in footer.text and '▁' in footer.text
             elif state == 'partial':
-                assert '~' + label + ' ' in footer.text and '·' in footer.text and '█' in footer.text
+                assert label + ' ' in footer.text and '·' in footer.text and '█' in footer.text
             elif state == 'stale':
-                assert '~' + label + ' ' in footer.text and '█' in footer.text
+                assert label + ' ' in footer.text and '█' in footer.text
             else:
                 assert label + ' —' in footer.text
                 assert not any(char in footer.text for char in '▁▂▃▄▅▆▇█')

@@ -9,15 +9,15 @@ from textual.widgets import Input
 from maxpane_dashboard.app import MaxPaneApp
 from maxpane_dashboard.screens.game_select import GameSelectScreen
 from maxpane_dashboard.screens.surf import (
-    MODE_AGENT, MODE_BOARD, MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4,
+    MODE_AGENT, MODE_BOARD, MODE_DASHBOARD, MODE_ORACLES, MODE_POOL4,
     MODE_POOL4_USER, MODE_SWARM, MODE_WORK, SurfScreen,
 )
 from tests.test_app_startup import MANAGER_ATTRS
 from tests.data.test_surf_manager_surfboard import manager as work_manager
 
 MODES = (MODE_DASHBOARD, MODE_SWARM, MODE_AGENT, MODE_BOARD,
-         MODE_LAUNCHPAD, MODE_POOL4_USER, MODE_POOL4, MODE_WORK)
-CARD_KEYS = ("announce", "swarm", "agent", "board", "launchpad", "pool4", "protocol", "work")
+         MODE_ORACLES, MODE_POOL4_USER, MODE_POOL4, MODE_WORK)
+CARD_KEYS = ("announce", "swarm", "agent", "board", "oracles", "pool4", "protocol", "work")
 
 
 class HubManager:
@@ -441,3 +441,20 @@ async def test_work_card_round_trip_preserves_pending_reader(work_manager):
         await pilot.pause()
         assert isinstance(app.screen, GameSelectScreen)
         assert pending.cancelled()
+
+
+async def test_oracles_card_click_opens_native_dashboard_and_escape_retains_card():
+    from maxpane_dashboard.widgets.surfboard.rack import SurfboardCard
+    app, _ = hub_app()
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        hub = app.screen
+        card = hub.query_one('#surfboard-card-oracles', SurfboardCard)
+        await pilot.click(card)
+        await pilot.pause()
+        assert isinstance(app.screen, SurfScreen)
+        assert app.screen._mode == MODE_ORACLES
+        assert app.screen.return_context == 'surfboard'
+        await pilot.press('escape')
+        assert app.screen is hub
+        assert hub.query_one('#surfboard-card-oracles') is card

@@ -80,13 +80,12 @@ def test_rack_meters_use_real_denominators_uncapped_population_and_split():
     data.update(swarm_seat_selected={'token_id':420},swarm_seat_outcome=hub.seat_outcome(hub.normalize_records(capture('records')),420),
                 swarm_board_summary={'seats':2,'attempts':3393,'accepted':3254},
                 pool4_vault_assets=20,pool4_total_supply=100,pool4_total_burned=2,pool4_total_rewarded=3,pool4_total_fee_token=5)
-    lp={'coin_count':25,'launch_count':25,'cursor':{'last_block':123,'launches':{str(i):{} for i in range(25)}},'swaps_by_coin':{str(i):1 for i in range(23)}}
-    cards={c['key']:c for c in hub.cards(data,{},now=100,launchpad=lp)}
+    cards={c['key']:c for c in hub.cards(data,{},now=100)}
     assert (cards['announce']['numerator'],cards['announce']['denominator'])==(1,len(SIGNAL_NAMES))
     assert (cards['agent']['numerator'],cards['agent']['denominator'])==(None,86400)
     assert (cards['board']['numerator'],cards['board']['denominator'])==(None,86400)
-    assert cards['launchpad']['numerator'] is cards['launchpad']['denominator'] is None
-    assert cards['launchpad']['points'] is None  # Counts alone cannot establish volume.
+    assert cards['oracles']['numerator'] is cards['oracles']['denominator'] is None
+    assert cards['oracles']['points'] is None
     assert cards['pool4']['share_price'] is None
     assert cards['pool4']['numerator'] is cards['pool4']['denominator'] is None
     assert (cards['protocol']['numerator'],cards['protocol']['denominator'])==(2,10)
@@ -94,13 +93,38 @@ def test_rack_meters_use_real_denominators_uncapped_population_and_split():
     assert not {c['key'] for c in cards.values() if c['status']=='planned'}
     assert 'portfolio' not in cards and cards['work']['status']=='unavailable'
     assert 'earnings' not in cards
-    lp['launch_count']=24
-    assert next(c for c in hub.cards(data,{},now=100,launchpad=lp) if c['key']=='launchpad')['numerator'] is None
 
 
 def test_unknown_detector_prevents_a_false_zero_bar():
     cards=hub.cards({}, {}, now=100)
     assert cards[0]['numerator'] is cards[0]['denominator'] is None
+
+
+@pytest.mark.parametrize('state,partial,rows,primary,secondary,status,meter', [
+    ('unavailable', False, None, '—', 'unavailable', 'unavailable', 'unavailable'),
+    ('ok', False, [], '0', '0 loaded', 'idle', 'ok'),
+    ('ok', False, ['assessing', 'attested', 'mismatch'], '1', '3 loaded', 'assessing', 'ok'),
+    ('ok', True, ['assessing'] * 7 + ['attested'] * 86 + ['blocked'] * 7,
+     '7', '100 loaded', 'assessing', 'partial'),
+    ('stale', True, ['assessing', 'attested'], '1', 'stale ' + hub.hhmm(900), 'stale', 'stale'),
+])
+def test_oracle_card_counts_only_loaded_rows_and_retains_source_state(
+        state, partial, rows, primary, secondary, status, meter):
+    snapshot = dict(state=state, partial=partial, read_ts=900 if rows is not None else None,
+                    rows=[dict(status=s) for s in rows] if rows is not None else None)
+    cards = {row['key']: row for row in hub.cards(dict(surf_oracles=snapshot), {}, now=1000)}
+    row = cards['oracles']
+    assert 'launchpad' not in cards
+    assert row['title'] == 'ORACLES' and row['destination'] == 'oracles'
+    assert (row['primary'], row['secondary'], row['status']) == (primary, secondary, status)
+    assert row['meter_kind'] == 'oracles' and row['meter_state'] == meter
+    assert row['numerator'] == (rows.count('attested') if rows is not None else None)
+    assert row['denominator'] == (len(rows) if rows is not None else None)
+    assert 'newest 100' in row['detail'] and meter in row['detail']
+    if rows is not None:
+        assert f'read {hub.hhmm(900)}' in row['detail']
+        for name in set(rows):
+            assert f'{rows.count(name)} {name}' in row['detail']
 
 
 @pytest.mark.parametrize('jobs,workflows,status,subtitle', [
@@ -183,14 +207,6 @@ def test_board_face_uses_canonical_top_agent_not_selected_seat():
         data['swarm_board_rows']=missing
         row=next(c for c in hub.cards(data,{},now=100) if c['key']=='board')
         assert row['primary']=='unavailable' and row['secondary']=='unavailable'
-
-
-@pytest.mark.parametrize('new,status',[(0,'idle'),(1,'active'),(8,'active'),(None,'unavailable'),(True,'unavailable')])
-def test_launchpad_face_count_and_new_launch_color(new,status):
-    row=next(c for c in hub.cards(dict(launchpad_coin_count=208,launchpad_new_24h=new),{},now=100) if c['key']=='launchpad')
-    assert row['primary']=='208'
-    assert row['secondary']==(f'{new} new' if type(new) is int else 'unavailable')
-    assert row['status']==status
 
 
 @pytest.mark.parametrize('burn,reward,primary,secondary', [
@@ -680,21 +696,19 @@ def launchpad_volume_snapshot(**changes):
                      read_ts=18010, head_ts=18000, until=18000, known=25, total=25), **changes)
 
 
-def launchpad_volume_card(snapshot=None, *, now=18020, price=2000, market=None, launch_state='ok'):
-    return next(row for row in hub.cards(
-        dict(eth_usd=price, launchpad_coin_count=25, launchpad_new_24h=2), {}, now=now,
-        launchpad=dict(volume_2h=snapshot), family_sources={
+def launchpad_volume_projection(snapshot=None, *, now=18020, price=2000, market=None, launch_state='ok'):
+    points, state, detail = hub._launchpad_volume(
+        dict(eth_usd=price), dict(volume_2h=snapshot), {
             'market': market if market is not None else dict(state='ok', read_ts=now),
-            'launchpad': dict(state=launch_state, read_ts=now)}) if row['key'] == 'launchpad')
+            'launchpad': dict(state=launch_state, read_ts=now)}, now)
+    return dict(points=points, meter_state=state, detail=detail)
 
 
 def test_launchpad_volume_projects_eight_usd_buckets_and_retains_source_window():
     snapshot = launchpad_volume_snapshot()
-    row = launchpad_volume_card(snapshot)
-    assert row['meter_kind'] == 'sparkline' and row['meter_state'] == 'ok'
+    row = launchpad_volume_projection(snapshot)
+    assert row['meter_state'] == 'ok'
     assert row['points'] == [i * 2000 for i in range(8)]
-    assert row['numerator'] is row['denominator'] is None
-    assert row['primary'] == '25' and row['secondary'] == '2 new'
     for text in ('USD', '15m', 'current ETH/USD', '25/25', hub.hhmm(18000)):
         assert text in row['detail']
     assert snapshot == launchpad_volume_snapshot()
@@ -708,7 +722,7 @@ def test_launchpad_volume_projects_eight_usd_buckets_and_retains_source_window()
     (launchpad_volume_snapshot(), 18020, 'stale'),
 ])
 def test_launchpad_volume_stays_stale_after_expiry_new_slot_clock_or_failed_read(snapshot, now, launch_state):
-    row = launchpad_volume_card(snapshot, now=now, launch_state=launch_state)
+    row = launchpad_volume_projection(snapshot, now=now, launch_state=launch_state)
     assert row['points'] == [i * 2000 for i in range(8)]
     assert row['meter_state'] == 'stale'
 
@@ -720,7 +734,7 @@ def test_launchpad_volume_stays_stale_after_expiry_new_slot_clock_or_failed_read
     (2000, dict(state='ok', read_ts=18030)), (1e308, None),
 ])
 def test_launchpad_volume_requires_fresh_positive_finite_usd_quote(price, market):
-    row = launchpad_volume_card(launchpad_volume_snapshot(), price=price, market=market)
+    row = launchpad_volume_projection(launchpad_volume_snapshot(), price=price, market=market)
     assert row['points'] is None and row['meter_state'] == 'unavailable'
 
 
@@ -733,12 +747,12 @@ def test_launchpad_volume_requires_fresh_positive_finite_usd_quote(price, market
     (launchpad_volume_snapshot(state='partial', points_wei=None, known=24), 'partial'),
 ])
 def test_launchpad_volume_unknown_is_never_a_zero_chart(snapshot, state):
-    row = launchpad_volume_card(snapshot)
+    row = launchpad_volume_projection(snapshot)
     assert row['points'] is None and row['meter_state'] == state
 
 
 def test_launchpad_volume_complete_empty_intervals_are_real_zero():
-    row = launchpad_volume_card(launchpad_volume_snapshot(points_wei=[0] * 8))
+    row = launchpad_volume_projection(launchpad_volume_snapshot(points_wei=[0] * 8))
     assert row['points'] == [0] * 8 and row['meter_state'] == 'ok'
 
 
