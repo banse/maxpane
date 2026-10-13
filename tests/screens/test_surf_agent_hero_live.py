@@ -25,7 +25,7 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         text = _region_text(pilot.app, hero)
         paid = mmdd_hhmm(data['surf_agent_hero']['rewards']['last_paid_ts'])
         for expected in ("IDMD", "75% premium", "of 1,000", "AGENT #8127", paid, "example.eth ⧉", "TOP #527 x84",
-                         "EARNINGS", "7 worked on", "4 CLAIMED", "since "):
+                         "EARNINGS", "7 worked on", "4 new (2)", "since "):
             assert expected in text
         record = screen.query_one(SurfSwarmSeatRecord)
         assert record.display and record.region.y > hero.region.bottom

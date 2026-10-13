@@ -304,15 +304,22 @@ more than three show two plus `+N more`.
 Its tooltip retains every raw model/effort pair. An empty served list says
 `not advertised`; an unread list is unknown. RECORD's model is what actually ran.
 EARNINGS replaces FEEDBACK. Its TOKENS digits count distinct `(chainId, tokenAddress)`
-assets in the owner's public explorer earned table; the outer footer counts assets
-with an explicit claimed state. The inner `x worked on` intersects builder allocations
+assets in the owner's public explorer earned table. The outer footer is `x new`,
+counting distinct tokens earned in the rolling last 24 hours; append ` (y)` only
+when a known positive subset involved the selected agent's accepted builder work.
+The inner `x worked on` intersects builder allocations
 with this selected seat's accepted job IDs. Green means one of those assets launched
 less than 24 hours ago. Wallet-wide totals are labeled as such on hover. Unknown work
 identity cannot become zero worked-on assets. Legitimate held rows without a token
 address are excluded; malformed or truncated tables fail the whole read.
 Legacy `early` cuts count toward earned assets, but only `builder` cuts establish
-worked-on assets. An explicit unknown claim state preserves earned/worked counts;
-the claimed total stays unknown unless another row confirms that asset was claimed.
+worked-on assets. Raw claim fields remain cache-compatible and do not affect the
+visible summary. Recent counts use each asset's earliest launch/earned timestamp;
+later duplicate rows cannot make an old token new. Include age zero and exclude
+exactly 24 hours and future timestamps. Missing dates preserve unknown recent
+counts unless a known old date excludes that asset. Unknown work identity keeps
+the selected-agent subset unknown. Footers compact only when needed; hover keeps
+exact counts, date semantics and unknown-state explanations.
 `surf_agent_earnings.py` resolves named Next flight exports as JSON, checks the provider
 wallet, and never executes script. GET-only, no redirects, 15 seconds, 4 MiB, 4096 rows.
 `AgentCardSources` runs earnings and membership reads inside the cancellable selected-seat

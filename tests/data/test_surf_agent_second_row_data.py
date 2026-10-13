@@ -49,9 +49,9 @@ def test_runtime_missing_one_matching_connection_is_unknown(snapshot):
 
 def test_earnings_independent_clock_and_unknown_work_coverage(snapshot):
     snapshot['sources']['earnings'] = dict(state='ok', read_ts=NOW-25)
-    snapshot['data']['_agent_earnings'] = dict(earned=12, worked_on=2, claimed=4, worked_recent=True)
+    snapshot['data']['_agent_earnings'] = dict(earned=12, worked_on=2, earned_24h=4, worked_on_24h=1, worked_recent=True)
     result = hero.project(**snapshot)['earnings']
-    assert result == dict(state='ok', read_ts=NOW-25, earned=12, worked_on=2, claimed=4,
+    assert result == dict(state='ok', read_ts=NOW-25, earned=12, worked_on=2, earned_24h=4, worked_on_24h=1,
                          worked_recent=True, owner=snapshot['data']['swarm_seat_summary']['owner'])
     snapshot['sources']['earnings']['state'] = 'stale'
     assert hero.project(**snapshot)['earnings']['earned'] == 12

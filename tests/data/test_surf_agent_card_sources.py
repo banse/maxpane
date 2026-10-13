@@ -37,7 +37,7 @@ async def test_success_clocks_distinct_assets_and_selected_seat_join(reader):
     r, earnings, swarm = reader
     await r.read(seat(), NOW)
     data, meta = sources.project(r.capture(NOW), seat(), now=NOW)
-    assert data['_agent_earnings'] == dict(earned=1, worked_on=1, claimed=1, worked_recent=True)
+    assert data['_agent_earnings'] == dict(earned=1, worked_on=1, earned_24h=1, worked_on_24h=1, worked_recent=True)
     assert data['_agent_nodes'] == dict(oracle=0, launches=1, other=0, known_jobs=1, total_jobs=1)
     assert meta['earnings']['read_ts'] == meta['agent_work']['read_ts'] == NOW
     await r.read(seat(), NOW+1)
@@ -46,6 +46,8 @@ async def test_success_clocks_distinct_assets_and_selected_seat_join(reader):
     data, _ = sources.project(r.capture(NOW), other_seat, now=NOW)
     assert data['_agent_earnings']['earned'] == 1
     assert data['_agent_earnings']['worked_on'] == 0
+    assert data['_agent_earnings']['earned_24h'] == 1
+    assert data['_agent_earnings']['worked_on_24h'] == 0
     data, meta = sources.project(r.capture(NOW), seat('0x'+'9'*40), now=NOW)
     assert data['_agent_earnings'] == {} and meta['earnings']['state'] == 'unavailable'
 
@@ -98,6 +100,8 @@ def test_unknown_accepted_job_identity_does_not_claim_zero_worked_on():
     data, _ = sources.project(capture, raw, now=NOW)
     assert data['_agent_earnings']['earned'] == 1
     assert data['_agent_earnings']['worked_on'] is None
+    assert data['_agent_earnings']['earned_24h'] == 1
+    assert data['_agent_earnings']['worked_on_24h'] is None
     assert data['_agent_earnings']['worked_recent'] is None
 
 
@@ -183,6 +187,8 @@ async def test_manager_selected_read_persistence_and_switch_never_borrow_other_o
         await manager._pool_swarm_seat(420, NOW)
         hero = manager._project_hub()['surf_agent_hero']
         assert hero['earnings']['earned'] == hero['earnings']['worked_on'] == 1
+        assert hero['earnings']['earned_24h'] == hero['earnings']['worked_on_24h'] == 1
+        assert 'claimed' not in hero['earnings']
         assert hero['nodes']['launches'] == 1
         manager.set_seat(7)
         assert manager._project_hub()['surf_agent_hero']['earnings']['earned'] is None

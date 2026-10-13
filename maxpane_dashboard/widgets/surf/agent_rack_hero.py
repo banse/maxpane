@@ -18,7 +18,7 @@ from maxpane_dashboard.widgets.fmt import hhmm, mmdd
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
 from maxpane_dashboard.widgets.surfboard.rack import meter_text
-from ._fmt import EXPLORER, mmdd_hhmm, short_model
+from ._fmt import EXPLORER, fmt_compact, mmdd_hhmm, short_model
 from .news_hero import HeroRecord, _count, _number
 from .pool4_hero import Pool4HeroCard, _amount, _face
 
@@ -47,6 +47,13 @@ def _status_word(source):
     return {"working": "BUSY", "idle": "IDLE", "offline": "OFF", "paused": "PAUSED"}.get(live, "UNKNOWN")
 
 
+def _earnings_footer(source, *, compact=False):
+    earned, worked = (count(source.get(key)) for key in ("earned_24h", "worked_on_24h"))
+    labels = [fmt_compact(value).replace("K", "k") if compact and value is not None and value >= 1000
+              else _count(value) for value in (earned, worked)]
+    return labels[0] + " new" + (f" ({labels[1]})" if worked else "")
+
+
 def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     records = []
     for key, title, heading, footer in (
@@ -59,7 +66,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         ("owner", "OWNER", "WALLET", "OPEN / COPY"),
         ("runtime", "RUNTIME", "SOFTWARE", "since --"),
         ("models", "MODELS", "ADVERTISED", "CONFIGURATION"),
-        ("earnings", "EARNINGS", "TOKENS", "-- CLAIMED"),
+        ("earnings", "EARNINGS", "TOKENS", "-- new"),
         ("collab", "COLLAB", "SEATS", "TOP --"),
         ("nodes", "NODES", "ACCEPTED", "HISTORY"),
     ):
@@ -148,7 +155,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         elif key == "earnings":
             fields["digits"] = _count(count(section.get("earned")))
             fields["subtitle"] = _count(count(section.get("worked_on"))) + " worked on"
-            fields["footer"] = _count(count(section.get("claimed"))) + " CLAIMED"
+            fields["footer"] = _earnings_footer(section)
             fields["accent"] = section.get("worked_recent") is True
         elif key == "collab":
             fields["digits"] = _digits(section.get("count"))
@@ -249,6 +256,11 @@ class AgentRackCard(Pool4HeroCard):
             footer = data.footer
             if cell_len(footer) > max(0, self.region.width - 6):
                 footer = "since " + hhmm(number(self.source.get("connected_ts")), unknown="--")
+            self.border_subtitle = Text().append(footer, style="dim")
+        elif data.key == "earnings":
+            footer = data.footer
+            if cell_len(footer) > max(0, self.region.width - 6):
+                footer = _earnings_footer(self.source, compact=True)
             self.border_subtitle = Text().append(footer, style="dim")
         elif data.key == "accepted" and data.footer not in ("NO ATTEMPTS", "--%"):
             label = data.footer + " "
@@ -391,8 +403,13 @@ class AgentRackCard(Pool4HeroCard):
         elif record.key == "accepted":
             tip.append(f"\n{_count(count(source.get('accepted')))} / {_count(count(source.get('attempts')))} · {_face(source.get('percent'), 1)}%")
         elif record.key == "earnings":
-            tip.append("\nDistinct token assets earned by the owner's wallet; claimed counts assets with a claim."
-                       "\nWorked on counts launches with this agent's work; green means one launched in the last 24h.")
+            recent, worked = (count(source.get(key)) for key in ("earned_24h", "worked_on_24h"))
+            tip.append(f"\nDistinct token assets earned by the owner's wallet: {_count(count(source.get('earned')))} total."
+                       f"\nLast 24h: {_count(recent)} earned; {_count(worked)} worked on by this agent."
+                       "\nUses each token's earliest launch/earned timestamp. Worked on requires this agent's accepted builder work."
+                       "\nGreen means a token worked on by this agent launched in the last 24h.")
+            if recent is None or worked is None:
+                tip.append("\n-- means unknown; an unknown worked-on count is omitted from the footer.")
             if is_address(source.get("owner")):
                 tip.append("\n").append_text(address_text(source["owner"], explorer=EXPLORER))
         elif record.key in ("models", "collab", "nodes") and rows is not None:

@@ -273,12 +273,13 @@ def test_bad_source_clocks_cannot_publish_values(snapshot, source, sections, sta
 def test_invalid_and_impossible_counts_never_turn_into_zero(snapshot, bad):
     snapshot['data']['swarm_seat_outcome'].update(accepted=bad, attempts=3)
     snapshot['data']['swarm_seat_contrib'].update(wall_clock_s=bad, output_tokens=bad)
-    snapshot['data']['_agent_earnings'] = dict(earned=bad, worked_on=0, claimed=1, worked_recent=False)
+    snapshot['data']['_agent_earnings'] = dict(earned=bad, worked_on=0, earned_24h=1, worked_on_24h=bad, worked_recent=False)
     snapshot['sources']['earnings'] = dict(state='ok', read_ts=NOW-25)
     result = hero.project(**snapshot)
     assert result['accepted']['accepted'] is result['accepted']['percent'] is None
     assert result['effort']['hours'] is result['effort']['output_tokens'] is None
-    assert result['earnings']['earned'] is None and result['earnings']['claimed'] == 1
+    assert result['earnings']['earned'] is None and result['earnings']['earned_24h'] == 1
+    assert result['earnings']['worked_on_24h'] is None
     snapshot['data']['swarm_seat_outcome']['accepted'] = 4
     result = hero.project(**snapshot)
     assert result['accepted']['accepted'] is result['accepted']['percent'] is None

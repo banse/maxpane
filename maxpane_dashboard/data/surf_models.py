@@ -1541,7 +1541,7 @@ SURF_AGENT_HERO_FIELDS = {
                 "fleet_daemon", "fleet_count", "fleet_total", "daemon_differs",
                 "connected_ts", "connected_state", "connected_read_ts"),
     "models": ("state", "read_ts", "rows"),
-    "earnings": ("state", "read_ts", "earned", "worked_on", "claimed", "worked_recent", "owner"),
+    "earnings": ("state", "read_ts", "earned", "worked_on", "earned_24h", "worked_on_24h", "worked_recent", "owner"),
     "collab": ("state", "read_ts", "count", "rows"),
     "nodes": ("state", "read_ts", "rows", "oracle", "launches", "other", "known_jobs", "total_jobs",
               "launch_state", "launch_read_ts"),

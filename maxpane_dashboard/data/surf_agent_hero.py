@@ -214,7 +214,8 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
         earnings_source = dict(earnings_source, state='stale')
     earned = _mapping(data.get('_agent_earnings'))
     earnings = _detail_facts(earnings_source, earned=count(earned.get('earned')),
-        worked_on=count(earned.get('worked_on')), claimed=count(earned.get('claimed')),
+        worked_on=count(earned.get('worked_on')), earned_24h=count(earned.get('earned_24h')),
+        worked_on_24h=count(earned.get('worked_on_24h')),
         worked_recent=earned.get('worked_recent') if type(earned.get('worked_recent')) is bool else None,
         owner=owner['address'])
     work = _mapping(data.get('_agent_nodes'))

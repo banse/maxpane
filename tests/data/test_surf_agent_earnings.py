@@ -44,7 +44,7 @@ def test_captured_rows_and_chunked_dynamic_exports_decode_without_javascript():
 
 def test_empty_table_is_a_real_zero_but_absent_or_wrong_wallet_is_unknown():
     assert parse_earned_html(page([]), OWNER) == []
-    assert summarize([], set(), NOW) == {'earned': 0, 'worked_on': 0, 'claimed': 0, 'worked_recent': False}
+    assert summarize([], set(), NOW) == {'earned': 0, 'worked_on': 0, 'earned_24h': 0, 'worked_on_24h': 0, 'worked_recent': False}
     for html in ('', '<html>not found</html>', page([])[:-30], page([], owner='0x' + '1' * 40)):
         assert parse_earned_html(html, OWNER) is None
 
@@ -58,10 +58,11 @@ def test_legacy_early_rewards_and_unknown_claim_do_not_hide_earned_tokens():
     assert [row['builder'] for row in parsed] == [False, True, False]
     assert [row['claimed'] for row in parsed] == [False, False, None]
     jobs = {row['jobId'] for row in rows}
-    assert summarize(parsed, jobs, NOW) == dict(earned=3, worked_on=1, claimed=None, worked_recent=False)
+    expected = dict(earned=3, worked_on=1, earned_24h=0, worked_on_24h=0, worked_recent=False)
+    assert summarize(parsed, jobs, NOW) == expected
     assert coerce_rows(json.loads(json.dumps(parsed))) == parsed
     confirmed = dict(parsed[-1], claimed=True)
-    assert summarize(parsed + [confirmed], jobs, NOW)['claimed'] == 1
+    assert summarize(parsed + [confirmed], jobs, NOW) == expected
     missing = dict(parsed[-1])
     del missing['claimed']
     assert coerce_rows([missing]) is None
@@ -88,17 +89,17 @@ def test_bad_or_missing_date_cannot_make_recent_work(at):
     assert summarize(parsed, {row['jobId']}, NOW)['worked_recent'] is False
 
 
-def test_earned_counts_assets_not_rows_or_units_and_claims_require_explicit_state():
+def test_earned_counts_assets_not_rows_or_units_and_matches_selected_builder_jobs():
     row = parse_earned_html(page([raw_rows()[2]]), OWNER)[0]
     row['launched_ts'] = NOW - 1
     duplicate = dict(row, builder=False, claimed=True)
     other_chain = dict(row, chain_id=1 if row['chain_id'] != 1 else 4663, builder=False)
     rows = [row, duplicate, other_chain]
     assert summarize(rows, {row['job_id']}, NOW) == {
-        'earned': 2, 'worked_on': 1, 'claimed': 1, 'worked_recent': True,
+        'earned': 2, 'worked_on': 1, 'earned_24h': 2, 'worked_on_24h': 1, 'worked_recent': True,
     }
     assert summarize(rows, {'11111111-1111-1111-1111-111111111111'}, NOW) == {
-        'earned': 2, 'worked_on': 0, 'claimed': 1, 'worked_recent': False,
+        'earned': 2, 'worked_on': 0, 'earned_24h': 2, 'worked_on_24h': 0, 'worked_recent': False,
     }
     raw = raw_rows()[0]
     raw['amount'] = 0
@@ -109,7 +110,37 @@ def test_earned_counts_assets_not_rows_or_units_and_claims_require_explicit_stat
 def test_recent_work_uses_launch_time_with_an_injected_clock(age, recent):
     row = parse_earned_html(page([raw_rows()[2]]), OWNER)[0]
     row['launched_ts'] = NOW - age
-    assert summarize([row], {row['job_id']}, NOW)['worked_recent'] is recent
+    result = summarize([row], {row['job_id']}, NOW)
+    assert result['worked_recent'] is recent
+    assert result['earned_24h'] == result['worked_on_24h'] == int(recent)
+
+
+def test_new_token_counts_use_earliest_asset_date_and_selected_agent_work():
+    row = parse_earned_html(page([raw_rows()[2]]), OWNER)[0]
+    row['launched_ts'] = NOW - 1
+    old = dict(row, launched_ts=NOW-86400, builder=False)
+    another_chain = dict(row, chain_id=row['chain_id']+1, builder=False)
+    # The later row does not make an already earned asset new; chains stay distinct.
+    for rows in ([row, old, another_chain], [another_chain, old, row]):
+        result = summarize(rows, {row['job_id']}, NOW)
+        assert result['earned'] == 2 and result['worked_on'] == 1
+        assert result['earned_24h'] == 1 and result['worked_on_24h'] == 0
+        assert result['worked_recent'] is True  # Existing green rule is unchanged.
+
+
+def test_unknown_dates_do_not_invent_new_counts_or_hide_independent_builder_counts():
+    row = parse_earned_html(page([raw_rows()[2]]), OWNER)[0]
+    row['launched_ts'] = None
+    result = summarize([row], {row['job_id']}, NOW)
+    assert result['earned'] == result['worked_on'] == 1
+    assert result['earned_24h'] is result['worked_on_24h'] is None
+    assert summarize([row], set(), NOW)['worked_on_24h'] == 0
+    old = dict(row, launched_ts=NOW-86400)
+    result = summarize([row, old], {row['job_id']}, NOW)
+    assert result['earned_24h'] == result['worked_on_24h'] == 0
+    recent = dict(row, launched_ts=NOW-1)
+    result = summarize([row, recent], {row['job_id']}, NOW)
+    assert result['earned_24h'] is result['worked_on_24h'] is None
 
 
 @pytest.mark.parametrize('field,value', [

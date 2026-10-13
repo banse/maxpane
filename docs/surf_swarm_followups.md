@@ -1569,3 +1569,20 @@ and frozen pending-owner state. No full suite was run.
 Final review: Approved, no findings. Sixteen targeted checks passed; two additional
 mutations killed missing wallet validation and missing selected-seat attribution.
 All source bytes were restored. No residual follow-ups from this change.
+
+## AGENT EARNINGS recent-token footer — 2026-10-13
+
+The owner replaced the claimed footer with `x new`, plus ` (y)` only for a
+positive selected-agent builder subset. Both counts use distinct chain/address
+assets and the rolling 24-hour window; an old asset cannot become new through a
+later duplicate row. Missing dates or work identity preserve unknowns. Raw claim
+fields stay cache-compatible but no longer affect the visible summary. Existing
+total figures and the green recent-builder-work rule are unchanged.
+
+The native live 149×45 render showed seat 420 with 349 earned, 25 worked on and
+`41 new (1)`. The 132-column footer check fits the largest supported count as
+`4.1k new (4.1k)` and keeps exact numbers on hover; wider cards use exact counts.
+No layout pin changed. Five data and two UI mutations were killed and restored.
+Final verification: 579 affected tests, 124 guards and 12 doc pins passed. Review
+approved with no findings; 17 targeted cases and two additional mutations verified
+unknown-date handling and recent-work projection. No residual follow-ups.
