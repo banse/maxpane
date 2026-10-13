@@ -338,7 +338,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
         for label in ("ONCHAIN FEED", "SWARM BUILDS", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
-                      "PROTOCOL", "WORK IN PROGRESS", "TOKENS", "EMPTY SEAT"):
+                      "PROTOCOL", "WIP", "TOKENS", "EMPTY SEAT"):
             assert label in text
 
 
@@ -350,16 +350,16 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.move_focus("down")
         assert rack.focused_card == "launchpad"
         rack.move_focus("right")
-        assert rack.focused_card == "swarm-tokens"
+        assert rack.focused_card == "protocol"
         rack.move_focus("up")
         assert rack.focused_card == "board"
         rack.move_focus("left")
-        assert rack.focused_card == "protocol"
+        assert rack.focused_card == "swarm-tokens"
         rack.move_focus("left")
         assert rack.focused_card == "pool4"
         rack.move_focus("left")
         assert rack.focused_card == "work"
-        rack.focus_card("swarm-tokens")
+        rack.focus_card("protocol")
         rack.move_focus("down")
         assert rack.focused_card == "agent-2"
         rack.move_focus("left")
@@ -727,7 +727,7 @@ async def test_protocol_supply_footer_is_fitted_and_marks_clipping():
             strips = card_strips(pilot.app, card)
             assert 'BURN' not in strips[-1].text and '▰' not in strips[-1].text
             assert '0.47% burned' in strips[-1].text
-            assert abs(strips[-1].text.index('0.47% burned') - (card.region.width - 11) / 2) <= .5
+            assert abs(strips[-1].text.index('0.47% burned') - (card.region.width - len('0.47% burned')) / 2) <= .5
             assert 'of supply' not in strips[-1].text
             assert '‹' not in strips[0].text
         card.set_data(dict(secondary='unavailable'))
@@ -817,7 +817,8 @@ async def test_work_card_approved_digits_workflows_and_step_footer(size):
         strips = card_strips(app, card)
         top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
         left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
-        assert 'WORK IN PROGRESS' in strips[0].text
+        assert '⊙ WIP' in strips[0].text
+        assert 'WORK IN PROGRESS' not in strips[0].text
         assert 'ACTIVE JOBS' in strips[top].text
         assert [strip.text[left+1:right].strip() for strip in strips[top+1:top+4]] == ['╭─╴', '╰─╮', '╶─╯']
         assert '1 workflow' in strips[top+4].text
