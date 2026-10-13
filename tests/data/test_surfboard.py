@@ -495,7 +495,8 @@ def test_tokens_card_carries_ranking_and_keeps_count_in_detail(ranked):
     assert row['token_ranking'] == ranking
     assert '116 tokens' in row['detail']
     assert all(r['token_ranking'] is None for r in cards if r['key'] != 'swarm-tokens')
-    assert row['points'] is None and row['meter_kind'] is None
+    assert row['points'] is None and row['meter_kind'] == 'sparkline'
+    assert row['meter_state'] == 'unavailable'
 
 
 @pytest.mark.parametrize('change,status', [(2.3,'active'),(-2.3,'idle'),(0,'idle'),
@@ -633,10 +634,12 @@ def test_token_ranking_projection_discloses_coverage_and_source_clock():
         volume=dict(points=[1]*8, state='ok', known=10, total=10, as_of=100))
     row = next(c for c in hub.cards({}, {}, now=100, tokens_catalogue=source) if c['key']=='swarm-tokens')
     assert row['token_ranking'] == ranking
-    assert row['meter_kind'] is None and row['points'] is None
+    assert row['meter_kind'] == 'sparkline' and row['points'] == [1]*8
+    assert row['meter_state'] == 'ok'
     assert 'USD' in row['detail'] and '8/10' in row['detail']
     assert 'partial' in row['detail'] and f'read {hub.hhmm(90)}' in row['detail']
-    assert '12,500' in row['detail'] and '3h' not in row['detail']
+    assert '12,500' in row['detail']
+    assert 'all swarm tokens' in row['detail'] and '10/10' in row['detail']
 
 
 def launchpad_volume_snapshot(**changes):
@@ -720,3 +723,18 @@ def test_board_projects_three_canonical_ranks_independent_of_selection(populatio
     assert all(row['top_agents'] is None for row in cards if row['key']!='board')
     if expected:
         assert board['primary'] == '527'
+
+
+@pytest.mark.parametrize('state,points', [('ok', [0]*8), ('partial', [1, None, 2, 3, 4, 5, 6, 7]),
+                                         ('stale', None), ('unavailable', None)])
+def test_token_volume_projection_is_independent_of_recent_launch_ranking(state, points):
+    volume = dict(points=points, state=state, known=20, total=178, as_of=9000, until=7200)
+    catalogue = dict(count=178, state='ok', as_of=9900, volume=volume,
+                     ranking=dict(rows=[], total=0, known=0, state='ok'))
+    row = next(c for c in hub.cards({}, {}, now=10000, tokens_catalogue=catalogue)
+               if c['key'] == 'swarm-tokens')
+    assert row['secondary'] == '0 new'
+    assert row['meter_kind'] == 'sparkline' and row['meter_state'] == state
+    assert row['points'] == points
+    assert 'all swarm tokens' in row['detail'] and '20/178' in row['detail']
+    assert state in row['detail'] and hub.hhmm(9000) in row['detail']

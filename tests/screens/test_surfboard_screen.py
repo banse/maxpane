@@ -360,7 +360,7 @@ async def test_hub_paints_while_startup_full_fetch_is_blocked():
         assert manager.hub_reads == 1
         assert not release.is_set()
         await pilot.pause()
-        assert "SURFBOARD / DASHBOARD RACK" in painted(app)
+        assert "IMD BOARDROOM" in painted(app)
         release.set()
 
 

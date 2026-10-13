@@ -745,7 +745,7 @@ guarantee, not a promise that arbitrary notes fit; measured content limits are i
 ## SURFBOARD HUB (dashboard 9)
 
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
-Seven launchers route to the native modes; Escape returns to the retained rack, while menu/Tab
+The title is centered green `IMD BOARDROOM`. Seven launchers route to the native modes; Escape returns to the retained rack, while menu/Tab
 clear the return context. TOKENS opens the retained SWARM TOKENS dashboard. Its LAST 24h
 inset ranks the top three supported, unambiguous deployments by selected-pool 24h USD volume,
 including inactive deployments. Chain/address aliases share their earliest known launch time;
@@ -753,17 +753,22 @@ only ages from zero through less than 24 hours qualify. Missing volume never mea
 Valid cached volumes stay in the ranking across rotating quote batches; retained stale inputs
 mark the ranking stale rather than temporarily replacing its leaders with fresh lower volumes.
 Green ↑ and red ↓ compare consecutive successful prices for the same token and expected/selected
-pool; first, unchanged or stale prices show a neutral dash. Fresh rows retain their direction
+pool; first, unchanged or stale prices show no marker. Fresh rows retain their direction
 even when other ranked evidence is stale; a stale catalogue suppresses all directions.
-The outer footer shows `NEWEST ticker age`, with single spaces, independently of volume rank.
-Hub polling offers catalogue and bounded shared market reads only; history/trade readers are unchanged.
+The outer footer shows gray `24h` beside a green USD-volume history across all swarm tokens,
+including older and inactive launches. It reuses the bounded hourly-volume reader and eight
+three-hour buckets; missing intervals stay gaps. Tooltip coverage and clocks remain explicit.
+Hub polling offers catalogue, shared selected markets and bounded volume history; price-history
+and trade readers are unchanged.
 The inset footer shows positive `x new` from the eligible canonical last-24-hour population.
 Per the owner, no partial/stale/clock labels appear there; the literal tooltip retains coverage
 and source clocks. Known zero-new text remains hidden on TOKENS and ONCHAIN NEWS.
 Portfolio opens its existing preview. LEADERBOARD shows TOP AGENTS with three canonical ranked
-seats and accepted counts, led by gold/silver/bronze stars. Its activity footer remains rank one's.
-Empty AGENT insets use a borderless input, centered ↑ and `type in`; their outer footer is
-`Identity.md NFT`. Spare rows below the side cards show centered キープ / ビルディング in the card surface
+seats and accepted counts, led by gold/silver/bronze stars with one leading blank. Counts align
+right with one trailing blank; oversized counts drop grouping, then use compact notation only
+if necessary. Its activity footer remains rank one's.
+Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
+footer is `Identity.md`. Spare rows below the side cards show bold centered キープ / ビルディング in the card surface
 color, using the lower middle row (one line below the cards at the owner size).
 The terminal hides automatic stale labels (including generated command summaries) and V/P/D
 service flags at every width, per the owner; underlying metadata and unavailable states remain.

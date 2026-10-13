@@ -263,3 +263,27 @@ Validation: 210 affected/composing tests, 124 fast guards and 12 docpins passed.
 Five layout/behavior mutants were rejected and restored. Final review approved
 with no findings; six focused cases passed and both width-pin mutations failed
 as intended. No full suite run or outstanding findings.
+
+
+## IMD boardroom rack polish — 2026-10-13
+
+Implemented the owner request: centered green IMD BOARDROOM heading, bold surface-color
+Katakana captions, borderless `seat number` placeholders and `Identity.md` footers,
+blank unchanged/unknown price indicators, and padded medal rows with accepted counts
+right-aligned. Oversized counts compact only when needed; equal card widths and pins
+remain unchanged. TOKENS restores gray `24h` and the existing all-status USD-volume
+history, independent of its last-24h top-three ranking. Polling schedules the existing
+bounded volume reader alongside shared markets, preserving selected-pool identity.
+
+Fresh keyless render shown at 149×45 before final hardening. The final live snapshot
+had partial volume coverage (2/349 candidates), with four measured three-hour buckets
+and four gaps; source coverage remains explicit in the tooltip. A direct selected-pool
+read for SNITCH returned HTTP 200 and 13 known completed hourly candles. No history
+was fabricated or substituted from rolling 24h quote snapshots.
+
+Nine deliberate regression mutants were rejected and restored. Final validation and
+review are recorded in the commit. No new endpoints, contract fields, or layout pins.
+
+Validation: 528 affected/composing tests, 124 guards and 12 docpins passed.
+Final review approved with no findings after 13 focused checks and a further
+gap-to-zero mutation was rejected and restored. No full suite or open findings.

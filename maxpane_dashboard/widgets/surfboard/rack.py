@@ -18,7 +18,7 @@ from maxpane_dashboard.widgets.fmt import fmt_age
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
-from maxpane_dashboard.widgets.sparkline_common import build_sparkline
+from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_compact
 
 GREEN = "green"
 MUTED = "dim"
@@ -34,7 +34,7 @@ SLOTS = (
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
 )
-METER_LABELS = dict(swarm="24H", launchpad="2H", portfolio="ASSETS")
+METER_LABELS = {"swarm": "24H", "swarm-tokens": "24h", "launchpad": "2H", "portfolio": "ASSETS"}
 
 
 def _number(value):
@@ -54,21 +54,6 @@ def _token_line(row, width, style):
     return line, lost or cell_len(age) > 3
 
 
-def _newest_token(ranking, width):
-    newest = ranking.get('newest')
-    if isinstance(newest, dict):
-        age = fmt_age(newest.get('age_s')) if _number(newest.get('age_s')) else '—'
-        chain = flatten(newest.get('chain')).upper()
-        symbol, clipped = fit_prose(newest.get('symbol') or '—', max(0, width-8-cell_len(age)),
-            style=MUTED, explorer=for_network('MAINNET' if chain == 'ETH' else chain))
-        line = Text('NEWEST ', style=MUTED).append_text(symbol).append(' ' + age)
-        clipped |= cell_len(line.plain) > width
-        line.truncate(width, overflow='ellipsis')
-        return line, clipped
-    empty = ranking.get('rows') == [] and ranking.get('state') == 'ok'
-    return fit_prose('no launches' if empty else 'unavailable', width, style=MUTED)
-
-
 def _token_preview(rows, width, style):
     """Three ranked rows; the data layer owns ordering and price comparison."""
     lines = [(Text('', style=style), False) for _ in range(3)]
@@ -77,7 +62,7 @@ def _token_preview(rows, width, style):
         return lines
     for index, row in enumerate(rows[:3]):
         marker, ink = {'up': ('↑', Style.parse(GREEN)), 'down': ('↓', Style.parse(RED))}.get(
-            row.get('price_direction'), ('—', style))
+            row.get('price_direction'), (' ', style))
         line, lost = _token_line(row, max(0, width-2), style)
         line.align('left', max(0, width-2))
         line.append(' ').append(marker, style=ink)
@@ -95,15 +80,20 @@ def _top_agents_preview(rows, width, style):
               row['rank']) for row in rows[:3]]
     seat_width = max(cell_len(seat) for seat, _, _ in shown)
     count_width = max(cell_len(count) for _, count, _ in shown)
-    if seat_width + count_width + 3 > width:
+    if seat_width + count_width + 5 > width:
         shown = [(seat, count.replace(',', ''), rank) for seat, count, rank in shown]
+        count_width = max(cell_len(count) for _, count, _ in shown)
+    if seat_width + count_width + 5 > width:
+        shown = [(seat, fmt_compact(int(count)) if count.isdecimal() else count, rank)
+                 for seat, count, rank in shown]
         count_width = max(cell_len(count) for _, count, _ in shown)
     medals = {1: '#ffd700', 2: '#c0c0c0', 3: '#cd7f32'}
     for index, (seat, count, rank) in enumerate(shown):
-        numeric = f"{seat.ljust(seat_width)} {count.rjust(count_width)}"
-        line = Text(clip(numeric, max(0, width-2)), style=style)
-        star = Text('★', style=style + Style(color=medals.get(rank, '#999999')))
-        lines[index] = star.append(' ', style=style).append_text(line), cell_len(numeric) > width-2
+        count_cells = max(count_width, width - seat_width - 5)
+        numeric = f"{seat.ljust(seat_width)} {count.rjust(count_cells)} "
+        line = Text(clip(numeric, max(0, width-3)), style=style)
+        star = Text(' ', style=style).append('★', style=style + Style(color=medals.get(rank, '#999999')))
+        lines[index] = star.append(' ', style=style).append_text(line), cell_len(numeric) > width-3
     return lines
 
 
@@ -117,12 +107,10 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
-    if key == "swarm-tokens":
-        return _newest_token(card.get("token_ranking") or {}, 20 if width is None else width)[0]
     if key == "protocol":
         return _protocol_footer(card, 24 if width is None else width)[0]
     if key in AGENT_KEYS and state == "empty":
-        return Text("Identity.md NFT", style=MUTED)
+        return Text("Identity.md", style=MUTED)
     if key == "pool4":
         price = card.get("share_price")
         value = "1 sIMD = — IMD"
@@ -145,10 +133,10 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     cells = 8 if width is None else max(0, width - cell_len(label) - 1)
     if key == "portfolio" or state == "empty":
         return out.append("▱" * cells, style=MUTED)
-    if card.get("meter_kind") == "sparkline" or key == "launchpad":
+    if card.get("meter_kind") == "sparkline" or key in ("launchpad", "swarm-tokens"):
         points = card.get("points")
         if (isinstance(points, list) and len(points) == 8
-                and (all(_number(point) for point in points) or key == "launchpad"
+                and (all(_number(point) for point in points) or key in ("launchpad", "swarm-tokens")
                      and any(_number(point) for point in points)
                      and all(point is None or _number(point) for point in points))):
             known = [point for point in points if _number(point)]
@@ -229,7 +217,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
 
     def compose(self):
         if self.seat_slot is not None:
-            yield Input(placeholder="seat no", restrict=r"#?[0-9]*", max_length=11,
+            yield Input(placeholder="seat number", restrict=r"#?[0-9]*", max_length=11,
                         id=f"surfboard-seat-{self.seat_slot}", classes="seat-input", compact=True)
 
     def on_mount(self):
@@ -388,8 +376,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if len(bottom) > inside:
                 bottom = bottom.replace(" new ", " ")
         clipped = len(label) > inside or len(bottom) > inside
-        if self.key == "swarm-tokens":
-            clipped |= _newest_token(ranking, max(0, self.region.width - 6))[1]
         if self.key == "protocol":
             clipped |= _protocol_footer(self.data, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
@@ -456,7 +442,7 @@ class SurfboardRack(Grid):
     SurfboardCard > Input.seat-input { position: absolute; height: 1; margin: 0; padding: 0;
         border: none; background: $surface; color: $foreground; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
-    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $surface;
+    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $surface; text-style: bold;
         content-align: center middle; }
     SurfboardRack > #surfboard-keep { layer: keep; }
     SurfboardRack > #surfboard-building { layer: building; }

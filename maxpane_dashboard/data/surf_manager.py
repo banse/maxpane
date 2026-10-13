@@ -7455,7 +7455,7 @@ class SurfManager:
         if not self._closing:
             now = float(self._clock())
             self._offer_full(now)
-            self.swarm_tokens_manager().offer_hub_markets()
+            self.swarm_tokens_manager().offer_hub_volume()
             self._offer_hub_sources(now)
             self._spawn_swarm_board(set(self.cache.tiers_due(now)), now)
         return self._project_hub()

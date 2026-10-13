@@ -57,7 +57,8 @@ async def test_four_empty_agent_seats_have_inner_frames_and_borderless_inputs(si
             assert "┌" in painted[top].text and "┐" in painted[top].text
             assert "└" in painted[top + 4].text and "┘" in painted[top + 4].text
             assert "type in" in painted[top + 4].text and "seat no" not in painted[top + 4].text
-            assert "Identity.md NFT" in painted[-1].text
+            assert "Identity.md" in painted[-1].text and "NFT" not in painted[-1].text
+            assert "seat number" in painted[top + 2].text
             assert "EMPTY" not in painted[-1].text and "▱" not in painted[-1].text
             assert painted[top + 3].text.strip("│ ") == "↑"
             assert abs(painted[top + 3].text.index("↑") - (card.region.width - 1) / 2) <= .5

@@ -56,7 +56,7 @@ class SurfboardScreen(DashboardScreen):
     ]
     DEFAULT_CSS = """
     SurfboardScreen { background: $background; color: $text; }
-    SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $text-muted; padding: 0 1; }
+    SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $accent; padding: 0 1; content-align: center middle; }
     SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
     """
@@ -74,7 +74,7 @@ class SurfboardScreen(DashboardScreen):
         self._age_timer = None
 
     def compose(self) -> ComposeResult:
-        yield Static(Text("SURFBOARD / DASHBOARD RACK"), id="surfboard-title")
+        yield Static(Text("IMD BOARDROOM"), id="surfboard-title")
         with VerticalScroll(id="surfboard-viewport"):
             yield SurfboardRack(id="surfboard-rack")
         yield StatusBar()
@@ -134,7 +134,7 @@ class SurfboardScreen(DashboardScreen):
         if viewport.show_vertical_scrollbar:
             hints.append("‹ taller")
         self.query_one("#surfboard-title", Static).update(Text(
-            "SURFBOARD / DASHBOARD RACK" + (" · " + " · ".join(hints) if hints else "")))
+            "IMD BOARDROOM" + (" · " + " · ".join(hints) if hints else "")))
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
         if event.seat_slot is not None:

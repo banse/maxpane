@@ -371,7 +371,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 text = r["card_text"]["swarm-tokens"]
                 assert "LAST 24h" in text
                 if kind != "unavailable":
-                    assert card["secondary"] in text and "FRESH" in text
+                    assert card["secondary"] in text and "24h" in text
                 expected = ('unavailable',) if kind == 'unavailable' else ('SFPT', 'RAI', 'TDEMO', '↑', '↓')
                 assert all(word in text for word in expected), r
                 continue
@@ -393,7 +393,8 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                     assert text.count("★") == 3
                     for row in card['top_agents']:
                         assert str(row['token_id']) in text
-                        assert (f"{row['accepted']:,}" in text or str(row['accepted']) in text)
+                        expected_count = {99999999: '100.0M', 9999999: '10.0M', 999999: '1000.0K'}.get(row['accepted'], f"{row['accepted']:,}")
+                        assert expected_count in text
                 continue
             if card["key"] == "launchpad":
                 text = r["card_text"]["launchpad"]
@@ -473,7 +474,7 @@ async def test_translated_side_labels_use_spare_space_without_overlapping_termin
                 if free > 0:
                     line = side[free // 2]
                     assert word in line.text
-                    assert any(segment.style.color == card.rich_style.bgcolor
+                    assert any(segment.style.color == card.rich_style.bgcolor and segment.style.bold
                                for segment in line if word in segment.text)
 
 
@@ -492,3 +493,20 @@ async def test_rack_columns_share_width_equally(size):
     # Whole terminal cells may leave one extra cell in a fractional track.
     assert max(widths) - min(widths) <= 1
     assert not rendered['clipped']
+
+
+async def test_boardroom_title_is_centered_green_after_refresh_and_resize():
+    from rich.color import Color
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        for width in (149, 180, 143):
+            await pilot.resize_terminal(width, 34 if width == 143 else 45)
+            await app.hub._do_refresh()
+            await pilot.pause()
+            row = app.hub._compositor.render_strips()[0]
+            text = row.text.strip()
+            assert text.startswith('IMD BOARDROOM')
+            assert ('‹ widen' in text) == (width < SURFBOARD_FULL_LAYOUT_COLUMNS)
+            assert abs(row.text.index(text) - (width - len(text)) / 2) <= .5
+            ink = next(segment.style.color for segment in row if 'IMD BOARDROOM' in segment.text)
+            assert ink == Color.parse(app.get_css_variables()['accent'])
