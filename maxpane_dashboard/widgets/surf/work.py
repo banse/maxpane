@@ -117,7 +117,8 @@ class _WorkTree(Tree):
         else:
             label = fit_prose(node.label.plain, width, style=node.label.style)
         label.stylize(style)
-        return Text(prefix, style=base_style) + label
+        # Preserve Textual's expander action on the arrow at every tree depth.
+        return Text(prefix, style=base_style + Style(meta={"toggle": True})) + label
 
 
 class _WorkTreePanel(PanelBase):

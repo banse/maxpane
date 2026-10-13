@@ -327,3 +327,34 @@ async def test_default_tied_jobs_use_stable_id_after_page_reordering(reverse):
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         assert "Tie later id" in painted(pilot.app, "#work-detail-panel")
+
+
+@pytest.mark.parametrize("key,child_text", [("workflow:flow-a", "Contracts"), ("job:job-a", "vault")])
+async def test_mouse_expanders_toggle_top_level_and_nested_branches(key, child_text):
+    async with Harness(payload()).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        tree = app.query_one("#work-tree", Tree)
+        branch = node(tree, key)
+
+        def arrow_position():
+            for y, strip in enumerate(app.screen._compositor.render_strips()):
+                x = 0
+                for segment in strip:
+                    if segment.style and segment.style.meta.get("node") == branch.id:
+                        for glyph in ("▼", "▶"):
+                            if glyph in segment.text:
+                                return x + segment.text.index(glyph), y
+                    x += segment.cell_length
+            pytest.fail("branch arrow must be visible and clickable")
+
+        assert child_text in painted(app, "#work-tree-panel")
+        await pilot.click(offset=arrow_position())
+        await pilot.pause()
+        assert not branch.is_expanded
+        assert child_text not in painted(app, "#work-tree-panel")
+        assert app.focused is tree
+        await pilot.click(offset=arrow_position())
+        await pilot.pause()
+        assert branch.is_expanded
+        assert child_text in painted(app, "#work-tree-panel")
