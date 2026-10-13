@@ -120,7 +120,9 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             kind = section.get("last_work_kind")
             kind = kind if kind in ("worked", "accepted") else "work"
             fields["subtitle"] = f"{kind} {hhmm(number(section.get('last_work_ts')), unknown='--:--')}"
-            if section.get("live_state") == "paused":
+            if (count(section.get("working")) or 0) > 0:
+                fields["subtitle"] = "active"
+            elif section.get("live_state") == "paused":
                 fields["subtitle"] = "until " + hhmm(number(section.get("paused_until_ts")), unknown="--:--")
             fields["accent"] = section.get("meter_state") == "busy"
         elif key == "owner":

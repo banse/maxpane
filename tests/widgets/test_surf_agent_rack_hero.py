@@ -82,7 +82,7 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             "effort": ("HOURS", "1.8M tokens", "75% premium"),
             "rewards": ("IMD", "$120.82", "paid "),
             "rank": ("POSITION", "of 1,024", "↑ 2"),
-            "status": ("WORKER", "worked", "BUSY", "▰"),
+            "status": ("WORKER", "active", "BUSY", "▰"),
             "owner": ("WALLET", "example.eth ⧉", "paired", "OPEN / COPY"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "up to date"),
             "models": ("model A", "high", "model B", "medium", "2 models"),
@@ -152,7 +152,7 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
                                                ("offline", "offline", "OFF"), ("paused", "idle", "IDLE"), (None, "unavailable", "—")])
 async def test_status_meter_colors_and_unknown_worker_never_claim_offline(live, meter, word):
     data = payload()
-    data["status"].update(live_state=live, meter_state=meter, working=0 if live != "working" else 2,
+    data["status"].update(live_state=live, meter_state=meter, working=0 if live != "working" else 1,
                           meter_kind="activity-cooldown", numerator=.5)
     if live == "paused":
         data["status"].update(paused_until_ts=1791776800., failures=3)
@@ -161,6 +161,11 @@ async def test_status_meter_colors_and_unknown_worker_never_claim_offline(live, 
         app = pilot.app
         text = painted(app, "status")
         assert word in text, text
+        assert ("active" in text) == (live == "working")
+        if live == "working":
+            assert "worked" not in text
+        elif live in ("idle", "offline"):
+            assert "worked" in text
         if live == "offline":
             assert "▱" in text and "▰" not in text
         elif live == "idle":
@@ -343,7 +348,7 @@ async def test_accepted_and_status_tracks_fill_footer_and_show_formatted_digits(
         assert all(word not in status for word in ("working", "capacity", "devices"))
         # Three tall groups: two active slots, a muted 0F, three capacity slots.
         assert "╶─╮ ╭─╮╭─╴ ╶─╮" in status
-        assert "worked" in status
+        assert "active" in status
         middle = [segment for strip in strips(app, "status") for segment in strip
                   if "╭─╮╭─╴" in segment.text]
         assert middle
