@@ -499,11 +499,12 @@ def test_tokens_card_carries_ranking_and_keeps_count_in_detail(ranked):
     assert row['meter_state'] == 'unavailable'
 
 
-@pytest.mark.parametrize('change,status', [(2.3,'active'),(-2.3,'idle'),(0,'idle'),
-    (None,'unavailable'),(True,'unavailable'),(float('nan'),'unavailable'),(float('inf'),'unavailable')])
-def test_pool4_price_digits_follow_valid_24h_direction(change, status):
+@pytest.mark.parametrize('direction,status', [('up','active'),('down','falling'),
+    ('flat','idle'),(None,'idle')])
+@pytest.mark.parametrize('change', [2.3, -2.3, 0, None, float('nan')])
+def test_pool4_price_digits_follow_consecutive_reads_not_24h_change(direction, status, change):
     row = next(c for c in hub.cards(dict(pool4_price_usd=8.77, imd_price_usd=9.99,
-        imd_change_24h_pct=change), {}, now=100) if c['key']=='pool4')
+        imd_change_24h_pct=change), {}, now=100, pool4_price_direction=direction) if c['key']=='pool4')
     assert (row['primary'], row['secondary'], row['status']) == ('8.77', 'USD', status)
     assert row['destination'] == 'pool4_user'
     assert '24h' in row['detail']

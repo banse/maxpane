@@ -1,5 +1,19 @@
 # Surfboard follow-ups
 
+## Boardroom card tones and consecutive price reads — 2026-10-13
+
+IMD BOARDROOM uses its former muted title color; ONCHAIN FEED has a white active
+inset and SWARM BUILDS keeps its activity colors. PROTOCOL has a neutral inset and
+centered burned-supply footer; empty AGENT seats center Identity.md. POOL4 compares
+successive confirmed USD prices, retaining direction across repaints and resetting
+on equal reads or pool identity changes. Failed reads do not replace the baseline.
+
+Live keyless render shown at 149×45. Existing 144×35 layout boundaries and one-line
+caption gaps remain unchanged. Verification: 449 affected/composing tests, 124 guards,
+12 docpins and eight mutation checks passed. Final review approved without findings;
+six focused review cases passed and a cross-pool comparison mutation was rejected.
+No outstanding findings; no full suite run.
+
 ## LAUNCHES latest-token inset — 2026-10-11
 
 No outstanding review findings. Final review approved the latest-three launch

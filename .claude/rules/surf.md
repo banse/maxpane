@@ -745,7 +745,9 @@ guarantee, not a promise that arbitrary notes fit; measured content limits are i
 ## SURFBOARD HUB (dashboard 9)
 
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
-The title is centered green `IMD BOARDROOM`. Seven launchers route to the native modes; Escape returns to the retained rack, while menu/Tab
+The title is centered muted gray `IMD BOARDROOM`. ONCHAIN FEED uses white active inset
+borders and border text, matching its body; SWARM BUILDS retains its activity colors.
+Seven launchers route to the native modes; Escape returns to the retained rack, while menu/Tab
 clear the return context. TOKENS opens the retained SWARM TOKENS dashboard. Its LAST 24h
 inset ranks the top three supported, unambiguous deployments by selected-pool 24h USD volume,
 including inactive deployments. Chain/address aliases share their earliest known launch time;
@@ -762,13 +764,13 @@ Hub polling offers catalogue, shared selected markets and bounded volume history
 and trade readers are unchanged.
 The inset footer shows positive `x new` from the eligible canonical last-24-hour population.
 Per the owner, no partial/stale/clock labels appear there; the literal tooltip retains coverage
-and source clocks. Known zero-new text remains hidden on TOKENS and ONCHAIN NEWS.
+and source clocks. Known zero-new text remains hidden on TOKENS and ONCHAIN FEED.
 Portfolio opens its existing preview. LEADERBOARD shows TOP AGENTS with three canonical ranked
 seats and accepted counts, led by gold/silver/bronze stars with one leading blank. Counts align
 right with one trailing blank; oversized counts drop grouping, then use compact notation only
 if necessary. Its activity footer remains rank one's.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
-footer is `Identity.md`. One-line gaps below LAUNCHPAD and PORTFOLIO separate them from
+footer is centered `Identity.md`. One-line gaps below LAUNCHPAD and PORTFOLIO separate them from
 the AGENT seats; bold centered キープ / ビルディング occupy those lines in the card surface
 color. All card gaps are one line; all card sizes stay equal.
 The terminal hides automatic stale labels (including generated command summaries) and V/P/D
@@ -786,7 +788,12 @@ then orange to empty over hours 24–72. Offline is red OFF with empty segments.
 Every successful workers read refreshes activity evidence even when content is unchanged;
 failed/stale/unknown evidence has no live bar. Persisted per-token stop history is validated
 on load. Cold idle has an unknown bar until a work-to-idle transition is observed.
-PROTOCOL uses label / amount / IMD columns and an outer `x% burned` footer. POOL4's outer footer reuses the protocol's live
-sIMD share price, rounded to fit; card detail retains six decimals and source freshness.
+PROTOCOL uses label / amount / IMD columns, neutral inset borders/title, and a centered
+outer `x% burned` footer. POOL4's inset borders/title/USD label compare consecutive valid
+USD price reads: green up, orange down, neutral on first or unchanged reads. Source clocks
+prevent cached repaints from clearing direction; failed/stale/missing reads do not advance
+the baseline, and network/pool changes reset it. The session-local comparison is independent
+of the 24h change retained in detail. POOL4's outer footer reuses the protocol's live sIMD
+share price, rounded to fit; card detail retains six decimals and source freshness.
 Rank migration resets only contributor-based baselines (`seat-records-v1`). See the hub PRD
 and implementation plan for exact meter formulas, commands and source cadence.

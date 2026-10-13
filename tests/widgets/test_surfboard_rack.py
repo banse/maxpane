@@ -34,7 +34,7 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
                     pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             top=next(i for i,s in enumerate(strips) if '┌' in s.text)
             left,right=strips[top].text.index('┌'),strips[top].text.index('┐'); inside=right-left-1
-            assert '⊙ ONCHAIN NEWS' in '\n'.join(s.text for s in strips)
+            assert '⊙ ONCHAIN FEED' in '\n'.join(s.text for s in strips)
             header = next(s for s in strips[top] if 'LATEST' in s.text)
             assert strips[top].text.strip('│┌┐─ ') == 'LATEST'
             assert not header.style.bold and header.style.color == inset_border_color(strips[top])
@@ -48,7 +48,8 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
             neutral=neutral_inset_color(pilot.app)
             status_ink=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
                         if status in ('active','working') else pilot.app.ansi_theme.ansi_colors[1 if status=='failed' else 3])
-            expected=neutral if status in ('idle','stale') else status_ink
+            expected=(card.rich_style.color.get_truecolor() if status=='active' else
+                      neutral if status in ('idle','stale') else status_ink)
             assert edge==expected
             for row in strips[top:top+5]:
                 for x in (left,right):
@@ -237,8 +238,8 @@ async def test_card_activity_colors_update_from_current_counts():
             ('agent','idle','IDMD #420','0 of 3 slots',3),
             ('agent','offline','IDMD #420','0 of 3 slots',1),
             ('swarm-tokens','idle','118','0 new',3),
-            ('protocol','active','33,279','IMD',2),
-            ('protocol','ready','33,279','IMD',11),
+            ('protocol','active','33,279','IMD',3),
+            ('protocol','ready','33,279','IMD',3),
             ('protocol','experimental','33,279','IMD',3),
             ('protocol','stale','33,279','IMD',3),
             ('protocol','unavailable','33,279','IMD',3),
@@ -336,7 +337,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.x > cards[6].region.x
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
-        for label in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
+        for label in ("ONCHAIN FEED", "SWARM BUILDS", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
                       "PROTOCOL", "PORTFOLIO", "TOKENS", "EMPTY SEAT"):
             assert label in text
 
@@ -439,7 +440,7 @@ async def test_swarm_outer_footer_stretches_history_on_resize_and_keeps_unknown_
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
             assert footer.text == f"╰─ 24H {chart} ─╯"
-            assert str(card.border_title) == "⊙ SWARM"
+            assert str(card.border_title) == "⊙ SWARM BUILDS"
         card.set_data(dict(card.data, points=None))
         await pilot.pause()
         footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
@@ -724,12 +725,50 @@ async def test_protocol_supply_footer_is_fitted_and_marks_clipping():
             strips = card_strips(pilot.app, card)
             assert 'BURN' not in strips[-1].text and '▰' not in strips[-1].text
             assert '0.47% burned' in strips[-1].text
+            assert abs(strips[-1].text.index('0.47% burned') - (card.region.width - 11) / 2) <= .5
             assert 'of supply' not in strips[-1].text
             assert '‹' not in strips[0].text
         card.set_data(dict(secondary='unavailable'))
         await pilot.pause()
         assert 'unavailable' in card_strips(pilot.app, card)[-1].text
         assert 'unavailable burned' not in card_strips(pilot.app, card)[-1].text
+
+
+async def test_empty_seat_footer_centers_and_assigned_seat_restores_left_alignment():
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one('#surfboard-card-agent-4', SurfboardCard)
+        for width in (149, 200):
+            await pilot.resize_terminal(width, 45)
+            for data in (None, dict(token_id=420, status='idle', primary='IDMD #420',
+                                   secondary='0 of 3', meter_state='idle'), None):
+                card.set_data(data)
+                await pilot.pause()
+                row = card_strips(pilot.app, card)[-1].text
+                if data is None:
+                    assert abs(row.index('Identity.md') - (card.region.width - 11) / 2) <= .5
+                else:
+                    assert row.startswith('╰─ IDLE ')
+
+
+async def test_pool4_price_direction_colors_whole_inset_and_resets_to_neutral():
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one('#surfboard-card-pool4', SurfboardCard)
+        for status in ('active', 'falling', 'idle', 'stale', 'unavailable', 'active'):
+            card.set_data(dict(status=status, primary='8.77', secondary='USD'))
+            await pilot.pause()
+            strips = card_strips(pilot.app, card)
+            top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
+            left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
+            ink = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
+                   if status == 'active' else pilot.app.ansi_theme.ansi_colors[3]
+                   if status == 'falling' else neutral_inset_color(pilot.app))
+            for row in strips[top:top + 5]:
+                for x in (left, right):
+                    assert next(iter(row.crop(x, x + 1))).style.color.get_truecolor() == ink
+            for row, label in ((strips[top], 'IMD PRICE'), (strips[top + 4], 'USD')):
+                assert next(seg.style.color.get_truecolor() for seg in row if label in seg.text) == ink
+            digits = next(seg for seg in strips[top + 1] if '╭─╮' in seg.text)
+            assert digits.style.color == card.rich_style.color
 
 
 @pytest.mark.parametrize('accepted,shown', [(None, '—'), (0, '0')])

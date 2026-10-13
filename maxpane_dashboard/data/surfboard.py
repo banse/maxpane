@@ -416,7 +416,7 @@ def _launchpad_volume(data, launchpad, families, now):
     return points, state, detail
 
 
-def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, activity: dict | None = None, agent_seats: list[dict] | None = None) -> list[dict]:
+def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, activity: dict | None = None, agent_seats: list[dict] | None = None, pool4_price_direction: str | None = None) -> list[dict]:
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES, FIRED_TTL_S, _tx_hash
     result = []
     def card(key,title,primary,secondary,detail,destination,n=None,d=None,points=None,source=None):
@@ -524,10 +524,10 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     share_text = f"{share_price:,.6f}" if share_price is not None else "unavailable"
     card("pool4","POOL4",f"{price:,.2f}" if price is not None else "unavailable","USD",
          f"1 sIMD = {share_text} IMD · 24h {change_text}"
-         +f" · {data.get('pool4_network') or 'unknown network'}","pool4_user")
+         +f" · {data.get('pool4_network') or 'unknown network'} · price color compares consecutive reads","pool4_user")
     result[-1]["share_price"] = share_price
-    result[-1]["status"] = ("unavailable" if price is None or not valid_change else
-                            "active" if change > 0 else "idle")
+    result[-1]["status"] = ("unavailable" if price is None else
+                            {"up": "active", "down": "falling"}.get(pool4_price_direction, "idle"))
     burn=data.get("pool4_total_burned");reward=data.get("pool4_total_rewarded");fee=data.get("pool4_total_fee_token")
     denominator=sum((burn,reward,fee)) if all(number(x) is not None for x in (burn,reward,fee)) else None
     supply_source = sources.get("supply") or {}

@@ -27,7 +27,7 @@ RED = "red"
 
 # Fixed rack identities; the four agent cards carry independent assignments.
 SLOTS = (
-    ("announce", "ONCHAIN NEWS", 0, 0), ("swarm", "SWARM", 0, 1),
+    ("announce", "ONCHAIN FEED", 0, 0), ("swarm", "SWARM BUILDS", 0, 1),
     ("swarm-tokens", "TOKENS", 0, 2), ("pool4", "POOL4", 0, 3),
     ("protocol", "PROTOCOL", 0, 4), ("board", "LEADERBOARD", 0, 5),
     ("launchpad", "LAUNCHPAD", 1, 0), ("portfolio", "PORTFOLIO", 1, 5),
@@ -262,6 +262,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         self.refresh()
 
     def _update_meter(self):
+        self.styles.border_subtitle_align = "center" if self.key == "protocol" or self.empty_seat else "left"
         if self.key == "announce":
             # Textual reserves six cells for corners, border stubs and padding.
             self.border_subtitle = signal_meter_text(self.data, max(0, self.region.width - 6))
@@ -305,6 +306,12 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         border_inset = (Style.parse(MUTED) + Style(bgcolor=palette["background"])
                         if color == AMBER else inset)
+        if self.key == "protocol":
+            border_inset = Style.parse(MUTED) + Style(bgcolor=palette["background"])
+        elif self.key == "announce" and status == "active":
+            border_inset = Style(color=self.rich_style.color, bgcolor=palette["background"])
+        elif self.key == "pool4" and status == "falling":
+            border_inset = Style.parse(AMBER) + Style(bgcolor=palette["background"])
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]

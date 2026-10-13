@@ -57,7 +57,7 @@ class SurfboardScreen(DashboardScreen):
     ]
     DEFAULT_CSS = """
     SurfboardScreen { background: $background; color: $text; }
-    SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $accent; padding: 0 1; content-align: center middle; }
+    SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $text-muted; padding: 0 1; content-align: center middle; }
     SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
     """

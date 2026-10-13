@@ -289,6 +289,70 @@ async def test_legacy_source_success_clears_failure_without_retimestamping_conte
     await m.close()
 
 
+async def test_pool4_card_compares_confirmed_reads_and_ignores_repaints(manager):
+    from maxpane_dashboard.data.surf_cache import SLOT_POOL4, SLOT_MARKET, TIER_POOL4
+    from maxpane_dashboard.data.surf_manager import SOURCE_MARKET
+    m, clock = manager
+    pool = dict(network='MAINNET', current_tick=0, hook_addr='0x' + '1' * 40)
+    m.cache.store_last_good(SLOT_POOL4, pool, ts=990)
+    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=8, imd_change_24h_pct=-90), ts=990)
+
+    def card():
+        return next(row for row in m._project_hub()['surfboard_cards'] if row['key'] == 'pool4')
+
+    assert (card()['primary'], card()['status']) == ('8.00', 'idle')
+    for price, state in ((9, 'active'), (7, 'falling'), (7, 'idle'), (8, 'active')):
+        clock.now += 10
+        m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=price), ts=clock.now)
+        assert card()['status'] == state
+        assert card()['status'] == state  # Same source version is not a new price read.
+
+    # A confirmed equal pool read changes no value but clears the old upward color.
+    clock.now += 10
+    m.cache.mark_fetched(TIER_POOL4, clock.now)
+    assert card()['status'] == 'idle'
+    clock.now += 10
+    m.cache.store_last_good(SLOT_POOL4, dict(pool, current_tick=100), ts=clock.now)
+    assert card()['status'] == 'falling'
+    m.cache.mark_failed(TIER_POOL4, clock.now + 1)
+    assert card()['status'] == 'stale'
+    clock.now += 10
+    m.cache.mark_fetched(TIER_POOL4, clock.now)
+    assert card()['status'] == 'idle'
+
+    # A retained/failed source and an invalid quote cannot replace the last good price.
+    m._failed_groups.add(SOURCE_MARKET)
+    clock.now += 10
+    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=4), ts=clock.now)
+    assert card()['status'] == 'stale'
+    m._failed_groups.clear()
+    clock.now += 10
+    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=None), ts=clock.now)
+    assert card()['status'] == 'unavailable'
+    clock.now += 10
+    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=6), ts=clock.now)
+    assert card()['status'] == 'falling'  # Compare with 8, not the failed 4.
+    clock.now += 91
+    assert card()['status'] == 'stale'
+    await m.close()
+
+
+@pytest.mark.parametrize('identity', [dict(network='SEPOLIA'), dict(hook_addr='0x' + '2' * 40)])
+async def test_pool4_card_does_not_compare_different_pool_identities(manager, identity):
+    from maxpane_dashboard.data.surf_cache import SLOT_POOL4, SLOT_MARKET
+    m, clock = manager
+    pool = dict(network='MAINNET', current_tick=0, hook_addr='0x' + '1' * 40)
+    m.cache.store_last_good(SLOT_POOL4, pool, ts=990)
+    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=8), ts=990)
+    m._project_hub()
+    clock.now += 10
+    m.cache.store_last_good(SLOT_POOL4, dict(pool, **identity), ts=clock.now)
+    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=9), ts=clock.now)
+    row = next(row for row in m._project_hub()['surfboard_cards'] if row['key'] == 'pool4')
+    assert row['status'] == 'idle'
+    await m.close()
+
+
 async def test_footer_sources_are_independent_and_use_injected_clock(manager):
     from maxpane_dashboard.data.surf_cache import SLOT_MARKET
     from maxpane_dashboard.data.surf_manager import SOURCE_MARKET

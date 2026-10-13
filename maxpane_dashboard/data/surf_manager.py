@@ -1091,6 +1091,7 @@ class SurfManager:
         self._last_full_payload = None
         self._last_full_read_ts = None
         self._hub_active = False
+        self._hub_pool4_price_read = None
         self._swarm_active = False
         self._hub_source_tasks = {}
         self._hub_lookup_lock = asyncio.Lock()
@@ -7263,6 +7264,27 @@ class SurfManager:
                           "stale" if degraded or now - stamp > self.poll_interval else "ok"}
         return out
 
+    def _hub_pool4_price_direction(self, data: dict, sources: dict) -> str | None:
+        """Compare confirmed USD-price reads, never cached screen repaints."""
+        price = hub.number(data.get("pool4_price_usd"))
+        reads = [sources[name] for name in ("pool4", "market")]
+        now = float(self._clock())
+        stamps = tuple(hub.timestamp(source.get("read_ts")) for source in reads)
+        if (price is None or any(source.get("state") != "ok" for source in reads)
+                or any(stamp is None or stamp > now for stamp in stamps)):
+            return None
+        identity = (data.get("pool4_network"), data.get("pool4_hook_addr"))
+        prior = self._hub_pool4_price_read
+        direction = None
+        if prior is not None and prior[0] == identity:
+            if any(stamp < previous for stamp, previous in zip(stamps, prior[1])):
+                return None
+            if stamps == prior[1]:
+                return prior[3]
+            direction = "up" if price > prior[2] else "down" if price < prior[2] else "flat"
+        self._hub_pool4_price_read = (identity, stamps, price, direction)
+        return direction
+
     def _pool4_hero_source(self, entry, *, now, tier, group=None):
         """Capture confirmed reads beside their slot, before detached work."""
         stamp = news_hero._stamp(getattr(entry, "ts", None), now)
@@ -7376,6 +7398,7 @@ class SurfManager:
                     seat['live'] = None  # an incomplete roster cannot prove absent capacity
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
                                                  agent_seats=agent_seats,
+                                                 pool4_price_direction=self._hub_pool4_price_direction(data, family_sources),
                                                  announce_read_ts=getattr(channel_entry, "ts", None),
                                                  announce_items=channel.get("items"),
                                                  family_sources=family_sources,

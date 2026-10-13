@@ -338,7 +338,7 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
         "announce", "swarm", "swarm-tokens", "pool4", "protocol", "board",
         "launchpad", "portfolio", "agent", "agent-2", "agent-3", "agent-4"]
-    for title in ("ONCHAIN NEWS", "SWARM", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
+    for title in ("ONCHAIN FEED", "SWARM BUILDS", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
                   "TOKENS", "PORTFOLIO", "EMPTY SEAT", "type in"):
         assert title in r["text"], (title, r["text"])
 
@@ -501,7 +501,7 @@ async def test_rack_columns_share_width_equally(size):
     assert not rendered['clipped']
 
 
-async def test_boardroom_title_is_centered_green_after_refresh_and_resize():
+async def test_boardroom_title_is_centered_muted_after_refresh_and_resize():
     from rich.color import Color
     app = HubHarness(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
@@ -515,4 +515,8 @@ async def test_boardroom_title_is_centered_green_after_refresh_and_resize():
             assert ('‹ widen' in text) == (width < SURFBOARD_FULL_LAYOUT_COLUMNS)
             assert abs(row.text.index(text) - (width - len(text)) / 2) <= .5
             ink = next(segment.style.color for segment in row if 'IMD BOARDROOM' in segment.text)
-            assert ink == Color.parse(app.get_css_variables()['accent'])
+            card = app.hub.query_one('#surfboard-card-announce')
+            card_title = app.hub._compositor.render_strips()[card.region.y].crop(card.region.x, card.region.right)
+            title_ink = next(seg.style.color for seg in card_title if 'ONCHAIN FEED' in seg.text)
+            assert ink == title_ink
+            assert ink != Color.parse(app.get_css_variables()['accent'])
