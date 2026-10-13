@@ -10,13 +10,14 @@ from maxpane_dashboard.app import MaxPaneApp
 from maxpane_dashboard.screens.game_select import GameSelectScreen
 from maxpane_dashboard.screens.surf import (
     MODE_AGENT, MODE_BOARD, MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4,
-    MODE_POOL4_USER, MODE_SWARM, SurfScreen,
+    MODE_POOL4_USER, MODE_SWARM, MODE_WORK, SurfScreen,
 )
 from tests.test_app_startup import MANAGER_ATTRS
+from tests.data.test_surf_manager_surfboard import manager as work_manager
 
 MODES = (MODE_DASHBOARD, MODE_SWARM, MODE_AGENT, MODE_BOARD,
-         MODE_LAUNCHPAD, MODE_POOL4_USER, MODE_POOL4)
-CARD_KEYS = ("announce", "swarm", "agent", "board", "launchpad", "pool4", "protocol")
+         MODE_LAUNCHPAD, MODE_POOL4_USER, MODE_POOL4, MODE_WORK)
+CARD_KEYS = ("announce", "swarm", "agent", "board", "launchpad", "pool4", "protocol", "work")
 
 
 class HubManager:
@@ -171,7 +172,7 @@ def test_open_mode_validates_before_mount_without_scheduling():
 
 
 @pytest.mark.asyncio
-async def test_all_seven_routes_reuse_one_screen_and_return_to_one_rack():
+async def test_all_eight_routes_reuse_one_screen_and_return_to_one_rack():
     from maxpane_dashboard.screens.surfboard import SurfboardScreen
     from maxpane_dashboard.widgets.surfboard import SurfboardRack
     app, managers = hub_app()
@@ -396,3 +397,47 @@ async def test_command_navigation_and_url_allowlist_use_existing_routes(monkeypa
         assert saved == [420]
         await pilot.press("escape")
         assert app.screen is hub
+
+
+@pytest.mark.asyncio
+async def test_work_card_mouse_route_returns_to_same_boardroom():
+    from maxpane_dashboard.screens.surf import MODE_WORK
+    app, _ = hub_app()
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        hub = app.screen
+        assert await pilot.click('#surfboard-card-work')
+        await pilot.pause()
+        assert isinstance(app.screen, SurfScreen) and app.screen._mode == MODE_WORK
+        assert app.screen.return_context == 'surfboard'
+        await pilot.press('escape')
+        await pilot.pause()
+        assert app.screen is hub
+
+
+async def test_work_card_round_trip_preserves_pending_reader(work_manager):
+    manager, _ = work_manager
+    entered = asyncio.Event()
+
+    async def jobs(*, limit):
+        entered.set()
+        await asyncio.Event().wait()
+
+    manager.swarm_client.fetch_jobs.side_effect = jobs
+    app, _ = hub_app()
+    app._surf_manager = manager
+    async with app.run_test(size=(149, 45)) as pilot:
+        await asyncio.wait_for(entered.wait(), 1)
+        pending = manager._work_reader.task
+        await pilot.click('#surfboard-card-work')
+        await pilot.pause()
+        assert app.screen._mode == MODE_WORK
+        assert manager._work_reader.task is pending and not pending.cancelling()
+        await pilot.press('escape')
+        await pilot.pause()
+        assert manager._hub_active and not manager._work_active
+        assert manager._work_reader.task is pending and not pending.cancelling()
+        await pilot.press('m')
+        await pilot.pause()
+        assert isinstance(app.screen, GameSelectScreen)
+        assert pending.cancelled()

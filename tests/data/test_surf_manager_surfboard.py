@@ -1,4 +1,6 @@
 import asyncio
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import pytest
@@ -15,6 +17,7 @@ def manager(tmp_path):
     swarm.fetch_overview=AsyncMock(return_value=capture('overview'))
     swarm.fetch_seat_records=AsyncMock(return_value=capture('records'))
     swarm.fetch_steps_hourly=AsyncMock(return_value=capture('hourly'))
+    swarm.fetch_jobs=AsyncMock(return_value=None)
     m=SurfManager(clock=lambda:clock.now,cache_path=str(tmp_path/'cache.json'),client=Client(),pool4_client=Client(),swarm_client=swarm,npm_client=Client(),seat=420)
     base=Client(); base.fetch_imd_global_supply=AsyncMock(return_value=None)
     m._launch_rpc_clients[8453]=base
@@ -23,6 +26,85 @@ def manager(tmp_path):
     m._swarm_tokens_manager = SwarmTokensManager(m, client=Pages(), market=Market(), clock=lambda: clock.now)
     m._cycle=AsyncMock(return_value=m._blank_payload())
     return m,clock
+
+
+async def test_hub_work_card_shares_completed_snapshot_with_dashboard(manager):
+    m, clock = manager
+    raw = json.loads(Path('tests/fixtures/surf/work/captured.json').read_text())
+    clock.now = raw['read_ts']
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def jobs(*, limit):
+        entered.set()
+        await release.wait()
+        return raw['jobs']
+    m.swarm_client.fetch_jobs = AsyncMock(side_effect=jobs)
+    m.swarm_client.fetch_workflows = AsyncMock(return_value=raw['workflows'])
+    m.swarm_client.fetch_job = AsyncMock(side_effect=lambda identity: next(
+        (d for d in raw['details'] if d['id']==identity), None))
+    m.set_hub_active(True)
+    try:
+        first = await m.fetch_hub_snapshot()
+        row = next(c for c in first['surfboard_cards'] if c['key']=='work')
+        assert row['status']=='unavailable' and row['primary']=='—'
+        await asyncio.wait_for(entered.wait(), 1)
+        task = m._work_reader.task
+        await m.fetch_hub_snapshot()
+        assert m._work_reader.task is task
+        release.set()
+        await task
+        second = await m.fetch_hub_snapshot()
+        row = next(c for c in second['surfboard_cards'] if c['key']=='work')
+        assert row['primary']=='2'
+        assert row['work_summary']==second['surf_work']['summary']
+        assert row['meter_state']==second['surf_work']['state']=='ok'
+        m.set_work_active(True)
+        m.set_hub_active(False)
+        dashboard = await m.fetch_and_compute()
+        assert dashboard['surf_work']==second['surf_work']
+        assert m._work_reader.task is task
+        m.swarm_client.fetch_jobs.assert_awaited_once_with(limit=100)
+        m.swarm_client.fetch_workflows.assert_awaited_once_with(limit=100)
+    finally:
+        await m.close()
+
+
+@pytest.mark.parametrize('first', ['hub', 'work'])
+async def test_work_reader_cancels_only_after_both_consumers_leave(manager, first):
+    m, _ = manager
+    entered = asyncio.Event()
+    async def jobs(*, limit):
+        entered.set()
+        await asyncio.Event().wait()
+    m.swarm_client.fetch_jobs = AsyncMock(side_effect=jobs)
+    other = 'work' if first=='hub' else 'hub'
+    getattr(m, f'set_{first}_active')(True)
+    try:
+        await (m.fetch_hub_snapshot() if first=='hub' else m.fetch_and_compute())
+        await asyncio.wait_for(entered.wait(), 1)
+        task = m._work_reader.task
+        getattr(m, f'set_{other}_active')(True)
+        getattr(m, f'set_{first}_active')(False)
+        assert not task.cancelling()
+        getattr(m, f'set_{other}_active')(False)
+        await asyncio.gather(task, return_exceptions=True)
+        assert task.cancelled()
+    finally:
+        await m.close()
+
+
+async def test_inactive_or_closing_hub_does_not_offer_work(manager):
+    m, _ = manager
+    try:
+        await m.fetch_hub_snapshot()
+        assert m._work_reader.task is None
+        m.set_hub_active(True)
+        m._closing = True
+        await m.fetch_hub_snapshot()
+        assert m._work_reader.task is None
+        m.swarm_client.fetch_jobs.assert_not_awaited()
+    finally:
+        m._closing = False
+        await m.close()
 
 async def test_shared_full_fetch_cancellation_isolated_and_interval_coalesced(manager):
     m,clock=manager; gate=asyncio.Event()

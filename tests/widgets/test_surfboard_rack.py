@@ -338,7 +338,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
         for label in ("ONCHAIN FEED", "SWARM BUILDS", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
-                      "PROTOCOL", "PORTFOLIO", "TOKENS", "EMPTY SEAT"):
+                      "PROTOCOL", "WORK IN PROGRESS", "TOKENS", "EMPTY SEAT"):
             assert label in text
 
 
@@ -350,7 +350,7 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.move_focus("down")
         assert rack.focused_card == "launchpad"
         rack.move_focus("right")
-        assert rack.focused_card == "portfolio"
+        assert rack.focused_card == "work"
         rack.move_focus("up")
         assert rack.focused_card == "board"
         rack.move_focus("left")
@@ -359,7 +359,7 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         assert rack.focused_card == "pool4"
         rack.move_focus("left")
         assert rack.focused_card == "swarm-tokens"
-        rack.focus_card("portfolio")
+        rack.focus_card("work")
         rack.move_focus("down")
         assert rack.focused_card == "agent-2"
         rack.move_focus("left")
@@ -380,16 +380,16 @@ async def test_live_cards_route_and_empty_seats_focus_input_without_opening():
 
     async with Messages().run_test(size=(149, 45)) as pilot:
         rack = pilot.app.query_one(SurfboardRack)
-        for key in ("swarm-tokens", "portfolio"):
+        for key in ("swarm-tokens", "work"):
             rack.focus_card(key)
             rack.activate_focused()
         await pilot.pause()
         rack.query_one("#surfboard-card-agent-2", SurfboardCard).action_activate()
         await pilot.pause()
-        assert [event.key for event in pilot.app.opened] == ["swarm-tokens", "portfolio"]
-        live, portfolio = pilot.app.opened
+        assert [event.key for event in pilot.app.opened] == ["swarm-tokens", "work"]
+        live, work = pilot.app.opened
         assert live.destination == "swarm-tokens" and "production-chain markets" in live.detail
-        assert portfolio.destination == "portfolio" and "holdings and ready claims" in portfolio.detail
+        assert work.destination == "work" and "WORK IN PROGRESS" in work.detail
 
 
 @pytest.mark.parametrize("numerator,denominator,expected", [
@@ -452,8 +452,8 @@ async def test_all_other_card_footers_align_left_and_fill_width_on_resize():
     from tests.screens.test_surfboard_layout import HubHarness
     from tests.surfboard_fixtures import hub_payload
 
-    labels = {"board": "IDLE", "agent": "IDLE", "portfolio": "ASSETS"}
-    placeholders = {"portfolio"}
+    labels = {"board": "IDLE", "agent": "IDLE"}
+    placeholders = set()
     payload = hub_payload()
     for data in payload["surfboard_cards"]:
         if data["key"] in labels:
@@ -804,3 +804,53 @@ async def test_token_volume_footer_shares_swarm_label_color_and_retains_gaps(poi
             assert '—' not in footer.text
             assert ('·' in footer.text) == (None in points)
             assert any(c in footer.text for c in '▁▂▃▄▅▆▇█')
+
+
+@pytest.mark.parametrize('size', [(149, 45), (144, 37)])
+async def test_work_card_approved_digits_workflows_and_step_footer(size):
+    async with RackApp().run_test(size=size) as pilot:
+        app = pilot.app
+        card = app.query_one('#surfboard-card-work', SurfboardCard)
+        card.set_data(dict(primary='5', secondary='1 workflow', status='active',
+                           work_summary=dict(build=5, review=4)))
+        await pilot.pause()
+        strips = card_strips(app, card)
+        top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
+        left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
+        assert 'WORK IN PROGRESS' in strips[0].text
+        assert 'ACTIVE JOBS' in strips[top].text
+        assert [strip.text[left+1:right].strip() for strip in strips[top+1:top+4]] == ['╭─╴', '╰─╮', '╶─╯']
+        assert '1 workflow' in strips[top+4].text
+        footer = strips[-1].text
+        assert ('5 build · 4 review' if size[0] == 149 else '5 build · 4 rev') in footer
+        assert inset_border_color(strips[top]).get_truecolor() == Color.parse(app.get_css_variables()['accent']).get_truecolor()
+        assert card.region.height == app.query_one('#surfboard-card-launchpad').region.height
+        assert len(app.query(SurfboardCard)) == 12
+        assert not app.query('#surfboard-card-portfolio')
+
+
+async def test_work_card_unknown_idle_and_stale_reset_activity_ink():
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        app = pilot.app
+        card = app.query_one('#surfboard-card-work', SurfboardCard)
+        for state, primary, secondary, counts in [
+            ('active', '5', '1 workflow', dict(build=5, review=4)),
+            ('idle', '0', '0 workflows', dict(build=0, review=0)),
+            ('stale', '5', 'stale 05:20', dict(build=5, review=4)),
+            ('unavailable', '—', 'unavailable', dict(build=None, review=None)),
+        ]:
+            card.set_data(dict(status=state, primary=primary, secondary=secondary, work_summary=counts))
+            await pilot.pause()
+            strips = card_strips(app, card)
+            top = next(s for s in strips if 'ACTIVE JOBS' in s.text)
+            expected = Color.parse(app.get_css_variables()['accent']).get_truecolor() if state == 'active' else neutral_inset_color(app)
+            assert inset_border_color(top).get_truecolor() == expected
+            assert secondary in '\n'.join(s.text for s in strips)
+            if state == 'unavailable':
+                assert '— build · — review' in strips[-1].text
+            if state == 'idle':
+                assert '0 build · 0 review' in strips[-1].text
+        card.set_data(None)
+        await pilot.pause()
+        assert '— build · — review' in card_strips(app, card)[-1].text
+        assert card.data['destination'] == 'work'

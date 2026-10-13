@@ -31,11 +31,11 @@ SLOTS = (
     ("announce", "ONCHAIN FEED", 0, 0), ("swarm", "SWARM BUILDS", 0, 1),
     ("swarm-tokens", "TOKENS", 0, 2), ("pool4", "POOL4", 0, 3),
     ("protocol", "PROTOCOL", 0, 4), ("board", "LEADERBOARD", 0, 5),
-    ("launchpad", "LAUNCHPAD", 1, 0), ("portfolio", "PORTFOLIO", 1, 5),
+    ("launchpad", "LAUNCHPAD", 1, 0), ("work", "WORK IN PROGRESS", 1, 5),
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
 )
-METER_LABELS = {"swarm": "24H", "swarm-tokens": "24h", "launchpad": "2H", "portfolio": "ASSETS"}
+METER_LABELS = {"swarm": "24H", "swarm-tokens": "24h", "launchpad": "2H"}
 
 
 def _number(value):
@@ -104,12 +104,26 @@ def _protocol_footer(card, width):
     return fit_prose(text, width, style=MUTED)
 
 
+def _work_footer(card, width):
+    summary = card.get("work_summary") or {}
+    values = [summary.get(key) for key in ("build", "review")]
+    counts = [str(int(value)) if _number(value) and value == int(value) else "—" for value in values]
+    for build_label, review_label in (("build", "review"), ("build", "rev"), ("bld", "rev")):
+        text = f"{counts[0]} {build_label} · {counts[1]} {review_label}"
+        if cell_len(text) <= width:
+            return Text(text, style=MUTED), False
+    compact = [fmt_compact(value) if count != "—" else count for value, count in zip(values, counts)]
+    return fit_prose(f"{compact[0]} bld · {compact[1]} rev", width, style=MUTED)
+
+
 def meter_text(card: dict, width: int | None = None) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
     if key == "protocol":
         return _protocol_footer(card, 24 if width is None else width)[0]
+    if key == "work":
+        return _work_footer(card, 24 if width is None else width)[0]
     if key in AGENT_KEYS and state == "empty":
         return Text("Identity.md", style=MUTED)
     if key == "pool4":
@@ -132,7 +146,7 @@ def meter_text(card: dict, width: int | None = None) -> Text:
         label_ink = AMBER
     out = Text().append(label + " ", style=label_ink)
     cells = 8 if width is None else max(0, width - cell_len(label) - 1)
-    if key == "portfolio" or state == "empty":
+    if state == "empty":
         return out.append("▱" * cells, style=MUTED)
     if card.get("meter_kind") == "sparkline" or key in ("launchpad", "swarm-tokens"):
         points = card.get("points")
@@ -248,9 +262,12 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self.data["destination"] = "swarm-tokens"
             self.data.setdefault("detail", "TOKENS · production-chain markets · unavailable · Enter to open")
             self.tooltip = Text(self.detail)
-        if self.key == "portfolio":
-            self.data.update(status="active", primary="PORTFOLIO", secondary="wallet holdings",
-                             destination="portfolio", detail="PORTFOLIO · holdings and ready claims · Enter to open")
+        if self.key == "work":
+            self.data["destination"] = "work"
+            self.data.setdefault("primary", "—")
+            self.data.setdefault("secondary", "unavailable")
+            self.data.setdefault("detail", "WORK IN PROGRESS · unavailable · Enter to open")
+            self.tooltip = Text(self.detail)
         if self.empty_seat:
             self.data.update(status="empty", primary="", secondary="type in", destination=None,
                              meter_state="empty", detail="AGENT · empty seat · Enter to type a seat number")
@@ -316,10 +333,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         label = ""
         native_digits = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "launchpad", "pool4") or self.seat_slot is not None:
+        if self.key in ("swarm", "launchpad", "pool4", "work") or self.seat_slot is not None:
             label = " SEAT " if self.seat_slot is not None else {"swarm": " AGENTS ",
                      "launchpad": " COINS ",
-                     "pool4": " IMD PRICE "}[self.key]
+                     "pool4": " IMD PRICE ", "work": " ACTIVE JOBS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
             if self.key == "pool4":
@@ -386,6 +403,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         clipped = len(label) > inside or len(bottom) > inside
         if self.key == "protocol":
             clipped |= _protocol_footer(self.data, max(0, self.region.width - 6))[1]
+        if self.key == "work":
+            clipped |= _work_footer(self.data, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
             style = Style(
                 color=self.rich_style.color, bgcolor=palette["background"],
@@ -475,7 +494,7 @@ class SurfboardRack(Grid):
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
-        # Reserve two extra side-column lines below LAUNCHPAD and PORTFOLIO.
+        # Reserve two extra side-column lines below LAUNCHPAD and WORK IN PROGRESS.
         card_height = max(7, (self.content_size.height - gaps - 2) // rows)
         self.query(SurfboardCard).set_styles(height=card_height)
         # The terminal spans the last track and can use its leftover space.
@@ -483,7 +502,7 @@ class SurfboardRack(Grid):
         self.call_after_refresh(self._position_taglines)
 
     def _position_taglines(self):
-        for key, label_id in (("launchpad", "keep"), ("portfolio", "building")):
+        for key, label_id in (("launchpad", "keep"), ("work", "building")):
             card = self.query_one(f"#surfboard-card-{key}", SurfboardCard)
             label = self.query_one(f"#surfboard-{label_id}", Static)
             # Match the dim footer ink while leaving the gap background unchanged.

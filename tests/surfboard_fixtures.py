@@ -47,12 +47,12 @@ def hub_payload(kind="normal"):
     next(card for card in cards if card['key'] == 'board')['top_agents'] = [
         dict(rank=1, token_id=527, accepted=4176), dict(rank=2, token_id=12, accepted=3001),
         dict(rank=3, token_id=3, accepted=987)]
-    for key, title in (("portfolio", "PORTFOLIO"),):
-        cards.append(dict(key=key, title=title, destination=None, status="planned",
-                          seat_slot=None, token_id=None,
-                          primary="coming soon", secondary="future dashboard", detail="planned / coming soon",
-                          meter_kind=None, meter_state=None, share_price=None,
-                          numerator=None, denominator=None, points=None, token_ranking=None, top_agents=None))
+    cards.append(dict(key="work", title="WORK IN PROGRESS", destination="work", status="active",
+                      seat_slot=None, token_id=None, primary="5", secondary="1 workflow",
+                      detail="WORK IN PROGRESS · 5 jobs · 1 workflow · 5 build · 4 review · read 22:00",
+                      meter_kind="work", meter_state="ok", share_price=None,
+                      numerator=None, denominator=None, points=None, token_ranking=None, top_agents=None,
+                      work_summary=dict(jobs=5, workflows=1, seats=7, build=5, review=4, blocked=0)))
     for slot, key in enumerate(("agent-2", "agent-3", "agent-4"), start=1):
         cards.append(dict(key=key, title="AGENT", destination=None, status="empty",
                           primary="", secondary="type in", detail="AGENT · empty seat",
@@ -92,6 +92,9 @@ def hub_payload(kind="normal"):
             primary="★ burned 1M IMD\n★ rewarded 100k IMD\n★ fees 10k IMD", secondary="17.40% of supply")
         next(card for card in cards if card["key"] == "swarm-tokens").update(
             primary="1,234,567", secondary="99,999 new")
+        next(card for card in cards if card["key"] == "work").update(
+            primary="124", secondary="100 workflows",
+            work_summary=dict(jobs=124, workflows=100, seats=4800, build=4800, review=4800, blocked=0))
         overview = dict(agents_online=99999, working_now=99999, jobs_24h=999999,
                         oracles_24h=99999, accepted_24h=99999999, seats_enrolled=99999,
                         services=dict(verifier=False, publisher=None, deployer=True))
@@ -105,6 +108,9 @@ def hub_payload(kind="normal"):
                         numerator=None, denominator=None, points=None)
             card['token_ranking'] = None
             card['top_agents'] = None
+        next(card for card in cards if card["key"] == "work").update(
+            status="unavailable", primary="—", secondary="unavailable", meter_state="unavailable",
+            work_summary=dict.fromkeys(("jobs", "workflows", "seats", "build", "review", "blocked")))
         overview, events = None, None
         footer.update(market_value_usd=None, market_basis=None, market_state="unavailable",
                       market_read_ts=None, inference_tokens=None, overview_state="unavailable",

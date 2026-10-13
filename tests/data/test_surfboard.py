@@ -91,7 +91,8 @@ def test_rack_meters_use_real_denominators_uncapped_population_and_split():
     assert cards['pool4']['numerator'] is cards['pool4']['denominator'] is None
     assert (cards['protocol']['numerator'],cards['protocol']['denominator'])==(2,10)
     assert cards['protocol']['status']=='experimental'
-    assert {c['key'] for c in cards.values() if c['status']=='planned'}=={'portfolio'}
+    assert not {c['key'] for c in cards.values() if c['status']=='planned'}
+    assert 'portfolio' not in cards and cards['work']['status']=='unavailable'
     assert 'earnings' not in cards
     lp['launch_count']=24
     assert next(c for c in hub.cards(data,{},now=100,launchpad=lp) if c['key']=='launchpad')['numerator'] is None
@@ -100,6 +101,37 @@ def test_rack_meters_use_real_denominators_uncapped_population_and_split():
 def test_unknown_detector_prevents_a_false_zero_bar():
     cards=hub.cards({}, {}, now=100)
     assert cards[0]['numerator'] is cards[0]['denominator'] is None
+
+
+@pytest.mark.parametrize('jobs,workflows,status,subtitle', [
+    (5, 1, 'active', '1 workflow'), (0, 0, 'idle', '0 workflows'),
+    (12, 3, 'active', '3 workflows'),
+])
+def test_work_card_projects_loaded_counts(jobs, workflows, status, subtitle):
+    summary = dict(jobs=jobs, workflows=workflows, seats=9, build=5, review=4, blocked=11)
+    source = dict(state='ok', read_ts=90, summary=summary, partial=True,
+                  jobs_loaded=100, workflows_loaded=100, details_loaded=24, details_expected=42)
+    cards = hub.cards({'surf_work': source}, {}, now=100)
+    row = next(c for c in cards if c['key']=='work')
+    assert (row['title'], row['destination'], row['meter_kind']) == ('WORK IN PROGRESS', 'work', 'work')
+    assert (row['primary'], row['secondary'], row['status'], row['meter_state']) == (str(jobs), subtitle, status, 'ok')
+    assert row['work_summary'] == summary
+    assert all(c['work_summary'] is None for c in cards if c['key']!='work')
+    assert '100 jobs' in row['detail'] and '100 workflows' in row['detail']
+    assert '24/42 details' in row['detail'] and 'partial' in row['detail']
+    assert f'read {hub.hhmm(90)}' in row['detail'] and 'Enter to open' in row['detail']
+
+
+def test_work_card_preserves_stale_and_unknown_counts_without_false_zero():
+    summary = dict(jobs=5, workflows=1, seats=None, build=None, review=None, blocked=11)
+    stale = dict(state='stale', read_ts=90, summary=summary, partial=True,
+                 jobs_loaded=100, workflows_loaded=100, details_loaded=24, details_expected=42)
+    row = next(c for c in hub.cards({'surf_work': stale}, {}, now=300) if c['key']=='work')
+    assert (row['primary'], row['secondary'], row['status'], row['meter_state']) == ('5', f'stale {hub.hhmm(90)}', 'stale', 'stale')
+    assert row['work_summary']['build'] is row['work_summary']['review'] is None
+    unknown = next(c for c in hub.cards({}, {}, now=300) if c['key']=='work')
+    assert (unknown['primary'], unknown['secondary'], unknown['status'], unknown['meter_state']) == ('—', 'unavailable', 'unavailable', 'unavailable')
+    assert all(value is None for value in unknown['work_summary'].values())
 
 
 @pytest.mark.parametrize('kind,age,expected', [

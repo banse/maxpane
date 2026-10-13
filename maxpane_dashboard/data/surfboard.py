@@ -20,6 +20,7 @@ from maxpane_dashboard.data import surf_launchpad_volume as launch_volume
 from maxpane_dashboard.analytics.surf_launch_checks import address
 from maxpane_dashboard.data.surf_models import (
     SURFBOARD_CARD_FIELDS, SURFBOARD_OVERVIEW_FIELDS, SURFBOARD_SUPPLY_FIELDS, SWARM_SEAT_OUTCOME_FIELDS,
+    SURF_WORK_SUMMARY_KEYS,
 )
 
 OUTCOME_COUNTERS = ("attempts", "accepted", "rejected", "failed", "pending")
@@ -601,10 +602,23 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
                             f" · {volume.get('known', 0)}/{volume.get('total', '—')} tokens"
                             f" · {volume.get('state', 'unavailable')} · read {hhmm(volume.get('as_of'))}"
                             f" · until {hhmm(volume.get('until'))}")
-    row=dict.fromkeys(SURFBOARD_CARD_FIELDS)
-    row.update(key="portfolio",title="PORTFOLIO",status="planned",primary="planned",
-               secondary="coming soon",detail="PORTFOLIO · planned dashboard")
-    result.append(row)
+    work = data.get("surf_work") or {}
+    summary = {key: count((work.get("summary") or {}).get(key)) for key in SURF_WORK_SUMMARY_KEYS}
+    jobs, workflows = summary["jobs"], summary["workflows"]
+    state = work.get("state", "unavailable")
+    subtitle = (f"{workflows:,} workflow{'s' if workflows != 1 else ''}"
+                if workflows is not None else "— workflows")
+    if state != "ok":
+        subtitle = f"stale {hhmm(work.get('read_ts'))}" if state == "stale" else "unavailable"
+    card("work", "WORK IN PROGRESS", f"{jobs:,}" if jobs is not None else "—", subtitle,
+         "WORK IN PROGRESS · " + " · ".join(f"{_value(summary[key])} {key}" for key in SURF_WORK_SUMMARY_KEYS)
+         + f" · loaded {_value(work.get('jobs_loaded'))} jobs · {_value(work.get('workflows_loaded'))} workflows"
+         + f" · {_value(work.get('details_loaded'))}/{_value(work.get('details_expected'))} details"
+         + (" · partial" if work.get("partial") else "")
+         + f" · {state} · read {hhmm(work.get('read_ts'))} · Enter to open", "work")
+    result[-1].update(work_summary=summary, meter_kind="work", meter_state=state,
+                     status=("active" if jobs else "idle") if state == "ok" and jobs is not None else
+                     "stale" if state == "stale" else "unavailable")
     return result
 
 

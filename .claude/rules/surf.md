@@ -771,7 +771,7 @@ seats and accepted counts, led by gold/silver/bronze stars with one leading blan
 right with one trailing blank; oversized counts drop grouping, then use compact notation only
 if necessary. Its activity footer remains rank one's.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
-footer is centered `Identity.md`. Three-line gaps below LAUNCHPAD and PORTFOLIO separate them
+footer is centered `Identity.md`. Three-line gaps below LAUNCHPAD and WORK IN PROGRESS separate them
 from the AGENT seats; regular-weight キープ / ビルディング match the muted card-footer
 labels and are centered on the middle line.
 Other card gaps remain one line; all card sizes stay equal.
@@ -806,7 +806,8 @@ The approved tree/detail body is `MODE_WORK`, reachable from Surf and the boardr
 It shares SurfScreen and SurfManager; no new top-level game registration. Six rack heroes
 and the body consume only `surf_work`. The work reader owns a separate 60s cache tier,
 120s failure backoff, fresh 100-job/100-workflow pages and at most 24 detail reads.
-Only the visible body offers that reader; leaving cancels it. No history merge or
+The boardroom card and visible Work body share that reader; it cancels when
+neither consumer is visible. No history merge or
 unrelated Surf collectors run on its refresh path. Busy stops detail fanout and retains
 the previous snapshot; missing individual details remain explicit partial coverage.
 
@@ -814,6 +815,12 @@ Counts apply to loaded jobs/workflows and every working node of executing jobs. 
 are distinct assigned token IDs; missing executing details make step/seat counts unknown.
 Creation age never claims execution duration. Current node state controls activity,
 even when an older verdict says accepted. Job and workflow states have separate meanings.
+
+The boardroom replaces PORTFOLIO with WORK IN PROGRESS. Its ACTIVE JOBS digits
+and workflow subtitle share `surf_work.summary`; `work_summary` carries the
+build/review footer counts. Unknown values remain em dashes; stale counts retain
+an explicit timestamp. Coverage and read details remain in the card tooltip.
+Click/Enter opens Work and Escape returns to the retained boardroom.
 
 The tree groups workflow jobs and steps, then other unfinished jobs. Selection and
 collapsed branches survive refreshes. Local `/` search and `f` filters preserve parents;

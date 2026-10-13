@@ -169,24 +169,17 @@ async def test_small_terminal_keeps_fields_reachable_and_editor_fits():
         assert app.screen.assets == 'all' and app.screen.chain == 'all'
 
 
-async def test_hub_card_opens_retained_live_manager_and_returns_with_wallet_choice(monkeypatch):
+async def test_live_portfolio_screen_returns_to_boardroom(monkeypatch):
     from tests.screens.test_surfboard_screen import hub_app
-    from maxpane_dashboard.widgets.surfboard import SurfboardRack
     from maxpane_dashboard.screens.surfboard import SurfboardScreen
     monkeypatch.setattr('maxpane_dashboard.config.get_wallet', lambda: '')
-    app, managers = hub_app()
+    app, _ = hub_app()
     from tests.data.test_portfolio_live import setup
     live, *_ = setup(None)
-    calls = []
-    def portfolio_manager(wallet=None):
-        calls.append(wallet)
-        return live
-    managers['_surf_manager'].portfolio_manager = portfolio_manager
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         hub = app.screen
-        rack = hub.query_one(SurfboardRack)
-        rack.query_one('#surfboard-card-portfolio').action_activate()
+        app.push_screen(PortfolioScreen(live))
         await pilot.pause()
         assert isinstance(app.screen, PortfolioScreen)
         assert app.screen._data_manager is live and not live.is_mock
@@ -195,7 +188,6 @@ async def test_hub_card_opens_retained_live_manager_and_returns_with_wallet_choi
         await pilot.press('escape')
         assert app.screen is hub and isinstance(app.screen, SurfboardScreen)
     await live.close()
-    assert len(calls) == 1
 
 
 async def test_live_coverage_sources_and_details_never_show_demo_values():

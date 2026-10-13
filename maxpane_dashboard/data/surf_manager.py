@@ -7174,11 +7174,13 @@ class SurfManager:
     def set_hub_active(self, active: bool) -> None:
         """Visibility changes eligibility; manager tasks retain their owner."""
         self._hub_active = bool(active)
+        if not self._hub_active and not self._work_active:
+            self._work_reader.cancel()
 
     def set_work_active(self, active: bool) -> None:
         """Visibility only; network work is offered by the scheduled refresh."""
         self._work_active = bool(active)
-        if not self._work_active:
+        if not self._work_active and not self._hub_active:
             self._work_reader.cancel()
 
     def set_swarm_active(self, active: bool) -> None:
@@ -7409,6 +7411,7 @@ class SurfManager:
             for seat in agent_seats:
                 if (seat['live'] or {}).get('live_state') == 'offline':
                     seat['live'] = None  # an incomplete roster cannot prove absent capacity
+        data["surf_work"] = self._work_reader.project()
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
                                                  agent_seats=agent_seats,
                                                  pool4_price_direction=self._hub_pool4_price_direction(data, family_sources),
@@ -7422,7 +7425,6 @@ class SurfManager:
                                                      if getattr(self, '_swarm_tokens_manager', None) is not None else None))
         data["surf_news_hero"] = self._news_hero(data, now)
         data["surf_swarm_hero"] = self._swarm_hero(sources, now)
-        data["surf_work"] = self._work_reader.project()
         if refresh_agent:
             quote = data['surf_news_hero']['market']
             data.update(self._seat_rewards_keys(data, quote.get('price_usd'), now,
@@ -7495,6 +7497,8 @@ class SurfManager:
             self.swarm_tokens_manager().offer_hub_volume()
             self._offer_hub_sources(now)
             self._spawn_swarm_board(set(self.cache.tiers_due(now)), now)
+            if self._hub_active:
+                self._work_reader.offer()
         return self._project_hub()
 
     def _offer_full(self, now: float) -> Any:

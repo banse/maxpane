@@ -1563,7 +1563,9 @@ SURF_LAUNCHPAD_HERO_FIELDS = {
 }
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points", "token_ranking",
-                        "meter_state", "share_price", "seat_slot", "token_id", "top_agents")
+                        "meter_state", "share_price", "seat_slot", "token_id", "top_agents", "work_summary")
+# work_summary: the existing surf_work summary counts on WORK IN PROGRESS;
+# None on other cards. Build and review are independent counts, never a ratio.
 # top_agents: None (unknown) / [] (known empty) / up to three {rank, token_id,
 # accepted} rows in canonical rank order; None on cards other than LEADERBOARD.
 # seat_slot/token_id identify the four saved AGENT cards; None on other cards.

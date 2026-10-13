@@ -86,9 +86,8 @@ The isolated, deterministic **MOCK DATA** demo remains available without network
 
 ### PORTFOLIO — wallet holdings and claims
 
-Open **PORTFOLIO** from dashboard 9 (SURFBOARD HUB). It uses your saved/environment
-wallet; press `w` to change it using THE LIST's wallet prompt. The accepted wallet
-persists for this session when returning through the hub.
+The Portfolio view remains available as the standalone preview below. Its former
+boardroom card is now **WORK IN PROGRESS**.
 
 The overview shows swarm-token holdings, verified ready claims and linked IMD
 agents. It shares SWARM TOKENS' catalogue, quotes, market activity, price charts
@@ -236,7 +235,9 @@ LAUNCHES and SITES in full-width rows beneath. The hero shows AGENTS (online/enr
 WORKING, ACCEPTED 24h, LAUNCHES, WORKFLOWS and SITES. The last three show totals and the largest
 status counts that fit as whole pairs; missing data says `unavailable`, while an empty list is `0`.
 
-Press **`w`** from Surf or the IMD boardroom for **WORK IN PROGRESS**. Six rack cards
+Open the **WORK IN PROGRESS** boardroom card, or press **`w`** from Surf or the
+boardroom. The card shows active-job digits, active workflows, and build/review
+step counts from the same snapshot as the dashboard. Six rack cards
 summarize executing jobs, active workflows, working seats, build/review steps and blocked
 jobs. Select a workflow, job or step in the tree to inspect its objective, assignments,
 dependencies, attempts and latest notes. Use arrows to navigate, Enter to focus details,
@@ -244,7 +245,8 @@ dependencies, attempts and latest notes. Use arrows to navigate, Enter to focus 
 then returns to the view you came from.
 
 These counts describe the loaded window, not network-wide totals. The view reads the newest
-100 jobs and 100 workflows, plus at most 24 job details, while open. Missing details remain
+100 jobs and 100 workflows, plus at most 24 job details, while the boardroom or
+Work dashboard is open. Missing details remain
 explicit; unknown assignments never become zero. Reads run at most once a minute, and failed
 reads keep the previous snapshot with its original timestamp and a stale marker.
 
