@@ -87,7 +87,7 @@ class SurfOraclesHero(Grid):
     SurfOraclesHero { width: 1fr; height: 9; grid-size: 6 1; grid-columns: 1fr;
         grid-rows: 9; grid-gutter: 0 1; }
     """
-    CARDS = (("requests", "REQUESTS", "LOADED", "request history"),
+    CARDS = (("requests", "REQUESTS", "LATEST 100", "request history"),
              ("assessing", "ASSESSING", "OPEN", "in progress"),
              ("attested", "ATTESTED", "CLOSED", "with agreement"),
              ("disagreed", "NO QUORUM", "CLOSED", "without quorum"),
@@ -105,8 +105,6 @@ class SurfOraclesHero(Grid):
         counts = Counter(row.get("status") for row in rows or [])
         counts.update(requests=len(rows or []), networks=len({r["chain_id"] for r in rows or [] if _chain(r) != "--"}))
         state = payload.get("state", "unavailable")
-        if state == "ok" and payload.get("partial"):
-            state = "partial"
         for key, title, heading, footer in self.CARDS:
             value = _count(counts[key]) if rows is not None else "--"
             if key == "networks" and any(_chain(row) == "--" for row in rows or []):
@@ -295,12 +293,10 @@ class SurfOraclesBody(Horizontal):
         self._select(selected)
         table.refresh(layout=True)
         state = self._payload.get("state", "unavailable")
-        coverage = f"{len(rows)} shown / {len(self._rows)} loaded · {_STATES.get(self._filter, self._filter)} · {self._chain_filter}"
+        coverage = f"LATEST 100 · {len(rows)} shown / {len(self._rows)} loaded · {_STATES.get(self._filter, self._filter)} · {self._chain_filter}"
         other = sum(row.get("status") not in _STATES for row in self._rows.values())
         if other:
             coverage += f" · {other} other"
-        if self._payload.get("partial"):
-            coverage += " · partial"
         if self._payload.get("rows") is None:
             coverage = "Requests unavailable"
         coverage += f" · {state} · as of {hhmm(self._payload.get('read_ts'), unknown='--:--')}"

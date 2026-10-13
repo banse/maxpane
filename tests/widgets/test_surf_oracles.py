@@ -69,7 +69,10 @@ async def test_hero_counts_unknown_states_coverage_and_approved_layout():
         assert [c.data.digits for c in cards] == ["5", "1", "1", "1", "1", "2"]
         assert all(c.region.height == 9 for c in cards)
         assert "1 other" in painted(app, "#oracle-coverage")
-        assert "partial" in painted(app, "#oracle-coverage")
+        assert "LATEST 100" in painted(app, "#oracle-coverage")
+        assert "LATEST 100" in painted(app, "#hero-oracle-requests")
+        assert "partial" not in painted(app, "#oracle-coverage")
+        assert "partial" not in painted(app, SurfOraclesHero)
         assert "mystery" in painted(app, "#oracle-requests")
         assert "NO QUORUM" in painted(app, SurfOraclesHero)
         assert "YES" in painted(app, "#oracle-summary")
