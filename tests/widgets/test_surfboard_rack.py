@@ -350,7 +350,7 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.move_focus("down")
         assert rack.focused_card == "launchpad"
         rack.move_focus("right")
-        assert rack.focused_card == "work"
+        assert rack.focused_card == "swarm-tokens"
         rack.move_focus("up")
         assert rack.focused_card == "board"
         rack.move_focus("left")
@@ -358,8 +358,8 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.move_focus("left")
         assert rack.focused_card == "pool4"
         rack.move_focus("left")
-        assert rack.focused_card == "swarm-tokens"
-        rack.focus_card("work")
+        assert rack.focused_card == "work"
+        rack.focus_card("swarm-tokens")
         rack.move_focus("down")
         assert rack.focused_card == "agent-2"
         rack.move_focus("left")
@@ -822,7 +822,7 @@ async def test_work_card_approved_digits_workflows_and_step_footer(size):
         assert [strip.text[left+1:right].strip() for strip in strips[top+1:top+4]] == ['╭─╴', '╰─╮', '╶─╯']
         assert '1 workflow' in strips[top+4].text
         footer = strips[-1].text
-        assert ('5 build · 4 review' if size[0] == 149 else '5 build · 4 rev') in footer
+        assert ('5 build · 4 review' if card.region.width >= 24 else '5 build · 4 rev') in footer
         assert inset_border_color(strips[top]).get_truecolor() == Color.parse(app.get_css_variables()['accent']).get_truecolor()
         assert card.region.height == app.query_one('#surfboard-card-launchpad').region.height
         assert len(app.query(SurfboardCard)) == 12
@@ -847,10 +847,10 @@ async def test_work_card_unknown_idle_and_stale_reset_activity_ink():
             assert inset_border_color(top).get_truecolor() == expected
             assert secondary in '\n'.join(s.text for s in strips)
             if state == 'unavailable':
-                assert '— build · — review' in strips[-1].text
+                assert ('— build · — review' if card.region.width >= 24 else '— build · — rev') in strips[-1].text
             if state == 'idle':
-                assert '0 build · 0 review' in strips[-1].text
+                assert ('0 build · 0 review' if card.region.width >= 24 else '0 build · 0 rev') in strips[-1].text
         card.set_data(None)
         await pilot.pause()
-        assert '— build · — review' in card_strips(app, card)[-1].text
+        assert ('— build · — review' if card.region.width >= 24 else '— build · — rev') in card_strips(app, card)[-1].text
         assert card.data['destination'] == 'work'

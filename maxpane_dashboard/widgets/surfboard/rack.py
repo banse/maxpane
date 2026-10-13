@@ -29,9 +29,9 @@ RED = "red"
 # Fixed rack identities; the four agent cards carry independent assignments.
 SLOTS = (
     ("announce", "ONCHAIN FEED", 0, 0), ("swarm", "SWARM BUILDS", 0, 1),
-    ("swarm-tokens", "TOKENS", 0, 2), ("pool4", "POOL4", 0, 3),
+    ("work", "WORK IN PROGRESS", 0, 2), ("pool4", "POOL4", 0, 3),
     ("protocol", "PROTOCOL", 0, 4), ("board", "LEADERBOARD", 0, 5),
-    ("launchpad", "LAUNCHPAD", 1, 0), ("work", "WORK IN PROGRESS", 1, 5),
+    ("launchpad", "LAUNCHPAD", 1, 0), ("swarm-tokens", "TOKENS", 1, 5),
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
 )
@@ -414,7 +414,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             clipped |= lost
             line.align("left" if preview is not None else "center", inside)
             body.append("│", style=border_inset).append_text(line).append("│\n", style=border_inset)
-        self.border_title = Text(title_with_hint("⊙ " + self.title,
+        prefix = "⊙" if self.key == "work" and self.size.width < 24 else "⊙ "
+        self.border_title = Text(title_with_hint(prefix + self.title,
             clipped, max(0, self.size.width - 4)))
         footer = Text("└" + clip(bottom, inside).center(inside, "─") + "┘",
                       style=border_inset + Style(bold=False))
@@ -494,7 +495,7 @@ class SurfboardRack(Grid):
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
-        # Reserve two extra side-column lines below LAUNCHPAD and WORK IN PROGRESS.
+        # Reserve two extra side-column lines below LAUNCHPAD and TOKENS.
         card_height = max(7, (self.content_size.height - gaps - 2) // rows)
         self.query(SurfboardCard).set_styles(height=card_height)
         # The terminal spans the last track and can use its leftover space.
@@ -502,7 +503,7 @@ class SurfboardRack(Grid):
         self.call_after_refresh(self._position_taglines)
 
     def _position_taglines(self):
-        for key, label_id in (("launchpad", "keep"), ("work", "building")):
+        for key, label_id in (("launchpad", "keep"), ("swarm-tokens", "building")):
             card = self.query_one(f"#surfboard-card-{key}", SurfboardCard)
             label = self.query_one(f"#surfboard-{label_id}", Static)
             # Match the dim footer ink while leaving the gap background unchanged.
