@@ -24,8 +24,9 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         assert len(cards) == 12 and {card.region.height for card in cards} == {9}
         text = _region_text(pilot.app, hero)
         paid = mmdd_hhmm(data['surf_agent_hero']['rewards']['last_paid_ts'])
+        earned_footer = "4 new (2)" if width == 132 else "4 new (2 worked)"
         for expected in ("IDMD", "75% premium", "of 1,000", "AGENT #8127", paid, "example.eth ⧉", "TOP #527 x84",
-                         "EARNINGS", "7 worked on", "4 new (2)", "since "):
+                         "EARNINGS", "7 worked on", earned_footer, "since "):
             assert expected in text
         record = screen.query_one(SurfSwarmSeatRecord)
         assert record.display and record.region.y > hero.region.bottom

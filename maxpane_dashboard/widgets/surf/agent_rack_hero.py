@@ -51,7 +51,8 @@ def _earnings_footer(source, *, compact=False):
     earned, worked = (count(source.get(key)) for key in ("earned_24h", "worked_on_24h"))
     labels = [fmt_compact(value).replace("K", "k") if compact and value is not None and value >= 1000
               else _count(value) for value in (earned, worked)]
-    return labels[0] + " new" + (f" ({labels[1]})" if worked else "")
+    suffix = f" ({labels[1]}{' worked' if not compact else ''})" if worked else ""
+    return labels[0] + " new" + suffix
 
 
 def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
@@ -199,6 +200,7 @@ class AgentRackCard(Pool4HeroCard):
         self.raw_record = record
         self.owner_text = Text()
         super().__init__(record)
+        self.styles.border_subtitle_align = "center"
 
     def _fit_content(self, record):
         if record.key == "owner":

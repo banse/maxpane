@@ -86,12 +86,16 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             "owner": ("WALLET", "example.eth ⧉", "paired", "OPEN / COPY"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "up to date"),
             "models": ("model A", "high", "model B", "medium", "2 models"),
-            "earnings": ("EARNINGS", "TOKENS", "7 worked on", "4 new (2)"),
+            "earnings": ("EARNINGS", "TOKENS", "7 worked on", "4 new (2 worked)"),
             "collab": ("SEATS", "collaborators", "TOP #527 x84"),
             "nodes": ("other", "500", "launches", "340", "oracle", "120", "work by type"),
         }.items():
             text = painted(app, key)
             assert all(word in text for word in words), (key, text)
+            footer = strips(app, key)[-1].text
+            label = footer.strip("╰─╯ ")
+            left = footer.index(label)
+            assert abs(left - (len(footer) - left - len(label))) <= 1, (key, footer)
         # 420 and 960, asserted as digit glyphs that actually reach the terminal.
         assert "  ╵╰─╴╰─╯" in painted(app, "seat")
         assert "╶─╯╰─╯╰─╯" in painted(app, "accepted")
@@ -538,7 +542,7 @@ async def test_earnings_counts_distinct_tokens_and_accents_only_recent_work():
         await pilot.pause()
         app = pilot.app
         text = painted(app, "earnings")
-        assert "TOKENS" in text and "7 worked on" in text and "4 new (2)" in text
+        assert "TOKENS" in text and "7 worked on" in text and "4 new (2 worked)" in text
         assert "╶┴╴╰─╴" in text  # tall 12
         green = Color.parse(app.get_css_variables()["accent"]).get_truecolor()
         assert border_color(app, "earnings") == green
@@ -556,8 +560,8 @@ async def test_earnings_counts_distinct_tokens_and_accents_only_recent_work():
 
 
 @pytest.mark.parametrize("new,worked,expected", [
-    (4, 2, "4 new (2)"), (4, 0, "4 new"), (4, None, "4 new"),
-    (0, 0, "0 new"), (None, None, "-- new"), (None, 2, "-- new (2)"),
+    (4, 2, "4 new (2 worked)"), (4, 0, "4 new"), (4, None, "4 new"),
+    (0, 0, "0 new"), (None, None, "-- new"), (None, 2, "-- new (2 worked)"),
 ])
 async def test_earnings_footer_shows_recent_distinct_tokens_and_only_positive_work(new, worked, expected):
     data = payload()
@@ -591,7 +595,7 @@ async def test_earnings_recent_footer_compacts_only_when_needed_and_keeps_exact_
         assert "Last 24h: 4,096 earned" in tooltip and "4,096 worked on by this agent" in tooltip
         await pilot.resize_terminal(211, 45)
         await pilot.pause()
-        assert "4,096 new (4,096)" in strips(app, "earnings")[-1].text
+        assert "4,096 new (4,096 worked)" in strips(app, "earnings")[-1].text
 
 
 async def test_nodes_group_work_by_type_without_guessing_incomplete_launch_membership():

@@ -228,6 +228,7 @@ native RECORD. The approved rack has two equal rows of six nine-line cards, with
 one blank line between: SEAT / ACCEPTED / EFFORT / REWARDS / RANK / STATUS, then
 OWNER / RUNTIME / MODELS / EARNINGS / COLLAB / NODES. The old `SurfSwarmAgentHero`
 and `SurfSwarmSeatCards` remain parked; no production body mounts them.
+All twelve outer card footers are centered, including loading and error states.
 
 `surf_agent_hero` is a primitive projection with independent state/read timestamps
 for all twelve cards. A successful unchanged detail read confirms only that seat
@@ -305,7 +306,7 @@ Its tooltip retains every raw model/effort pair. An empty served list says
 `not advertised`; an unread list is unknown. RECORD's model is what actually ran.
 EARNINGS replaces FEEDBACK. Its TOKENS digits count distinct `(chainId, tokenAddress)`
 assets in the owner's public explorer earned table. The outer footer is `x new`,
-counting distinct tokens earned in the rolling last 24 hours; append ` (y)` only
+counting distinct tokens earned in the rolling last 24 hours; append ` (y worked)` only
 when a known positive subset involved the selected agent's accepted builder work.
 The inner `x worked on` intersects builder allocations
 with this selected seat's accepted job IDs. Green means one of those assets launched
@@ -319,7 +320,8 @@ later duplicate rows cannot make an old token new. Include age zero and exclude
 exactly 24 hours and future timestamps. Missing dates preserve unknown recent
 counts unless a known old date excludes that asset. Unknown work identity keeps
 the selected-agent subset unknown. Footers compact only when needed; hover keeps
-exact counts, date semantics and unknown-state explanations.
+exact counts, date semantics and unknown-state explanations. Narrow EARNINGS
+footers retain the compact `x new (y)` form when the full wording does not fit.
 `surf_agent_earnings.py` resolves named Next flight exports as JSON, checks the provider
 wallet, and never executes script. GET-only, no redirects, 15 seconds, 4 MiB, 4096 rows.
 `AgentCardSources` runs earnings and membership reads inside the cancellable selected-seat
