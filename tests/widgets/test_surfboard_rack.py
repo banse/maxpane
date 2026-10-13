@@ -337,7 +337,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.x > cards[6].region.x
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
-        for label in ("ONCHAIN FEED", "SWARM BUILDS", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4",
+        for label in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "LAUNCHPAD", "POOL4",
                       "PROTOCOL", "WIP", "TOKENS", "EMPTY SEAT"):
             assert label in text
 
@@ -440,7 +440,7 @@ async def test_swarm_outer_footer_stretches_history_on_resize_and_keeps_unknown_
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
             assert footer.text == f"╰─ 24H {chart} ─╯"
-            assert str(card.border_title) == "⊙ SWARM BUILDS"
+            assert str(card.border_title) == "⊙ BUILT BY SWARM"
         card.set_data(dict(card.data, points=None))
         await pilot.pause()
         footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)

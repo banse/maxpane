@@ -346,7 +346,7 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
         "announce", "swarm", "work", "pool4", "swarm-tokens", "board",
         "launchpad", "protocol", "agent", "agent-2", "agent-3", "agent-4"]
-    for title in ("ONCHAIN FEED", "SWARM BUILDS", "AGENT", "LEADERBOARD", "LAUNCHPAD", "POOL4", "PROTOCOL",
+    for title in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "LAUNCHPAD", "POOL4", "PROTOCOL",
                   "TOKENS", "WIP", "EMPTY SEAT", "type in"):
         assert title in r["text"], (title, r["text"])
 
