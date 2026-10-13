@@ -479,7 +479,7 @@ async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_
                 line = gap[1]
                 assert abs(cell_len(line.text[:line.text.index(word)]) -
                            (card.region.width - cell_len(word)) / 2) <= .5
-                assert any(segment.style.color == label_ink and segment.style.bold
+                assert any(segment.style.color == label_ink and not segment.style.bold
                            for segment in line if word in segment.text)
                 assert sum(word in strip.text for strip in strips) == 1
             terminal = rack.query_one(SurfboardTerminal)

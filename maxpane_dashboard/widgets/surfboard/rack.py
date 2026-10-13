@@ -450,7 +450,7 @@ class SurfboardRack(Grid):
     SurfboardCard > Input.seat-input { position: absolute; height: 1; margin: 0; padding: 0;
         border: none; background: $surface; color: $foreground; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
-    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $text-muted; text-style: bold;
+    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $text-muted; text-style: none;
         content-align: center middle; }
     SurfboardRack > #surfboard-keep { layer: keep; }
     SurfboardRack > #surfboard-building { layer: building; }
