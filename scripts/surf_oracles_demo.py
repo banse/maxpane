@@ -109,6 +109,9 @@ class OracleMockCard(NewsHeroCard):
 class RequestPanel(PanelBase):
     TITLE = "REQUESTS"
 
+    def on_resize(self):
+        self.call_after_refresh(self.app.fit_questions)
+
     def compose_body(self):
         yield Static(Text(), id="request-coverage")
         yield Input(placeholder="find a question or chain", id="request-find")
@@ -124,7 +127,7 @@ class DetailPanel(PanelBase):
         tree = Tree("answers", id="answer-tree")
         tree.show_root = False
         yield tree
-        yield Static(Text("click branches · enter full answer · esc closes", style="dim"), id="answer-hint")
+        yield Static(Text("space fold · enter answer · esc close", style="dim"), id="answer-hint")
 
 
 class SurfOraclesDemo(App):
@@ -144,7 +147,7 @@ class SurfOraclesDemo(App):
     #oracle-body { height: 1fr; min-height: 28; }
     #oracle-body PanelBase { border: round $panel; padding: 0 1; background: $background; height: 1fr; }
     #oracle-body .panel-title { height: 1; text-wrap: nowrap; }
-    #requests-panel { width: 47%; margin-right: 1; }
+    #requests-panel { width: 66%; margin-right: 1; }
     #detail-panel { width: 1fr; }
     #request-coverage { height: 1; margin-bottom: 1; color: $text-muted; }
     #request-find { display: none; height: 3; }
@@ -152,7 +155,7 @@ class SurfOraclesDemo(App):
     #request-summary { height: auto; margin-bottom: 1; }
     #answer-heading { height: 1; margin-bottom: 1; color: $text-muted; }
     #answer-tree { height: 1fr; min-height: 8; padding: 0; background: $background; scrollbar-gutter: stable; }
-    #answer-hint { height: 1; color: $text-muted; }
+    #answer-hint { height: auto; color: $text-muted; }
     """
 
     def __init__(self):
@@ -182,6 +185,19 @@ class SurfOraclesDemo(App):
         self.rebuild_requests()
         table.focus()
 
+    def fit_questions(self):
+        table = self.query_one(DataTable)
+        if not table.ordered_columns:
+            return
+        *fixed, question = table.ordered_columns
+        width = max(1, table.scrollable_content_region.width - sum(column.get_render_width(table) for column in fixed) - 2 * table.cell_padding)
+        if question.width == width:
+            return
+        question.width = width
+        for key in table.rows:
+            table.update_cell(key, question.key, Text(clip(self.by_id[key.value]["question"], width)), update_width=True)
+        table.refresh(layout=True)
+
     def rebuild_requests(self):
         rows = [row for row in MOCK_REQUESTS if
                 (self.status_filter == "all" or row["status"] == self.status_filter) and
@@ -192,7 +208,7 @@ class SurfOraclesDemo(App):
         for row in rows:
             table.add_row(Text(fmt_age(row["age_s"]), style="dim"), Text(row["chain"]),
                           Text(STATE_LABELS[row["status"]], style=STATE_COLORS[row["status"]]),
-                          Text(clip(row["question"], 37)), key=row["id"])
+                          Text(clip(row["question"], table.ordered_columns[-1].width)), key=row["id"])
         self.query_one("#request-coverage", Static).update(Text(
             f"{len(rows)} shown / 100 loaded · {STATE_LABELS.get(self.status_filter, 'all states')} · {self.chain_filter}"))
         selected = next((i for i, row in enumerate(rows) if row["id"] == self.selected_id), 0)
@@ -225,7 +241,7 @@ class SurfOraclesDemo(App):
                   "Awaiting agreement" if status == "assessing" else "Source unavailable · request blocked")
         summary.append(result + "\n", style="bold" if status == "attested" else "dim")
         agreed = str(row["agreed"]) if row["agreed"] is not None else "—"
-        summary.append(f"{agreed} agreed · {row['quorum']} required · {row['panel_size']} seats target", style="dim")
+        summary.append(f"{agreed} agreed · {row['quorum']} required\n{row['panel_size']} seats target", style="dim")
         self.query_one("#request-summary", Static).update(summary)
         self.query_one("#answer-heading", Static).update(Text(f"ANSWERS · {len(row['members'])} loaded records", style="bold"))
         tree = self.query_one(Tree)

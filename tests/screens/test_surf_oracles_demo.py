@@ -54,11 +54,14 @@ async def test_six_equal_rack_cards_and_split_detail_fit_owner_size():
             assert card.data.title in text and card.data.heading in text
             assert all(corner in text for corner in "┌┐└┘")
         left, right = app.query_one("#requests-panel"), app.query_one("#detail-panel")
+        assert left.region.width >= 1.8 * right.region.width
         assert cards[0].region.bottom < left.region.y == right.region.y
         assert left.region.right < right.region.x
         assert left.region.bottom == right.region.bottom < app.query_one("#demo-footer").region.y
         assert "MOCK DATA" in painted(app)
         assert "100 loaded" in painted(app, left)
+        assert "Is the collection floor price above the requested threshold?" in painted(app, left)
+        assert not app.query_one(DataTable).max_scroll_x
         assert "YES" in painted(app, right) and "13 agreed" in painted(app, right)
         assert "17 seats" in painted(app, right) and "seat 527" in painted(app, right)
         assert not app.query_one("#viewport").max_scroll_x
@@ -163,3 +166,8 @@ async def test_filters_empty_result_and_resize_recover():
         await pilot.pause()
         assert not view.max_scroll_x and not view.max_scroll_y
         assert "SELECTED REQUEST" in painted(app)
+        question_width = app.query_one(DataTable).ordered_columns[-1].width
+        await pilot.resize_terminal(180, 45)
+        await pilot.pause()
+        assert app.query_one(DataTable).ordered_columns[-1].width > question_width
+        assert not app.query_one(DataTable).max_scroll_x
