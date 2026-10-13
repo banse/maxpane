@@ -248,3 +248,18 @@ Validation: 645 affected/composing tests, 124 fast guards, 12 docpins and two
 address checks passed. Final review: Approved, no findings; 17 focused cases
 passed and an explorer-link mutation was rejected and restored. No outstanding
 findings for this refresh.
+
+
+## Rack sizing and captions correction — 2026-10-13
+
+Owner shortened the protocol footer to `x% burned`. All six columns again use
+equal fractional widths, with only terminal-cell rounding differences. Both
+Katakana captions use the card background color and occupy the lower middle
+spare row, moving down one line at 149×45. Card heights and the terminal span
+are unchanged. The live keyless preview was shown before remeasuring the layout;
+the screen pin and its measurement block document the restored geometry.
+
+Validation: 210 affected/composing tests, 124 fast guards and 12 docpins passed.
+Five layout/behavior mutants were rejected and restored. Final review approved
+with no findings; six focused cases passed and both width-pin mutations failed
+as intended. No full suite run or outstanding findings.

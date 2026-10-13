@@ -83,8 +83,8 @@ async def test_post_preview_keeps_unicode_literal_and_address_copy_units(size):
                 assert not next(s.style for s in content[0] if '[bold]' in s.text).bold
             elif text.startswith('a界'):
                 assert [s.crop(left+1,right).text.rstrip() for s in content]==[
-                    'a'+'界'*7,
-                    '界'*8, '界'*6+'...']
+                    'a'+'界'*(8 if size[0]==149 else 7),
+                    '界'*(9 if size[0]==149 else 8), '界'*(7 if size[0]==149 else 6)+'...']
             elif text=='Short post':
                 assert 'Short post' in content[0].text
                 assert all(not s.crop(left+1,right).text.strip() for s in content[1:])
@@ -147,7 +147,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         footer = next(segment for segment in strips[top + 4] if "27 working" in segment.text)
         assert not footer.style.bold
         assert footer.style.color.get_truecolor() == Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
-        chart = "▁▁▂▂▃▄▄▅▅▆▇▇█" if size[0] == 149 else "▁▁▂▃▃▄▅▅▆▇▇█"
+        chart = "▁▁▂▂▃▃▄▅▅▆▆▇▇█" if size[0] == 149 else "▁▁▂▂▃▄▄▅▅▆▇▇█"
         assert strips[-1].text == f"╰─ 24H {chart} ─╯"
         header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
         assert not header.style.bold
@@ -316,8 +316,8 @@ async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
                 assert '★' not in line and ':' not in line
             assert len(unit_columns) == len(label_columns) == 1
             assert strips[top+4].text[left+1:right].strip('─ ') == ''
-            assert '0.47% of supply' in strips[-1].text and 'BURN' not in strips[-1].text
-            assert ('‹' in str(card.border_title)) == (card.region.width - 6 < 21)
+            assert '0.47% burned' in strips[-1].text and 'BURN' not in strips[-1].text
+            assert '‹' not in str(card.border_title)
 
 
 async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
@@ -392,8 +392,8 @@ async def test_live_cards_route_and_empty_seats_focus_input_without_opening():
 
 
 @pytest.mark.parametrize("numerator,denominator,expected", [
-    (0, 8, "IDLE ▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "IDLE ▰▰▰▰▰▱▱▱▱▱▱"),
-    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE —"),
+    (0, 8, "IDLE ▱▱▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "IDLE ▰▰▰▰▰▰▱▱▱▱▱▱▱"),
+    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE —"),
     (None, 8, "IDLE —"), (True, 8, "IDLE —"), (9, 8, "IDLE —"),
     (-1, 8, "IDLE —"), (float("inf"), 8, "IDLE —"),
 ])
@@ -415,7 +415,7 @@ async def test_chart_requires_all_eight_buckets_and_empty_seats_stay_unlit():
             meter_kind="sparkline", points=[0, 1, 2, 3, 4, 5, 6, 7]),
             dict(key="agent-2", token_id=None, status="active", numerator=1, denominator=1, destination="fake")])
         await pilot.pause()
-        assert "24H ▁▁▂▂▃▄▄▅▅▆▇▇█" in painted(pilot.app)
+        assert "24H ▁▁▂▂▃▃▄▅▅▆▆▇▇█" in painted(pilot.app)
         empty = rack.query_one("#surfboard-card-agent-2", SurfboardCard)
         assert empty.data["destination"] is None
         rack.update_data(surfboard_cards=[dict(key="swarm", meter_kind="sparkline", points=[0, 1])])
@@ -433,8 +433,8 @@ async def test_swarm_outer_footer_stretches_history_on_resize_and_keeps_unknown_
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         card = app.hub.query_one("#surfboard-card-swarm", SurfboardCard)
-        for width, chart in [(149, "▁▁▂▃▃▄▅▅▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
-                             (140, "▁▁▂▃▃▄▅▅▆▇▇█"), (149, "▁▁▂▃▃▄▅▅▆▇▇█")]:
+        for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
+                             (140, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
@@ -719,7 +719,8 @@ async def test_protocol_supply_footer_is_fitted_and_marks_clipping():
             await pilot.pause()
             strips = card_strips(pilot.app, card)
             assert 'BURN' not in strips[-1].text and '▰' not in strips[-1].text
-            assert '0.47% of supply burned' in strips[-1].text
+            assert '0.47% burned' in strips[-1].text
+            assert 'of supply' not in strips[-1].text
             assert '‹' not in strips[0].text
         card.set_data(dict(secondary='unavailable'))
         await pilot.pause()

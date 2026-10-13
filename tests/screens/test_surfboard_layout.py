@@ -37,7 +37,7 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        for width, cells in [(149, 8), (180, 14), (140, 8), (149, 8)]:
+        for width, cells in [(149, 9), (180, 14), (140, 8), (149, 9)]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             card = app.hub.query_one("#surfboard-card-announce", SurfboardCard)
@@ -171,7 +171,7 @@ async def test_projected_pool4_share_rate_fits_owner_size_without_detail(state):
         pool4 = app.hub.query_one("#surfboard-card-pool4")
         footer = app.hub._compositor.render_strips()[pool4.region.bottom - 1].crop(
             pool4.region.x, pool4.region.right)
-        assert footer.text == "╰─ 1 sIMD = 1.30 IMD ─╯"
+        assert footer.text == "╰─ 1 sIMD = 1.303 IMD ─╯"
         assert "‹ widen" not in str(pool4.border_title)
 
 
@@ -471,14 +471,24 @@ async def test_translated_side_labels_use_spare_space_without_overlapping_termin
                 visible = '\n'.join(strip.text for strip in side)
                 assert (word in visible) == (free > 0)
                 if free > 0:
-                    line = next(strip for strip in side if word in strip.text)
-                    assert any(segment.style.color == card.get_component_rich_style(
-                        'surfboard-card--muted').color for segment in line if word in segment.text)
+                    line = side[free // 2]
+                    assert word in line.text
+                    assert any(segment.style.color == card.rich_style.bgcolor
+                               for segment in line if word in segment.text)
 
 
 @pytest.mark.parametrize('kind', ['normal', 'stress'])
 async def test_protocol_full_supply_footer_fits_at_owner_size(kind):
     rendered = await _render(hub_payload(kind), (149, 45))
-    expected = '0.47% of supply burned' if kind == 'normal' else '17.40% of supply burned'
+    expected = '0.47% burned' if kind == 'normal' else '17.40% burned'
     assert expected in rendered['card_text']['protocol']
     assert 'protocol' not in rendered['clipped']
+
+
+@pytest.mark.parametrize('size', [(149, 45), (180, 45)])
+async def test_rack_columns_share_width_equally(size):
+    rendered = await _render(hub_payload(), size)
+    widths = list(rendered['widths'].values())
+    # Whole terminal cells may leave one extra cell in a fractional track.
+    assert max(widths) - min(widths) <= 1
+    assert not rendered['clipped']

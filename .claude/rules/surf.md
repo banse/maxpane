@@ -763,7 +763,8 @@ and source clocks. Known zero-new text remains hidden on TOKENS and ONCHAIN NEWS
 Portfolio opens its existing preview. LEADERBOARD shows TOP AGENTS with three canonical ranked
 seats and accepted counts, led by gold/silver/bronze stars. Its activity footer remains rank one's.
 Empty AGENT insets use a borderless input, centered ↑ and `type in`; their outer footer is
-`Identity.md NFT`. Spare rows below the side cards show centered muted キープ / ビルディング.
+`Identity.md NFT`. Spare rows below the side cards show centered キープ / ビルディング in the card surface
+color, using the lower middle row (one line below the cards at the owner size).
 The terminal hides automatic stale labels (including generated command summaries) and V/P/D
 service flags at every width, per the owner; underlying metadata and unavailable states remain.
 It supports bounded read-only commands and replaces its recent `/swarm` event window
@@ -779,7 +780,7 @@ then orange to empty over hours 24–72. Offline is red OFF with empty segments.
 Every successful workers read refreshes activity evidence even when content is unchanged;
 failed/stale/unknown evidence has no live bar. Persisted per-token stop history is validated
 on load. Cold idle has an unknown bar until a work-to-idle transition is observed.
-PROTOCOL uses label / amount / IMD columns and an outer `x% of supply burned` footer. POOL4's outer footer reuses the protocol's live
+PROTOCOL uses label / amount / IMD columns and an outer `x% burned` footer. POOL4's outer footer reuses the protocol's live
 sIMD share price, rounded to fit; card detail retains six decimals and source freshness.
 Rank migration resets only contributor-based baselines (`seat-records-v1`). See the hub PRD
 and implementation plan for exact meter formulas, commands and source cadence.

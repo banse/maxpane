@@ -18,24 +18,22 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Re-measured after the 2026-10-13 live 149×45 content refresh.
-#: PROTOCOL's "17.40% of supply burned" needs 23 footer cells plus six native
-#: border cells, so that column reserves 29. POOL4 reserves 23 for the share
-#: quote; four remaining columns get at least 22. The 145-column rack plus
-#: viewport padding and the vertical gutter binds the 148-column width pin.
+#: Re-measured after the 2026-10-13 equal-width live preview at 149×45.
+#: Six equal fractional columns restore the standard card widths (at most one
+#: cell of rounding difference). PROTOCOL's "rewarded 100k IMD" row needs 19
+#: inner cells with padding, binding its card to 23 columns and the rack to
+#: 141. The viewport's padding and vertical gutter bind the width pin at 144.
 #: Normal, stress, unavailable and wide composites scroll horizontally at
-#: 147×34, but not 148×34; vertical scrolling clears at 148×35. All card text
-#: fits at 148×35 and 149×45; long event prose retains its own ellipsis marker.
-#: Four seven-row cards plus three gutters keep the row pin at 35. Cards
-#: have equal heights; the terminal fills the center through the rack bottom.
-#: At 149×45 it spans 99 columns and extends two rows below the side cards.
-#: Centered Katakana captions occupy only those spare side rows, hidden when
-#: none remain. Empty seats retain their five-line inset and borderless input.
-#: TOP AGENTS is three rows of stars, seat numbers and accepted counts;
-#: TOKENS retains three ranked rows and a NEWEST footer. Supply precision,
-#: counts, unknown states and Unicode cell widths are checked in composition.
+#: 143×34, but not 144×34; vertical scrolling clears at 144×35. Every card fits
+#: at 144×35 and 149×45. The short supply footer is "17.40% burned" at stress.
+#: Four seven-row card floors plus three gutters keep the height pin at 35.
+#: Equal card heights remain; the terminal fills the center to the rack bottom,
+#: measuring 94 columns at the pin and 97 at 149×45. Two spare side rows remain
+#: at the owner size; captions occupy the second, one line below their former
+#: position, in the same color as the card background. No spare rows means hidden
+#: captions. Their placement does not change any card or terminal dimensions.
 #: App-wide width stays 143.
-SURFBOARD_FULL_LAYOUT_COLUMNS = 148
+SURFBOARD_FULL_LAYOUT_COLUMNS = 144
 SURFBOARD_FULL_LAYOUT_ROWS = 35
 
 

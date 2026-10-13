@@ -109,7 +109,7 @@ def _top_agents_preview(rows, width, style):
 
 def _protocol_footer(card, width):
     share = flatten(card.get('secondary'))
-    text = share + ' burned' if share.endswith('% of supply') else 'unavailable'
+    text = share.removesuffix(' of supply') + ' burned' if share.endswith('% of supply') else 'unavailable'
     return fit_prose(text, width, style=MUTED)
 
 
@@ -445,7 +445,7 @@ class SurfboardRack(Grid):
     """Own fixed slots and terminal children; the screen dispatches to both."""
     DEFAULT_CSS = """
     SurfboardRack { layout: grid; grid-size: 6 4; grid-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
-        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 145; }
+        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 141; }
     SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; border-subtitle-align: left; }
@@ -456,7 +456,7 @@ class SurfboardRack(Grid):
     SurfboardCard > Input.seat-input { position: absolute; height: 1; margin: 0; padding: 0;
         border: none; background: $surface; color: $foreground; }
     SurfboardRack > SurfboardTerminal { column-span: 4; row-span: 3; }
-    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $text-muted;
+    SurfboardRack > .rack-tagline { dock: top; height: 1; color: $surface;
         content-align: center middle; }
     SurfboardRack > #surfboard-keep { layer: keep; }
     SurfboardRack > #surfboard-building { layer: building; }
@@ -478,10 +478,6 @@ class SurfboardRack(Grid):
         self.focused_card = "announce"
 
     def on_resize(self):
-        # Reserve the supply sentence's 23 cells plus the native border gaps;
-        # other columns share the remainder and all grow together on wide screens.
-        equal_width = (self.content_size.width - 5) // 6
-        self.styles.grid_columns = ("1fr", "1fr", "1fr", max(23, equal_width), max(29, equal_width), "1fr")
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
@@ -499,7 +495,7 @@ class SurfboardRack(Grid):
             label.display = spare > 0
             label.styles.width = card.region.width
             label.styles.offset = (card.region.x - self.content_region.x,
-                card.region.bottom - self.content_region.y + max(0, (spare - 1) // 2))
+                card.region.bottom - self.content_region.y + max(0, spare // 2))
 
     def compose(self):
         for index, slot in enumerate(SLOTS):
