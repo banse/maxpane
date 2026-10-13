@@ -458,3 +458,38 @@ async def test_oracles_card_click_opens_native_dashboard_and_escape_retains_card
         await pilot.press('escape')
         assert app.screen is hub
         assert hub.query_one('#surfboard-card-oracles') is card
+
+
+async def test_loading_repaints_completed_cache_without_offering_more_reads():
+    from copy import deepcopy
+    from unittest.mock import AsyncMock, Mock
+    from maxpane_dashboard.screens.surfboard import SurfboardScreen
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import hub_payload, HubPayloadManager
+    payload = hub_payload()
+    loading = deepcopy(payload)
+    next(c for c in loading['surfboard_cards'] if c['key'] == 'work')['status'] = 'loading'
+    manager = HubPayloadManager(loading)
+    manager.fetch_hub_snapshot = AsyncMock(return_value=loading)
+    manager.get_hub_snapshot = Mock(return_value=payload)
+    app = HubHarness(loading)
+    app.hub = SurfboardScreen(manager)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        hub = app.hub
+        hub._age_timer.pause()
+        hub._refresh_timer.pause()
+        assert '◌ loading' in painted(app)
+        offered = manager.fetch_hub_snapshot.await_count
+        hub._tick_terminal_age()
+        await pilot.pause()
+        assert '◌ loading' not in painted(app)
+        assert not hub._loading
+        manager.get_hub_snapshot.assert_called_once()
+        assert manager.fetch_hub_snapshot.await_count == offered
+        hub._tick_terminal_age()
+        await pilot.pause()
+        manager.get_hub_snapshot.assert_called_once()
+        hub.action_refresh()
+        await pilot.pause()
+        assert manager.fetch_hub_snapshot.await_count == offered + 1

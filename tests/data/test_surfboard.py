@@ -101,12 +101,12 @@ def test_unknown_detector_prevents_a_false_zero_bar():
 
 
 @pytest.mark.parametrize('state,partial,rows,primary,secondary,status,meter', [
-    ('unavailable', False, None, '—', 'unavailable', 'unavailable', 'unavailable'),
+    ('unavailable', False, None, '—', 'in progress', 'unavailable', 'unavailable'),
     ('ok', False, [], '0', 'in progress', 'idle', 'ok'),
     ('ok', False, ['assessing', 'attested', 'mismatch'], '1', 'in progress', 'assessing', 'ok'),
     ('ok', True, ['assessing'] * 7 + ['attested'] * 86 + ['blocked'] * 7,
      '7', 'in progress', 'assessing', 'partial'),
-    ('stale', True, ['assessing', 'attested'], '1', 'stale ' + hub.hhmm(900), 'stale', 'stale'),
+    ('stale', True, ['assessing', 'attested'], '1', 'in progress', 'stale', 'stale'),
 ])
 def test_oracle_card_counts_only_loaded_rows_and_retains_source_state(
         state, partial, rows, primary, secondary, status, meter):
@@ -163,10 +163,10 @@ def test_work_card_preserves_stale_and_unknown_counts_without_false_zero():
     stale = dict(state='stale', read_ts=90, summary=summary, partial=True,
                  jobs_loaded=100, workflows_loaded=100, details_loaded=24, details_expected=42)
     row = next(c for c in hub.cards({'surf_work': stale}, {}, now=300) if c['key']=='work')
-    assert (row['primary'], row['secondary'], row['status'], row['meter_state']) == ('5', f'stale {hub.hhmm(90)}', 'stale', 'stale')
+    assert (row['primary'], row['secondary'], row['status'], row['meter_state']) == ('5', '1 workflow', 'stale', 'stale')
     assert row['work_summary']['build'] is row['work_summary']['review'] is None
     unknown = next(c for c in hub.cards({}, {}, now=300) if c['key']=='work')
-    assert (unknown['primary'], unknown['secondary'], unknown['status'], unknown['meter_state']) == ('—', 'unavailable', 'unavailable', 'unavailable')
+    assert (unknown['primary'], unknown['secondary'], unknown['status'], unknown['meter_state']) == ('—', '— workflows', 'unavailable', 'unavailable')
     assert all(value is None for value in unknown['work_summary'].values())
 
 
@@ -200,7 +200,7 @@ def test_announce_card_counts_unique_replies_and_answers_in_last_day(items,foote
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES
     data={f'sig_{name}_state':'fired' if i<5 else 'ok' for i,name in enumerate(SIGNAL_NAMES)}
     row=hub.cards(data,{},now=100000,announce_items=items)[0]
-    assert row['primary']=='unavailable' and row['secondary']==footer
+    assert row['primary']=='—' and row['secondary']==footer
     assert row['numerator']==5 and row['denominator']==len(SIGNAL_NAMES)
     assert '24h' in row['detail'] and 'cached' in row['detail']
     assert row['status']!='active'

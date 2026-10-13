@@ -99,7 +99,7 @@ async def test_unknown_and_successfully_empty_feeds_differ_and_overview_is_expli
         terminal = pilot.app.query_one(SurfboardTerminal)
         terminal.update_data()
         await pilot.pause()
-        assert "events unavailable" in painted(pilot.app)
+        assert "events —" in painted(pilot.app)
         terminal.update_data(surfboard_events=[], surfboard_overview=dict(agents_online=0, working_now=0,
             jobs_24h=0, oracles_24h=0, accepted_24h=0))
         await pilot.pause()
@@ -221,16 +221,16 @@ async def test_footer_age_tick_updates_only_footer_and_keeps_live_log_draft_and_
 
 @pytest.mark.parametrize("changes,expected,excluded", [
     ({"market_basis": "fdv"}, "FDV", ""),
-    ({"market_value_usd": None}, "$IMD unavailable", "[····"),
-    ({"market_value_usd": True}, "$IMD unavailable", "$1.00"),
-    ({"market_value_usd": float("nan")}, "$IMD unavailable", "nan"),
+    ({"market_value_usd": None}, "$IMD —", "[····"),
+    ({"market_value_usd": True}, "$IMD —", "$1.00"),
+    ({"market_value_usd": float("nan")}, "$IMD —", "nan"),
     ({"market_state": "stale"}, "$33.69M", "stale"),
     ({"overview_state": "stale"}, "189.1B tokens used", "stale"),
     ({"provider_ts": None}, "age unknown", "10s ago"),
     ({"provider_ts": float("inf")}, "age unknown", "inf"),
     ({"provider_ts": 1_700_000_011}, "0s ago", "-1s"),
     ({"as_of": True}, "age unknown", ""),
-    ({"inference_tokens": True}, "tokens unavailable", "1.0 tokens"),
+    ({"inference_tokens": True}, "tokens —", "1.0 tokens"),
 ])
 async def test_footer_keeps_figures_fdv_and_age_without_stale_labels(changes, expected, excluded):
     async with TerminalApp().run_test(size=(96, 14)) as pilot:
@@ -444,7 +444,7 @@ async def test_launch_missing_metadata_is_unavailable_and_zero_score_reviews_are
         terminal.update_data(surfboard_events=[launch,review])
         await pilot.pause()
         text=painted(pilot.app)
-        assert 'deployer     deployed     launch unavailable · chain unavailable' in text
+        assert 'deployer     deployed     launch — · chain —' in text
         assert 'verifier' not in text
 
 
@@ -511,3 +511,43 @@ async def test_launch_address_links_use_only_the_served_chain(chain,explorer):
         else:
             assert links and all(target[2]==explorer and target[5].endswith('/address/'+address)
                                  for target in links)
+
+
+async def test_terminal_loading_clears_and_preserves_cached_figures_and_literal_prose():
+    async with TerminalApp().run_test(size=(149, 20)) as pilot:
+        terminal = pilot.app.query_one(SurfboardTerminal)
+        terminal.update_data(surfboard_sources={'overview': {'state': 'loading'}},
+                             surfboard_footer=dict(FOOTER, market_state='loading', overview_state='loading'))
+        await pilot.pause()
+        text = painted(pilot.app)
+        assert '◌ loading' in text and 'unavailable' not in text
+        assert '$33.69M' in text and '189.1B tokens used' in text
+        terminal.update_data()
+        await pilot.pause()
+        text = painted(pilot.app)
+        assert 'loading' not in text and 'unavailable' not in text
+        assert 'events —' in text and '$IMD —' in text
+        terminal.add_reply('stale and unavailable are literal reply words')
+        rows = events(0, 1)
+        rows[0]['kind'] = 'job'
+        rows[0]['objective'] = 'unavailable source; stale build'
+        terminal.update_data(surfboard_events=rows)
+        await pilot.pause()
+        text = painted(pilot.app)
+        assert 'stale and unavailable are literal reply words' in text
+        assert 'Unavailable source; stale build' in text
+
+
+@pytest.mark.parametrize('width', [149, 97, 94])
+@pytest.mark.parametrize('source', ['market_state', 'overview_state'])
+async def test_cached_terminal_footer_shows_loading_for_each_source(width, source):
+    from textual.widgets import Static
+    async with TerminalApp().run_test(size=(width, 20)) as pilot:
+        terminal = pilot.app.query_one(SurfboardTerminal)
+        terminal.update_data(surfboard_footer=dict(FOOTER, **{source: 'loading'}))
+        await pilot.pause()
+        footer = terminal.query_one('#surfboard-terminal-footer', Static)
+        text = pilot.app.screen._compositor.render_strips()[footer.content_region.y].crop(footer.content_region.x, footer.content_region.right).text
+        assert '◌ loading' in text
+        assert '$33.69M' in text and '189.1B' in text
+        assert '‹ widen' not in text and '…' not in text

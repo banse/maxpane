@@ -100,7 +100,7 @@ def hub_payload(kind="normal"):
                       market_basis="fdv", market_state="stale", overview_state="stale")
     elif kind == "unavailable":
         for card in cards[:8]:
-            card.update(status="unavailable", primary="unavailable",
+            card.update(status="unavailable", primary="—" if card['key'] == 'announce' else "unavailable",
                         secondary={"pool4":"USD", "protocol":"unavailable"}.get(card["key"], "unavailable"),
                         meter_state="unavailable", share_price=None,
                         numerator=None, denominator=None, points=None)

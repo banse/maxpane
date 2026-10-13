@@ -461,7 +461,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     age = now-timestamp(latest["ts"]) if latest else None
     new_announcement = age is not None and age < FIRED_TTL_S
     reply_text = f"{replies:,} new {'reply' if replies == 1 else 'replies'}" if replies is not None else "unavailable"
-    card("announce", "SURFBOARD", latest["text"] if latest else "unavailable", reply_text,
+    card("announce", "SURFBOARD", latest["text"] if latest else "—", reply_text,
          f"ALERT · {known}/{len(states)} detectors known · {fired} signals · 24h replies (cached channel) · last announcement {compact_age(age)}"
          f" · post read {hhmm(announce_read_ts)} · snapshot {hhmm(data.get('as_of'))}", "dashboard",fired if known==len(states) else None,len(states) if known==len(states) else None)
     overview=data.get("surfboard_overview") or {}; hourly=data.get("surfboard_hourly") or {}
@@ -526,8 +526,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     if oracle_state == "ok" and oracles.get("partial"):
         oracle_state = "partial"
     count_names = sorted(set(counts) - {"assessing", "attested"} | {"disagreed", "blocked"})
-    subtitle = (f"stale {hhmm(oracles.get('read_ts'))}" if oracle_state == "stale" else
-                "in progress" if oracle_state in ("ok", "partial") else "unavailable")
+    subtitle = "in progress"
     card("oracles", "ORACLES", f"{assessing:,}" if assessing is not None else "—", subtitle,
          f"ORACLES · newest {ORACLE_PAGE_LIMIT} requests · counts from loaded rows"
          + f" · {_value(loaded)} loaded · {_value(assessing)} assessing · {_value(attested)} attested"
@@ -557,7 +556,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
                 if supply and number(burn) is not None and data.get("pool4_network") != "SEPOLIA" else None)
     percent = ("<0.01%" if 0 < fraction < .0001 else f"{fraction:.2%}") if fraction is not None else None
     supply_state = supply_source.get("state", "unavailable")
-    supply_text = ("~" if supply_state == "stale" else "") + percent + " of supply" if percent is not None else "unavailable"
+    supply_text = percent + " of supply" if percent is not None else "unavailable"
     card("protocol","PROTOCOL",_protocol_stats(burn, reward, fee), supply_text,
          f"BURN · global supply {supply_state} · as of {hhmm(supply_source.get('read_ts'))}"
          f" · {_value(burn,' burned')} · {_value(reward,' rewarded')} · measured flow · EXPERIMENTAL"
@@ -625,8 +624,6 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     state = work.get("state", "unavailable")
     subtitle = (f"{workflows:,} workflow{'s' if workflows != 1 else ''}"
                 if workflows is not None else "— workflows")
-    if state != "ok":
-        subtitle = f"stale {hhmm(work.get('read_ts'))}" if state == "stale" else "unavailable"
     card("work", "WORK IN PROGRESS", f"{jobs:,}" if jobs is not None else "—", subtitle,
          "WORK IN PROGRESS · " + " · ".join(f"{_value(summary[key])} {key}" for key in SURF_WORK_SUMMARY_KEYS)
          + f" · loaded {_value(work.get('jobs_loaded'))} jobs · {_value(work.get('workflows_loaded'))} workflows"

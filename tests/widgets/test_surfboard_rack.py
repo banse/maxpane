@@ -101,8 +101,8 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
         for status, primary, subtitle, chains, glyphs in [
             ('assessing', '7', 'in progress', 2, ['╶─┐', '  │', '  ╵']),
             ('idle', '0', 'in progress', 0, ['╭─╮', '│ │', '╰─╯']),
-            ('stale', '7', 'stale 05:20', 2, ['╶─┐', '  │', '  ╵']),
-            ('unavailable', '—', 'unavailable', None, ['', '—', '']),
+            ('stale', '7', 'in progress', 2, ['╶─┐', '  │', '  ╵']),
+            ('unavailable', '—', 'in progress', None, ['', '—', '']),
         ]:
             card.set_data(dict(primary=primary, secondary=subtitle, status=status,
                                numerator=chains, denominator=100, meter_kind='oracles'))
@@ -141,7 +141,7 @@ def painted(app):
     ("1,000 online", ["╶╮ ╭─╮╭─╮╭─╮", " │ │ ││ ││ │", "╶┴╴╰─╯╰─╯╰─╯"]),
     ("12,345 online", ["╶╮ ╶─╮╶─╮╷ ╷╭─╴", " │ ┌─┘ ─┤╰─┤╰─╮", "╶┴╴╰─╴╶─╯  ╵╶─╯"]),
     ("1,234,567 online", ["", "1,234,567", ""]),
-    ("unavailable", ["", "unavailable", ""]),
+    ("unavailable", ["", "—", ""]),
 ])
 async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(size, primary, expected):
     async with RackApp().run_test(size=size) as pilot:
@@ -610,14 +610,14 @@ async def test_token_empty_unread_and_unavailable_keep_independent_volume_footer
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
         for envelope, body in [
-            (None, 'unavailable'),
+            (None, '—'),
             (dict(ranking, rows=None, newest=None, state='unavailable', known=0, total=None),
-             'unavailable'),
+             '—'),
             (dict(ranking, rows=[], newest=None, known=0, total=0), 'no launches'),
             (dict(ranking, rows=[], newest=dict(ranking['newest'], age_s=172800), known=0, total=0),
              'no launches'),
             (dict(ranking, rows=None, state='unavailable', known=0, total=3),
-             'unavailable'),
+             '—'),
         ]:
             card.set_data(dict(data, token_ranking=envelope, status='idle', secondary='0 new'))
             await pilot.pause()
@@ -718,7 +718,7 @@ async def test_top_agents_three_aligned_rows_and_medal_stars(state):
         assert '‹' not in strips[0].text
 
 
-@pytest.mark.parametrize('top_agents,expected', [(None, 'unavailable'), ([], 'no agents')])
+@pytest.mark.parametrize('top_agents,expected', [(None, '—'), ([], 'no agents')])
 async def test_top_agents_unknown_and_empty_are_distinct(top_agents, expected):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
@@ -747,7 +747,7 @@ async def test_protocol_supply_footer_is_fitted_and_marks_clipping():
             assert '‹' not in strips[0].text
         card.set_data(dict(secondary='unavailable'))
         await pilot.pause()
-        assert 'unavailable' in card_strips(pilot.app, card)[-1].text
+        assert '—' in card_strips(pilot.app, card)[-1].text
         assert 'unavailable burned' not in card_strips(pilot.app, card)[-1].text
 
 
@@ -852,8 +852,8 @@ async def test_work_card_unknown_idle_and_stale_reset_activity_ink():
         for state, primary, secondary, counts in [
             ('active', '5', '1 workflow', dict(build=5, review=4)),
             ('idle', '0', '0 workflows', dict(build=0, review=0)),
-            ('stale', '5', 'stale 05:20', dict(build=5, review=4)),
-            ('unavailable', '—', 'unavailable', dict(build=None, review=None)),
+            ('stale', '5', '1 workflow', dict(build=5, review=4)),
+            ('unavailable', '—', '— workflows', dict(build=None, review=None)),
         ]:
             card.set_data(dict(status=state, primary=primary, secondary=secondary, work_summary=counts))
             await pilot.pause()
@@ -870,3 +870,51 @@ async def test_work_card_unknown_idle_and_stale_reset_activity_ink():
         await pilot.pause()
         assert ('— build · — review' if card.region.width >= 24 else '— build · — rev') in card_strips(app, card)[-1].text
         assert card.data['destination'] == 'work'
+
+
+@pytest.mark.parametrize('size', [(149, 45), (144, 37)])
+async def test_boardroom_loading_footers_keep_cached_content_and_clear(size):
+    from tests.surfboard_fixtures import hub_payload
+    async with RackApp().run_test(size=size) as pilot:
+        app = pilot.app
+        rack = app.query_one(SurfboardRack)
+        payload = hub_payload('normal')
+        rack.update_data(**payload)
+        await pilot.pause()
+        for data in payload['surfboard_cards']:
+            card = app.query_one('#surfboard-card-' + data['key'], SurfboardCard)
+            before = [s.text for s in card_strips(app, card)[1:-1]]
+            card.set_data(dict(data, status='loading'))
+            await pilot.pause()
+            strips = card_strips(app, card)
+            if card.empty_seat:
+                assert 'loading' not in '\n'.join(s.text for s in strips)
+                continue
+            assert '◌ loading' in strips[-1].text
+            assert [s.text for s in strips[1:-1]] == before
+            card.set_data(data)
+            await pilot.pause()
+            assert 'loading' not in card_strips(app, card)[-1].text
+
+
+async def test_boardroom_missing_values_have_no_unavailable_labels_or_false_loader():
+    from tests.surfboard_fixtures import hub_payload
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        pilot.app.query_one(SurfboardRack).update_data(**hub_payload('unavailable'))
+        await pilot.pause()
+        for card in pilot.app.query(SurfboardCard):
+            text = '\n'.join(s.text for s in card_strips(pilot.app, card))
+            assert 'unavailable' not in text and 'stale' not in text and 'loading' not in text
+
+
+@pytest.mark.parametrize('word', ['unavailable', 'stale'])
+async def test_literal_announcement_is_not_a_missing_value_placeholder(word):
+    from maxpane_dashboard.data.surfboard import cards
+    post = dict(kind='self', ts=99, tx_hash='0x'+'a'*64, text=word)
+    data = cards({}, {}, now=100, announce_items=[post])[0]
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one('#surfboard-card-announce', SurfboardCard)
+        for status in ('active', 'idle', 'loading'):
+            card.set_data(dict(data, status=status))
+            await pilot.pause()
+            assert word in '\n'.join(s.text for s in card_strips(pilot.app, card)[1:-1])

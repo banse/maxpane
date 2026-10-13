@@ -372,3 +372,27 @@ Validation: 482 affected/composing tests, 124 guards and 12 docpins passed. Thre
 implementation mutations and the reviewer's hidden-detail cancellation mutation
 were rejected and restored. Final review approved with no findings after 12 focused
 checks. No full suite, open findings, endpoint additions or layout-pin changes.
+
+## Boardroom loading display — 2026-10-14
+
+Owner-requested display exception: remove automatic stale/unavailable placeholders
+from cards and terminal summaries. Retain cached figures, use em dashes for missing
+values, and preserve source clocks/states internally and in card tooltips. WIP keeps
+its workflow subtitle; ORACLES keeps `in progress`. Literal event/reply prose remains
+untouched. Actual in-flight reads show `◌ loading`, including the terminal footer with cached
+figures; empty agent inputs are unchanged. Literal single-word announcements are
+not treated as missing-value placeholders.
+The existing age timer requests guarded cache-only repaints while loading, so finished
+reads appear without waiting for the next 30-second network poll or offering new I/O.
+
+Live keyless renders at 149×45 showed 13 pending indicators, then zero after reads
+finished, with no automatic stale/unavailable text. Existing 144×37 layout checks
+remain green. The final affected/composing run passed all 560 cases; 124 guards and 12 docpins
+passed. The final live reading preview also showed the terminal footer loader
+beside cached values. Three implementation mutations
+were caught and restored (stuck loader, extra network read, hidden loader).
+No full suite run. Initial review identified literal single-word announcement handling
+and cached terminal-footer loading; both were fixed with compositor regressions.
+Scoped re-review approved both fixes after eight passing cases and two reversal
+mutations caught and restored. No outstanding findings.
+The final combined fast-guard/docpin check passed all 127 selected cases.

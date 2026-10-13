@@ -823,6 +823,14 @@ guarantee, not a promise that arbitrary notes fit; measured content limits are i
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
 The title is centered muted gray `IMD BOARDROOM`. ONCHAIN FEED uses white active inset
 borders and border text, matching its body; SWARM BUILDS retains its activity colors.
+Per the owner's 2026-10-14 display adjustment, the boardroom omits automatic stale
+and unavailable text. Cached figures remain visible, missing figures use `—`, and
+source states/clocks remain in internal snapshots and card tooltips. Actual pending
+reads show `◌ loading` in affected card footers and terminal source summaries.
+The existing one-second age timer requests cache-only repaints while loading, using
+the shared refresh guard; these repaints offer no network work. Success, failure,
+and cancellation clear the indicator. Empty seat inputs and literal feed/reply prose
+are unchanged. Ordinary network polling remains 30 seconds.
 Seven launchers route to the native modes; Escape returns to the retained rack, while menu/Tab
 clear the return context. TOKENS opens the retained SWARM TOKENS dashboard. Its LAST 24h
 inset ranks the top three supported, unambiguous deployments by selected-pool 24h USD volume,
@@ -851,8 +859,8 @@ footer is centered `Identity.md`. Three-line gaps below ORACLES and PROTOCOL sep
 from the AGENT seats; regular-weight キープ / ビルディング match the muted card-footer
 labels and are centered on the middle line.
 Other card gaps remain one line; all card sizes stay equal.
-The terminal hides automatic stale labels (including generated command summaries) and V/P/D
-service flags at every width, per the owner; underlying metadata and unavailable states remain.
+The terminal hides automatic stale labels (including generated command summaries), unavailable
+placeholders and V/P/D service flags at every width; underlying source metadata remains.
 It supports bounded read-only commands and replaces its recent `/swarm` event window
 without duplicating events or losing replies, draft or scroll anchor. Source polling and full
 collection are manager-owned single-flight tasks; only the hub skips the startup prefetch join.
@@ -886,7 +894,7 @@ or through the ORACLES card replacing LAUNCHPAD. The card uses ASSESSING digits,
 `in progress` inside and the distinct loaded chain count (`n chains`) outside. Fresh positive
 assessing counts paint green; zero,
 stale and unavailable paint neutral. Counts cover loaded rows, with page-cap/partial
-coverage and the source clock in the tooltip; stale counts have a dated subtitle.
+coverage and the source clock in the tooltip; retained counts keep `in progress` inside.
 The boardroom shares the list reader without selected-detail reads. Either visible
 consumer keeps list polling eligible; only native ORACLES enables selected details.
 Its six rack cards and 66/34 request/detail body consume only `surf_oracles`.
@@ -919,8 +927,8 @@ even when an older verdict says accepted. Job and workflow states have separate 
 
 The boardroom replaces PORTFOLIO with WORK IN PROGRESS. Its ACTIVE JOBS digits
 and workflow subtitle share `surf_work.summary`; `work_summary` carries the
-build/review footer counts. Unknown values remain em dashes; stale counts retain
-an explicit timestamp. Coverage and read details remain in the card tooltip.
+build/review footer counts. Unknown values remain em dashes; retained counts keep
+the workflow subtitle. Coverage and read details remain in the card tooltip.
 Click/Enter opens Work and Escape returns to the retained boardroom.
 
 The tree groups workflow jobs and steps, then other unfinished jobs. Selection and

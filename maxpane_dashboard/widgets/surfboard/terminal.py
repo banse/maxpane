@@ -118,12 +118,12 @@ class SurfboardTerminal(PanelBase):
 
     def compose(self):
         # The owner's web-terminal layout explicitly replaces PanelBase's title gap.
-        yield Static(Text("network unavailable"), classes="terminal-overview panel-title")
+        yield Static(Text("network —"), classes="terminal-overview panel-title")
         yield RichLog(id="surfboard-events", wrap=False, min_width=1, max_lines=260, auto_scroll=False, markup=False)
         with Horizontal(classes="terminal-prompt"):
             yield Static(Text("> "))
             yield Input(placeholder="? for commands", id="surfboard-command", max_length=COMMAND_LIMIT)
-        yield Static(Text("$IMD unavailable · tokens unavailable · age unknown"), id="surfboard-terminal-footer", classes="terminal-footer")
+        yield Static(Text("$IMD — · tokens — · age unknown"), id="surfboard-terminal-footer", classes="terminal-footer")
 
     @property
     def command_input(self):
@@ -181,8 +181,9 @@ class SurfboardTerminal(PanelBase):
         self.call_after_refresh(self._paint)
 
     def _header(self, width):
+        loading = (self._sources.get('overview') or {}).get('state') == 'loading'
         if self._overview is None:
-            return Text("network unavailable", style=FAIL), False
+            return Text("◌ loading" if loading else "network —", style=DIM), False
         overview = self._overview or {}
         fields = (("agents_online", "online"), ("working_now", "working"),
                   ("jobs_24h", "jobs"), ("oracles_24h", "oracles"), ("accepted_24h", "steps"))
@@ -196,6 +197,8 @@ class SurfboardTerminal(PanelBase):
                 valid = isinstance(value, int) and _number(value) is not None
                 shown = (fmt_compact(value) if compact and value >= 1000 else fmt_int(value)) if valid else "—"
                 result.append(shown, style="bold " + LIVE).append(" " + label, style=self.rich_style.color.name)
+            if loading:
+                result.append(" · ◌ loading", style=DIM)
             if result.cell_len <= width:
                 return result, compact
         result.truncate(width, overflow="ellipsis")
@@ -249,7 +252,7 @@ class SurfboardTerminal(PanelBase):
         elif raw_kind == "review":
             actor, state = "verifier", "onchain"
             scores, accepted = details.get("scores"), details.get("accepted")
-            counts = "scores unavailable" if scores is None else f"{scores} score" + ("" if scores == 1 else "s")
+            counts = "scores —" if scores is None else f"{scores} score" + ("" if scores == 1 else "s")
             if scores is not None and accepted is not None:
                 counts += ", all accepted" if accepted == scores else ", all rejected" if accepted == 0 else f", {accepted} accepted"
             description = _joined(description, counts)
@@ -257,14 +260,14 @@ class SurfboardTerminal(PanelBase):
             actor = "publisher"
             ens, cid = flatten(details.get("ens_name")), flatten(details.get("cid"))
             state = "hosted" if ens else "published"
-            description = _joined(description, ens or (cid[:16] + "…" if cid else "site unavailable"))
+            description = _joined(description, ens or (cid[:16] + "…" if cid else "site —"))
         elif raw_kind == "launch":
             actor, state = "deployer", "deployed"
             launch = details.get("launch_number")
-            name = flatten(details.get("token")) or ("launch unavailable" if launch is None else f"launch {launch}")
+            name = flatten(details.get("token")) or ("launch —" if launch is None else f"launch {launch}")
             chain = details.get("chain_id")
             chain_name = {1: "Ethereum", 8453: "Base", 11155111: "Sepolia"}.get(chain)
-            description = _joined(name, chain_name or ("chain unavailable" if chain is None else f"chain {chain}"))
+            description = _joined(name, chain_name or ("chain —" if chain is None else f"chain {chain}"))
         elif raw_kind == "agent":
             accepted, failed = details.get("seat_accepted"), details.get("seat_failed")
             last = _number(details.get("last_work"))
@@ -322,21 +325,24 @@ class SurfboardTerminal(PanelBase):
         footer = self.query_one("#surfboard-terminal-footer", Static)
         width = max(1, footer.content_size.width)
         data = self._footer
+        loading = any(data.get(source) == 'loading' for source in ('market_state', 'overview_state'))
         market = _number(data.get("market_value_usd"))
-        market_known = market is not None and data.get("market_basis") in ("market_cap", "fdv") and data.get("market_state") in ("ok", "stale")
-        prefix = "$IMD " + (_market_money(market) if market_known else "unavailable")
+        market_known = market is not None and data.get("market_basis") in ("market_cap", "fdv") and data.get("market_state") in ("ok", "stale", "loading")
+        prefix = "$IMD " + (_market_money(market) if market_known else "—")
         if market_known and data.get("market_basis") == "fdv":
             prefix += " FDV"
         tokens = data.get("inference_tokens")
-        token_text = fmt_compact(tokens) if isinstance(tokens, int) and _number(tokens) is not None and data.get("overview_state") in ("ok", "stale") else None
+        token_text = fmt_compact(tokens) if isinstance(tokens, int) and _number(tokens) is not None and data.get("overview_state") in ("ok", "stale", "loading") else None
         observed, provider = _number(data.get("as_of")), _number(data.get("provider_ts"))
         age_seconds = _number(max(0, observed + self._elapsed - provider)) if observed is not None and provider is not None and self._elapsed is not None else None
         age = fmt_age(age_seconds) if age_seconds is not None else None
         candidates = []
         for compact in (False, True):
-            token_part = token_text + (" tokens" if compact else " tokens used") if token_text is not None else "tokens unavailable"
+            token_part = token_text + (" tokens" if compact else " tokens used") if token_text is not None else "tokens —"
             age_part = (age + " ago" if compact else age + " ago last updated") if age is not None else "age unknown"
             tail = " | " + token_part + " | " + age_part
+            if loading:
+                tail += " · ◌ loading"
             # Goal bars shrink before any factual figure does.
             room = max(1, min(24, width - cell_len(prefix + " [] $1B goal" + tail)))
             if market_known:
@@ -373,7 +379,8 @@ class SurfboardTerminal(PanelBase):
         clipped = False
         previous = None
         if not self._events:
-            rows.append(("events:empty", Text("events unavailable" if self._events is None else "no recent events", style="dim")))
+            missing = "◌ loading" if (self._sources.get('overview') or {}).get('state') == 'loading' else "events —"
+            rows.append(("events:empty", Text(missing if self._events is None else "no recent events", style="dim")))
         replies = dict(self._replies)
         for key in self._transcript:
             if key in (self._events or {}):

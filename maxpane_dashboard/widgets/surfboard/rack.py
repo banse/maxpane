@@ -59,7 +59,7 @@ def _token_preview(rows, width, style):
     """Three ranked rows; the data layer owns ordering and price comparison."""
     lines = [(Text('', style=style), False) for _ in range(3)]
     if not rows:
-        lines[1] = fit_prose('unavailable' if rows is None else 'no launches', width, style=style)
+        lines[1] = fit_prose('—' if rows is None else 'no launches', width, style=style)
         return lines
     for index, row in enumerate(rows[:3]):
         marker, ink = {'up': ('↑', Style.parse(GREEN)), 'down': ('↓', Style.parse(RED))}.get(
@@ -75,7 +75,7 @@ def _top_agents_preview(rows, width, style):
     """One shared column budget for the canonical accepted-job leaders."""
     lines = [(Text('', style=style), False) for _ in range(3)]
     if not rows:
-        lines[1] = fit_prose('unavailable' if rows is None else 'no agents', width, style=style)
+        lines[1] = fit_prose('—' if rows is None else 'no agents', width, style=style)
         return lines
     shown = [(str(row['token_id']), f"{row['accepted']:,}" if _number(row.get('accepted')) else '—',
               row['rank']) for row in rows[:3]]
@@ -100,7 +100,7 @@ def _top_agents_preview(rows, width, style):
 
 def _protocol_footer(card, width):
     share = flatten(card.get('secondary'))
-    text = share.removesuffix(' of supply') + ' burned' if share.endswith('% of supply') else 'unavailable'
+    text = share.removesuffix(' of supply') + ' burned' if share.endswith('% of supply') else '—'
     return fit_prose(text, width, style=MUTED)
 
 
@@ -272,13 +272,13 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.key == "oracles":
             self.data["destination"] = "oracles"
             self.data.setdefault("primary", "—")
-            self.data.setdefault("secondary", "unavailable")
+            self.data.setdefault("secondary", "in progress")
             self.data.setdefault("detail", "ORACLES · unavailable · Enter to open")
             self.tooltip = Text(self.detail)
         if self.key == "work":
             self.data["destination"] = "work"
             self.data.setdefault("primary", "—")
-            self.data.setdefault("secondary", "unavailable")
+            self.data.setdefault("secondary", "— workflows")
             self.data.setdefault("detail", "WORK IN PROGRESS · unavailable · Enter to open")
             self.tooltip = Text(self.detail)
         if self.empty_seat:
@@ -286,6 +286,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                              meter_state="empty", detail="AGENT · empty seat · Enter to type a seat number")
         else:
             self._seat_error = ""
+        self.tooltip = Text(self.detail)
         self.set_class(self.empty_seat, "empty")
         self.border_title = Text("⊙ " + self.title)
         self._update_meter()
@@ -294,7 +295,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
 
     def _update_meter(self):
         self.styles.border_subtitle_align = "center" if self.key == "protocol" or self.empty_seat else "left"
-        if self.key == "announce":
+        if self.data.get("status") == "loading":
+            self.border_subtitle = Text("◌ loading", style=AMBER)
+        elif self.key == "announce":
             # Textual reserves six cells for corners, border stubs and padding.
             self.border_subtitle = signal_meter_text(self.data, max(0, self.region.width - 6))
         else:
@@ -312,8 +315,12 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         color = MUTED if muted else {"active": GREEN, "working": GREEN, "ready": "bright_yellow",
             "stale": AMBER, "unavailable": AMBER, "paused": AMBER,
             "offline": RED, "error": RED, "failed": RED}.get(status, AMBER)
-        primary = flatten(self.data.get("primary")) or "unavailable"
-        secondary = flatten(self.data.get("secondary")) or "unavailable"
+        primary = flatten(self.data.get("primary")) or "—"
+        secondary = flatten(self.data.get("secondary"))
+        if self.key != "announce" and primary == "unavailable":
+            primary = "—"
+        if secondary == "unavailable":
+            secondary = ""
         ranking = self.data.get("token_ranking") or {}
         if self.key == "swarm-tokens" and ranking.get("state", "unavailable") != "ok":
             color = AMBER
@@ -378,7 +385,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             amount_width = max((cell_len(row[1]) for row in fields if len(row) == 3), default=1)
             preview = []
             for parts in fields:
-                name, amount, unit = parts if len(parts) == 3 else ("unavailable", "—", "IMD")
+                name, amount, unit = parts if len(parts) == 3 else ("—", "—", "IMD")
                 row = f"{name.ljust(label_width)} {amount.ljust(amount_width)} {unit}"
                 available = max(0, inside - 2)
                 if cell_len(row) > available:

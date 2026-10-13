@@ -77,6 +77,8 @@ class SurfboardScreen(DashboardScreen):
         self._age_clock = clock
         self._age_captured = None
         self._age_timer = None
+        self._loading = False
+        self._cache_only = False
 
     def compose(self) -> ComposeResult:
         yield Static(Text("IMD BOARDROOM"), id="surfboard-title")
@@ -96,6 +98,7 @@ class SurfboardScreen(DashboardScreen):
     @on(events.ScreenSuspend)
     def _suspend_hub(self) -> None:
         self._stop_age_timer()
+        self._cache_only = False
         setter = getattr(self._data_manager, "set_hub_active", None)
         if setter is not None:
             setter(False)
@@ -117,8 +120,14 @@ class SurfboardScreen(DashboardScreen):
         if self._age_timer is not None and self.is_current and self._age_captured is not None:
             self.query_one(SurfboardTerminal).update_age(
                 max(0, self._age_clock() - self._age_captured))
+            if self._loading and not self._refresh_in_flight:
+                self._cache_only = True
+                self.start_refresh()
 
     async def _fetch_data(self) -> dict:
+        if self._cache_only:
+            self._cache_only = False
+            return self._data_manager.get_hub_snapshot()
         return await self._data_manager.fetch_hub_snapshot()
 
     def _prime_status_bar(self, bar: StatusBar) -> None:
@@ -126,6 +135,7 @@ class SurfboardScreen(DashboardScreen):
 
     def _update_title(self, data: dict) -> None:
         self._age_captured = self._age_clock()
+        self._loading = any(card.get('status') == 'loading' for card in data.get('surfboard_cards') or [])
         self.call_after_refresh(self._render_chrome)
 
     def on_resize(self) -> None:

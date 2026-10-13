@@ -47,7 +47,7 @@ async def test_hub_work_card_shares_completed_snapshot_with_dashboard(manager):
     try:
         first = await m.fetch_hub_snapshot()
         row = next(c for c in first['surfboard_cards'] if c['key']=='work')
-        assert row['status']=='unavailable' and row['primary']=='—'
+        assert row['status']=='loading' and row['primary']=='—'
         await asyncio.wait_for(entered.wait(), 1)
         task = m._work_reader.task
         await m.fetch_hub_snapshot()
@@ -149,7 +149,7 @@ async def test_hub_oracles_share_list_native_detail_and_retained_failure_clock(m
         assert stale['surf_oracles']['read_ts'] == raw['read_ts']
         assert retained['primary'] == card['primary']
         assert retained['meter_state'] == retained['status'] == 'stale'
-        assert retained['secondary'].startswith('stale ')
+        assert retained['secondary'] == 'in progress'
         clock.now += 119
         await m.fetch_and_compute()
         assert m.swarm_client.fetch_oracle_requests.await_count == 2
@@ -649,10 +649,11 @@ async def test_tokens_card_shares_retained_catalogue_and_counts_24h_without_full
         m._swarm_launch_keys = lambda: dict(swarm_launch_rows=cached)
         second = await m.fetch_hub_snapshot()
         card = next(c for c in second['surfboard_cards'] if c['key']=='swarm-tokens')
-        assert (card['primary'], card['secondary'], card['status']) == ('3', '3 new', 'active')
+        assert (card['primary'], card['secondary'], card['status']) == ('3', '3 new', 'loading')
         assert adapter is m.swarm_tokens_manager()
         assert set(adapter._tasks) == {'catalogue', 'markets'}
         await adapter.wait_pending()
+        assert next(c for c in m.get_hub_snapshot()['surfboard_cards'] if c['key']=='swarm-tokens')['status'] == 'active'
         for i, token in enumerate(adapter._tokens(m.swarm_tokens_source(), clock.now, include_inactive=True)):
             adapter._market[token['id']] = (dict(state='ok', market_pool='pool',
                 _expected_pool=token['launch_pool'], volume_24h=1000-i*10, price_usd=1), clock.now)
@@ -809,4 +810,52 @@ async def test_hub_snapshot_offers_bounded_volume_reads_without_awaiting_them(ma
         adapter.offer_hub_volume.assert_called_once_with()
     finally:
         m._closing = False
+        await m.close()
+
+
+@pytest.mark.parametrize('source,expected', [
+    ('overview', {'swarm'}), ('hourly', {'swarm'}),
+    ('records', {'board', 'agent'}), ('supply', {'protocol'}),
+    ('work', {'work'}), ('oracles', {'oracles'}),
+    ('workers', {'board', 'agent'}), ('pool4', {'pool4', 'protocol'}),
+    ('catalogue', {'swarm-tokens'}), ('markets', {'swarm-tokens'}),
+    ('volume', {'swarm-tokens'}), ('history', set()),
+    ('full', {'announce', 'pool4', 'protocol'}),
+])
+@pytest.mark.parametrize('outcome', ['success', 'failure', 'cancel'])
+async def test_hub_loading_tracks_only_relevant_unfinished_reads(manager, source, expected, outcome):
+    m, _ = manager
+    m.set_hub_seats([420, None, None, None])
+    baseline = m._project_hub()
+    release = asyncio.Event()
+    async def read():
+        await release.wait()
+        if outcome == 'failure':
+            raise ValueError('read failed')
+    task = asyncio.create_task(read())
+    if source in ('overview', 'hourly', 'records', 'supply'):
+        m._hub_source_tasks[source] = task
+    elif source in ('work', 'oracles'):
+        getattr(m, f'_{source}_reader').task = task
+    elif source in ('catalogue', 'markets', 'volume', 'history'):
+        m._swarm_tokens_manager._tasks[source] = task
+    else:
+        setattr(m, {'workers': '_swarm_board_task', 'pool4': '_pool4_task', 'full': '_full_task'}[source], task)
+    try:
+        loading = m.get_hub_snapshot()
+        assert {c['key'] for c in loading['surfboard_cards'] if c['status'] == 'loading'} == expected
+        assert [c['primary'] for c in loading['surfboard_cards']] == [c['primary'] for c in baseline['surfboard_cards']]
+        assert (loading['surfboard_sources']['overview']['state'] == 'loading') == (source == 'overview')
+        assert (loading['surfboard_footer']['market_state'] == 'loading') == (source == 'full')
+        assert m._hub_sources() == baseline['surfboard_sources']  # transient display only
+        if outcome == 'cancel':
+            task.cancel()
+        else:
+            release.set()
+        await asyncio.gather(task, return_exceptions=True)
+        finished = m.get_hub_snapshot()
+        assert finished['surfboard_cards'] == baseline['surfboard_cards']
+        assert finished['surfboard_sources'] == baseline['surfboard_sources']
+        assert finished['surfboard_footer'] == baseline['surfboard_footer']
+    finally:
         await m.close()

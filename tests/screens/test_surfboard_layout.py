@@ -380,14 +380,14 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 assert "LAST 24h" in text
                 if kind != "unavailable":
                     assert card["secondary"] in text and "24h" in text
-                expected = ('unavailable',) if kind == 'unavailable' else ('SFPT', 'RAI', 'TDEMO', '↑', '↓')
+                expected = ('—',) if kind == 'unavailable' else ('SFPT', 'RAI', 'TDEMO', '↑', '↓')
                 assert all(word in text for word in expected), r
                 continue
             if card["key"] == "announce":
                 text=r["card_text"]["announce"]
                 assert " LATEST " in text
                 if kind == "unavailable":
-                    assert "unavailable" in text
+                    assert "—" in text and "unavailable" not in text
                 else:
                     assert "You can now" in text and "deploy via the" in text and "..." in text
                     assert card["secondary"].removesuffix(" replies") in text
@@ -396,7 +396,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 text = r["card_text"]["board"]
                 assert "TOP AGENTS" in text
                 if kind == "unavailable":
-                    assert "unavailable" in text
+                    assert "—" in text and "unavailable" not in text
                 else:
                     assert text.count("★") == 3
                     for row in card['top_agents']:
@@ -408,12 +408,12 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 text = r["card_text"]["oracles"]
                 assert "ASSESSING" in text
                 if kind == "unavailable":
-                    assert card['primary'] in text
+                    assert '—' in text
                 elif kind == "stress":
                     assert "╶╮ ╭─╮╭─╮" in text
                 else:
                     assert "╶─┐" in text
-                assert card['secondary'] in text
+                assert (card['secondary'] if kind != 'unavailable' else '—') in text
                 continue
             if card["key"] == "protocol":
                 text = r["card_text"]["protocol"]
@@ -427,12 +427,15 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 text = r["card_text"]["pool4"]
                 assert " IMD PRICE " in text and "USD" in text, r
                 expected = (("╶─┐ ╭─╮╭─╮", "  │ ╰─┤│ │", "  ╵•╶─╯╰─╯")
-                            if kind in ("normal", "wide") else (card["primary"],))
+                            if kind in ("normal", "wide") else ('—' if kind == 'unavailable' else card["primary"],))
                 assert all(row in text for row in expected), r
                 continue
             if card["key"] == "agent":
                 text = r["card_text"]["agent"]
                 assert " SEAT " in text, r
+                if kind == 'unavailable':
+                    assert '—' in text and 'unavailable' not in text
+                    continue
                 expected = (("╭─╮" * 5, "╰─┤" * 5, "╶─╯" * 5) if kind == "stress" else
                             ("╷ ╷╶─╮╭─╮", "╰─┤┌─┘│ │", "  ╵╰─╴╰─╯") if kind in ("normal", "wide") else
                             (card["primary"],))
@@ -442,9 +445,10 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
             if card["key"] == "swarm":
                 text = r["card_text"]["swarm"]
                 assert "AGENTS" in text and "AGENTS ONLINE" not in text, r
-                expected = ("╭─╮╭─╴╶─╮", "├─┤├─╮ ─┤", "╰─╯╰─╯╶─╯") if kind in ("normal", "wide") else (card["primary"],)
+                expected = ("╭─╮╭─╴╶─╮", "├─┤├─╮ ─┤", "╰─╯╰─╯╶─╯") if kind in ("normal", "wide") else ('—' if kind == 'unavailable' else card["primary"],)
                 assert all(row in text for row in expected), r
-                assert card["secondary"] in text, r
+                if kind != 'unavailable':
+                    assert card["secondary"] in text, r
                 continue
             assert card["primary"] in r["card_text"][card["key"]], (card, r)
             assert card["secondary"] in r["card_text"][card["key"]], (card, r)

@@ -7523,7 +7523,44 @@ class SurfManager:
                 self.cache.get_last_good(SLOT_SWARM_CONTRIBUTORS),
                 self.cache.get_last_good(SLOT_SWARM_WORKERS), now=now)
             data['surf_agent_hero'] = self._agent_hero(data, agent_capture, agent_sources, quote, now=now)
+        self._hub_loading_state(data)
         return data
+
+    def _hub_loading_state(self, data: dict) -> None:
+        """Transient display states; cached source envelopes remain authoritative."""
+        def running(task):
+            return task is not None and not task.done() and not task.cancelling()
+
+        sources = self._hub_source_tasks
+        tokens = getattr(self, '_swarm_tokens_manager', None)
+        reads = {
+            'announce': (self._full_task,),
+            'swarm': (sources.get('overview'), sources.get('hourly')),
+            'pool4': (self._full_task, self._pool4_task),
+            'protocol': (self._full_task, self._pool4_task, sources.get('supply')),
+            'board': (self._swarm_board_task, sources.get('records')),
+            'work': (self._work_reader.task,),
+            'oracles': (() if self._oracles_reader._reading_detail else (self._oracles_reader.task,)),
+            'swarm-tokens': tuple(tokens._tasks.get(name) for name in ('catalogue', 'markets', 'volume')) if tokens else (),
+        }
+        for card in data['surfboard_cards']:
+            key = card['key']
+            if key in hub.SURFBOARD_AGENT_KEYS:
+                if card.get('token_id') is None:
+                    continue
+                key = 'board'
+            if any(running(task) for task in reads.get(key, ())):
+                card['status'] = 'loading'
+        if running(sources.get('overview')):
+            data['surfboard_sources'] = dict(data['surfboard_sources'],
+                overview=dict(data['surfboard_sources']['overview'], state='loading'))
+            data['surfboard_footer']['overview_state'] = 'loading'
+        if running(self._full_task):
+            data['surfboard_footer']['market_state'] = 'loading'
+
+    def get_hub_snapshot(self) -> dict[str, Any]:
+        """Read completed cache writes without offering any network work."""
+        return self._project_hub()
 
     def _swarm_hero(self, sources: dict, now: float) -> dict:
         """Project one synchronous cache snapshot, including each route's clock."""
