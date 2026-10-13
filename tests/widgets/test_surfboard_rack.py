@@ -298,10 +298,11 @@ async def test_pool4_digit_face(size,key,primary,secondary,label,expected,green,
         assert not footer.style.bold and footer.style.color.get_truecolor()==ink
 
 
-@pytest.mark.parametrize('size', [(180,45), (149,45), (140,36)])
+@pytest.mark.parametrize('size', [(180,45), (149,45), (143,36)])
 async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
     from maxpane_dashboard.data.surfboard import cards
 
+    # This bare rack has no scrolling viewport; its rightmost card needs the rack floor.
     async with RackApp().run_test(size=size) as pilot:
         card = pilot.app.query_one('#surfboard-card-protocol', SurfboardCard)
         for values, expected in [
@@ -362,11 +363,11 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.update_data()
         rack.focus_card("announce")
         rack.move_focus("down")
-        assert rack.focused_card == "protocol"
+        assert rack.focused_card == "board"
         rack.move_focus("right")
         assert rack.focused_card == "swarm-tokens"
         rack.move_focus("up")
-        assert rack.focused_card == "board"
+        assert rack.focused_card == "protocol"
         rack.move_focus("left")
         assert rack.focused_card == "pool4"
         rack.move_focus("left")
