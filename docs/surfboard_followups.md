@@ -305,3 +305,19 @@ Validation: 165 affected/composing tests, 124 guards and 12 docpins passed.
 Four mutations were rejected, including the row pin in both directions.
 Review approved with no findings after five focused cases and a further
 caption-placement mutation. No full suite or outstanding findings.
+
+
+## One-line side captions — 2026-10-13
+
+Owner revision: reduce the gaps below LAUNCHPAD and PORTFOLIO to one line,
+retaining the centered bold キープ / ビルディング in those lines. Other styling,
+equal card sizes and the full-height center terminal are preserved.
+
+Fresh keyless 149×45 preview shown. Four-payload in-situ checks restored the
+144×35 minimum without clipping; all card gaps are one line across resizing.
+The two extra rows are no longer reserved, so the rack floor is 31 rows again.
+
+Validation: 165 affected/composing tests, 124 guards and 12 docpins passed.
+Four regression mutations were rejected, including the row pin both ways.
+Review approved with no findings after five focused cases and an additional
+caption-overlap mutation. No full suite or outstanding findings.

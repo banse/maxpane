@@ -431,7 +431,7 @@ class SurfboardRack(Grid):
     """Own fixed slots and terminal children; the screen dispatches to both."""
     DEFAULT_CSS = """
     SurfboardRack { layout: grid; grid-size: 6 4; grid-columns: 1fr 1fr 1fr 1fr 1fr 1fr;
-        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 33; min-width: 141; }
+        grid-rows: 1fr 1fr 1fr 1fr; grid-gutter: 1 1; height: 1fr; min-height: 31; min-width: 141; }
     SurfboardRack > SurfboardCard { height: 1fr; min-height: 7; padding: 0 1;
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; border-subtitle-align: left; }
@@ -467,11 +467,10 @@ class SurfboardRack(Grid):
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
-        # Reserve two extra side-column lines below LAUNCHPAD and PORTFOLIO.
-        card_height = max(7, (self.content_size.height - gaps - 2) // rows)
+        card_height = max(7, (self.content_size.height - gaps) // rows)
         self.query(SurfboardCard).set_styles(height=card_height)
         # The terminal spans the last track and can use its leftover space.
-        self.styles.grid_rows = (card_height, card_height + 2, card_height, "1fr")
+        self.styles.grid_rows = (card_height,) * (rows - 1) + ("1fr",)
         self.call_after_refresh(self._position_taglines)
 
     def _position_taglines(self):
@@ -480,7 +479,7 @@ class SurfboardRack(Grid):
             label = self.query_one(f"#surfboard-{label_id}", Static)
             label.styles.width = card.region.width
             label.styles.offset = (card.region.x - self.content_region.x,
-                card.region.bottom - self.content_region.y + 1)
+                card.region.bottom - self.content_region.y)
 
     def compose(self):
         for index, slot in enumerate(SLOTS):

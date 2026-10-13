@@ -768,9 +768,9 @@ seats and accepted counts, led by gold/silver/bronze stars with one leading blan
 right with one trailing blank; oversized counts drop grouping, then use compact notation only
 if necessary. Its activity footer remains rank one's.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
-footer is `Identity.md`. Three-line gaps below LAUNCHPAD and PORTFOLIO separate them from
-the AGENT seats; bold centered キープ / ビルディング occupy each gap's middle line in the card
-surface color. Other card gaps remain one line; all card sizes stay equal.
+footer is `Identity.md`. One-line gaps below LAUNCHPAD and PORTFOLIO separate them from
+the AGENT seats; bold centered キープ / ビルディング occupy those lines in the card surface
+color. All card gaps are one line; all card sizes stay equal.
 The terminal hides automatic stale labels (including generated command summaries) and V/P/D
 service flags at every width, per the owner; underlying metadata and unavailable states remain.
 It supports bounded read-only commands and replaces its recent `/swarm` event window
