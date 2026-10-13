@@ -44,7 +44,8 @@ def test_contract_canonical_arithmetic_and_independent_source_clocks(snapshot):
     assert result['accepted'] == dict(state='ok', read_ts=NOW-60, listed=True,
         accepted=3253, attempts=3392, percent=pytest.approx(95.90212264150944))
     assert result['effort'] == dict(state='ok', read_ts=NOW-80, listed=True,
-        hours=pytest.approx(8.093120833333334), output_tokens=1215919)
+        hours=pytest.approx(8.093120833333334), output_tokens=1215919,
+        premium_percent=None, premium_jobs=None, model_jobs=None, work_jobs=None)
     assert result['rank'] == dict(state='ok', read_ts=NOW-60, listed=True, rank=1, ranked_of=2, delta=2)
     assert result['rewards'] == dict(state='ok', read_ts=NOW-40, imd=12.84, usd=120.8244,
                                     seats=3, usd_state='ok', usd_read_ts=NOW-20, last_paid_ts=None, paid_recent=False)
@@ -65,6 +66,49 @@ def test_contract_canonical_arithmetic_and_independent_source_clocks(snapshot):
     assert result['status']['last_work_kind'] == 'accepted'
     assert result['status']['work_read_ts'] == NOW-50
     assert snapshot == before
+
+
+def test_premium_share_counts_actual_known_models_and_reports_coverage(snapshot):
+    # Attempts on the same job still represent separate work; configured models
+    # must not turn a Sonnet submission into premium usage.
+    snapshot['data']['swarm_seat_summary']['models'] = [dict(model='astra', effort='high')]
+    models = ['openai/gpt-6-astra', 'Claude-Opus-4.6', 'claude-fable-5-1',
+              'claude-sonnet-5', 'astral', 'my-fablet', None, '', 123]
+    rows = [dict(job_id='same-job', model=model, answer_state='read') for model in models]
+    rows[2]['answer_state'] = 'no_reply'  # usage remains valid without answer prose
+    rows += [dict(model='opus', answer_state='unavailable')]
+    snapshot['data']['swarm_seat_work_rows'] = rows
+    before = deepcopy(snapshot)
+    effort = hero.project(**snapshot)['effort']
+    assert {key: effort[key] for key in ('premium_percent', 'premium_jobs', 'model_jobs', 'work_jobs')} == dict(
+        premium_percent=50., premium_jobs=3, model_jobs=6, work_jobs=10)
+    assert snapshot == before
+
+
+@pytest.mark.parametrize('rows,expected', [
+    ([], (None, 0, 0, 0)),
+    ([dict(model=None, answer_state='read')], (None, 0, 0, 1)),
+    ([dict(model='sonnet', answer_state='read')], (0., 0, 1, 1)),
+    ([dict(model='OPUS', answer_state='read')], (100., 1, 1, 1)),
+    (None, (None, None, None, None)),
+    ([None], (None, None, None, None)),
+])
+def test_premium_zero_and_unknown_are_distinct(snapshot, rows, expected):
+    snapshot['data']['swarm_seat_work_rows'] = rows
+    effort = hero.project(**snapshot)['effort']
+    assert tuple(effort[key] for key in ('premium_percent', 'premium_jobs', 'model_jobs', 'work_jobs')) == expected
+
+
+@pytest.mark.parametrize('state', ['ok', 'stale', 'pending', 'busy', 'unavailable', 'unknown_seat'])
+def test_premium_models_follow_detail_availability_not_contributor_clock(snapshot, state):
+    snapshot['data']['swarm_seat_work_rows'] = [dict(model='fable', answer_state='read')]
+    snapshot['sources']['contributors'] = dict(state='unavailable', read_ts=None)
+    snapshot['sources']['seat']['state'] = state if state != 'unknown_seat' else 'ok'
+    snapshot['data']['swarm_seat_state'] = 'ok' if state in ('ok', 'stale') else state
+    effort = hero.project(**snapshot)['effort']
+    assert effort['hours'] is None
+    assert effort['premium_percent'] == (100. if state in ('ok', 'stale') else None)
+    assert effort['work_jobs'] == (1 if state in ('ok', 'stale') else None)
 
 
 @pytest.mark.parametrize('state', ['pending', 'busy', 'unknown_seat', None])

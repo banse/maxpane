@@ -242,7 +242,7 @@ failures stay unavailable and busy responses stay `busy`. Never-paired and known
 from zero. A retained never-paired result keeps its internal qualification and
 confirmation time until a successful new read.
 
-SEAT keeps the IDMD token as its digits. Its inner caption is `online`, `working`,
+SEAT uses `Identity.md` as its inner title and keeps the IDMD token as its digits. Its inner caption is `online`, `working`,
 or `offline` from the independent worker observation; green for online/working,
 red for offline, neutral for unknown. The outer `AGENT #x` uses the ERC-8004
 registration ID from that seat's detail, never the IDMD token as a substitute.
@@ -252,13 +252,20 @@ ACCEPTED groups accepted digits with commas, shows `of N` attempts on the inner
 bottom border, and percentage plus a full-width meter outside. Its inner border
 and EFFORT's are always neutral. Zero attempts says `no attempts`; no record
 says `not recorded`. EFFORT shows contributor wall-clock hours and lifetime output
-tokens; input and cached-input tokens are excluded. Hero RANK compares consecutive
+tokens; input and cached-input tokens are excluded. Its outer footer is `x% premium`,
+the Astra/Opus/Fable share among all loaded work attempts with known actual usage
+models (`read` or `no_reply`), before RECORD filtering. Hover shows the premium,
+known-model and total recorded counts; advertised runtime models never enter this
+calculation. Unknown coverage shows `--% premium`, while known nonpremium work
+can show `0% premium`. Model facts follow selected detail availability independently
+of the contributor clocks. Hero RANK compares consecutive
 confirmed records reads per seat: green/up for gained places, red/down for lost
-places, neutral/dash for unchanged or first read. Repaints retain the last delta;
+places, neutral with a blank footer for unchanged or first read. Repaints retain the last delta;
 the next unchanged successful read clears it. Legacy persisted rank history is
 unchanged. These sources stay independent of seat-detail availability.
 
-STATUS shows large active-slot and capacity digits with a static grey `0F`
+STATUS shows large active-slot and capacity digits with a static `0F` colored
+exactly like the effective outer card background (also in the compact fallback)
 between them. Its inner bottom
 border shows the newest seat activity as `worked HH:MM` or `accepted HH:MM`;
 the full date and independent detail-read clock live in its tooltip. The border

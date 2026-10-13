@@ -19,7 +19,8 @@ def payload():
     return dict(
         seat=dict(source, token_id=420, agent_id="8127", selected_by="saved", read_error=False),
         accepted=dict(source, listed=True, accepted=960, attempts=1000, percent=96.),
-        effort=dict(source, listed=True, hours=320., output_tokens=1800000),
+        effort=dict(source, listed=True, hours=320., output_tokens=1800000,
+                    premium_percent=75., premium_jobs=3, model_jobs=4, work_jobs=10),
         rewards=dict(source, imd=12.84, usd=120.82, seats=3, usd_state="ok", usd_read_ts=1791775800., last_paid_ts=1791775680., paid_recent=True),
         rank=dict(source, listed=True, rank=27, ranked_of=1024, delta=2),
         status=dict(source, live_state="working", working=2, capacity=3, devices=2,
@@ -73,9 +74,9 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         assert [(card.region.x, card.region.width) for card in cards[:6]] == [(card.region.x, card.region.width) for card in cards[6:]]
         assert cards[6].region.y - cards[0].region.bottom == 1
         for key, words in {
-            "seat": ("IDMD", "working", "AGENT #8127"),
+            "seat": ("Identity.md", "working", "AGENT #8127"),
             "accepted": ("of 1,000", "96%", "▰"),
-            "effort": ("HOURS", "1.8M tokens", "CONTRIBUTORS"),
+            "effort": ("HOURS", "1.8M tokens", "75% premium"),
             "rewards": ("IMD", "$120.82", "paid "),
             "rank": ("POSITION", "of 1,024", "↑ 2"),
             "status": ("WORKER", "worked", "BUSY", "▰"),
@@ -357,12 +358,15 @@ async def test_rank_and_reward_borders_follow_read_changes_and_payment_recency()
         neutral = border_color(app, "accepted")
         assert "paid " in painted(app, "rewards") and "OWNER SHARE" not in painted(app, "rewards")
         for delta, recent, arrow, expected in [(2, True, "↑ 2", green), (-3, False, "↓ 3", app.ansi_theme.ansi_colors[1]),
-                                               (0, False, "—", neutral), (None, None, "—", neutral)]:
+                                               (0, False, "", neutral), (None, None, "", neutral)]:
             data["rank"]["delta"] = delta
             data["rewards"]["paid_recent"] = recent
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
-            assert arrow in painted(app, "rank")
+            if arrow:
+                assert arrow in strips(app, "rank")[-1].text
+            else:
+                assert set(strips(app, "rank")[-1].text) <= set(" ╰─╯")
             assert border_color(app, "rank") == expected
             assert border_color(app, "rewards") == (green if recent else neutral)
 
@@ -398,3 +402,46 @@ async def test_reward_payment_time_fits_narrow_footer_without_losing_date(width)
         await pilot.resize_terminal(170, 45)
         await pilot.pause()
         assert "paid " + date in strips(pilot.app, "rewards")[-1].text
+
+
+@pytest.mark.parametrize("width,working,glyph", [(149, 2, "╭─╮╭─╴"), (132, None, "0F")])
+async def test_status_separator_matches_outer_card_background_in_tall_and_compact_readouts(width, working, glyph):
+    data = payload()
+    data["status"]["working"] = working
+    async with Harness(data).run_test(size=(width, 45)) as pilot:
+        await pilot.pause()
+        rendered = strips(pilot.app, "status")
+        card = pilot.app.query_one("#hero-status")
+        middle = card.region.width // 2
+        background = next(iter(rendered[1].crop(middle, middle + 1))).style.bgcolor.get_truecolor()
+        separator = [segment for strip in rendered for segment in strip if glyph in segment.text]
+        assert separator, painted(pilot.app, "status")
+        assert all(segment.style.color.get_truecolor() == background for segment in separator)
+
+
+@pytest.mark.parametrize("percent,listed,label", [(75., True, "75% premium"), (0., True, "0% premium"),
+                                                  (None, True, "--% premium"), (101., True, "--% premium"),
+                                                  (75., False, "75% premium")])
+async def test_effort_shows_premium_share_with_known_model_coverage(percent, listed, label):
+    data = payload()
+    data["effort"].update(premium_percent=percent, listed=listed)
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        assert label in strips(app, "effort")[-1].text
+        assert "CONTRIBUTORS" not in painted(app, "effort")
+        assert "Premium models: 3/4 known-model work attempts; model coverage 4/10 recorded attempts. Astra, Opus, Fable." in str(app.query_one("#hero-effort").tooltip)
+        assert border_color(app, "effort") == border_color(app, "accepted")
+
+
+@pytest.mark.parametrize("state", ["pending", "unavailable"])
+async def test_premium_footer_survives_independent_contributor_failure(state):
+    data = payload()
+    data["effort"].update(state=state, hours=None, output_tokens=None)
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        assert "75% premium" in strips(pilot.app, "effort")[-1].text
+        data["effort"].update(premium_percent=None, premium_jobs=None, model_jobs=None, work_jobs=None)
+        pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+        await pilot.pause()
+        assert ("loading" if state == "pending" else "unavailable") in strips(pilot.app, "effort")[-1].text

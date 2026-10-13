@@ -1520,3 +1520,21 @@ three outdated expectations; after correction, all 178 affected-file cases passe
 Final review approved with 21 focused tests and a further pending-state mutation;
 the grey separator was also verified in compact and unknown-count output.
 No residual review findings. No full suite was run.
+
+## AGENT labels and premium model usage — 2026-10-13
+
+SEAT now reads `Identity.md`; STATUS's static `0F` matches the outer card
+background in tall and compact modes; unchanged RANK has no footer. EFFORT shows
+the Astra/Opus/Fable share among known actual submission models, with premium,
+known-model and total recorded attempt counts on hover. The owner explicitly
+selected this subset calculation. It uses all loaded selected-seat work before
+RECORD filters, adds no API reads, and remains available through contributor
+outages when model evidence is valid.
+
+The keyless native 149×45 preview showed seat 3 at 20.69% premium: 12 of 58
+known-model attempts, with 1,354 recorded attempts. Native 131–133-column checks
+preserved the existing 132-column boundary. The scoped composing run passed
+745 cases, guards 124 and doc pins 12. Final review found one footer-priority
+defect; the fix passed all 48 widget/native-integration cases. Three data
+mutations and reviewer footer mutations were killed and restored byte-for-byte.
+Scoped re-review: Approved. No residual findings; no full suite run.

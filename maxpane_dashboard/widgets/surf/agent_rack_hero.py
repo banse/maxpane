@@ -50,11 +50,11 @@ def _status_word(source):
 def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     records = []
     for key, title, heading, footer in (
-        ("seat", "SEAT", "IDMD", "AGENT #--"),
+        ("seat", "SEAT", "Identity.md", "AGENT #--"),
         ("accepted", "ACCEPTED", "WORK", "--%"),
-        ("effort", "EFFORT", "HOURS", "CONTRIBUTORS"),
+        ("effort", "EFFORT", "HOURS", "--% premium"),
         ("rewards", "REWARDS", "IMD", "paid --"),
-        ("rank", "RANK", "POSITION", "—"),
+        ("rank", "RANK", "POSITION", ""),
         ("status", "STATUS", "WORKER", "UNKNOWN"),
         ("owner", "OWNER", "WALLET", "OPEN / COPY"),
         ("runtime", "RUNTIME", "SOFTWARE", "VERSION"),
@@ -69,6 +69,9 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         section = raw if state in _AVAILABLE else {}
         fields = dict(key=key, title=title, heading=heading, footer=footer, state=state,
                       read_ts=number(raw.get("read_ts")), accent=state == "ok")
+        if key == "effort":
+            percent = number(raw.get("premium_percent"))
+            fields["footer"] = f"{percent:.4g}% premium" if percent is not None and percent <= 100 else "--% premium"
         if key == "seat":
             token = count(raw.get("token_id"))
             fields["digits"] = str(token) if token is not None and number(token) is not None else "--"
@@ -109,7 +112,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["digits"] = _digits(section.get("rank"))
             fields["subtitle"] = "of " + _count(count(section.get("ranked_of")))
             delta = _number(section.get("delta"), signed=True)
-            fields["footer"] = f"{'↑' if delta > 0 else '↓'} {abs(delta):g}" if delta else "—"
+            fields["footer"] = f"{'↑' if delta > 0 else '↓'} {abs(delta):g}" if delta else ""
             fields["accent"] = delta is not None and delta > 0
         elif key == "status":
             fields["digits"] = f"{_count(count(section.get('working')))} 0F {_count(count(section.get('capacity')))}"
@@ -223,7 +226,9 @@ class AgentRackCard(Pool4HeroCard):
 
     def _footer(self):
         data = self.data
-        if data.state in ("pending", "busy"):
+        if data.key == "effort" and data.footer != "--% premium":
+            self.border_subtitle = Text().append(data.footer, style="dim")
+        elif data.state in ("pending", "busy"):
             self.border_subtitle = Text().append("◌ loading" if data.state == "pending" else "busy", style="yellow")
         elif data.state in ("unknown_seat", "stale_unknown_seat", "empty", "unavailable"):
             word = {"unknown_seat": "never paired", "stale_unknown_seat": "never paired", "empty": "EMPTY"}.get(data.state, "unavailable")
@@ -266,14 +271,16 @@ class AgentRackCard(Pool4HeroCard):
         palette = self.app.get_css_variables()
         frame = self._frame_style()
         ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
+        base, surface = self.background_colors
+        separator = ink + Style(color=(base + surface).rich_color)
         values = data.digits.split()
         groups = [[segment.text for segment in Digits(value).render(Style()) if segment.text != "\n"] for value in values]
         rows = []
         if len(groups) == 3 and all(value != "--" for value in values) and sum(len(group[0]) for group in groups) + 2 <= inside:
             for n in range(3):
-                rows.append(Text(groups[0][n] + " ", style=ink).append(groups[1][n], style=ink + Style(dim=True)).append(" " + groups[2][n], style=ink))
+                rows.append(Text(groups[0][n] + " ", style=ink).append(groups[1][n], style=separator).append(" " + groups[2][n], style=ink))
         else:
-            row = Text(values[0] + " ", style=ink).append("0F", style=ink + Style(dim=True)).append(" " + values[-1], style=ink)
+            row = Text(values[0] + " ", style=ink).append("0F", style=separator).append(" " + values[-1], style=ink)
             row.truncate(inside, overflow="ellipsis")
             rows = [Text(""), row, Text("")]
         heading = " " + clip(data.heading, inside - 2) + " "
@@ -313,6 +320,9 @@ class AgentRackCard(Pool4HeroCard):
         if record.key == "owner" and record.state in _AVAILABLE and is_address(source.get("address")):
             tip.append("\n").append_text(address_text(source["address"], explorer=EXPLORER))
             tip.append("\npaired " + mmdd_hhmm(number(source.get("paired_ts"))))
+        elif record.key == "effort":
+            premium, known, total = (_count(count(source.get(key))) for key in ("premium_jobs", "model_jobs", "work_jobs"))
+            tip.append(f"\nPremium models: {premium}/{known} known-model work attempts; model coverage {known}/{total} recorded attempts. Astra, Opus, Fable.")
         elif record.key == "runtime":
             tip.append(f"\n{flatten(source.get('runtime'))} · daemon {flatten(source.get('daemon'))}"
                        f"\nlatest {flatten(source.get('latest_version')) or '--'} · checked {hhmm(number(source.get('checked_ts')), unknown='--:--')} local"

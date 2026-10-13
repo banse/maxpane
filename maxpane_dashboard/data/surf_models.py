@@ -1528,7 +1528,10 @@ SURF_AGENT_HERO_STATES = ("ok", "partial", "stale", "unavailable", "pending", "b
 SURF_AGENT_HERO_FIELDS = {
     "seat": ("state", "read_ts", "token_id", "selected_by", "read_error", "agent_id"),
     "accepted": ("state", "read_ts", "listed", "accepted", "attempts", "percent"),
-    "effort": ("state", "read_ts", "listed", "hours", "output_tokens"),
+    # Premium share covers recorded attempts with known actual usage models;
+    # model_jobs/work_jobs expose coverage independently of receipt counters.
+    "effort": ("state", "read_ts", "listed", "hours", "output_tokens",
+               "premium_percent", "premium_jobs", "model_jobs", "work_jobs"),
     "rewards": ("state", "read_ts", "imd", "usd", "seats", "usd_state", "usd_read_ts", "last_paid_ts", "paid_recent"),
     "rank": ("state", "read_ts", "listed", "rank", "ranked_of", "delta"),
     "status": ("state", "read_ts", "live_state", "working", "capacity", "devices", "paused_until_ts", "failures",

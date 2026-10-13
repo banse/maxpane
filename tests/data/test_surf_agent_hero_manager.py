@@ -12,6 +12,27 @@ from tests.data.test_surf_manager_seat_rewards import _RewardsClient
 NOW = 1791806400.0  # after the committed seat's pairing and work timestamps
 
 
+async def test_premium_usage_uses_all_loaded_answers_and_clears_when_seat_changes(tmp_path):
+    from tests.data.test_surf_manager_answers import Answers
+    fake = Answers()
+    for response, model in zip(fake.responses.values(), ('gpt-6-astra', 'opus', 'fable', 'sonnet', 'sonnet', 'sonnet')):
+        submission = response['submissions'][0]
+        submission['usage'] = dict(submission['usage'], model=model)
+    m = _manager(tmp_path, fake, clock=FakeClock(NOW))
+    m.set_seat(420)
+    try:
+        await m._pool_swarm_seat(420, NOW)
+        effort = m._project_hub()['surf_agent_hero']['effort']
+        assert (effort['premium_percent'], effort['premium_jobs'], effort['model_jobs'], effort['work_jobs']) == (75., 3, 4, 6)
+        m.record_cap = 1
+        assert m._project_hub()['surf_agent_hero']['effort'] == effort
+        assert len(fake.answer_calls) == 4  # projection adds no eager history reads
+        m.set_seat(7)
+        assert m._project_hub()['surf_agent_hero']['effort']['premium_percent'] is None
+    finally:
+        await m.close()
+
+
 async def test_rank_color_delta_compares_confirmed_reads_not_repaints(agent):
     m, clock, _, _ = agent
     capture = dict(seats={}, rewards={}, rewards_failed=set(), runtime={}, activity=None)

@@ -1,4 +1,6 @@
 """Twelve AGENT rack facts from existing independent reads; no I/O or clock."""
+import re
+
 from maxpane_dashboard.analytics.surf_launch_checks import address
 from maxpane_dashboard.analytics.surf_swarm_signals import runtime_outdated, daemon_differs
 from maxpane_dashboard.analytics.surfboard import count, number, ratio, seat_token
@@ -61,6 +63,21 @@ def _rows(value, fields):
     if not isinstance(value, list) or any(not isinstance(row, dict) for row in value):
         return None
     return [{name: validate(row.get(name)) for name, validate in fields.items()} for row in value]
+
+
+def _premium_usage(rows, detail):
+    """Actual submission usage across all loaded work, with explicit coverage."""
+    result = dict(premium_percent=None, premium_jobs=None, model_jobs=None, work_jobs=None)
+    if (detail['state'] not in ('ok', 'partial', 'stale') or not isinstance(rows, list)
+            or any(not isinstance(row, dict) for row in rows)):
+        return result
+    models = [row['model'].strip().casefold() for row in rows
+              if row.get('answer_state') in ('read', 'no_reply')
+              and isinstance(row.get('model'), str) and row['model'].strip()]
+    premium = sum(bool(re.search(r'(?:^|[^a-z])(astra|opus|fable)(?:$|[^a-z])', model))
+                  for model in models)
+    return dict(premium_percent=100 * premium / len(models) if models else None,
+                premium_jobs=premium, model_jobs=len(models), work_jobs=len(rows))
 
 
 def _runtime(data, summary, detail, sources, now):
@@ -156,6 +173,7 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
     effort = (_facts(contributors, listed=listed, hours=seconds / 3600 if seconds is not None else None,
                      output_tokens=count(contrib.get('output_tokens')) if listed else None) if listed is not False
               else dict(contributors, listed=False, hours=None, output_tokens=None))
+    effort.update(_premium_usage(data.get('swarm_seat_work_rows'), detail))
     reward_source = _source(sources, 'rewards', now)
     if detail['state'] not in ('ok', 'partial', 'stale'):
         reward_source = detail
