@@ -31,7 +31,7 @@ SLOTS = (
     ("announce", "ONCHAIN FEED", 0, 0), ("swarm", "BUILT BY SWARM", 0, 1),
     ("work", "WIP", 0, 2), ("oracles", "ORACLES", 0, 3),
     ("pool4", "POOL4", 0, 4), ("protocol", "PROTOCOL", 0, 5),
-    ("swarm-tokens", "TOKENS", 1, 0), ("board", "FLEET", 1, 5),
+    ("board", "FLEET", 1, 0), ("swarm-tokens", "TOKENS", 1, 5),
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
 )
@@ -534,7 +534,7 @@ class SurfboardRack(Grid):
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
-        # Reserve two extra side-column lines below TOKENS and FLEET.
+        # Reserve two extra side-column lines below FLEET and TOKENS.
         card_height = max(7, (self.content_size.height - gaps - 2) // rows)
         self.query(SurfboardCard).set_styles(height=card_height)
         # The terminal spans the last track and can use its leftover space.
@@ -542,7 +542,7 @@ class SurfboardRack(Grid):
         self.call_after_refresh(self._position_taglines)
 
     def _position_taglines(self):
-        for key, label_id in (("swarm-tokens", "keep"), ("board", "building")):
+        for key, label_id in (("board", "keep"), ("swarm-tokens", "building")):
             card = self.query_one(f"#surfboard-card-{key}", SurfboardCard)
             label = self.query_one(f"#surfboard-{label_id}", Static)
             # Match the dim footer ink while leaving the gap background unchanged.
