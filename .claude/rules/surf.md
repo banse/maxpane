@@ -801,8 +801,12 @@ no network await in the event handler). Rendered row identity is token metadata,
 text or a raw-payload index. FLEET fits whole sanitized values and counts omissions with `+N`.
 Long runtime names use an explicit ellipsis/widen content exception; fixed counters cannot
 clip at the full-layout pin. BOARD's measured guarantees live beside its pins in screens/surf.py.
-FLEET uses fixed-width dim labels, grouped metadata, bold counts and an explicitly advertised
-model mix, with workers in its title clock and contributors in a separate sub-header. A worker
+FLEET uses fixed-width dim labels and bold counts. Every runtime, OS and slot bucket has its
+own line; model lists the top three named advertised model/effort pairs, one per line, followed
+by the omitted-pair count and advertised note. Daemon shows only the most-used version.
+Long metadata names ellipsise while preserving counts and full values on hover. Groups expand
+and shrink with the cached payload; additional categories remain reachable through body scrolling.
+Workers retain their title clock and contributors a separate sub-header. A worker
 counts once per distinct model/effort pair, including an explicit none bucket; multiple pairs
 can make the model-count sum exceed LIVE. Paused none is green; a paused count is red.
 

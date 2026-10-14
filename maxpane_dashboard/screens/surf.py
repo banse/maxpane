@@ -2068,17 +2068,19 @@ BOARD_BODY_ID = "surf-board-body"
 #: may ellipsise with widen; full model/effort pairs remain available on hover.
 SURF_BOARD_FULL_LAYOUT_COLUMNS = 143
 
-#: BOARD height, 33 -> 35 on 2026-10-12: the approved rack adds two hero
-#: rows while leaving the native body unchanged. Measured through the same
-#: in-situ b-body sweep: capture and stress fit from 35; v4, without a paused
-#: detail row, fits from 34. At 34 the capture body scrolls and says taller;
-#: at 35 it does neither. FLEET retains its 22-row floor with paused detail,
-#: and LEADERBOARD retains every row and scrolls internally.
-#: Nine hero rows + 22 body rows + four chrome rows give the measured edge.
-#: Measurements at 143 columns include capture, v4, 999-seat stress and
-#: independently unread record/worker/contributor snapshots, known-empty
-#: records and stale data. At the owner size 149×45 all six cards and the
-#: native body fit; spare height goes to the scrollable table.
+#: BOARD height, 35 -> 44 on 2026-10-14: FLEET now lists every runtime,
+#: OS and slot configuration vertically, the top three advertised model/effort
+#: pairs, and the leading daemon. The native b-body CLI measured capture and
+#: v4 whole from 42 rows; stress with three runtimes, three models, three OS
+#: buckets, four slot buckets and paused detail is whole from 44. At 43 that
+#: stress body scrolls with taller; at 44 neither occurs. Its FLEET is 31 rows;
+#: capture and v4 each need 29. LEADERBOARD still scrolls its own table.
+#: Nine hero rows + 31 body rows + four chrome rows give the measured edge.
+#: Counts remain exact; long metadata names ellipsise with full values on
+#: hover instead of being replaced by omitted-item counts. Width remains 143.
+#: Additional runtime/OS/slot categories can grow this payload-sized panel
+#: further: they remain reachable through body scrolling and its taller marker.
+#: The live 149×45 render fits all six cards, three named models and receipts.
 #:
 #: Previous height history: 27 -> 33 on 2026-09-22 when the independent
 #: contributor group gained a blank row and five effort/token lines. This
@@ -2087,7 +2089,7 @@ SURF_BOARD_FULL_LAYOUT_COLUMNS = 143
 #: evidence that the table gained or lost a row, and an internal table scroll
 #: is not the body's taller condition. Known empty versus unavailable cards
 #: keep the same nine-row footprint on refresh and mode changes.
-SURF_BOARD_FULL_LAYOUT_ROWS = 35
+SURF_BOARD_FULL_LAYOUT_ROWS = 44
 
 #: Every active mode now has its own hero. The legacy SurfHero remains
 #: mounted and dispatched for its existing contract, but no mode shows it.

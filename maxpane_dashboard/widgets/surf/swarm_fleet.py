@@ -10,8 +10,9 @@ from maxpane_dashboard.widgets.surf._fmt import source_clock, short_model
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 
 # Eleven cells align the longest label, tokens/job, plus one separating cell.
-# At BOARD's 37 outer cells the content is 33, leaving 22 for whole mix items.
-# The model's second line carries its exact omitted count and advertised note.
+# At BOARD's 37 outer cells the content is 33, leaving 22 for each mix item.
+# Runtime, OS and slots expand vertically; the top three model/effort pairs
+# precede their omitted count and advertised note. Daemon shows the leader.
 # CONTRIBUTORS has a blank row under its sub-header and five /contributors
 # lines (owner, 2026-09-22: "show more data about the contributors"); a pair
 # that outgrows its line keeps its first value and counts the rest as +N.
@@ -50,6 +51,7 @@ class SurfSwarmFleet(SignalsPanelBase):
                          swarm_contributors_as_of_hhmm=swarm_contributors_as_of_hhmm)
         self.write('.panel-title', Text('FLEET · workers as of ' + source_clock(swarm_workers_as_of_hhmm)))
         for name in filter(None, _NAMES):
+            self.query_one(f'#surf-fleet-{name}').tooltip = None
             self.write_guarded(f'#surf-fleet-{name}',
                                lambda name=name: self._line(name, swarm_fleet, swarm_board_summary, swarm_contributors_as_of_hhmm),
                                self._label(name) + Text('unavailable', style='yellow'))
@@ -77,6 +79,17 @@ class SurfSwarmFleet(SignalsPanelBase):
                 return text
         return Text(rowfit.clip(prefix.plain + f'+{len(parts)}', self._room()))
 
+    def _stack(self, label, parts):
+        """One value per row; preserve counts and expose complete names on hover."""
+        self.query_one(f'#surf-fleet-{label}').tooltip = Text('\n').join(parts) if parts else None
+        lines = []
+        for part in parts:
+            name, _, count = part.plain.rpartition(' ')
+            name = rowfit.clip(name, max(0, self._room() - LABEL_WIDTH - len(count) - 1))
+            lines.append(self._label(label if not lines else '') +
+                         Text(name, style='dim') + Text(' ' + count, style='bold'))
+        return Text('\n').join(lines) if lines else self._label(label) + Text('none reported', style='dim')
+
     @staticmethod
     def _paused(fleet):
         rows = fleet.get('paused') if isinstance(fleet, dict) else None
@@ -90,23 +103,17 @@ class SurfSwarmFleet(SignalsPanelBase):
             return prefix + Text('unavailable', style='yellow'), note + Text('(advertised)', style='dim')
         parts = []
         for row in rows:
-            if isinstance(row, dict):
+            if isinstance(row, dict) and row.get('model') is not None:
                 model = row.get('model')
                 cleaned = short_model(model)
-                name = 'none' if model is None else cleaned or '—'
+                name = cleaned or '—'
                 if cleaned and row.get('effort') is not None:
                     name += ' ' + strip_tags(flatten(row['effort']))
                 parts.append(self._item(name, row.get('count')))
-        keep = len(parts)
-        while keep and (prefix + Text(' · ').join(parts[:keep])).cell_len > self._room():
-            keep -= 1
-        value = Text(' · ').join(parts[:keep]) if keep else Text(f'+{len(parts)}', style='bold')
-        if not parts:
-            value = Text('none reported', style='dim')
-        if 0 < keep < len(parts):
-            note += Text(f'+{len(parts)-keep} ', style='bold')
+        if len(parts) > 3:
+            note += Text(f'+{len(parts)-3} ', style='bold')
         note += Text('(advertised)', style='dim')
-        return prefix + value, note
+        return self._stack('model', parts[:3]), note
 
     @staticmethod
     def _count(value, word='', compact=False):
@@ -163,7 +170,10 @@ class SurfSwarmFleet(SignalsPanelBase):
             rows = fleet.get(_MIXES[name])
             if not isinstance(rows, list):
                 return label + Text('unavailable', style='yellow')
-            return self._fit(name, [self._item(row.get('value'), row.get('count')) for row in rows if isinstance(row, dict)])
+            parts = [self._item(row.get('value'), row.get('count')) for row in rows if isinstance(row, dict)]
+            if name == 'profile':
+                return self._fit(name, parts)
+            return self._stack(name, parts[:1] if name == 'daemon' else parts)
         if name == 'heartbeat':
             endpoints = [fleet.get('heartbeat_oldest_ts'), fleet.get('heartbeat_newest_ts')]
             if any(value is None for value in endpoints):

@@ -19,17 +19,41 @@ async def test_mixes_tokens_and_clocks_have_distinct_sources():
     text=await render()
     for word in ('FLEET','runtime','daemon','os','profile','slots','heartbeat','tokens/job','served','paused','03:01','04:02'):
         assert word in text
+
+async def test_expanded_worker_groups_show_each_entry_and_top_three_models():
+    fleet = dict(FLEET,
+        runtimes=[dict(value='codex',count=453),dict(value='claude',count=401),dict(value='both',count=12)],
+        models=[dict(model=None,effort=None,count=500),
+                dict(model='gpt-6-astra',effort='xhigh',count=396),
+                dict(model='claude-fable-5-1',effort='high',count=250),
+                dict(model='claude-opus-5-5',effort='high',count=99),
+                dict(model='claude-sonnet-5',effort='high',count=20)],
+        daemons=[dict(value='0.1.0+35c7abcdef01234567',count=800),dict(value='older',count=66)],
+        os=[dict(value='linux',count=853),dict(value='darwin',count=12),dict(value='windows',count=1)],
+        concurrency=[dict(value=str(n),count=100-n) for n in (1,2,3,8)])
+    lines=await composite_lines(SurfSwarmFleet,(37,50),css_path=CSS_PATH,swarm_fleet=fleet)
+    for label,values in [('runtime',['codex 453','claude 401','both 12']),
+                         ('model',['astra 6 xhigh 396','fable 5.1 high 250','opus 5.5 high 99']),
+                         ('os',['linux 853','darwin 12','windows 1']),
+                         ('slots',['1 99','2 98','3 97','8 92'])]:
+        start=next(i for i,line in enumerate(lines) if line.strip().startswith(label+' '))
+        assert [line.strip() for line in lines[start:start+len(values)]] == [label.ljust(11)+values[0],*values[1:]]
+    daemon=next(line.strip() for line in lines if line.strip().startswith('daemon '))
+    assert daemon.startswith('daemon     0.1.0+') and daemon.endswith('… 800')
+    assert not any('older' in line or 'sonnet' in line for line in lines)
+    assert any('+1 (advertised)' in line for line in lines)
 async def test_empty_metadata_is_none_reported_and_unread_is_unavailable():
     assert 'none reported' in await render(dict(FLEET,runtimes=[]))
     text=await render(None)
     assert 'runtime    unavailable' in text and 'served' in text
     text=await render(FLEET,None)
     assert 'tokens/job' in text and 'unavailable' in text and 'runtime    unavailable' not in text
-async def test_mix_omissions_are_exact_and_hostile_text_is_sanitized():
+async def test_only_the_most_used_daemon_is_shown_and_hostile_text_is_sanitized():
     values=[{'value':'[/x]alpha','count':9}]+[{'value':f'daemon{i}','count':8-i} for i in range(7)]
     text=await render(dict(FLEET,daemons=values))
     line=next(line for line in text.splitlines() if 'daemon' in line)
-    assert 'alpha 9' in line and '+7' in line and '[/x]' not in text
+    assert 'alpha 9' in line and '+7' not in line and '[/x]' not in text
+    assert 'daemon0' not in text
 async def test_paused_omission_count_is_exact():
     paused=[{'token_id':i,'until_ts':1_758_456_000+i,'failures':3} for i in range(99)]
     text=await render(dict(FLEET,paused=paused))
@@ -46,9 +70,38 @@ async def test_full_served_daemon_is_retained_when_it_fits():
     text=await render(dict(FLEET,daemons=[{'value':'abcdef0123456789','count':67}]))
     assert 'abcdef0123456789 67' in text
 
-async def test_long_metadata_is_counted_as_omitted():
+async def test_long_daemon_keeps_its_name_prefix_and_exact_count():
     text=await render(dict(FLEET,daemons=[{'value':'x'*64,'count':67}]))
-    assert 'daemon     +1' in text
+    line=next(line.strip() for line in text.splitlines() if line.strip().startswith('daemon '))
+    assert line.startswith('daemon     xxx') and line.endswith('… 67')
+
+async def test_expanded_groups_shrink_on_refresh_and_clear_unknown_tooltips():
+    from textual.app import App
+    class Harness(App):
+        CSS_PATH=CSS_PATH
+        def compose(self):yield SurfSwarmFleet()
+    async with Harness().run_test(size=(60,50),tooltips=True) as pilot:
+        widget=pilot.app.query_one(SurfSwarmFleet)
+        version='0.1.0+'+'abc123'*6
+        widget.update_data(swarm_fleet=dict(FLEET,daemons=[dict(value=version,count=777)]))
+        await pilot.pause()
+        before=widget.size.height
+        await pilot.hover('#surf-fleet-daemon')
+        pilot.app.screen._handle_tooltip_timer(widget.query_one('#surf-fleet-daemon'))
+        await pilot.pause()
+        text='\n'.join(''.join(seg.text for seg in strip) for strip in pilot.app.screen._compositor.render_strips())
+        assert version in ''.join(text.split()) and '777' in text
+        pilot.app.screen._clear_tooltip()
+        widget.update_data(swarm_fleet=dict(FLEET,runtimes=[dict(value='codex',count=1)],os=[],concurrency=[]))
+        await pilot.hover('#surf-fleet-runtime')
+        await pilot.pause()
+        assert widget.size.height < before
+        text='\n'.join(''.join(seg.text for seg in strip) for strip in pilot.app.screen._compositor.render_strips())
+        assert 'claude 37' not in text and 'darwin 12' not in text
+        widget.update_data(swarm_fleet=None)
+        await pilot.pause()
+        for name in ('runtime','daemon','os','slots','model'):
+            assert widget.query_one(f'#surf-fleet-{name}').tooltip is None
 
 async def test_malformed_paused_tokens_never_reach_display():
     paused=[{'token_id':'[/x]PWNED','until_ts':1758456000,'failures':3},
@@ -65,7 +118,8 @@ async def test_polish_groups_align_labels_and_keep_the_advertised_model_prefix()
     for label in labels:
         line=next(line.strip() for line in lines if line.strip().startswith(label+' '))
         assert line.startswith(label.ljust(11)), (label,line)
-    assert 'astra 6 xhigh 43' in text and '+2 (advertised)' in text
+    assert 'astra 6 xhigh 43' in text and 'fable 5.1 high 34' in text
+    assert '(advertised)' in text and '+2 (advertised)' not in text
     header=next(i for i,line in enumerate(lines) if 'RECEIPTS · read 03:01' in line)
     paused=next(i for i,line in enumerate(lines) if line.strip().startswith('paused '))
     assert not lines[paused-1].strip() and not lines[header-1].strip()
@@ -116,13 +170,13 @@ async def test_a_contributor_pair_too_wide_for_its_line_counts_its_second_value(
 
 async def test_polish_model_missing_none_and_hostile_values_are_distinct():
     none=await render(dict(FLEET,models=[dict(model=None,effort=None,count=3)]))
-    assert 'none 3' in none and '(advertised)' in none
+    assert 'model      none reported' in none and '(advertised)' in none
     unread=await render(dict(FLEET,models=None))
     assert 'model      unavailable' in unread and 'none 3' not in unread
     hostile=await render(dict(FLEET,models=[dict(model='[/x]astra',effort='[$success]high',count=2)]))
     assert 'astra high 2' in hostile and '[/x]' not in hostile and '[$success]' not in hostile
     long=await render(dict(FLEET,models=[dict(model='x'*64,effort='high',count=99999)]))
-    assert 'model      +1' in long and '…' not in long
+    assert 'model      xxx' in long and '… 99,999' in long
 
 
 @pytest.mark.parametrize('paused,color', [([],2),([dict(token_id=420,until_ts=1758456000,failures=3)],1)])

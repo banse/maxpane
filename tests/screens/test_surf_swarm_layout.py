@@ -1156,9 +1156,12 @@ def _board_payload(kind="capture"):
             rejected=11111*999,failed=0,pending=33333*999,receipts=99999,tokens_per_completed_job=99999)
         payload["swarm_fleet"].update(
             daemons=[{"value":str(i)+"d"*64,"count":99999-i} for i in range(20)],
-            runtimes=[{"value":"r"*64,"count":99999}],
+            runtimes=[{"value":"r"*64,"count":99999},{"value":"claude","count":99998},
+                      {"value":"both","count":99997}],
             models=[{"model":"m"*64,"effort":"xhigh","count":99999},
-                    {"model":None,"effort":None,"count":99999}],
+                    {"model":"claude-fable-5-1","effort":"high","count":99998},
+                    {"model":"claude-opus-5-5","effort":"high","count":99997},
+                    {"model":None,"effort":None,"count":99996}],
             paused=[{"token_id":i,"until_ts":1758456000+i,"failures":99999} for i in range(99)])
     stamp = source["read_ts"]
     observations = {
@@ -1204,11 +1207,11 @@ async def test_board_width_boundaries(width,kind):
         assert 'SurfSwarmBoardHero' in result['marked'], result
         assert any(name == 'SurfSwarmBoardHero' for name, _ in result['clipped']), result
 
-@pytest.mark.parametrize('height',boundary_set(SURF_BOARD_FULL_LAYOUT_ROWS,20,61,31,35))
+@pytest.mark.parametrize('height',boundary_set(SURF_BOARD_FULL_LAYOUT_ROWS,20,61,42))
 @pytest.mark.parametrize('kind',['capture','v4','worst'])
 async def test_board_height_boundaries(height,kind):
     result=await _render(_board_payload(kind),(SURF_BOARD_FULL_LAYOUT_COLUMNS,height),'b')
-    measured_rows = SURF_BOARD_FULL_LAYOUT_ROWS - (kind == 'v4')
+    measured_rows = 44 if kind == 'worst' else 42
     assert result['taller']==(height<measured_rows),result
 
 async def test_agent_width_pin_is_not_loose():
@@ -1235,13 +1238,15 @@ async def test_agent_independent_sources_are_whole_at_the_full_pin(kind):
     assert not result['taller'] and not result['overflow'],result
 
 
-@pytest.mark.parametrize("kind", ["capture", "worst"])
-async def test_board_polish_row_pin_is_tight_and_keeps_fleet_whole(kind):
-    below = await _render(_board_payload(kind), (SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS-1), 'b')
-    at = await _render(_board_payload(kind), (SURF_BOARD_FULL_LAYOUT_COLUMNS, SURF_BOARD_FULL_LAYOUT_ROWS), 'b')
+@pytest.mark.parametrize("kind,rows,fleet_rows", [("capture",42,29),("v4",42,29),("worst",44,31)])
+async def test_board_polish_row_pin_is_tight_and_keeps_fleet_whole(kind,rows,fleet_rows):
+    below = await _render(_board_payload(kind), (SURF_BOARD_FULL_LAYOUT_COLUMNS, rows-1), 'b')
+    at = await _render(_board_payload(kind), (SURF_BOARD_FULL_LAYOUT_COLUMNS, rows), 'b')
     assert below['taller'] and any(below['scroll'].values()), below
     assert not at['taller'] and not any(at['scroll'].values()), at
-    assert at['heights']['SurfSwarmFleet'] == 22, at  # 16 + blank + five contributor lines
+    assert at['heights']['SurfSwarmFleet'] == fleet_rows, at
+    if kind == 'worst':
+        assert rows == SURF_BOARD_FULL_LAYOUT_ROWS
     _assert_board_whole(at,kind)
 
 
