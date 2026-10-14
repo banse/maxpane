@@ -55,7 +55,8 @@
           "seat": {
             "tokenId": "863",
             "agentId": "51225"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "audit_flow",
@@ -63,7 +64,8 @@
           "seat": {
             "tokenId": "963",
             "agentId": "51534"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "audit_judge",
@@ -71,7 +73,8 @@
           "seat": {
             "tokenId": "1014",
             "agentId": "52681"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "audit_math",
@@ -79,7 +82,8 @@
           "seat": {
             "tokenId": "999",
             "agentId": "52287"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "audit_permissions",
@@ -87,7 +91,8 @@
           "seat": {
             "tokenId": "880",
             "agentId": "51081"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "build_contract_project",
@@ -95,7 +100,8 @@
           "seat": {
             "tokenId": "717",
             "agentId": "52707"
-          }
+          },
+          "role": "implement"
         },
         {
           "key": "manifest",
@@ -103,7 +109,8 @@
           "seat": {
             "tokenId": "849",
             "agentId": "51328"
-          }
+          },
+          "role": "integrate"
         },
         {
           "key": "write_foundry_tests",
@@ -111,7 +118,8 @@
           "seat": {
             "tokenId": "1573",
             "agentId": "52708"
-          }
+          },
+          "role": "tests"
         }
       ]
     },
@@ -130,7 +138,8 @@
           "seat": {
             "tokenId": "123",
             "agentId": "52286"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "audit_flow",
@@ -138,7 +147,8 @@
           "seat": {
             "tokenId": "66",
             "agentId": "51401"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "audit_judge",
@@ -146,7 +156,8 @@
           "seat": {
             "tokenId": "808",
             "agentId": "52166"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "audit_math",
@@ -154,7 +165,8 @@
           "seat": {
             "tokenId": "877",
             "agentId": "51343"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "audit_permissions",
@@ -162,7 +174,8 @@
           "seat": {
             "tokenId": "415",
             "agentId": "52270"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "build_contract_project",
@@ -170,7 +183,8 @@
           "seat": {
             "tokenId": "1001",
             "agentId": "51064"
-          }
+          },
+          "role": "implement"
         },
         {
           "key": "manifest",
@@ -178,7 +192,8 @@
           "seat": {
             "tokenId": "729",
             "agentId": "50988"
-          }
+          },
+          "role": "integrate"
         },
         {
           "key": "write_foundry_tests",
@@ -186,7 +201,8 @@
           "seat": {
             "tokenId": "1536",
             "agentId": "51461"
-          }
+          },
+          "role": "tests"
         }
       ]
     },
@@ -205,7 +221,8 @@
           "seat": {
             "tokenId": "401",
             "agentId": "51197"
-          }
+          },
+          "role": "review"
         },
         {
           "key": "frontend_for_contract",
@@ -213,7 +230,8 @@
           "seat": {
             "tokenId": "402",
             "agentId": "51518"
-          }
+          },
+          "role": "implement"
         }
       ]
     }

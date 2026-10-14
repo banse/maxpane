@@ -6,7 +6,7 @@ from textual.widgets.data_table import RowDoesNotExist
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int, fmt_float, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten, sanitize_cell, strip_tags
-from maxpane_dashboard.widgets.surf._fmt import source_clock
+from maxpane_dashboard.widgets.surf._fmt import source_clock, short_model
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_token, outcomes_clock
 from maxpane_dashboard.widgets.surf._swarm_table import SwarmTableBase, table_cols
 
@@ -19,13 +19,35 @@ _SPECS=(('rank','#',3),('seat','seat',7),('runtime','runtime',11),('devices','de
 _ALL=tuple(key for key,_,_ in _SPECS)
 _COMPACT=tuple(key for key in _ALL if key not in ('turns','hours','devices'))
 _TIGHT=('rank','seat','attempts','accepted','rate','state')
-_LAUNCH_SPECS=(('rank','#',4),('seat','seat',7),('jobs','jobs',7),
-               ('launches','launches',8),('runtime','runtime',11),('state','state',16))
+# The reader permits six-digit job totals; the split keeps both exact counts
+# by removing separator spaces only when necessary.
+_LAUNCH_SPECS=(('rank','#',4),('seat','seat',7),('jobs','jobs',6),
+               ('launches','launches',8),('build_review','build/review',13),
+               ('model','model',14),('effort','effort',6),
+               ('runtime','runtime',11),('state','state',16))
 _LAUNCH_KEYS=tuple(key for key,_,_ in _LAUNCH_SPECS)
 _LAUNCH_TIERS={'full':_LAUNCH_KEYS, 'compact':tuple(key for key in _LAUNCH_KEYS if key!='runtime'),
                'tight':('rank','seat','jobs','launches')}
 _LAUNCH_LADDER=rowfit.Ladder(*((name,table_cols(w for key,_,w in _LAUNCH_SPECS if key in keep))
                               for name,keep in _LAUNCH_TIERS.items()))
+_BUILD_REVIEW_NOTE=('Build/review: distinct contributing jobs; build includes implementation, '
+                    'integration and tests. A job can count as both build and review, so counts can overlap.')
+
+
+def _model_pairs(item):
+    """Keep model and effort paired; the manager supplies current worker settings."""
+    pairs=item.get('advertised_models')
+    if not isinstance(pairs,list):
+        return []
+    clean={(strip_tags(flatten(pair['model'])),strip_tags(flatten(pair.get('effort'))) or None)
+           for pair in pairs if isinstance(pair,dict) and isinstance(pair.get('model'),str)
+           and strip_tags(flatten(pair['model']))}
+    return sorted(clean,key=lambda pair:(pair[0],pair[1] or ''))
+
+
+def _build_review(item):
+    counts=tuple(seat_token(item.get(key)) for key in ('build_jobs','review_jobs'))
+    return counts if all(value is not None for value in counts) else None
 
 class _SeatTable(DataTable):
     """A BOARD row's first click uses the same selection message as Enter."""
@@ -37,6 +59,9 @@ class _SeatTable(DataTable):
                 and isinstance(column, int) and 0 <= column < len(self.columns)):
             self.move_cursor(row=row, column=column, scroll=False)
         await super()._on_click(event)
+
+    def on_mouse_move(self,event):
+        self.parent._show_row_tooltip(event.style.meta.get('row'))
 
 
 class SurfSwarmLeaderboard(SwarmTableBase):
@@ -68,6 +93,7 @@ class SurfSwarmLeaderboard(SwarmTableBase):
         self._recorded_rows=None
         self._recorded_clocks=''
         self._contribution={}
+        self._row_tooltips={}
     def compose_body(self):
         for child in super().compose_body():
             yield _SeatTable(id=child.id, cursor_foreground_priority='renderable') if isinstance(child, DataTable) else child
@@ -139,6 +165,7 @@ class SurfSwarmLeaderboard(SwarmTableBase):
         token,scroll_y=self._restore_view if self._restore_view is not None else self._cursor_state()
         self._restore_view=None
         self._clipped_fields=set()
+        self._row_tooltips={}
         super()._repaint()
         if token is not None and table is not None:
             for index, row in enumerate(table.ordered_rows):
@@ -147,6 +174,7 @@ class SurfSwarmLeaderboard(SwarmTableBase):
                     break
         if table is not None:
             table.scroll_to(y=scroll_y,animate=False,force=True)
+            self.call_after_refresh(self._refresh_row_tooltip)
         if self._view_mode=='launches':
             self._render_launch_source()
 
@@ -191,6 +219,26 @@ class SurfSwarmLeaderboard(SwarmTableBase):
             event.stop()
             self.sort_by(event.column_key.value)
 
+    def on_data_table_row_highlighted(self,event: DataTable.RowHighlighted):
+        if event.data_table.id==self.TABLE_ID:
+            self.call_after_refresh(self._refresh_row_tooltip)
+
+    def _refresh_row_tooltip(self):
+        table=self.query_one(DataTable)
+        row=table.cursor_row
+        if table._show_hover_cursor and table.is_mouse_over:
+            row=self.screen.get_style_at(*self.app.mouse_position).meta.get('row')
+        self._show_row_tooltip(row)
+
+    def _show_row_tooltip(self,row):
+        table=self.query_one(DataTable)
+        tooltip=None
+        if self._view_mode=='launches':
+            tooltip=Text(_BUILD_REVIEW_NOTE)
+            if isinstance(row,int) and 0<=row<table.row_count:
+                tooltip=self._row_tooltips.get(self.token_for_row(table.ordered_rows[row].key),tooltip)
+        table.tooltip=tooltip
+
     def column_plan(self, tier, budget):
         marker = '▼' if self._sort_reverse else '▲'
         return tuple((key, label[:width-1] + marker if key == self._sort_key else label, width)
@@ -199,6 +247,12 @@ class SurfSwarmLeaderboard(SwarmTableBase):
     def _sort_value(self, item):
         if not isinstance(item, dict):
             return None
+        if self._sort_key in ('model','effort'):
+            pairs=_model_pairs(item)
+            value=(short_model(pairs[0][0]) if self._sort_key=='model' else pairs[0][1]) if pairs else None
+            return value.casefold() if value else None
+        if self._sort_key=='build_review':
+            return _build_review(item)
         field = {'seat':'token_id', 'rate':'accept_rate', 'hours':'wall_clock_s',
                  'state':'live_state'}.get(self._sort_key, self._sort_key)
         value = item.get(field)
@@ -251,9 +305,25 @@ class SurfSwarmLeaderboard(SwarmTableBase):
                    runtime=item.get('runtime') if item.get('runtime') is not None else unknown,
                    rate='—' if rate is None else fmt_float(rate*100,'.1f')+'%',
                    hours='—' if hours is None else fmt_float(hours/3600,'.1f'),state=state_text)
+        if self._view_mode=='launches':
+            pairs=_model_pairs(item)
+            counts=_build_review(item)
+            raw.update(model=((short_model(pairs[0][0]) or '—')+(f' +{len(pairs)-1}' if len(pairs)>1 else '')) if pairs else '—',
+                       effort=(pairs[0][1] or '—') if pairs else '—',
+                       build_review=f'{counts[0]} / {counts[1]}' if counts is not None else '— / —')
+            details=('Current advertised settings:\n'+'\n'.join(f'{model} · {effort or "—"}' for model,effort in pairs)
+                     if pairs else 'No current advertised settings' if item.get('advertised_models')==[]
+                     else 'Current advertised settings unavailable')
+            self._row_tooltips[token]=Text(details+'\n'+_BUILD_REVIEW_NOTE)
         cells={}
         for key,_,width in self.COLUMN_SPECS:
-            cell=Text.from_markup(sanitize_cell(raw[key],width))
+            if key=='build_review' and rowfit.cell_len(raw[key])>width:
+                raw[key]=raw[key].replace(' ','')
+            display=raw[key]
+            if key=='model' and len(pairs)>1:
+                suffix=f' +{len(pairs)-1}'
+                display=rowfit.clip(short_model(pairs[0][0]) or '—',width-rowfit.cell_len(suffix))+suffix
+            cell=Text.from_markup(sanitize_cell(display,width))
             if rowfit.cell_len(strip_tags(flatten(raw[key]))) > width:
                 self._clipped=True
                 self._clipped_fields.add(key)

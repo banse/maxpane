@@ -334,7 +334,7 @@ async def test_launch_and_recorded_views_keep_independent_sort_cursor_and_scroll
         assert tokens(widget)[table.cursor_row]==launch_token
         assert table.scroll_y==launch_scroll
         widget.cycle_sort();await pilot.pause()
-        assert widget._sort_key=='runtime'
+        assert widget._sort_key=='build_review'
 
 
 async def test_launch_progress_updates_preserve_recorded_rows_clocks_and_worker_join():
@@ -375,3 +375,130 @@ async def test_leaderboard_title_keeps_both_tabs_clickable_and_widen_visible_at_
         assert ('‹' in painted)==bool(widget._widen or widget._clipped)
         if width==106:
             assert 'LEADERBOARD · recorded seats · launch contribution' in painted
+
+
+async def test_launch_model_effort_and_build_review_paint_paired_current_settings():
+    pairs=[{'model':'claude-fable-5-1','effort':'high'},
+           {'model':'gpt-6-astra','effort':'xhigh'}]
+    launches=[dict(rank=1,token_id=10,jobs=12,launches=3,build_jobs=3,review_jobs=10,
+                   advertised_models=pairs),
+              dict(rank=2,token_id=2,jobs=4,launches=2,build_jobs=0,review_jobs=4,
+                   advertised_models=[]),
+              dict(rank=3,token_id=7,jobs=2,launches=1,build_jobs=None,review_jobs=None,
+                   advertised_models=None)]
+    original=copy.deepcopy(launches)
+    async with SortHarness().run_test(size=(120,14)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_launch_contribution=contribution(launches))
+        widget.set_view('launches');await pilot.pause()
+        painted=_painted_rows(pilot.app)
+        assert all(word in painted[widget.query_one(DataTable).region.y]
+                   for word in ('model','effort','build/review'))
+        first=next(line for line in painted if '#10 ' in line)
+        assert 'fable 5.1 +1' in first and 'high' in first.split() and '3 / 10' in first
+        second=next(line for line in painted if '#2 ' in line)
+        assert '0 / 4' in second
+        third=next(line for line in painted if '#7 ' in line)
+        assert '— / —' in third
+        assert 'unavailable' not in '\n'.join(painted)
+        assert launches==original
+
+
+@pytest.mark.parametrize('key,values',[
+    ('model',[
+        {'advertised_models':[{'model':'claude-fable-5-1','effort':'high'}]},
+        {'advertised_models':[{'model':'gpt-6-astra','effort':'xhigh'}]},
+        {'advertised_models':[{'model':'gpt-6-astra','effort':None}]},
+        {'advertised_models':[]}, {'advertised_models':None}]),
+    ('effort',[
+        {'advertised_models':[{'model':'gpt-6-astra','effort':'xhigh'}]},
+        {'advertised_models':[{'model':'claude-fable-5-1','effort':'high'}]},
+        {'advertised_models':[{'model':'claude-fable-5-1','effort':'high'}]},
+        {'advertised_models':[{'model':'gpt-6-astra','effort':None}]},
+        {'advertised_models':None}]),
+    ('build_review',[
+        {'build_jobs':10,'review_jobs':2}, {'build_jobs':2,'review_jobs':10},
+        {'build_jobs':2,'review_jobs':10}, {'build_jobs':None,'review_jobs':2},
+        {'build_jobs':0,'review_jobs':None}]),
+])
+async def test_launch_new_columns_sort_stably_with_missing_last(key,values):
+    rows=[dict(rank=i+1,token_id=token,jobs=12,launches=2,**value)
+          for i,(token,value) in enumerate(zip((101,103,102,104,105),values))]
+    async with SortHarness().run_test(size=(120,14)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_launch_contribution=contribution(rows))
+        widget.set_view('launches')
+        widget.sort_by(key);await pilot.pause()
+        assert tokens(widget)==[103,102,101,104,105]
+        widget.reverse_sort();await pilot.pause()
+        assert tokens(widget)==[101,103,102,104,105]
+        header=widget.query_one(DataTable).columns[key]
+        assert header.label.plain in _painted_rows(pilot.app)[widget.query_one(DataTable).region.y]
+
+
+async def test_launch_tooltip_follows_actual_hover_and_keyboard_row_without_model_guessing():
+    pairs=[{'model':'claude-fable-5-1','effort':'high'},
+           {'model':'gpt-6-astra[/x]','effort':'xhigh\x1b'}]
+    rows=[dict(rank=1,token_id=10,jobs=12,launches=3,build_jobs=3,review_jobs=10,
+               advertised_models=pairs),
+          dict(rank=2,token_id=2,jobs=4,launches=2,build_jobs=0,review_jobs=4,
+               advertised_models=None)]
+    async with SortHarness().run_test(size=(120,18),tooltips=True) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_board_rows=[dict(ROWS[0],token_id=2,runtime='claude')],
+                           swarm_launch_contribution=contribution(rows))
+        widget.set_view('launches');await pilot.pause()
+        table=widget.query_one(DataTable)
+        table.move_cursor(row=1);await pilot.pause()
+        await pilot.hover(table,offset=(3,1));await pilot.pause()
+        assert table.cursor_row==1  # Hover must use the row under the pointer.
+        tooltip=table.tooltip
+        assert 'Current advertised settings' in tooltip.plain
+        assert 'claude-fable-5-1 · high' in tooltip.plain
+        assert 'gpt-6-astra · xhigh' in tooltip.plain
+        assert 'Build/review' in tooltip.plain and 'overlap' in tooltip.plain
+        assert not tooltip.spans and '\x1b' not in tooltip.plain and '[/x]' not in tooltip.plain
+        widget.set_launch_contribution(contribution(rows,state='pending'))
+        await pilot.pause()
+        assert 'claude-fable-5-1 · high' in table.tooltip.plain
+        pilot.app.screen._handle_tooltip_timer(table)
+        await pilot.pause()
+        assert 'Current advertised settings' in '\n'.join(_painted_rows(pilot.app))
+        pilot.app.screen._clear_tooltip()
+        table.focus();await pilot.press('up','down');await pilot.pause()
+        assert 'Current advertised settings unavailable' in table.tooltip.plain
+        widget.set_view('recorded');await pilot.pause()
+        assert table.tooltip is None
+
+
+async def test_launch_long_model_preserves_additional_pair_count_and_marks_clipping():
+    pairs=[{'model':'aaa-model-'+'界'*20+'[/x]', 'effort':'high'},
+           {'model':'gpt-6-astra', 'effort':'xhigh'}]
+    async with SortHarness().run_test(size=(120,14)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_launch_contribution=contribution([
+            dict(rank=1,token_id=10,jobs=12,launches=3,build_jobs=3,review_jobs=10,
+                 advertised_models=pairs)]))
+        widget.set_view('launches');await pilot.pause()
+        painted=_painted_rows(pilot.app)
+        row=next(line for line in painted if '#10 ' in line)
+        assert '… +1' in row and '[/x]' not in row
+        assert '‹ widen' in '\n'.join(painted)
+
+
+@pytest.mark.parametrize('models,label',[
+    (None,'Current advertised settings unavailable'),
+    ([], 'No current advertised settings'),
+])
+async def test_launch_hover_distinguishes_unavailable_from_no_advertised_models(models,label):
+    async with SortHarness().run_test(size=(120,18),tooltips=True) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_launch_contribution=contribution([
+            dict(rank=1,token_id=7,jobs=2,launches=1,build_jobs=2,review_jobs=0,
+                 advertised_models=models)]))
+        widget.set_view('launches');await pilot.pause()
+        table=widget.query_one(DataTable)
+        await pilot.hover(table,offset=(3,1));await pilot.pause()
+        pilot.app.screen._handle_tooltip_timer(table)
+        await pilot.pause()
+        assert label in ' '.join('\n'.join(_painted_rows(pilot.app)).split())

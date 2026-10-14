@@ -7297,7 +7297,23 @@ class SurfManager:
             read_ts=catalogue._cat_as_of)
 
     def get_launch_contribution_snapshot(self) -> dict:
-        return self._launch_contribution_reader.project()
+        """Join current advertised settings without persisting them as past job usage."""
+        snapshot = self._launch_contribution_reader.project()
+        if snapshot.get('rows') is None:
+            return snapshot
+        workers = sw.coerce_workers_slot(getattr(self.cache.get_last_good(SLOT_SWARM_WORKERS), 'payload', None))
+        groups = sw._worker_groups(workers)
+        complete = (workers is not None and workers['count'] == len(workers['workers'])
+                    and not workers['malformed_tokens'])
+        rows = []
+        for row in snapshot['rows']:
+            pairs = {(pair['model'], pair['effort']) for worker in groups.get(row['token_id'], ())
+                     for pair in worker['advertised_models']}
+            advertised = ([dict(model=model, effort=effort) for model, effort in
+                           sorted(pairs, key=lambda pair: (pair[0], pair[1] or ''))]
+                          if pairs or complete else None)
+            rows.append(dict(row, advertised_models=advertised))
+        return dict(snapshot, rows=rows)
 
     def _hub_sources(self) -> dict[str, dict]:
         now = self._clock()
@@ -7527,7 +7543,7 @@ class SurfManager:
                 if (seat['live'] or {}).get('live_state') == 'offline':
                     seat['live'] = None  # an incomplete roster cannot prove absent capacity
         data["surf_work"] = self._work_reader.project()
-        data["swarm_launch_contribution"] = self._launch_contribution_reader.project()
+        data["swarm_launch_contribution"] = self.get_launch_contribution_snapshot()
         data["surf_oracles"] = self._oracles_reader.project()
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
                                                  agent_seats=agent_seats,

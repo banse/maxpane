@@ -2060,6 +2060,12 @@ BOARD_BODY_ID = "surf-board-body"
 #: table counter limit is not changed by this hero integration.
 #: App-wide 143 stays unchanged. The owner's 149 columns fit the complete
 #: hero and native body. Each body still owns its independent measured pin.
+#: 2026-10-14: launch contribution adds current model/effort and build/review.
+#: Its nine-column full tier starts at 143 and now ties TOP SEAT as binder;
+#: recorded seats still reach twelve columns at 141. In-situ launch sweeps
+#: with forty rows measured compact at 130 and no tight-tier scroll from 73.
+#: The live 149x45 preview fits all nine columns. Long advertised settings
+#: may ellipsise with widen; full model/effort pairs remain available on hover.
 SURF_BOARD_FULL_LAYOUT_COLUMNS = 143
 
 #: BOARD height, 33 -> 35 on 2026-10-12: the approved rack adds two hero

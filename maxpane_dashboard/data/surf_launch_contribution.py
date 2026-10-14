@@ -52,6 +52,18 @@ def _valid_version(value):
             and value[1] == 'live' and _iso(value[2]))
 
 
+def _valid_roles(roles, seats):
+    if not isinstance(roles, dict) or set(roles) != {'build', 'review', 'unknown'}:
+        return False
+    for values in roles.values():
+        if (not isinstance(values, list) or len(values) > MAX_NODES
+                or any(type(value) is not int or value not in seats for value in values)
+                or values != sorted(set(values))):
+            return False
+    known = set(roles['build']) | set(roles['review'])
+    return known.isdisjoint(roles['unknown']) and known | set(roles['unknown']) == set(seats)
+
+
 def _valid_fact(kind, value, now):
     if not isinstance(value, dict) or not _stamp(value.get('read_ts'), now):
         return False
@@ -62,11 +74,13 @@ def _valid_fact(kind, value, now):
         return False
     if kind == 'jobs':
         seats = value.get('seats')
-        return (set(value) == {'read_ts', 'terminal', 'seats', 'workflow'}
+        keys = {'read_ts', 'terminal', 'seats', 'workflow'}
+        return (set(value) in (keys, keys | {'roles'})
                 and isinstance(seats, list) and len(seats) <= MAX_NODES
                 and all(type(seat) is int and parse_seat_token(seat) is not None for seat in seats)
                 and seats == sorted(set(seats))
-                and (value['workflow'] is None or parse_job_id(value['workflow']) is not None))
+                and (value['workflow'] is None or parse_job_id(value['workflow']) is not None)
+                and ('roles' not in value or _valid_roles(value['roles'], seats)))
     return (set(value) == {'read_ts', 'terminal', 'contracts', 'frontend', 'launch'}
             and all(parse_job_id(value.get(key)) is not None for key in ('contracts', 'launch'))
             and (value.get('frontend') is None or parse_job_id(value['frontend']) is not None))
@@ -78,14 +92,22 @@ def _snapshot(value, now):
             or len(value['rows']) > MAX_FACTS):
         return None
     rows, seen = [], set()
+    keys = {'rank', 'token_id', 'jobs', 'launches'}
     for rank, row in enumerate(value['rows'], 1):
-        if (not isinstance(row, dict) or set(row) != {'rank', 'token_id', 'jobs', 'launches'}
-                or any(type(row[key]) is not int for key in row)
+        if (not isinstance(row, dict) or set(row) not in (keys, keys | {'build_jobs', 'review_jobs'})
+                or any(type(row[key]) is not int for key in keys)
                 or row['rank'] != rank or row['token_id'] < 0
                 or row['token_id'] in seen or not 0 < row['jobs'] <= MAX_FACTS
                 or not 0 < row['launches'] <= MAX_LAUNCHES):
             return None
-        seen.add(row['token_id']); rows.append(dict(row))
+        build, review = row.get('build_jobs'), row.get('review_jobs')
+        if not (build is None and review is None or
+                type(build) is int and type(review) is int
+                and 0 <= build <= row['jobs'] and 0 <= review <= row['jobs']
+                and build + review >= row['jobs']):
+            return None
+        seen.add(row['token_id'])
+        rows.append(dict(row, build_jobs=build, review_jobs=review))
     if rows != sorted(rows, key=lambda row: (-row['jobs'], row['token_id'])):
         return None
     return dict(rows=rows, read_ts=value['read_ts'])
@@ -158,6 +180,8 @@ class LaunchContributionReader:
 
     def _fresh(self, kind, identity, now):
         fact = self._facts[kind].get(identity)
+        if kind == 'jobs' and fact is not None and 'roles' not in fact:
+            return None  # retain the old ranking while bounded batches backfill roles
         ttl = TERMINAL_TTL if kind == 'launches' or fact and fact['terminal'] else ACTIVE_TTL
         return fact if fact and 0 <= now - fact['read_ts'] < ttl else None
 
@@ -217,6 +241,7 @@ class LaunchContributionReader:
                     or parse_job_id(workflow.get('id')) is None)):
             raise ValueError('job evidence missing')
         seats, seen = set(), set()
+        roles = {key: set() for key in ('build', 'review', 'unknown')}
         for node in nodes:
             if (not isinstance(node, dict) or not isinstance(node.get('key'), str)
                     or not node['key'] or node['key'] in seen
@@ -229,8 +254,14 @@ class LaunchContributionReader:
                 if token is None:
                     raise ValueError('accepted seat missing')
                 seats.add(token)
+                role = node.get('role')
+                group = ('build' if role in ('implement', 'integrate', 'test', 'tests')
+                         else 'review' if role == 'review' else 'unknown')
+                roles[group].add(token)
+        for key in ('build', 'review'):
+            roles[key].difference_update(roles['unknown'])
         return dict(seats=sorted(seats), workflow=workflow['id'] if workflow else None,
-                    terminal=state in TERMINAL)
+                    terminal=state in TERMINAL, roles={key: sorted(values) for key, values in roles.items()})
 
     @staticmethod
     def _workflow(raw):
@@ -289,6 +320,8 @@ class LaunchContributionReader:
         if not self._complete or self._catalogue_failed or self._catalogue_pending:
             return False
         jobs_by_seat, launches_by_seat, clocks = {}, {}, [self._catalogue_ts]
+        role_jobs = {'build': {}, 'review': {}}
+        unknown = set()
         for identity, row in self._target.items():
             jobs = self._jobs_for(row, now)
             if jobs is None:
@@ -302,9 +335,15 @@ class LaunchContributionReader:
                 for seat in fact['seats']:
                     jobs_by_seat.setdefault(seat, set()).add(job_id)
                     launches_by_seat.setdefault(seat, set()).add(identity)
+                unknown.update(fact['roles']['unknown'])
+                for role, by_seat in role_jobs.items():
+                    for seat in fact['roles'][role]:
+                        by_seat.setdefault(seat, set()).add(job_id)
         seats = sorted(jobs_by_seat, key=lambda seat: (-len(jobs_by_seat[seat]), seat))
         result = dict(rows=[dict(rank=rank, token_id=seat, jobs=len(jobs_by_seat[seat]),
-                                 launches=len(launches_by_seat[seat]))
+                                 launches=len(launches_by_seat[seat]),
+                                 **{f'{role}_jobs': None if seat in unknown else len(by_seat.get(seat, ()))
+                                    for role, by_seat in role_jobs.items()})
                             for rank, seat in enumerate(seats, 1)], read_ts=min(clocks))
         if result != self._last:
             self._last = result

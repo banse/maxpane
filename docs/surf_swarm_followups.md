@@ -1658,3 +1658,32 @@ Final BOARD/widget checks passed 188 cases, including the new tab at 143×35,
 149×45 and 225×61 and the existing boundary sweep. Docpins passed 12 cases.
 Final review: Approved, no findings. Three named integration/UI checks and a
 frontend-inclusion mutation passed review verification; no residual follow-ups.
+
+## LEADERBOARD launch contributor settings and roles — 2026-10-14
+
+Added MODEL, EFFORT and BUILD / REVIEW to launch contribution. Model and effort
+remain paired current advertised settings, joined from the existing worker cache
+without per-seat requests. Multiple settings show `+N` and full pairs on hover.
+Unknown settings remain distinct from a confirmed empty advertisement.
+
+BUILD counts accepted implement, integrate, test and tests jobs; REVIEW counts
+accepted review jobs. Counts deduplicate job IDs across nodes and launches. A seat
+doing both roles on one job contributes to both counts but only once to its ranking.
+Unknown roles preserve the ranking and leave the split unknown. Legacy cached
+rankings remain visible while existing bounded reads backfill role facts.
+
+The live 149×45 Matrix render covered all 318 production launches and 727 seats,
+all with known role counts. All nine columns fit the unchanged BOARD 143×35 pin.
+Compact layout remains 130 columns; the tight table clears overflow at 73 columns.
+Long settings retain full hover details; large role counts preserve exact digits
+through `100000/100000` at the full-layout pin. No testnet launches are included.
+
+Validation: 326 data/model/manager tests, 230 widget/contract/composing screen
+tests, 124 existing BOARD layout cases and 124 fast guards passed. Thirteen
+implementation mutation checks were killed and restored. No full suite was run.
+
+Final review found two Important issues: unavailable settings used absence wording,
+and large role counts could clip. Both were fixed in one wave. Scoped re-review:
+Approved; four regressions and six boundary cases passed, and both targeted mutants
+were killed and restored. The initial review also killed a role-classification
+mutant. No residual findings.

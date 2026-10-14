@@ -67,6 +67,10 @@ async def test_real_launches_include_verified_frontend_and_count_jobs_once(setup
     rows = {row['token_id']: row for row in result['rows']}
     assert rows[401]['jobs'] == rows[402]['jobs'] == 1
     assert rows[401]['launches'] == rows[402]['launches'] == 1
+    assert (rows[401]['build_jobs'], rows[401]['review_jobs']) == (0, 1)
+    assert (rows[402]['build_jobs'], rows[402]['review_jobs']) == (1, 0)
+    assert (rows[849]['build_jobs'], rows[849]['review_jobs']) == (1, 0)
+    assert (rows[1573]['build_jobs'], rows[1573]['review_jobs']) == (1, 0)
     assert 717 in rows and 863 in rows
     assert sorted(row['rank'] for row in result['rows']) == list(range(1, len(rows) + 1))
     assert raw == before
@@ -84,14 +88,16 @@ async def test_deduplicates_seat_nodes_and_job_across_launches_excludes_oracle(s
     job = raw['launches'][first['id']]['jobs'][0]['id']
     raw['launches'][second['id']]['jobs'] = [{'id': job}]
     raw['jobs'][job]['nodes'] = [
-        {'key': 'build', 'state': 'accepted', 'seat': {'tokenId': '7'}},
-        {'key': 'review', 'state': 'accepted', 'seat': {'tokenId': '7'}},
+        {'key': 'build', 'role': 'implement', 'state': 'accepted', 'seat': {'tokenId': '7'}},
+        {'key': 'tests', 'role': 'test', 'state': 'accepted', 'seat': {'tokenId': '7'}},
+        {'key': 'review', 'role': 'review', 'state': 'accepted', 'seat': {'tokenId': '7'}},
         {'key': 'oracle_assess', 'state': 'accepted', 'seat': {'tokenId': '8'}},
         {'key': 'failed', 'state': 'failed', 'seat': {'tokenId': '9'}},
         {'key': 'pending', 'state': 'working', 'seat': {'tokenId': '10'}},
     ]
     result = await batch(reader, raw)
-    assert result['rows'] == [{'rank': 1, 'token_id': 7, 'jobs': 1, 'launches': 2}]
+    assert result['rows'] == [{'rank': 1, 'token_id': 7, 'jobs': 1, 'launches': 2,
+                              'build_jobs': 1, 'review_jobs': 1}]
     assert client.calls.count(('jobs', job)) == 1
 
 
@@ -337,3 +343,77 @@ async def test_duplicate_catalogue_and_duplicate_job_ids_are_not_complete(setup)
     launch = raw['launches'][raw['catalogue'][0]['id']]
     launch['jobs'] *= 2
     assert (await batch(reader, raw))['state'] == 'failed'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('role', [None, 'unknown', 3, ['review']])
+async def test_unknown_role_keeps_ranking_and_only_hides_affected_seat_split(setup, role):
+    reader, client, raw, _, _ = setup
+    jobs = list(raw['jobs'].values())
+    jobs[0]['nodes'][0]['role'] = role
+    jobs[0]['nodes'][1]['seat']['tokenId'] = '863'  # known and unknown role on one job
+    jobs[1]['nodes'][0]['seat']['tokenId'] = '863'
+    result = await batch(reader, raw)
+    rows = {row['token_id']: row for row in result['rows']}
+    assert result['state'] == 'ok' and rows[863]['jobs'] == 2
+    assert rows[863]['build_jobs'] is rows[863]['review_jobs'] is None
+    assert (rows[717]['build_jobs'], rows[717]['review_jobs']) == (1, 0)
+    calls = list(client.calls)
+    await batch(reader, raw)
+    assert client.calls == calls  # known absence is not endlessly refetched
+
+
+@pytest.mark.asyncio
+async def test_legacy_ranking_retained_while_role_facts_are_backfilled(setup):
+    reader, client, raw, cache, clock = setup
+    good = await batch(reader, raw)
+    payload = copy.deepcopy(cache.get_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION).payload)
+    for fact in payload['jobs'].values():
+        fact.pop('roles')
+    for row in payload['snapshot']['rows']:
+        row.pop('build_jobs'); row.pop('review_jobs')
+    cache.store_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION, payload, ts=NOW)
+    client.calls.clear()
+    restored = LaunchContributionReader(client, cache, clock=lambda: clock[0])
+    before = restored.project()
+    assert before['rows'] == [dict(row, build_jobs=None, review_jobs=None) for row in good['rows']]
+    assert before['read_ts'] == good['read_ts']
+    client.wait = asyncio.Event()
+    restored.offer(raw['catalogue'], complete=True, read_ts=NOW)
+    assert restored.project()['state'] == 'pending'
+    assert restored.project()['rows'] == before['rows']
+    client.wait.set()
+    await restored.task
+    assert restored.project()['rows'] == good['rows']
+    assert sorted(client.calls) == [('jobs', identity) for identity in sorted(raw['jobs'])]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('roles', [None, {}, {'build': [True], 'review': [], 'unknown': []},
+    {'build': [99999], 'review': [], 'unknown': []},
+    {'build': [717, 717], 'review': [], 'unknown': []},
+    {'build': [717], 'review': [], 'unknown': [717]}])
+async def test_corrupt_cached_roles_refetch_only_the_bad_job(setup, roles):
+    reader, client, raw, cache, clock = setup
+    await batch(reader, raw)
+    payload = copy.deepcopy(cache.get_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION).payload)
+    identity = next(iter(raw['jobs']))
+    payload['jobs'][identity]['roles'] = roles
+    cache.store_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION, payload, ts=NOW)
+    client.calls.clear()
+    restored = LaunchContributionReader(client, cache, clock=lambda: clock[0])
+    assert (await batch(restored, raw))['state'] == 'ok'
+    assert client.calls == [('jobs', identity)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('build,review', [(True, 1), (-1, 1), (2, 0), (None, 0), (0, 0)])
+async def test_impossible_cached_split_cannot_be_presented_as_complete(setup, build, review):
+    reader, client, raw, cache, clock = setup
+    await batch(reader, raw)
+    payload = copy.deepcopy(cache.get_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION).payload)
+    payload['snapshot']['rows'][0].update(build_jobs=build, review_jobs=review)
+    cache.store_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION, payload, ts=NOW)
+    restored = LaunchContributionReader(client, cache, clock=lambda: clock[0])
+    assert restored.project()['rows'] is None
+    assert (await batch(restored, raw))['state'] == 'ok'

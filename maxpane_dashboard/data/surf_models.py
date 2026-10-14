@@ -1583,6 +1583,11 @@ SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "deta
 # id, age_s, symbol, chain. state: ok/partial/stale/unavailable; read_ts is source time.
 SWARM_SEAT_OUTCOME_FIELDS = ("token_id", "listed", "attempts", "accepted", "rejected",
                            "failed", "pending", "accept_rate", "rank", "ranked_of")
+# Historical distinct accepted job counts; build/review may overlap or both be unknown.
+# Current advertised_models is joined only during projection: [{model, effort}], []
+# for known absence, None when unavailable. It is not persisted with historical work.
+SWARM_LAUNCH_CONTRIBUTION_ROW_FIELDS = ("rank", "token_id", "jobs", "launches",
+                                      "build_jobs", "review_jobs", "advertised_models")
 # Sources are keyed overview/records/hourly/supply. state is ok/stale/unavailable;
 # version is the normalized payload hash, read_ts is successful observation time.
 SURFBOARD_SOURCE_FIELDS = ("payload", "read_ts", "provider_ts", "version", "attempt_ts", "state")

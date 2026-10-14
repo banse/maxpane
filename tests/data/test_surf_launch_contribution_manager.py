@@ -1,9 +1,14 @@
 """The board's background launch ranking has a visibility-only I/O boundary."""
+import copy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import pytest
+
 from tests.data.test_surf_manager_swarm import _FakeSwarm, _manager
-from maxpane_dashboard.data.surf_cache import SLOT_SWARM_LAUNCH_CONTRIBUTION
+from maxpane_dashboard.data.surf_cache import SLOT_SWARM_LAUNCH_CONTRIBUTION, SLOT_SWARM_WORKERS
+from maxpane_dashboard.data import surf_swarm as sw
+from maxpane_dashboard.data.surf_models import SWARM_LAUNCH_CONTRIBUTION_ROW_FIELDS
 
 
 async def test_catalogue_and_reader_are_offered_only_for_visible_launch_tab(tmp_path):
@@ -66,6 +71,57 @@ async def test_manager_restores_completed_ranking_after_loading_disk_cache(tmp_p
     await manager.close()
     reopened = _manager(tmp_path, _FakeSwarm())
     try:
-        assert reopened.get_launch_contribution_snapshot()["rows"] == expected
+        assert reopened.get_launch_contribution_snapshot()["rows"] == [dict(
+            row, build_jobs=None, review_jobs=None, advertised_models=None) for row in expected]
     finally:
         await reopened.close()
+
+
+async def test_current_models_join_all_workers_without_mutating_history_or_fetching(tmp_path):
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm)
+    history = {"rows": [dict(rank=1, token_id=98765, jobs=4, launches=3,
+                            build_jobs=2, review_jobs=3)]}
+    manager._launch_contribution_reader.project = Mock(return_value=history)
+    workers = sw.normalize_workers(swarm.workers)
+    sample = workers['workers'][0]
+    workers['workers'] = [dict(sample, token_id=98765, advertised_models=[
+        {'model': 'fable 5.1', 'effort': 'high'}, {'model': 'astra 6', 'effort': None}]),
+        dict(sample, token_id=98765, advertised_models=[
+        {'model': 'astra 6', 'effort': 'xhigh'}, {'model': 'fable 5.1', 'effort': 'high'}])]
+    workers['count'] = 2
+    manager.cache.store_last_good(SLOT_SWARM_WORKERS, workers)
+    original = copy.deepcopy((history, workers))
+    try:
+        row = manager.get_launch_contribution_snapshot()['rows'][0]
+        assert set(row) == set(SWARM_LAUNCH_CONTRIBUTION_ROW_FIELDS)
+        assert row['advertised_models'] == [
+            {'model': 'astra 6', 'effort': None}, {'model': 'astra 6', 'effort': 'xhigh'},
+            {'model': 'fable 5.1', 'effort': 'high'}]
+        assert manager._project_hub()['swarm_launch_contribution']['rows'] == [row]
+        row['advertised_models'][0]['model'] = 'edited'
+        assert (history, workers) == original
+        assert manager.get_launch_contribution_snapshot()['rows'][0]['advertised_models'][0]['model'] == 'astra 6'
+        assert not swarm.calls
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize('source,expected', [('missing', None), ('malformed', None),
+                                          ('complete', []), ('partial', None)])
+async def test_no_advertised_models_preserves_source_availability(tmp_path, source, expected):
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm)
+    manager._launch_contribution_reader.project = Mock(return_value={
+        'rows': [dict(rank=1, token_id=98765, jobs=1, launches=1, build_jobs=1, review_jobs=0)]})
+    if source != 'missing':
+        workers = sw.normalize_workers(swarm.workers)
+        workers['workers'] = []
+        workers['count'] = 0 if source == 'complete' else 1
+        if source == 'malformed':
+            workers['workers'] = [{'token_id': 98765, 'advertised_models': [{'model': 3}]}]
+        manager.cache.store_last_good(SLOT_SWARM_WORKERS, workers)
+    try:
+        assert manager.get_launch_contribution_snapshot()['rows'][0]['advertised_models'] == expected
+    finally:
+        await manager.close()
