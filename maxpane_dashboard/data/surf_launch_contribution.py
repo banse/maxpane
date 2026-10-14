@@ -96,6 +96,7 @@ class LaunchContributionReader:
 
     def __init__(self, client, cache, *, clock=time.time):
         self.client, self.cache, self.clock = client, cache, clock
+        self._sleep = asyncio.sleep
         self.task = None
         self._target, self._complete, self._catalogue_ts = {}, False, None
         self._offered, self._catalogue_failed = False, False
@@ -180,7 +181,12 @@ class LaunchContributionReader:
 
     async def _get(self, kind, identity, decoder):
         method = {'launches': 'fetch_launch_jobs', 'jobs': 'fetch_job', 'workflows': 'fetch_workflow'}[kind]
-        raw = await getattr(self.client, method)(identity)
+        for attempt in range(3):
+            raw = await getattr(self.client, method)(identity)
+            if raw is not None and raw != {'error': 'busy'}:
+                break
+            if attempt < 2:
+                await self._sleep(5 * 3 ** attempt)
         if not isinstance(raw, dict) or raw.get('id') != identity:
             raise ValueError('source identity or response unavailable')
         fact = decoder(raw)
@@ -275,7 +281,7 @@ class LaunchContributionReader:
         except Exception as exc:
             self._failed = True
             self._retry_at = self.clock() + BACKOFF
-            logger.debug('launch contribution read failed for %s: %s', row['id'] if row else None, exc)
+            logger.warning('launch contribution read failed for %s: %s', row['id'] if row else None, exc)
         finally:
             self._store()
 

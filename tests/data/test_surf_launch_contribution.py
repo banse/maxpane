@@ -4,6 +4,7 @@ import copy
 import json
 from pathlib import Path
 from uuid import UUID
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -46,6 +47,7 @@ def setup(tmp_path):
     cache = SurfCache(str(tmp_path / 'cache.json'), clock=lambda: clock[0])
     client = Client(raw)
     reader = LaunchContributionReader(client, cache, clock=lambda: clock[0])
+    reader._sleep = AsyncMock()
     return reader, client, raw, cache, clock
 
 
@@ -153,13 +155,55 @@ async def test_failed_read_stops_fanout_and_backoff_then_retries(setup, failure)
     raw['launches'][identity] = failure
     result = await batch(reader, raw)
     assert result['state'] == 'failed' and result['rows'] is None
-    assert len(client.calls) == 1
+    attempts = 1 if isinstance(failure, Exception) else 3
+    assert len(client.calls) == attempts
+    assert reader._sleep.await_count == attempts - 1
     raw['launches'][identity] = good
     clock[0] += 119
     await batch(reader, raw)
-    assert len(client.calls) == 1
+    assert len(client.calls) == attempts
     clock[0] += 1
     assert (await batch(reader, raw))['state'] == 'ok'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('kind', ['launches', 'jobs', 'workflows'])
+async def test_transient_failure_retries_same_read_without_losing_scan_progress(setup, kind):
+    reader, client, raw, _, _ = setup
+    original = client.read
+    failures = [None, {'error': 'busy'}]
+    async def flaky_read(source, identity):
+        if source == kind and failures:
+            client.calls.append((source, identity))
+            return failures.pop(0)
+        return await original(source, identity)
+    async def delay(seconds):
+        assert reader.project()['state'] == 'pending'
+        assert reader.project()['rows'] is None
+    client.read = flaky_read
+    reader._sleep.side_effect = delay
+    result = await batch(reader, raw)
+    assert result['state'] == 'ok' and result['loaded'] == result['total'] == 2
+    assert result['rows']
+    assert [call.args for call in reader._sleep.await_args_list] == [(5,), (15,)]
+    retried = [call for call in client.calls if call[0] == kind]
+    assert retried[0] == retried[1] == retried[2]
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_transient_retry_stops_requests_without_marking_failed(setup):
+    reader, client, raw, _, _ = setup
+    raw['launches'][raw['catalogue'][0]['id']] = None
+    waiting = asyncio.Event()
+    async def delay(seconds):
+        waiting.set()
+        await asyncio.Event().wait()
+    reader._sleep.side_effect = delay
+    reader.offer(raw['catalogue'], complete=True, read_ts=NOW)
+    await asyncio.wait_for(waiting.wait(), 1)
+    await reader.close()
+    assert len(client.calls) == 1
+    assert reader.project()['state'] == 'pending'
 
 
 @pytest.mark.asyncio
