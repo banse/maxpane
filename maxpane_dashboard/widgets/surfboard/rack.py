@@ -402,14 +402,15 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             fields = [flatten(line).removeprefix("★ ").split() for line in stats]
             label_width = max((cell_len(row[0]) for row in fields if len(row) == 3), default=8)
             amount_width = max((cell_len(row[1]) for row in fields if len(row) == 3), default=1)
+            available = max(0, inside - 1)
+            unit_gap = " " if label_width + amount_width + 5 <= available else ""
             preview = []
             for parts in fields:
                 name, amount, unit = parts if len(parts) == 3 else ("—", "—", "IMD")
-                row = f"{name.ljust(label_width)} {amount.ljust(amount_width)} {unit}"
-                available = max(0, inside - 2)
+                row = f"{name.ljust(label_width)} {amount.ljust(amount_width)}{unit_gap}{unit}"
                 if cell_len(row) > available:
-                    row = f"{name} {amount} {unit}"
-                preview.append((Text(" " + clip(row, available) + " ", style=Style(
+                    row = f"{name} {amount}{unit_gap}{unit}"
+                preview.append((Text(" " + clip(row, available), style=Style(
                     color=self.rich_style.color, bgcolor=palette["background"])), cell_len(row) > available))
         elif self.key == "announce":
             from maxpane_dashboard.widgets.surf._icons import post_preview as _post_preview
@@ -506,7 +507,6 @@ class SurfboardRack(Grid):
         border: round $panel; background: $surface; color: $text; content-align: center middle;
         border-title-color: $text-muted; border-subtitle-color: $text-muted; border-subtitle-align: left; }
     SurfboardRack > SurfboardCard:focus { border: round $accent; }
-    SurfboardRack > #surfboard-card-protocol { padding: 0; }
     SurfboardRack > SurfboardCard.empty { color: $text-muted; }
     SurfboardCard .surfboard-card--muted { color: $text-muted; background: $background; }
     SurfboardCard > Input.seat-input { position: absolute; height: 1; margin: 0; padding: 0;

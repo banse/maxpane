@@ -327,7 +327,7 @@ async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
             for strip, name, value in zip(strips[top+1:top+4], ('burned', 'rewarded', 'fees'), expected):
                 line = strip.text[left+1:right]
                 assert line.split() == [name, value, 'IMD']
-                assert line.startswith(' ' + name) and line.endswith(' ')
+                assert line.startswith(' ' + name)
                 assert not line[line.index('IMD')+3:].strip()
                 unit_columns.add(line.index('IMD'))
                 label_columns.add(line.index(name))

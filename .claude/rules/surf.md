@@ -891,7 +891,10 @@ polling missed the work; a newer observed stop wins. Heartbeat, acceptance and
 feedback timestamps cannot reset it. Without either source, cold idle has a dash,
 not a full orange bar. The last green segment remains until the full 24h expires.
 PROTOCOL uses label / amount / IMD columns, neutral inset borders/title, and a centered
-outer `x% burned` footer. POOL4's inset borders/title/USD label compare consecutive valid
+outer `x% burned` footer. Its inset uses the same horizontal padding as the other cards.
+Stats retain a leading blank and aligned columns; spare trailing space and then the
+amount/unit gap give way when needed to keep complete values at narrow widths.
+POOL4's inset borders/title/USD label compare consecutive valid
 USD price reads: green up, orange down, neutral on first or unchanged reads. Source clocks
 prevent cached repaints from clearing direction; failed/stale/missing reads do not advance
 the baseline, and network/pool changes reset it. The session-local comparison is independent

@@ -18,12 +18,13 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Rechecked after the 2026-10-14 PROTOCOL/FLEET swap live preview at 149×45.
+#: Rechecked after the 2026-10-14 PROTOCOL inset correction live preview at 149×45.
 #: Six equal fractional columns retain the standard card widths (at most one
 #: cell of rounding difference). PROTOCOL is top-right; FLEET is below ONCHAIN
 #: FEED. The rack retains its 143-column minimum and 23-column card floor;
-#: PROTOCOL's "rewarded 100k IMD" row fits its new slot. Viewport padding and
-#: the vertical gutter keep the width pin at 146.
+#: PROTOCOL uses the standard card padding and matches TOKENS' inset width.
+#: Its aligned stats keep a leading blank; at the pin the stress row fits as
+#: "rewarded 100kIMD". Viewport padding and the vertical gutter keep the pin at 146.
 #: Normal, stress, unavailable and wide composites scroll horizontally at
 #: 145×36, but not 146×36; vertical scrolling clears at 146×37. Every card fits
 #: at 146×37 and 149×45. TOKENS keeps its leading blank and right-edge arrows.

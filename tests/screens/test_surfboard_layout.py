@@ -512,6 +512,26 @@ async def test_protocol_full_supply_footer_fits_at_owner_size(kind):
     assert 'protocol' not in rendered['clipped']
 
 
+@pytest.mark.parametrize('size', [(146, 37), (149, 45), (180, 45)])
+@pytest.mark.parametrize('kind', ['normal', 'stress'])
+async def test_protocol_inset_matches_tokens_width_without_losing_stats(size, kind):
+    rendered = await _render(hub_payload(kind), size)
+    headers = [next(line for line in rendered['card_text'][key].splitlines() if '┌' in line)
+               for key in ('protocol', 'swarm-tokens')]
+    assert headers[0].index('┌') == headers[1].index('┌')
+    assert headers[0].index('┐') == headers[1].index('┐')
+    assert 'protocol' not in rendered['clipped']
+    text = rendered['card_text']['protocol']
+    expected = ['1M', '100k', '10k'] if kind == 'stress' else ['33k', '6k', '4k']
+    unit_columns = []
+    for label, value in zip(('burned', 'rewarded', 'fees'), expected):
+        row = next(line for line in text.splitlines() if label in line)
+        assert value in row and 'IMD' in row and '…' not in row
+        assert row[headers[0].index('┌') + 1:].startswith(' ' + label)
+        unit_columns.append(row.index('IMD'))
+    assert len(set(unit_columns)) == 1
+
+
 @pytest.mark.parametrize('size', [(149, 45), (180, 45)])
 async def test_rack_columns_share_width_equally(size):
     rendered = await _render(hub_payload(), size)
