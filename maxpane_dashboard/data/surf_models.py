@@ -1553,10 +1553,15 @@ SURF_LEADERBOARD_HERO_FIELDS = {
     "top": ("state", "read_ts", "token_id", "accepted", "rank", "empty", "percent"),
     "recorded": ("state", "read_ts", "seats", "attempts", "online", "online_state", "online_read_ts"),
     "rate": ("state", "read_ts", "accepted", "attempts", "percent"),
-    "launches": ("state", "read_ts", "seats", "claude", "codex", "jobs", "runtime_known", "runtime_state", "runtime_read_ts"),
-    "workers": ("state", "read_ts", "live", "working", "capacity"),
+    "launches": ("state", "read_ts", "seats", "claude", "codex", "jobs", "runtime_known", "runtime_state", "runtime_read_ts",
+                 "percent", "total_seats", "records_state", "records_read_ts"),
+    "workers": ("state", "read_ts", "live", "working", "capacity", "runtime", "runtime_percent",
+                "runtime_count", "runtime_total", "runtime_known"),
     "effort": ("state", "read_ts", "tokens", "turns", "hours", "wall_clock_ms"),
 }
+# Launch share uses the complete canonical recorded-seat count with its own clock.
+# Worker runtime coverage counts distinct online seats; a leader requires complete
+# roster and runtime metadata. Each seat votes once per runtime, including both.
 SURF_LAUNCHPAD_HERO_STATES = ("ok", "partial", "stale", "unavailable")
 SURF_LAUNCHPAD_WIDGET_SIGNATURES = {"SurfLaunchpadHero": {"surf_launchpad_hero": "surf_launchpad_hero"}}
 SURF_LAUNCHPAD_HERO_FIELDS = {

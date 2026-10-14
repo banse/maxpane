@@ -1170,20 +1170,24 @@ def _board_payload(kind="capture"):
                         payload=sw.normalize_workers(workers)),
         "contributors": dict(state="ok" if contributors is not None else "unavailable", read_ts=stamp + 120),
     }
-    # Launch history is an independent observation, including when records or
-    # worker metadata are unavailable. Stress counts exercise the card's width.
+    # Launch history is independent; its percentage also needs recorded seats.
+    total_seats = payload["swarm_board_summary"].get("seats") if records is not None else None
+    launch_seats = min(99999 if kind == "worst" else 727, total_seats) if total_seats is not None else 727
+    launch_claude = min(307, launch_seats)
+    launch_codex = min(335, launch_seats - launch_claude)
     payload["swarm_launch_contribution"] = {"summary": dict(
-        state="ok", read_ts=stamp, seats=99999 if kind == "worst" else 727,
-        claude=None if workers is None else 307, codex=None if workers is None else 335,
-        jobs=999999 if kind == "worst" else 1042, runtime_known=None if workers is None else 641,
-        runtime_state=observations["workers"]["state"], runtime_read_ts=stamp + 60)}
+        state="ok", read_ts=stamp, seats=launch_seats,
+        claude=None if workers is None else launch_claude, codex=None if workers is None else launch_codex,
+        jobs=999999 if kind == "worst" else 1042,
+        runtime_known=None if workers is None else launch_claude + launch_codex,
+        runtime_state=observations["workers"]["state"], runtime_read_ts=stamp + 60,
+        percent=100. * launch_seats / total_seats if total_seats else None, total_seats=total_seats,
+        records_state=source["state"], records_read_ts=stamp)}
     payload["surf_leaderboard_hero"] = project(data=payload, sources=observations, now=stamp + 180)
     return payload
 
 
 def _assert_board_whole(result,where):
-    if where == "worst":
-        result = dict(result, marked_besides_exceptions=result["marked_besides_exceptions"] - {"SurfSwarmLeaderboard"})
     _assert_whole(result,where)
     assert result["tiers"]["SurfSwarmLeaderboard"]=="full",result
     assert result["columns"]["SurfSwarmLeaderboard"] == ("#▲","seat","runtime","dev","att","acc","rej","pend","rate","turns","hrs","state"),result
@@ -1209,7 +1213,7 @@ async def test_board_width_boundaries(width,kind):
     assert not result['overflow'],result
     if width>=140:_assert_board_whole(result,kind)
     else:  # Recorded seats has an earlier full-tier edge than launch contributors.
-        assert 'SurfSwarmLeaderboard' in result['marked'], result
+        assert 'SurfSwarmLeaderboard' not in result['marked'], result
         assert len(result['columns']['SurfSwarmLeaderboard']) < 12, result
 
 @pytest.mark.parametrize('height',boundary_set(SURF_BOARD_FULL_LAYOUT_ROWS,20,61,42))
@@ -1229,7 +1233,7 @@ async def test_agent_width_pin_is_not_loose():
 
 async def test_board_recorded_width_boundary_is_tight():
     result=await _render(_board_payload(),(139,80),'b')
-    assert 'SurfSwarmLeaderboard' in result['marked'], result
+    assert 'SurfSwarmLeaderboard' not in result['marked'], result
     assert len(result['columns']['SurfSwarmLeaderboard']) < 12, result
     at = await _render(_board_payload(), (140,80), 'b')
     _assert_board_whole(at, 'capture')

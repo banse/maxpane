@@ -53,11 +53,14 @@ async def test_launch_tab_click_schedules_progress_preserves_rows_and_opens_seat
             "detail": "all 317 production launches",
             "summary": {"state":"ok","read_ts":1_790_000_000.,"seats":1,"jobs":4,
                         "claude":1,"codex":0,"runtime_known":1,
-                        "runtime_state":"ok","runtime_read_ts":1_790_000_001.}}
+                        "runtime_state":"ok","runtime_read_ts":1_790_000_001.,
+                        "percent":25.,"total_seats":4,"records_state":"ok",
+                        "records_read_ts":1_790_000_002.}}
         screen._tick_launch_contribution()
         await pilot.pause()
         assert "claude" in _region_text(pilot.app, widget)
-        assert '4 jobs' in _region_text(pilot.app, launches_card)
+        assert '25%' in _region_text(pilot.app, launches_card)
+        assert '1 of 4 recorded seats' in launches_card.tooltip.plain
         widget.query_one(DataTable).focus()
         await pilot.press("enter")
         screen.select_seat.assert_called_once_with(401)
@@ -129,7 +132,7 @@ async def test_launch_tab_fits_board_pin_and_wider_sizes(size):
 
 @pytest.mark.sweep
 @pytest.mark.parametrize("width",boundary_set(SURF_BOARD_FULL_LAYOUT_COLUMNS,60,225,72,129,142,149))
-async def test_launch_column_tiers_mark_every_omission_and_clear_at_board_pin(width):
+async def test_launch_column_tiers_keep_geometry_without_widen_hint(width):
     # Measured in the real BOARD with a scrolling table: tight stops clipping
     # at 72, compact begins at 129, and all nine columns arrive at 142.
     launches=[dict(rank=i+1,token_id=i+1,jobs=13,launches=12,build_jobs=4,review_jobs=10,
@@ -152,10 +155,7 @@ async def test_launch_column_tiers_mark_every_omission_and_clear_at_board_pin(wi
         clipped=table.virtual_size.width>table.scrollable_content_region.width
         title=_region_text(pilot.app,widget.query_one('.panel-title'))
         all_keys=('rank','seat','jobs','launches','build_review','model','effort','runtime','state')
-        if clipped or widget._keys!=all_keys or widget._clipped:
-            assert '‹' in title
-        else:
-            assert '‹' not in title
+        assert '‹' not in title and 'widen' not in title
         if width>=142:
             assert widget._keys==all_keys and not clipped
             text=_region_text(pilot.app,widget)

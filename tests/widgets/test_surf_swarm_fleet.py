@@ -232,6 +232,77 @@ async def test_receipts_subheader_matches_fleet_bold_muted_title_style():
         assert styles[1].color==styles[0].color
 
 
+@pytest.mark.parametrize('theme',['matrix','minimal'])
+async def test_counts_match_leaderboard_foreground_while_metadata_and_units_stay_neutral(theme):
+    from rich.color import Color
+    from maxpane_dashboard.themes import THEMES
+    from maxpane_dashboard.widgets.surf.swarm_leaderboard import SurfSwarmLeaderboard
+    class ColorHarness(Harness):
+        def compose(self):
+            widget=SurfSwarmFleet()
+            widget.styles.width=43
+            widget.styles.max_width=43
+            yield widget
+            yield SurfSwarmLeaderboard()
+    app=ColorHarness()
+    app.register_theme(THEMES[theme])
+    app.theme=theme
+    fleet=dict(FLEET,
+        runtimes=[dict(value=name,count=count) for name,count in [('codex',458),('claude',418),('both',3)]],
+        models=[dict(model=model,effort='high',count=count) for model,count in
+                [('gpt-6-astra',398),('claude-fable-5-1',244),('claude-opus-5-5',18),('claude-sonnet-5',2)]],
+        daemons=[dict(value='0.1.0+99',count=741)],
+        os=[dict(value='linux',count=887)],profiles=[dict(value='plan3',count=881)],
+        concurrency=[dict(value='1',count=882),dict(value='2',count=883)],paused=[])
+    summary=dict(SUMMARY,devices=123,receipt_seats=456,receipt_accepted=234,receipt_attempts=345,
+                 receipt_rejected=99_999_999,receipt_pending=99_999_999,turns=666,
+                 wall_clock_ms=7_200_000,input_tokens=125,output_tokens=126,tokens_per_completed_job=321)
+    async with app.run_test(size=(120,65)) as pilot:
+        app.query_one(SurfSwarmFleet).update_data(swarm_fleet=fleet,swarm_board_summary=summary,
+            swarm_workers_as_of_hhmm='04:02',swarm_contributors_as_of_hhmm='03:01')
+        app.query_one(SurfSwarmLeaderboard).update_data(swarm_board_rows=[
+            dict(rank=1,token_id=124,devices=449,live_state='idle'),
+            dict(rank=2,token_id=123,devices=458,live_state='idle')])
+        await pilot.pause()
+        lines=painted(pilot)
+        board_y=next(i for i,line in enumerate(lines) if '#123 ' in line)
+        foreground=app.screen.get_style_at(lines[board_y].index('458'),board_y).color
+        assert foreground.get_truecolor()==Color.parse(app.get_css_variables()['foreground']).get_truecolor()
+        runtime_y=next(i for i,line in enumerate(lines) if line.strip().startswith('runtime '))
+        neutral_color=app.screen.get_style_at(lines[runtime_y].index('runtime'),runtime_y).color
+        for marker,counts,neutral in [
+            ('runtime ',('458','418','+1'),('runtime','codex','claude')),
+            ('model ',('398',),('model','astra 6','high')),
+            ('fable 5.1',('244',),('fable 5.1','high')),
+            ('opus 5.5',('18','+1'),('opus 5.5','high')),
+            ('daemon ',('741',),('daemon','0.1.0+99')),
+            ('os ',('887',),('os','linux')),
+            ('profile ',('881',),('profile','plan3')),
+            ('slots ',('882','883'),('slots','1','· 2')),
+            ('devices ',('123','456'),('devices','seats')),
+            ('accepted ',('234','345'),('accepted','of')),
+            ('rejected ',('99,999,999','+1'),('rejected',)),
+            ('turns ',('666','2'),('turns','h')),
+            ('tokens ',('125','126'),('tokens','in','out')),
+            ('tokens/job ',('321',),('tokens/job','served')),
+        ]:
+            y=next(i for i,line in enumerate(lines) if line.strip().startswith(marker))
+            for value in counts:
+                style=app.screen.get_style_at(lines[y].index(value),y)
+                assert style.color==foreground and style.bold and not style.dim,(marker,value,style)
+            for value in neutral:
+                start=lines[y].index(value)
+                for offset,char in enumerate(value):
+                    if not char.isspace():
+                        style=app.screen.get_style_at(start+offset,y)
+                        assert style.color==neutral_color,(marker,value,style)
+        for marker in ('heartbeat','FLEET','RECEIPTS'):
+            y=next(i for i,line in enumerate(lines) if line.strip().startswith(marker))
+            for x,char in enumerate(lines[y]):
+                if char.isdigit():
+                    assert app.screen.get_style_at(x,y).color!=foreground,(marker,char)
+
+
 @pytest.mark.parametrize('width',[37,43])
 async def test_long_and_wide_metadata_preserves_exact_counts_and_inline_omissions(width):
     fleet=dict(FLEET,

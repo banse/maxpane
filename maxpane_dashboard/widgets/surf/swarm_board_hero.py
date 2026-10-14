@@ -6,6 +6,7 @@ from textual.app import ComposeResult
 from textual.containers import Grid
 
 from maxpane_dashboard.widgets.fmt import hhmm
+from maxpane_dashboard.widgets.markup_safety import flatten, strip_tags
 from ._fmt import worked_duration
 from ._swarm_seat import seat_token
 from .news_hero import HeroRecord, _count, _number
@@ -16,6 +17,11 @@ def _state(value):
     return value if value in ("ok", "partial", "stale", "unavailable", "pending", "failed") else "unavailable"
 
 
+def _percent(value):
+    value = _number(value)
+    return _face(value if value is not None and value <= 100 else None, 1).removesuffix('.0') + '%'
+
+
 def leaderboard_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     payload = payload if isinstance(payload, dict) else {}
     records = []
@@ -23,8 +29,8 @@ def leaderboard_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         ("top", "TOP SEAT", "AGENT", "-- accepted"),
         ("recorded", "RECORDED", "SEATS", "-- attempts"),
         ("rate", "ACCEPT RATE", "ACCEPTED", "-- / --"),
-        ("launches", "LAUNCHES", "CONTRIBUTORS", "-- jobs"),
-        ("workers", "WORKERS", "NOW", "CURRENT"),
+        ("launches", "LAUNCHES", "CONTRIBUTORS", "--%"),
+        ("workers", "WORKERS", "NOW", "--% run --"),
         ("effort", "EFFORT", "RECEIPTS", "CONTRIBUTORS"),
     ):
         source = payload.get(key)
@@ -74,7 +80,10 @@ def leaderboard_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                 stats.append((column, _count(value) if key == "workers" else _amount(value)))
             fields["stats"] = tuple(stats)
             if key == "launches":
-                fields["footer"] = f"{_amount(seat_token(section.get('jobs')))} jobs"
+                fields["footer"] = _percent(section.get('percent'))
+            elif key == "workers":
+                runtime = strip_tags(flatten(section.get('runtime'))) or '--'
+                fields["footer"] = f"{_percent(section.get('runtime_percent'))} run {runtime}"
             elif key == "effort":
                 fields["footer"] = worked_duration(section.get("wall_clock_ms"))
         records.append(HeroRecord(**fields))
@@ -91,7 +100,7 @@ class BoardHeroCard(Pool4HeroCard):
         if data.state == "unavailable":
             super()._footer()
         elif (data.key == "launches" and data.state in ("pending", "failed")
-              and all(value == "--" for _, value in data.stats) and data.footer == "-- jobs"):
+              and all(value == "--" for _, value in data.stats) and data.footer == "--%"):
             self.border_subtitle = Text("◌ loading" if data.state == "pending" else "load failed",
                                         style="dim" if data.state == "pending" else "red")
         else:
@@ -139,4 +148,16 @@ class SurfSwarmBoardHero(Grid):
             known, seats = (_count(seat_token(source.get(key))) for key in ("runtime_known", "seats"))
             details.append(f"{known} of {seats} seats have current reported runtimes.")
             details.append("Seats reporting both runtimes count once in each; current metadata, not historical usage.")
+            total = _count(seat_token(source.get('total_seats')))
+            details.append(f"{seats} of {total} recorded seats contributed to launches.")
+            state = _state(source.get('records_state'))
+            clock = hhmm(source.get('records_read_ts'), unknown='--:--')
+            details.append(f"recorded seats {state} · as of {clock} local")
+        elif record.key == "workers":
+            known, total, count = (_count(seat_token(source.get(key))) for key in
+                                   ('runtime_known', 'runtime_total', 'runtime_count'))
+            runtime = strip_tags(flatten(source.get('runtime'))) or '--'
+            details.append(f"{count} of {total} online seats run {runtime}.")
+            details.append(f"{known} of {total} online seats have complete runtime metadata.")
+            details.append("Seats reporting both runtimes count once in each; ties sort by runtime name.")
         card.tooltip = Text("\n".join(details))

@@ -799,9 +799,11 @@ marks the selected AGENT token with `▸`, and Enter validates through `parse_se
 shared `config.save_seat`, then reuses `_seat_entered` (set_seat, mode, scheduled refresh;
 no network await in the event handler). Rendered row identity is token metadata, never clipped
 text or a raw-payload index. FLEET fits whole sanitized values and counts omissions with `+N`.
-Long runtime names use an explicit ellipsis/widen content exception; fixed counters cannot
+Long runtime names use an explicit ellipsis content exception; fixed counters cannot
 clip at the full-layout pin. BOARD's measured guarantees live beside its pins in screens/surf.py.
-FLEET uses dim labels and bold counts. Runtime shows its top two categories on one line,
+FLEET and RECEIPTS use dim labels and bold counts in the leaderboard's foreground color.
+Only numeric values and omission counts receive that color; names, versions, efforts,
+slot bucket labels, separators, units and clocks stay neutral. Runtime shows its top two categories on one line,
 with `+N` after the second; every OS and slot bucket appears in pairs. Model lists the top
 three named model/effort pairs on separate lines, with an inline omitted-pair count on the
 last line. Metadata categories have a blank separator. Daemon shows the most-used version.
@@ -820,14 +822,22 @@ whole offline row dim. Colour is checked on composited cells, including under th
 BOARD uses `SURF_BOARD_FULL_LAYOUT_COLUMNS` × `SURF_BOARD_FULL_LAYOUT_ROWS`, with grouped
 FLEET and paused detail binding height. The constants and their `#:` blocks own the measurements.
 The existing global market title remains unchanged; source clocks belong in BOARD content.
+By explicit owner request, LEADERBOARD has no visible widen hint in either tab at any width.
+Responsive columns, ellipses and full hover details remain; tests inspect actual columns
+and clipping instead of treating the missing hint as evidence of a complete table.
 
 The six BOARD cards are neutral gray. TOP SEAT shows AGENT with acceptance percentage below
 the ID and accepted count in the outer footer. RECORDED shows distinct online recorded seats
 below the total and attempts in its footer. ACCEPT RATE uses ACCEPTED above its digits, `%`
-below, and accepted/attempts in the footer. LAUNCHES shows contributing seats, current reported
-claude/codex seat counts and globally distinct qualifying jobs from all live production launch
-history. Testnet is excluded; current runtime coverage and its independent clock are on hover,
-and a both-runtime seat counts in both categories. EFFORT shows summed input/output tokens,
+below, and accepted/attempts in the footer. LAUNCHES shows contributing seats and current reported
+claude/codex seat counts from all live production launch history. Its footer is contributor seats
+as a percentage of the canonical RECORDED seat total; the denominator's independent state and
+read time are on hover. Testnet is excluded; current runtime coverage and its clock are on hover,
+and a both-runtime seat counts in both categories. WORKERS shows the leading runtime's share
+of distinct online seats as `x% run runtime`, deduplicating devices. A leader requires a complete
+roster and runtime metadata for every online seat; unknown coverage stays unknown and is
+disclosed on hover. Both-runtime seats vote once for each; ties sort by runtime name.
+EFFORT shows summed input/output tokens,
 turns and hours, plus the boardroom's whole-year/week/day worked duration. Retained card values
 keep metric footers during refresh; stale qualifications are on hover rather than on the face.
 The launch reader runs while either BOARD tab is visible, so LAUNCHES loads independently of

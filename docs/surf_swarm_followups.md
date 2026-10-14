@@ -1720,3 +1720,36 @@ Fast guards passed 124 cases and documentation pins passed 12. No full suite
 was run. Final review: Approved, no findings. Review verified the fresh-process
 boardroom import, shared duration, tab/resize column preservation and three named
 tests; a distinct-canonical-seat mutant was killed and restored. No residuals.
+
+## BOARD value emphasis and population shares — 2026-10-15
+
+FLEET and RECEIPTS now color numeric values and omission counts with the
+leaderboard foreground, preserving neutral labels, model/version text, units
+and clocks. LEADERBOARD omits its widen hint at the owner's request; responsive
+columns, ellipses, hover detail and clickable tabs remain.
+
+LAUNCHES shows contributor seats divided by canonical RECORDED seats, with
+the denominator's independent source state and clock on hover. WORKERS shows
+the leading runtime's share of distinct online seats. Devices are deduplicated,
+both-runtime seats vote once per runtime, and missing roster/runtime coverage
+leaves the leader unknown. Empty and whitespace-only runtime IDs also count
+as missing metadata. No new data source or polling was added.
+
+The live production preview at 149×45 showed `68.3%` contributors and
+`52.5% run codex`, with the prior launch ranking retained during its refresh.
+All columns and receipt rows fit. BOARD remains 142×44; 122 layout cases passed
+using actual columns/clipped fields rather than the omitted hint. Data checks
+passed 239 cases; widget/composing checks covered 159 cases. Four obsolete
+hint assertions were updated, then all 103 FLEET/LEADERBOARD cases passed.
+Fast guards passed 124 cases and documentation pins passed 12. No full suite.
+
+Final review found one incorrect-percentage edge involving an empty runtime
+ID, fixed in one wave with five failing-then-passing regression inputs. The
+initial data/UI proof killed eight mutants; the fix adds a guard-bypass proof.
+Scoped re-review: Critical finding ADDRESSED; the reviewer independently killed
+the guard-bypass mutant and restored exact bytes. No remaining blocking findings.
+
+Open Minor: `_percent()` uses the existing `_face()` precision below 1%, so
+`0.123456` renders `0.1235%` rather than the plan's one-decimal `0.1%`. File this
+formatting refinement for the next touch of `swarm_board_hero.py`; no numerical
+value is lost or rounded to zero.

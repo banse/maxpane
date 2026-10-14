@@ -39,8 +39,10 @@ def payload():
                       online_state="ok", online_read_ts=1791775200.),
         rate=dict(source, accepted=96000, attempts=100000, percent=96.),
         launches=dict(source, seats=940, claude=602, codex=400, jobs=12800,
-                      runtime_known=900, runtime_state="ok", runtime_read_ts=1791775200.),
-        workers=dict(source, live=966, working=24, capacity=2880),
+                      runtime_known=900, runtime_state="ok", runtime_read_ts=1791775200.,
+                      percent=91.796875, total_seats=1024, records_state="ok", records_read_ts=1791774600.),
+        workers=dict(source, live=966, working=24, capacity=2880, runtime="codex",
+                     runtime_percent=52.380952, runtime_count=506, runtime_total=966, runtime_known=966),
         effort=dict(source, tokens=18400000, turns=580000, hours=14215.,
                     wall_clock_ms=14215 * 3600000),
     )
@@ -106,8 +108,8 @@ async def test_six_approved_cards_preserve_digits_counts_and_equal_geometry():
             ("top", "AGENT", "95.9%", "4.188k accepted"),
             ("recorded", "SEATS", "966 online", "100k attempts"),
             ("rate", "ACCEPTED", "%", "96k / 100k"),
-            ("launches", "CONTRIBUTORS", "", "12.8k jobs"),
-            ("workers", "NOW", "", "CURRENT"),
+            ("launches", "CONTRIBUTORS", "", "91.8%"),
+            ("workers", "NOW", "", "52.4% run codex"),
             ("effort", "RECEIPTS", "", "worked 1y 32w 3d"),
         ):
             lines = painted(app, key).splitlines()
@@ -180,7 +182,7 @@ async def test_partial_stale_and_failed_sources_remain_independent(local_clock):
         assert "partial" in app.query_one("#hero-effort").tooltip.plain
         assert "05:00" in app.query_one("#hero-effort").tooltip.plain
         assert any("turns" in line and "--" in line for line in painted(app, "effort").splitlines())
-        assert "CURRENT" in painted(app, "workers") and "966" in painted(app, "workers")
+        assert "52.4% run codex" in painted(app, "workers") and "966" in painted(app, "workers")
         data["workers"]["state"] = "unavailable"
         app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=data)
         await pilot.pause()
@@ -209,11 +211,15 @@ async def test_invalid_percent_is_unknown_instead_of_a_success_rate(percent):
     data = payload()
     data["rate"]["percent"] = percent
     data["top"]["percent"] = percent
+    data["launches"]["percent"] = percent
+    data["workers"]["runtime_percent"] = percent
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         assert "--" in painted(pilot.app, "rate")
         assert "╶─╯╰─╯•╰─╯" not in painted(pilot.app, "rate")
         assert "--%" in painted(pilot.app, "top")
+        assert "--%" in painted(pilot.app, "launches")
+        assert "--% run codex" in painted(pilot.app, "workers")
 
 
 async def test_small_effort_hours_and_tiny_nonzero_accept_rate_remain_visible():
@@ -265,11 +271,11 @@ async def test_launch_refresh_updates_only_its_card_and_retains_neutral_values(s
         app = pilot.app
         before = {key: painted(app, key) for key in payload() if key != "launches"}
         summary = dict(payload()["launches"], state=state, seats=941, claude=603,
-                       codex=401, jobs=12801, runtime_known=901)
+                       codex=401, jobs=12801, runtime_known=901, percent=941 / 1024 * 100)
         app.query_one(SurfSwarmBoardHero).set_launch_contribution({"summary": summary})
         await pilot.pause()
         text = painted(app, "launches")
-        assert all(word in text for word in ("941", "603", "401", "12.8k jobs"))
+        assert all(word in text for word in ("941", "603", "401", "91.9%"))
         assert all(word not in text for word in ("stale", "partial", "loading", "failed"))
         assert before == {key: painted(app, key) for key in before}
         frame = next(segment for strip in strips(app, "launches") for segment in strip if "┌" in segment.text)
@@ -295,10 +301,10 @@ async def test_launch_first_read_status_keeps_unknown_and_known_zero_distinct(st
             color = failure.style.color.get_truecolor()
             assert color.red > color.green and color.red > color.blue
         app.query_one(SurfSwarmBoardHero).set_launch_contribution({
-            "summary": dict(state=state, seats=0, claude=0, codex=0, jobs=0, runtime_known=0)})
+            "summary": dict(state=state, seats=0, claude=0, codex=0, jobs=0, runtime_known=0, percent=0, total_seats=1024)})
         await pilot.pause()
         text = painted(app, "launches")
-        assert "0 jobs" in text and footer not in text
+        assert "0%" in text and footer not in text
         assert all(any(label in line and "0" in line for line in text.splitlines())
                    for label in ("seats", "claude", "codex"))
 
@@ -332,3 +338,24 @@ async def test_invalid_source_clocks_are_explicit_and_never_painted(widget_name)
         swarm_board_as_of_hhmm="[/x]PWNED", swarm_workers_as_of_hhmm="99:99"))
     assert "unavailable" in text
     assert "PWNED" not in text and "99:99" not in text and "[/x]" not in text
+
+
+async def test_share_footers_keep_denominators_on_hover_and_unknowns_unknown(local_clock):
+    data = payload()
+    data['launches'].update(percent=None, total_seats=None, records_state='unavailable', records_read_ts=None)
+    data['workers'].update(runtime=None, runtime_percent=None, runtime_count=None, runtime_known=900)
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        assert '--%' in painted(app, 'launches').splitlines()[8]
+        assert '--% run --' in painted(app, 'workers').splitlines()[8]
+        launch = app.query_one('#hero-launches').tooltip.plain
+        assert 'recorded seats unavailable' in launch and '--:--' in launch
+        assert '900 of 966' in app.query_one('#hero-workers').tooltip.plain
+        app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=payload())
+        await pilot.pause()
+        launch = app.query_one('#hero-launches').tooltip.plain
+        assert '940 of 1,024 recorded seats' in launch and '05:10' in launch
+        workers = app.query_one('#hero-workers').tooltip.plain
+        assert '506 of 966 online seats run codex' in workers
+        assert 'both runtimes' in workers

@@ -25,7 +25,7 @@ async def test_unread_and_empty_are_distinct():
     assert 'no submitted records yet' in await render([])
 async def test_hostile_runtime_is_sanitized_with_visible_clip():
     text=await render([dict(ROWS[0],runtime='[/x]PWNED'+'x'*64)])
-    assert 'PWNED' in text and '…' in text and '‹ widen' in text
+    assert 'PWNED' in text and '…' in text and '‹ widen' not in text
     assert '[/x]' not in text
 async def test_row_identity_survives_skipped_rows_and_resize():
     class Harness(App):
@@ -227,7 +227,7 @@ def contribution(rows=None, *, state='ok', detail='317/317 production launches',
     return dict(state=state, read_ts=read_ts, rows=rows, loaded=317, total=317, detail=detail)
 
 
-@pytest.mark.parametrize('width',[120,106,64,42])
+@pytest.mark.parametrize('width',[120,106,64,42,24])
 async def test_launch_tab_titles_are_clickable_and_counts_join_only_worker_facts(width):
     rows=[dict(ROWS[0], token_id=10, rank=99, runtime='claude', live_state='working', working=2),
           dict(ROWS[1], token_id=2, rank=18, runtime='codex', live_state='idle')]
@@ -240,7 +240,7 @@ async def test_launch_tab_titles_are_clickable_and_counts_join_only_worker_facts
         widget.update_data(swarm_board_rows=rows, swarm_launch_contribution=contribution(launches),
                            swarm_seat_selected={'token_id':10})
         await pilot.pause()
-        labels=('recorded','launches') if width==42 else ('recorded seats','launch contributors')
+        labels=('recorded','launches') if width==24 else ('recorded seats','launch contributors')
         for mode,word in zip(('recorded','launches'),labels):
             painted=_painted_rows(pilot.app)
             y=next(y for y,line in enumerate(painted) if word in line)
@@ -250,6 +250,7 @@ async def test_launch_tab_titles_are_clickable_and_counts_join_only_worker_facts
         table=widget.query_one(DataTable)
         assert 'jobs' in widget._keys and 'turns' not in widget._keys
         painted=_painted_rows(pilot.app)
+        assert '‹ widen' not in '\n'.join(painted)
         first=next(line for line in painted if '▸#10 ' in line)
         assert first.split()[:3]==['1','▸#10','12']
         if 'runtime' in widget._keys:
@@ -257,8 +258,9 @@ async def test_launch_tab_titles_are_clickable_and_counts_join_only_worker_facts
         if 'state' in widget._keys:
             assert '● working 2' in first
         unknown=next(line for line in painted if '#7 ' in line)
-        assert '—' in unknown and 'unavailable' not in unknown
-        assert table.max_scroll_x==0
+        if width>=42:
+            assert '—' in unknown and 'unavailable' not in unknown
+            assert table.max_scroll_x==0
         assert (rows,launches)==original
 
 
@@ -361,7 +363,7 @@ async def test_launch_progress_updates_preserve_recorded_rows_clocks_and_worker_
 
 
 @pytest.mark.parametrize('width',[21,51,52,53,106])
-async def test_leaderboard_title_keeps_both_tabs_clickable_and_widen_visible_at_narrow_widths(width):
+async def test_leaderboard_title_keeps_both_tabs_clickable_without_widen_at_narrow_widths(width):
     async with SortHarness().run_test(size=(width,14)) as pilot:
         widget=pilot.app.query_one(SurfSwarmLeaderboard)
         widget.update_data(swarm_board_rows=ROWS)
@@ -372,7 +374,7 @@ async def test_leaderboard_title_keeps_both_tabs_clickable_and_widen_visible_at_
                  for x in range(title.region.x,title.region.right) if painted[x]!=' '}
         assert {"screen.board_view('recorded')","screen.board_view('launches')"}<=actions
         assert title.region.height==1
-        assert ('‹' in painted)==bool(widget._widen or widget._clipped)
+        assert '‹' not in painted and 'widen' not in painted
         if width==106:
             assert 'LEADERBOARD · recorded seats · launch contributors' in painted
 
@@ -471,7 +473,7 @@ async def test_launch_tooltip_follows_actual_hover_and_keyboard_row_without_mode
         assert table.tooltip is None
 
 
-async def test_launch_long_model_preserves_additional_pair_count_and_marks_clipping():
+async def test_launch_long_model_preserves_additional_pair_count_without_widen_hint():
     pairs=[{'model':'aaa-model-'+'界'*20+'[/x]', 'effort':'high'},
            {'model':'gpt-6-astra', 'effort':'xhigh'}]
     async with SortHarness().run_test(size=(120,14)) as pilot:
@@ -483,7 +485,20 @@ async def test_launch_long_model_preserves_additional_pair_count_and_marks_clipp
         painted=_painted_rows(pilot.app)
         row=next(line for line in painted if '#10 ' in line)
         assert '… +1' in row and '[/x]' not in row
-        assert '‹ widen' in '\n'.join(painted)
+        assert '‹ widen' not in '\n'.join(painted)
+
+
+@pytest.mark.parametrize('mode',['recorded','launches'])
+@pytest.mark.parametrize('width',[120,90,64,42,24])
+async def test_both_leaderboard_views_omit_widen_hint_at_every_width(mode,width):
+    async with SortHarness().run_test(size=(width,14)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        row=dict(ROWS[0],runtime='runtime-name-that-needs-clipping',jobs=12,launches=3)
+        widget.update_data(swarm_board_rows=[row],swarm_launch_contribution=contribution([row]))
+        widget.set_view(mode)
+        await pilot.pause()
+        assert '‹ widen' not in '\n'.join(_painted_rows(pilot.app))
+        assert widget.query_one(DataTable).row_count==1
 
 
 @pytest.mark.parametrize('models,label',[

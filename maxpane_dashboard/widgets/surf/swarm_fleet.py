@@ -1,6 +1,7 @@
 """Labelled worker metadata groups and the independent contributor token metric."""
 from datetime import datetime
 from rich.cells import cell_len
+from rich.style import Style
 from rich.text import Text
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int, hhmm
@@ -66,26 +67,30 @@ class SurfSwarmFleet(SignalsPanelBase):
     def _label(label):
         return Text().append(label.ljust(LABEL_WIDTH), style='dim')
 
-    @staticmethod
-    def _item(name, count):
-        return Text().append(strip_tags(flatten(name)), style='dim').append(' ').append(fmt_int(count), style='bold')
+    def _number_style(self):
+        return Style(color=self.app.get_css_variables()['foreground'], bold=True, dim=False)
+
+    def _item(self, name, count):
+        return Text().append(strip_tags(flatten(name)), style='dim').append(' ').append(fmt_int(count), style=self._number_style())
 
     def _fit(self, label, parts, empty='none reported'):
         prefix = self._label(label) if label else Text()
         if not parts:
             return prefix + Text(empty, style='dim')
         for keep in range(len(parts), -1, -1):
-            values = parts[:keep] + ([Text(f'+{len(parts)-keep}', style='bold')] if keep < len(parts) else [])
+            values = parts[:keep] + ([Text(f'+{len(parts)-keep}', style=self._number_style())] if keep < len(parts) else [])
             text = prefix + Text(' · ').join(values)
             if text.cell_len <= self._room():
                 return text
-        return Text(rowfit.clip(prefix.plain + f'+{len(parts)}', self._room()))
+        text = Text(rowfit.clip(prefix.plain + f'+{len(parts)}', self._room()))
+        text.stylize(self._number_style(), len(prefix.plain))
+        return text
 
     def _metadata_row(self, label, parts, omitted=0, compact_label=False):
         """Fit names by terminal cells; preserve complete counts and count omissions."""
         for keep in range(len(parts), -1, -1):
             hidden = omitted + len(parts) - keep
-            suffix = Text(f' +{hidden}', style='bold') if hidden else Text()
+            suffix = Text(f' +{hidden}', style=self._number_style()) if hidden else Text()
             values = [part.plain.rpartition(' ')[::2] for part in parts[:keep]]
             label_width = LABEL_WIDTH
             natural = LABEL_WIDTH + sum(part.cell_len for part in parts[:keep]) + 3 * max(keep - 1, 0) + suffix.cell_len
@@ -99,10 +104,10 @@ class SurfSwarmFleet(SignalsPanelBase):
             while sum(widths) > name_room:
                 widest = max(range(keep), key=widths.__getitem__)
                 widths[widest] -= 1
-            fitted = [Text(rowfit.clip(name, width), style='dim') + Text(' ' + count, style='bold')
+            fitted = [Text(rowfit.clip(name, width), style='dim') + Text(' ' + count, style=self._number_style())
                       for (name, count), width in zip(values, widths)]
             return Text(label.ljust(label_width), style='dim') + Text(' · ').join(fitted) + suffix
-        return Text(f'+{omitted + len(parts)}', style='bold')
+        return Text(f'+{omitted + len(parts)}', style=self._number_style())
 
     def _group(self, label, parts, columns=1, limit=None):
         """Group metadata, reserving the last row's inline omission count."""
@@ -146,18 +151,16 @@ class SurfSwarmFleet(SignalsPanelBase):
         self.query_one('#surf-fleet-model').tooltip = Text('\n').join(full) if full else None
         return self._group('model', parts, limit=3)
 
-    @staticmethod
-    def _count(value, word='', compact=False):
-        out = Text(fmt_compact(value) if compact else fmt_int(value), style='bold')
+    def _count(self, value, word='', compact=False):
+        out = Text().append(fmt_compact(value) if compact else fmt_int(value), style=self._number_style())
         return out.append(' ' + word, style='dim') if word else out
 
-    @classmethod
-    def _wall_clock(cls, ms):
+    def _wall_clock(self, ms):
         """Wall-clock time to the nearest hour; under half an hour, whole minutes
         (a floor read 59 minutes as ``0 h`` and 5.9 h as ``5 h``, F64)."""
         if ms < _MS_PER_HOUR // 2:
-            return cls._count((ms + _MS_PER_MINUTE // 2) // _MS_PER_MINUTE, 'min')
-        return cls._count((ms + _MS_PER_HOUR // 2) // _MS_PER_HOUR, 'h')
+            return self._count((ms + _MS_PER_MINUTE // 2) // _MS_PER_MINUTE, 'min')
+        return self._count((ms + _MS_PER_HOUR // 2) // _MS_PER_HOUR, 'h')
 
     def _contributors(self, name, summary):
         """One /contributors line; its first value unread is the whole line unread."""
@@ -191,7 +194,7 @@ class SurfSwarmFleet(SignalsPanelBase):
         if name == 'tokens':
             value = summary.get('tokens_per_completed_job') if isinstance(summary, dict) else None
             return self._label('tokens/job') + (Text('unavailable', style='yellow') if value is None else
-                                              Text(fmt_int(value), style='bold') + Text(' (served)', style='dim'))
+                                              self._count(value, '(served)'))
         if name == 'model':
             return self._model_lines(fleet)
         label = self._label(name)

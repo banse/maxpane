@@ -2054,15 +2054,18 @@ BOARD_BODY_ID = "surf-board-body"
 #: and gives FLEET 43 or 45 columns respectively. At wide sizes the table
 #: stays capped and the metadata rail receives the remaining cells.
 #:
-#: Named content exception: the stress table's 64-character runtime keeps
-#: ellipsis and widen in its eleven-cell column at and above the pin. Other
-#: counters and installed columns cannot clip. Long advertised settings
-#: may similarly mark; full sanitized pairs remain available on hover.
+#: Owner exception: LEADERBOARD omits its widen hint at every width. The
+#: sweep checks installed columns and clipped fields directly. The stress
+#: table's 64-character runtime keeps its ellipsis in an eleven-cell column;
+#: other counters and installed columns cannot clip. Long advertised settings
+#: may similarly ellipsise; full sanitized pairs remain available on hover.
 #: A ten-digit seat ID uses a normal text face, never a rounded identifier.
-#: Four-digit table ranks may still mark widen, a pre-existing content limit.
+#: Four-digit table ranks retain their pre-existing content limit.
 #: Empty records, zero attempts and missing independent sources keep the
-#: same card footprints. Launch jobs count distinct global qualifying IDs;
-#: worker runtime coverage and its independent clock remain on hover.
+#: same card footprints. LAUNCHES shows the share of recorded seats; WORKERS
+#: shows the leading runtime's share of distinct online seats. Source clocks
+#: and runtime coverage remain on hover. Counts in FLEET/RECEIPTS match the
+#: leaderboard foreground; names, units, versions and clocks stay neutral.
 #: App-wide 143 stays unchanged; BOARD owns its independently measured pin.
 SURF_BOARD_FULL_LAYOUT_COLUMNS = 142
 

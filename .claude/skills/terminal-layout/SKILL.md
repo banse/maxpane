@@ -48,6 +48,11 @@ out of rows says `‹ taller` on the screen-wide title bar. Launch forces 17 pt 
 about 169 columns on a laptop — so 143 is reachable without `--font-size` /
 `MAXPANE_FONT_SIZE`.
 
+Owner exception (2026-10-15): BOARD's LEADERBOARD omits the visible `‹ widen`
+hint in both tabs at every width. Responsive tiers, ellipses and hover detail
+remain. Measure installed columns and clipped fields directly; no hint is not
+proof that this table is whole. Other panels keep the normal hint behavior.
+
 **The app-wide record, appended never rewritten: 198 → 172 → 143 → 176 → 152 →
 143.** FWA set the first three and the last; surf the two in between. It tracks
 *that* number only — a dashboard measuring under 143 does not append to it,

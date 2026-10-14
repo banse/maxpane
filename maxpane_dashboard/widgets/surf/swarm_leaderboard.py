@@ -271,12 +271,10 @@ class SurfSwarmLeaderboard(SwarmTableBase):
 
     def _render_title(self, as_of):
         room = max(self.size.width - self.TITLE_PADDING_COLS, 0)
-        widen = self._widen or self._clipped
         full_labels=('recorded seats','launch contributors')
-        hint_cols=2+rowfit.cell_len(rowfit.WIDEN_HINT) if widen else 0
         for prefix,labels in (('LEADERBOARD · ',full_labels),('',full_labels),
                               ('',('recorded','launches')),('',('rec','launches'))):
-            if not room or rowfit.cell_len(prefix+' · '.join(labels))+hint_cols<=room:
+            if not room or rowfit.cell_len(prefix+' · '.join(labels))<=room:
                 break
         title=Text(prefix)
         accent=self.app.get_css_variables().get('accent','cyan')
@@ -285,8 +283,7 @@ class SurfSwarmLeaderboard(SwarmTableBase):
             active=mode==self._view_mode
             title.append(label,style=Style(color=accent if active else None,bold=active,dim=not active,
                                           meta={'@click':f"screen.board_view('{mode}')"}))
-        hinted=rowfit.title_with_hint(title.plain,widen,room)
-        title.append(hinted[len(title.plain):])
+        # Owner: BOARD keeps fitted tabs and cell ellipses, without a widen hint.
         self.query_one('.panel-title',Static).auto_links=False
         self.write('.panel-title',title)
 

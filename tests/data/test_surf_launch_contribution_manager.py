@@ -8,6 +8,7 @@ import pytest
 from tests.data.test_surf_manager_swarm import _FakeSwarm, _manager
 from maxpane_dashboard.data.surf_cache import SLOT_SWARM_LAUNCH_CONTRIBUTION, SLOT_SWARM_WORKERS
 from maxpane_dashboard.data import surf_swarm as sw
+from maxpane_dashboard.data import surfboard as hub
 from maxpane_dashboard.data.surf_models import SWARM_LAUNCH_CONTRIBUTION_ROW_FIELDS
 
 
@@ -148,7 +149,8 @@ async def test_launch_summary_and_board_hero_share_live_cache_only_projection(tm
     try:
         snapshot = manager.get_launch_contribution_snapshot()
         assert snapshot['summary'] == dict(state='ok', read_ts=now - 90, seats=3,
-            claude=1, codex=1, jobs=3, runtime_known=1, runtime_state='ok', runtime_read_ts=now - 10)
+            claude=1, codex=1, jobs=3, runtime_known=1, runtime_state='ok', runtime_read_ts=now - 10,
+            percent=None, total_seats=None, records_state='unavailable', records_read_ts=None)
         board = manager._swarm_board_keys(None, entry, None)
         assert board['swarm_launch_contribution'] == snapshot
         assert board['surf_leaderboard_hero']['launches'] == snapshot['summary']
@@ -168,7 +170,8 @@ async def test_cold_launch_summary_keeps_pending_and_worker_clock_independent(tm
     try:
         summary = manager.get_launch_contribution_snapshot()['summary']
         assert summary == dict(state='pending', read_ts=None, seats=None, claude=None, codex=None,
-            jobs=None, runtime_known=None, runtime_state='unavailable', runtime_read_ts=None)
+            jobs=None, runtime_known=None, runtime_state='unavailable', runtime_read_ts=None,
+            percent=None, total_seats=None, records_state='unavailable', records_read_ts=None)
         assert manager._swarm_board_keys(None, None, None)['surf_leaderboard_hero']['launches'] == summary
         assert not swarm.calls
     finally:
@@ -195,5 +198,60 @@ async def test_recorded_online_counts_unique_canonical_seats_and_uses_captured_r
         assert board['surf_leaderboard_hero']['recorded'] == dict(state='ok', read_ts=now - 80,
             seats=2, attempts=6, online=1, online_state='stale', online_read_ts=now - 40)
         assert not swarm.calls
+    finally:
+        await manager.close()
+
+
+async def test_periodic_launch_share_uses_current_records_and_board_uses_its_captured_source(tmp_path):
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm)
+    now = manager._clock()
+    manager._launch_contribution_reader.project = Mock(return_value=dict(state='ok', read_ts=now - 90,
+        jobs=3, rows=[dict(rank=1, token_id=7, jobs=2, launches=2, build_jobs=2, review_jobs=0),
+                     dict(rank=2, token_id=527, jobs=2, launches=2, build_jobs=0, review_jobs=2)]))
+    records = dict(count=4, seats=[dict(token_id=token, agent_id=None, attempts=1, accepted=1,
+        rejected=0, failed=0, pending=0) for token in (7, 90, 527, 999)])
+    current = hub.source_envelope(records, now - 50)
+    manager.cache.store_last_good(hub.SOURCE_SLOTS['records'], current, ts=now - 50)
+    captured = hub.source_envelope(dict(count=2, seats=records['seats'][:2]), now - 100)
+    try:
+        periodic = manager.get_launch_contribution_snapshot()['summary']
+        assert periodic['percent'] == 50 and periodic['total_seats'] == 4
+        assert periodic['records_state'] == 'ok' and periodic['records_read_ts'] == now - 50
+        assert periodic['read_ts'] == now - 90 and periodic['state'] == 'ok'
+        board = manager._swarm_board_keys(None, None, None, records_source=captured)
+        summary = board['surf_leaderboard_hero']['launches']
+        assert summary == board['swarm_launch_contribution']['summary']
+        assert summary['total_seats'] == board['surf_leaderboard_hero']['recorded']['seats'] == 2
+        assert summary['percent'] == 100 and summary['records_read_ts'] == now - 100
+        assert manager.get_launch_contribution_snapshot()['summary'] == periodic
+        manager._clock.advance(121)
+        assert manager.get_launch_contribution_snapshot()['summary'] == dict(periodic, records_state='stale')
+        assert not swarm.calls
+    finally:
+        await manager.close()
+
+
+async def test_records_failure_keeps_launch_share_when_retained_and_never_erases_launch_totals(tmp_path):
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm)
+    now = manager._clock()
+    manager._launch_contribution_reader.project = Mock(return_value=dict(state='ok', read_ts=now - 90,
+        jobs=1, rows=[dict(rank=1, token_id=7, jobs=1, launches=1, build_jobs=1, review_jobs=0)]))
+    records = dict(count=2, seats=[dict(token_id=token, agent_id=None, attempts=1, accepted=1,
+        rejected=0, failed=0, pending=0) for token in (7, 527)])
+    source = hub.source_envelope(records, now - 50)
+    failed = hub.source_envelope(None, now, prior=source)
+    manager.cache.store_last_good(hub.SOURCE_SLOTS['records'], failed, ts=now)
+    try:
+        retained = manager.get_launch_contribution_snapshot()['summary']
+        assert retained['percent'] == 50 and retained['total_seats'] == 2
+        assert retained['records_state'] == 'stale' and retained['records_read_ts'] == now - 50
+        manager.cache.store_last_good(hub.SOURCE_SLOTS['records'], hub.source_envelope(None, now), ts=now)
+        unread = manager.get_launch_contribution_snapshot()['summary']
+        assert unread == dict(retained, percent=None, total_seats=None,
+                             records_state='unavailable', records_read_ts=None)
+        assert unread['state'] == 'ok' and unread['read_ts'] == now - 90
+        assert unread['seats'] == unread['jobs'] == 1 and not swarm.calls
     finally:
         await manager.close()

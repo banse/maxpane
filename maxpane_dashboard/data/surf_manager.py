@@ -6482,7 +6482,7 @@ class SurfManager:
         now = float(self._clock())
         sources = hero_sources if hero_sources is not None else self._swarm_board_hero_sources(
             contributors_entry, workers_entry, now=now)
-        data['swarm_launch_contribution'] = self.get_launch_contribution_snapshot()
+        data['swarm_launch_contribution'] = self.get_launch_contribution_snapshot(records_source=source)
         data['surf_leaderboard_hero'] = leaderboard_hero.project(
             data=data, sources=dict(sources, records=source,
                                     workers=dict(sources['workers'], payload=workers)), now=now)
@@ -7298,13 +7298,14 @@ class SurfManager:
             complete=catalogue._complete and catalogue._scan is None, failed=catalogue._cat_failed,
             read_ts=catalogue._cat_as_of)
 
-    def get_launch_contribution_snapshot(self) -> dict:
+    def get_launch_contribution_snapshot(self, *, records_source: dict | None = None) -> dict:
         """Join current advertised settings without persisting them as past job usage."""
         snapshot = self._launch_contribution_reader.project()
         entry = self.cache.get_last_good(SLOT_SWARM_WORKERS)
         workers = sw.coerce_workers_slot(getattr(entry, 'payload', None))
         source = self._swarm_board_source(SLOT_SWARM_WORKERS, entry, now=float(self._clock()))
-        snapshot = dict(snapshot, summary=leaderboard_hero.launch_facts(snapshot, workers, source))
+        records = records_source if records_source is not None else self._hub_sources()['records']
+        snapshot = dict(snapshot, summary=leaderboard_hero.launch_facts(snapshot, workers, source, records))
         if snapshot.get('rows') is None:
             return snapshot
         groups = sw._worker_groups(workers)
