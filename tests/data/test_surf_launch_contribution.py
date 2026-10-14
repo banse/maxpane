@@ -64,6 +64,7 @@ async def test_real_launches_include_verified_frontend_and_count_jobs_once(setup
     before = copy.deepcopy(raw)
     result = await batch(reader, raw)
     assert result['state'] == 'ok' and result['loaded'] == result['total'] == 2
+    assert result['jobs'] == 3
     rows = {row['token_id']: row for row in result['rows']}
     assert rows[401]['jobs'] == rows[402]['jobs'] == 1
     assert rows[401]['launches'] == rows[402]['launches'] == 1
@@ -98,6 +99,7 @@ async def test_deduplicates_seat_nodes_and_job_across_launches_excludes_oracle(s
     result = await batch(reader, raw)
     assert result['rows'] == [{'rank': 1, 'token_id': 7, 'jobs': 1, 'launches': 2,
                               'build_jobs': 1, 'review_jobs': 1}]
+    assert result['jobs'] == 1
     assert client.calls.count(('jobs', job)) == 1
 
 
@@ -108,6 +110,7 @@ async def test_testnet_and_parked_excluded_before_any_detail_read(setup):
     raw['catalogue'][1]['status'] = 'parked'
     result = await batch(reader, raw)
     assert result['state'] == 'ok' and result['rows'] == [] and result['total'] == 0
+    assert result['jobs'] == 0
     assert client.calls == []
 
 
@@ -117,6 +120,7 @@ async def test_first_loading_no_provisional_ranking_and_cancel_is_not_failure(se
     client.wait = asyncio.Event()
     reader.offer(raw['catalogue'], complete=True, read_ts=NOW)
     assert reader.project()['state'] == 'pending' and reader.project()['rows'] is None
+    assert reader.project()['jobs'] is None
     task = reader.task
     reader.cancel()
     await reader.close()
@@ -222,8 +226,10 @@ async def test_last_complete_ranking_survives_refresh_failure_and_restart(setup)
     failed = await batch(reader, raw)
     assert failed['state'] == 'stale' and failed['rows'] == good['rows']
     assert failed['read_ts'] == good['read_ts']
+    assert failed['jobs'] == good['jobs'] == 3
     restored = LaunchContributionReader(client, cache, clock=lambda: clock[0])
     assert restored.project()['rows'] == good['rows']
+    assert restored.project()['jobs'] == 3
     assert restored.project()['state'] == 'pending'
 
 
@@ -417,3 +423,73 @@ async def test_impossible_cached_split_cannot_be_presented_as_complete(setup, bu
     restored = LaunchContributionReader(client, cache, clock=lambda: clock[0])
     assert restored.project()['rows'] is None
     assert (await batch(restored, raw))['state'] == 'ok'
+
+
+@pytest.mark.asyncio
+async def test_global_jobs_union_excludes_jobs_without_accepted_contributor_seats(setup):
+    reader, _, raw, _, _ = setup
+    first, second = raw['catalogue']
+    shared = raw['launches'][first['id']]['jobs'][0]['id']
+    unrelated = raw['launches'][second['id']]['jobs'][0]['id']
+    raw['launches'][second['id']]['jobs'].append({'id': shared})
+    raw['jobs'][shared]['nodes'] = [
+        {'key': 'build', 'role': 'implement', 'state': 'accepted', 'seat': {'tokenId': '7'}},
+        {'key': 'review', 'role': 'review', 'state': 'accepted', 'seat': {'tokenId': '8'}},
+    ]
+    raw['jobs'][unrelated]['nodes'] = [
+        {'key': 'oracle_assess', 'state': 'accepted', 'seat': {'tokenId': '9'}},
+        {'key': 'build', 'state': 'failed', 'seat': {'tokenId': '10'}},
+    ]
+    # This fixture's verified frontend remains a distinct contributing job.
+    result = await batch(reader, raw)
+    assert result['jobs'] == 2
+    assert sum(row['jobs'] for row in result['rows']) == 4
+    assert {row['token_id'] for row in result['rows']} == {7, 8, 401, 402}
+
+
+@pytest.mark.asyncio
+async def test_legacy_snapshot_retains_rows_but_jobs_unknown_until_recomputed(setup):
+    reader, client, raw, cache, clock = setup
+    good = await batch(reader, raw)
+    payload = copy.deepcopy(cache.get_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION).payload)
+    payload['snapshot'].pop('jobs')
+    cache.store_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION, payload, ts=NOW)
+    restored = LaunchContributionReader(client, cache, clock=lambda: clock[0])
+    assert restored.project()['rows'] == good['rows']
+    assert restored.project()['jobs'] is None
+    client.calls.clear()
+    recomputed = await batch(restored, raw)
+    assert recomputed['jobs'] == 3 and recomputed['rows'] == good['rows']
+    assert client.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('total', [True, -1, 0, 0.5, '3', 100001, 100, float('nan')])
+async def test_invalid_or_inconsistent_persisted_global_jobs_is_not_a_snapshot(setup, total):
+    reader, client, raw, cache, clock = setup
+    await batch(reader, raw)
+    payload = copy.deepcopy(cache.get_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION).payload)
+    payload['snapshot']['jobs'] = total
+    cache.store_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION, payload, ts=NOW)
+    restored = LaunchContributionReader(client, cache, clock=lambda: clock[0])
+    assert restored.project()['rows'] is None and restored.project()['jobs'] is None
+    assert (await batch(restored, raw))['jobs'] == 3
+
+
+@pytest.mark.asyncio
+async def test_persisted_total_cannot_be_less_than_a_seats_job_count(setup):
+    reader, client, raw, cache, clock = setup
+    await batch(reader, raw)
+    payload = copy.deepcopy(cache.get_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION).payload)
+    payload['snapshot'] = dict(read_ts=NOW, jobs=1,
+        rows=[dict(rank=1, token_id=7, jobs=2, launches=1, build_jobs=2, review_jobs=0)])
+    cache.store_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION, payload, ts=NOW)
+    assert LaunchContributionReader(client, cache, clock=lambda: clock[0]).project()['rows'] is None
+
+
+@pytest.mark.asyncio
+async def test_empty_persisted_snapshot_cannot_claim_jobs(setup):
+    _, client, _, cache, clock = setup
+    cache.store_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION,
+        {'snapshot': dict(read_ts=NOW, jobs=1, rows=[])}, ts=NOW)
+    assert LaunchContributionReader(client, cache, clock=lambda: clock[0]).project()['rows'] is None

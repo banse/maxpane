@@ -7,6 +7,8 @@ from textual.widgets import DataTable
 
 from maxpane_dashboard.screens.surf import SurfScreen, SURF_BOARD_FULL_LAYOUT_COLUMNS
 from maxpane_dashboard.widgets.surf.swarm_leaderboard import SurfSwarmLeaderboard
+from maxpane_dashboard.widgets.surf.swarm_fleet import SurfSwarmFleet
+from maxpane_dashboard.widgets.surf.swarm_board_hero import SurfSwarmBoardHero
 from tests.screens._sweeps import boundary_set
 from tests.screens.test_surf_screen import (
     _FakeManager, _ThemedHarness, _frozen_payload, _region_text,
@@ -20,17 +22,24 @@ async def test_launch_tab_click_schedules_progress_preserves_rows_and_opens_seat
     manager.offer_launch_contribution = Mock()
     manager.get_launch_contribution_snapshot = Mock(return_value={
         "state": "pending", "rows": None, "read_ts": None,
-        "loaded": 6, "total": 317, "detail": "loading 6/317 production launches"})
+        "loaded": 6, "total": 317, "detail": "loading 6/317 production launches",
+        "summary": {"state":"pending","seats":None,"jobs":None}})
     screen = SurfScreen(manager, poll_interval=30, name="surf")
     monkeypatch.setattr(screen, "select_seat", Mock())
     async with _ThemedHarness(screen).run_test(size=(149, 45)) as pilot:
         await screen._do_refresh()
         await pilot.press("b")
         await pilot.pause()
+        manager.set_launch_contribution_active.assert_called_with(True)
+        assert screen._board_view == 'recorded'
+        screen._tick_launch_contribution()
+        await pilot.pause()
+        launches_card = screen.query_one(SurfSwarmBoardHero).query_one('#hero-launches')
+        assert 'loading' in _region_text(pilot.app, launches_card)
         widget = screen.query_one(SurfSwarmLeaderboard)
         title = widget.query_one(".panel-title")
         title_text = _region_text(pilot.app, title)
-        await pilot.click(title, offset=(title_text.index("launch contribution"), 0))
+        await pilot.click(title, offset=(title_text.index("launch contributors"), 0))
         await pilot.pause()
         assert widget._view_mode == "launches"
         manager.set_launch_contribution_active.assert_called_with(True)
@@ -41,10 +50,14 @@ async def test_launch_tab_click_schedules_progress_preserves_rows_and_opens_seat
         manager.get_launch_contribution_snapshot.return_value = {
             "state": "ok", "rows": [{"token_id": 401, "rank": 1, "jobs": 4, "launches": 3}],
             "read_ts": 1_790_000_000., "loaded": 317, "total": 317,
-            "detail": "all 317 production launches"}
+            "detail": "all 317 production launches",
+            "summary": {"state":"ok","read_ts":1_790_000_000.,"seats":1,"jobs":4,
+                        "claude":1,"codex":0,"runtime_known":1,
+                        "runtime_state":"ok","runtime_read_ts":1_790_000_001.}}
         screen._tick_launch_contribution()
         await pilot.pause()
         assert "claude" in _region_text(pilot.app, widget)
+        assert '4 jobs' in _region_text(pilot.app, launches_card)
         widget.query_one(DataTable).focus()
         await pilot.press("enter")
         screen.select_seat.assert_called_once_with(401)
@@ -59,7 +72,7 @@ async def test_launch_tab_click_schedules_progress_preserves_rows_and_opens_seat
         await pilot.click(title, offset=(title_text.index("recorded seats"), 0))
         await pilot.pause()
         assert widget._view_mode == "recorded"
-        manager.set_launch_contribution_active.assert_called_with(False)
+        manager.set_launch_contribution_active.assert_called_with(True)
         assert "55" in _region_text(pilot.app, widget)
 
 
@@ -85,6 +98,8 @@ async def test_launch_columns_show_current_model_and_job_split_at_owner_size():
             assert word in text
         table = widget.query_one(DataTable)
         assert table.virtual_size.width <= table.scrollable_content_region.width
+        assert screen.query_one(SurfSwarmFleet).size.width > 37
+        assert table.scrollable_content_region.width - table.virtual_size.width <= 2
         assert "‹ widen" not in text
 
 
@@ -106,17 +121,17 @@ async def test_launch_tab_fits_board_pin_and_wider_sizes(size):
             "#▲", "seat", "jobs", "launches", "build/review", "model", "effort", "runtime", "state")
         assert table.virtual_size.width <= table.scrollable_content_region.width
         text = _region_text(pilot.app, widget)
-        assert "LEADERBOARD · recorded seats · launch contribution" in text
+        assert "LEADERBOARD · recorded seats · launch contributors" in text
         assert "317 live production launches · all history" in text
         assert "‹ widen" not in text
         assert widget.region.bottom <= screen.query_one("StatusBar").region.y
 
 
 @pytest.mark.sweep
-@pytest.mark.parametrize("width",boundary_set(SURF_BOARD_FULL_LAYOUT_COLUMNS,60,225,73,130,149))
+@pytest.mark.parametrize("width",boundary_set(SURF_BOARD_FULL_LAYOUT_COLUMNS,60,225,72,129,142,149))
 async def test_launch_column_tiers_mark_every_omission_and_clear_at_board_pin(width):
     # Measured in the real BOARD with a scrolling table: tight stops clipping
-    # at 73, compact begins at 130, and all nine columns arrive at 143.
+    # at 72, compact begins at 129, and all nine columns arrive at 142.
     launches=[dict(rank=i+1,token_id=i+1,jobs=13,launches=12,build_jobs=4,review_jobs=10,
                    advertised_models=[dict(model='claude-fable-5-1',effort='high'),
                                       dict(model='gpt-6-astra',effort='xhigh')]) for i in range(40)]
@@ -141,16 +156,20 @@ async def test_launch_column_tiers_mark_every_omission_and_clear_at_board_pin(wi
             assert '‹' in title
         else:
             assert '‹' not in title
-        if width>=143:
+        if width>=142:
             assert widget._keys==all_keys and not clipped
             text=_region_text(pilot.app,widget)
             for word in ('build/review','model','effort','fable 5.1 +1','high','4 / 10','claude','working 2'):
                 assert word in text
-        elif width>=130:
+        elif width>=129:
             assert widget._keys==tuple(key for key in all_keys if key!='runtime')
         else:
             assert widget._keys==('rank','seat','jobs','launches')
-        assert clipped==(width<73)
+        assert clipped==(width<72)
+        if width == SURF_BOARD_FULL_LAYOUT_COLUMNS:
+            assert widget._keys == all_keys and not clipped
+        elif width == SURF_BOARD_FULL_LAYOUT_COLUMNS - 1:
+            assert widget._keys != all_keys
 
 
 @pytest.mark.parametrize('count',[10_000,100_000])

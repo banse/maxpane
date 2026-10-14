@@ -87,7 +87,7 @@ def _valid_fact(kind, value, now):
 
 
 def _snapshot(value, now):
-    if (not isinstance(value, dict) or set(value) != {'rows', 'read_ts'}
+    if (not isinstance(value, dict) or set(value) not in ({'rows', 'read_ts'}, {'rows', 'read_ts', 'jobs'})
             or not _stamp(value['read_ts'], now) or not isinstance(value['rows'], list)
             or len(value['rows']) > MAX_FACTS):
         return None
@@ -110,7 +110,11 @@ def _snapshot(value, now):
         rows.append(dict(row, build_jobs=build, review_jobs=review))
     if rows != sorted(rows, key=lambda row: (-row['jobs'], row['token_id'])):
         return None
-    return dict(rows=rows, read_ts=value['read_ts'])
+    jobs = value.get('jobs')
+    if jobs is not None and (type(jobs) is not int
+            or not max((row['jobs'] for row in rows), default=0) <= jobs <= min(MAX_FACTS, sum(row['jobs'] for row in rows))):
+        return None
+    return dict(rows=rows, read_ts=value['read_ts'], jobs=jobs)
 
 
 class LaunchContributionReader:
@@ -344,7 +348,8 @@ class LaunchContributionReader:
                                  launches=len(launches_by_seat[seat]),
                                  **{f'{role}_jobs': None if seat in unknown else len(by_seat.get(seat, ()))
                                     for role, by_seat in role_jobs.items()})
-                            for rank, seat in enumerate(seats, 1)], read_ts=min(clocks))
+                            for rank, seat in enumerate(seats, 1)], read_ts=min(clocks),
+                      jobs=len({job for jobs in jobs_by_seat.values() for job in jobs}))
         if result != self._last:
             self._last = result
             self._store()
@@ -388,6 +393,7 @@ class LaunchContributionReader:
             state, detail = 'ok', f'{total} live production launches · all history'
         return dict(state=state, rows=[dict(row) for row in self._last['rows']] if retained else None,
                     read_ts=self._last['read_ts'] if retained else None,
+                    jobs=self._last['jobs'] if retained else None,
                     loaded=loaded, total=total, detail=detail)
 
     def cancel(self):

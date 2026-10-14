@@ -65,7 +65,7 @@ class _SeatTable(DataTable):
 
 
 class SurfSwarmLeaderboard(SwarmTableBase):
-    TITLE='LEADERBOARD · recorded seats · launch contribution'
+    TITLE='LEADERBOARD · recorded seats · launch contributors'
     TABLE_ID='surf-swarm-leaderboard-table'
     ROW_CAP=None
     EMPTY_LINE='no submitted records yet'
@@ -272,7 +272,7 @@ class SurfSwarmLeaderboard(SwarmTableBase):
     def _render_title(self, as_of):
         room = max(self.size.width - self.TITLE_PADDING_COLS, 0)
         widen = self._widen or self._clipped
-        full_labels=('recorded seats','launch contribution')
+        full_labels=('recorded seats','launch contributors')
         hint_cols=2+rowfit.cell_len(rowfit.WIDEN_HINT) if widen else 0
         for prefix,labels in (('LEADERBOARD · ',full_labels),('',full_labels),
                               ('',('recorded','launches')),('',('rec','launches'))):

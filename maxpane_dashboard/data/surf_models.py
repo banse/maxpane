@@ -1522,7 +1522,7 @@ SURF_PROTOCOL_HERO_FIELDS = {
     "delivery": ("state", "read_ts", "queued", "ready", "per_day"),
     "checks": ("state", "read_ts", "counters", "drift_bps", "path"),
 }
-SURF_LEADERBOARD_HERO_STATES = ("ok", "partial", "stale", "unavailable")
+SURF_LEADERBOARD_HERO_STATES = ("ok", "partial", "stale", "unavailable", "pending", "failed")
 SURF_AGENT_HERO_STATES = ("ok", "partial", "stale", "unavailable", "pending", "busy", "unknown_seat", "stale_unknown_seat", "empty", "failed")
 #: Twelve rack cards retain independent records, worker, receipt and selected-seat clocks.
 SURF_AGENT_HERO_FIELDS = {
@@ -1550,12 +1550,12 @@ SURF_AGENT_HERO_MODEL_FIELDS = ("model", "effort")
 SURF_AGENT_HERO_COLLAB_FIELDS = ("token_id", "shared_jobs")
 SURF_AGENT_HERO_NODE_FIELDS = ("node_key", "accepted", "attempts")
 SURF_LEADERBOARD_HERO_FIELDS = {
-    "top": ("state", "read_ts", "token_id", "accepted", "rank", "empty"),
-    "recorded": ("state", "read_ts", "seats", "attempts"),
+    "top": ("state", "read_ts", "token_id", "accepted", "rank", "empty", "percent"),
+    "recorded": ("state", "read_ts", "seats", "attempts", "online", "online_state", "online_read_ts"),
     "rate": ("state", "read_ts", "accepted", "attempts", "percent"),
-    "outcomes": ("state", "read_ts", "rejected", "failed", "pending"),
+    "launches": ("state", "read_ts", "seats", "claude", "codex", "jobs", "runtime_known", "runtime_state", "runtime_read_ts"),
     "workers": ("state", "read_ts", "live", "working", "capacity"),
-    "effort": ("state", "read_ts", "receipts", "turns", "hours"),
+    "effort": ("state", "read_ts", "tokens", "turns", "hours", "wall_clock_ms"),
 }
 SURF_LAUNCHPAD_HERO_STATES = ("ok", "partial", "stale", "unavailable")
 SURF_LAUNCHPAD_WIDGET_SIGNATURES = {"SurfLaunchpadHero": {"surf_launchpad_hero": "surf_launchpad_hero"}}
@@ -1586,6 +1586,10 @@ SWARM_SEAT_OUTCOME_FIELDS = ("token_id", "listed", "attempts", "accepted", "reje
 # Historical distinct accepted job counts; build/review may overlap or both be unknown.
 # Current advertised_models is joined only during projection: [{model, effort}], []
 # for known absence, None when unavailable. It is not persisted with historical work.
+# The snapshot's jobs counts distinct contributing job IDs globally, not summed
+# per-seat jobs. Legacy cached rankings retain rows with jobs=None until recomputed.
+# Its summary follows SURF_LEADERBOARD_HERO_FIELDS['launches']; runtime families
+# use current workers and retain their own availability/coverage and read marker.
 SWARM_LAUNCH_CONTRIBUTION_ROW_FIELDS = ("rank", "token_id", "jobs", "launches",
                                       "build_jobs", "review_jobs", "advertised_models")
 # Sources are keyed overview/records/hourly/supply. state is ok/stale/unavailable;

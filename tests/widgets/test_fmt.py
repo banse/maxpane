@@ -41,7 +41,7 @@ def test_the_export_list_is_exactly_the_public_surface():
     assert set(fmt.__all__) == {
         "DASH", "EMDASH", "as_float", "fmt_age", "fmt_countdown", "fmt_eth",
         "fmt_float", "fmt_int", "fmt_pct", "fmt_points", "hhmm", "mmdd",
-        "safe_get",
+        "safe_get", "worked_duration",
     }
     for name in fmt.__all__:
         assert hasattr(fmt, name), name

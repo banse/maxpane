@@ -1,5 +1,6 @@
 """Labelled worker metadata groups and the independent contributor token metric."""
 from datetime import datetime
+from rich.cells import cell_len
 from rich.text import Text
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import fmt_int, hhmm
@@ -10,14 +11,14 @@ from maxpane_dashboard.widgets.surf._fmt import source_clock, short_model
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 
 # Eleven cells align the longest label, tokens/job, plus one separating cell.
-# At BOARD's 37 outer cells the content is 33, leaving 22 for each mix item.
-# Runtime, OS and slots expand vertically; the top three model/effort pairs
-# precede their omitted count and advertised note. Daemon shows the leader.
-# CONTRIBUTORS has a blank row under its sub-header and five /contributors
+# Runtime shows two values; OS and slots expand in pairs. Three named model /
+# effort pairs keep their omitted count inline. Daemon shows the leader.
+# RECEIPTS has a blank row under its sub-header and five /contributors
 # lines (owner, 2026-09-22: "show more data about the contributors"); a pair
 # that outgrows its line keeps its first value and counts the rest as +N.
 LABEL_WIDTH = 11
-_NAMES = ('runtime', 'model', 'model-note', 'daemon', 'os', 'profile', 'slots',
+_NAMES = ('runtime', None, 'model', None, 'daemon', None, 'os', None,
+          'profile', None, 'slots', None,
           'heartbeat', None, 'paused', 'paused-detail', None, 'contributors', None,
           'devices', 'accepted', 'rejected', 'turns', 'tokens-io', 'tokens')
 _MS_PER_HOUR = 3_600_000
@@ -31,6 +32,7 @@ class SurfSwarmFleet(SignalsPanelBase):
     ROWS = tuple((f'surf-fleet-{name}', None) if name else None for name in _NAMES)
     DEFAULT_CSS = '''
     SurfSwarmFleet > .panel-line { text-wrap: nowrap; text-overflow: ellipsis; }
+    SurfSwarmFleet > #surf-fleet-contributors { color: $text-muted; text-style: bold; }
     '''
 
     def __init__(self, *args, **kwargs):
@@ -79,16 +81,41 @@ class SurfSwarmFleet(SignalsPanelBase):
                 return text
         return Text(rowfit.clip(prefix.plain + f'+{len(parts)}', self._room()))
 
-    def _stack(self, label, parts):
-        """One value per row; preserve counts and expose complete names on hover."""
-        self.query_one(f'#surf-fleet-{label}').tooltip = Text('\n').join(parts) if parts else None
+    def _metadata_row(self, label, parts, omitted=0, compact_label=False):
+        """Fit names by terminal cells; preserve complete counts and count omissions."""
+        for keep in range(len(parts), -1, -1):
+            hidden = omitted + len(parts) - keep
+            suffix = Text(f' +{hidden}', style='bold') if hidden else Text()
+            values = [part.plain.rpartition(' ')[::2] for part in parts[:keep]]
+            label_width = LABEL_WIDTH
+            natural = LABEL_WIDTH + sum(part.cell_len for part in parts[:keep]) + 3 * max(keep - 1, 0) + suffix.cell_len
+            if compact_label and natural > self._room():
+                label_width = len(label) + 1
+            room = self._room() - label_width - suffix.cell_len - 3 * max(keep - 1, 0)
+            name_room = room - sum(cell_len(count) + 1 for _, count in values)
+            if name_room < keep:
+                continue
+            widths = [cell_len(name) for name, _ in values]
+            while sum(widths) > name_room:
+                widest = max(range(keep), key=widths.__getitem__)
+                widths[widest] -= 1
+            fitted = [Text(rowfit.clip(name, width), style='dim') + Text(' ' + count, style='bold')
+                      for (name, count), width in zip(values, widths)]
+            return Text(label.ljust(label_width), style='dim') + Text(' · ').join(fitted) + suffix
+        return Text(f'+{omitted + len(parts)}', style='bold')
+
+    def _group(self, label, parts, columns=1, limit=None):
+        """Group metadata, reserving the last row's inline omission count."""
+        shown = parts if limit is None else parts[:limit]
+        if not shown:
+            return self._label(label) + Text('none reported', style='dim')
         lines = []
-        for part in parts:
-            name, _, count = part.plain.rpartition(' ')
-            name = rowfit.clip(name, max(0, self._room() - LABEL_WIDTH - len(count) - 1))
-            lines.append(self._label(label if not lines else '') +
-                         Text(name, style='dim') + Text(' ' + count, style='bold'))
-        return Text('\n').join(lines) if lines else self._label(label) + Text('none reported', style='dim')
+        for start in range(0, len(shown), columns):
+            group = shown[start:start + columns]
+            omitted = len(parts) - len(shown) if start + columns >= len(shown) else 0
+            lines.append(self._metadata_row(label if not lines else '', group, omitted,
+                                            compact_label=columns > 1))
+        return Text('\n').join(lines)
 
     @staticmethod
     def _paused(fleet):
@@ -98,22 +125,26 @@ class SurfSwarmFleet(SignalsPanelBase):
     def _model_lines(self, fleet):
         rows = fleet.get('models') if isinstance(fleet, dict) else None
         prefix = self._label('model')
-        note = self._label('')
         if not isinstance(rows, list):
-            return prefix + Text('unavailable', style='yellow'), note + Text('(advertised)', style='dim')
+            return prefix + Text('unavailable', style='yellow')
         parts = []
+        full = []
         for row in rows:
-            if isinstance(row, dict) and row.get('model') is not None:
+            if isinstance(row, dict):
                 model = row.get('model')
+                raw_name = 'none' if model is None else strip_tags(flatten(model)) or '—'
+                if model is not None and row.get('effort') is not None:
+                    raw_name += ' ' + strip_tags(flatten(row['effort']))
+                full.append(self._item(raw_name, row.get('count')))
+                if model is None:
+                    continue
                 cleaned = short_model(model)
                 name = cleaned or '—'
                 if cleaned and row.get('effort') is not None:
                     name += ' ' + strip_tags(flatten(row['effort']))
                 parts.append(self._item(name, row.get('count')))
-        if len(parts) > 3:
-            note += Text(f'+{len(parts)-3} ', style='bold')
-        note += Text('(advertised)', style='dim')
-        return self._stack('model', parts[:3]), note
+        self.query_one('#surf-fleet-model').tooltip = Text('\n').join(full) if full else None
+        return self._group('model', parts, limit=3)
 
     @staticmethod
     def _count(value, word='', compact=False):
@@ -154,15 +185,15 @@ class SurfSwarmFleet(SignalsPanelBase):
 
     def _line(self, name, fleet, summary, clock):
         if name == 'contributors':
-            return Text('RECEIPTS · read ' + source_clock(clock), style='dim')
+            return Text('RECEIPTS · read ' + source_clock(clock), style='bold')
         if name in ('devices', 'accepted', 'rejected', 'turns', 'tokens-io'):
             return self._contributors(name, summary)
         if name == 'tokens':
             value = summary.get('tokens_per_completed_job') if isinstance(summary, dict) else None
             return self._label('tokens/job') + (Text('unavailable', style='yellow') if value is None else
                                               Text(fmt_int(value), style='bold') + Text(' (served)', style='dim'))
-        if name in ('model', 'model-note'):
-            return self._model_lines(fleet)[name == 'model-note']
+        if name == 'model':
+            return self._model_lines(fleet)
         label = self._label(name)
         if not isinstance(fleet, dict):
             return Text() if name == 'paused-detail' else label + Text('unavailable', style='yellow')
@@ -171,9 +202,12 @@ class SurfSwarmFleet(SignalsPanelBase):
             if not isinstance(rows, list):
                 return label + Text('unavailable', style='yellow')
             parts = [self._item(row.get('value'), row.get('count')) for row in rows if isinstance(row, dict)]
+            self.query_one(f'#surf-fleet-{name}').tooltip = Text('\n').join(parts) if parts else None
             if name == 'profile':
                 return self._fit(name, parts)
-            return self._stack(name, parts[:1] if name == 'daemon' else parts)
+            if name == 'daemon':
+                return self._group(name, parts[:1])
+            return self._group(name, parts, columns=2, limit=2 if name == 'runtime' else None)
         if name == 'heartbeat':
             endpoints = [fleet.get('heartbeat_oldest_ts'), fleet.get('heartbeat_newest_ts')]
             if any(value is None for value in endpoints):

@@ -1166,9 +1166,17 @@ def _board_payload(kind="capture"):
     stamp = source["read_ts"]
     observations = {
         "records": source,
-        "workers": dict(state="ok" if workers is not None else "unavailable", read_ts=stamp + 60),
+        "workers": dict(state="ok" if workers is not None else "unavailable", read_ts=stamp + 60,
+                        payload=sw.normalize_workers(workers)),
         "contributors": dict(state="ok" if contributors is not None else "unavailable", read_ts=stamp + 120),
     }
+    # Launch history is an independent observation, including when records or
+    # worker metadata are unavailable. Stress counts exercise the card's width.
+    payload["swarm_launch_contribution"] = {"summary": dict(
+        state="ok", read_ts=stamp, seats=99999 if kind == "worst" else 727,
+        claude=None if workers is None else 307, codex=None if workers is None else 335,
+        jobs=999999 if kind == "worst" else 1042, runtime_known=None if workers is None else 641,
+        runtime_state=observations["workers"]["state"], runtime_read_ts=stamp + 60)}
     payload["surf_leaderboard_hero"] = project(data=payload, sources=observations, now=stamp + 180)
     return payload
 
@@ -1194,18 +1202,15 @@ async def test_board_full_layout_pin_has_all_columns_and_source_labels(kind):
     assert not result['overflow'] and not result['taller'],result
     assert result['heights']['SurfSwarmBoardHero'] == 9
 
-@pytest.mark.parametrize('width',boundary_set(SURF_BOARD_FULL_LAYOUT_COLUMNS,60,225,86,92,94,97,98,121,126,132,133,141))
+@pytest.mark.parametrize('width',boundary_set(SURF_BOARD_FULL_LAYOUT_COLUMNS,60,225,86,92,94,97,98,121,126,132,133,140))
 @pytest.mark.parametrize('kind',['capture','v4','worst'])
 async def test_board_width_boundaries(width,kind):
     result=await _render(_board_payload(kind),(width,80),'b')
     assert not result['overflow'],result
-    if width>=SURF_BOARD_FULL_LAYOUT_COLUMNS:_assert_board_whole(result,kind)
-    elif width < 141:  # The native table retains its independent full-tier edge.
+    if width>=140:_assert_board_whole(result,kind)
+    else:  # Recorded seats has an earlier full-tier edge than launch contributors.
         assert 'SurfSwarmLeaderboard' in result['marked'], result
         assert len(result['columns']['SurfSwarmLeaderboard']) < 12, result
-    else:
-        assert 'SurfSwarmBoardHero' in result['marked'], result
-        assert any(name == 'SurfSwarmBoardHero' for name, _ in result['clipped']), result
 
 @pytest.mark.parametrize('height',boundary_set(SURF_BOARD_FULL_LAYOUT_ROWS,20,61,42))
 @pytest.mark.parametrize('kind',['capture','v4','worst'])
@@ -1222,12 +1227,11 @@ async def test_agent_width_pin_is_not_loose():
     _assert_whole(at, 'agent pin')
 
 
-async def test_board_width_pin_is_not_loose():
-    result=await _render(_board_payload(),(SURF_BOARD_FULL_LAYOUT_COLUMNS-1,80),'b')
-    assert result['marked'] == {'SurfSwarmBoardHero'}, result
-    assert ('SurfSwarmBoardHero', '3.253k accepted') in result['clipped'], result
-    assert len(result['columns']['SurfSwarmLeaderboard']) == 12, result
-    at = await _render(_board_payload(), (SURF_BOARD_FULL_LAYOUT_COLUMNS,80), 'b')
+async def test_board_recorded_width_boundary_is_tight():
+    result=await _render(_board_payload(),(139,80),'b')
+    assert 'SurfSwarmLeaderboard' in result['marked'], result
+    assert len(result['columns']['SurfSwarmLeaderboard']) < 12, result
+    at = await _render(_board_payload(), (140,80), 'b')
     _assert_board_whole(at, 'capture')
 
 

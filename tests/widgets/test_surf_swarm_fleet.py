@@ -1,26 +1,42 @@
 """Worker metadata mixes and source-labelled served token count."""
 import pytest
+from textual.app import App
 from maxpane_dashboard.app import CSS_PATH
 from maxpane_dashboard.data import surf_swarm as fold
 from maxpane_dashboard.widgets.surf.swarm_fleet import SurfSwarmFleet
 from tests.surf_swarm_fixtures import swarm_capture_v3
-from tests.widgets.surf_compositing import composite_lines
 WORKERS=swarm_capture_v3('workers')
 FLEET=fold.fleet(WORKERS)
 SUMMARY=fold.board_summary(swarm_capture_v3('contributors'),WORKERS)
 # Synthetic renderer contract: receipt accounting intentionally differs from canonical outcomes.
 SUMMARY.update({f'receipt_{key}': SUMMARY[key] for key in ('seats','attempts','accepted','rejected','pending')})
 SUMMARY.update(seats=50,attempts=100,accepted=80,rejected=5,failed=3,pending=12)
-async def render(fleet=FLEET,summary=SUMMARY):
-    return '\n'.join(await composite_lines(SurfSwarmFleet,(37,30),css_path=CSS_PATH,
-        swarm_fleet=fleet,swarm_board_summary=summary,
-        swarm_board_as_of_hhmm='02:00',swarm_contributors_as_of_hhmm='03:01',swarm_workers_as_of_hhmm='04:02'))
+class Harness(App):
+    CSS_PATH=CSS_PATH
+    def compose(self):
+        widget=SurfSwarmFleet()
+        widget.styles.width='100%'
+        widget.styles.max_width='100%'
+        yield widget
+
+def painted(pilot):
+    return [''.join(seg.text for seg in strip).rstrip()
+            for strip in pilot.app.screen._compositor.render_strips()]
+
+async def render(fleet=FLEET,summary=SUMMARY,width=37):
+    async with Harness().run_test(size=(width,60)) as pilot:
+        pilot.app.query_one(SurfSwarmFleet).update_data(
+            swarm_fleet=fleet,swarm_board_summary=summary,
+            swarm_board_as_of_hhmm='02:00',swarm_contributors_as_of_hhmm='03:01',swarm_workers_as_of_hhmm='04:02')
+        await pilot.pause()
+        return '\n'.join(painted(pilot))
 async def test_mixes_tokens_and_clocks_have_distinct_sources():
     text=await render()
     for word in ('FLEET','runtime','daemon','os','profile','slots','heartbeat','tokens/job','served','paused','03:01','04:02'):
         assert word in text
 
-async def test_expanded_worker_groups_show_each_entry_and_top_three_models():
+@pytest.mark.parametrize('width',[37,43])
+async def test_worker_groups_pair_runtime_os_slots_and_append_model_omissions(width):
     fleet = dict(FLEET,
         runtimes=[dict(value='codex',count=453),dict(value='claude',count=401),dict(value='both',count=12)],
         models=[dict(model=None,effort=None,count=500),
@@ -31,17 +47,18 @@ async def test_expanded_worker_groups_show_each_entry_and_top_three_models():
         daemons=[dict(value='0.1.0+35c7abcdef01234567',count=800),dict(value='older',count=66)],
         os=[dict(value='linux',count=853),dict(value='darwin',count=12),dict(value='windows',count=1)],
         concurrency=[dict(value=str(n),count=100-n) for n in (1,2,3,8)])
-    lines=await composite_lines(SurfSwarmFleet,(37,50),css_path=CSS_PATH,swarm_fleet=fleet)
-    for label,values in [('runtime',['codex 453','claude 401','both 12']),
-                         ('model',['astra 6 xhigh 396','fable 5.1 high 250','opus 5.5 high 99']),
-                         ('os',['linux 853','darwin 12','windows 1']),
-                         ('slots',['1 99','2 98','3 97','8 92'])]:
+    lines=(await render(fleet,width=width)).splitlines()
+    runtime=next(line.strip() for line in lines if line.strip().startswith('runtime '))
+    assert runtime.split(maxsplit=1)[1]=='codex 453 · claude 401 +1'
+    for label,values in [('model',['astra 6 xhigh 396','fable 5.1 high 250','opus 5.5 high 99 +1']),
+                         ('os',['linux 853 · darwin 12','windows 1']),
+                         ('slots',['1 99 · 2 98','3 97 · 8 92'])]:
         start=next(i for i,line in enumerate(lines) if line.strip().startswith(label+' '))
         assert [line.strip() for line in lines[start:start+len(values)]] == [label.ljust(11)+values[0],*values[1:]]
     daemon=next(line.strip() for line in lines if line.strip().startswith('daemon '))
-    assert daemon.startswith('daemon     0.1.0+') and daemon.endswith('… 800')
-    assert not any('older' in line or 'sonnet' in line for line in lines)
-    assert any('+1 (advertised)' in line for line in lines)
+    assert daemon.startswith('daemon     0.1.0+') and daemon.endswith('800')
+    assert ('…' in daemon)==(width==37)
+    assert not any('older' in line or 'sonnet' in line or 'both 12' in line or 'advertised' in line for line in lines)
 async def test_empty_metadata_is_none_reported_and_unread_is_unavailable():
     assert 'none reported' in await render(dict(FLEET,runtimes=[]))
     text=await render(None)
@@ -110,16 +127,19 @@ async def test_malformed_paused_tokens_never_reach_display():
     assert '#0 until' in text and 'PWNED' not in text and '[/x]' not in text
 
 
-async def test_polish_groups_align_labels_and_keep_the_advertised_model_prefix():
+async def test_metadata_categories_each_end_with_a_blank_and_receipts_stay_together():
     from tests.surf_swarm_fixtures import swarm_capture_v4
-    text=await render(fold.fleet(swarm_capture_v4('workers')))
+    text=await render(fold.fleet(swarm_capture_v4('workers')),width=43)
     lines=text.splitlines()
     labels=('runtime','model','daemon','os','profile','slots','heartbeat','paused','tokens/job')
     for label in labels:
         line=next(line.strip() for line in lines if line.strip().startswith(label+' '))
         assert line.startswith(label.ljust(11)), (label,line)
     assert 'astra 6 xhigh 43' in text and 'fable 5.1 high 34' in text
-    assert '(advertised)' in text and '+2 (advertised)' not in text
+    assert 'advertised' not in text
+    for following in ('model','daemon','os','profile','slots','heartbeat','paused'):
+        start=next(i for i,line in enumerate(lines) if line.strip().startswith(following+' '))
+        assert not lines[start-1].strip(), following
     header=next(i for i,line in enumerate(lines) if 'RECEIPTS · read 03:01' in line)
     paused=next(i for i,line in enumerate(lines) if line.strip().startswith('paused '))
     assert not lines[paused-1].strip() and not lines[header-1].strip()
@@ -170,7 +190,7 @@ async def test_a_contributor_pair_too_wide_for_its_line_counts_its_second_value(
 
 async def test_polish_model_missing_none_and_hostile_values_are_distinct():
     none=await render(dict(FLEET,models=[dict(model=None,effort=None,count=3)]))
-    assert 'model      none reported' in none and '(advertised)' in none
+    assert 'model      none reported' in none and 'advertised' not in none
     unread=await render(dict(FLEET,models=None))
     assert 'model      unavailable' in unread and 'none 3' not in unread
     hostile=await render(dict(FLEET,models=[dict(model='[/x]astra',effort='[$success]high',count=2)]))
@@ -181,11 +201,7 @@ async def test_polish_model_missing_none_and_hostile_values_are_distinct():
 
 @pytest.mark.parametrize('paused,color', [([],2),([dict(token_id=420,until_ts=1758456000,failures=3)],1)])
 async def test_polish_paused_state_and_numbers_have_composited_styles(paused,color):
-    from textual.app import App
-    class Harness(App):
-        CSS_PATH=CSS_PATH
-        def compose(self):yield SurfSwarmFleet()
-    async with Harness().run_test(size=(37,30)) as pilot:
+    async with Harness().run_test(size=(37,60)) as pilot:
         pilot.app.query_one(SurfSwarmFleet).update_data(swarm_fleet=dict(FLEET,paused=paused),swarm_board_summary=SUMMARY)
         await pilot.pause()
         lines=[''.join(seg.text for seg in strip) for strip in pilot.app.screen._compositor.render_strips()]
@@ -201,6 +217,77 @@ async def test_polish_paused_state_and_numbers_have_composited_styles(paused,col
         count_x=lines[token_y].index(str(SUMMARY['tokens_per_completed_job'])[0],lines[token_y].index('tokens/job')+10)
         assert pilot.app.screen.get_style_at(count_x,token_y).bold
         if paused:assert '#420 until' in '\n'.join(lines)
+
+
+async def test_receipts_subheader_matches_fleet_bold_muted_title_style():
+    async with Harness().run_test(size=(43,60)) as pilot:
+        pilot.app.query_one(SurfSwarmFleet).update_data(swarm_fleet=FLEET,swarm_board_summary=SUMMARY)
+        await pilot.pause()
+        lines=painted(pilot)
+        styles=[]
+        for word in ('FLEET','RECEIPTS'):
+            y=next(i for i,line in enumerate(lines) if word in line)
+            styles.append(pilot.app.screen.get_style_at(lines[y].index(word),y))
+        assert styles[1].bold and not styles[1].dim
+        assert styles[1].color==styles[0].color
+
+
+@pytest.mark.parametrize('width',[37,43])
+async def test_long_and_wide_metadata_preserves_exact_counts_and_inline_omissions(width):
+    fleet=dict(FLEET,
+        runtimes=[dict(value='[/x]界'*20,count=1234),dict(value='幅'*20,count=5678),dict(value='third',count=9)],
+        os=[dict(value='界'*20,count=123456),dict(value='幅'*20,count=789012),dict(value='third',count=3)],
+        concurrency=[dict(value='123456',count=111111),dict(value='987654',count=222222),dict(value='third',count=3)],
+        models=[dict(model='模型'*20,effort='high',count=count) for count in (9999,8888,7777,6666)])
+    lines=(await render(fleet,width=width)).splitlines()
+    for label,counts,length in [('runtime',('1,234','5,678'),1),('model',('9,999','8,888','7,777'),3),
+                                ('os',('123,456','789,012','3'),2),('slots',('111,111','222,222','3'),2)]:
+        start=next(i for i,line in enumerate(lines) if line.strip().startswith(label+' '))
+        group=lines[start:start+length]
+        assert all(count in '\n'.join(group) for count in counts), group
+        assert not lines[start+length].strip(), group
+        if label in ('runtime','model'):
+            assert group[-1].rstrip().endswith(' +1')
+    assert '[/x]' not in '\n'.join(lines)
+
+
+async def test_runtime_width_omission_counts_every_hidden_category_without_partial_numbers():
+    text=await render(dict(FLEET,runtimes=[dict(value=name,count=99_999_999) for name in ('codex','claude','both')]))
+    line=next(line.strip() for line in text.splitlines() if line.strip().startswith('runtime '))
+    assert line=='runtime    codex 99,999,999 +2'
+
+
+async def test_hover_keeps_omitted_raw_metadata_and_refresh_clears_empty_and_unknown_groups():
+    async with Harness().run_test(size=(80,65),tooltips=True) as pilot:
+        widget=pilot.app.query_one(SurfSwarmFleet)
+        widget.styles.width=43
+        widget.update_data(swarm_fleet=dict(FLEET,
+            runtimes=[dict(value=value,count=40-i) for i,value in enumerate(('codex','claude','[/x]hidden-runtime'))],
+            models=[dict(model=None,effort=None,count=50)]+[
+                dict(model=model,effort='[$success]high',count=30-i) for i,model in enumerate(
+                    ('gpt-6-astra','claude-opus-5-5','claude-fable-5-1','[/x]hidden-model'))],
+            daemons=[dict(value='leader',count=30),dict(value='[/x]hidden-daemon',count=2)],
+            profiles=[dict(value='[/x]profile-with-a-very-long-name',count=1)]))
+        await pilot.pause()
+        for name,expected in [('runtime','hidden-runtime 38'),('model','hidden-model high 27'),
+                              ('daemon','hidden-daemon 2'),('profile','profile-with-a-very-long-name 1')]:
+            target=widget.query_one(f'#surf-fleet-{name}')
+            await pilot.hover(target)
+            pilot.app.screen._handle_tooltip_timer(target)
+            await pilot.pause()
+            text=''.join('\n'.join(painted(pilot)).split())
+            assert ''.join(expected.split()) in text
+            assert '[/x]' not in text and '[$success]' not in text
+            if name=='model':
+                assert 'gpt-6-astrahigh30' in text and 'none50' in text
+            pilot.app.screen._clear_tooltip()
+        for value,word in [([], 'none reported'),(None,'unavailable')]:
+            widget.update_data(swarm_fleet=dict(FLEET,**{key:value for key in
+                ('runtimes','models','daemons','os','profiles','concurrency')}))
+            await pilot.pause()
+            for name in ('runtime','model','daemon','os','profile','slots'):
+                assert widget.query_one(f'#surf-fleet-{name}').tooltip is None
+                assert any(line.strip()==f'{name:<11}{word}' for line in painted(pilot))
 
 
 async def test_tag_only_model_uses_empty_dash_without_effort():

@@ -240,7 +240,7 @@ async def test_launch_tab_titles_are_clickable_and_counts_join_only_worker_facts
         widget.update_data(swarm_board_rows=rows, swarm_launch_contribution=contribution(launches),
                            swarm_seat_selected={'token_id':10})
         await pilot.pause()
-        labels=('recorded','launches') if width==42 else ('recorded seats','launch contribution')
+        labels=('recorded','launches') if width==42 else ('recorded seats','launch contributors')
         for mode,word in zip(('recorded','launches'),labels):
             painted=_painted_rows(pilot.app)
             y=next(y for y,line in enumerate(painted) if word in line)
@@ -374,7 +374,7 @@ async def test_leaderboard_title_keeps_both_tabs_clickable_and_widen_visible_at_
         assert title.region.height==1
         assert ('‹' in painted)==bool(widget._widen or widget._clipped)
         if width==106:
-            assert 'LEADERBOARD · recorded seats · launch contribution' in painted
+            assert 'LEADERBOARD · recorded seats · launch contributors' in painted
 
 
 async def test_launch_model_effort_and_build_review_paint_paired_current_settings():

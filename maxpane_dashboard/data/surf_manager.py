@@ -6482,8 +6482,10 @@ class SurfManager:
         now = float(self._clock())
         sources = hero_sources if hero_sources is not None else self._swarm_board_hero_sources(
             contributors_entry, workers_entry, now=now)
+        data['swarm_launch_contribution'] = self.get_launch_contribution_snapshot()
         data['surf_leaderboard_hero'] = leaderboard_hero.project(
-            data=data, sources=dict(sources, records=source), now=now)
+            data=data, sources=dict(sources, records=source,
+                                    workers=dict(sources['workers'], payload=workers)), now=now)
         return data
 
     # -- the AGENT body's selected seat: /seats/{token} ----------------------
@@ -7281,7 +7283,7 @@ class SurfManager:
         self._swarm_active = bool(active)
 
     def set_launch_contribution_active(self, active: bool) -> None:
-        """The visible leaderboard tab owns its background enrichment."""
+        """The visible BOARD owns its background launch enrichment."""
         self._launch_contribution_active = bool(active)
         if not self._launch_contribution_active:
             self._launch_contribution_reader.cancel()
@@ -7299,9 +7301,12 @@ class SurfManager:
     def get_launch_contribution_snapshot(self) -> dict:
         """Join current advertised settings without persisting them as past job usage."""
         snapshot = self._launch_contribution_reader.project()
+        entry = self.cache.get_last_good(SLOT_SWARM_WORKERS)
+        workers = sw.coerce_workers_slot(getattr(entry, 'payload', None))
+        source = self._swarm_board_source(SLOT_SWARM_WORKERS, entry, now=float(self._clock()))
+        snapshot = dict(snapshot, summary=leaderboard_hero.launch_facts(snapshot, workers, source))
         if snapshot.get('rows') is None:
             return snapshot
-        workers = sw.coerce_workers_slot(getattr(self.cache.get_last_good(SLOT_SWARM_WORKERS), 'payload', None))
         groups = sw._worker_groups(workers)
         complete = (workers is not None and workers['count'] == len(workers['workers'])
                     and not workers['malformed_tokens'])
@@ -7543,7 +7548,6 @@ class SurfManager:
                 if (seat['live'] or {}).get('live_state') == 'offline':
                     seat['live'] = None  # an incomplete roster cannot prove absent capacity
         data["surf_work"] = self._work_reader.project()
-        data["swarm_launch_contribution"] = self.get_launch_contribution_snapshot()
         data["surf_oracles"] = self._oracles_reader.project()
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
                                                  agent_seats=agent_seats,

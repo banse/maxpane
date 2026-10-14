@@ -15,7 +15,7 @@ from textual.widgets import Input, Static
 from maxpane_dashboard.analytics.surfboard import SURFBOARD_AGENT_KEYS as AGENT_KEYS
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.explorer import for_network
-from maxpane_dashboard.widgets.fmt import fmt_age
+from maxpane_dashboard.widgets.fmt import fmt_age, worked_duration
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
@@ -121,12 +121,7 @@ def _work_footer(card, width):
 
 def _fleet_footer(card, width):
     ms = card.get('numerator') if card.get('meter_kind') == 'duration' else None
-    text = 'worked —'
-    if type(ms) is int and ms >= 0:
-        years, days = divmod(ms // 86_400_000, 365)
-        weeks, days = divmod(days, 7)
-        text = f'worked {years}y {weeks}w {days}d'
-    return fit_prose(text, width, style=MUTED)
+    return fit_prose(worked_duration(ms), width, style=MUTED)
 
 
 def meter_text(card: dict, width: int | None = None) -> Text:

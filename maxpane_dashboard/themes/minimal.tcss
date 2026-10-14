@@ -2531,8 +2531,8 @@ SurfSwarmLeaderboard {
     min-height: 8;
 }
 SurfSwarmFleet {
-    width: 37;
-    max-width: 37;
+    width: 1fr;
+    min-width: 37;
     height: auto;
     padding: 0 1;
 }

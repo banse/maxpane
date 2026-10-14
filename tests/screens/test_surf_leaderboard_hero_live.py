@@ -18,14 +18,16 @@ async def test_board_projection_reaches_six_cards_and_sorting_keeps_canonical_to
         assert hero.display and hero.size.height == 9
         cards = list(hero.children)
         assert len(cards) == 6 and {card.region.height for card in cards} == {9}
-        for text in ('TOP SEAT', 'RECORDED', 'ACCEPT RATE', 'OUTCOMES', 'WORKERS', 'EFFORT',
-                     '100k attempts', '4.18k accepted', '96k / 100k', '2,880', '18.4k'):
+        for text in ('TOP SEAT', 'RECORDED', 'ACCEPT RATE', 'LAUNCHES', 'WORKERS', 'EFFORT',
+                     '100k attempts', '4.18k accepted', '96k / 100k', '2,880', '500M',
+                     'worked 2y 2w 6d'):
             assert text in _region_text(app, hero)
         before = _region_text(app, cards[0])
         app.screen.query_one(SurfSwarmLeaderboard).reverse_sort()
         await pilot.pause()
         assert _region_text(app, cards[0]) == before
-        assert 'RANK 1' in before
+        assert 'AGENT' in before and '99.9%' in before
+        assert 'RANK 1' not in before
         await pilot.press('escape')
         await pilot.pause()
         assert app.screen.query_one(SurfNewsHero).display and not hero.display

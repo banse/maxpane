@@ -2036,59 +2036,53 @@ SURF_MODES = (MODE_DASHBOARD, MODE_LAUNCHPAD, MODE_POOL4, MODE_POOL4_USER,
               MODE_SWARM, MODE_AGENT, MODE_BOARD, MODE_WORK, MODE_ORACLES)
 BOARD_BODY_ID = "surf-board-body"
 
-#: BOARD rack hero, re-measured 2026-10-12 after the owner approved the
-#: live 149×45 preview. Six equal nine-row cards replace the seven-row hero:
-#: TOP SEAT / RECORDED / ACCEPT RATE / OUTCOMES / WORKERS / EFFORT. The native
-#: LEADERBOARD and 37-column FLEET remain beside one another below them.
-#: The existing b-body sweep and scripts/measure_layout.py measured capture
-#: and stress whole from 143 columns; at 142 TOP SEAT still advertises loss
-#: of its accepted-count subtitle. The hero therefore binds two cells above
-#: the native table's full twelve-column onset (141, unchanged).
-#: Record-source, worker-source and contributor-source outages retain
-#: independent dated cards. Empty records and zero attempts are known states.
-#: The boundary fixtures cover those states plus all-unread and stale values;
-#: the inset and footer content and outer-title markers enter the geometry
-#: assertions, not only CSS text-overflow. Under the width pin, the card may
-#: advertise loss after the table itself has already reached full width.
+#: BOARD refresh, measured 2026-10-15 after the live 149×45 preview.
+#: Six equal nine-row cards show TOP SEAT / RECORDED / ACCEPT RATE /
+#: LAUNCHES / WORKERS / EFFORT. The hero uses neutral accents and metric
+#: footers; retained-source qualifications remain available on hover.
+#: LEADERBOARD is capped at its complete table budget; FLEET takes the
+#: remaining width with a 37-column minimum. This removes the empty table
+#: tail at owner size without hiding any column. Switching tabs and resizing
+#: recomputes the cap because their complete column sets differ.
+#: The existing b-body CLI measured recorded seats whole from 140 columns
+#: for capture and stress; at 139 its compact tier still drops columns.
+#: Launch contributors binds the shared width pin: its nine columns are
+#: complete from 142, compact begins at 129, and tight stops clipping at 72.
+#: The composited launch boundary test checks both sides of every onset,
+#: with forty rows so the table's internal scrollbar is present.
+#: The 149×45 preview retains all nine launch or twelve recorded columns
+#: and gives FLEET 43 or 45 columns respectively. At wide sizes the table
+#: stays capped and the metadata rail receives the remaining cells.
 #:
-#: Named content exception remains the stress table's 64-character runtime:
-#: its eleven-cell column keeps ellipsis and widen at and above the pin.
-#: No other stress column may clip, and every installed table column remains
-#: reachable. Source labels, unknown values and the six-card titles fit.
-#: A ten-digit seat ID may use a normal text face, never a rounded identifier.
-#: Four-digit native table ranks can still mark widen; that pre-existing
-#: table counter limit is not changed by this hero integration.
-#: App-wide 143 stays unchanged. The owner's 149 columns fit the complete
-#: hero and native body. Each body still owns its independent measured pin.
-#: 2026-10-14: launch contribution adds current model/effort and build/review.
-#: Its nine-column full tier starts at 143 and now ties TOP SEAT as binder;
-#: recorded seats still reach twelve columns at 141. In-situ launch sweeps
-#: with forty rows measured compact at 130 and no tight-tier scroll from 73.
-#: The live 149x45 preview fits all nine columns. Long advertised settings
-#: may ellipsise with widen; full model/effort pairs remain available on hover.
-SURF_BOARD_FULL_LAYOUT_COLUMNS = 143
+#: Named content exception: the stress table's 64-character runtime keeps
+#: ellipsis and widen in its eleven-cell column at and above the pin. Other
+#: counters and installed columns cannot clip. Long advertised settings
+#: may similarly mark; full sanitized pairs remain available on hover.
+#: A ten-digit seat ID uses a normal text face, never a rounded identifier.
+#: Four-digit table ranks may still mark widen, a pre-existing content limit.
+#: Empty records, zero attempts and missing independent sources keep the
+#: same card footprints. Launch jobs count distinct global qualifying IDs;
+#: worker runtime coverage and its independent clock remain on hover.
+#: App-wide 143 stays unchanged; BOARD owns its independently measured pin.
+SURF_BOARD_FULL_LAYOUT_COLUMNS = 142
 
-#: BOARD height, 35 -> 44 on 2026-10-14: FLEET now lists every runtime,
-#: OS and slot configuration vertically, the top three advertised model/effort
-#: pairs, and the leading daemon. The native b-body CLI measured capture and
-#: v4 whole from 42 rows; stress with three runtimes, three models, three OS
-#: buckets, four slot buckets and paused detail is whole from 44. At 43 that
-#: stress body scrolls with taller; at 44 neither occurs. Its FLEET is 31 rows;
-#: capture and v4 each need 29. LEADERBOARD still scrolls its own table.
+#: BOARD height remains 44, re-measured 2026-10-15 after grouping FLEET.
+#: Runtime shows its top two on one line, models the top three on separate
+#: lines with an inline omission count, and OS/slots every category in pairs.
+#: Blank rows separate metadata categories; RECEIPTS retains its own clock
+#: and six lines, below a bold title and blank row. Daemon shows its leader.
+#: The native b-body CLI measured capture and v4 whole from 42 rows, with
+#: a 29-row FLEET. Stress with paused detail is whole from 44 rows and its
+#: FLEET is 31 rows. At 43 stress scrolls with taller; at 44 neither occurs.
 #: Nine hero rows + 31 body rows + four chrome rows give the measured edge.
-#: Counts remain exact; long metadata names ellipsise with full values on
-#: hover instead of being replaced by omitted-item counts. Width remains 143.
-#: Additional runtime/OS/slot categories can grow this payload-sized panel
-#: further: they remain reachable through body scrolling and its taller marker.
-#: The live 149×45 render fits all six cards, three named models and receipts.
-#:
-#: Previous height history: 27 -> 33 on 2026-09-22 when the independent
-#: contributor group gained a blank row and five effort/token lines. This
-#: integration does not remove those lines or transfer their source clock.
-#: The width and height assertions remain separate: a title marker is not
-#: evidence that the table gained or lost a row, and an internal table scroll
-#: is not the body's taller condition. Known empty versus unavailable cards
-#: keep the same nine-row footprint on refresh and mode changes.
+#: LEADERBOARD scrolls internally; its visible row count is not a body pin.
+#: Additional OS/slot categories can grow this payload-sized panel further;
+#: body scrolling and its taller marker keep every category reachable.
+#: Long names ellipsise with full values on hover, preserving exact counts.
+#: The live 149×45 render fits all six cards, metadata and receipt totals.
+#: Width and height assertions are separate: a title marker is not evidence
+#: of a hidden row, and a table's internal scroll is not the body's taller
+#: condition. Known empty versus unavailable cards retain their footprint.
 SURF_BOARD_FULL_LAYOUT_ROWS = 44
 
 #: Every active mode now has its own hero. The legacy SurfHero remains
@@ -3521,8 +3515,8 @@ class SurfScreen(DashboardScreen):
         min-height: 8;
     }
     SurfSwarmFleet {
-        width: 37;
-        max-width: 37;
+        width: 1fr;
+        min-width: 37;
         height: auto;
         padding: 0 1;
     }
@@ -3789,7 +3783,7 @@ class SurfScreen(DashboardScreen):
             self._oracles_timer = self.set_interval(1, self._tick_oracles)
         elif not active:
             self._stop_oracles_timer()
-        active = self.is_current and self._mode == MODE_BOARD and self._board_view == "launches"
+        active = self.is_current and self._mode == MODE_BOARD
         setter = getattr(self._data_manager, "set_launch_contribution_active", None)
         if setter is not None:
             setter(active)
@@ -3805,13 +3799,15 @@ class SurfScreen(DashboardScreen):
             self._launch_contribution_timer = None
 
     def _tick_launch_contribution(self):
-        if not (self.is_current and self._mode == MODE_BOARD and self._board_view == "launches"):
+        if not (self.is_current and self._mode == MODE_BOARD):
             return
         offer = getattr(self._data_manager, "offer_launch_contribution", None)
         getter = getattr(self._data_manager, "get_launch_contribution_snapshot", None)
         if offer is not None and getter is not None:
             offer()
-            self.query_one(SurfSwarmLeaderboard).set_launch_contribution(getter())
+            snapshot = getter()
+            self.query_one(SurfSwarmLeaderboard).set_launch_contribution(snapshot)
+            self.query_one(SurfSwarmBoardHero).set_launch_contribution(snapshot)
 
     def _stop_oracles_timer(self):
         if self._oracles_timer is not None:
@@ -3876,7 +3872,18 @@ class SurfScreen(DashboardScreen):
         lag one resize behind -- lit on a terminal that now fits, dark on
         one that no longer does. Both are worse than no marker.
         """
+        self.call_after_refresh(self._fit_board_panels)
         self.call_after_refresh(self._render_title)
+
+    def _fit_board_panels(self):
+        """Give the fleet space beyond the leaderboard's complete column set."""
+        if self._mode != MODE_BOARD:
+            return
+        body = self.query_one(f'#{BOARD_BODY_ID}')
+        leaderboard = self.query_one(SurfSwarmLeaderboard)
+        width = min(leaderboard.LADDER.steps[0][1] + leaderboard.GUTTER_COLS,
+                    max(1, body.content_size.width - 37))
+        leaderboard.styles.width = width
 
     # ------------------------------------------------------------------
     # Mode toggle -- ``l`` LAUNCHPAD / ``escape`` back to the dashboard
@@ -3960,6 +3967,7 @@ class SurfScreen(DashboardScreen):
             self._record_filter_open = False
         self._show_record_editor()
         self._sync_agent_runtime()
+        self.call_after_refresh(self._fit_board_panels)
         if self._mode == MODE_WORK:
             self.call_after_refresh(self.query_one(SurfWorkBody).focus_tree)
         if self._mode == MODE_ORACLES:
@@ -4136,6 +4144,7 @@ class SurfScreen(DashboardScreen):
         self._board_view = mode
         leaderboard = self.query_one(SurfSwarmLeaderboard)
         leaderboard.set_view(mode)
+        self._fit_board_panels()
         self._sync_agent_runtime()
         leaderboard.query_one(DataTable).focus()
 

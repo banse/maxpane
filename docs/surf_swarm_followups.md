@@ -1687,3 +1687,36 @@ and large role counts could clip. Both were fixed in one wave. Scoped re-review:
 Approved; four regressions and six boundary cases passed, and both targeted mutants
 were killed and restored. The initial review also killed a role-classification
 mutant. No residual findings.
+
+## BOARD cards and compact FLEET — 2026-10-15
+
+The six neutral cards now place acceptance, online seats, launch contributors and
+cumulative effort as requested. Card faces retain metric footers during stale
+reads; source qualifications and independent worker clocks remain on hover.
+LAUNCHES reads in either BOARD tab and counts distinct accepted non-oracle job
+IDs across all live production launch history. Current claude/codex seat counts
+disclose known runtime coverage, and both-runtime seats count in both categories.
+EFFORT sums input/output tokens and shares the boardroom's whole-year/week/day
+duration formatter. Missing sources remain unknown; retained snapshots preserve
+their matching totals and timestamps.
+
+FLEET puts its top two runtimes on one line, the top three models on separate
+lines with inline omissions, and every OS/slot category in pairs. Blank rows
+separate categories; RECEIPTS is bold. LEADERBOARD keeps its complete column
+budget while the rail receives the spare width. The tab is named launch
+contributors. The live 149×45 production preview showed 320 launches, 729 seats
+and 351 distinct jobs with all table columns, metadata and receipts visible.
+
+Measured BOARD is 142×44: recorded seats clears at 140, launch contributors at
+142 (compact 129, tight 72); capture/v4 height is 42 and stress with paused detail
+is 44. Five integration mutants prove visible-BOARD loading, card updates, the
+width allocation and both directions of the width pin. Fourteen more mutants
+cover data and the two widgets; every mutant was killed and restored.
+
+Validation: 274 affected data tests, 532 widget/composing screen cases and 122
+BOARD layout cases passed. The combined run caught the shared formatter's old
+export-list expectation; after updating it, all 59 formatter tests passed.
+Fast guards passed 124 cases and documentation pins passed 12. No full suite
+was run. Final review: Approved, no findings. Review verified the fresh-process
+boardroom import, shared duration, tab/resize column preservation and three named
+tests; a distinct-canonical-seat mutant was killed and restored. No residuals.

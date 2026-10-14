@@ -7,11 +7,25 @@ from maxpane_dashboard.data import surf_leaderboard_hero as hero
 from maxpane_dashboard.data.surf_models import SURF_LEADERBOARD_HERO_FIELDS, SURF_LEADERBOARD_HERO_STATES
 
 
+def test_frozen_board_refresh_contract():
+    assert SURF_LEADERBOARD_HERO_FIELDS == {
+        'top': ('state', 'read_ts', 'token_id', 'accepted', 'rank', 'empty', 'percent'),
+        'recorded': ('state', 'read_ts', 'seats', 'attempts', 'online', 'online_state', 'online_read_ts'),
+        'rate': ('state', 'read_ts', 'accepted', 'attempts', 'percent'),
+        'launches': ('state', 'read_ts', 'seats', 'claude', 'codex', 'jobs', 'runtime_known', 'runtime_state', 'runtime_read_ts'),
+        'workers': ('state', 'read_ts', 'live', 'working', 'capacity'),
+        'effort': ('state', 'read_ts', 'tokens', 'turns', 'hours', 'wall_clock_ms'),
+    }
+    assert {'pending', 'failed'} <= set(SURF_LEADERBOARD_HERO_STATES)
+
+
 @pytest.fixture
 def snapshot():
     return dict(now=1000, sources={
         'records': dict(state='ok', read_ts=900),
-        'workers': dict(state='ok', read_ts=980),
+        'workers': dict(state='ok', read_ts=980, payload=dict(count=3, malformed_tokens=[],
+            workers=[dict(token_id=7, runtimes=['claude']), dict(token_id=7, runtimes=['codex']),
+                     dict(token_id=999, runtimes=['claude'])])),
         'contributors': dict(state='ok', read_ts=800),
     }, data=dict(swarm_board_rows=[
         dict(rank=2, token_id=7, accepted=10, attempts=20),
@@ -19,42 +33,49 @@ def snapshot():
     ], swarm_board_summary=dict(seats=2, accepted=50, attempts=80,
         rejected=20, failed=5, pending=5, live=3, working=2, capacity=9,
         receipts=96, turns=120, wall_clock_ms=9_000_000,
-        receipt_seats=999, receipt_accepted=888, receipt_attempts=777)))
+        input_tokens=12_000, output_tokens=3_000, cached_input_tokens=10_000,
+        receipt_seats=999, receipt_accepted=888, receipt_attempts=777),
+        swarm_launch_contribution=dict(summary=dict(state='ok', read_ts=700, seats=2,
+            claude=1, codex=1, jobs=3, runtime_known=1, runtime_state='ok', runtime_read_ts=980))))
 
 
 def test_literal_contract_canonical_rank_counts_hours_and_independent_clocks(snapshot):
     before = deepcopy(snapshot)
     result = hero.project(**snapshot)
     expected = dict(
-        top=dict(state='ok', read_ts=900, token_id=527, accepted=40, rank=1, empty=False),
-        recorded=dict(state='ok', read_ts=900, seats=2, attempts=80),
+        top=dict(state='ok', read_ts=900, token_id=527, accepted=40, rank=1, empty=False, percent=40 / 60 * 100),
+        recorded=dict(state='ok', read_ts=900, seats=2, attempts=80, online=1, online_state='ok', online_read_ts=980),
         rate=dict(state='ok', read_ts=900, accepted=50, attempts=80, percent=62.5),
-        outcomes=dict(state='ok', read_ts=900, rejected=20, failed=5, pending=5),
+        launches=snapshot['data']['swarm_launch_contribution']['summary'],
         workers=dict(state='ok', read_ts=980, live=3, working=2, capacity=9),
-        effort=dict(state='ok', read_ts=800, receipts=96, turns=120, hours=2.5),
+        effort=dict(state='ok', read_ts=800, tokens=15_000, turns=120, hours=2.5, wall_clock_ms=9_000_000),
     )
     assert result == expected
     assert tuple(result) == tuple(SURF_LEADERBOARD_HERO_FIELDS)
     for section, fields in SURF_LEADERBOARD_HERO_FIELDS.items():
-        assert tuple(result[section]) == tuple(expected[section]) == fields
+        assert tuple(result[section]) == fields
         assert result[section]['state'] in SURF_LEADERBOARD_HERO_STATES
     assert snapshot == before
     snapshot['data']['swarm_board_rows'].reverse()
     assert hero.project(**snapshot) == expected
+    result['launches']['jobs'] = 100
+    assert snapshot['data']['swarm_launch_contribution']['summary']['jobs'] == 3
 
 
 def test_cold_unknown_and_proven_empty_are_distinct(snapshot):
     cold = hero.project(data={}, sources={}, now=1000)
     assert all(card['state'] == 'unavailable' for card in cold.values())
-    assert all(value is None for card in cold.values() for key, value in card.items() if key != 'state')
+    assert all(value is None for card in cold.values() for key, value in card.items()
+               if key not in ('state', 'online_state', 'runtime_state'))
     snapshot['data']['swarm_board_rows'] = []
     snapshot['data']['swarm_board_summary'] = dict.fromkeys(snapshot['data']['swarm_board_summary'], 0)
     empty = hero.project(**snapshot)
-    assert empty['top'] == dict(state='ok', read_ts=900, token_id=None, accepted=None, rank=None, empty=True)
-    assert empty['recorded'] == dict(state='ok', read_ts=900, seats=0, attempts=0)
+    assert empty['top'] == dict(state='ok', read_ts=900, token_id=None, accepted=None, rank=None, empty=True, percent=None)
+    assert empty['recorded'] == dict(state='ok', read_ts=900, seats=0, attempts=0,
+                                    online=0, online_state='ok', online_read_ts=980)
     assert empty['rate'] == dict(state='ok', read_ts=900, accepted=0, attempts=0, percent=None)
     assert empty['workers'] == dict(state='ok', read_ts=980, live=0, working=0, capacity=0)
-    assert empty['effort'] == dict(state='ok', read_ts=800, receipts=0, turns=0, hours=0)
+    assert empty['effort'] == dict(state='ok', read_ts=800, tokens=0, turns=0, hours=0, wall_clock_ms=0)
     snapshot['sources']['records']['state'] = 'stale'
     dated = hero.project(**snapshot)
     assert dated['top'] == dict(empty['top'], state='stale')
@@ -63,47 +84,76 @@ def test_cold_unknown_and_proven_empty_are_distinct(snapshot):
     assert hero.project(**snapshot)['top']['empty'] is None
 
 
-def test_zero_acceptance_with_real_attempts_is_zero_percent(snapshot):
-    snapshot['data']['swarm_board_summary'].update(accepted=0, attempts=80)
-    assert hero.project(**snapshot)['rate'] == dict(state='ok', read_ts=900, accepted=0, attempts=80, percent=0)
-
-
-@pytest.mark.parametrize('name,sections', [
-    ('records', ('top', 'recorded', 'rate', 'outcomes')),
-    ('workers', ('workers',)), ('contributors', ('effort',)),
-])
-def test_source_outages_leave_other_families_untouched(snapshot, name, sections):
-    before = hero.project(**snapshot)
-    snapshot['sources'][name]['state'] = 'unavailable'
+@pytest.mark.parametrize('accepted,attempts,percent', [(0, 80, 0), (0, 0, None), (40, 60, 40 / 60 * 100)])
+def test_top_and_rate_share_percentage_semantics(snapshot, accepted, attempts, percent):
+    snapshot['data']['swarm_board_summary'].update(accepted=accepted, attempts=attempts)
+    snapshot['data']['swarm_board_rows'][1].update(accepted=accepted, attempts=attempts)
     result = hero.project(**snapshot)
-    for section, card in result.items():
-        if section in sections:
-            assert card['state'] == 'unavailable'
-            assert all(value is None for key, value in card.items() if key not in ('state', 'read_ts'))
-        else:
-            assert card == before[section]
+    assert result['top']['percent'] == result['rate']['percent'] == percent
+    assert result['top']['state'] == result['rate']['state'] == 'ok'
+
+
+def test_records_outage_preserves_other_sources_and_worker_marker(snapshot):
+    before = hero.project(**snapshot)
+    snapshot['sources']['records']['state'] = 'unavailable'
+    result = hero.project(**snapshot)
+    for section in ('top', 'recorded', 'rate'):
+        assert result[section]['state'] == 'unavailable'
+    assert result['recorded']['online'] is None
+    assert result['recorded']['online_state'] == 'ok'
+    assert result['recorded']['online_read_ts'] == 980
+    for section in ('launches', 'workers', 'effort'):
+        assert result[section] == before[section]
+
+
+def test_worker_outage_preserves_records_and_effort(snapshot):
+    before = hero.project(**snapshot)
+    snapshot['sources']['workers']['state'] = 'unavailable'
+    result = hero.project(**snapshot)
+    assert result['recorded'] == dict(before['recorded'], online=None, online_state='unavailable')
+    assert result['workers'] == dict(state='unavailable', read_ts=980, live=None, working=None, capacity=None)
+    for section in ('top', 'rate', 'effort', 'launches'):
+        assert result[section] == before[section]
 
 
 def test_stale_values_keep_their_actual_source_clock(snapshot):
     for source in snapshot['sources'].values():
         source['state'] = 'stale'
     result = hero.project(**snapshot)
-    assert all(card['state'] == 'stale' for card in result.values())
     assert result['top']['accepted'] == 40 and result['top']['read_ts'] == 900
+    assert result['recorded']['online'] == 1 and result['recorded']['online_state'] == 'stale'
     assert result['workers']['live'] == 3 and result['workers']['read_ts'] == 980
     assert result['effort']['hours'] == 2.5 and result['effort']['read_ts'] == 800
+    assert result['launches']['state'] == 'ok'
 
 
-@pytest.mark.parametrize('bad', [None, True, -1, '8', float('nan'), float('inf')])
+@pytest.mark.parametrize('bad', [None, True, -1, '8', 0.5, float('nan'), float('inf')])
 def test_invalid_fields_preserve_only_valid_neighbors(snapshot, bad):
     summary = snapshot['data']['swarm_board_summary']
-    summary.update(accepted=bad, failed=bad, capacity=bad, wall_clock_ms=bad)
+    summary.update(accepted=bad, capacity=bad, wall_clock_ms=bad, input_tokens=bad)
     result = hero.project(**snapshot)
     assert result['rate'] == dict(state='partial', read_ts=900, accepted=None, attempts=80, percent=None)
-    assert result['outcomes'] == dict(state='partial', read_ts=900, rejected=20, failed=None, pending=5)
     assert result['workers'] == dict(state='partial', read_ts=980, live=3, working=2, capacity=None)
-    assert result['effort'] == dict(state='partial', read_ts=800, receipts=96, turns=120, hours=None)
+    assert result['effort'] == dict(state='partial', read_ts=800, tokens=None, turns=120, hours=None, wall_clock_ms=None)
     assert result['top']['state'] == result['recorded']['state'] == 'ok'
+
+
+@pytest.mark.parametrize('missing', ['input_tokens', 'output_tokens'])
+def test_tokens_require_both_sources_and_never_add_cached_tokens(snapshot, missing):
+    snapshot['data']['swarm_board_summary'][missing] = None
+    result = hero.project(**snapshot)['effort']
+    assert result['tokens'] is None and result['hours'] == 2.5
+    snapshot['sources']['contributors']['state'] = 'unavailable'
+    assert hero.project(**snapshot)['effort'] == dict(state='unavailable', read_ts=800,
+        tokens=None, turns=None, hours=None, wall_clock_ms=None)
+
+
+def test_wall_clock_preserves_exact_large_integer(snapshot):
+    milliseconds = 2**53 + 1
+    snapshot['data']['swarm_board_summary']['wall_clock_ms'] = milliseconds
+    result = hero.project(**snapshot)['effort']
+    assert type(result['wall_clock_ms']) is int and result['wall_clock_ms'] == milliseconds
+    assert result['hours'] == milliseconds / 3_600_000
 
 
 def test_impossible_acceptance_counts_never_publish_a_percentage(snapshot):
@@ -111,7 +161,7 @@ def test_impossible_acceptance_counts_never_publish_a_percentage(snapshot):
     snapshot['data']['swarm_board_rows'][1].update(accepted=61, attempts=60)
     result = hero.project(**snapshot)
     assert result['rate'] == dict(state='partial', read_ts=900, accepted=None, attempts=80, percent=None)
-    assert result['top'] == dict(state='partial', read_ts=900, token_id=527, accepted=None, rank=1, empty=False)
+    assert result['top'] == dict(state='partial', read_ts=900, token_id=527, accepted=None, rank=1, empty=False, percent=None)
 
 
 @pytest.mark.parametrize('rows', [[], None, [{}], [True],
@@ -122,23 +172,78 @@ def test_partial_or_malformed_records_never_invent_top_or_prove_empty(snapshot, 
     snapshot['sources']['records']['state'] = 'partial'
     snapshot['data']['swarm_board_rows'] = rows
     assert hero.project(**snapshot)['top'] == dict(
-        state='unavailable', read_ts=900, token_id=None, accepted=None, rank=None, empty=None)
+        state='unavailable', read_ts=900, token_id=None, accepted=None, rank=None, empty=None, percent=None)
 
 
 @pytest.mark.parametrize('state', ['partial', 'stale'])
 def test_incomplete_roster_keeps_served_live_but_hides_partial_slot_sums(snapshot, state):
     snapshot['sources']['workers'].update(state=state, partial=True)
-    assert hero.project(**snapshot)['workers'] == dict(
-        state=state, read_ts=980, live=3, working=None, capacity=None)
-    snapshot['data']['swarm_board_summary'].update(turns=None, wall_clock_ms=None)
-    assert hero.project(**snapshot)['effort'] == dict(
-        state='partial', read_ts=800, receipts=96, turns=None, hours=None)
+    result = hero.project(**snapshot)
+    assert result['workers'] == dict(state=state, read_ts=980, live=3, working=None, capacity=None)
+    assert result['recorded']['online'] is None
+    assert result['recorded']['online_state'] == state
+    assert result['recorded']['state'] == 'ok'
 
 
 @pytest.mark.parametrize('stamp', [None, 0, -1, True, float('nan'), float('inf'), 1001])
 def test_bad_source_clock_cannot_publish_values(snapshot, stamp):
     snapshot['sources']['records']['read_ts'] = stamp
     result = hero.project(**snapshot)
-    for name in ('top', 'recorded', 'rate', 'outcomes'):
+    for name in ('top', 'recorded', 'rate'):
         assert result[name]['state'] == 'unavailable' and result[name]['read_ts'] is None
     assert result['workers']['state'] == result['effort']['state'] == 'ok'
+    assert result['recorded']['online'] is None
+
+
+@pytest.fixture
+def launch_snapshot():
+    return dict(state='ok', read_ts=700, jobs=4, rows=[dict(token_id=7), dict(token_id=527),
+        dict(token_id=80), dict(token_id=90)])
+
+
+def test_launch_runtime_families_deduplicate_seats_and_disclose_coverage(launch_snapshot):
+    workers = dict(count=5, malformed_tokens=[], workers=[
+        dict(token_id=7, runtimes=['claude', 'codex']), dict(token_id=7, runtimes=['claude']),
+        dict(token_id=527, runtimes=['codex']), dict(token_id=80, runtimes=None),
+        dict(token_id=999, runtimes=['claude'])])
+    before = deepcopy((launch_snapshot, workers))
+    assert hero.launch_facts(launch_snapshot, workers, dict(state='stale', read_ts=980)) == dict(
+        state='ok', read_ts=700, seats=4, claude=1, codex=2, jobs=4, runtime_known=2,
+        runtime_state='stale', runtime_read_ts=980)
+    assert (launch_snapshot, workers) == before
+
+
+@pytest.mark.parametrize('workers,source,expected_state', [
+    (None, dict(state='unavailable', read_ts=None), 'unavailable'),
+    (dict(count=1, malformed_tokens=[], workers=[]), dict(state='ok', read_ts=980), 'partial'),
+    (dict(count=0, malformed_tokens=[7], workers=[]), dict(state='stale', read_ts=980), 'stale'),
+])
+def test_missing_or_partial_runtime_roster_cannot_invent_family_totals(launch_snapshot, workers, source, expected_state):
+    result = hero.launch_facts(launch_snapshot, workers, source)
+    assert result == dict(state='ok', read_ts=700, seats=4, claude=None, codex=None, jobs=4,
+        runtime_known=None, runtime_state=expected_state, runtime_read_ts=source['read_ts'])
+
+
+@pytest.mark.parametrize('state', ['pending', 'failed'])
+def test_launch_initial_read_unknown_and_retained_complete_facts(launch_snapshot, state):
+    source = dict(state='ok', read_ts=980)
+    workers = dict(count=0, malformed_tokens=[], workers=[])
+    initial = hero.launch_facts(dict(state=state, rows=None, jobs=None, read_ts=None), workers, source)
+    assert initial == dict(state=state, read_ts=None, seats=None, claude=None, codex=None,
+        jobs=None, runtime_known=None, runtime_state='ok', runtime_read_ts=980)
+    launch_snapshot['state'] = 'pending' if state == 'pending' else 'stale'
+    retained = hero.launch_facts(launch_snapshot, workers, source)
+    assert retained['state'] == launch_snapshot['state']
+    assert retained['seats'] == retained['jobs'] == 4 and retained['read_ts'] == 700
+    assert retained['claude'] == retained['codex'] == retained['runtime_known'] == 0
+
+
+def test_launch_known_empty_and_legacy_unknown_jobs(launch_snapshot):
+    workers = dict(count=0, workers=[], malformed_tokens=[])
+    source = dict(state='ok', read_ts=980)
+    empty = hero.launch_facts(dict(state='ok', rows=[], read_ts=700, jobs=0), workers, source)
+    assert empty == dict(state='ok', read_ts=700, seats=0, claude=0, codex=0, jobs=0,
+        runtime_known=0, runtime_state='ok', runtime_read_ts=980)
+    launch_snapshot['jobs'] = None
+    legacy = hero.launch_facts(launch_snapshot, workers, source)
+    assert legacy['jobs'] is None and legacy['seats'] == 4 and legacy['state'] == 'partial'

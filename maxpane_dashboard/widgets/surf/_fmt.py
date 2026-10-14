@@ -32,7 +32,7 @@ import re
 from maxpane_dashboard.widgets.markup_safety import flatten, strip_tags
 
 from maxpane_dashboard.widgets.explorer import ETHEREUM, IMD, SITES
-from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, fmt_float, hhmm, mmdd
+from maxpane_dashboard.widgets.fmt import DASH, EMDASH, as_float, fmt_age, fmt_float, hhmm, mmdd, worked_duration
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
 __all__ = [
@@ -53,7 +53,9 @@ __all__ = [
     "mmdd",
     "mmdd_hhmm",
     "short_model",
+    "worked_duration",
 ]
+
 
 #: Surf's default explorer, Ethereum mainnet (Etherscan): read off
 #: ``data/surf_client.py:84`` -- ``STATE_RPC_PRIMARY``

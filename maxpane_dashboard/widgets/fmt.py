@@ -42,6 +42,7 @@ import ``safe_markup`` at all.
 
 from __future__ import annotations
 
+
 import time
 
 __all__ = [
@@ -58,7 +59,17 @@ __all__ = [
     "hhmm",
     "mmdd",
     "safe_get",
+    "worked_duration",
 ]
+
+
+def worked_duration(milliseconds):
+    """Fleet wall time in whole 365-day years, weeks and days; discard hours."""
+    if type(milliseconds) is not int or milliseconds < 0:
+        return 'worked —'
+    years, days = divmod(milliseconds // 86_400_000, 365)
+    weeks, days = divmod(days, 7)
+    return f'worked {years}y {weeks}w {days}d'
 
 #: Unknown scalar.  Two columns, so a dashed cell never re-flows a table.
 DASH = "--"

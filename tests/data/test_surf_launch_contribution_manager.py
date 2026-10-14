@@ -11,7 +11,7 @@ from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data.surf_models import SWARM_LAUNCH_CONTRIBUTION_ROW_FIELDS
 
 
-async def test_catalogue_and_reader_are_offered_only_for_visible_launch_tab(tmp_path):
+async def test_catalogue_and_reader_are_offered_only_for_visible_board(tmp_path):
     manager = _manager(tmp_path, _FakeSwarm())
     catalogue = SimpleNamespace(offer_catalogue=Mock(), _catalogue_rows=Mock(return_value=[]),
         _complete=True, _cat_failed=False, _cat_as_of=123.0, close=AsyncMock(),
@@ -25,12 +25,13 @@ async def test_catalogue_and_reader_are_offered_only_for_visible_launch_tab(tmp_
         catalogue.offer_catalogue.assert_not_called()
         manager.set_launch_contribution_active(True)
         reader.offer.assert_not_called()
-        assert manager.get_launch_contribution_snapshot() == {"rows": []}
+        snapshot = manager.get_launch_contribution_snapshot()
+        assert snapshot['rows'] == [] and snapshot['summary']['seats'] == 0
         reader.offer.assert_not_called()
         manager.offer_launch_contribution()
         catalogue.offer_catalogue.assert_called_once_with()
         reader.offer.assert_called_once_with([], complete=True, failed=False, read_ts=123.0)
-        assert manager._project_hub()["swarm_launch_contribution"] == {"rows": []}
+        assert manager._project_hub()["swarm_launch_contribution"] == snapshot
         manager.set_launch_contribution_active(False)
         reader.cancel.assert_called_once_with()
         manager.offer_launch_contribution()
@@ -123,5 +124,76 @@ async def test_no_advertised_models_preserves_source_availability(tmp_path, sour
         manager.cache.store_last_good(SLOT_SWARM_WORKERS, workers)
     try:
         assert manager.get_launch_contribution_snapshot()['rows'][0]['advertised_models'] == expected
+    finally:
+        await manager.close()
+
+
+async def test_launch_summary_and_board_hero_share_live_cache_only_projection(tmp_path):
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm)
+    now = manager._clock()
+    history = dict(state='ok', read_ts=now - 90, jobs=3, rows=[
+        dict(rank=1, token_id=7, jobs=2, launches=2, build_jobs=2, review_jobs=0),
+        dict(rank=2, token_id=527, jobs=2, launches=1, build_jobs=1, review_jobs=1),
+        dict(rank=3, token_id=90, jobs=1, launches=1, build_jobs=1, review_jobs=0)])
+    manager._launch_contribution_reader.project = Mock(return_value=history)
+    workers = sw.normalize_workers(swarm.workers)
+    sample = workers['workers'][0]
+    workers.update(count=4, malformed_tokens=[], workers=[
+        dict(sample, token_id=7, runtimes=['claude']), dict(sample, token_id=7, runtimes=['codex']),
+        dict(sample, token_id=527, runtimes=None), dict(sample, token_id=999, runtimes=['codex'])])
+    manager.cache.store_last_good(SLOT_SWARM_WORKERS, workers, ts=now - 20)
+    entry = manager.cache.get_last_good(SLOT_SWARM_WORKERS)
+    manager._swarm_board_observations[SLOT_SWARM_WORKERS] = dict(entry=entry, read_ts=now - 10, failed=False)
+    try:
+        snapshot = manager.get_launch_contribution_snapshot()
+        assert snapshot['summary'] == dict(state='ok', read_ts=now - 90, seats=3,
+            claude=1, codex=1, jobs=3, runtime_known=1, runtime_state='ok', runtime_read_ts=now - 10)
+        board = manager._swarm_board_keys(None, entry, None)
+        assert board['swarm_launch_contribution'] == snapshot
+        assert board['surf_leaderboard_hero']['launches'] == snapshot['summary']
+        assert manager._project_hub()['surf_leaderboard_hero']['launches'] == snapshot['summary']
+        history.update(state='pending')
+        assert manager.get_launch_contribution_snapshot()['summary'] == dict(snapshot['summary'], state='pending')
+        history.update(state='stale')
+        assert manager.get_launch_contribution_snapshot()['summary'] == dict(snapshot['summary'], state='stale')
+        assert not swarm.calls
+    finally:
+        await manager.close()
+
+
+async def test_cold_launch_summary_keeps_pending_and_worker_clock_independent(tmp_path):
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm)
+    try:
+        summary = manager.get_launch_contribution_snapshot()['summary']
+        assert summary == dict(state='pending', read_ts=None, seats=None, claude=None, codex=None,
+            jobs=None, runtime_known=None, runtime_state='unavailable', runtime_read_ts=None)
+        assert manager._swarm_board_keys(None, None, None)['surf_leaderboard_hero']['launches'] == summary
+        assert not swarm.calls
+    finally:
+        await manager.close()
+
+
+async def test_recorded_online_counts_unique_canonical_seats_and_uses_captured_roster(tmp_path):
+    swarm = _FakeSwarm()
+    manager = _manager(tmp_path, swarm)
+    now = manager._clock()
+    workers = sw.normalize_workers(swarm.workers)
+    sample = workers['workers'][0]
+    workers.update(count=3, malformed_tokens=[], workers=[
+        dict(sample, token_id=7), dict(sample, token_id=7), dict(sample, token_id=999)])
+    manager.cache.store_last_good(SLOT_SWARM_WORKERS, workers, ts=now - 40)
+    entry = manager.cache.get_last_good(SLOT_SWARM_WORKERS)
+    source = dict(state='ok', read_ts=now - 80, payload=dict(count=2, seats=[
+        dict(token_id=7, agent_id=None, accepted=3, attempts=4, rejected=0, failed=1, pending=0),
+        dict(token_id=527, agent_id=None, accepted=1, attempts=2, rejected=0, failed=0, pending=1)]))
+    captured = manager._swarm_board_hero_sources(None, entry, now=now)
+    manager.cache.store_last_good(SLOT_SWARM_WORKERS, dict(workers, count=0, workers=[]), ts=now)
+    try:
+        board = manager._swarm_board_keys(None, entry, None, records_source=source, hero_sources=captured)
+        assert board['surf_leaderboard_hero']['recorded'] == dict(state='ok', read_ts=now - 80,
+            seats=2, attempts=6, online=1, online_state='stale', online_read_ts=now - 40)
+        assert not swarm.calls
     finally:
         await manager.close()

@@ -37,7 +37,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
 | `s` | MODE_SWARM | WORKFLOWS beside LATEST LAUNCHES; LAUNCHES and SITES full-width; `x` opens the newest production launch | `SurfSwarmRackHero`: FLEET / OUTPUT / WORKFLOWS / LAUNCHES / LATEST WORKFLOW / SITES |
 | `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED JOBS / WORK / REWARDS / RANK / STATUS |
-| `b` | MODE_BOARD | Recorded-seat LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: TOP SEAT / RECORDED / ACCEPT RATE / OUTCOMES / WORKERS / EFFORT |
+| `b` | MODE_BOARD | Recorded-seat LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: TOP SEAT / RECORDED / ACCEPT RATE / LAUNCHES / WORKERS / EFFORT |
 
 The legacy `SurfHero` remains mounted and dispatched for its existing contract,
 but `_SURF_HERO_MODES` is empty: every active mode now has its own hero. The
@@ -801,12 +801,13 @@ no network await in the event handler). Rendered row identity is token metadata,
 text or a raw-payload index. FLEET fits whole sanitized values and counts omissions with `+N`.
 Long runtime names use an explicit ellipsis/widen content exception; fixed counters cannot
 clip at the full-layout pin. BOARD's measured guarantees live beside its pins in screens/surf.py.
-FLEET uses fixed-width dim labels and bold counts. Every runtime, OS and slot bucket has its
-own line; model lists the top three named advertised model/effort pairs, one per line, followed
-by the omitted-pair count and advertised note. Daemon shows only the most-used version.
+FLEET uses dim labels and bold counts. Runtime shows its top two categories on one line,
+with `+N` after the second; every OS and slot bucket appears in pairs. Model lists the top
+three named model/effort pairs on separate lines, with an inline omitted-pair count on the
+last line. Metadata categories have a blank separator. Daemon shows the most-used version.
 Long metadata names ellipsise while preserving counts and full values on hover. Groups expand
 and shrink with the cached payload; additional categories remain reachable through body scrolling.
-Workers retain their title clock and contributors a separate sub-header. A worker
+Workers retain their title clock and contributors a separate bold RECEIPTS sub-header. A worker
 counts once per distinct model/effort pair, including an explicit none bucket; multiple pairs
 can make the model-count sum exceed LIVE. Paused none is green; a paused count is red.
 
@@ -819,6 +820,19 @@ whole offline row dim. Colour is checked on composited cells, including under th
 BOARD uses `SURF_BOARD_FULL_LAYOUT_COLUMNS` × `SURF_BOARD_FULL_LAYOUT_ROWS`, with grouped
 FLEET and paused detail binding height. The constants and their `#:` blocks own the measurements.
 The existing global market title remains unchanged; source clocks belong in BOARD content.
+
+The six BOARD cards are neutral gray. TOP SEAT shows AGENT with acceptance percentage below
+the ID and accepted count in the outer footer. RECORDED shows distinct online recorded seats
+below the total and attempts in its footer. ACCEPT RATE uses ACCEPTED above its digits, `%`
+below, and accepted/attempts in the footer. LAUNCHES shows contributing seats, current reported
+claude/codex seat counts and globally distinct qualifying jobs from all live production launch
+history. Testnet is excluded; current runtime coverage and its independent clock are on hover,
+and a both-runtime seat counts in both categories. EFFORT shows summed input/output tokens,
+turns and hours, plus the boardroom's whole-year/week/day worked duration. Retained card values
+keep metric footers during refresh; stale qualifications are on hover rather than on the face.
+The launch reader runs while either BOARD tab is visible, so LAUNCHES loads independently of
+the `launch contributors` tab. LEADERBOARD is capped at its full column budget and FLEET takes
+the remainder with a 37-column floor; tab changes and terminal resizing recompute the split.
 
 Parked IN FLIGHT keeps the folded dispatch/failure note as its last column; these constraints apply when it returns. Actual note clipping
 lights widen in every tier; a fitting literal ellipsis does not. Full tier is a column
