@@ -34,8 +34,9 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: All cards remain equally tall. The terminal fills the center to the rack
 #: bottom, measuring 95 columns at the pin and 97 at 149×45. At owner size all
 #: cards remain nine rows tall; the enlarged gaps use the two former spare rows.
-#: WORK IN PROGRESS uses job digits, workflow subtitle and fitted build/review
-#: counts in the former PORTFOLIO slot; its title fits the standard card width.
+#: WORK IN PROGRESS uses job digits and workflow subtitle in the former
+#: PORTFOLIO slot. Its outer footer shows SWARM's 24H history; build/review
+#: counts appear under BUILT BY SWARM. Both fit the standard card widths.
 #: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 146
 SURFBOARD_FULL_LAYOUT_ROWS = 37

@@ -271,7 +271,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
     def detail(self):
         return flatten(self.data.get("detail")) or f"{self.title} · unavailable"
 
-    def set_data(self, data):
+    def set_data(self, data, *, footer_data=None):
         self.data = dict(data) if isinstance(data, dict) else {}
         self.data.update(key=self.key, title=self.title)
         if self.seat_slot is not None:
@@ -298,7 +298,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                              meter_state="empty", detail="AGENT · empty seat · Enter to type a seat number")
         else:
             self._seat_error = ""
+        self.footer_data = dict(footer_data) if isinstance(footer_data, dict) else self.data
         self.tooltip = Text(self.detail)
+        if self.footer_data.get("key") != self.key and self.footer_data.get("detail"):
+            self.tooltip.append("\nFooter: " + flatten(self.footer_data["detail"]))
         self.set_class(self.empty_seat, "empty")
         self.border_title = Text("⊙ " + self.title)
         self._update_meter()
@@ -307,13 +310,13 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
 
     def _update_meter(self):
         self.styles.border_subtitle_align = "center"
-        if self.data.get("status") == "loading":
+        if self.footer_data.get("status") == "loading":
             self.border_subtitle = Text("◌ loading", style=AMBER)
         elif self.key == "announce":
             # Textual reserves six cells for corners, border stubs and padding.
             self.border_subtitle = signal_meter_text(self.data, max(0, self.region.width - 6))
         else:
-            self.border_subtitle = meter_text(self.data, max(0, self.region.width - 6))
+            self.border_subtitle = meter_text(self.footer_data, max(0, self.region.width - 6))
 
     def on_resize(self):
         self._update_meter()
@@ -441,8 +444,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         clipped = len(label) > inside or len(bottom) > inside
         if self.key == "protocol":
             clipped |= _protocol_footer(self.data, max(0, self.region.width - 6))[1]
-        if self.key == "work":
-            clipped |= _work_footer(self.data, max(0, self.region.width - 6))[1]
+        if self.footer_data.get("key") == "work":
+            clipped |= _work_footer(self.footer_data, max(0, self.region.width - 6))[1]
         if self.key == "board":
             clipped |= _fleet_footer(self.data, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
@@ -568,7 +571,9 @@ class SurfboardRack(Grid):
     def update_data(self, surfboard_cards=None, surfboard_sources=None, **_kwargs):
         cards = {card["key"]: card for card in surfboard_cards if isinstance(card, dict) and isinstance(card.get("key"), str)} if isinstance(surfboard_cards, list) else {}
         for card in self.query(SurfboardCard):
-            card.set_data(cards.get(card.key))
+            footer_key = {"swarm": "work", "work": "swarm"}.get(card.key)
+            footer = dict(cards.get(footer_key) or {}, key=footer_key) if footer_key else None
+            card.set_data(cards.get(card.key), footer_data=footer)
 
     def focus_card(self, key=None):
         key = key or self.focused_card

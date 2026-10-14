@@ -825,6 +825,11 @@ The title is centered muted gray `IMD BOARDROOM`. ONCHAIN FEED uses white active
 borders and border text, matching its body; SWARM BUILDS retains its activity colors.
 The top row is ONCHAIN FEED, BUILT BY SWARM, WIP, ORACLES, POOL4, PROTOCOL.
 FLEET sits below ONCHAIN FEED, opposite TOKENS beside the terminal.
+BUILT BY SWARM and WIP exchange only their outer footers: build/review counts
+appear under BUILT BY SWARM, while the original SWARM `24H` history appears under
+WIP. The rack supplies each footer's original data and loading state separately;
+card bodies, destinations and data contracts are unchanged. Footer widths fit
+their receiving cards, and tooltips retain the footer source's detail.
 Per the owner's 2026-10-14 display adjustment, the boardroom omits automatic stale
 and unavailable text. Cached figures remain visible, missing figures use `—`, and
 source states/clocks remain in internal snapshots and card tooltips. All boardroom card
@@ -935,7 +940,8 @@ even when an older verdict says accepted. Job and workflow states have separate 
 
 The boardroom replaces PORTFOLIO with WORK IN PROGRESS. Its ACTIVE JOBS digits
 and workflow subtitle share `surf_work.summary`; `work_summary` carries the
-build/review footer counts. Unknown values remain em dashes; retained counts keep
+build/review footer counts displayed under BUILT BY SWARM. WIP displays the original
+SWARM `24H` chart. Unknown values remain em dashes; retained counts keep
 the workflow subtitle. A positive displayed job count keeps the inset border/title/subtitle
 green, including retained counts during stale or pending reads. Zero and unknown counts
 use the default inset color. Coverage and read details remain in the card tooltip.

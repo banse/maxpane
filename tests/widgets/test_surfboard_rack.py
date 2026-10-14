@@ -163,7 +163,9 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         assert not footer.style.bold
         assert footer.style.color.get_truecolor() == Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
         chart = "▁▁▂▂▃▃▄▅▅▆▆▇▇█" if size[0] == 149 else "▁▁▂▂▃▄▄▅▅▆▇▇█"
-        assert strips[-1].text == f"╰─ 24H {chart} ─╯"
+        work = rack.query_one('#surfboard-card-work', SurfboardCard)
+        assert card_strips(pilot.app, work)[-1].text == f"╰─ 24H {chart} ─╯"
+        assert '— build' in strips[-1].text
         header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
         assert not header.style.bold
         assert header.style.color == inset_border_color(strips[top])
@@ -439,7 +441,7 @@ async def test_chart_requires_all_eight_buckets_and_empty_seats_stay_unlit():
         assert "24H —" in painted(pilot.app)
 
 
-async def test_swarm_outer_footer_stretches_history_on_resize_and_keeps_unknown_left():
+async def test_swarm_history_on_wip_footer_stretches_on_resize_and_keeps_unknown_left():
     from tests.screens.test_surfboard_layout import HubHarness
     from tests.surfboard_fixtures import hub_payload
 
@@ -448,19 +450,83 @@ async def test_swarm_outer_footer_stretches_history_on_resize_and_keeps_unknown_
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        card = app.hub.query_one("#surfboard-card-swarm", SurfboardCard)
-        for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
-                             (140, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
+        card = app.hub.query_one("#surfboard-card-work", SurfboardCard)
+        for width, chart in [(149, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
+                             (140, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▄▄▅▅▆▇▇█")]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
             assert footer.text == f"╰─ 24H {chart} ─╯"
-            assert str(card.border_title) == "⊙ BUILT BY SWARM"
-        card.set_data(dict(card.data, points=None))
+            assert str(card.border_title) == "⊙ WIP"
+        next(row for row in payload['surfboard_cards'] if row['key'] == 'swarm')['points'] = None
+        app.hub.query_one(SurfboardRack).update_data(**payload)
         await pilot.pause()
         footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
         assert footer.text.strip('╰╯─ ') == '24H —'
         assert not any(char in footer.text for char in "▁▂▃▄▅▆▇█")
+
+
+@pytest.mark.parametrize('size', [(149, 45), (146, 37)])
+async def test_swarm_and_wip_swap_only_footers_with_independent_sources(size):
+    from copy import deepcopy
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import hub_payload
+
+    payload = hub_payload()
+    sources = {row['key']: row for row in payload['surfboard_cards']}
+    sources['swarm']['points'] = list(range(8))
+    original = deepcopy(payload)
+    app = HubHarness(payload)
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        rack = app.hub.query_one(SurfboardRack)
+        swarm = rack.query_one('#surfboard-card-swarm', SurfboardCard)
+        work = rack.query_one('#surfboard-card-work', SurfboardCard)
+        assert payload == original
+        assert swarm.data['primary'] == '863 online' and swarm.data['destination'] == 'swarm'
+        assert work.data['primary'] == '5' and work.data['destination'] == 'work'
+        assert swarm.data['points'] == list(range(8)) and work.data['points'] is None
+        assert 'Footer: ' + sources['work']['detail'] in str(swarm.tooltip)
+        assert 'Footer: ' + sources['swarm']['detail'] in str(work.tooltip)
+        swarm_footer = card_strips(app, swarm)[-1]
+        work_footer = card_strips(app, work)[-1]
+        assert swarm_footer.text.strip('╰╯─ ') in ('5 build · 4 review', '5 build · 4 rev')
+        assert work_footer.text.strip('╰╯─ ').startswith('24H ▁')
+        assert all(segment.style.color.get_truecolor() == app.ansi_theme.ansi_colors[2]
+                   for segment in work_footer if any(glyph in segment.text for glyph in '▁▂▃▄▅▆▇█'))
+        before = {card.key: [line.text for line in card_strips(app, card)[1:-1]] for card in (swarm, work)}
+        for work_state, swarm_state, counts, chart in (
+            ('loading', 'active', '◌ loading', True),
+            ('active', 'loading', '5 build', False),
+            ('active', 'active', '5 build', True),
+        ):
+            sources['work']['status'], sources['swarm']['status'] = work_state, swarm_state
+            rack.update_data(**payload)
+            await pilot.pause()
+            assert counts in card_strips(app, swarm)[-1].text
+            assert ('24H' in card_strips(app, work)[-1].text) == chart
+            assert ('◌ loading' in card_strips(app, work)[-1].text) == (not chart)
+            for card in (swarm, work):
+                assert [line.text for line in card_strips(app, card)[1:-1]] == before[card.key]
+        sources['work']['work_summary'].update(build=0, review=0)
+        sources['swarm']['points'] = [0] * 8
+        rack.update_data(**payload)
+        await pilot.pause()
+        assert '0 build' in card_strips(app, swarm)[-1].text
+        assert '24H ▁' in card_strips(app, work)[-1].text
+        sources['work']['work_summary'].update(build=10**30, review=10**30)
+        rack.update_data(**payload)
+        await pilot.pause()
+        assert '…' in card_strips(app, swarm)[-1].text
+        # The long SWARM title has room for its widen marker at this width.
+        await pilot.resize_terminal(180, 45)
+        await pilot.pause()
+        assert '‹' in card_strips(app, swarm)[0].text
+        assert '‹' not in card_strips(app, work)[0].text
+        rack.update_data(surfboard_cards=[])
+        await pilot.pause()
+        assert '— build' in card_strips(app, swarm)[-1].text
+        assert card_strips(app, work)[-1].text.strip('╰╯─ ') == '24H —'
 
 
 async def test_activity_card_footers_fill_width_on_resize():
