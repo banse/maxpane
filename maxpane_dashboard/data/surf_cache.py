@@ -186,6 +186,7 @@ SLOT_POOL4 = "pool4"          # discovery + hook/vault/dripper getters + flow lo
 SLOT_POOL4_STAKERS = "pool4_stakers"  # the sIMD Transfer fold's last-good
 SLOT_SWARM_LAUNCHES = "swarm_launches"
 SLOT_SWARM_LAUNCH_FACTS = "swarm_launch_facts"
+SLOT_SWARM_LAUNCH_CONTRIBUTION = "swarm_launch_contribution"
 SLOT_SWARM = "swarm"                  # health + jobs + the unfinished details
 SLOT_SWARM_SCORES = "swarm_scores"    # jobs, details, skills and workflow history
 SLOT_SWARM_JOBS_SEEN = "swarm_jobs_seen"  # job_id -> entry, accumulated across list windows
@@ -210,7 +211,7 @@ SLOTS: tuple[str, ...] = (
     SLOT_SURF_WORK, SLOT_SURF_ORACLES,
     "surfboard_overview", "surfboard_records", "surfboard_hourly", "surfboard_supply",
     SLOT_SURFBOARD_ACTIVITY,
-    SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS,
+    SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS, SLOT_SWARM_LAUNCH_CONTRIBUTION,
     SLOT_CHAIN,
     SLOT_CHANNEL,
     SLOT_MARKET,

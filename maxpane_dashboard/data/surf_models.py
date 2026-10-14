@@ -1632,6 +1632,7 @@ SWARM_KEYS: tuple[str, ...] = (
     # ---- BOARD (`b`, 2026-09-22); independent /contributors and /workers sources ----
     "swarm_board_summary",     # dict -- SWARM_BOARD_SUMMARY_FIELDS; unread source fields None
     "swarm_board_rows",        # list[dict] | None -- one ranked row per recorded seat; effort/presence joined by token
+    "swarm_launch_contribution", # all-history production launch-job ranking; independent loading/coverage
     "swarm_fleet",             # dict | None -- SWARM_FLEET_FIELDS, from /workers only
     "swarm_board_as_of_hhmm",   # str | None -- records successful-read marker
     "swarm_workers_as_of_hhmm", # str | None -- workers last-good marker
@@ -1699,7 +1700,7 @@ SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     # Card rows two and three (2026-09-22), replacing SEAT and BY NODE.
     "SurfSwarmSeatRecord": ("swarm_seat_work_rows", "swarm_seat_state", "swarm_seat_as_of_hhmm", "swarm_seat_read"),
     "SurfSwarmBoardHero": ("surf_leaderboard_hero",),
-    "SurfSwarmLeaderboard": ("swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
+    "SurfSwarmLeaderboard": ("swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm", "swarm_launch_contribution"),
     "SurfSwarmFleet": ("swarm_fleet", "swarm_board_summary", "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm"),
 }
 

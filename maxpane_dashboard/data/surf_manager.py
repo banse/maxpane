@@ -124,6 +124,7 @@ from maxpane_dashboard.data.npm_registry_client import NpmRegistryClient, RUNTIM
 from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
 from maxpane_dashboard.data.surf_work import coerce_snapshot as coerce_work_snapshot
 from maxpane_dashboard.data.surf_work_reader import WorkReader
+from maxpane_dashboard.data.surf_launch_contribution import LaunchContributionReader
 from maxpane_dashboard.data.surf_cache import SLOT_SURF_WORK, SLOT_SURF_ORACLES
 from maxpane_dashboard.data.surf_oracles import coerce_snapshot as coerce_oracles_snapshot
 from maxpane_dashboard.data.surf_oracles_reader import OraclesReader
@@ -1101,6 +1102,7 @@ class SurfManager:
         self._oracles_reader = OraclesReader(self.swarm_client, self.cache, clock=clock)
         self._work_active = False
         self._work_reader = WorkReader(self.swarm_client, self.cache, clock=clock)
+        self._launch_contribution_active = False
 
         self._closing = False
         self._full_task = None
@@ -1242,6 +1244,7 @@ class SurfManager:
         except Exception as exc:            # noqa: BLE001 — load is fail-soft; belt and braces
             logger.warning("SURF cache load failed: %s", exc)
         self._upgrade_swarm_scores_slot()
+        self._launch_contribution_reader = LaunchContributionReader(self.swarm_client, self.cache, clock=clock)
 
     def _upgrade_swarm_scores_slot(self) -> None:
         """A sweep slot persisted before ``/workflows`` was read makes the tier due.
@@ -1292,6 +1295,7 @@ class SurfManager:
         self._closing = True
         await self._oracles_reader.close()
         await self._work_reader.close()
+        await self._launch_contribution_reader.close()
         portfolio_manager = getattr(self, '_portfolio_manager', None)
         if portfolio_manager is not None:
             try:
@@ -7276,6 +7280,25 @@ class SurfManager:
         """Native SWARM visibility offers the existing hourly source, without I/O."""
         self._swarm_active = bool(active)
 
+    def set_launch_contribution_active(self, active: bool) -> None:
+        """The visible leaderboard tab owns its background enrichment."""
+        self._launch_contribution_active = bool(active)
+        if not self._launch_contribution_active:
+            self._launch_contribution_reader.cancel()
+
+    def offer_launch_contribution(self) -> None:
+        """Schedule catalogue and bounded detail reads, without awaiting I/O."""
+        if self._closing or not self._launch_contribution_active:
+            return
+        catalogue = self.swarm_tokens_manager()
+        catalogue.offer_catalogue()
+        self._launch_contribution_reader.offer(catalogue._catalogue_rows(),
+            complete=catalogue._complete and catalogue._scan is None, failed=catalogue._cat_failed,
+            read_ts=catalogue._cat_as_of)
+
+    def get_launch_contribution_snapshot(self) -> dict:
+        return self._launch_contribution_reader.project()
+
     def _hub_sources(self) -> dict[str, dict]:
         now = self._clock()
         sources = {}
@@ -7504,6 +7527,7 @@ class SurfManager:
                 if (seat['live'] or {}).get('live_state') == 'offline':
                     seat['live'] = None  # an incomplete roster cannot prove absent capacity
         data["surf_work"] = self._work_reader.project()
+        data["swarm_launch_contribution"] = self._launch_contribution_reader.project()
         data["surf_oracles"] = self._oracles_reader.project()
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
                                                  agent_seats=agent_seats,

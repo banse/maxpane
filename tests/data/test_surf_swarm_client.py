@@ -1,5 +1,7 @@
 import httpx
 import pytest
+import json
+from pathlib import Path
 
 from maxpane_dashboard.data.surf_models import SWARM_WORKFLOW_PAGE_SIZE
 from maxpane_dashboard.data.surf_swarm_client import SWARM_API, SwarmClient
@@ -15,6 +17,30 @@ def _client(handler, **kw) -> SwarmClient:
 
 def _no_network(request):  # pragma: no cover - must never run
     raise AssertionError(f"a test reached the network: {request.url}")
+
+
+async def test_launch_contribution_reads_light_links_and_verified_workflow_routes():
+    capture = json.loads((Path(__file__).parents[1] / "fixtures/surf/launch_contribution/captured.json").read_text())
+    launch_id, launch = next(iter(capture["launches"].items()))
+    workflow_id, workflow = next(iter(capture["workflows"].items()))
+    def handler(request):
+        assert request.method == "GET"
+        if request.url.path == f"/launches/{launch_id}":
+            assert dict(request.url.params) == {"light": "1"}
+            return httpx.Response(200, json=launch)
+        assert request.url.path == f"/workflows/{workflow_id}"
+        assert not request.url.params
+        return httpx.Response(200, json=workflow)
+    async with _client(handler) as client:
+        assert await client.fetch_launch_jobs(launch_id) == launch
+        assert await client.fetch_workflow(workflow_id) == workflow
+
+
+async def test_launch_contribution_invalid_identifiers_never_issue_a_request():
+    async with _client(_no_network) as client:
+        for invalid in ("../other", "https://other.example", "", None):
+            assert await client.fetch_launch_jobs(invalid) is None
+            assert await client.fetch_workflow(invalid) is None
 
 
 async def test_every_read_is_a_keyless_get_against_the_pools_first_host():

@@ -47,7 +47,7 @@ SWARM_SEATS_KEYS = (
 
 #: BOARD additions follow the existing seat block; the sources remain separate.
 SWARM_BOARD_KEYS = (
-    "swarm_board_summary", "swarm_board_rows", "swarm_fleet",
+    "swarm_board_summary", "swarm_board_rows", "swarm_launch_contribution", "swarm_fleet",
     "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm",
     "swarm_seat_live", "swarm_seat_contrib",
 )
@@ -111,7 +111,7 @@ SWARM_V2_ROW_SHAPES = {
     "swarm_seat_work_rows": (
         "job_id", "node_key", "role", "job_state", "work_status", "objective", "accepted_ts",
         "submitted_ts",
-        "launch", "submission_hash", "answer", "answer_state", "model", "took_s",
+        "launch", "launch_state", "submission_hash", "answer", "answer_state", "model", "took_s",
         "output_tokens", "panel_state", "panel_agreed", "panel_quorum", "panel_size",
         "panel_figure", "panel_answer_type", "panel_answer_bool",
         "oracle_question", "oracle_chain_id", "oracle_member_ok", "oracle_member_reason", "oracle_seat_answer", "oracle_notes",
@@ -144,8 +144,8 @@ def test_the_swarm_block_includes_runtime_checks_and_rank_delta():
     """Thirty-two existing keys, the served health status word and the owner's ENS name,
     runtime/rank/read keys, F-S5's two REWARDS keys, the /workflows rows
     and their independent successful-read marker, plus the launches tier marker."""
-    assert len(SWARM_KEYS) == 46
-    assert len(set(SWARM_KEYS)) == 46
+    assert len(SWARM_KEYS) == 47
+    assert len(set(SWARM_KEYS)) == 47
     assert all(k.startswith("swarm_") for k in SWARM_KEYS)
 
 
@@ -167,7 +167,7 @@ def test_the_v2_keys_then_the_seats_keys_are_the_tail_in_order():
     Order matters because WP7 deleted the eight retired keys by name from
     the head, so the tail is the final block's second half.
     """
-    assert SWARM_KEYS[-36:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
+    assert SWARM_KEYS[-37:] == (SWARM_V2_KEYS + SWARM_SEATS_KEYS + SWARM_BOARD_KEYS
                                 + ("swarm_health_status", "swarm_seat_owner_ens", "swarm_runtime_latest",
                                    "swarm_runtime_as_of_hhmm", "swarm_fleet_daemon", "swarm_seat_rank_delta", "swarm_seat_read",
                                    "swarm_seat_rewards", "swarm_seat_rewards_state",
@@ -296,7 +296,7 @@ def test_the_seats_permanent_exports_are_the_frozen_literals():
         "attempts", "accepted", "reviewed", "review_entries", "review_status", "mean_score", "scored",
         "roles", "online", "owner", "paired_ts", "collaborators", "runtime",
         "agent_id", "daemon", "devices", "win_rate", "last_won_ts", "last_sent_ts",
-        "last_worked_ts", "models",
+        "last_worked_ts", "models", "api_status",
     )
     assert SWARM_SEAT_REVIEW_STATUSES == ("sent", "submitted", "queued")
     # "pending" by the owner's Q-A answer (2026-09-21); None is not a member -- it is
@@ -384,6 +384,7 @@ def test_board_signatures_carry_each_source_clock():
         "SurfSwarmLeaderboard": (
             "swarm_board_rows", "swarm_seat_selected", "swarm_board_as_of_hhmm",
             "swarm_workers_as_of_hhmm", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm",
+            "swarm_launch_contribution",
         ),
         "SurfSwarmFleet": (
             "swarm_fleet", "swarm_board_summary", "swarm_board_as_of_hhmm",

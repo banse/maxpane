@@ -1356,6 +1356,7 @@ async def test_the_swarm_folds_emit_exactly_the_swarm_block(tmp_path):
     seen = _seen(manager)
     assert live is not None and scores is not None
     parts = [
+        {"swarm_launch_contribution": manager.get_launch_contribution_snapshot()},
         manager._swarm_launch_keys(),
         manager._runtime_keys(manager._clock()),
         manager._swarm_keys(live.payload, live, manager._clock(), seen),

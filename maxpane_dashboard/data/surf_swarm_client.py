@@ -314,6 +314,19 @@ class SwarmClient(OwnedHttpClient):
             return None
         return await self._dict(f"/launches/{launch_id}")
 
+    async def fetch_launch_jobs(self, launch_id: str) -> dict[str, Any] | None:
+        """Launch/job links without large reward allocations and claims."""
+        if parse_job_id(launch_id) is None:
+            return None
+        body = await self._get(f"/launches/{launch_id}", params={"light": "1"})
+        return body if isinstance(body, dict) else None
+
+    async def fetch_workflow(self, workflow_id: str) -> dict[str, Any] | None:
+        """Authoritative contract/frontend job relationship for one workflow."""
+        if parse_job_id(workflow_id) is None:
+            return None
+        return await self._dict(f"/workflows/{workflow_id}")
+
     async def fetch_launch_policies(self) -> list[dict[str, Any]] | None:
         return await self._list("/launch/policies", "policies")
 

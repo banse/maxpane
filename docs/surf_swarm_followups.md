@@ -1629,3 +1629,32 @@ All four affected data files passed again (231 cases). Scoped re-review: ADDRESS
 Approved; both permanent clock regressions and the original reproduction passed.
 A further mutation proved popup-detail reads use the same clock and was restored.
 No residual findings. No full suite was run.
+
+## LEADERBOARD launch contribution tab — 2026-10-14
+
+Added the requested second tab, ranking seats by distinct accepted non-oracle
+jobs contributing to live production launches across all launch history. Testnet
+and unlaunched entries are excluded before detail reads. Verified workflow links
+include frontend jobs omitted by the launch's direct job list. Repeated nodes or
+launch references cannot inflate a seat's job count.
+
+The tab has jobs, launches, runtime and current-state columns, independent sorting
+and cursor/scroll retention, and the existing seat-opening action. A visible-tab
+background reader loads six launches at a time. First load reports progress;
+refresh/failure retains the last complete ranking and its source clock. Validated
+compact facts survive restart. A catalogue refresh cannot publish mid-pagination.
+
+A genuine 149×45 Matrix-theme preview was shown. The first complete read covered
+317 production launches in 391 seconds. A cached refresh picked up a new launch
+in about one second: 318 launches and 727 contributing seats. BOARD remains
+143×35. Narrow titles use shorter clickable labels to preserve the widen hint.
+
+Validation: 1,026 affected tests passed; subsequent manager integration
+checks passed 299 cases; reader tests passed 36; registration checks passed 85;
+guards/docpins passed 127. Fourteen mutation checks were killed and restored
+(six reader, six UI, two integration). No full suite was run.
+
+Final BOARD/widget checks passed 188 cases, including the new tab at 143×35,
+149×45 and 225×61 and the existing boundary sweep. Docpins passed 12 cases.
+Final review: Approved, no findings. Three named integration/UI checks and a
+frontend-inclusion mutation passed review verification; no residual follow-ups.

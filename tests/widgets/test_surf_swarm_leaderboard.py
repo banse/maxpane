@@ -4,6 +4,7 @@ from textual.app import App
 from textual.widgets import DataTable
 from maxpane_dashboard.data import surf_swarm as fold
 from maxpane_dashboard.widgets.surf.swarm_leaderboard import SurfSwarmLeaderboard
+from maxpane_dashboard.widgets.fmt import hhmm
 from tests.surf_swarm_fixtures import swarm_capture_v3
 from tests.widgets.surf_compositing import composite_lines
 ROWS=fold.board_rows(swarm_capture_v3('contributors'),swarm_capture_v3('workers'))
@@ -220,3 +221,157 @@ async def test_the_table_has_one_blank_cell_left_and_one_scrollbar_cell_right():
         title=next(line for line in painted if 'LEADERBOARD' in line)
         header=next(line for line in painted if '#▲' in line)
         assert header.index('#')==title.index('L')+1
+
+
+def contribution(rows=None, *, state='ok', detail='317/317 production launches', read_ts=1700000000):
+    return dict(state=state, read_ts=read_ts, rows=rows, loaded=317, total=317, detail=detail)
+
+
+@pytest.mark.parametrize('width',[120,106,64,42])
+async def test_launch_tab_titles_are_clickable_and_counts_join_only_worker_facts(width):
+    rows=[dict(ROWS[0], token_id=10, rank=99, runtime='claude', live_state='working', working=2),
+          dict(ROWS[1], token_id=2, rank=18, runtime='codex', live_state='idle')]
+    launches=[dict(rank=2, token_id=2, jobs=5, launches=2),
+              dict(rank=1, token_id=10, jobs=12, launches=3),
+              dict(rank=3, token_id=7, jobs=2, launches=None)]
+    original=copy.deepcopy((rows,launches))
+    async with SortHarness().run_test(size=(width,14)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_board_rows=rows, swarm_launch_contribution=contribution(launches),
+                           swarm_seat_selected={'token_id':10})
+        await pilot.pause()
+        labels=('recorded','launches') if width==42 else ('recorded seats','launch contribution')
+        for mode,word in zip(('recorded','launches'),labels):
+            painted=_painted_rows(pilot.app)
+            y=next(y for y,line in enumerate(painted) if word in line)
+            assert pilot.app.screen.get_style_at(painted[y].index(word),y).meta['@click']==f"screen.board_view('{mode}')"
+        widget.set_view('launches');await pilot.pause()
+        assert tokens(widget)==[10,2,7]
+        table=widget.query_one(DataTable)
+        assert 'jobs' in widget._keys and 'turns' not in widget._keys
+        painted=_painted_rows(pilot.app)
+        first=next(line for line in painted if '▸#10 ' in line)
+        assert first.split()[:3]==['1','▸#10','12']
+        if 'runtime' in widget._keys:
+            assert 'claude' in first
+        if 'state' in widget._keys:
+            assert '● working 2' in first
+        unknown=next(line for line in painted if '#7 ' in line)
+        assert '—' in unknown and 'unavailable' not in unknown
+        assert table.max_scroll_x==0
+        assert (rows,launches)==original
+
+
+@pytest.mark.parametrize('state,rows,word',[
+    ('pending',None,'loading'),('failed',None,'load failed'),
+    ('ok',[],'no launch contributions'),('partial',[],'no confirmed contributions'),
+])
+async def test_launch_tab_distinguishes_loading_failed_empty_and_partial(state,rows,word):
+    async with SortHarness().run_test(size=(106,14)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_launch_contribution=contribution(rows,state=state,
+            detail='17/317 production launches',read_ts=None))
+        widget.set_view('launches');await pilot.pause()
+        text='\n'.join(_painted_rows(pilot.app))
+        assert word in text and '17/317 production launches' in text
+        assert not tokens(widget)
+        if state=='failed':
+            y=next(y for y,line in enumerate(_painted_rows(pilot.app)) if 'load failed' in line)
+            x=_painted_rows(pilot.app)[y].index('load failed')
+            assert pilot.app.screen.get_style_at(x,y).color.get_truecolor()==Color.parse('#ff0000').get_truecolor()
+
+
+@pytest.mark.parametrize('state',['pending','partial','stale','failed'])
+async def test_launch_refresh_retains_snapshot_and_source_clock_without_loading(state):
+    rows=[dict(rank=1,token_id=7,jobs=12,launches=3)]
+    async with SortHarness().run_test(size=(106,14)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_launch_contribution=contribution(rows))
+        widget.set_view('launches');await pilot.pause()
+        before=_painted_rows(pilot.app)
+        widget.update_data(swarm_launch_contribution=contribution(rows,state=state,
+            detail='17/317 production launches · retry'))
+        await pilot.pause()
+        painted=_painted_rows(pilot.app)
+        assert next(line for line in painted if '#7 ' in line)==next(line for line in before if '#7 ' in line)
+        text='\n'.join(painted)
+        assert '17/317 production launches' in text and hhmm(1700000000) in text
+        assert 'loading' not in text
+        if state in ('failed','stale'):assert 'load failed' in text
+
+
+async def test_launch_and_recorded_views_keep_independent_sort_cursor_and_scroll():
+    rows=[dict(ROWS[0],token_id=i,rank=i+1,turns=40-i) for i in range(40)]
+    launches=[dict(rank=i+1,token_id=i,jobs=40-i,launches=None if i==5 else i%4)
+              for i in range(40)]
+    async with SortHarness().run_test(size=(106,12)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_board_rows=rows,swarm_launch_contribution=contribution(launches))
+        await pilot.pause()
+        table=widget.query_one(DataTable)
+        widget.sort_by('turns');await pilot.pause()
+        table.move_cursor(row=20);await pilot.pause()
+        recorded_token=tokens(widget)[table.cursor_row]
+        recorded_scroll=table.scroll_y
+        widget.set_view('launches');await pilot.pause()
+        widget.sort_by('launches');widget.reverse_sort();await pilot.pause()
+        assert tokens(widget)[-1]==5
+        table.move_cursor(row=25);await pilot.pause()
+        launch_token=tokens(widget)[table.cursor_row]
+        launch_scroll=table.scroll_y
+        widget.sort_by('turns')  # This column is not part of the contribution schema.
+        assert widget._sort_key=='launches'
+        widget.set_view('recorded');await pilot.pause()
+        assert (widget._sort_key,widget._sort_reverse)==('turns',False)
+        assert tokens(widget)[table.cursor_row]==recorded_token
+        assert table.scroll_y==recorded_scroll
+        widget.update_data(swarm_board_rows=list(reversed(rows)),swarm_launch_contribution=contribution(list(reversed(launches))))
+        await pilot.pause()
+        assert tokens(widget)[table.cursor_row]==recorded_token
+        assert table.scroll_y==recorded_scroll
+        widget.set_view('launches');await pilot.pause()
+        assert (widget._sort_key,widget._sort_reverse)==('launches',True)
+        assert tokens(widget)[table.cursor_row]==launch_token
+        assert table.scroll_y==launch_scroll
+        widget.cycle_sort();await pilot.pause()
+        assert widget._sort_key=='runtime'
+
+
+async def test_launch_progress_updates_preserve_recorded_rows_clocks_and_worker_join():
+    row=dict(ROWS[0],token_id=7,rank=1,runtime='codex',live_state='working',working=2)
+    async with SortHarness().run_test(size=(106,14)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_board_rows=[row],swarm_seat_selected={'token_id':7},
+                           swarm_workers_as_of_hhmm='01:23')
+        await pilot.pause()
+        recorded=_painted_rows(pilot.app)
+        widget.set_launch_contribution(contribution(None,state='pending',detail='1/317 production launches'))
+        await pilot.pause()
+        assert _painted_rows(pilot.app)==recorded
+        widget.set_view('launches');await pilot.pause()
+        widget.set_launch_contribution(contribution(None,state='pending',detail='2/317 production launches'))
+        await pilot.pause()
+        assert '2/317 production launches' in '\n'.join(_painted_rows(pilot.app))
+        widget.set_launch_contribution(contribution([dict(rank=1,token_id=7,jobs=12,launches=3)]))
+        await pilot.pause()
+        launch_row=next(line for line in _painted_rows(pilot.app) if '▸#7 ' in line)
+        assert '12' in launch_row and 'codex' in launch_row and 'working 2' in launch_row
+        widget.set_view('recorded');await pilot.pause()
+        assert _painted_rows(pilot.app)==recorded
+
+
+@pytest.mark.parametrize('width',[21,51,52,53,106])
+async def test_leaderboard_title_keeps_both_tabs_clickable_and_widen_visible_at_narrow_widths(width):
+    async with SortHarness().run_test(size=(width,14)) as pilot:
+        widget=pilot.app.query_one(SurfSwarmLeaderboard)
+        widget.update_data(swarm_board_rows=ROWS)
+        await pilot.pause()
+        title=widget.query_one('.panel-title')
+        painted=_painted_rows(pilot.app)[title.region.y]
+        actions={pilot.app.screen.get_style_at(x,title.region.y).meta.get('@click')
+                 for x in range(title.region.x,title.region.right) if painted[x]!=' '}
+        assert {"screen.board_view('recorded')","screen.board_view('launches')"}<=actions
+        assert title.region.height==1
+        assert ('‹' in painted)==bool(widget._widen or widget._clipped)
+        if width==106:
+            assert 'LEADERBOARD · recorded seats · launch contribution' in painted

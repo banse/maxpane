@@ -19,6 +19,13 @@ _SPECS=(('rank','#',3),('seat','seat',7),('runtime','runtime',11),('devices','de
 _ALL=tuple(key for key,_,_ in _SPECS)
 _COMPACT=tuple(key for key in _ALL if key not in ('turns','hours','devices'))
 _TIGHT=('rank','seat','attempts','accepted','rate','state')
+_LAUNCH_SPECS=(('rank','#',4),('seat','seat',7),('jobs','jobs',7),
+               ('launches','launches',8),('runtime','runtime',11),('state','state',16))
+_LAUNCH_KEYS=tuple(key for key,_,_ in _LAUNCH_SPECS)
+_LAUNCH_TIERS={'full':_LAUNCH_KEYS, 'compact':tuple(key for key in _LAUNCH_KEYS if key!='runtime'),
+               'tight':('rank','seat','jobs','launches')}
+_LAUNCH_LADDER=rowfit.Ladder(*((name,table_cols(w for key,_,w in _LAUNCH_SPECS if key in keep))
+                              for name,keep in _LAUNCH_TIERS.items()))
 
 class _SeatTable(DataTable):
     """A BOARD row's first click uses the same selection message as Enter."""
@@ -33,7 +40,7 @@ class _SeatTable(DataTable):
 
 
 class SurfSwarmLeaderboard(SwarmTableBase):
-    TITLE='LEADERBOARD · recorded seats'
+    TITLE='LEADERBOARD · recorded seats · launch contribution'
     TABLE_ID='surf-swarm-leaderboard-table'
     ROW_CAP=None
     EMPTY_LINE='no submitted records yet'
@@ -55,17 +62,73 @@ class SurfSwarmLeaderboard(SwarmTableBase):
         self._clipped_fields=set()
         self._sort_key='rank'
         self._sort_reverse=False
+        self._view_mode='recorded'
+        self._view_states={}
+        self._restore_view=None
+        self._recorded_rows=None
+        self._recorded_clocks=''
+        self._contribution={}
     def compose_body(self):
         for child in super().compose_body():
             yield _SeatTable(id=child.id, cursor_foreground_priority='renderable') if isinstance(child, DataTable) else child
         yield Static('',classes='board-clocks')
     def update_data(self,swarm_board_rows=None,swarm_seat_selected=None,
                     swarm_board_as_of_hhmm=None,swarm_workers_as_of_hhmm=None,
-                    swarm_outcomes_source=None,swarm_contributors_as_of_hhmm=None,**_kwargs):
+                    swarm_outcomes_source=None,swarm_contributors_as_of_hhmm=None,
+                    swarm_launch_contribution=None,**_kwargs):
         selected=swarm_seat_selected if isinstance(swarm_seat_selected,dict) else {}
         self._selected=seat_token(selected.get('token_id'))
-        self.store(swarm_board_rows,None)
-        self.write('.board-clocks',Text(f'records {outcomes_clock(swarm_outcomes_source)} · effort {source_clock(swarm_contributors_as_of_hhmm)} · workers {source_clock(swarm_workers_as_of_hhmm)}'))
+        self._recorded_rows=swarm_board_rows
+        self._recorded_clocks=f'records {outcomes_clock(swarm_outcomes_source)} · effort {source_clock(swarm_contributors_as_of_hhmm)} · workers {source_clock(swarm_workers_as_of_hhmm)}'
+        self._contribution=swarm_launch_contribution if isinstance(swarm_launch_contribution,dict) else {}
+        self._present_view()
+
+    def set_launch_contribution(self,snapshot):
+        """Update background-read progress without replacing the recorded snapshot."""
+        self._contribution=snapshot if isinstance(snapshot,dict) else {}
+        if self._view_mode=='launches':
+            self._present_view()
+
+    def set_view(self,mode):
+        if mode not in ('recorded','launches') or mode==self._view_mode:
+            return
+        self._view_states[self._view_mode]=(self._sort_key,self._sort_reverse,self._cursor_state())
+        self._view_mode=mode
+        self._sort_key,self._sort_reverse,self._restore_view=self._view_states.get(mode,('rank',False,(None,0)))
+        recorded=mode=='recorded'
+        self.COLUMN_SPECS=_SPECS if recorded else _LAUNCH_SPECS
+        self.TIER_COLUMNS=type(self).TIER_COLUMNS if recorded else _LAUNCH_TIERS
+        self.LADDER=type(self).LADDER if recorded else _LAUNCH_LADDER
+        self._present_view()
+
+    def _present_view(self):
+        if self._view_mode=='recorded':
+            self.EMPTY_LINE='no submitted records yet'
+            self.UNAVAILABLE_LINE='unavailable'
+            self.store(self._recorded_rows,None)
+            if self.write('.board-clocks',Text(self._recorded_clocks)):
+                self.query_one('.board-clocks',Static).tooltip=None
+            return
+        source=self._contribution
+        rows=source.get('rows')
+        if isinstance(rows,list):
+            workers={seat_token(row.get('token_id')):row for row in (self._recorded_rows or []) if isinstance(row,dict)}
+            rows=[dict(workers.get(seat_token(row.get('token_id')),{}),**row)
+                  for row in rows if isinstance(row,dict)]
+        state=source.get('state','pending')
+        self.EMPTY_LINE='no launch contributions' if state=='ok' else 'no confirmed contributions in this read'
+        self.UNAVAILABLE_LINE='◌ loading' if state=='pending' else 'load failed'
+        self.store(rows,None)
+
+    def _cursor_state(self):
+        try:
+            table=self.query_one(DataTable)
+        except Exception:
+            return None,0
+        token=(self.token_for_row(table.ordered_rows[table.cursor_row].key)
+               if table.row_count else None)
+        return token,table.scroll_y
+
     def _repaint(self):
         # Column installation and row rendering both clear the table. Capture
         # immutable identity first; saved selection and cursor are independent.
@@ -73,25 +136,51 @@ class SurfSwarmLeaderboard(SwarmTableBase):
             table = self.query_one(DataTable)
         except Exception:
             table = None
-        token = (self.token_for_row(table.ordered_rows[table.cursor_row].key)
-                 if table is not None and table.row_count else None)
+        token,scroll_y=self._restore_view if self._restore_view is not None else self._cursor_state()
+        self._restore_view=None
         self._clipped_fields=set()
         super()._repaint()
         if token is not None and table is not None:
             for index, row in enumerate(table.ordered_rows):
                 if self.token_for_row(row.key) == token:
-                    table.move_cursor(row=index)
+                    table.move_cursor(row=index,scroll=False)
                     break
+        if table is not None:
+            table.scroll_to(y=scroll_y,animate=False,force=True)
+        if self._view_mode=='launches':
+            self._render_launch_source()
+
+    def _render_launch_source(self):
+        source=self._contribution
+        state=source.get('state','pending')
+        detail=strip_tags(flatten(source.get('detail') or ''))
+        parts=[]
+        if state in ('failed','stale','unavailable') and isinstance(source.get('rows'),list):
+            parts.append('load failed')
+        elif state=='partial':
+            parts.append('partial')
+        if source.get('read_ts') is not None:
+            parts.append(f"as of {hhmm(source['read_ts'])}")
+        if detail:
+            parts.append(detail)
+        self.write('.board-clocks',Text(' · '.join(parts),style='red' if state in ('failed','stale','unavailable') else 'dim'))
+        if not isinstance(source.get('rows'),list) and state!='pending':
+            self._write_footer(('load failed',),style='red')
+        try:
+            self.query_one('.board-clocks',Static).tooltip=Text(detail) if detail else None
+        except Exception:
+            pass
 
     def sort_by(self, key):
-        if key not in _ALL:
+        if key not in tuple(spec[0] for spec in self.COLUMN_SPECS):
             return
         self._sort_reverse = not self._sort_reverse if key == self._sort_key else False
         self._sort_key = key
         self._repaint()
 
     def cycle_sort(self):
-        self.sort_by(_ALL[(_ALL.index(self._sort_key) + 1) % len(_ALL)])
+        keys=tuple(spec[0] for spec in self.COLUMN_SPECS)
+        self.sort_by(keys[(keys.index(self._sort_key) + 1) % len(keys)])
 
     def reverse_sort(self):
         self._sort_reverse = not self._sort_reverse
@@ -129,27 +218,41 @@ class SurfSwarmLeaderboard(SwarmTableBase):
     def _render_title(self, as_of):
         room = max(self.size.width - self.TITLE_PADDING_COLS, 0)
         widen = self._widen or self._clipped
-        base = self.TITLE
-        if widen and room and rowfit.cell_len(base) + 2 + rowfit.cell_len(rowfit.WIDEN_HINT) > room:
-            base = "LEADERBOARD"
-        self.write(".panel-title", Text(rowfit.title_with_hint(base, widen, room)))
+        full_labels=('recorded seats','launch contribution')
+        hint_cols=2+rowfit.cell_len(rowfit.WIDEN_HINT) if widen else 0
+        for prefix,labels in (('LEADERBOARD · ',full_labels),('',full_labels),
+                              ('',('recorded','launches')),('',('rec','launches'))):
+            if not room or rowfit.cell_len(prefix+' · '.join(labels))+hint_cols<=room:
+                break
+        title=Text(prefix)
+        accent=self.app.get_css_variables().get('accent','cyan')
+        for index,(mode,label) in enumerate(zip(('recorded','launches'),labels)):
+            if index:title.append(' · ')
+            active=mode==self._view_mode
+            title.append(label,style=Style(color=accent if active else None,bold=active,dim=not active,
+                                          meta={'@click':f"screen.board_view('{mode}')"}))
+        hinted=rowfit.title_with_hint(title.plain,widen,room)
+        title.append(hinted[len(title.plain):])
+        self.query_one('.panel-title',Static).auto_links=False
+        self.write('.panel-title',title)
 
     def build_cells(self,item):
         token=seat_token(item.get('token_id'))
         if token is None: return None
         state=item.get('live_state')
-        state_text={'idle':'○ idle','offline':'offline'}.get(state,'unavailable')
+        unknown='—' if self._view_mode=='launches' else 'unavailable'
+        state_text={'idle':'○ idle','offline':'offline'}.get(state,unknown)
         if state=='working': state_text=f"● working {fmt_int(item.get('working'))}"
         elif state=='paused': state_text=f"⏸ {hhmm(item.get('paused_until_ts'))} ×{fmt_int(item.get('failures'))}"
         rate=item.get('accept_rate')
         hours=item.get('wall_clock_s')
-        raw={key:str(item[key]) if seat_token(item.get(key)) is not None else '—' for key in ('rank','devices','attempts','accepted','rejected','pending','turns')}
+        raw={key:str(item[key]) if seat_token(item.get(key)) is not None else '—' for key in ('rank','devices','attempts','accepted','rejected','pending','turns','jobs','launches')}
         raw.update(seat=('▸' if token==self._selected else '')+f'#{token}',
-                   runtime=item.get('runtime') if item.get('runtime') is not None else 'unavailable',
+                   runtime=item.get('runtime') if item.get('runtime') is not None else unknown,
                    rate='—' if rate is None else fmt_float(rate*100,'.1f')+'%',
                    hours='—' if hours is None else fmt_float(hours/3600,'.1f'),state=state_text)
         cells={}
-        for key,_,width in _SPECS:
+        for key,_,width in self.COLUMN_SPECS:
             cell=Text.from_markup(sanitize_cell(raw[key],width))
             if rowfit.cell_len(strip_tags(flatten(raw[key]))) > width:
                 self._clipped=True

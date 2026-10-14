@@ -1484,6 +1484,9 @@ _NON_NUMERIC_KEYS = frozenset(
         # BOARD: four nested dicts, one row list, and two independent clocks.
         # None is unread; an empty list/dict is not a numeric zero probe.
         "swarm_board_summary", "swarm_board_rows", "swarm_fleet",
+        # Nested rows/source envelope; loading, failed and empty are checked in
+        # test_surf_swarm_leaderboard, including absent counters versus real rows.
+        "swarm_launch_contribution",
         "swarm_board_as_of_hhmm", "swarm_workers_as_of_hhmm",
         "swarm_seat_live", "swarm_seat_contrib",
         # The accepted-work migration separates the source clocks. This

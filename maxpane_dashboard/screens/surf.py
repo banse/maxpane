@@ -3540,6 +3540,8 @@ class SurfScreen(DashboardScreen):
         self._return_context: str | None = None
         self._agent_slot = 0
         self._oracles_timer = None
+        self._launch_contribution_timer = None
+        self._board_view = "recorded"
         self.record_cap = SurfSwarmSeatRecord.ROW_CAP
         self.record_launches_only = False
         self._record_seat_token = None
@@ -3779,6 +3781,29 @@ class SurfScreen(DashboardScreen):
             self._oracles_timer = self.set_interval(1, self._tick_oracles)
         elif not active:
             self._stop_oracles_timer()
+        active = self.is_current and self._mode == MODE_BOARD and self._board_view == "launches"
+        setter = getattr(self._data_manager, "set_launch_contribution_active", None)
+        if setter is not None:
+            setter(active)
+        if active and self._launch_contribution_timer is None:
+            self._launch_contribution_timer = self.set_interval(1, self._tick_launch_contribution)
+            self.call_after_refresh(self._tick_launch_contribution)
+        elif not active:
+            self._stop_launch_contribution_timer()
+
+    def _stop_launch_contribution_timer(self):
+        if self._launch_contribution_timer is not None:
+            self._launch_contribution_timer.stop()
+            self._launch_contribution_timer = None
+
+    def _tick_launch_contribution(self):
+        if not (self.is_current and self._mode == MODE_BOARD and self._board_view == "launches"):
+            return
+        offer = getattr(self._data_manager, "offer_launch_contribution", None)
+        getter = getattr(self._data_manager, "get_launch_contribution_snapshot", None)
+        if offer is not None and getter is not None:
+            offer()
+            self.query_one(SurfSwarmLeaderboard).set_launch_contribution(getter())
 
     def _stop_oracles_timer(self):
         if self._oracles_timer is not None:
@@ -3795,6 +3820,7 @@ class SurfScreen(DashboardScreen):
 
     def on_unmount(self):
         self._stop_oracles_timer()
+        self._stop_launch_contribution_timer()
 
     @on(events.ScreenResume)
     def _resume_agent_runtime(self) -> None:
@@ -3803,6 +3829,10 @@ class SurfScreen(DashboardScreen):
     @on(events.ScreenSuspend)
     def _suspend_agent_runtime(self) -> None:
         self._stop_oracles_timer()
+        self._stop_launch_contribution_timer()
+        setter = getattr(self._data_manager, "set_launch_contribution_active", None)
+        if setter is not None:
+            setter(False)
         setter = getattr(self._data_manager, "set_oracles_active", None)
         if setter is not None:
             setter(False)
@@ -4091,6 +4121,15 @@ class SurfScreen(DashboardScreen):
     def action_cycle_board_sort(self) -> None:
         if self._mode == MODE_BOARD:
             self.query_one(SurfSwarmLeaderboard).cycle_sort()
+
+    def action_board_view(self, mode: str) -> None:
+        if self._mode != MODE_BOARD or mode not in ("recorded", "launches"):
+            return
+        self._board_view = mode
+        leaderboard = self.query_one(SurfSwarmLeaderboard)
+        leaderboard.set_view(mode)
+        self._sync_agent_runtime()
+        leaderboard.query_one(DataTable).focus()
 
     def action_reverse_board_sort(self) -> None:
         if self._mode == MODE_BOARD:

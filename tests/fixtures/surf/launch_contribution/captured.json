@@ -1,0 +1,246 @@
+{
+  "source": "https://api.imd.fun; captured 2026-10-14; unchanged selected fields, prose and reward allocations omitted",
+  "catalogue": [
+    {
+      "id": "6d766a87-1614-4bdb-aa24-5960fef59882",
+      "launchNumber": 1777,
+      "status": "live",
+      "chainId": 1,
+      "updatedAt": "2026-10-14T19:55:37.445Z"
+    },
+    {
+      "id": "0cc11429-5331-4902-a9f4-0fc6b9ab82ab",
+      "launchNumber": 1445,
+      "status": "live",
+      "chainId": 1,
+      "updatedAt": "2026-10-12T17:51:17.528Z"
+    }
+  ],
+  "launches": {
+    "6d766a87-1614-4bdb-aa24-5960fef59882": {
+      "id": "6d766a87-1614-4bdb-aa24-5960fef59882",
+      "status": "live",
+      "chainId": 1,
+      "updatedAt": "2026-10-14T19:55:37.445Z",
+      "jobs": [
+        {
+          "id": "663e917d-9776-4cbb-bc6d-d0905e337064",
+          "state": "completed"
+        }
+      ]
+    },
+    "0cc11429-5331-4902-a9f4-0fc6b9ab82ab": {
+      "id": "0cc11429-5331-4902-a9f4-0fc6b9ab82ab",
+      "status": "live",
+      "chainId": 1,
+      "updatedAt": "2026-10-12T17:51:17.528Z",
+      "jobs": [
+        {
+          "id": "2ff472e8-1453-414f-81ab-eb2702dbeece",
+          "state": "completed"
+        }
+      ]
+    }
+  },
+  "jobs": {
+    "663e917d-9776-4cbb-bc6d-d0905e337064": {
+      "id": "663e917d-9776-4cbb-bc6d-d0905e337064",
+      "state": "completed",
+      "updatedAt": "2026-10-14T19:54:15.239Z",
+      "workflow": null,
+      "nodes": [
+        {
+          "key": "audit_economics",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "863",
+            "agentId": "51225"
+          }
+        },
+        {
+          "key": "audit_flow",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "963",
+            "agentId": "51534"
+          }
+        },
+        {
+          "key": "audit_judge",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "1014",
+            "agentId": "52681"
+          }
+        },
+        {
+          "key": "audit_math",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "999",
+            "agentId": "52287"
+          }
+        },
+        {
+          "key": "audit_permissions",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "880",
+            "agentId": "51081"
+          }
+        },
+        {
+          "key": "build_contract_project",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "717",
+            "agentId": "52707"
+          }
+        },
+        {
+          "key": "manifest",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "849",
+            "agentId": "51328"
+          }
+        },
+        {
+          "key": "write_foundry_tests",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "1573",
+            "agentId": "52708"
+          }
+        }
+      ]
+    },
+    "2ff472e8-1453-414f-81ab-eb2702dbeece": {
+      "id": "2ff472e8-1453-414f-81ab-eb2702dbeece",
+      "state": "completed",
+      "updatedAt": "2026-10-12T17:49:53.448Z",
+      "workflow": {
+        "id": "64edd9c0-a8f0-4720-ab70-7ca6b38d97fa",
+        "status": "completed"
+      },
+      "nodes": [
+        {
+          "key": "audit_economics",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "123",
+            "agentId": "52286"
+          }
+        },
+        {
+          "key": "audit_flow",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "66",
+            "agentId": "51401"
+          }
+        },
+        {
+          "key": "audit_judge",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "808",
+            "agentId": "52166"
+          }
+        },
+        {
+          "key": "audit_math",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "877",
+            "agentId": "51343"
+          }
+        },
+        {
+          "key": "audit_permissions",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "415",
+            "agentId": "52270"
+          }
+        },
+        {
+          "key": "build_contract_project",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "1001",
+            "agentId": "51064"
+          }
+        },
+        {
+          "key": "manifest",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "729",
+            "agentId": "50988"
+          }
+        },
+        {
+          "key": "write_foundry_tests",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "1536",
+            "agentId": "51461"
+          }
+        }
+      ]
+    },
+    "ea1b99e8-3969-4348-ab5d-f56d5f5917fb": {
+      "id": "ea1b99e8-3969-4348-ab5d-f56d5f5917fb",
+      "state": "completed",
+      "updatedAt": "2026-10-12T20:07:41.734Z",
+      "workflow": {
+        "id": "64edd9c0-a8f0-4720-ab70-7ca6b38d97fa",
+        "status": "completed"
+      },
+      "nodes": [
+        {
+          "key": "design_critic",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "401",
+            "agentId": "51197"
+          }
+        },
+        {
+          "key": "frontend_for_contract",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "402",
+            "agentId": "51518"
+          }
+        }
+      ]
+    }
+  },
+  "workflows": {
+    "64edd9c0-a8f0-4720-ab70-7ca6b38d97fa": {
+      "id": "64edd9c0-a8f0-4720-ab70-7ca6b38d97fa",
+      "status": "completed",
+      "updatedAt": "2026-10-12T20:10:38.321Z",
+      "contracts": {
+        "id": "2ff472e8-1453-414f-81ab-eb2702dbeece",
+        "state": "completed",
+        "failure": null,
+        "repoUrl": "https://github.com/identity-md-launches/launch-1445-workflow-contract-stage-context",
+        "commit": "03131de3c1cbc06b61e1b1361e87aa8a2b5432ac"
+      },
+      "frontend": {
+        "id": "ea1b99e8-3969-4348-ab5d-f56d5f5917fb",
+        "state": "completed",
+        "failure": null,
+        "repoUrl": "https://github.com/identity-md-launches/launch-1453-workflow-frontend-stage-context",
+        "commit": "727e85d247a4ab0a201a15ae18987d30d166b824"
+      },
+      "launch": {
+        "id": "0cc11429-5331-4902-a9f4-0fc6b9ab82ab",
+        "status": "live"
+      }
+    }
+  }
+}
