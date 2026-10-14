@@ -221,8 +221,8 @@ async def test_protocol_fleet_and_four_agent_seats_have_expected_positions():
         assert work.region.y == rack.query_one('#surfboard-card-swarm').region.y
         assert rack.query_one('#surfboard-card-swarm').region.right < work.region.x
         assert work.region.right < oracles.region.x
-        assert agent.region.x == fleet.region.x
-        assert bay.region.x == tokens.region.x and bay.region.y == agent.region.y
+        assert agent.region.x == tokens.region.x
+        assert bay.region.x == fleet.region.x and bay.region.y == agent.region.y
         assert bay.can_focus and bay.data['destination'] is None
         assert not rack.query('#surfboard-card-earnings')
 
@@ -345,10 +345,10 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert r["terminal"].y == r["cards"]["board"].y == r["cards"]["swarm-tokens"].y
     assert r["terminal"].bottom == r["rack"].bottom
     assert r["cards"]["agent-3"].bottom == r["cards"]["agent-4"].bottom <= r["terminal"].bottom
-    assert r["cards"]["board"].right < r["terminal"].x < r["terminal"].right < r["cards"]["swarm-tokens"].x
+    assert r["cards"]["swarm-tokens"].right < r["terminal"].x < r["terminal"].right < r["cards"]["board"].x
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
         "announce", "swarm", "work", "oracles", "pool4", "protocol",
-        "board", "swarm-tokens", "agent", "agent-2", "agent-3", "agent-4"]
+        "swarm-tokens", "board", "agent", "agent-2", "agent-3", "agent-4"]
     for title in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "ORACLES", "POOL4", "PROTOCOL",
                   "TOKENS", "WIP", "EMPTY SEAT", "type in"):
         assert title in r["text"], (title, r["text"])
@@ -485,8 +485,8 @@ async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_
             news = rack.query_one('#surfboard-card-announce')
             footer = strips[news.region.bottom - 1].crop(news.region.x, news.region.right)
             label_ink = next(segment.style.color for segment in footer if 'SIGNALS' in segment.text)
-            for word, above, below in [('キープ', 'board', 'agent'),
-                                       ('ビルディング', 'swarm-tokens', 'agent-2')]:
+            for word, above, below in [('キープ', 'swarm-tokens', 'agent'),
+                                       ('ビルディング', 'board', 'agent-2')]:
                 card = rack.query_one(f'#surfboard-card-{above}')
                 agent = rack.query_one(f'#surfboard-card-{below}')
                 assert agent.region.y - card.region.bottom == 3

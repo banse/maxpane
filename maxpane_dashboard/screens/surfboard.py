@@ -18,10 +18,10 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Rechecked after the 2026-10-14 PROTOCOL/FLEET swap live preview at 149×45.
+#: Rechecked after the 2026-10-14 FLEET/TOKENS swap live preview at 149×45.
 #: Six equal fractional columns retain the standard card widths (at most one
-#: cell of rounding difference). PROTOCOL is top-right; FLEET is below ONCHAIN
-#: FEED. The rack retains its 143-column minimum and 23-column card floor;
+#: cell of rounding difference). PROTOCOL is top-right; TOKENS is below ONCHAIN
+#: FEED and FLEET is opposite it. The rack retains its 143-column minimum and 23-column card floor;
 #: PROTOCOL's "rewarded 100k IMD" row fits its new slot. Viewport padding and
 #: the vertical gutter keep the width pin at 146.
 #: Normal, stress, unavailable and wide composites scroll horizontally at
@@ -29,7 +29,7 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: at 146×37 and 149×45. TOKENS keeps its leading blank and right-edge arrows.
 #: Four seven-row card floors, three gutters and two extra side-gap rows need
 #: a 33-row rack, restoring the height pin from 35 to 37. The gaps directly below
-#: FLEET and TOKENS are three lines, with regular muted captions in the
+#: TOKENS and FLEET are three lines, with regular muted captions in the
 #: middle line before the AGENT seats. All other card gaps remain one line.
 #: All cards remain equally tall. The terminal fills the center to the rack
 #: bottom, measuring 95 columns at the pin and 97 at 149×45. At owner size all

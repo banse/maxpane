@@ -363,9 +363,9 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.update_data()
         rack.focus_card("announce")
         rack.move_focus("down")
-        assert rack.focused_card == "board"
-        rack.move_focus("right")
         assert rack.focused_card == "swarm-tokens"
+        rack.move_focus("right")
+        assert rack.focused_card == "board"
         rack.move_focus("up")
         assert rack.focused_card == "protocol"
         rack.move_focus("left")
@@ -374,7 +374,7 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         assert rack.focused_card == "oracles"
         rack.move_focus("left")
         assert rack.focused_card == "work"
-        rack.focus_card("swarm-tokens")
+        rack.focus_card("board")
         rack.move_focus("down")
         assert rack.focused_card == "agent-2"
         rack.move_focus("left")
