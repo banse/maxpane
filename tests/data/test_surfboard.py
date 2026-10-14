@@ -260,7 +260,7 @@ def test_protocol_card_rounds_readouts_but_keeps_exact_flow(burn, reward, primar
 @pytest.mark.parametrize('state,working,capacity,slots,status', [
     ('working', 2, 3, '2 of 3 slots', 'working'),
     ('idle', 0, 3, '0 of 3 slots', 'idle'),
-    ('offline', 0, 0, '0 of 0 slots', 'offline'),
+    ('offline', 0, 0, 'offline', 'offline'),
     ('paused', 0, 3, '0 of 3 slots', 'idle'),
     ('paused', 1, 3, '1 of 3 slots', 'working'),
     ('working', 0, 3, '0 of 3 slots', 'idle'),

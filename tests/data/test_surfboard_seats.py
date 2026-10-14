@@ -54,7 +54,7 @@ def test_each_assigned_card_uses_its_own_activity_capacity_and_outcomes():
                                 agent_seats=assignments, activity=observed))
     assert [r['token_id'] for r in rows] == [420,1836,0,None]
     assert [r['status'] for r in rows] == ['working','idle','offline','empty']
-    assert [r['secondary'] for r in rows[:3]] == ['1 of 2 slots','0 of 4 slots','0 of 0 slots']
+    assert [r['secondary'] for r in rows[:3]] == ['1 of 2 slots','0 of 4 slots','offline']
     assert '95.9% accepted' in rows[0]['detail'] and '100.0% accepted' in rows[1]['detail']
     assert 'no submitted record' in rows[2]['detail']
     assert [r['destination'] for r in rows] == ['agent','agent','agent',None]
@@ -107,6 +107,27 @@ async def test_incomplete_workers_cannot_give_absent_assigned_seat_zero_capacity
     assert rows[0]['meter_state'] == 'busy'
     assert rows[1]['meter_state'] == 'unavailable'
     assert rows[1]['secondary'] == '— of — slots'
+    await m.close()
+
+
+async def test_offline_cards_use_each_seats_cached_api_status(manager):
+    from tests.surf_swarm_fixtures import swarm_seat_capture
+    m, clock = manager
+    read = workers()
+    m.cache.store_last_good(SLOT_SWARM_WORKERS, read, ts=clock.now)
+    m.cache.store_last_good(SLOT_SURFBOARD_ACTIVITY, activity.observe(None, read, now=clock.now), ts=clock.now)
+    points = {}
+    for token, status in ((7, 'revoked'), (420, 'suspended')):
+        seat = dict(swarm_seat_capture('seat_420'), tokenId=str(token), status=status)
+        points[str(token)] = dict(state='ok', read_ts=clock.now, seat=seat)
+    m.cache.store_last_good(SLOT_SWARM_SEAT, dict(seats=points), ts=clock.now)
+    m.set_hub_seats([7, 420, 3, 7])
+    m.set_seat(420)
+    rows = agent_cards(m._project_hub()['surfboard_cards'])
+    assert [row['secondary'] for row in rows] == ['revoked', 'suspended', 'offline', 'revoked']
+    assert all(row['status'] == row['meter_state'] == 'offline' for row in rows)
+    m.swarm_client.fetch_seat_records.assert_not_awaited()
+    assert m._swarm_seat_task is None
     await m.close()
 
 

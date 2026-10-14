@@ -878,6 +878,7 @@ def seat_summary_from_seat(payload: object) -> dict[str, Any]:
     if attempts is not None and attempts > 0 and accepted is not None and accepted <= attempts:
         summary["win_rate"] = accepted / attempts
     summary["agent_id"] = _str(payload.get("agentId"))
+    summary["api_status"] = (_str(payload.get("status")) or "").strip() or None
     summary["devices"] = _count(payload.get("devices"))
     if "daemonVersion" in payload:
         daemon = payload["daemonVersion"]

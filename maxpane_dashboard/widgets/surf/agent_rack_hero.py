@@ -84,6 +84,9 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["digits"] = str(token) if token is not None and number(token) is not None else "--"
             presence = _source(payload, "status").get("live_state")
             fields["subtitle"] = {"working": "working", "idle": "online", "paused": "online", "offline": "offline"}.get(presence, "status --")
+            if presence == "offline":
+                api_status = raw.get("api_status")
+                fields["subtitle"] = (flatten(api_status) if isinstance(api_status, str) else "") or "offline"
             agent_id = raw.get("agent_id")
             agent_id = agent_id if isinstance(agent_id, str) and agent_id.isascii() and agent_id.isdecimal() else "--"
             fields["footer"] = f"AGENT #{agent_id}"
@@ -278,7 +281,7 @@ class AgentRackCard(Pool4HeroCard):
     def _frame_style(self):
         palette = self.app.get_css_variables()
         color = palette["accent"] if self.data.accent else "dim"
-        offline = (self.data.key == "seat" and self.data.subtitle == "offline"
+        offline = (self.data.key == "seat" and self.source.get("live_state") == "offline"
                    or self.data.key == "status" and self.source.get("meter_state") == "offline")
         delta = _number(self.source.get("delta"), signed=True) if self.data.key == "rank" else None
         if self.data.key == "runtime" and self.data.state in _AVAILABLE and self.source.get("update_state") == "outdated":
@@ -440,4 +443,7 @@ class SurfSwarmAgentRackHero(Grid):
 
     def update_data(self, *, surf_agent_hero=None, **kwargs):
         for record in agent_records(surf_agent_hero):
-            self.query_one(f"#hero-{record.key}", AgentRackCard).set_source(record, _source(surf_agent_hero, record.key))
+            source = _source(surf_agent_hero, record.key)
+            if record.key == "seat":
+                source = dict(source, live_state=_source(surf_agent_hero, "status").get("live_state"))
+            self.query_one(f"#hero-{record.key}", AgentRackCard).set_source(record, source)

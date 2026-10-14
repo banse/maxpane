@@ -7493,7 +7493,10 @@ class SurfManager:
         channel_entry = self.cache.get_last_good(SLOT_CHANNEL)
         channel = getattr(channel_entry, "payload", None) or {}
         workers = sw.coerce_workers_slot(getattr(self.cache.get_last_good(SLOT_SWARM_WORKERS), 'payload', None))
+        seat_points = (sw.coerce_seat_slot(getattr(self.cache.get_last_good(SLOT_SWARM_SEAT), 'payload', None),
+                                         now=now) or {}).get('seats', {})
         agent_seats = [dict(token_id=assigned, live=sw._seat_live_from_slot(workers, assigned),
+                            api_status=((seat_points.get(str(assigned)) or {}).get('seat') or {}).get('status'),
                             outcome=hub.seat_outcome(sources['records']['payload'], assigned))
                        for assigned in self._hub_seats]
         if workers is not None and (workers['count'] != len(workers['workers']) or workers['malformed_tokens']):

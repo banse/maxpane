@@ -1526,7 +1526,7 @@ SURF_LEADERBOARD_HERO_STATES = ("ok", "partial", "stale", "unavailable")
 SURF_AGENT_HERO_STATES = ("ok", "partial", "stale", "unavailable", "pending", "busy", "unknown_seat", "stale_unknown_seat", "empty", "failed")
 #: Twelve rack cards retain independent records, worker, receipt and selected-seat clocks.
 SURF_AGENT_HERO_FIELDS = {
-    "seat": ("state", "read_ts", "token_id", "selected_by", "read_error", "agent_id"),
+    "seat": ("state", "read_ts", "token_id", "selected_by", "read_error", "agent_id", "api_status"),
     "accepted": ("state", "read_ts", "listed", "accepted", "attempts", "percent"),
     # Premium share covers recorded attempts with known actual usage models;
     # model_jobs/work_jobs expose coverage independently of receipt counters.
@@ -1889,7 +1889,7 @@ SWARM_SEAT_SUMMARY_FIELDS: tuple[str, ...] = (
     "attempts", "accepted", "reviewed", "review_entries", "review_status", "mean_score", "scored",
     "roles", "online", "owner", "paired_ts", "collaborators", "runtime",
     "agent_id", "daemon", "devices", "win_rate", "last_won_ts", "last_sent_ts", "last_worked_ts",
-    "models",
+    "models", "api_status",
 )
 
 #: ``reviews[].status`` as served: ``sent`` (txHash + sentAt), ``submitted`` (txHash,

@@ -501,6 +501,9 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
              'agent',source='records')
         result[-1].update(seat_slot=slot, token_id=token)
         activity_meter(token, live_state)
+        if result[-1]['status'] == 'offline':
+            api_status = seat.get('api_status')
+            result[-1]['secondary'] = api_status.strip() if isinstance(api_status, str) and api_status.strip() else 'offline'
     leader = next((row for row in data.get("swarm_board_rows") or []
                    if isinstance(row, dict) and row.get("rank") == 1), {})
     card("board","LEADERBOARD",_value(count(leader.get("token_id"))),

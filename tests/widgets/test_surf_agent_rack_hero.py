@@ -156,6 +156,7 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
                                                ("offline", "offline", "OFF"), ("paused", "idle", "IDLE"), (None, "unavailable", "—")])
 async def test_status_meter_colors_and_unknown_worker_never_claim_offline(live, meter, word):
     data = payload()
+    data["seat"]["api_status"] = "revoked"
     data["status"].update(live_state=live, meter_state=meter, working=0 if live != "working" else 1,
                           meter_kind="activity-cooldown", numerator=.5)
     if live == "paused":
@@ -164,6 +165,10 @@ async def test_status_meter_colors_and_unknown_worker_never_claim_offline(live, 
         await pilot.pause()
         app = pilot.app
         text = painted(app, "status")
+        if live is None:
+            assert "status --" in painted(app, "seat")
+            assert "revoked" not in painted(app, "seat")
+            assert border_color(app, "seat") != app.ansi_theme.ansi_colors[1]
         assert word in text, text
         assert ("active" in text) == (live == "working")
         if live == "working":
@@ -318,10 +323,14 @@ def border_color(app, key):
 
 @pytest.mark.parametrize("live,word,color", [("working", "working", "accent"), ("idle", "online", "accent"),
                                           ("paused", "online", "accent"), ("offline", "offline", "red")])
-async def test_seat_uses_worker_presence_and_erc8004_registration(live, word, color):
+@pytest.mark.parametrize("api_status", [None, "revoked", "suspended", "", "  ", 123])
+async def test_seat_uses_worker_presence_and_erc8004_registration(live, word, color, api_status):
     from rich.color import Color
     data = payload()
     data["seat"]["state"] = "stale"
+    data["seat"]["api_status"] = api_status
+    if live == "offline" and isinstance(api_status, str) and api_status.strip():
+        word = api_status
     data["status"].update(live_state=live, meter_state='unavailable')
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()

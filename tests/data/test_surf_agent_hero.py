@@ -68,6 +68,17 @@ def test_contract_canonical_arithmetic_and_independent_source_clocks(snapshot):
     assert snapshot == before
 
 
+@pytest.mark.parametrize('status', ['revoked', 'suspended', '', None, 123])
+def test_seat_api_status_survives_projection_only_with_own_detail(snapshot, status):
+    seat = swarm_seat_capture('seat_420')
+    seat['status'] = status
+    snapshot['data']['swarm_seat_summary'] = sw.seat_summary_from_seat(seat)
+    expected = status.strip() or None if isinstance(status, str) else None
+    assert hero.project(**snapshot)['seat']['api_status'] == expected
+    snapshot['data']['swarm_seat_state'] = 'pending'
+    assert hero.project(**snapshot)['seat']['api_status'] is None
+
+
 def test_premium_share_counts_actual_known_models_and_reports_coverage(snapshot):
     # Attempts on the same job still represent separate work; configured models
     # must not turn a Sonnet submission into premium usage.

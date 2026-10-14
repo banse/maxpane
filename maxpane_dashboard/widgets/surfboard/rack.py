@@ -348,7 +348,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.seat_slot is not None:
             if status == "active":
                 color = AMBER
-            secondary = "offline" if status == "offline" else secondary.removesuffix(" slots")
+            secondary = (secondary or "offline") if status == "offline" else secondary.removesuffix(" slots")
         if self.key == "announce":
             secondary = secondary.removesuffix(" replies").removesuffix(" reply")
         elif self.key == "protocol":

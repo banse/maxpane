@@ -204,7 +204,9 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             ("working", "2 of 3 slots", "busy", 86400),
             ("idle", "0 of 3 slots", "idle", 43200),
             ("paused", "0 of 3 slots", "idle", 21600),
-            ("offline", "0 of 0 slots", "offline", 0),
+            ("offline", "offline", "offline", 0),
+            ("offline", "revoked", "offline", 0),
+            ("offline", "suspended", "offline", 0),
             ("unavailable", "— of — slots", "unavailable", None),
             ("active", "0 of 3 slots", "idle", 43200),
             ("working", "1 of 3 slots", "busy", 86400),
@@ -228,7 +230,7 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
                 padding = (right - left - 1 - len(row)) // 2
                 assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
             assert "slots" not in strips[top + 4].text
-            footer_text = "offline" if status == "offline" else slots.removesuffix(" slots")
+            footer_text = slots.removesuffix(" slots")
             footer = next(segment for segment in strips[top + 4] if footer_text in segment.text)
             if status == "offline":
                 assert " of " not in strips[top + 4].text

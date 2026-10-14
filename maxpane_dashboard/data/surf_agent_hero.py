@@ -159,7 +159,8 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
     summary = _mapping(data.get('swarm_seat_summary'))
     seat = dict(detail, token_id=token, selected_by=_text(selected.get('selected_by')),
                 read_error=data.get('swarm_seat_read') if data.get('swarm_seat_read') in ('busy', 'failed') else None,
-                agent_id=_text(summary.get('agent_id')) if detail['state'] in ('ok', 'partial', 'stale') else None)
+                agent_id=_text(summary.get('agent_id')) if detail['state'] in ('ok', 'partial', 'stale') else None,
+                api_status=_text(summary.get('api_status')) if detail['state'] in ('ok', 'partial', 'stale') else None)
     records, contributors, workers = (_source(sources, key, now) for key in ('records', 'contributors', 'workers'))
     outcome = _mapping(data.get('swarm_seat_outcome'))
     if seat_token(outcome.get('token_id')) != token:

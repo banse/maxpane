@@ -229,6 +229,9 @@ one blank line between: SEAT / ACCEPTED / EFFORT / REWARDS / RANK / STATUS, then
 OWNER / RUNTIME / MODELS / EARNINGS / COLLAB / NODES. The old `SurfSwarmAgentHero`
 and `SurfSwarmSeatCards` remain parked; no production body mounts them.
 All twelve outer card footers are centered, including loading and error states.
+Offline SEAT subtitles use the selected seat's API pairing status (for example,
+`revoked`) when available, with `offline` as fallback. Worker presence, independent
+of that descriptive status, remains the authority for online/working labels and red styling.
 
 `surf_agent_hero` is a primitive projection with independent state/read timestamps
 for all twelve cards. A successful unchanged detail read confirms only that seat
@@ -884,6 +887,9 @@ remain effort/receipts; workers remain presence; detail responses never overwrit
 AGENT outer footers track their assigned worker activity independently:
 orange BUSY with a full green bar; gray IDLE drains green to orange over 24 hours,
 then orange to empty over hours 24–72. Offline is red OFF with empty segments.
+Offline AGENT inner subtitles use the assigned token's cached `/seats` status,
+falling back to `offline` when no usable status has been read. Other seats' detail
+cannot supply the label; this projection introduces no additional requests.
 Every successful workers read refreshes activity evidence even when content is unchanged;
 failed/stale/unknown evidence has no live bar. Persisted per-token stop history is validated
 on load. Cached own-work `submittedAt` can seed or advance an idle anchor when

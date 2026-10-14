@@ -129,6 +129,7 @@ def test_summary_420_is_the_explorer_record(seat420):
         "runtime": "claude 2.1.278 (Claude Code)",            # runtimes[0] id + version, raw
         "last_worked_ts": None,     # the pre-status capture serves no submittedAt
         "models": [],               # runtimes[] served, no premiumModel in this 09-21 capture
+        "api_status": "active",    # status is pairing metadata, not worker presence
     }
     assert tuple(summary["review_status"]) == SWARM_SEAT_REVIEW_STATUSES
 
@@ -376,6 +377,7 @@ def test_work_rows_420_source_order_frozen_shape(seat420):
         "accepted_ts": _iso("2026-09-21T04:10:09.585Z"),
         "submitted_ts": None,  # the pre-status capture serves no submittedAt
         "launch": seat420["work"][0]["launch"],
+        "launch_state": "not_read",
         "submission_hash": seat420["work"][0]["submissionHash"],
         "answer": None, "answer_state": "not_read", "model": None, "took_s": None,
         "output_tokens": None, "panel_state": "not_oracle", "panel_agreed": None,
