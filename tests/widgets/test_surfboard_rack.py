@@ -84,7 +84,8 @@ async def test_post_preview_keeps_unicode_literal_and_address_copy_units(size):
                 assert not next(s.style for s in content[0] if '[bold]' in s.text).bold
             elif text.startswith('a界'):
                 assert [s.crop(left+1,right).text.rstrip() for s in content]==[
-                    'a'+'界'*8, '界'*(9 if size[0]==149 else 8), '界'*7+'...']
+                    'a'+'界'*(9 if size[0]==149 else 8), '界'*9,
+                    '界'*(8 if size[0]==149 else 7)+'...']
             elif text=='Short post':
                 assert 'Short post' in content[0].text
                 assert all(not s.crop(left+1,right).text.strip() for s in content[1:])
@@ -429,8 +430,8 @@ async def test_live_cards_route_and_empty_seats_focus_input_without_opening():
 
 
 @pytest.mark.parametrize("numerator,denominator,expected", [
-    (0, 8, "IDLE ▱▱▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "IDLE ▰▰▰▰▰▰▱▱▱▱▱▱▱"),
-    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE —"),
+    (0, 8, "IDLE ▱▱▱▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "IDLE ▰▰▰▰▰▰▰▱▱▱▱▱▱▱"),
+    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE —"),
     (None, 8, "IDLE —"), (True, 8, "IDLE —"), (9, 8, "IDLE —"),
     (-1, 8, "IDLE —"), (float("inf"), 8, "IDLE —"),
 ])

@@ -871,6 +871,9 @@ borders and border text, matching its body; SWARM BUILDS retains its activity co
 The top row is ONCHAIN FEED, BUILT BY SWARM, WIP, ORACLES, POOL4, FLEET.
 PROTOCOL sits below ONCHAIN FEED, opposite TOKENS below FLEET beside the terminal.
 The キープ and ビルディング captions stay over the left and right AGENT columns.
+The first column takes one character from the ORACLES track after fractional
+rounding; the other track widths, gutters and overall rack width stay unchanged.
+The terminal follows the adjusted grid, and captions recenter after track changes.
 BUILT BY SWARM and WIP exchange only their outer footers: build/review counts
 appear under BUILT BY SWARM, while the original SWARM `24H` history appears under
 WIP. The rack supplies each footer's original data and loading state separately;

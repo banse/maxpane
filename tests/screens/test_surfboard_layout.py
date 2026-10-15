@@ -64,7 +64,7 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        for width, cells in [(149, 9), (180, 14), (140, 9), (149, 9)]:
+        for width, cells in [(149, 10), (180, 15), (140, 10), (149, 10)]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             card = app.hub.query_one("#surfboard-card-announce", SurfboardCard)
@@ -421,7 +421,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 if kind == "unavailable":
                     assert "—" in text and "unavailable" not in text
                 else:
-                    assert "You can now" in text and "deploy via the" in text and "..." in text
+                    assert "You can now deploy" in text and "via the swarm" in text and "..." in text
                     assert card["secondary"].removesuffix(" replies") in text
                 continue
             if card["key"] == "board":
@@ -560,13 +560,45 @@ async def test_protocol_inset_matches_tokens_padding_without_losing_stats(size, 
     assert len(set(unit_columns)) == 1
 
 
-@pytest.mark.parametrize('size', [(149, 45), (180, 45)])
-async def test_rack_columns_share_width_equally(size):
-    rendered = await _render(hub_payload(), size)
-    widths = list(rendered['widths'].values())
-    # Whole terminal cells may leave one extra cell in a fractional track.
-    assert max(widths) - min(widths) <= 1
-    assert not rendered['clipped']
+async def test_first_column_takes_one_cell_from_oracles_and_keeps_grid_aligned_on_resize():
+    from rich.cells import cell_len
+    # Existing fractional track widths, before the one-cell transfer.
+    original = [(146, [23, 23, 23, 23, 23, 23]),
+                (149, [23, 24, 23, 24, 23, 24]),
+                (151, [23, 24, 24, 24, 24, 24]),
+                (152, [24, 24, 24, 24, 24, 24]),
+                (180, [28, 29, 29, 28, 29, 29]),
+                (149, [23, 24, 23, 24, 23, 24])]
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        for width, before in original:
+            await pilot.resize_terminal(width, 45)
+            await pilot.pause()
+            rack = app.hub.query_one(SurfboardRack)
+            expected = before.copy()
+            expected[0] += 1
+            expected[3] -= 1
+            for card in rack.query(SurfboardCard):
+                column = card.rack_column
+                assert card.region.width == expected[column], (width, card.key, card.region)
+                assert card.region.x == rack.content_region.x + sum(expected[:column]) + column
+                assert card.region.height == 9
+                assert '‹' not in str(card.border_title)
+            terminal = rack.query_one(SurfboardTerminal)
+            assert terminal.region.x == rack.query_one('#surfboard-card-swarm').region.x
+            assert terminal.region.right == rack.query_one('#surfboard-card-pool4').region.right
+            assert terminal.region.width == sum(before[1:5]) + 3 - 1
+            assert rack.region.right == rack.query_one('#surfboard-card-board').region.right
+            strips = app.hub._compositor.render_strips()
+            for key, label_id, word in [('protocol', 'keep', 'キープ'),
+                                        ('swarm-tokens', 'building', 'ビルディング')]:
+                card = rack.query_one(f'#surfboard-card-{key}')
+                label = rack.query_one(f'#surfboard-{label_id}')
+                assert label.region.x == card.region.x
+                assert label.region.width == card.region.width
+                line = strips[card.region.bottom + 1].crop(card.region.x, card.region.right).text
+                assert abs(cell_len(line[:line.index(word)]) -
+                           (card.region.width - cell_len(word)) / 2) <= .5
 
 
 async def test_boardroom_title_is_centered_muted_after_refresh_and_resize():

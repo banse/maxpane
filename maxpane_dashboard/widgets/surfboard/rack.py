@@ -551,6 +551,14 @@ class SurfboardRack(Grid):
         self.focused_card = "announce"
 
     def on_resize(self):
+        # Keep fractional-track rounding, transferring one cell from ORACLES to the left rail.
+        columns = self.styles.grid_size_columns
+        available = self.content_size.width - (columns - 1) * self.styles.grid_gutter_vertical
+        widths = [(index + 1) * available // columns - index * available // columns
+                  for index in range(columns)]
+        widths[0] += 1
+        widths[3] -= 1
+        self.styles.grid_columns = tuple(widths)
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
@@ -560,6 +568,8 @@ class SurfboardRack(Grid):
         # The terminal spans the last track and can use its leftover space.
         self.styles.grid_rows = (card_height, card_height + 2, card_height, "1fr")
         self.call_after_refresh(self._position_taglines)
+        # Wait for the track changes to reach the children's regions.
+        self.call_after_refresh(self.call_after_refresh, self._position_taglines)
 
     def _position_taglines(self):
         for key, label_id in (("protocol", "keep"), ("swarm-tokens", "building")):

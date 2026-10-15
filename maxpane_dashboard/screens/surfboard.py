@@ -19,13 +19,14 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Rechecked after the 2026-10-14 PROTOCOL inset correction live preview at 149×45.
-#: Six equal fractional columns retain the standard card widths (at most one
-#: cell of rounding difference). FLEET is top-right with TOKENS below it;
-#: PROTOCOL is below ONCHAIN FEED. The rack retains its 143-column minimum and
-#: 23-column card floor; PROTOCOL and TOKENS use the same inset padding.
-#: Its aligned stats keep a leading blank; at the pin the stress row fits as
-#: "rewarded 100kIMD". Viewport padding and the vertical gutter keep the pin at 146.
+#: Rechecked after the 2026-10-15 one-cell transfer, live preview at 149×45.
+#: Start with six equal fractional tracks, then give the first column one cell
+#: from ORACLES. Other track widths and the rack's right edge stay unchanged.
+#: FLEET is top-right with TOKENS below it; PROTOCOL is below ONCHAIN FEED.
+#: The rack retains its 143-column minimum: 24 cells left, 22 for ORACLES,
+#: 23 for the other tracks. PROTOCOL and TOKENS use the same inset padding;
+#: aligned stats retain a leading blank and the full stress values and IMD units.
+#: Viewport padding and the vertical gutter keep the pin at 146.
 #: Normal, stress, unavailable and wide composites scroll horizontally at
 #: 145×36, but not 146×36; vertical scrolling clears at 146×37. Every card fits
 #: at 146×37 and 149×45. TOKENS keeps its leading blank and right-edge arrows.
@@ -34,7 +35,7 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: PROTOCOL and TOKENS are three lines, with regular muted captions in the
 #: middle line before the AGENT seats. All other card gaps remain one line.
 #: All cards remain equally tall. The terminal fills the center to the rack
-#: bottom, measuring 95 columns at the pin and 97 at 149×45. At owner size all
+#: bottom, measuring 94 columns at the pin and 96 at 149×45. At owner size all
 #: cards remain nine rows tall; the enlarged gaps use the two former spare rows.
 #: WORK IN PROGRESS uses job digits and workflow subtitle in the former
 #: PORTFOLIO slot. Its outer footer shows SWARM's 24H history; build/review
@@ -48,6 +49,8 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: composites retain 146×37; captions stay above their original AGENT columns.
 #: Subsequent PROTOCOL/FLEET and TOKENS/PROTOCOL swaps retain both pins and caption
 #: positions in the boundary composites and the live 149×45 preview.
+#: The one-cell transfer also retains both pins across all four payloads.
+#: Resize checks preserve column alignment and centered captions after track changes.
 #: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 146
 SURFBOARD_FULL_LAYOUT_ROWS = 37
