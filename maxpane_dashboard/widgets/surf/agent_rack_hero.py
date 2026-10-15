@@ -308,7 +308,7 @@ class AgentRackCard(Pool4HeroCard):
         frame = self._frame_style()
         ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
         active = frame.color in (Color.parse(palette["accent"]), Color.parse("green"))
-        _, _, digits = inner_styles(palette, active=active)
+        _, _, digits = inner_styles(palette, active=active, frame_color=frame.color, ansi_theme=self.app.ansi_theme)
         base, surface = self.background_colors
         previous = dim_color(ink.bgcolor, ink.color)
         # Halfway between the card background and the original dim text.

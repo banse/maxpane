@@ -257,6 +257,7 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
                 padding = (right - left - 1 - len(row)) // 2
                 assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
                 digit_ink = (pilot.app.ansi_theme.ansi_colors[2] if status == 'working' else
+                             pilot.app.ansi_theme.ansi_colors[3] if status == 'offline' else
                              Color.parse(pilot.app.get_css_variables()['foreground']).get_truecolor())
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for s in strip.crop(left+1, right) if s.text.strip())

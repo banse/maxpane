@@ -1,12 +1,15 @@
 """Shared body colors and rich text padding for Surf card insets."""
+from rich.color import Color
 from rich.style import Style
 from rich.text import Text
 
 
-def inner_styles(palette, *, active=False):
+def inner_styles(palette, *, active=False, frame_color=None, ansi_theme=None):
     """Return label, value and numeric-readout styles for the final frame."""
     label = Style(color="green", bgcolor=palette["background"], dim=False)
     value = Style(color=palette["foreground"], bgcolor=palette["background"], dim=False)
+    if frame_color is not None and frame_color.get_truecolor(ansi_theme) == Color.parse("red").get_truecolor(ansi_theme):
+        return label, value, value + Style(color="yellow")
     return label, value, label if active else value
 
 

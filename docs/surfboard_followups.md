@@ -1,5 +1,16 @@
 # Surfboard follow-ups
 
+## Red-frame numeric readouts — 2026-10-15
+
+Red inset borders now use orange digits in all Surf and boardroom cards,
+including custom Agent STATUS readouts. Symbolic ANSI red and resolved theme
+RGB red share the rule. Other body colors, frame colors, captions and geometry
+retain their existing behavior. The live public-source WORK view at 149×45
+shows the red BLOCKED card with orange digits. The seven composited red-frame
+checks reject removing the orange override.
+All 424 affected widget/composing checks and 127 guards/docpins passed. The
+single review approved the change; no geometry or layout pins moved.
+
 ## Shared card inner styling — 2026-10-15
 
 All mounted Surf and boardroom card bodies share label/value/digit colors and

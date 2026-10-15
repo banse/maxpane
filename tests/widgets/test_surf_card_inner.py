@@ -77,7 +77,9 @@ async def test_composited_readout_uses_final_frame_and_pads_only_text(
         if frame_color is not None:
             expected = app.get_css_variables()["accent"] if frame_color == "accent" else frame_color
             assert frame.color.get_truecolor(app.ansi_theme) == Color.parse(expected).get_truecolor(app.ansi_theme)
-        digit_color = app.ansi_theme.ansi_colors[2] if bright else Color.parse(app.get_css_variables()["foreground"]).get_truecolor()
+        digit_color = (app.ansi_theme.ansi_colors[3] if frame_color == "red" else
+                       app.ansi_theme.ansi_colors[2] if bright else
+                       Color.parse(app.get_css_variables()["foreground"]).get_truecolor())
         for index, row in enumerate(rows[top + 1:top + 4], top + 1):
             if "e" in digits:
                 assert row[left + 1] == row[right - 1] == " "

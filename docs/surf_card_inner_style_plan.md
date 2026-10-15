@@ -10,7 +10,7 @@ Apply one inner-body color policy to every visible Surf card and boardroom card:
 - A numeric readout whose final inset border is green uses the brighter ANSI green
   already used by active boardroom digits (`green`, the theme's ANSI index 2).
 - Body labels and prose use that light green. Other values use the darker theme
-  `foreground` green, including numeric readouts with neutral, orange or red frames. Missing-value
+  `foreground` green, including numeric readouts with neutral or orange frames. Missing-value
   placeholders may retain label green; they are not measured values.
 - Keep existing boldness, except where existing custom post-processing must be
   replaced to preserve the same bold value appearance.
@@ -24,6 +24,13 @@ Apply one inner-body color policy to every visible Surf card and boardroom card:
 - Preserve values, formatting, units, safe literal text, copy/explorer affordances,
   source clocks and loading/failure semantics. Preserve card order, dimensions,
   keyboard behavior, polling, models contracts and all data calculations.
+
+Follow-up: red inset borders require orange numeric readouts (the theme's ANSI
+yellow/orange), including custom Agent STATUS and boardroom digits. The controller
+implements this small shared-policy correction; test the existing composited
+red-frame cases first, pass the final frame color/theme into the shared helper,
+verify a live 149×45 render, then run one final review. Colors alone do not move
+geometry or require new layout measurements.
 
 The owner confirmed “Every Surf view and boardroom.” This is Tier 2 because the
 renderer serves multiple bodies. Expected production change is comfortably below
@@ -61,11 +68,11 @@ Choose B; no generalized card framework, new data layer, or hierarchy rewrite.
 Shared module: `maxpane_dashboard/widgets/card_inner.py`.
 
 ```python
-def inner_styles(palette, *, active=False):
+def inner_styles(palette, *, active=False, frame_color=None, ansi_theme=None):
     # Return (label_style, value_style, digit_style).
     # All use palette['background'] and dim=False.
     # Labels: ANSI green; values: palette['foreground'];
-    # digits: label color only when active, otherwise value color.
+    # Digits: orange for a red frame; otherwise label when active, value when not.
 
 def padded_inner_row(row: Text, inside: int, *, align='left') -> Text:
     # Copy the rich Text, fit/align to max(0, inside - 2), then add edge spaces.

@@ -192,7 +192,8 @@ class NewsHeroCard(HeroBoxBase):
         palette = self.app.get_css_variables()
         frame = self._frame_style()
         ink, value_ink, digit_ink = inner_styles(
-            palette, active=frame.color in (Color.parse(palette["accent"]), Color.parse("green")))
+            palette, active=frame.color in (Color.parse(palette["accent"]), Color.parse("green")),
+            frame_color=frame.color, ansi_theme=self.app.ansi_theme)
         if self.VALUE_BOLD:
             value_ink += Style(bold=True)
             digit_ink += Style(bold=True)

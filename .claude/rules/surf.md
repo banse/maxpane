@@ -19,8 +19,8 @@ table names them and this file repeats no numbers.
 
 Every mounted Surf hero and boardroom card uses the same body palette: light ANSI
 green labels/prose and theme-foreground values. Numeric readouts use light green
-only when their final inset frame is green; neutral, orange and red frames retain
-their existing colors while the digits use foreground. Headings, inset subtitles,
+when their final inset frame is green and orange when it is red. Neutral and
+orange frames retain foreground digits. Headings, inset subtitles,
 outer captions and state decisions are unchanged. BOARD values remain bold.
 Text rows reserve one blank cell inside each edge, including previews, compact
 readouts, owner links and models. Native tall digits retain their centered width.
