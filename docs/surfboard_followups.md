@@ -432,3 +432,17 @@ reject reversals of both changes; the mutation runner restores the source.
 Final affected/composing checks: 185 passed; fast guards and documentation pins:
 127 passed. Review approved with no findings and independently killed both
 mutants. No outstanding follow-ups for this swap; no full suite was run.
+
+## Boardroom PROTOCOL / FLEET position swap — 2026-10-15
+
+FLEET now occupies the top-right slot; PROTOCOL sits directly below it beside
+the terminal. TOKENS remains on the left. Card data and destinations are unchanged;
+arrow navigation follows the swapped slots. Both translated captions and all four
+AGENT seats retain their positions.
+
+The live keyless 149×45 preview shows the swap. Reverting the slot order or
+anchoring the right caption to FLEET again fails the existing position,
+navigation and caption checks; both mutation proofs restored the source.
+All 185 affected/composing checks and 127 guards/documentation pins passed;
+the layout remains 146×37. Review approved with no findings and independently
+rejected both mutations. No outstanding follow-ups; no full suite was run.

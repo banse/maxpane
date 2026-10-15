@@ -868,8 +868,8 @@ guarantee, not a promise that arbitrary notes fit; measured content limits are i
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
 The title is centered muted gray `IMD BOARDROOM`. ONCHAIN FEED uses white active inset
 borders and border text, matching its body; SWARM BUILDS retains its activity colors.
-The top row is ONCHAIN FEED, BUILT BY SWARM, WIP, ORACLES, POOL4, PROTOCOL.
-TOKENS sits below ONCHAIN FEED, opposite FLEET below PROTOCOL beside the terminal.
+The top row is ONCHAIN FEED, BUILT BY SWARM, WIP, ORACLES, POOL4, FLEET.
+TOKENS sits below ONCHAIN FEED, opposite PROTOCOL below FLEET beside the terminal.
 The キープ and ビルディング captions stay over the left and right AGENT columns.
 BUILT BY SWARM and WIP exchange only their outer footers: build/review counts
 appear under BUILT BY SWARM, while the original SWARM `24H` history appears under
@@ -919,7 +919,7 @@ seven-day weeks and days; remaining hours are discarded. The existing meter fiel
 carry `meter_kind=duration`, milliseconds in `numerator` and no denominator. Unknown
 time is `worked —`; known zero is `worked 0y 0w 0d`. FLEET has no activity label or bar.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
-footer is centered `Identity.md`. Three-line gaps below FLEET and TOKENS separate them
+footer is centered `Identity.md`. Three-line gaps below PROTOCOL and TOKENS separate them
 from the AGENT seats; regular-weight キープ / ビルディング match the muted card-footer
 labels and are centered on the middle line.
 Other card gaps remain one line; all card sizes stay equal.

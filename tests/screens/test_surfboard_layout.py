@@ -242,15 +242,16 @@ async def test_protocol_fleet_and_four_agent_seats_have_expected_positions():
         bay = rack.query_one('#surfboard-card-agent-2')
         oracles = rack.query_one('#surfboard-card-oracles')
         pool4 = rack.query_one('#surfboard-card-pool4')
-        assert tokens.region.y == fleet.region.y
-        assert oracles.region.y == pool4.region.y == work.region.y == protocol.region.y
+        assert tokens.region.y == protocol.region.y
+        assert oracles.region.y == pool4.region.y == work.region.y == fleet.region.y
         assert oracles.region.right < pool4.region.x
-        assert pool4.region.right < protocol.region.x
+        assert pool4.region.right < fleet.region.x
+        assert fleet.region.x == protocol.region.x and fleet.region.bottom < protocol.region.y
         assert work.region.y == rack.query_one('#surfboard-card-swarm').region.y
         assert rack.query_one('#surfboard-card-swarm').region.right < work.region.x
         assert work.region.right < oracles.region.x
         assert agent.region.x == tokens.region.x
-        assert bay.region.x == fleet.region.x and bay.region.y == agent.region.y
+        assert bay.region.x == protocol.region.x and bay.region.y == agent.region.y
         assert bay.can_focus and bay.data['destination'] is None
         assert not rack.query('#surfboard-card-earnings')
 
@@ -369,14 +370,14 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert r["status_whole"], r
     assert len(r["cards"]) == 12
     assert len({region.y for region in r["cards"].values()}) == 4
-    assert len({r["cards"][key].y for key in ("announce", "swarm", "work", "oracles", "pool4", "protocol")}) == 1
-    assert r["terminal"].y == r["cards"]["board"].y == r["cards"]["swarm-tokens"].y
+    assert len({r["cards"][key].y for key in ("announce", "swarm", "work", "oracles", "pool4", "board")}) == 1
+    assert r["terminal"].y == r["cards"]["protocol"].y == r["cards"]["swarm-tokens"].y
     assert r["terminal"].bottom == r["rack"].bottom
     assert r["cards"]["agent-3"].bottom == r["cards"]["agent-4"].bottom <= r["terminal"].bottom
-    assert r["cards"]["swarm-tokens"].right < r["terminal"].x < r["terminal"].right < r["cards"]["board"].x
+    assert r["cards"]["swarm-tokens"].right < r["terminal"].x < r["terminal"].right < r["cards"]["protocol"].x
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
-        "announce", "swarm", "work", "oracles", "pool4", "protocol",
-        "swarm-tokens", "board", "agent", "agent-2", "agent-3", "agent-4"]
+        "announce", "swarm", "work", "oracles", "pool4", "board",
+        "swarm-tokens", "protocol", "agent", "agent-2", "agent-3", "agent-4"]
     for title in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "ORACLES", "POOL4", "PROTOCOL",
                   "TOKENS", "WIP", "EMPTY SEAT", "type in"):
         assert title in r["text"], (title, r["text"])
@@ -513,7 +514,7 @@ async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_
             footer = strips[news.region.bottom - 1].crop(news.region.x, news.region.right)
             label_ink = next(segment.style.color for segment in footer if 'SIGNALS' in segment.text)
             for word, above, below in [('キープ', 'swarm-tokens', 'agent'),
-                                       ('ビルディング', 'board', 'agent-2')]:
+                                       ('ビルディング', 'protocol', 'agent-2')]:
                 card = rack.query_one(f'#surfboard-card-{above}')
                 agent = rack.query_one(f'#surfboard-card-{below}')
                 assert agent.region.y - card.region.bottom == 3
@@ -527,7 +528,7 @@ async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_
                            for segment in line if word in segment.text)
                 assert sum(word in strip.text for strip in strips) == 1
             terminal = rack.query_one(SurfboardTerminal)
-            assert terminal.region.y == rack.query_one('#surfboard-card-board').region.y
+            assert terminal.region.y == rack.query_one('#surfboard-card-protocol').region.y
             assert terminal.region.bottom == rack.content_region.bottom
 
 
