@@ -446,3 +446,16 @@ navigation and caption checks; both mutation proofs restored the source.
 All 185 affected/composing checks and 127 guards/documentation pins passed;
 the layout remains 146×37. Review approved with no findings and independently
 rejected both mutations. No outstanding follow-ups; no full suite was run.
+
+## Boardroom TOKENS / PROTOCOL position swap — 2026-10-15
+
+PROTOCOL now occupies the left slot below ONCHAIN FEED; TOKENS sits on the
+right below FLEET. The top row, agent seats and translated captions retain
+their positions. Card data and destinations follow the same identities, and
+arrow navigation follows the new columns.
+
+The live keyless 149×45 preview shows the swap. Tests reject restoring the old
+card order or moving the captions with the cards; both mutations were restored.
+All 185 affected/composing checks and 127 guards/documentation pins passed;
+the layout remains 146×37. Review approved with no findings and independently
+rejected both mutations. No outstanding follow-ups; no full suite was run.

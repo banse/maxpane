@@ -869,7 +869,7 @@ guarantee, not a promise that arbitrary notes fit; measured content limits are i
 The title is centered muted gray `IMD BOARDROOM`. ONCHAIN FEED uses white active inset
 borders and border text, matching its body; SWARM BUILDS retains its activity colors.
 The top row is ONCHAIN FEED, BUILT BY SWARM, WIP, ORACLES, POOL4, FLEET.
-TOKENS sits below ONCHAIN FEED, opposite PROTOCOL below FLEET beside the terminal.
+PROTOCOL sits below ONCHAIN FEED, opposite TOKENS below FLEET beside the terminal.
 The キープ and ビルディング captions stay over the left and right AGENT columns.
 BUILT BY SWARM and WIP exchange only their outer footers: build/review counts
 appear under BUILT BY SWARM, while the original SWARM `24H` history appears under
