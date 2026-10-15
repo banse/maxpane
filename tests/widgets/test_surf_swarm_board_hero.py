@@ -71,6 +71,40 @@ def painted(app, key):
     return "\n".join(strip.text for strip in strips(app, key))
 
 
+@pytest.mark.parametrize('width', [142, 149])
+@pytest.mark.parametrize('theme', ['matrix', 'minimal'])
+async def test_inner_metrics_are_green_with_padded_stats_and_neutral_captions(width, theme):
+    app = Harness(payload())
+    app.register_theme(THEMES[theme])
+    app.theme = theme
+    async with app.run_test(size=(width, 45)) as pilot:
+        await pilot.pause()
+        green = Color.parse(app.get_css_variables()['foreground']).get_truecolor()
+        for key in payload():
+            card = app.query_one(f'#hero-{key}')
+            rows = strips(app, key)
+            top = next(i for i, row in enumerate(rows) if '┌' in row.text)
+            left, right = rows[top].text.index('┌'), rows[top].text.index('┐')
+            for index, row in enumerate(rows[top + 1:top + 4]):
+                if card.data.stats:
+                    label, value = card.data.stats[index]
+                    assert row.text[left + 1:right].startswith(' ' + label)
+                    assert row.text[right - 1] == ' '
+                    assert row.text[right - 1 - len(value):right - 1] == value
+                    positions = range(right - 1 - len(value), right - 1)
+                    assert app.screen.get_style_at(card.region.x + left + 2, card.region.y + top + index + 1).color.get_truecolor() != green
+                else:
+                    positions = [x for x in range(left + 1, right) if not row.text[x].isspace()]
+                    assert positions
+                for x in positions:
+                    style = app.screen.get_style_at(card.region.x + x, card.region.y + top + index + 1)
+                    assert style.color.get_truecolor() == green and not style.dim, (key, row.text, style)
+            for index in (top, top + 4, len(rows) - 1):
+                for segment in rows[index]:
+                    if segment.text.strip():
+                        assert segment.style.color.get_truecolor() != green
+
+
 async def test_six_approved_cards_preserve_digits_counts_and_equal_geometry():
     async with Harness(payload()).run_test(size=(149, 45)) as pilot:
         await pilot.pause()

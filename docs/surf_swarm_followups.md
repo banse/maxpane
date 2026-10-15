@@ -1753,3 +1753,35 @@ Open Minor: `_percent()` uses the existing `_face()` precision below 1%, so
 `0.123456` renders `0.1235%` rather than the plan's one-decimal `0.1%`. File this
 formatting refinement for the next touch of `swarm_board_hero.py`; no numerical
 value is lost or rounded to zero.
+
+## BOARD card padding and value color — 2026-10-15
+
+LAUNCHES, WORKERS and EFFORT now keep one blank cell inside each vertical
+border. Their right-hand values and the first three cards' primary digits
+use the leaderboard foreground. Frames, labels, captions and outer footers
+retain their existing styling. Optional shared-renderer settings default to
+the previous appearance for other cards. FLEET omits heartbeat and leaves two
+blank rows below paused or its detail before RECEIPTS.
+
+The production app was rendered at 149×45 using retained live-source cache
+data; the refresh failed, so this is not a fresh-data claim. Composited tests
+verify padding and colors independently of the SVG export. Removing heartbeat
+reduces the height pin from 44 to 43. Capture/v4 fit from 41 rows and stress
+with paused detail from 43. The overall width stays 142; the padded stress
+fixture now needs 141 rather than 140, while the recorded table itself still
+clears at 140. The old width expectation failed serially and was corrected;
+all 87 width-boundary cases then passed.
+
+Validation covered 374 widget/composing cases and 518 layout cases, with 124
+fast guards and 12 documentation pins. No full suite was run. The previously
+filed boardroom FLEET hover-wording overstatement was corrected when the
+behavior rules were touched; calculations and tooltips are unchanged.
+
+Final review: Approved. Five implementation mutants and the reviewer's padding
+budget mutant were killed and restored. Default-consumer colors and BOARD
+refresh/resize styles passed focused review checks.
+
+Open Minor: at 61 columns, an unknown stats value `--` clips to `…` before
+`NewsHeroCard.render()` checks whether it is unknown, so the ellipsis becomes
+green. Preserve the unknown flag before clipping when `news_hero.py` is next
+touched. The approved owner size and full-layout pin retain neutral unknowns.

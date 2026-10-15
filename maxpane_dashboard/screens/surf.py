@@ -2044,8 +2044,8 @@ BOARD_BODY_ID = "surf-board-body"
 #: remaining width with a 37-column minimum. This removes the empty table
 #: tail at owner size without hiding any column. Switching tabs and resizing
 #: recomputes the cap because their complete column sets differ.
-#: The existing b-body CLI measured recorded seats whole from 140 columns
-#: for capture and stress; at 139 its compact tier still drops columns.
+#: The b-body CLI measured recorded seats whole from 140 columns for capture;
+#: padded stress stats clear at 141. At 139 the compact table drops columns.
 #: Launch contributors binds the shared width pin: its nine columns are
 #: complete from 142, compact begins at 129, and tight stops clipping at 72.
 #: The composited launch boundary test checks both sides of every onset,
@@ -2066,18 +2066,22 @@ BOARD_BODY_ID = "surf-board-body"
 #: shows the leading runtime's share of distinct online seats. Source clocks
 #: and runtime coverage remain on hover. Counts in FLEET/RECEIPTS match the
 #: leaderboard foreground; names, units, versions and clocks stay neutral.
+#: Rechecked 2026-10-15 with green primary digits and stat values. The last
+#: three cards reserve one blank cell at each inset edge; labels, frames and
+#: captions stay neutral. The padding fits without changing the width pin.
 #: App-wide 143 stays unchanged; BOARD owns its independently measured pin.
 SURF_BOARD_FULL_LAYOUT_COLUMNS = 142
 
-#: BOARD height remains 44, re-measured 2026-10-15 after grouping FLEET.
+#: BOARD height is 43, re-measured 2026-10-15 after removing heartbeat.
 #: Runtime shows its top two on one line, models the top three on separate
 #: lines with an inline omission count, and OS/slots every category in pairs.
 #: Blank rows separate metadata categories; RECEIPTS retains its own clock
 #: and six lines, below a bold title and blank row. Daemon shows its leader.
-#: The native b-body CLI measured capture and v4 whole from 42 rows, with
-#: a 29-row FLEET. Stress with paused detail is whole from 44 rows and its
-#: FLEET is 31 rows. At 43 stress scrolls with taller; at 44 neither occurs.
-#: Nine hero rows + 31 body rows + four chrome rows give the measured edge.
+#: Two blank rows follow paused (or its detail) before RECEIPTS. The native
+#: b-body CLI measured capture whole from 41 rows, with a 28-row FLEET;
+#: v4 is bound by the same composited boundary test. Stress with paused detail
+#: is whole from 43 rows and its FLEET is 30 rows. At 42 stress scrolls with
+#: taller; at 43 neither occurs. Nine hero + 30 body + four chrome rows bind.
 #: LEADERBOARD scrolls internally; its visible row count is not a body pin.
 #: Additional OS/slot categories can grow this payload-sized panel further;
 #: body scrolling and its taller marker keep every category reachable.
@@ -2086,7 +2090,7 @@ SURF_BOARD_FULL_LAYOUT_COLUMNS = 142
 #: Width and height assertions are separate: a title marker is not evidence
 #: of a hidden row, and a table's internal scroll is not the body's taller
 #: condition. Known empty versus unavailable cards retain their footprint.
-SURF_BOARD_FULL_LAYOUT_ROWS = 44
+SURF_BOARD_FULL_LAYOUT_ROWS = 43
 
 #: Every active mode now has its own hero. The legacy SurfHero remains
 #: mounted and dispatched for its existing contract, but no mode shows it.

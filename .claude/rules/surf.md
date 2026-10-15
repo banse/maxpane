@@ -809,7 +809,8 @@ three named model/effort pairs on separate lines, with an inline omitted-pair co
 last line. Metadata categories have a blank separator. Daemon shows the most-used version.
 Long metadata names ellipsise while preserving counts and full values on hover. Groups expand
 and shrink with the cached payload; additional categories remain reachable through body scrolling.
-Workers retain their title clock and contributors a separate bold RECEIPTS sub-header. A worker
+Workers retain their title clock and contributors a separate bold RECEIPTS sub-header.
+Heartbeat is omitted; two blank rows follow paused or its detail before RECEIPTS. A worker
 counts once per distinct model/effort pair, including an explicit none bucket; multiple pairs
 can make the model-count sum exceed LIVE. Paused none is green; a paused count is red.
 
@@ -826,7 +827,9 @@ By explicit owner request, LEADERBOARD has no visible widen hint in either tab a
 Responsive columns, ellipses and full hover details remain; tests inspect actual columns
 and clipping instead of treating the missing hint as evidence of a complete table.
 
-The six BOARD cards are neutral gray. TOP SEAT shows AGENT with acceptance percentage below
+The six BOARD cards retain neutral gray frames, labels and captions. Their main digits and
+right-hand statistics values use the leaderboard foreground; statistics rows keep one blank
+cell inside each edge. TOP SEAT shows AGENT with acceptance percentage below
 the ID and accepted count in the outer footer. RECORDED shows distinct online recorded seats
 below the total and attempts in its footer. ACCEPT RATE uses ACCEPTED above its digits, `%`
 below, and accepted/attempts in the footer. LAUNCHES shows contributing seats and current reported
@@ -895,7 +898,7 @@ inset with codex/claude shares of distinct online seats and the most-used daemon
 Shares deduplicate devices, count a both-runtime seat once in each runtime, and remain unknown
 until the roster and runtime metadata are complete. The daemon strips `+build` before grouping;
 the most-used advertised model/effort pair forms the inner footer without a label. Counts are
-per worker for daemon and model settings; hover preserves that distinction and source coverage.
+per worker for daemon and model settings; hover preserves source coverage.
 Only the three row values use the leaderboard foreground; labels and frames stay neutral.
 Long metadata fits with ellipsis and retains full text on hover. Its centered outer footer is
 `worked Ny Nw Nd`, using the complete contributor

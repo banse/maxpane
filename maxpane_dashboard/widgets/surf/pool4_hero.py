@@ -114,7 +114,7 @@ class Pool4HeroCard(LocalSourceHeroCard):
                    or cell_len(flatten(data.heading)) + 2 > inside
                    or bool(data.subtitle) and cell_len(flatten(data.subtitle)) + 2 > inside
                    or bool(data.digits) and cell_len(data.digits) > inside
-                   or any(cell_len(flatten(label)) + cell_len(flatten(value)) + 1 > inside
+                   or any(cell_len(flatten(label)) + cell_len(flatten(value)) + 1 + 2 * self.STAT_PADDING > inside
                           for label, value in data.stats)
                    or any(cell_len(flatten(row)) > inside for row in data.rows))
         if data.preview:

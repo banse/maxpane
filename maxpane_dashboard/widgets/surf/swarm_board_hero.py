@@ -93,6 +93,9 @@ def leaderboard_records(payload: dict | None) -> tuple[HeroRecord, ...]:
 class BoardHeroCard(Pool4HeroCard):
     """BOARD keeps metric footers while source qualifications live on hover."""
 
+    STAT_PADDING = 1
+    VALUE_COLOR = "foreground"
+
     DEFAULT_CSS = "BoardHeroCard { border-subtitle-align: center; }"
 
     def _footer(self):

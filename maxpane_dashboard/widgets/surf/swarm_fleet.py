@@ -1,5 +1,4 @@
 """Labelled worker metadata groups and the independent contributor token metric."""
-from datetime import datetime
 from rich.cells import cell_len
 from rich.style import Style
 from rich.text import Text
@@ -20,7 +19,7 @@ from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 LABEL_WIDTH = 11
 _NAMES = ('runtime', None, 'model', None, 'daemon', None, 'os', None,
           'profile', None, 'slots', None,
-          'heartbeat', None, 'paused', 'paused-detail', None, 'contributors', None,
+          'paused', 'paused-detail', None, None, 'contributors', None,
           'devices', 'accepted', 'rejected', 'turns', 'tokens-io', 'tokens')
 _MS_PER_HOUR = 3_600_000
 _MS_PER_MINUTE = 60_000
@@ -211,11 +210,6 @@ class SurfSwarmFleet(SignalsPanelBase):
             if name == 'daemon':
                 return self._group(name, parts[:1])
             return self._group(name, parts, columns=2, limit=2 if name == 'runtime' else None)
-        if name == 'heartbeat':
-            endpoints = [fleet.get('heartbeat_oldest_ts'), fleet.get('heartbeat_newest_ts')]
-            if any(value is None for value in endpoints):
-                return label + Text('unavailable', style='yellow')
-            return label + Text(' – '.join(datetime.fromtimestamp(value).strftime('%H:%M:%S') for value in endpoints))
         paused = self._paused(fleet)
         if name == 'paused-detail':
             parts = [Text(f"#{row['token_id']} until {hhmm(row['until_ts'])} ×{fmt_int(row['failures'])}") for row in paused]

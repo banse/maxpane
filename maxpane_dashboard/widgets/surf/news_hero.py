@@ -134,6 +134,9 @@ def news_records(payload: dict | None) -> tuple[HeroRecord, ...]:
 class NewsHeroCard(HeroBoxBase):
     """The rack's five-line inset with a source-aware outer footer."""
 
+    STAT_PADDING = 0
+    VALUE_COLOR = None
+
     DEFAULT_CSS = """
     NewsHeroCard { height: 9; padding: 0 1; border: round $panel; background: $surface;
         color: $text; content-align: center middle; border-title-color: $text-muted;
@@ -175,24 +178,30 @@ class NewsHeroCard(HeroBoxBase):
         palette = self.app.get_css_variables()
         frame = Style.parse(palette["accent"] if data.accent else "dim") + Style(bgcolor=palette["background"])
         ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
+        value_ink = ink + Style(color=palette[self.VALUE_COLOR]) if self.VALUE_COLOR else ink
         centered = False
         if data.preview:
             rows = post_preview(data.preview, inside, ink)
         elif data.digits:
-            digits = [Text(segment.text, style=ink) for segment in Digits(data.digits).render(Style()) if segment.text != "\n"]
+            digit_ink = value_ink if data.digits != "--" else ink
+            digits = [Text(segment.text, style=digit_ink) for segment in Digits(data.digits).render(Style()) if segment.text != "\n"]
             if data.digits != "--" and all(character in "0123456789.," for character in data.digits) and all(row.cell_len <= inside for row in digits):
                 rows = digits
             else:
-                rows = [Text(""), Text(clip(data.digits, inside), style=ink), Text("")]
+                rows = [Text(""), Text(clip(data.digits, inside), style=digit_ink), Text("")]
             centered = True
         elif data.stats:
             rows = []
+            padding = " " * self.STAT_PADDING
+            room = max(0, inside - 2 * self.STAT_PADDING)
             for label, value in data.stats[:3]:
-                label, value = flatten(label), clip(flatten(value), inside)
-                fitted_label = clip(label, max(0, inside - cell_len(value) - 1))
-                gap = max(0, inside - cell_len(fitted_label) - cell_len(value))
+                label, value = flatten(label), clip(flatten(value), room)
+                fitted_label = clip(label, max(0, room - cell_len(value) - 1))
+                gap = max(0, room - cell_len(fitted_label) - cell_len(value))
                 style = ink + Style(color="red" if label == "fired" else "yellow") if label in ("fired", "watch") and value != "--" else ink
-                rows.append(Text(fitted_label + " " * gap + value, style=style))
+                rows.append(Text(padding + fitted_label + " " * gap, style=style)
+                            .append(value, style=value_ink if self.VALUE_COLOR and value != "--" else style)
+                            .append(padding, style=ink))
         else:
             rows = [Text(clip(flatten(row), inside), style=ink) for row in data.rows[:3]]
         rows += [Text("", style=ink)] * (3 - len(rows))

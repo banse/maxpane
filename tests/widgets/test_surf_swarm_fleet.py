@@ -32,8 +32,9 @@ async def render(fleet=FLEET,summary=SUMMARY,width=37):
         return '\n'.join(painted(pilot))
 async def test_mixes_tokens_and_clocks_have_distinct_sources():
     text=await render()
-    for word in ('FLEET','runtime','daemon','os','profile','slots','heartbeat','tokens/job','served','paused','03:01','04:02'):
+    for word in ('FLEET','runtime','daemon','os','profile','slots','tokens/job','served','paused','03:01','04:02'):
         assert word in text
+    assert 'heartbeat' not in text
 
 @pytest.mark.parametrize('width',[37,43])
 async def test_worker_groups_pair_runtime_os_slots_and_append_model_omissions(width):
@@ -127,22 +128,25 @@ async def test_malformed_paused_tokens_never_reach_display():
     assert '#0 until' in text and 'PWNED' not in text and '[/x]' not in text
 
 
-async def test_metadata_categories_each_end_with_a_blank_and_receipts_stay_together():
+@pytest.mark.parametrize('paused', [[], [dict(token_id=420, until_ts=1758456000, failures=3)]])
+async def test_metadata_categories_each_end_with_a_blank_and_receipts_stay_together(paused):
     from tests.surf_swarm_fixtures import swarm_capture_v4
-    text=await render(fold.fleet(swarm_capture_v4('workers')),width=43)
+    text=await render(dict(fold.fleet(swarm_capture_v4('workers')), paused=paused),width=43)
     lines=text.splitlines()
-    labels=('runtime','model','daemon','os','profile','slots','heartbeat','paused','tokens/job')
+    labels=('runtime','model','daemon','os','profile','slots','paused','tokens/job')
     for label in labels:
         line=next(line.strip() for line in lines if line.strip().startswith(label+' '))
         assert line.startswith(label.ljust(11)), (label,line)
     assert 'astra 6 xhigh 43' in text and 'fable 5.1 high 34' in text
     assert 'advertised' not in text
-    for following in ('model','daemon','os','profile','slots','heartbeat','paused'):
+    for following in ('model','daemon','os','profile','slots','paused'):
         start=next(i for i,line in enumerate(lines) if line.strip().startswith(following+' '))
         assert not lines[start-1].strip(), following
     header=next(i for i,line in enumerate(lines) if 'RECEIPTS · read 03:01' in line)
     paused=next(i for i,line in enumerate(lines) if line.strip().startswith('paused '))
     assert not lines[paused-1].strip() and not lines[header-1].strip()
+    assert not lines[header-2].strip()
+    assert 'heartbeat' not in text
     assert 'FLEET · workers as of 04:02' in text
     assert 'tokens / completed job' not in text
     assert not lines[header+1].strip(), 'owner 2026-09-22: a blank row under CONTRIBUTORS'
@@ -296,7 +300,7 @@ async def test_counts_match_leaderboard_foreground_while_metadata_and_units_stay
                     if not char.isspace():
                         style=app.screen.get_style_at(start+offset,y)
                         assert style.color==neutral_color,(marker,value,style)
-        for marker in ('heartbeat','FLEET','RECEIPTS'):
+        for marker in ('FLEET','RECEIPTS'):
             y=next(i for i,line in enumerate(lines) if line.strip().startswith(marker))
             for x,char in enumerate(lines[y]):
                 if char.isdigit():

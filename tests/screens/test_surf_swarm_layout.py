@@ -1211,7 +1211,11 @@ async def test_board_full_layout_pin_has_all_columns_and_source_labels(kind):
 async def test_board_width_boundaries(width,kind):
     result=await _render(_board_payload(kind),(width,80),'b')
     assert not result['overflow'],result
-    if width>=140:_assert_board_whole(result,kind)
+    if width >= (141 if kind == 'worst' else 140):
+        _assert_board_whole(result,kind)
+    elif width == 140:
+        assert result['marked_besides_exceptions'] == {'SurfSwarmBoardHero'}, result
+        assert len(result['columns']['SurfSwarmLeaderboard']) == 12, result
     else:  # Recorded seats has an earlier full-tier edge than launch contributors.
         assert 'SurfSwarmLeaderboard' not in result['marked'], result
         assert len(result['columns']['SurfSwarmLeaderboard']) < 12, result
@@ -1220,7 +1224,7 @@ async def test_board_width_boundaries(width,kind):
 @pytest.mark.parametrize('kind',['capture','v4','worst'])
 async def test_board_height_boundaries(height,kind):
     result=await _render(_board_payload(kind),(SURF_BOARD_FULL_LAYOUT_COLUMNS,height),'b')
-    measured_rows = 44 if kind == 'worst' else 42
+    measured_rows = 43 if kind == 'worst' else 41
     assert result['taller']==(height<measured_rows),result
 
 async def test_agent_width_pin_is_not_loose():
@@ -1246,7 +1250,7 @@ async def test_agent_independent_sources_are_whole_at_the_full_pin(kind):
     assert not result['taller'] and not result['overflow'],result
 
 
-@pytest.mark.parametrize("kind,rows,fleet_rows", [("capture",42,29),("v4",42,29),("worst",44,31)])
+@pytest.mark.parametrize("kind,rows,fleet_rows", [("capture",41,28),("v4",41,28),("worst",43,30)])
 async def test_board_polish_row_pin_is_tight_and_keeps_fleet_whole(kind,rows,fleet_rows):
     below = await _render(_board_payload(kind), (SURF_BOARD_FULL_LAYOUT_COLUMNS, rows-1), 'b')
     at = await _render(_board_payload(kind), (SURF_BOARD_FULL_LAYOUT_COLUMNS, rows), 'b')
