@@ -462,8 +462,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.key == "board":
             clipped |= _fleet_footer(self.data, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
-            style = Style(
-                color=value_style.color if numeric_readout else self.rich_style.color, bgcolor=palette["background"],
+            style = border_inset + Style(bold=bold) if numeric_readout else Style(
+                color=self.rich_style.color, bgcolor=palette["background"],
                 bold=bold, dim=muted)
             line, lost = (preview[index] if preview is not None else
                           (Text(raw, style=style), False) if native_digits else fit_prose(raw, inside, style=style))
