@@ -114,7 +114,7 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
             for strip, expected in zip(strips[top+1:top+4], glyphs):
                 assert strip.text[left+1:right].strip() == expected.strip()
                 if primary != '—':
-                    digit_ink = app.ansi_theme.ansi_colors[3] if status == 'assessing' else card.rich_style.color.get_truecolor()
+                    digit_ink = app.ansi_theme.ansi_colors[2] if status == 'assessing' else card.rich_style.color.get_truecolor()
                     assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                                for s in strip.crop(left+1, right) if s.text.strip())
             assert subtitle in strips[top+4].text
@@ -164,7 +164,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
             padding = (right - left - 1 - len(row)) // 2
             assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
             if primary != 'unavailable':
-                assert all(s.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
+                assert all(s.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
                            for s in strip.crop(left+1, right) if s.text.strip())
         footer = next(segment for segment in strips[top + 4] if "27 working" in segment.text)
         assert not footer.style.bold
@@ -236,7 +236,7 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
             for strip, row in zip(strips[top + 1:top + 4], ["╷ ╷╶─╮╭─╮", "╰─┤┌─┘│ │", "  ╵╰─╴╰─╯"]):
                 padding = (right - left - 1 - len(row)) // 2
                 assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
-                digit_ink = (pilot.app.ansi_theme.ansi_colors[3] if status == 'working' else
+                digit_ink = (pilot.app.ansi_theme.ansi_colors[2] if status == 'working' else
                              ink if status == 'offline' else card.rich_style.color.get_truecolor())
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for s in strip.crop(left+1, right) if s.text.strip())
@@ -990,7 +990,7 @@ async def test_pool4_price_direction_colors_whole_inset_and_resets_to_neutral():
             for row, label in ((strips[top], 'IMD PRICE'), (strips[top + 4], 'USD')):
                 assert next(seg.style.color.get_truecolor() for seg in row if label in seg.text) == ink
             digits = next(seg for seg in strips[top + 1] if '╭─╮' in seg.text)
-            digit_ink = (pilot.app.ansi_theme.ansi_colors[3] if status == 'active' else
+            digit_ink = (pilot.app.ansi_theme.ansi_colors[2] if status == 'active' else
                          ink if status == 'falling' else card.rich_style.color.get_truecolor())
             assert digits.style.color.get_truecolor() == digit_ink and not digits.style.dim
 
@@ -1066,7 +1066,7 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
                 for x in (left, right):
                     assert next(iter(row.crop(x, x+1))).style.color.get_truecolor() == expected
             if primary != '—':
-                digit_ink = app.ansi_theme.ansi_colors[3] if primary in ('5', '1,000') else card.rich_style.color.get_truecolor()
+                digit_ink = app.ansi_theme.ansi_colors[2] if primary in ('5', '1,000') else card.rich_style.color.get_truecolor()
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for row in strips[top+1:top+4] for s in row.crop(left+1, right) if s.text.strip())
             for row, label in ((strips[top], 'ACTIVE JOBS'), (strips[top+4], secondary)):
