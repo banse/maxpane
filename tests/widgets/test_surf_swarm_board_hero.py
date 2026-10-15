@@ -73,7 +73,7 @@ def painted(app, key):
 
 @pytest.mark.parametrize('width', [142, 149])
 @pytest.mark.parametrize('theme', ['matrix', 'minimal'])
-async def test_inner_metrics_and_labels_match_light_green_with_neutral_captions(width, theme):
+async def test_inner_metrics_match_boardroom_colors_with_neutral_captions(width, theme):
     app = Harness(payload())
     app.register_theme(THEMES[theme])
     app.theme = theme
@@ -82,6 +82,7 @@ async def test_inner_metrics_and_labels_match_light_green_with_neutral_captions(
         green = app.ansi_theme.ansi_colors[2]
         for key in payload():
             card = app.query_one(f'#hero-{key}')
+            value_color = Color.parse(app.get_css_variables()['foreground']).get_truecolor() if card.data.stats else green
             rows = strips(app, key)
             top = next(i for i, row in enumerate(rows) if '┌' in row.text)
             left, right = rows[top].text.index('┌'), rows[top].text.index('┐')
@@ -99,11 +100,11 @@ async def test_inner_metrics_and_labels_match_light_green_with_neutral_captions(
                     assert positions
                 for x in positions:
                     style = app.screen.get_style_at(card.region.x + x, card.region.y + top + index + 1)
-                    assert style.color.get_truecolor() == green and style.bold and not style.dim, (key, row.text, style)
+                    assert style.color.get_truecolor() == value_color and style.bold and not style.dim, (key, row.text, style)
             for index in (top, top + 4, len(rows) - 1):
                 for segment in rows[index]:
                     if segment.text.strip():
-                        assert segment.style.color.get_truecolor() != green
+                        assert segment.style.color.get_truecolor() not in (green, value_color)
 
 
 async def test_six_approved_cards_preserve_digits_counts_and_equal_geometry():

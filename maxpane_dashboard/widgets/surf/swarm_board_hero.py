@@ -104,7 +104,8 @@ class BoardHeroCard(Pool4HeroCard):
         value_color = Style(color=self.app.get_css_variables()[self.VALUE_COLOR]).color
         for span in tuple(content.spans):
             if isinstance(span.style, Style) and span.style.color == value_color:
-                content.stylize("bold green", span.start, span.end)
+                content.stylize(Style(color=value_color if self.data.stats else "green", bold=True),
+                                span.start, span.end)
             elif (self.data.stats and isinstance(span.style, Style)
                   and span.style.color == self.rich_style.color and span.style.dim is False):
                 content.stylize("green", span.start, span.end)
