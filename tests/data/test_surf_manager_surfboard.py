@@ -698,7 +698,7 @@ async def test_hub_background_reads_preserve_loaded_cards_and_terminal(manager, 
             elif key == 'swarm':
                 card.update(primary='0 online', secondary='0 working', points=[0]*8)
             elif key == 'board':
-                card.update(primary='unavailable', top_agents=[])
+                card.update(primary='unavailable', fleet_summary=dict(online=0, runtime_known=0, state='ok', read_ts=1000))
             elif key == 'pool4':
                 card.update(primary='0.00', share_price=0)
             elif key == 'oracles':
@@ -862,7 +862,7 @@ async def test_hub_snapshot_offers_bounded_volume_reads_without_awaiting_them(ma
 
 @pytest.mark.parametrize('source,expected', [
     ('overview', {'swarm'}), ('hourly', {'swarm'}),
-    ('records', {'board', 'agent'}), ('supply', {'protocol'}),
+    ('records', {'agent'}), ('supply', {'protocol'}),
     ('work', {'work'}), ('oracles', {'oracles'}),
     ('workers', {'board', 'agent'}), ('pool4', {'pool4', 'protocol'}),
     ('catalogue', {'swarm-tokens'}), ('markets', {'swarm-tokens'}),
@@ -904,5 +904,41 @@ async def test_hub_loading_tracks_only_relevant_unfinished_reads(manager, source
         assert finished['surfboard_cards'] == baseline['surfboard_cards']
         assert finished['surfboard_sources'] == baseline['surfboard_sources']
         assert finished['surfboard_footer'] == baseline['surfboard_footer']
+    finally:
+        await m.close()
+
+
+async def test_fleet_card_uses_captured_workers_and_independent_contributor_clock(manager):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_WORKERS, SLOT_SWARM_CONTRIBUTORS
+    from maxpane_dashboard.data.surf_swarm import normalize_contributors
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+    from tests.data.test_surfboard import fleet_workers
+    m, clock = manager
+    workers = fleet_workers()
+    m.cache.store_last_good(SLOT_SWARM_WORKERS, workers, ts=900)
+    worker_entry = m.cache.get_last_good(SLOT_SWARM_WORKERS)
+    m._swarm_board_observations[SLOT_SWARM_WORKERS] = dict(entry=worker_entry, read_ts=990, failed=False)
+    m.cache.store_last_good(SLOT_SWARM_CONTRIBUTORS,
+                           normalize_contributors(swarm_capture_v3('contributors')), ts=800)
+    original = m._swarm_board_keys
+    def replace_cache_after_capture(*args, **kwargs):
+        data = original(*args, **kwargs)
+        m.cache.store_last_good(SLOT_SWARM_WORKERS, dict(workers=[], count=0, malformed_tokens=[]), ts=1000)
+        return data
+    m._swarm_board_keys = replace_cache_after_capture
+    try:
+        data = m.get_hub_snapshot()
+        card = next(card for card in data['surfboard_cards'] if card['key'] == 'board')
+        assert card['fleet_summary']['codex_percent'] == pytest.approx(100/3)
+        assert card['fleet_summary']['online'] == 3
+        assert card['fleet_summary']['state'] == 'ok'
+        assert card['fleet_summary']['read_ts'] == 990
+        assert data['surf_leaderboard_hero']['workers']['read_ts'] == 990
+        assert card['numerator'] == data['swarm_board_summary']['wall_clock_ms']
+        assert card['numerator'] > 0
+        assert f'contributors read {m.cache.get_last_good(SLOT_SWARM_CONTRIBUTORS).as_of_hhmm()}' in card['detail']
+        m._swarm_board_keys = original
+        card = next(card for card in m.get_hub_snapshot()['surfboard_cards'] if card['key'] == 'board')
+        assert card['fleet_summary']['online'] == 0
     finally:
         await m.close()

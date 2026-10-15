@@ -38,6 +38,11 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: WORK IN PROGRESS uses job digits and workflow subtitle in the former
 #: PORTFOLIO slot. Its outer footer shows SWARM's 24H history; build/review
 #: counts appear under BUILT BY SWARM. Both fit the standard card widths.
+#: Rechecked 2026-10-15 for FLEET's three RUNTIMES rows and model/effort footer:
+#: normal, stress, unavailable and wide boundary composites preserve 146×37;
+#: the owner size 149×45 also fits. A nine-cell base daemon uses the trailing
+#: value cell when needed. "astra 6 xhigh" / "opus 5.5 medium" retain both lower
+#: corners. Owner waived another preview; measurements use the production screen.
 #: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 146
 SURFBOARD_FULL_LAYOUT_ROWS = 37

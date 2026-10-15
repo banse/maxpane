@@ -71,31 +71,33 @@ def _token_preview(rows, width, style):
     return lines
 
 
-def _top_agents_preview(rows, width, style):
-    """One shared column budget for the canonical accepted-job leaders."""
-    lines = [(Text('', style=style), False) for _ in range(3)]
-    if not rows:
-        lines[1] = fit_prose('—' if rows is None else 'no agents', width, style=style)
-        return lines
-    shown = [(str(row['token_id']), f"{row['accepted']:,}" if _number(row.get('accepted')) else '—',
-              row['rank']) for row in rows[:3]]
-    seat_width = max(cell_len(seat) for seat, _, _ in shown)
-    count_width = max(cell_len(count) for _, count, _ in shown)
-    if seat_width + count_width + 5 > width:
-        shown = [(seat, count.replace(',', ''), rank) for seat, count, rank in shown]
-        count_width = max(cell_len(count) for _, count, _ in shown)
-    if seat_width + count_width + 5 > width:
-        shown = [(seat, fmt_compact(int(count)) if count.isdecimal() else count, rank)
-                 for seat, count, rank in shown]
-        count_width = max(cell_len(count) for _, count, _ in shown)
-    medals = {1: '#ffd700', 2: '#c0c0c0', 3: '#cd7f32'}
-    for index, (seat, count, rank) in enumerate(shown):
-        count_cells = max(count_width, width - seat_width - 5)
-        numeric = f"{seat.ljust(seat_width)} {count.rjust(count_cells)} "
-        line = Text(clip(numeric, max(0, width-3)), style=style)
-        star = Text(' ', style=style).append('★', style=style + Style(color=medals.get(rank, '#999999')))
-        lines[index] = star.append(' ', style=style).append_text(line), cell_len(numeric) > width-3
+def _fleet_preview(summary, width, style, value_style):
+    """Three fixed rows, with only observed values in the leaderboard ink."""
+    values = []
+    for key in ('codex_percent', 'claude_percent'):
+        value = summary.get(key)
+        values.append(f"{value:.1f}".removesuffix('.0') + '%'
+                      if _number(value) and value <= 100 else '—')
+    values.append(flatten(summary.get('daemon')) or '—')
+    trailing = int(max(map(cell_len, values)) + 9 <= width)
+    lines = []
+    for label, value in zip(('codex', 'claude', 'daemon'), values):
+        prefix = ' ' + label.ljust(6) + ' '
+        available = max(0, width - cell_len(prefix) - trailing)
+        fitted, lost = fit_prose(value, available, style=value_style if value != '—' else style)
+        fitted.align('right', available)
+        line = Text(clip(prefix, width), style=style).append_text(fitted)
+        if cell_len(line.plain) < width:
+            line.append(' ', style=style)
+        lines.append((line, lost or cell_len(prefix) + 1 > width))
     return lines
+
+
+def _fleet_model(summary):
+    # Surf's package imports rack; keep the shared formatter import lazy.
+    from maxpane_dashboard.widgets.surf._fmt import short_model
+    model = short_model(summary.get('model'))
+    return ' '.join(filter(None, (model, flatten(summary.get('effort'))))) if model else '—'
 
 
 def _protocol_footer(card, width):
@@ -282,6 +284,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self.data.setdefault("secondary", "in progress")
             self.data.setdefault("detail", "ORACLES · unavailable · Enter to open")
             self.tooltip = Text(self.detail)
+        if self.key == "board":
+            self.data["destination"] = "board"
         if self.key == "work":
             self.data["destination"] = "work"
             self.data.setdefault("primary", "—")
@@ -295,6 +299,12 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self._seat_error = ""
         self.footer_data = dict(footer_data) if isinstance(footer_data, dict) else self.data
         self.tooltip = Text(self.detail)
+        if self.key == "board":
+            summary = self.data.get("fleet_summary") or {}
+            model = flatten(summary.get("model"))
+            effort = flatten(summary.get("effort"))
+            self.tooltip.append("\nModel: " + (" ".join(filter(None, (model, effort))) if model else "—"))
+            self.tooltip.append("\nDaemon: " + (flatten(summary.get("daemon")) or "—"))
         if self.footer_data.get("key") != self.key and self.footer_data.get("detail"):
             self.tooltip.append("\nFooter: " + flatten(self.footer_data["detail"]))
         self.set_class(self.empty_seat, "empty")
@@ -354,7 +364,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         border_inset = (Style.parse(MUTED) + Style(bgcolor=palette["background"])
                         if color == AMBER else inset)
-        if self.key == "protocol":
+        if self.key in ("protocol", "board"):
             border_inset = Style.parse(MUTED) + Style(bgcolor=palette["background"])
         elif self.key == "work":
             jobs = primary.replace(",", "")
@@ -413,9 +423,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             ink = self.rich_style.color if status == "active" else self.get_component_rich_style("surfboard-card--muted").color
             preview = [(line, False) for line in _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))]
         elif self.key == "board":
-            label = " TOP AGENTS "
-            preview = _top_agents_preview(self.data.get("top_agents"), inside,
-                Style(color=self.rich_style.color, bgcolor=palette["background"]))
+            summary = self.data.get("fleet_summary") or {}
+            label, secondary = " RUNTIMES ", _fleet_model(summary)
+            preview = _fleet_preview(summary, inside, border_inset,
+                Style(color=palette["foreground"], bgcolor=palette["background"], dim=False))
         elif self.key == "swarm-tokens":
             label = " LAST 24h "
             preview = _token_preview(ranking.get("rows"), inside,
@@ -425,11 +436,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if label and (start := body.plain.find(label.strip())) >= 0:
             body.stylize(Style(bold=False), start, start + len(label.strip()))
         bottom = f" {secondary} " if label else ""
-        if self.key in ("protocol", "board"):
+        if self.key == "protocol":
             bottom = ""
         if self.key in ("announce", "swarm-tokens") and secondary == "0 new":
             bottom = ""
-        if len(bottom) > inside:
+        if cell_len(bottom) > inside:
             bottom = bottom.strip()
         if self.seat_slot is not None and len(bottom) > inside:
             bottom = bottom.replace(" of ", "/")
@@ -437,7 +448,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             bottom = bottom.replace(",", "")
             if len(bottom) > inside:
                 bottom = bottom.replace(" new ", " ")
-        clipped = len(label) > inside or len(bottom) > inside
+        clipped = cell_len(label) > inside or cell_len(bottom) > inside
         if self.key == "protocol":
             clipped |= _protocol_footer(self.data, max(0, self.region.width - 6))[1]
         if self.footer_data.get("key") == "work":
@@ -455,7 +466,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             body.append("│", style=border_inset).append_text(line).append("│\n", style=border_inset)
         self.border_title = Text(title_with_hint("⊙ " + self.title,
             clipped, max(0, self.size.width - 4)))
-        footer = Text("└" + clip(bottom, inside).center(inside, "─") + "┘",
+        fitted_bottom = clip(bottom, inside)
+        footer = Text("└" + fitted_bottom.center(inside + len(fitted_bottom) - cell_len(fitted_bottom), "─") + "┘",
                       style=border_inset + Style(bold=False))
         if self.empty_seat and self._seat_error:
             footer.stylize(Style(color=RED, dim=False), 1, len(footer) - 1)

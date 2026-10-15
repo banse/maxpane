@@ -80,7 +80,8 @@ def test_fleet_work_duration_uses_all_contributors_not_just_ranked_seats():
     assert card['meter_kind'] == 'duration'
     assert card['numerator'] == 1614366561
     assert card['denominator'] is None
-    assert len(card['top_agents']) == 2
+    assert card['fleet_summary']['state'] == 'unavailable'
+    assert 'contributors read' in card['detail']
 
 
 @pytest.mark.parametrize('value,expected', [(0, 0), (None, None), (-1, None), (True, None), (float('nan'), None)])
@@ -223,19 +224,17 @@ def test_announce_card_counts_unique_replies_and_answers_in_last_day(items,foote
     assert row['status']!='active'
 
 
-def test_board_face_uses_canonical_top_agent_not_selected_seat():
+def test_fleet_ignores_canonical_rank_and_selected_seat():
     records=hub.normalize_records(capture('records'))
     rows, summary=hub.canonical_board(records,None,None)
-    # Rank order, rather than accidental incoming order or selected seat.
     data=dict(swarm_board_rows=list(reversed(rows)),swarm_board_summary=summary,
               swarm_seat_selected={'token_id':1836},swarm_seat_outcome=hub.seat_outcome(records,1836))
-    row=next(c for c in hub.cards(data,{'records':hub.source_envelope(records,100)},now=100) if c['key']=='board')
-    assert (row['title'],row['primary'],row['secondary'])==('LEADERBOARD','420','3,253 accepted jobs')
-    assert row['destination']=='board'
+    before = fleet_card(fleet_workers(), data=data)
+    assert before['title'] == 'FLEET' and before['destination'] == 'board'
+    assert 'accepted jobs' not in before['detail'] and 'top #' not in before['detail']
     for missing in (None, []):
-        data['swarm_board_rows']=missing
-        row=next(c for c in hub.cards(data,{},now=100) if c['key']=='board')
-        assert row['primary']=='unavailable' and row['secondary']=='unavailable'
+        data['swarm_board_rows'] = missing
+        assert fleet_card(fleet_workers(), data=data) == before
 
 
 @pytest.mark.parametrize('burn,reward,primary,secondary', [
@@ -608,27 +607,27 @@ def test_pool4_missing_price_never_shows_zero_or_green():
     assert (row['primary'],row['secondary'],row['status']) == ('unavailable','USD','unavailable')
 
 
-def test_cards_project_selected_and_top_agent_activity_independently():
+def test_fleet_duration_is_independent_of_selected_and_top_agent_activity():
     from maxpane_dashboard.data import surfboard_activity as activity
     from tests.data.test_surfboard_activity import workers
     data = dict(swarm_seat_selected={'token_id': 1836}, swarm_board_summary={'wall_clock_ms': 1614366561},
                 swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253)])
     observed = activity.observe(None, workers(1), now=100)
     rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed)}
-    assert rows['board']['meter_state'] == 'busy'
+    assert rows['board']['meter_state'] == 'unavailable'
     assert rows['board']['numerator'] == 1614366561 and rows['board']['denominator'] is None
     assert rows['agent']['meter_state'] == 'idle' and rows['agent']['numerator'] is None
     observed = activity.observe(observed, workers(0), now=200)
     observed = activity.observe(observed, workers(0), now=43400)
     rows = {c['key']: c for c in hub.cards(data, {}, now=43400, activity=observed)}
     assert rows['board']['numerator'] == 1614366561
-    assert 'observed stop' in rows['board']['detail'] and 'workers read' in rows['board']['detail']
+    assert 'observed stop' not in rows['board']['detail'] and 'contributors read' in rows['board']['detail']
     rows = {c['key']: c for c in hub.cards(data, {}, now=43701, activity=observed)}
-    assert rows['board']['meter_state'] == 'stale' and rows['board']['numerator'] == 1614366561
+    assert rows['board']['meter_state'] == 'unavailable' and rows['board']['numerator'] == 1614366561
 
 
 @pytest.mark.parametrize('selected_busy, top_busy', [(True, False), (False, True)])
-def test_agent_and_leaderboard_colors_follow_their_own_fresh_activity(selected_busy, top_busy):
+def test_agent_activity_colors_do_not_govern_fleet(selected_busy, top_busy):
     from tests.data.test_surfboard_activity import workers
     read = workers(int(selected_busy), token=1836)
     read['workers'] += workers(int(top_busy), token=420)['workers']
@@ -638,29 +637,28 @@ def test_agent_and_leaderboard_colors_follow_their_own_fresh_activity(selected_b
     data = dict(swarm_seat_selected={'token_id':1836},
                 swarm_seat_live={'live_state':'working'},
                 swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253, live_state='working')])
-    rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed)}
-    for key, busy in [('agent', selected_busy), ('board', top_busy)]:
-        assert rows[key]['status'] == ('working' if busy else 'idle')
-        assert rows[key]['meter_state'] == ('busy' if busy else 'idle')
-    assert rows['board']['primary'] == '420' and rows['board']['secondary'] == '3,253 accepted jobs'
+    rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed, workers=fleet_workers(),
+               worker_source=dict(state='ok', read_ts=100))}
+    assert rows['agent']['status'] == ('working' if selected_busy else 'idle')
+    assert rows['agent']['meter_state'] == ('busy' if selected_busy else 'idle')
+    assert rows['board']['status'] == 'idle' and rows['board']['meter_state'] == 'ok'
 
 
 @pytest.mark.parametrize('selected_offline', [False, True])
-def test_offline_identity_is_independent_for_selected_seat_and_rank_one(selected_offline):
+def test_offline_identity_for_selected_seat_does_not_govern_fleet(selected_offline):
     from tests.data.test_surfboard_activity import workers
     observed = hub.work_activity.observe(None, workers(0, token=420 if selected_offline else 1836), now=100)
     data = dict(swarm_seat_selected={'token_id':1836},
                 swarm_seat_live={'live_state':'offline' if selected_offline else 'idle'},
                 swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253,
                                        live_state='idle' if selected_offline else 'offline')])
-    rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed)}
-    for key, expected in [('agent', 'offline' if selected_offline else 'idle'),
-                          ('board', 'idle' if selected_offline else 'offline')]:
-        assert rows[key]['status'] == rows[key]['meter_state'] == expected
+    rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed, workers=fleet_workers(),
+               worker_source=dict(state='ok', read_ts=100))}
+    assert rows['agent']['status'] == rows['agent']['meter_state'] == ('offline' if selected_offline else 'idle')
+    assert rows['board']['status'] == 'idle' and rows['board']['meter_state'] == 'ok'
 
 
-@pytest.mark.parametrize('card_key', ['agent', 'board'])
-def test_fresh_offline_changes_display_without_rewriting_activity_history(card_key):
+def test_fresh_offline_changes_display_without_rewriting_activity_history():
     from copy import deepcopy
     from tests.data.test_surfboard_activity import workers
     observed = hub.work_activity.observe(None, workers(1), now=100)
@@ -669,9 +667,9 @@ def test_fresh_offline_changes_display_without_rewriting_activity_history(card_k
     data = dict(swarm_seat_selected={'token_id':420},
                 swarm_seat_live={'live_state':'offline'},
                 swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253, live_state='offline')])
-    row = next(c for c in hub.cards(data, {}, now=300, activity=observed) if c['key'] == card_key)
+    row = next(c for c in hub.cards(data, {}, now=300, activity=observed) if c['key'] == 'agent')
     assert row['meter_state'] == row['status'] == 'offline'
-    assert (row['numerator'], row['denominator']) == ((86300, 86400) if card_key == 'agent' else (None, None))
+    assert (row['numerator'], row['denominator']) == (86300, 86400)
     assert 'activity offline' in row['detail'] and 'workers read '+hub.hhmm(200) in row['detail']
     assert 'observed stop '+hub.hhmm(200) in row['detail']
     assert observed == before
@@ -681,7 +679,7 @@ def test_fresh_offline_changes_display_without_rewriting_activity_history(card_k
     ('stale', 'stale'), ('failed', 'stale'), ('incomplete', 'unavailable'),
     ('unknown', 'unavailable'), ('missing', 'unavailable'),
 ])
-def test_uncertain_activity_never_certifies_offline_for_agent_or_leaderboard(failure, expected):
+def test_uncertain_activity_never_certifies_offline_for_agent(failure, expected):
     from tests.data.test_surfboard_activity import workers
     observed = hub.work_activity.observe(None, workers(), now=100)
     now = 401 if failure == 'stale' else 200
@@ -699,9 +697,9 @@ def test_uncertain_activity_never_certifies_offline_for_agent_or_leaderboard(fai
                 swarm_seat_live={'live_state':'offline'},
                 swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253, live_state='offline')])
     rows = {c['key']: c for c in hub.cards(data, {}, now=now, activity=observed)}
-    for key in ('agent', 'board'):
-        assert rows[key]['status'] == rows[key]['meter_state'] == expected
-        assert rows[key]['numerator'] is None
+    assert rows['agent']['status'] == rows['agent']['meter_state'] == expected
+    assert rows['agent']['numerator'] is None
+    assert rows['board']['status'] == 'unavailable'
 
 
 def test_token_ranking_projection_discloses_coverage_and_source_clock():
@@ -785,20 +783,104 @@ def test_launchpad_volume_complete_empty_intervals_are_real_zero():
     assert row['points'] == [0] * 8 and row['meter_state'] == 'ok'
 
 
-@pytest.mark.parametrize('population,expected', [
-    (None, None), ([], []),
-    ([dict(rank=3, token_id=83, accepted=200), dict(rank=1, token_id=527, accepted=4184),
-      dict(rank=4, token_id=7, accepted=10), dict(rank=2, token_id=420, accepted=3500)],
-     [dict(rank=1, token_id=527, accepted=4184), dict(rank=2, token_id=420, accepted=3500),
-      dict(rank=3, token_id=83, accepted=200)]),
-])
-def test_board_projects_three_canonical_ranks_independent_of_selection(population, expected):
-    cards = hub.cards(dict(swarm_board_rows=population, swarm_seat_selected={'token_id':7}), {}, now=100)
-    board = next(row for row in cards if row['key']=='board')
-    assert board['top_agents'] == expected
-    assert all(row['top_agents'] is None for row in cards if row['key']!='board')
-    if expected:
-        assert board['primary'] == '527'
+def fleet_workers():
+    """Three distinct seats, five devices; repeated IDs/pairs cannot earn extra votes."""
+    from maxpane_dashboard.data.surf_swarm import normalize_workers
+    pairs = [('model-a', 'low'), ('model-a', 'high'), ('model-b', 'medium'),
+             ('model-b', 'medium'), ('model-b', 'medium')]
+    rows = [dict(seat=dict(tokenId=token), deviceKey=str(i),
+                 runtimes=[dict(id=runtime) for runtime in runtimes],
+                 daemonVersion=daemon)
+            for i, (token, runtimes, daemon) in enumerate([
+                (7, ['codex', 'codex'], '0.1.2+first'),
+                (7, ['codex'], '0.1.2+second'),
+                (7, ['claude'], '0.1.2+third'),
+                (8, ['claude'], '0.1.1+same'),
+                (9, ['claude'], '0.1.1+same')])]
+    workers = normalize_workers(dict(count=len(rows), workers=rows))
+    for row, (model, effort) in zip(workers['workers'], pairs):
+        row['advertised_models'] = [dict(model=model, effort=effort)] * 2
+    return workers
+
+
+def fleet_card(workers, *, state='ok', data=None, partial=False):
+    return next(card for card in hub.cards(data or {}, {}, now=1000, workers=workers,
+        worker_source=dict(state=state, read_ts=900, partial=partial)) if card['key'] == 'board')
+
+
+def test_fleet_runtime_shares_use_distinct_online_seats_and_deduplicate_devices():
+    from copy import deepcopy
+    workers = fleet_workers()
+    before = deepcopy(workers)
+    card = fleet_card(workers)
+    facts = card['fleet_summary']
+    assert facts == dict(codex_percent=pytest.approx(100/3), claude_percent=100, daemon='0.1.2',
+        model='model-b', effort='medium', online=3, runtime_known=3, state='ok', read_ts=900)
+    assert card['destination'] == 'board' and card['title'] == 'FLEET'
+    assert card['status'] == 'idle'
+    assert all(text in card['detail'] for text in ('3/3', 'online seats', 'both', 'advertised', '0.1.2+first'))
+    assert workers == before
+
+
+def test_fleet_daemon_aggregates_builds_before_ranking_and_model_keeps_effort_pairs():
+    workers = fleet_workers()
+    # Combined model-a wins 3:2, but no one model-a/effort pair beats model-b/medium.
+    workers['workers'][2]['advertised_models'] = [dict(model='model-a', effort='medium')]
+    workers['workers'][0]['advertised_models'] *= 20  # advertisements within a device deduplicate
+    facts = fleet_card(workers)['fleet_summary']
+    assert facts['daemon'] == '0.1.2'
+    assert (facts['model'], facts['effort']) == ('model-b', 'medium')
+    # Known absence contributes no vote, and a tie is lexical, independent of row order.
+    workers['workers'][0]['advertised_models'] = []
+    workers['workers'][2]['advertised_models'] = [dict(model='model-a', effort='high')]
+    workers['workers'].reverse()
+    facts = fleet_card(workers)['fleet_summary']
+    assert (facts['model'], facts['effort']) == ('model-a', 'high')
+
+
+@pytest.mark.parametrize('daemon', [None, '', '  ', '+build'])
+def test_fleet_missing_daemon_cannot_claim_fleet_majority(daemon):
+    workers = fleet_workers()
+    workers['workers'][0]['daemon'] = daemon
+    facts = fleet_card(workers)['fleet_summary']
+    assert facts['daemon'] is None
+    assert facts['claude_percent'] == 100 and facts['model'] == 'model-b'
+
+
+@pytest.mark.parametrize('missing', [None, [], [''], ['  '], ['codex', '']])
+def test_fleet_missing_runtime_on_any_device_keeps_denominator_but_no_percentage(missing):
+    workers = fleet_workers()
+    workers['workers'][0]['runtimes'] = missing
+    facts = fleet_card(workers)['fleet_summary']
+    assert facts['online'] == 3 and facts['runtime_known'] == 2
+    assert facts['codex_percent'] is facts['claude_percent'] is None
+    assert facts['model'] == 'model-b' and facts['daemon'] == '0.1.2'
+
+
+@pytest.mark.parametrize('mode', ['missing', 'partial', 'count', 'malformed', 'unavailable'])
+def test_fleet_unproven_roster_does_not_claim_share_daemon_or_model(mode):
+    workers = fleet_workers()
+    if mode == 'count': workers['count'] += 1
+    if mode == 'malformed': workers['malformed_tokens'] = [7]
+    card = fleet_card(None if mode == 'missing' else workers,
+        state='unavailable' if mode == 'unavailable' else 'ok', partial=mode == 'partial',
+        data=dict(swarm_board_summary=dict(wall_clock_ms=90000000), swarm_contributors_as_of_hhmm='00:12'))
+    facts = card['fleet_summary']
+    assert all(facts[key] is None for key in ('online', 'codex_percent', 'claude_percent', 'daemon', 'model', 'effort'))
+    assert facts['read_ts'] == 900
+    assert facts['state'] == ('unavailable' if mode in ('missing', 'unavailable') else 'partial')
+    assert card['numerator'] == 90000000 and 'contributors read 00:12' in card['detail']
+
+
+def test_fleet_empty_roster_known_zero_and_stale_source_retains_exact_facts():
+    workers = fleet_workers()
+    facts = fleet_card(workers)['fleet_summary']
+    assert fleet_card(workers, state='stale')['fleet_summary'] == dict(facts, state='stale')
+    workers.update(count=0, workers=[])
+    empty = fleet_card(workers)['fleet_summary']
+    assert empty == dict(codex_percent=None, claude_percent=None, daemon=None, model=None,
+                        effort=None, online=0, runtime_known=0, state='ok', read_ts=900)
+    assert all(card['fleet_summary'] is None for card in hub.cards({}, {}, now=1000) if card['key'] != 'board')
 
 
 @pytest.mark.parametrize('state,points', [('ok', [0]*8), ('partial', [1, None, 2, 3, 4, 5, 6, 7]),

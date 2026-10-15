@@ -890,10 +890,15 @@ and trade readers are unchanged.
 The inset footer shows positive `x new` from the eligible canonical last-24-hour population.
 Per the owner, no partial/stale/clock labels appear there; the literal tooltip retains coverage
 and source clocks. Known zero-new text remains hidden on TOKENS and ONCHAIN FEED.
-Portfolio opens its existing preview. LEADERBOARD shows TOP AGENTS with three canonical ranked
-seats and accepted counts, led by gold/silver/bronze stars with one leading blank. Counts align
-right with one trailing blank; oversized counts drop grouping, then use compact notation only
-if necessary. Its centered footer is `worked Ny Nw Nd`, using the complete contributor
+Portfolio opens its existing preview. FLEET opens LEADERBOARD and shows a neutral RUNTIMES
+inset with codex/claude shares of distinct online seats and the most-used daemon base version.
+Shares deduplicate devices, count a both-runtime seat once in each runtime, and remain unknown
+until the roster and runtime metadata are complete. The daemon strips `+build` before grouping;
+the most-used advertised model/effort pair forms the inner footer without a label. Counts are
+per worker for daemon and model settings; hover preserves that distinction and source coverage.
+Only the three row values use the leaderboard foreground; labels and frames stay neutral.
+Long metadata fits with ellipsis and retains full text on hover. Its centered outer footer is
+`worked Ny Nw Nd`, using the complete contributor
 summary's `wall_clock_ms` across all devices. Whole days are split into 365-day years,
 seven-day weeks and days; remaining hours are discarded. The existing meter fields
 carry `meter_kind=duration`, milliseconds in `numerator` and no denominator. Unknown

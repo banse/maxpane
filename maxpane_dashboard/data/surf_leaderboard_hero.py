@@ -43,10 +43,9 @@ def _roster_source(workers, source):
     return result
 
 
-def _runtime_leader(workers, source):
-    """One vote per seat and runtime; a winner needs every seat's complete metadata."""
-    result = dict(runtime=None, runtime_percent=None, runtime_count=None,
-                  runtime_total=None, runtime_known=None)
+def _runtime_counts(workers, source):
+    """Distinct-seat counts, available only for a complete roster and runtime metadata."""
+    result = dict(counts=None, total=None, known=None)
     if workers is None or source['state'] == 'unavailable':
         return result
     groups = _worker_groups(workers)
@@ -54,15 +53,23 @@ def _runtime_leader(workers, source):
                 for token, group in groups.items() if token not in workers['malformed_tokens']
                 and all(worker['runtimes'] and all(runtime.strip() for runtime in worker['runtimes'])
                         for worker in group)]
-    result['runtime_known'] = len(reported)
-    if not _complete_workers(workers, source):
-        return result
-    result['runtime_total'] = len(groups)
-    if not groups or len(reported) != len(groups):
-        return result
-    leader = _mix(runtime for runtimes in reported for runtime in runtimes)[0]
-    result.update(runtime=leader['value'], runtime_count=leader['count'],
-                  runtime_percent=leader['count'] / len(groups) * 100)
+    result['known'] = len(reported)
+    if _complete_workers(workers, source):
+        result['total'] = len(groups)
+        if len(reported) == len(groups):
+            result['counts'] = _mix(runtime for runtimes in reported for runtime in runtimes)
+    return result
+
+
+def _runtime_leader(workers, source):
+    """One vote per seat and runtime; a winner needs every seat's complete metadata."""
+    counts = _runtime_counts(workers, source)
+    result = dict(runtime=None, runtime_percent=None, runtime_count=None,
+                  runtime_total=counts['total'], runtime_known=counts['known'])
+    if counts['counts']:
+        leader = counts['counts'][0]
+        result.update(runtime=leader['value'], runtime_count=leader['count'],
+                      runtime_percent=leader['count'] / counts['total'] * 100)
     return result
 
 

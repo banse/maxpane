@@ -1574,11 +1574,14 @@ SURF_LAUNCHPAD_HERO_FIELDS = {
 }
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points", "token_ranking",
-                        "meter_state", "share_price", "seat_slot", "token_id", "top_agents", "work_summary")
+                        "meter_state", "share_price", "seat_slot", "token_id", "fleet_summary", "work_summary")
 # work_summary: the existing surf_work summary counts on WORK IN PROGRESS;
 # None on other cards. Build and review are independent counts, never a ratio.
-# top_agents: None (unknown) / [] (known empty) / up to three {rank, token_id,
-# accepted} rows in canonical rank order; None on cards other than LEADERBOARD.
+# fleet_summary: current workers on FLEET only; distinct online-seat runtime shares,
+# most-used base daemon version and advertised (model, effort) pair by worker.
+# Missing or partial rosters do not establish a winner. Duration remains independent.
+SURFBOARD_FLEET_FIELDS = ("codex_percent", "claude_percent", "daemon", "model", "effort",
+                         "online", "runtime_known", "state", "read_ts")
 # seat_slot/token_id identify the four saved AGENT cards; None on other cards.
 # meter_state: independent activity (busy/idle/offline/stale/unavailable/empty) or volume coverage;
 # share_price: IMD per whole sIMD from the existing protocol vault read, or None.

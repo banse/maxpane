@@ -17,11 +17,12 @@ from maxpane_dashboard.analytics.surfboard import count, number, ratio, hourly_p
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surfboard_activity as work_activity
 from maxpane_dashboard.data import surf_launchpad_volume as launch_volume
+from maxpane_dashboard.data import surf_leaderboard_hero as leaderboard_hero
 from maxpane_dashboard.data.surf_oracles import PAGE_LIMIT as ORACLE_PAGE_LIMIT
 from maxpane_dashboard.analytics.surf_launch_checks import address
 from maxpane_dashboard.data.surf_models import (
     SURFBOARD_CARD_FIELDS, SURFBOARD_OVERVIEW_FIELDS, SURFBOARD_SUPPLY_FIELDS, SWARM_SEAT_OUTCOME_FIELDS,
-    SURF_WORK_SUMMARY_KEYS,
+    SURF_WORK_SUMMARY_KEYS, SURFBOARD_FLEET_FIELDS,
 )
 
 OUTCOME_COUNTERS = ("attempts", "accepted", "rejected", "failed", "pending")
@@ -418,7 +419,30 @@ def _launchpad_volume(data, launchpad, families, now):
     return points, state, detail
 
 
-def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, activity: dict | None = None, agent_seats: list[dict] | None = None, pool4_price_direction: str | None = None) -> list[dict]:
+def fleet_summary(workers, source):
+    """Worker-only facts; no canonical ranking or contributor receipt denominator."""
+    source = source or dict(state='unavailable', read_ts=None)
+    facts = dict.fromkeys(SURFBOARD_FLEET_FIELDS)
+    facts.update(leaderboard_hero._roster_source(workers, source))
+    runtimes = leaderboard_hero._runtime_counts(workers, source)
+    facts.update(online=runtimes['total'], runtime_known=runtimes['known'])
+    if runtimes['counts'] is not None and runtimes['total']:
+        counts = {row['value']: row['count'] for row in runtimes['counts']}
+        for runtime in ('codex', 'claude'):
+            facts[runtime + '_percent'] = counts.get(runtime, 0) / runtimes['total'] * 100
+    if leaderboard_hero._complete_workers(workers, source):
+        daemons = [row['daemon'].split('+', 1)[0].strip() if row['daemon'] else None
+                   for row in workers['workers']]
+        if daemons and all(daemons):
+            facts['daemon'] = sw._mix(daemons)[0]['value']
+        model = next((row for row in sw._fleet_from_slot(workers)['models']
+                      if row['model'] and row['model'].strip()), None)
+        if model:
+            facts.update(model=model['model'], effort=model['effort'])
+    return facts
+
+
+def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, activity: dict | None = None, agent_seats: list[dict] | None = None, pool4_price_direction: str | None = None, workers: dict | None = None, worker_source: dict | None = None) -> list[dict]:
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES, FIRED_TTL_S, _tx_hash
     result = []
     def card(key,title,primary,secondary,detail,destination,n=None,d=None,points=None,source=None):
@@ -504,19 +528,16 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         if result[-1]['status'] == 'offline':
             api_status = seat.get('api_status')
             result[-1]['secondary'] = api_status.strip() if isinstance(api_status, str) and api_status.strip() else 'offline'
-    leader = next((row for row in data.get("swarm_board_rows") or []
-                   if isinstance(row, dict) and row.get("rank") == 1), {})
-    card("board","LEADERBOARD",_value(count(leader.get("token_id"))),
-         _value(count(leader.get("accepted")), " accepted jobs"),
-         f"top #{_value(count(leader.get('token_id')))} · {_value(count(leader.get('accepted')), ' accepted jobs')}"
-         " · summary cache ≤10m","board",source="records")
-    population = data.get("swarm_board_rows")
-    result[-1]["top_agents"] = (sorted(
-        (dict(rank=row["rank"], token_id=row["token_id"], accepted=count(row.get("accepted")))
-         for row in population if isinstance(row, dict) and count(row.get("rank")) in (1, 2, 3)
-         and seat_token(row.get("token_id")) is not None), key=lambda row: row["rank"])
-        if isinstance(population, list) else None)
-    activity_meter(leader.get("token_id"), leader.get("live_state"))
+    fleet = fleet_summary(workers, worker_source)
+    card("board", "FLEET", "", "",
+         f"FLEET · workers {fleet['state']} · read {hhmm(fleet['read_ts'])}"
+         f" · runtime metadata {_value(fleet['runtime_known'])}/{_value(fleet['online'])} online seats"
+         " · each distinct seat counts once per runtime; both counts in each"
+         " · current advertised model and effort; daemon builds combined by base version"
+         + " · daemon versions " + (", ".join(row['value'] for row in sw._mix(
+             worker['daemon'] for worker in workers['workers'])) if workers is not None else "—"), "board")
+    result[-1].update(fleet_summary=fleet, status='idle' if fleet['state'] == 'ok' else fleet['state'],
+                      meter_state=fleet['state'])
     worked_ms = count((data.get('swarm_board_summary') or {}).get('wall_clock_ms'))
     result[-1].update(meter_kind='duration', numerator=worked_ms, denominator=None)
     result[-1]['detail'] += (f" · fleet worked {_value(worked_ms)} ms across all contributor devices"

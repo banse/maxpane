@@ -396,3 +396,25 @@ and cached terminal-footer loading; both were fixed with compositor regressions.
 Scoped re-review approved both fixes after eight passing cases and two reversal
 mutations caught and restored. No outstanding findings.
 The final combined fast-guard/docpin check passed all 127 selected cases.
+
+## Boardroom FLEET runtime summary — 2026-10-15
+
+Replaced the top-agent list with codex/claude percentages of distinct online
+seats, the most-used daemon base version, and the leading advertised model and
+effort. The inner footer has no label (`astra 6 xhigh`); the centered worked
+duration remains independent. Worker facts and their source clock share one
+captured cache snapshot. No endpoints, timers or caches were added.
+
+The owner explicitly waived another preview. Production-screen composites
+retain the 146×37 minimum and fit 149×45, including a nine-cell daemon version
+and the model/effort footer. Validation: 822 affected/composing cases and 124
+fast guards and 12 documentation pins passed; the migrated optional-theme palette assertion passed after
+using its resolved foreground. Eight implementation mutations and two review
+mutations were rejected and restored. No full suite was run.
+
+Final review approved with no Critical or Important findings. Minor residual:
+`.claude/rules/surf.md` says hover preserves per-worker daemon/model weighting,
+but hover currently describes current advertised configuration and combined
+daemon builds without explicitly saying “per worker.” Correct that wording
+when the rules file is next touched; the calculations and approved UI are
+unaffected.

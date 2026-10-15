@@ -7524,9 +7524,11 @@ class SurfManager:
             token = selected.get("token_id") if isinstance(selected, dict) else None
         if token is not None and (not selected or selected.get("token_id") != token):
             data["swarm_seat_selected"] = {"token_id":token,"agent_id":None,"selected_by":"saved"}
-        data.update(self._swarm_board_keys(self.cache.get_last_good(SLOT_SWARM_CONTRIBUTORS),
-                                          self.cache.get_last_good(SLOT_SWARM_WORKERS), token,
-                                          records_source=sources["records"]))
+        contributors_entry = self.cache.get_last_good(SLOT_SWARM_CONTRIBUTORS)
+        workers_entry = self.cache.get_last_good(SLOT_SWARM_WORKERS)
+        board_sources = self._swarm_board_hero_sources(contributors_entry, workers_entry, now=now)
+        data.update(self._swarm_board_keys(contributors_entry, workers_entry, token,
+                                          records_source=sources["records"], hero_sources=board_sources))
         o = overview or {}
         data.update(swarm_agents_online=o.get("agents_online"), swarm_agents_enrolled=o.get("seats_enrolled"),
                     swarm_working_now=o.get("working_now"), swarm_accepted_today=o.get("accepted_24h"),
@@ -7537,7 +7539,7 @@ class SurfManager:
         data["surfboard_footer"] = hub.footer(market, family_sources["market"], sources["overview"], now=now)
         channel_entry = self.cache.get_last_good(SLOT_CHANNEL)
         channel = getattr(channel_entry, "payload", None) or {}
-        workers = sw.coerce_workers_slot(getattr(self.cache.get_last_good(SLOT_SWARM_WORKERS), 'payload', None))
+        workers = sw.coerce_workers_slot(getattr(workers_entry, 'payload', None))
         seat_points = (sw.coerce_seat_slot(getattr(self.cache.get_last_good(SLOT_SWARM_SEAT), 'payload', None),
                                          now=now) or {}).get('seats', {})
         agent_seats = [dict(token_id=assigned, live=sw._seat_live_from_slot(workers, assigned),
@@ -7551,7 +7553,8 @@ class SurfManager:
         data["surf_work"] = self._work_reader.project()
         data["surf_oracles"] = self._oracles_reader.project()
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
-                                                 agent_seats=agent_seats,
+                                                 agent_seats=agent_seats, workers=workers,
+                                                 worker_source=board_sources["workers"],
                                                  pool4_price_direction=self._hub_pool4_price_direction(data, family_sources),
                                                  announce_read_ts=getattr(channel_entry, "ts", None),
                                                  announce_items=channel.get("items"),
@@ -7586,7 +7589,8 @@ class SurfManager:
             'swarm': (sources.get('overview'), sources.get('hourly')),
             'pool4': (self._full_task, self._pool4_task),
             'protocol': (self._full_task, self._pool4_task, sources.get('supply')),
-            'board': (self._swarm_board_task, sources.get('records')),
+            'board': (self._swarm_board_task,),
+            'agent': (self._swarm_board_task, sources.get('records')),
             'work': (self._work_reader.task,),
             'oracles': (() if self._oracles_reader._reading_detail else (self._oracles_reader.task,)),
             'swarm-tokens': tuple(tokens._tasks.get(name) for name in ('catalogue', 'markets', 'volume')) if tokens else (),
@@ -7600,7 +7604,8 @@ class SurfManager:
                 known = any(hub.number(data.get(field)) is not None for field in
                             ('pool4_total_burned', 'pool4_total_rewarded', 'pool4_total_fee_token'))
             elif key == 'board':
-                known = card.get('top_agents') is not None
+                fleet = card.get('fleet_summary') or {}
+                known = fleet.get('state') in ('ok', 'stale') and fleet.get('online') is not None
             elif key == 'pool4':
                 known = known or card.get('share_price') is not None
             elif key == 'swarm':
@@ -7612,7 +7617,7 @@ class SurfManager:
                     continue
                 # The assigned seat number is input, not evidence of a read.
                 known = card.get('secondary') not in (None, '— of — slots')
-                key = 'board'
+                key = 'agent'
             if not known and any(running(task) for task in reads.get(key, ())):
                 card['status'] = 'loading'
         if running(sources.get('overview')):

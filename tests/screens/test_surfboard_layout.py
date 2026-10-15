@@ -29,6 +29,33 @@ class HubHarness(App):
         self.push_screen(self.hub)
 
 
+@pytest.mark.parametrize('size', [(146, 37), (149, 45)])
+async def test_fleet_runtime_card_model_effort_and_duration_survive_refresh(size):
+    payload = hub_payload()
+    app = HubHarness(payload)
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        card = app.hub.query_one('#surfboard-card-board', SurfboardCard)
+        def painted():
+            return '\n'.join(strip.crop(card.region.x, card.region.right).text for strip in
+                             app.hub._compositor.render_strips()[card.region.y:card.region.bottom])
+        output = painted()
+        assert all(text in output for text in ('RUNTIMES', 'codex', '52.5%', 'claude', '47.4%',
+                                              'daemon', '0.1.2', 'astra 6 xhigh', 'worked 1y 32w 3d'))
+        assert 'top model' not in output and 'TOP AGENTS' not in output
+        bottom = next(line for line in output.splitlines() if '└' in line)
+        assert '┘' in bottom and 'astra 6 xhigh' in bottom
+        facts = next(row for row in payload['surfboard_cards'] if row['key'] == 'board')['fleet_summary']
+        facts.update(model='claude-fable-5-1', effort='high', daemon='0.2.0',
+                     codex_percent=25., claude_percent=75.)
+        await app.hub._do_refresh()
+        await pilot.pause()
+        output = painted()
+        assert 'fable 5.1 high' in output and 'astra' not in output
+        assert '0.2.0' in output and 'worked 1y 32w 3d' in output
+        assert card.data['destination'] == 'board'
+
+
 @pytest.mark.parametrize("signals", [0, 1, 4, 9, 11, None])
 async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(signals):
     payload = hub_payload()
@@ -108,11 +135,12 @@ async def test_terminal_uses_dashboard_background_and_native_text_colors():
             assert terminal.query_one(RichLog).styles.background == app.hub.styles.background
             strips = app.hub._compositor.render_strips()
             value = next(segment for strip in strips for segment in strip
-                         if "4,176" in segment.text)
+                         if "52.5%" in segment.text)
             reply = next(segment for strip in strips for segment in strip
                          if "palette reply" in segment.text)
             assert value.style.bgcolor == Color.parse(theme.background)
-            assert value.style.color == card.rich_style.color
+            assert value.style.color == Color.parse(app.get_css_variables()['foreground'])
+            assert value.style.dim is False
             assert reply.style.color == terminal.rich_style.color
             assert reply.style.bgcolor == Color.parse(theme.background)
             rack = app.hub.query_one(SurfboardRack)
@@ -397,15 +425,14 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 continue
             if card["key"] == "board":
                 text = r["card_text"]["board"]
-                assert "TOP AGENTS" in text
+                assert "RUNTIMES" in text
+                assert all(label in text for label in ('codex', 'claude', 'daemon'))
+                assert 'top model' not in text and 'TOP AGENTS' not in text
                 if kind == "unavailable":
                     assert "—" in text and "unavailable" not in text
                 else:
-                    assert text.count("★") == 3
-                    for row in card['top_agents']:
-                        assert str(row['token_id']) in text
-                        expected_count = {99999999: '100.0M', 9999999: '10.0M', 999999: '1000.0K'}.get(row['accepted'], f"{row['accepted']:,}")
-                        assert expected_count in text
+                    assert card['fleet_summary']['daemon'] in text
+                    assert ('opus 5.5 medium' if kind == 'stress' else 'astra 6 xhigh') in text
                 continue
             if card["key"] == "oracles":
                 text = r["card_text"]["oracles"]
