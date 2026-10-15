@@ -381,6 +381,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             border_inset = Style.parse(AMBER) + Style(bgcolor=palette["background"])
         label = ""
         native_digits = False
+        numeric_readout = False
         rows = [("", False), (primary, not muted), (secondary, False)]
         if self.key in ("swarm", "launchpad", "oracles", "pool4", "work") or self.seat_slot is not None:
             label = " SEAT " if self.seat_slot is not None else {"swarm": " AGENTS ",
@@ -392,7 +393,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 digits = digits.replace(".", "", 1)
             readout = count if self.key == "pool4" else digits
             # Use the same native 3x3 renderer as Textual's Digits widget.
-            native_digits = digits.isascii() and digits.isdecimal() and Digits.get_width(readout) <= inside
+            numeric_readout = digits.isascii() and digits.isdecimal()
+            native_digits = numeric_readout and Digits.get_width(readout) <= inside
             if native_digits:
                 rows = [(segment.text, False) for segment in Digits(readout).render(Style())
                         if segment.text != "\n"]
@@ -459,8 +461,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             clipped |= _work_footer(self.footer_data, max(0, self.region.width - 6))[1]
         if self.key == "board":
             clipped |= _fleet_footer(self.data, max(0, self.region.width - 6))[1]
+        readout_style = label_style if border_inset.dim else border_inset
+        if numeric_readout and border_inset.color == Style.parse(palette["accent"]).color:
+            readout_style += Style(color=GREEN)
         for index, (raw, bold) in enumerate(rows):
-            style = Style(
+            style = readout_style + Style(bold=bold) if numeric_readout else Style(
                 color=self.rich_style.color, bgcolor=palette["background"],
                 bold=bold, dim=muted)
             line, lost = (preview[index] if preview is not None else
