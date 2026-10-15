@@ -470,7 +470,7 @@ async def test_swarm_history_on_wip_footer_stretches_on_resize_and_keeps_unknown
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         card = app.hub.query_one("#surfboard-card-work", SurfboardCard)
-        for width, chart in [(149, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (180, "▁▁▁▂▂▃▃▄▄▅▅▅▆▆▇▇██"),
+        for width, chart in [(149, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
                              (140, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▄▄▅▅▆▇▇█")]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()

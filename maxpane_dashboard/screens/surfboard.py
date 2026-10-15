@@ -20,8 +20,8 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
 #: Rechecked after the 2026-10-14 PROTOCOL inset correction live preview at 149×45.
-#: Cards use equal whole-cell widths within six fractional grid tracks; spare
-#: track cells remain outside the cards. FLEET is top-right with TOKENS below it;
+#: Six equal fractional columns retain the standard card widths (at most one
+#: cell of rounding difference). FLEET is top-right with TOKENS below it;
 #: PROTOCOL is below ONCHAIN FEED. The rack retains its 143-column minimum and
 #: 23-column card floor; PROTOCOL and TOKENS use the same inset padding.
 #: Its aligned stats keep a leading blank; at the pin the stress row fits as
@@ -48,9 +48,6 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: composites retain 146×37; captions stay above their original AGENT columns.
 #: Subsequent PROTOCOL/FLEET and TOKENS/PROTOCOL swaps retain both pins and caption
 #: positions in the boundary composites and the live 149×45 preview.
-#: Equal-width correction, 2026-10-15: all cards measure 23 cells at 149×45,
-#: with the terminal still 97 cells. Rounding remainders and resize round trips
-#: preserve equal cards and centered captions; the 146×37 boundary is unchanged.
 #: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 146
 SURFBOARD_FULL_LAYOUT_ROWS = 37
