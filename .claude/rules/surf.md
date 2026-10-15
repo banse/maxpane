@@ -610,6 +610,17 @@ first sightings below an observed high number still fire. Fired facts retain age
 and refresh their ticker/token/verdict metadata on later reads. Initial reads seed silently;
 failed or corrupt persisted reads do not fire. Typed fired events drive all-body title news, never parsed detail text.
 
+**Launch toasts:** Surf and boardroom refreshes post typed snapshots to one app-owned
+session tracker. Native `Token launched` toasts last ten seconds and show ticker,
+network and launch number. Only production detector events qualify. The first
+successful launch-list snapshot from this app session seeds silently; cached fired
+news alone cannot arm notifications. `swarm_launch_read_ts` is the list-read clock
+captured with those signals, or None on failure, independent of retained news.
+UUIDs and known `(chain_id, token_address)` aliases suppress repeats across refresh,
+metadata enrichment and view switches. A hidden screen cannot consume an event.
+Work/Oracles keep the existing detached launch tier eligible and advance only its
+detector; unrelated full-cycle sources stay paused. Delivery follows source polling.
+
 **WORKFLOWS history:** cold or incomplete caches backfill pages of 100, at most 10 pages, using
 strict UTC `createdAt` cursors, an advancing-cursor guard and the existing inter-call delay.
 The scores slot persists raw rows plus `workflows_complete`. After completion, sweeps fetch page 1

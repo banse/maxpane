@@ -12,6 +12,7 @@ from textual.containers import VerticalScroll
 from textual.widgets import Input, Static
 
 from maxpane_dashboard.data.surf_models import SURFBOARD_WIDGET_SIGNATURES
+from maxpane_dashboard.launch_notifications import SurfLaunchesUpdated
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
 from maxpane_dashboard.screens.surf import MODE_AGENT, MODE_WORK, MODE_ORACLES
 from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
@@ -142,6 +143,7 @@ class SurfboardScreen(DashboardScreen):
         bar.set_key_hints("arrows cards · enter open · w work · / command · esc menu")
 
     def _update_title(self, data: dict) -> None:
+        self.post_message(SurfLaunchesUpdated(self, data))
         self._age_captured = self._age_clock()
         self._loading = any(card.get('status') == 'loading' for card in data.get('surfboard_cards') or [])
         self.call_after_refresh(self._render_chrome)

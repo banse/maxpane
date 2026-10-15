@@ -392,6 +392,7 @@ EXPECTED_KEYS = {
     "sig_hot_age_s",
     "sig_swarm_state", "sig_swarm_detail", "sig_swarm_age_s", "sig_swarm_chain_id", "sig_swarm_launch",
     "swarm_launch_fired",
+    "swarm_launch_read_ts",
     "swarm_launches_as_of_hhmm",
     # ---- pool4 (docs/surf_pool4_contract.md §0.2/§0.3) ----------------------
     # 45 keys: 43 scalars plus the two list payloads. ``pool4_flow`` and
@@ -600,13 +601,13 @@ def test_surf_keys_is_exactly_the_prd_contract() -> None:
     )
 
     assert set(SURF_KEYS) == EXPECTED_KEYS | {"surfboard_cards", "surfboard_overview", "surfboard_events", "surfboard_hourly", "surfboard_sources", "surfboard_footer", "swarm_seat_outcome", "swarm_outcomes_source", "swarm_contributors_as_of_hhmm", "surf_news_hero", "surf_swarm_hero", "surf_pool4_hero", "surf_protocol_hero", "surf_leaderboard_hero", "surf_launchpad_hero", "surf_agent_hero", "surf_work", "surf_oracles", "swarm_launch_contribution"}
-    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 227
+    assert len(SURF_KEYS) == len(set(SURF_KEYS)) == 228  # + launch-toast read provenance
     # ...and the four addends really are the four tuples, so the total
     # above cannot be kept honest by adjusting the sentence.
     assert len(POOL4_KEYS) == 71
     assert len(POOL4_STAKERS_KEYS) == 5
     assert len(SWARM_KEYS) == 47
-    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 104
+    assert len(SURF_KEYS) - len(POOL4_KEYS) - len(POOL4_STAKERS_KEYS) - len(SWARM_KEYS) == 105
 
 
 def test_every_signal_has_all_three_facets() -> None:

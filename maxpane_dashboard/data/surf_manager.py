@@ -137,6 +137,7 @@ from maxpane_dashboard.analytics.surf_signals import (
     READING_KEYS,
     SIGNAL_NAMES,
     build_signals,
+    build_swarm_launch_signals,
     classify_channel_tx,
     decode_utf8_calldata,
     parity_pct,
@@ -7226,6 +7227,8 @@ class SurfManager:
         out["sig_swarm_chain_id"] = (signals or {}).get("sig_swarm_chain_id")
         out["sig_swarm_launch"] = (signals or {}).get("sig_swarm_launch")
         out["swarm_launch_fired"] = (signals or {}).get("swarm_launch_fired", [])
+        launch_read = readings.get("swarm_launch_events")
+        out["swarm_launch_read_ts"] = launch_read.get("ts") if isinstance(launch_read, dict) else None
         targets: list[str] = []
         fired = advanced.get("fired") if isinstance(advanced, dict) else None
         for name in ("post", "thread"):
@@ -7473,6 +7476,14 @@ class SurfManager:
             data.update(self._swarm_keys(getattr(swarm_entry, "payload", None) or {}, swarm_entry, now, seen))
             data.update(self._swarm_scores_keys(scores, scores_entry, swarm_entry, now))
             data.update(self._swarm_launch_keys())
+            if self._work_active or self._oracles_active:
+                baseline = self.cache.get_baselines()
+                launch_read = self._swarm_launch_events(data['swarm_launch_rows'])
+                signals, advanced = build_swarm_launch_signals(
+                    baseline, launch_read, now)
+                self.cache.set_baselines({**baseline, **advanced}, now=now)
+                data.update(signals)
+                data['swarm_launch_read_ts'] = launch_read['ts'] if launch_read is not None else None
             data.update(self._runtime_keys(now))
             # Keep the card's USD conversion and post age on the same captured
             # source versions as the source clocks shown beside those values.
@@ -7726,6 +7737,9 @@ class SurfManager:
 
     async def fetch_and_compute(self) -> dict[str, Any]:
         """Share full collection across screens; cancelling a waiter preserves it."""
+        if not self._closing and (self._oracles_active or self._work_active):
+            now = float(self._clock())
+            self._spawn_swarm_launches(set(self.cache.tiers_due(now)), now)
         if self._oracles_active:
             if not self._closing:
                 self._oracles_reader.offer()

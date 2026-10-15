@@ -230,6 +230,7 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard import config
 from maxpane_dashboard.analytics.surfboard import recent_launch_news
+from maxpane_dashboard.launch_notifications import SurfLaunchesUpdated
 from maxpane_dashboard.analytics.range_filters import FilterValidationError
 from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, parse_record_filter
 from maxpane_dashboard.screens.seat_input import parse_seat
@@ -4586,6 +4587,7 @@ class SurfScreen(DashboardScreen):
             logger.debug("surf refresh returned %r, not a dict", type(data))
             return
 
+        self.post_message(SurfLaunchesUpdated(self, data))
         # Title bar. The payload is kept so a later resize can re-compose
         # this same line with or without the row marker, without refetching.
         self._title_data = data

@@ -1785,3 +1785,23 @@ Open Minor: at 61 columns, an unknown stats value `--` clips to `…` before
 `NewsHeroCard.render()` checks whether it is unknown, so the ellipsis becomes
 green. Preserve the unknown flag before clipping when `news_hero.py` is next
 touched. The approved owner size and full-layout pin retain neutral unknowns.
+
+## Production launch toasts — 2026-10-15
+
+Surf modes and the boardroom now share native ten-second launch toasts with
+production filtering, silent first-session history and UUID/token alias
+deduplication. Work/Oracles retain the existing launch tier while leaving
+unrelated full-cycle sources paused. The new `swarm_launch_read_ts` snapshot
+metadata prevents retained fired news from arming notifications before a
+successful session read. No endpoint or dependency was added.
+
+Final review found and verified one Important same-batch alias-order defect;
+the fix learns known UUID aliases before selecting notifications. Scoped
+re-review: ADDRESSED, no residual findings. Seven deliberate mutations were
+killed and restored. The initial scoped run passed 859 cases and exposed an
+older fixture missing `launch_state`; that fixture now states `not_read`.
+After the fix wave, all 29 focused checks and all 96 composing-screen checks
+passed. The 124 fast guards and 12 documentation pins passed; no full suite ran.
+Live preview at 149×45 showed no startup notifications and rendered a
+demonstration toast using an existing public production launch. No actual
+new-launch event was observed during that preview.

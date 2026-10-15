@@ -79,6 +79,7 @@ __all__ = [
     "classify_channel_tx",
     "parity_pct",
     "build_signals",
+    "build_swarm_launch_signals",
 ]
 
 
@@ -1472,6 +1473,19 @@ def _detect_swarm(base, read, now):
     return read["_swarm_det"]
 
 
+def build_swarm_launch_signals(base, events, now):
+    """Advance only launch history for views which do not run the full cycle."""
+    det, state, active, chain, selected = _swarm_launch_state(
+        base, {"swarm_launch_events": events}, now)
+    return _swarm_signal_fields(det, active, chain, selected, now), state
+
+
+def _swarm_signal_fields(det, active, chain, selected, now):
+    return dict(sig_swarm_state=det.state, sig_swarm_detail=det.detail,
+                sig_swarm_age_s=now-det.fired_ts if det.fired_ts is not None else None,
+                sig_swarm_chain_id=chain, sig_swarm_launch=selected, swarm_launch_fired=active)
+
+
 # --- registry --------------------------------------------------------------
 
 #: ``(name, detector)`` in render order.  :data:`SIGNAL_NAMES` and
@@ -1680,9 +1694,7 @@ def build_signals(
     for name, detect in _DETECTORS:
         det = detect(base, read, now)
         if name == "swarm":
-            signals.update(sig_swarm_state=det.state, sig_swarm_detail=det.detail,
-                           sig_swarm_age_s=now-det.fired_ts if det.fired_ts is not None else None,
-                           sig_swarm_chain_id=swarm_chain, sig_swarm_launch=swarm_selected, swarm_launch_fired=swarm_fired)
+            signals.update(_swarm_signal_fields(det, swarm_fired, swarm_chain, swarm_selected, now))
             continue
         if det.fired_ts is not None or det.state == STATE_FIRED:
             event_ts = det.fired_ts if det.fired_ts is not None else now

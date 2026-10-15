@@ -1791,6 +1791,7 @@ _NUMERIC_KEYS_EXCLUDED: dict[str, str] = {
     "sig_hot_age_s": "state is None under outage; _head() reads age_s only when state == 'fired'",
     "sig_swarm_age_s": "WP1 accepts the key; WP3 installs the detector; age is only shown when fired",
     "sig_swarm_chain_id": "link routing metadata, not a displayed quantity; WP3 installs per-row explorer",
+    "swarm_launch_read_ts": "launch-toast startup provenance, not a displayed quantity",
     # -- the `4` POOL4 MARKET body (2026-09-11) --------------------------
     #
     # The rack's native numeric faces and aligned address count are checked

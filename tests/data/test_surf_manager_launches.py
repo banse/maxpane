@@ -46,6 +46,37 @@ class RPC(FakeSurfClient):
 def manager(tmp_path, swarm=None):
     return SurfManager(clock=FakeClock(NOW), cache_path=str(tmp_path/'cache.json'), client=RPC(), pool4_client=FakePool4Client(), swarm_client=swarm or LaunchSwarm())
 
+@pytest.mark.parametrize('mode', ['work', 'oracles'])
+async def test_optimized_views_offer_launch_poll_and_advance_only_launch_signals(tmp_path, monkeypatch, mode):
+    from tests.surf_launch_fixtures import launch_event
+    m = manager(tmp_path)
+    calls = []
+    event = launch_event(status='admitted')
+    monkeypatch.setattr(m, '_clock', lambda: NOW)
+    monkeypatch.setattr(m, '_offer_full', lambda _: pytest.fail('unrelated full refresh'))
+    monkeypatch.setattr(m, '_spawn_swarm_launches', lambda tiers, now: calls.append(now))
+    monkeypatch.setattr(m, '_swarm_launch_events', lambda _: {'events': [event], 'ts': NOW})
+    monkeypatch.setattr(m._work_reader, 'offer', lambda: None)
+    monkeypatch.setattr(m._oracles_reader, 'offer', lambda **kw: None)
+    m.cache.set_baselines({'announce_nonce': 123}, now=NOW)
+    getattr(m, f'set_{mode}_active')(True)
+    try:
+        first = await m.fetch_and_compute()
+        assert first['sig_swarm_state'] == 'watch'
+        assert first['swarm_launch_read_ts'] == NOW
+        event['status'] = 'live'
+        monkeypatch.setattr(m, '_clock', lambda: NOW + 1)
+        second = await m.fetch_and_compute()
+        assert second['swarm_launch_fired'][0]['launch_id'] == event['launch_id']
+        assert second['swarm_launch_fired'][0]['ts'] == NOW + 1
+        monkeypatch.setattr(m, '_clock', lambda: NOW + 2)
+        third = await m.fetch_and_compute()
+        assert third['swarm_launch_fired'][0]['ts'] == NOW + 1
+        assert calls == [NOW, NOW + 1, NOW + 2]
+        assert m.cache.get_baselines()['announce_nonce'] == 123
+    finally:
+        await m.close()
+
 @pytest.mark.asyncio
 async def test_launch_cycle_budgets_clocks_last_good_and_production_history(tmp_path):
     m=manager(tmp_path)
@@ -169,6 +200,10 @@ def test_v8_signal_reading_uses_passed_snapshot_and_publishes_chain(tmp_path):
     assert result['sig_swarm_launch']['launch_id']==event['launch_id']
     assert result['swarm_launch_fired'][0]['launch_id']==event['launch_id']
     assert result['sig_swarm_state']=='fired'
+    assert result['swarm_launch_read_ts'] == NOW  # source observation, not NOW+10 detection
+    failed = m._signal_keys(m._readings({}, None, {}, [], swarm_launch_events=None), NOW+20)
+    assert failed['sig_swarm_state'] == 'fired'  # retained news is not a successful read
+    assert failed['swarm_launch_read_ts'] is None
 
 
 @pytest.mark.asyncio

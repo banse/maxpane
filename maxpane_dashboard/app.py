@@ -11,6 +11,9 @@ from textual.widgets import Input
 
 from maxpane_dashboard.copy_action import CopyAddressMixin
 from maxpane_dashboard.explorer_action import ExplorerLinkMixin
+from maxpane_dashboard.launch_notifications import (
+    LaunchNotifications, SurfLaunchesUpdated, launch_toast_message,
+)
 from maxpane_dashboard.data.base_manager import BaseManager
 from maxpane_dashboard.data.cattown_manager import CatTownManager
 from maxpane_dashboard.data.curator_manager import CuratorManager
@@ -146,6 +149,13 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         ):
             _frenpet_variant.cache = _shared_frenpet_cache
         self._current_game = initial_game
+        self._launch_notifications = LaunchNotifications()
+
+    def on_surf_launches_updated(self, event: SurfLaunchesUpdated) -> None:
+        if event.screen is not self.screen or not isinstance(self.screen, (SurfScreen, SurfboardScreen)):
+            return
+        for launch in self._launch_notifications.consume(event.data):
+            self.notify(launch_toast_message(launch), title="Token launched", timeout=10)
 
     def on_mount(self) -> None:
         """Register themes, show splash, then start the first game screen."""

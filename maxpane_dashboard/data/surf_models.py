@@ -1972,6 +1972,7 @@ SURF_KEYS: tuple[str, ...] = (
     "sig_swarm_age_s",
     "sig_swarm_chain_id", "sig_swarm_launch",
     "swarm_launch_fired",
+    "swarm_launch_read_ts",  # current-session successful list read behind the signal, or None
     # ---- hero ---------------------------------------------------------------
     # `hook_status` removed 2026-08-24 (fix round 12a): no widget ever
     # rendered it after the HOOK hero card was dropped. The attribution

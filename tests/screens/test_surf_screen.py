@@ -700,6 +700,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
 #:   key directly is the original meaning of this set.
 META_KEYS = frozenset({
     "swarm_launch_fired",  # Typed launch news consumed by _title_line.
+    "swarm_launch_read_ts",  # Toast startup provenance, consumed by MaxPaneApp.
     "as_of", "degraded", "eth_usd",
     "swarm_breaker", "swarm_services_up", "swarm_health_status",
     "gate_open", "identities_written", "lp_liquidity",
@@ -1724,7 +1725,8 @@ def _sample_data() -> dict:
     # Captured submission facts, with synthetic hashes to distinguish popup cases.
     defaults = dict(sub_reply=None, sub_failure_reason=None, sub_turns=None, sub_cached_input_tokens=None,
         sub_failed_checks=None, sub_findings=None, sub_artifacts=None, sub_others=None, sub_others_total=None,
-        job_read='not_read', job_detail_state=None, job_blocked_reason=None, job_nodes=None, job_read_ts=None)
+        job_read='not_read', job_detail_state=None, job_blocked_reason=None, job_nodes=None, job_read_ts=None,
+        launch_state='not_read')
     data['swarm_seat_work_rows'] = [dict(row, **defaults) for row in data['swarm_seat_work_rows']]
     source = data['swarm_seat_work_rows'][0]
     data['swarm_seat_work_rows'].extend([
