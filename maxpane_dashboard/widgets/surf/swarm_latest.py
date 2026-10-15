@@ -1,4 +1,4 @@
-"""Five newest token, contract and site shipments in a plain aligned list."""
+"""Seven newest token, contract and site shipments in a plain aligned list."""
 from copy import deepcopy
 
 from rich.cells import cell_len
@@ -17,6 +17,8 @@ from maxpane_dashboard.widgets.fmt import as_float
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import PanelBase
 from maxpane_dashboard.widgets.surf._fmt import SITE_EXPLORER
+
+MAX_SHIPPED = 7
 
 
 def launch_age(created, now):
@@ -91,7 +93,7 @@ def shipped_items(launches, sites):
         if item['key'] not in seen:
             seen.add(item['key'])
             unique.append(item)
-    return unique[:5]
+    return unique[:MAX_SHIPPED]
 
 
 class ShippedRow(Static, can_focus=True):
@@ -110,7 +112,7 @@ class ShippedRow(Static, can_focus=True):
 
 class SurfSwarmLatestLaunches(PanelBase):
     TITLE = 'SHIPPED RECENTLY'
-    ROW_CAP = 5
+    ROW_CAP = MAX_SHIPPED
     DEFAULT_CSS = '''
     SurfSwarmLatestLaunches { height: auto; }
     SurfSwarmLatestLaunches > ShippedRow { height: 1; padding: 0 1; link-color: $foreground; }

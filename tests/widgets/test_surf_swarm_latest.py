@@ -68,8 +68,8 @@ def test_shipments_filter_dedupe_and_cap_after_mixing():
     sites = [site('newest', 1950), site('weir', 1900), site('old', 1600),
              site('replaced', 2000, superseded_by='new'), site('failed', 2000, status='failed')]
     items = shipped_items(launches, sites)
-    assert [item['name'] for item in items] == ['newest', 'weir', 'Alpha', 'Beta', '$EHS']
-    assert [item['kind'] for item in items] == ['site', 'site', 'contract', 'contract', 'token']
+    assert [item['name'] for item in items] == ['newest', 'weir', 'Alpha', 'Beta', '$EHS', 'old']
+    assert [item['kind'] for item in items] == ['site', 'site', 'contract', 'contract', 'token', 'site']
 
 
 def test_site_unknown_time_stays_last_and_known_testnet_join_is_excluded():
@@ -185,10 +185,23 @@ def test_only_production_live_deployed_token_is_a_shipment(change):
     assert shipped_items([token(**change)], []) == []
 
 
-def test_five_items_are_capped_after_sorting_both_sources():
-    from maxpane_dashboard.widgets.surf.swarm_latest import shipped_items
-    items = shipped_items([token(timestamp=1899)], [site(f's{i}', 1900+i) for i in range(6)])
-    assert [item['name'] for item in items] == ['s5', 's4', 's3', 's2', 's1']
+@pytest.mark.parametrize("size", [(149, 45), (141, 38)])
+async def test_seven_newest_items_fit_the_board_top_row(size):
+    from tests.screens.test_surf_screen import _frozen_payload, _surf_app, _region_text
+    from tests.screens.test_surf_swarm_screen import _open
+    from maxpane_dashboard.widgets.surf.swarm_latest import ShippedRow
+    payload = _frozen_payload(swarm_launch_rows=[token(timestamp=1899)],
+        swarm_site_rows=[site(f's{i}', 1900+i) for i in range(8)], as_of=2000)
+    async with _surf_app(payload).run_test(size=size) as pilot:
+        screen = await _open(pilot)
+        panel = screen.query_one(SurfSwarmLatestLaunches)
+        rows = list(panel.query(ShippedRow))
+        assert len(rows) == 7
+        assert [item['name'] for item in panel._payload['rows']] == [f's{i}' for i in range(7, 0, -1)]
+        painted = _region_text(pilot.app, panel)
+        assert all(f's{i}' in painted for i in range(7, 0, -1))
+        assert 's0' not in painted and '$EHS' not in painted
+        assert panel.parent.region.contains_region(rows[-1].region)
 
 
 async def test_refresh_removes_previous_items_and_x_tracks_request_order():
