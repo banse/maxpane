@@ -125,7 +125,7 @@ async def test_status_readout_uses_final_frame_color_and_padded_compact_fallback
         app = pilot.app
         expected = (app.ansi_theme.ansi_colors[2] if meter == "busy" else
                     app.ansi_theme.ansi_colors[3] if meter == "offline" else
-                    Color.parse(app.get_css_variables()["foreground"]).get_truecolor())
+                    app.query_one("#hero-status").rich_style.color.get_truecolor())
         rows = body_rows(app, "status")
         segments = [segment for row in rows for segment in row if segment.text.strip()]
         assert segments

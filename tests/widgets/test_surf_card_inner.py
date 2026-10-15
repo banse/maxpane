@@ -15,10 +15,10 @@ from maxpane_dashboard.widgets.surf.work import _WorkHeroCard
 
 @pytest.mark.parametrize("active", [False, True])
 def test_palette_separates_labels_values_and_active_digits(active):
-    label, value, digit = inner_styles({"foreground": "#55bb44", "background": "#112233"}, active=active)
+    label, value, digit = inner_styles({"foreground": "#55bb44", "background": "#112233"}, active=active, text_color="#eeeeee")
     assert label == Style(color="green", bgcolor="#112233", dim=False)
     assert value == Style(color="#55bb44", bgcolor="#112233", dim=False)
-    assert digit == (label if active else value)
+    assert digit == (label if active else Style(color="#eeeeee", bgcolor="#112233", dim=False))
 
 
 @pytest.mark.parametrize("inside", [0, 1, 2, 5, 12])
@@ -79,6 +79,7 @@ async def test_composited_readout_uses_final_frame_and_pads_only_text(
             assert frame.color.get_truecolor(app.ansi_theme) == Color.parse(expected).get_truecolor(app.ansi_theme)
         digit_color = (app.ansi_theme.ansi_colors[3] if frame_color == "red" else
                        app.ansi_theme.ansi_colors[2] if bright else
+                       card.rich_style.color.get_truecolor() if frame_color is None else
                        Color.parse(app.get_css_variables()["foreground"]).get_truecolor())
         for index, row in enumerate(rows[top + 1:top + 4], top + 1):
             if "e" in digits:

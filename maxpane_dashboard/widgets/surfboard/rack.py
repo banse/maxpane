@@ -381,7 +381,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             border_inset = Style.parse(AMBER) + Style(bgcolor=palette["background"])
         label_style, value_style, readout_style = inner_styles(
             palette, active=border_inset.color in (Style.parse(palette['accent']).color, Style.parse(GREEN).color),
-            frame_color=border_inset.color, ansi_theme=self.app.ansi_theme)
+            frame_color=border_inset.color, ansi_theme=self.app.ansi_theme, text_color=self.rich_style.color)
         label = ""
         native_digits = False
         numeric_readout = False

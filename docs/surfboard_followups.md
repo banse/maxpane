@@ -1,5 +1,15 @@
 # Surfboard follow-ups
 
+## Inactive numeric readouts — 2026-10-15
+
+Inactive digits with neutral inset borders again use each card's normal white
+text color across Surf and boardroom views. Active green digits, red-frame
+orange digits, other colored frames, stat values, labels and captions keep
+their existing colors. The live 149×45 boardroom render shows the restored
+inactive white readout. Geometry and layout boundaries are unchanged.
+All 462 affected widget/composing checks and 127 guards/docpins passed. Removing
+the restored text color failed 11 regression cases; final review approved.
+
 ## Red-frame numeric readouts — 2026-10-15
 
 Red inset borders now use orange digits in all Surf and boardroom cards,
