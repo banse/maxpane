@@ -117,11 +117,12 @@ four of five getters are liveness checks, `token()` is chosen by the candidate �
   channel window, read more of the channel or re-establish provenance from the chain.
 - **The announce channel has not named the mainnet hook**, so discovery correctly refuses it and
   the operator accepted `pool4.imd.fun/docs` as a *candidate* source. That widens the trust
-  surface, and HATCHES discloses it: `pool4_discovery_source` is its own payload key, a
-  docs-sourced adoption renders `⚠ via docs`, a dev-signed one renders plainly, and
-  `unattributed` reads at least as weakly as `docs` because `None` is where a producer bug comes
-  to rest. A self-post overrides the page. Source words are restated in the widget with an
-  agreement test against `POOL4_DISCOVERY_SOURCES`.
+  surface; `pool4_discovery_source` retains that provenance in its own payload key.
+  A self-post overrides the page. At the owner's request (2026-10-16), HATCHES
+  omits the whole discovery segment, including its detail, source and citation
+  warnings. Discovery and validation in the data layer are unchanged.
+  The live 149×45 preview and four-payload sweep put the protocol board's
+  full layout at 138 columns × 44 rows after the removal (previously 47 rows).
 
 **Mainnet is a different protocol from testnet** and self-adapted because nothing was a
 constant: the reward share rose by half, the reserve floor fell five orders of magnitude. What did

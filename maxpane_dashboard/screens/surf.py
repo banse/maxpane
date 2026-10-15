@@ -1359,7 +1359,15 @@ SURF_POOL4_FULL_LAYOUT_COLUMNS = 138
 #: The two-column native layout, twelve-lever coverage and vault floor
 #: are unchanged. At the owner's 45 rows both columns remain scrollable;
 #: the hero's six cards themselves fit completely.
-SURF_POOL4_FULL_LAYOUT_ROWS = 47
+#:
+#: **2026-10-16 — discovery segment removed, 47 -> 44.**
+#: After the live 149x45 preview, a 37..48-row production sweep at 150
+#: columns measured no-lever content whole at 38, ten levers at 42, and
+#: twelve levers at 44 on both networks. The rail now needs 31 rows;
+#: thirteen chrome rows remain. At 43 the worst case still scrolls and
+#: advertises taller. Contract links, all twelve levers, the VAULT floor
+#: and the independently measured 138-column width remain unchanged.
+SURF_POOL4_FULL_LAYOUT_ROWS = 44
 
 #: The ``4`` POOL4 MARKET body's own full-layout width, swept in situ on
 #: 2026-09-11 and **re-swept on 2026-09-12 after the body was restructured**.
@@ -3681,11 +3689,12 @@ class SurfScreen(DashboardScreen):
         #
         # THE COLUMNS WERE SPLIT TO BALANCE THEIR HEIGHTS, NOT BY WHAT THE
         # PANELS ARE ABOUT, and since 2026-09-14 they no longer balance. At
-        # the worst payload the rail carries 34 rows (HATCHES 23 + VAULT's
+        # the worst payload the rail carries 31 rows (HATCHES 20 + VAULT's
         # floor 10 + one margin) and IS the height pin. The left column
         # carried 34 too until POOL4 FLOW left this body (the owner: the `4`
         # body's RECENT FLOW already shows the same rows). It now carries 28,
-        # SPLIT 15 + RATCHET 11 + two margins, so the pin held at 45. The
+        # SPLIT 15 + RATCHET 11 + two margins. Removing the discovery segment
+        # on 2026-10-16 gave back three rail rows. The
         # pre-mainnet arrangement (HATCHES here, SPLIT/RATCHET/VAULT in the
         # rail) put 38 rows in the rail against 20 here and needed 49.
         #

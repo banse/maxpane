@@ -1,9 +1,8 @@
-"""POOL4 rail: HATCHES -- discovery, the four addresses, and every lever an
+"""POOL4 rail: HATCHES -- contract addresses and every lever an
 owner still holds.
 
 This is the panel that answers *who can still change this thing*. It renders
-``pool4_discovery_state`` / ``pool4_discovery_detail`` (how the hook on screen
-was arrived at), the four addresses the rest of the view reads from, and the
+the contract addresses the rest of the view reads from, and the
 ``pool4_hatches`` row list: one row per owner-held lever, each with the scope
 it lives on, the lever's name, its state, and -- width permitting -- the
 address behind it.
@@ -33,7 +32,7 @@ landed (``body``, ``line``, ``widest`` did the same to ``body = self.query_one
 
 Third-party text
 ----------------
-``detail``, ``addr``, ``pool4_discovery_detail`` and every address key are
+``detail``, ``addr`` and every address key are
 third-party-derived. Each is flattened, stripped of complete ``[...]``-shaped
 runs, escaped with :func:`~maxpane_dashboard.widgets.markup_safety.
 safe_markup`, and only then interpolated into a markup line that is parsed
@@ -63,19 +62,12 @@ from textual.widgets import Static
 
 from maxpane_dashboard.widgets.markup_safety import safe_markup
 from maxpane_dashboard.widgets.address import (
-    COPY_GLYPH,
     ICON_COLS,
     address_text,
     is_address,
 )
 from maxpane_dashboard.widgets.explorer import Explorer, for_network
 from maxpane_dashboard.widgets.surf._fmt import ANTI_POISONING_COLS, DASH
-from maxpane_dashboard.widgets.surf._icons import (
-    keep_units,
-    link_in_order,
-    mark_addresses,
-    unmark,
-)
 from maxpane_dashboard.widgets.surf._pool4 import (
     GLYPH_HINT,
     NETWORK_UNKNOWN,
@@ -93,8 +85,6 @@ from maxpane_dashboard.widgets.surf._pool4 import (
 __all__ = [
     "ADDRESS_LABELS",
     "COMPACT_WIDTH",
-    "CITATION_LABEL",
-    "DISCOVERY_UNKNOWN",
     "FULL_WIDTH",
     "GLYPH_HINT",
     "MAX_ROWS",
@@ -102,10 +92,7 @@ __all__ = [
     "SurfPool4Hatches",
     "TITLE",
     "REWARD_PATH_WORDS",
-    "SOURCE_WORDS",
     "UNKNOWN_PATH_WORD",
-    "UNAUDITABLE_LINE",
-    "UNSOURCED_WORD",
     "UNAVAILABLE_LINE",
     "WIDEN_HINT",
     "fit_cell",
@@ -151,87 +138,11 @@ def fit_cell(value: object, cols: int) -> str:
 TITLE = "HATCHES"
 UNAVAILABLE_LINE = "hatches unavailable"
 
-#: What the discovery line says when ``pool4_discovery_state is None``.
-#: Deliberately not ``"not-discovered"``: that is a *closed vocabulary
-#: member* meaning "discovery ran and found nothing", which is a different
-#: statement from "discovery has not run". Rendering the same words for both
-#: is the FARM/HOUR-SAVED defect CLAUDE.md records.
-DISCOVERY_UNKNOWN = "not run"
-
 #: Rows drawn before the list is cut. Nine labels across five scopes as of
 #: 2026-09-02 (`distributor` and its `dripper` lever joined when pool4 went
 #: live on mainnet); twelve leaves room for a scope to grow a second lever
 #: of the same name without silently dropping one.
 MAX_ROWS = 12
-
-#: The label the citation line carries. ``pool4_discovery_source_tx`` is a
-#: **pointer, not a credential** -- it says where to look, and the chain stays
-#: the authority -- so the line names it in the flattest possible terms and
-#: makes no claim about what it proves.
-CITATION_LABEL = "tx"
-
-#: The one state/citation combination worth surfacing, per
-#: ``surf_models.Pool4Discovery``'s table:
-#:
-#:     not-discovered + None   nothing to cite yet -- expected
-#:     rejected       + hash   the rejection cites the post it judged
-#:     adopted        + hash   the audit trail exists -- healthy
-#:     adopted        + None   AN ADOPTION NOTHING CAN AUDIT
-#:
-#: Only the last row gets a line. The first is the day-one path that actually
-#: runs, and printing "nothing to cite" on every launch would train the reader
-#: to skip the row that matters. That asymmetry **is** how this panel
-#: distinguishes the two ``None`` cases: an expected absence renders no
-#: citation line at all, an unauditable adoption renders this one, in warning
-#: colour, where a citation would have been.
-#:
-#: Expressible only because state and citation are two keys. A merged string
-#: could not say it -- which is the argument that got them separated.
-UNAUDITABLE_LINE = "no citation to audit"
-
-#: How each ``pool4_discovery_source`` renders beside the verdict, and **the
-#: mitigation the operator's decision was conditioned on.**
-#:
-#: The announce channel has not named the mainnet hook, so the operator
-#: accepted ``pool4.imd.fun/docs`` as a *candidate* source. That widens the
-#: trust surface and the chain fingerprint does not close it: a ``0x2840``-
-#: shaped address mines in ~20,000 tries, four of the five getters are pure
-#: liveness checks, and ``token()`` is the candidate's own choice. Prevention
-#: was not available; **disclosure was, and this panel is where it is
-#: delivered** -- so a dev-signed adoption and a docs-sourced one must never
-#: look the same.
-#:
-#: The order is ``POOL4_DISCOVERY_SOURCES``' own, strongest first, so this
-#: panel does not invent a ranking:
-#:
-#: * ``self-post``    -- signed by the announce wallet's key. Unforgeable.
-#:                       Rendered plainly, with no warning.
-#: * ``docs``         -- a page anyone with write access to it can change.
-#:                       Warned.
-#: * ``unattributed`` -- adopted, source not recorded. Warned, because it must
-#:                       read *at least as weakly as* ``docs``.
-#:
-#: The words are not imported from ``surf_models`` (a widget may not import
-#: ``data/``); ``test_the_source_vocabulary_agrees_with_the_contract`` asserts
-#: this mapping covers ``POOL4_DISCOVERY_SOURCES`` exactly, in both directions,
-#: so a fourth source reddens the suite rather than falling through to the
-#: unattributed branch and quietly looking like one of these three.
-SOURCE_WORDS = {
-    "self-post": ("", "via self-post"),
-    "docs": ("yellow", "⚠ via docs"),
-    "unattributed": ("yellow", "⚠ source unattributed"),
-}
-
-#: An adoption whose source key is ``None``.
-#:
-#: ``None`` is where a producer bug comes to rest, and a renderer treating it
-#: as "nothing to say" would draw a docs adoption identically to a signed one
-#: -- undoing the disclosure by omission. It is therefore rendered **at least
-#: as weakly as ``docs``**, in its own words so the producer bug stays visible
-#: rather than hiding inside ``unattributed``. ``None`` must never render as
-#: ``self-post``: absence is not provenance, and this is the one key where
-#: mistaking it for the strong answer relaunches the problem A27 closed.
-UNSOURCED_WORD = "⚠ source unrecorded"
 
 #: The shape of the reward path, annotated onto the distributor's address row.
 #:
@@ -291,7 +202,6 @@ _ADDR_CELL_COLS = _ADDR_COLS + ICON_COLS                             # 19
 #: the trade. A row with no address keeps all 17 cells for its detail.
 _GRID_CELL_COLS = _ADDR_COLS
 _GRID_ADDR_COLS = _GRID_CELL_COLS - ICON_COLS                        # 15
-_DISCOVERY_LABEL_COLS = 9
 _ADDR_LABEL_COLS = 5
 _GAP = 1
 
@@ -502,104 +412,8 @@ def _address_markup(
     return head
 
 
-def _source_markup(state: str, source: object) -> str:
-    """The provenance clause that rides beside the verdict word.
-
-    Rendered only on an adoption: ``not-discovered`` and ``rejected`` have
-    nothing adopted to attribute, and printing a provenance note on the
-    day-one path every launch is how a reader learns to skip the clause that
-    matters. Same asymmetry the citation uses one line below.
-    """
-    if state != "adopted":
-        return ""
-    word = strip_tags(source)
-    style, text = SOURCE_WORDS.get(word, ("yellow", UNSOURCED_WORD))
-    body = f"[{style}]{safe_markup(text)}[/]" if style else safe_markup(text)
-    return f" [dim]·[/] {body}"
-
-
-def _discovery_markup(
-    state: object, detail: object, source_tx: object, source: object, room: int,
-    explorer: Explorer | None = None,
-) -> list[str]:
-    """The discovery block: the verdict, its sentence, and the post it rests on.
-
-    Three renderings, and the split between them is the whole point of
-    ``pool4_discovery_source_tx`` existing as its own key:
-
-    * **the verdict word**, on the label line;
-    * **the detail** -- WP3's sentence -- as a single elastic summary line
-      fitted to *room*, ellipsised when it does not fit. It is a summary by
-      design and the ``…`` says so; the untruncated value stays in the cache
-      slot for an auditor. After amendment A27 every clause in it describes a
-      **forgeable** gate (a ``0x2840``-shaped address mines in ~20,000 tries,
-      four of five getters are liveness checks, ``token()`` is the candidate's
-      own choice), so losing its tail to width costs a reader nothing they
-      could have relied on;
-    * **the citation**, on its own line, fitted to the same room but *never*
-      competing with the sentence for it.
-
-    That last bullet is finding S18's actual fix. While the citation was welded
-    to the tail of the sentence upstream, any fitting pass dropped it first --
-    and after A27 it is the only unforgeable evidence there is. Two keys, two
-    lines, and the load-bearing one cannot be crowded out by the decorative one.
-
-    The hash is truncated **prefix-first** (``fit_cell``: head plus ``…``),
-    because the prefix is what an explorer searches on. At the pinned body
-    width that is 34 hex digits -- unambiguous for any transaction that will
-    ever exist -- against the 8 digits the old address-window form gave it.
-
-    *room* is the panel's real text budget less this block's indent, never a
-    tier constant: a constant gave the detail one rendering from a 106-column
-    terminal to a 260-column one, with 115 spare columns going unused beside
-    an ellipsis.
-    """
-    word = strip_tags(state) or DISCOVERY_UNKNOWN
-    style = "dim" if word in (DISCOVERY_UNKNOWN, "not-discovered") else ""
-    label = safe_markup(_pad("discovery", _DISCOVERY_LABEL_COLS))
-    head = f"[dim]{label}[/] "
-    head += f"[{style}]{safe_markup(word)}[/]" if style else safe_markup(word)
-    head += _source_markup(word, source)
-    lines = [head]
-    indent = " " * (_DISCOVERY_LABEL_COLS + _GAP)
-
-    text = strip_tags(detail)
-    if text:
-        # The sentence names the adopted hook in prose. Each address is
-        # windowed to the 17-cell anti-poisoning form -- the address block's
-        # own window a few lines below, not the lever grid's 15, which is a
-        # grid-column trade and does not apply to a line fitted to ``room`` --
-        # with its copy icon, *before* the fit, so ``room`` pays for the icon.
-        # The fit never bisects a window-and-icon unit (``keep_units``): at the
-        # pinned 99 a whole 42-character address used to be cut to 26 hex with
-        # its icon gone, while the same line carried it at 220. Signals' detail
-        # is the same shape and is fitted the same way.
-        marked, addresses, spans = mark_addresses(text, _ADDR_COLS)
-        kept = keep_units(marked, spans, fit_cell(marked, room))
-        if kept:
-            line = parse_line(f"[dim]{indent}{safe_markup(unmark(kept))}[/]")
-            if line is not None:
-                link_in_order([line], addresses[: kept.count(COPY_GLYPH)], explorer)
-                lines.append(line)
-
-    citation = strip_tags(source_tx)
-    if citation:
-        shown = fit_cell(citation, max(room - len(CITATION_LABEL) - 1, 0))
-        lines.append(
-            f"[dim]{indent}{CITATION_LABEL} [/]{safe_markup(shown)}"
-        )
-    elif word == "adopted":
-        # The row the two-key split exists to make sayable. Warning colour,
-        # in the position a citation would have occupied, so it reads as an
-        # absence rather than as one more dim note.
-        lines.append(
-            f"[yellow]{indent}⚠ {safe_markup(fit_cell(UNAUDITABLE_LINE, room))}[/]"
-        )
-    return lines
-
-
 class SurfPool4Hatches(Vertical):
-    """Discovery, the four addresses, and every owner-held lever.
+    """Contract addresses and every owner-held lever.
 
     Read-only (CLAUDE.md hard constraint 1): see the module docstring.
     """
@@ -669,13 +483,6 @@ class SurfPool4Hatches(Vertical):
         self._payload = {
             "rows": pool4_hatches,
             "network": pool4_network,
-            "discovery_state": pool4_discovery_state,
-            "discovery_detail": pool4_discovery_detail,
-            # Kept beside the verdict, never merged into it: the detail is a
-            # sentence, this is a pointer to a credential, and a reader must
-            # be able to tell them apart (surf_models.Pool4Discovery).
-            "discovery_source_tx": pool4_discovery_source_tx,
-            "discovery_source": pool4_discovery_source,
             "reward_path": pool4_reward_path,
             "addrs": {
                 "pool4_hook_addr": pool4_hook_addr,
@@ -708,27 +515,15 @@ class SurfPool4Hatches(Vertical):
         payload = self._payload
         if payload.get("rows") is not None:
             return False
-        if payload.get("discovery_state") is not None:
-            return False
         return not any(payload.get("addrs", {}).values())
 
-    def _content_lines(self, tier: str, room: int) -> list[Text]:
+    def _content_lines(self, tier: str) -> list[Text]:
         payload = self._payload
         # The chain every address on this panel is on: the sweep's network word
         # (``pool4_network``), resolved through the allowlist -- an unknown or
         # unset word links nothing rather than guessing (widgets/explorer.py).
         explorer = for_network(payload.get("network"))
         markup: list[str] = []
-        markup.extend(
-            _discovery_markup(
-                payload.get("discovery_state"),
-                payload.get("discovery_detail"),
-                payload.get("discovery_source_tx"),
-                payload.get("discovery_source"),
-                room,
-                explorer,
-            )
-        )
         # No blank separator here, and none before the lever list below.
         #
         # WP8 needed two rows back off this panel to keep the body's height
@@ -785,7 +580,7 @@ class SurfPool4Hatches(Vertical):
             markup.append(f"[dim]as of {safe_markup(strip_tags(as_of))}[/]")
 
         # Lines that carry a copy icon arrive already built as ``Text`` (the
-        # address block, a lever's address, the discovery detail); only the
+        # address block or a lever's address); only the
         # plain markup lines are parsed here.
         return [
             t
@@ -817,27 +612,16 @@ class SurfPool4Hatches(Vertical):
             return
 
         # Measure the tier that was actually built, rather than comparing the
-        # budget against a constant: a data-dependent line (a long discovery
-        # detail, an unusually wide state word) can exceed FULL_WIDTH, and a
+        # budget against a constant: a data-dependent line (an unusually wide
+        # state word) can exceed FULL_WIDTH, and a
         # marker keyed off `budget < FULL_WIDTH` would stay dark while that
         # line was being clipped by CSS in silence. Measured this way the
         # marker means what it says at every width and for every payload.
         budget = self._text_budget()
-        indent = _DISCOVERY_LABEL_COLS + _GAP
-        # ``budget == 0`` means "not laid out yet"; the full tier's own width
-        # keeps the pre-layout frame sensible and ``on_resize`` re-renders with
-        # the real number the moment there is one.
-        room = max(budget - indent, 1) if budget else FULL_WIDTH - indent
-        # The discovery block is fitted to the panel, so it never drives the
-        # tier and never lights the marker: the detail is a one-line summary
-        # whose truncation announces itself in its own `…`, and the citation --
-        # the only part a reader can check anything against -- has its own line
-        # and is never crowded out by it. `‹ widen` stays what it is on this
-        # panel: a whole column of the hatch grid was shed.
-        content = self._content_lines("full", room)
+        content = self._content_lines("full")
         if budget and widest_line(content) > budget:
             self._widen = True
-            content = self._content_lines("compact", room)
+            content = self._content_lines("compact")
         else:
             self._widen = False
 

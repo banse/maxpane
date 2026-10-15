@@ -363,39 +363,16 @@ async def test_hatches_block_keeps_seventeen_and_the_grid_gives_up_two_at_the_pi
             r for r in _rows(app) if "HATCHES" in r)
 
 
-async def test_hatches_discovery_prose_gets_an_icon_and_the_citation_does_not():
-    """On the discovery detail's own row, at the ``p`` pin and wide.
-
-    Located by row, not by "some icon copies an address": the address block a
-    few lines below carries its own icons, so a whole-panel check passes with
-    the detail's icon cut off. At the pin the detail is fitted to a 35-cell
-    room; the address must arrive as its 17-cell window with the icon, never
-    cut mid-window with the icon gone. The citation row is a transaction hash
-    and carries no icon at either width.
-    """
+async def test_hatches_keep_the_hook_copy_link_after_discovery_is_removed():
     payload = _mainnet_pool4_payload()
-    named = PROSE_ADDRESS_RE.search(payload["pool4_discovery_detail"]).group(0)
-    assert not is_address(payload["pool4_discovery_source_tx"])
     for width in (SURF_POOL4_FULL_LAYOUT_COLUMNS, 220):
         app = _app(payload)
         async with app.run_test(size=(width, 60)) as pilot:
             await pilot.press("e")
             await pilot.pause()
-            rows = _rows(app)
-            # HATCHES sits in the rail, so its lines share a row with the
-            # left column: located by content, never by a row's start.
-            label_y = next(i for i, r in enumerate(rows) if "discovery adopted" in r)
-            detail_y = label_y + 1
-            assert "adopted 0x" in rows[detail_y], (width, rows[detail_y])
-            cite_y = next(i for i in range(detail_y + 1, len(rows))
-                          if " tx 0x" in rows[i])
-            targets = icon_targets(app)
-            on_detail = [a for _x, y, a in targets if y == detail_y]
-            assert on_detail == [named], (width, rows[detail_y], on_detail)
-            assert f"{short_address(named, 17)} {COPY_GLYPH}" in rows[detail_y], (
-                width, rows[detail_y])
-            assert not [t for t in targets if t[1] == cite_y], (width, rows[cite_y])
-            assert COPY_GLYPH not in rows[cite_y]
+            text = "\n".join(_rows(app))
+            assert "discovery adopted" not in text and "no citation to audit" not in text
+            assert payload['pool4_hook_addr'] in {addr for _x, _y, addr in icon_targets(app)}
 
 
 # -- the 4 body: STAKERS ---------------------------------------------------

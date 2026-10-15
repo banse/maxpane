@@ -33,7 +33,6 @@ from rich.cells import cell_len
 from textual.app import App
 
 from maxpane_dashboard.data.surf_models import (
-    POOL4_DISCOVERY_SOURCES,
     POOL4_HATCH_SCOPES,
     POOL4_REWARD_PATHS,
 )
@@ -196,37 +195,6 @@ _ADOPTED_DETAIL = (
 #: checks and ``token()`` is a value the candidate's own contract picks. It is
 #: a pointer, not a credential -- the chain stays the authority.
 _SOURCE_TX = "0x" + "3f" * 32
-
-#: The text budget ``SurfPool4Hatches`` really gets at the pinned body width,
-#: **measured inside ``#surf-pool4-left`` rather than in this harness**: at
-#: ``screens/surf.SURF_POOL4_FULL_LAYOUT_COLUMNS = 106`` the panel is 50
-#: columns and its child ``Static``'s ``padding: 0 1`` leaves 48.
-#:
-#: Hand-typed rather than imported, on the same footing as
-#: ``test_surf_screen.POOL4_LEFT_NEED``: a widget test that imported the
-#: screen's seam would follow it silently wherever it went, and the point of
-#: the number here is that S18's evidence must reach the screen at *this*
-#: width. If WP8 moves the seam this literal is stale and should be
-#: re-measured, not re-derived.
-HATCHES_PINNED_PANEL_COLUMNS = 50
-HATCHES_PINNED_BUDGET = HATCHES_PINNED_PANEL_COLUMNS - 2
-
-#: Members a panel deliberately fits to the **panel** rather than to its tier,
-#: and which therefore cannot be part of a tier pin. HATCHES' discovery detail
-#: is elastic by design after S18: it uses whatever columns it is given, so a
-#: pin measured with it present would measure the terminal, not the panel.
-#: ``test_the_discovery_detail_is_fitted_to_the_panel_not_to_a_constant``
-#: covers what the pin no longer can.
-_ELASTIC_KEYS = {
-    "SurfPool4Hatches": ("pool4_discovery_detail", "pool4_discovery_source_tx"),
-}
-
-
-def _pin_payload(cls, payload):
-    """*payload* without the panel's elastic members -- see :data:`_ELASTIC_KEYS`."""
-    drop = _ELASTIC_KEYS.get(cls.__name__, ())
-    return {k: v for k, v in payload.items() if k not in drop}
-
 
 _PANELS = (
     (SurfPool4Ratchet, R, RATCHET_HEALTHY),
@@ -799,217 +767,21 @@ async def test_a_wholly_unread_vault_says_so():
 
 
 @pytest.mark.asyncio
-async def test_discovery_not_run_and_not_discovered_say_different_things():
-    """"Discovery has not run" and "discovery ran and found nothing" are two
-    states, and rendering one word for both is the FARM/HOUR-SAVED defect.
-    """
-    _w, unrun = await _render(
-        SurfPool4Hatches, dict(HATCHES_HEALTHY, pool4_discovery_state=None,
-                               pool4_discovery_detail=None)
-    )
-    _w, swept = await _render(SurfPool4Hatches, HATCHES_HEALTHY)
-    unrun_line = _line_starting(unrun, "discovery")
-    swept_line = _line_starting(swept, "discovery")
-    assert unrun_line != swept_line
-    assert H.DISCOVERY_UNKNOWN in unrun_line
-    assert "not-discovered" not in unrun_line
-    assert "not-discovered" in swept_line
-
-
-# ---------------------------------------------------------------------------
-# S18 -- the adoption's evidence has to reach the screen, and the state/
-# citation pair has to stay readable as a pair
-# ---------------------------------------------------------------------------
-
-
-def _discovery_block(lines) -> list[str]:
-    """The ``discovery`` label row's own indented continuation rows."""
-    painted = _painted(lines)
-    start = next(
-        i for i, line in enumerate(painted) if line.strip().startswith("discovery")
-    )
-    out = []
-    for line in painted[start + 1:]:
-        if not line.startswith(" " * (H._DISCOVERY_LABEL_COLS + H._GAP + 1)):
-            break
-        out.append(line.strip())
-    return out
-
-
-def _verdict_line(lines) -> str:
-    """Just the ``discovery <state> · <provenance>`` row.
-
-    The provenance clause rides on this row, and the row below it can carry
-    the *citation's* own warning -- two different disclosures with the same
-    glyph. A test that asserted over the whole block therefore caught the
-    wrong ``⚠``; scoping to the verdict row is what makes the assertion about
-    provenance rather than about whichever warning happened to be nearby.
-    """
-    return next(
-        line.strip() for line in _painted(lines)
-        if line.strip().startswith("discovery")
-    )
-
-
-def _discovery_pair(lines) -> str:
-    """The verdict word **and** its block, which is the unit the semantics
-    table is about.
-
-    ``_discovery_block`` alone excludes the label row, and the label row is
-    where the state word lives -- so comparing blocks made ``rejected`` + hash
-    and ``adopted`` + hash look identical when the detail was held constant.
-    The panel distinguishes them perfectly well; the extraction did not.
-    """
-    painted = _painted(lines)
-    start = next(
-        i for i, line in enumerate(painted) if line.strip().startswith("discovery")
-    )
-    return "\n".join([painted[start].strip(), *_discovery_block(lines)])
-
-
-async def _hatches(state, detail, source_tx, panel=None):
-    return await _render(
-        SurfPool4Hatches,
-        dict(HATCHES_HEALTHY, pool4_discovery_state=state,
-             pool4_discovery_detail=detail,
-             pool4_discovery_source_tx=source_tx),
-        size=(panel or HATCHES_PINNED_PANEL_COLUMNS, 60),
-    )
-
-
-@pytest.mark.asyncio
-async def test_the_citation_renders_on_its_own_line_at_the_pinned_width():
-    """S18's fix, at the width that matters.
-
-    The citation used to arrive welded to the tail of a ~94-character sentence
-    and was therefore the first thing any fitting pass dropped -- so what
-    reached the screen was the address the reader could already see four lines
-    below, and none of the evidence. It now has its own line and its own
-    width, and cannot be crowded out.
-    """
-    _w, lines = await _hatches("adopted", _ADOPTED_DETAIL, _SOURCE_TX)
-    block = _discovery_block(lines)
-    cite = [line for line in block if line.startswith(H.CITATION_LABEL + " ")]
-    assert len(cite) == 1, block
-    assert _SOURCE_TX[:34] in cite[0], cite[0]
-
-
-@pytest.mark.asyncio
-async def test_the_citation_keeps_its_prefix_when_it_is_truncated():
-    """A hash is a pointer, and the prefix is the half an explorer searches on,
-    so it is truncated head-first with a trailing ``…`` -- never middle-elided
-    into a form that finds nothing.
-    """
-    _w, lines = await _hatches("adopted", _ADOPTED_DETAIL, _SOURCE_TX)
-    cite = next(
-        line for line in _discovery_block(lines)
-        if line.startswith(H.CITATION_LABEL + " ")
-    )
-    shown = cite[len(H.CITATION_LABEL) + 1:]
-    assert shown.startswith("0x3f3f3f3f")
-    assert shown.endswith("…")
-    assert _SOURCE_TX.startswith(shown[:-1])      # a real prefix, not a window
-
-    # Wide enough, and the whole hash is there with nothing elided.
-    _w, wide = await _hatches("adopted", _ADOPTED_DETAIL, _SOURCE_TX, panel=140)
-    assert any(_SOURCE_TX in line for line in _discovery_block(wide))
-
-
-@pytest.mark.asyncio
-async def test_the_citation_is_never_crowded_out_by_the_detail():
-    """The property the two-key split buys, stated so it cannot regress.
-
-    However long the producer's sentence gets, it competes for its **own**
-    line, not for the citation's. This is the invariant a merged string could
-    not offer at any width.
-    """
-    _w, lines = await _hatches(
-        "adopted", "adopted " + "x" * 400, _SOURCE_TX
-    )
-    block = _discovery_block(lines)
-    assert any(line.startswith(H.CITATION_LABEL + " ") for line in block), block
-    assert _SOURCE_TX[:20] in " ".join(block)
-
-
-@pytest.mark.asyncio
-async def test_the_four_state_and_citation_combinations_read_differently():
-    """``surf_models.Pool4Discovery``'s table, rendered.
-
-    Each row is a distinct statement and the panel must not collapse any two
-    of them -- above all the two ``None``-citation rows, which are an expected
-    absence and an unauditable adoption respectively.
-    """
-    rendered = {}
-    for label, state, tx in (
-        ("not-discovered/none", "not-discovered", None),
-        ("rejected/hash", "rejected", _SOURCE_TX),
-        ("adopted/hash", "adopted", _SOURCE_TX),
-        ("adopted/none", "adopted", None),
-    ):
-        _w, lines = await _hatches(state, _ADOPTED_DETAIL, tx)
-        rendered[label] = _discovery_pair(lines)
-    assert len(set(rendered.values())) == 4, rendered
-
-
-@pytest.mark.asyncio
-async def test_an_adoption_with_no_citation_does_not_look_like_an_expected_absence():
-    """The row worth surfacing, and the reason the citation is a separate key.
-
-    ``not-discovered`` + ``None`` is the day-one path and says nothing; it
-    would be noise to print "nothing to cite" on every launch, and printing it
-    is how a reader learns to skip the row that matters. ``adopted`` + ``None``
-    is an adoption nothing can audit, and it gets a warning line **in the
-    position the citation would have occupied** -- so the absence is what the
-    reader sees, not an empty space.
-    """
-    _w, expected = await _hatches("not-discovered", _ADOPTED_DETAIL, None)
-    _w, unauditable = await _hatches("adopted", _ADOPTED_DETAIL, None)
-
-    assert H.UNAUDITABLE_LINE not in "\n".join(_discovery_block(expected))
-    assert H.UNAUDITABLE_LINE in "\n".join(_discovery_block(unauditable))
-    assert "⚠" in "\n".join(_discovery_block(unauditable))
-
-    # And an adoption that *can* be audited says nothing of the kind.
-    _w, healthy = await _hatches("adopted", _ADOPTED_DETAIL, _SOURCE_TX)
-    assert H.UNAUDITABLE_LINE not in "\n".join(_discovery_block(healthy))
-
-
-@pytest.mark.asyncio
-async def test_the_discovery_block_is_fitted_to_the_panel_not_to_a_constant():
-    """The original S18 defect, kept pinned after the simplification.
-
-    The block used to be windowed to its **tier's** width -- a constant 35
-    cells -- so it rendered identically at 106 columns and at 260, with 115
-    spare columns going unused beside an ellipsis. A wider panel must render
-    more, and never less.
-    """
-    widths = {}
-    for panel in (HATCHES_PINNED_PANEL_COLUMNS, 70, 100, 140):
-        _w, lines = await _hatches(
-            "adopted", _ADOPTED_DETAIL, _SOURCE_TX, panel=panel
-        )
-        widths[panel] = max(cell_len(line) for line in _discovery_block(lines))
-    assert len(set(widths.values())) > 1, widths
-    assert sorted(widths) == sorted(widths, key=widths.get), widths
-
-
-@pytest.mark.asyncio
-async def test_a_truncated_detail_does_not_light_the_marker():
-    """``‹ widen`` means a whole column of the hatch grid was shed.
-
-    The discovery detail is a one-line elastic **summary** whose truncation
-    announces itself in its own ``…``, and after A27 every clause in it
-    describes a forgeable gate -- so more columns buy a reader nothing they
-    could have relied on. The citation, which they could, is on its own line
-    and is never dropped. Marking here would light the marker at the pinned
-    width on every adopted payload, which is how a marker stops meaning
-    anything.
-    """
-    widget, lines = await _hatches("adopted", "adopted " + "x" * 400, _SOURCE_TX)
-    block = _discovery_block(lines)
-    assert any(line.endswith("…") for line in block), block
-    assert widget._widen is False
-    assert H.WIDEN_HINT not in _body(lines)
+@pytest.mark.parametrize("state,source,tx", [
+    (None, None, None), ("not-discovered", None, None),
+    ("adopted", "docs", None), ("adopted", "self-post", _SOURCE_TX),
+])
+async def test_discovery_section_is_removed_but_contracts_and_levers_remain(state, source, tx):
+    _w, lines = await _render(SurfPool4Hatches, dict(
+        HATCHES_HEALTHY, pool4_discovery_state=state, pool4_discovery_source=source,
+        pool4_discovery_detail=_ADOPTED_DETAIL, pool4_discovery_source_tx=tx))
+    body = _body(lines)
+    for removed in ("discovery", "adopted", "via docs", "via self-post", "no citation", "four getters", _SOURCE_TX[:10]):
+        assert removed not in body
+    assert _line_starting(lines, "hook ")
+    assert _line_starting(lines, "token ")
+    assert "owner" in body and "renounced" in body
+    assert "as of 12:34" in body
 
 
 @pytest.mark.asyncio
@@ -1067,8 +839,10 @@ async def test_unread_levers_and_an_empty_lever_list_say_different_things():
 
 
 @pytest.mark.asyncio
-async def test_a_wholly_unread_hatches_panel_says_so():
-    _w, lines = await _render(SurfPool4Hatches, {"pool4_network": "SEPOLIA"})
+@pytest.mark.parametrize('discovery', [None, 'adopted'])
+async def test_a_wholly_unread_hatches_panel_says_so(discovery):
+    _w, lines = await _render(SurfPool4Hatches, {
+        "pool4_network": "SEPOLIA", "pool4_discovery_state": discovery})
     assert H.UNAVAILABLE_LINE in _body(lines)
 
 
@@ -1210,87 +984,6 @@ def test_every_hatch_scope_fits_its_column():
         assert _cl(key) > H._SCOPE_COLS, f"{key!r} did not need shortening"
 
 
-def test_the_source_vocabulary_agrees_with_the_contract():
-    """Both directions. A fourth source added to ``POOL4_DISCOVERY_SOURCES``
-    must redden here rather than fall through to the unattributed branch and
-    quietly look like one of these three; and a word invented in the widget
-    with no contract behind it reddens too.
-    """
-    assert set(H.SOURCE_WORDS) == set(POOL4_DISCOVERY_SOURCES)
-
-
-@pytest.mark.asyncio
-async def test_a_docs_adoption_and_a_signed_adoption_do_not_look_the_same():
-    """**The disclosure the operator's decision was conditioned on.**
-
-    The announce channel has not named the mainnet hook, so ``pool4.imd.fun/
-    docs`` was accepted as a candidate source. That widens the trust surface
-    and the chain fingerprint does not close it -- a ``0x2840``-shaped address
-    mines in ~20,000 tries, four of the five getters are pure liveness checks,
-    and ``token()`` is the candidate's own choice. Prevention was not
-    available; disclosure was, and it is delivered here. A dev-signed adoption
-    and a docs-sourced one looking alike would silently undo it.
-    """
-    rendered = {}
-    for source in ("self-post", "docs"):
-        _w, lines = await _render(
-            SurfPool4Hatches,
-            dict(HATCHES_HEALTHY, pool4_discovery_state="adopted",
-                 pool4_discovery_source_tx=_SOURCE_TX,
-                 pool4_discovery_source=source),
-        )
-        rendered[source] = _verdict_line(lines)
-
-    assert rendered["self-post"] != rendered["docs"]
-    assert "⚠" in rendered["docs"], rendered["docs"]
-    assert "⚠" not in rendered["self-post"], rendered["self-post"]
-    assert "docs" in rendered["docs"]
-    assert "self-post" in rendered["self-post"]
-
-
-@pytest.mark.asyncio
-async def test_a_missing_or_unknown_source_reads_at_least_as_weakly_as_docs():
-    """``None`` is where a producer bug comes to rest, and a renderer treating
-    it as "nothing to say" would draw a docs adoption identically to a signed
-    one -- undoing the disclosure by omission. So an unrecorded source, an
-    explicitly ``unattributed`` one, and a word this build has never heard of
-    are all warned about, and none of them may render as ``self-post``.
-    """
-    weak = {}
-    for label, source in (
-        ("none", None), ("unattributed", "unattributed"), ("bogus", "BASE-post"),
-    ):
-        _w, lines = await _render(
-            SurfPool4Hatches,
-            dict(HATCHES_HEALTHY, pool4_discovery_state="adopted",
-                 pool4_discovery_source_tx=_SOURCE_TX,
-                 pool4_discovery_source=source),
-        )
-        weak[label] = _verdict_line(lines)
-        assert "⚠" in weak[label], (label, weak[label])
-        assert "self-post" not in weak[label], (label, weak[label])
-
-    # An unrecorded source stays distinguishable from a declared one, so a
-    # producer bug does not hide inside the vocabulary member.
-    assert weak["none"] != weak["unattributed"]
-    assert H.UNSOURCED_WORD.strip("⚠ ") in weak["none"]
-
-
-@pytest.mark.asyncio
-async def test_provenance_is_stated_only_where_there_is_an_adoption():
-    """``not-discovered`` and ``rejected`` have nothing adopted to attribute,
-    and a provenance note on the day-one path every launch is how a reader
-    learns to skip the clause that matters. Same asymmetry as the citation.
-    """
-    for state in ("not-discovered", "rejected"):
-        _w, lines = await _render(
-            SurfPool4Hatches,
-            dict(HATCHES_HEALTHY, pool4_discovery_state=state,
-                 pool4_discovery_source="docs"),
-        )
-        assert "via" not in _verdict_line(lines)
-
-
 @pytest.mark.asyncio
 async def test_a_bond_reserve_never_renders_as_an_open_market():
     """D1, and this panel has now been wrong in both directions.
@@ -1420,7 +1113,7 @@ async def test_the_full_width_pin_is_the_widest_full_tier_line(cls, mod, payload
     column too high both redden this. Measured in situ, inside the real
     container, so the child ``Static``'s own padding is paid for.
     """
-    widget, lines = await _render(cls, _pin_payload(cls, payload), size=(100, 40))
+    widget, lines = await _render(cls, payload, size=(100, 40))
     assert widget._widen is False
     assert max(_content_widths(lines)) == mod.FULL_WIDTH
 
@@ -1435,7 +1128,7 @@ async def test_the_compact_width_pin_is_the_widest_compact_tier_line(
     is the tier's own width and not CSS's.
     """
     widget, lines = await _render(
-        cls, _pin_payload(cls, payload), size=(mod.FULL_WIDTH + 1, 40)
+        cls, payload, size=(mod.FULL_WIDTH + 1, 40)
     )
     assert widget._widen is True
     assert max(_content_widths(lines)) == mod.COMPACT_WIDTH

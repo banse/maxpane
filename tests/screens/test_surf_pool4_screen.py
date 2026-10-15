@@ -145,10 +145,10 @@ POOL4_RAIL_NEED = 50        # SurfPool4Hatches', plus the column's own gutter
 #: three payloads when POOL4 FLOW left the body.
 #: The four native panels still clear at 99 columns. The six-card overview
 #: makes the whole protocol view 141 columns; its direct-route row binds.
-#: Nine hero rows add two rows over the old hero: 13 chrome + 34 body = 47.
+#: Discovery removal measured on 2026-10-16: 13 chrome + 31 body = 44.
 MEASURED_POOL4_BODY_COLUMNS = 99
 MEASURED_POOL4_COLUMNS = 138
-MEASURED_POOL4_ROWS = 47
+MEASURED_POOL4_ROWS = 44
 
 
 def _pool4_payload(**overrides) -> dict:
@@ -1047,9 +1047,8 @@ def test_the_pool4_body_fits_inside_the_documented_app_width() -> None:
 
 # -- the p body's own measured height (2026-09-01, re-swept 2026-09-02) ---
 #
-# Re-swept on 2026-10-12 after the nine-row rack hero: 13 rows of chrome,
-# native content unchanged. No levers needs 38, ten needs 44, twelve on
-# Sepolia needs 46, and the mainnet twelve-lever worst case needs 47.
+# Re-swept on 2026-10-16 after discovery removal: 13 rows of chrome.
+# No levers needs 38, ten needs 42, and twelve needs 44 on both networks.
 #
 # The sweep runs 36..55 -- nine rows below the measured 45 and ten above,
 # never starting at it, and never starting at the 44 it replaced either. It
@@ -1060,14 +1059,8 @@ def test_the_pool4_body_fits_inside_the_documented_app_width() -> None:
 
 #: The payloads the height sweep runs, and the last one is the pin's own.
 #:
-#: **The network dimension is not decoration.** Every Sepolia body here fits
-#: in 43 or less -- the twelve-lever one needs exactly 43 -- so a sweep of
-#: Sepolia payloads alone can say nothing about a pin of 44 from underneath,
-#: and the first version of this test after the mainnet re-sweep made its
-#: below-the-pin claim against ``_pool4_hatch_payload(12)`` for exactly that
-#: reason and passed at 43 with the pin one row above it. THE SPLIT is three
-#: rows taller on mainnet, so ``mainnet-capped`` is the body the pin actually
-#: describes and is the only payload the below-the-pin branch may assert on.
+#: Both networks are measured: mainnet's SPLIT is three rows taller, even
+#: though the twelve-lever rail now binds both at the same 44-row boundary.
 _POOL4_HEIGHT_PAYLOADS = {
     "ten-levers": lambda: None,
     "no-levers": lambda: _pool4_hatch_payload(0),
@@ -1081,7 +1074,7 @@ _POOL4_HEIGHT_PAYLOADS = {
 @pytest.mark.parametrize("payload_name", sorted(_POOL4_HEIGHT_PAYLOADS))
 #: Include each newly measured payload onset as well as the overall pin.
 @pytest.mark.parametrize(
-    "rows", boundary_set(SURF_POOL4_FULL_LAYOUT_ROWS, 34, 57, 38, 44, 46)
+    "rows", boundary_set(SURF_POOL4_FULL_LAYOUT_ROWS, 34, 57, 38, 42)
 )
 async def test_the_pool4_body_is_whole_from_its_pinned_height(
     rows, payload_name
@@ -1182,8 +1175,8 @@ async def test_the_pool4_height_pin_is_measured_against_the_column_it_describes(
                         rail.virtual_size.height)
             chrome = pilot.app.size.height - left.size.height
 
-    assert worst == 34, (
-        f"the body's worst-case content is {worst} rows, not the 34 the pin "
+    assert worst == 31, (
+        f"the body's worst-case content is {worst} rows, not the 31 the pin "
         "is derived from -- re-sweep it"
     )
     assert worst + chrome == SURF_POOL4_FULL_LAYOUT_ROWS
@@ -1874,93 +1867,23 @@ def test_the_pool4_rail_has_one_floored_fr_and_the_left_column_none() -> None:
         assert block[f"#{column}"].get("scrollbar-gutter") == "stable", column
 
 
-async def test_the_adopted_discovery_detail_does_not_move_the_pool4_pin() -> None:
-    """D8: the day-one payload is the *short* discovery detail, so the pin
-    was first measured against the narrow case.
-
-    CLAUDE.md's rule is to measure a data-dependent width against the state
-    the data is normally in, and "normally" for this key changes the moment a
-    mainnet hook is adopted: the detail goes from one clause to a sentence
-    plus a 66-character transaction hash. On the binding column. That is the
-    shape that moves pins, so it is measured rather than assumed.
-
-    It does not move this one, and the second half of this test is what
-    explains why -- but the property it asserts **changed with S18 and the
-    old one was the defect**. It used to assert *constancy*: that the block
-    rendered identically at every width. That was true, and it was true
-    because ``_discovery_markup`` windowed the detail to its tier's own
-    width, a fixed 35 cells, leaving 115 spare columns unused beside an
-    ellipsis at 150. The correct property is **monotonicity** -- a wider
-    panel renders more and never less -- transcribed from WP4's own
-    ``test_the_discovery_block_is_fitted_to_the_panel_not_to_a_constant``.
-
-    A test asserting the old property would now fail *for the right reason*
-    and be "fixed" by reverting a real improvement, which is the second-worst
-    outcome available; asserting nothing at all would leave the pin half
-    green if the widget ever went back to a constant. So the property is
-    restated rather than dropped.
-    """
-    payload = _frozen_payload(
-        pool4_network="MAINNET",
-        pool4_discovery_state="adopted",
+async def test_hidden_discovery_does_not_change_the_visible_hatches_content() -> None:
+    payload = _frozen_payload(pool4_network="MAINNET", pool4_discovery_state="adopted",
         pool4_discovery_detail=_ADOPTED_DISCOVERY_DETAIL,
-        pool4_discovery_source_tx=_ADOPTED_SOURCE_TX,
-    )
-    assert len(_ADOPTED_DISCOVERY_DETAIL) > 80, (
-        "the fixture stopped being the long-detail case it is named for"
-    )
-    assert "· tx" not in _ADOPTED_DISCOVERY_DETAIL, (
-        "the fixture merged the citation back into the detail -- the "
-        "producer has not composed it that way since S18"
-    )
-
-    widths: dict[int, int] = {}
+        pool4_discovery_source_tx=_ADOPTED_SOURCE_TX, pool4_discovery_source="docs")
     for width in (SURF_POOL4_FULL_LAYOUT_COLUMNS, 120, 152, 200):
         async with _pool4_app(payload).run_test(size=(width, 60)) as pilot:
             await pilot.app.screen._do_refresh()
             await pilot.pause()
             await pilot.press("e")
             await pilot.pause()
-            screen = pilot.app.screen
-            hatches = screen.query_one(SurfPool4Hatches)
-            body = _region_text(pilot.app, hatches)
-            widths[width] = max(
-                (len(line.rstrip()) for line in body.split("\n")), default=0
-            )
-            if width == SURF_POOL4_FULL_LAYOUT_COLUMNS:
-                # THE PIN HALF, unchanged: at the pin nothing is marked and
-                # nothing is CSS-clipped, on the adopted path.
-                assert not _pool4_marked(pilot.app, screen), (
-                    "the adopted detail lights a marker at the pin -- the "
-                    "pin was measured against the short detail only"
-                )
-                assert not _clipped_pool4_lines(pilot.app, screen)
-
-    # THE MONOTONICITY HALF, replacing the constancy one.
-    ordered = [widths[w] for w in sorted(widths)]
-    assert ordered == sorted(ordered), (
-        f"HATCHES renders LESS on a wider panel: {widths}"
-    )
-    assert len(set(ordered)) > 1, (
-        f"HATCHES renders identically at every width: {widths} -- the "
-        "discovery block is being fitted to a constant again, so the spare "
-        "columns of a wide terminal are going unused beside an ellipsis"
-    )
-    # ...and the citation, which is the part a reader can actually rely on,
-    # survives in full at the pin rather than being the thing that got cut.
-    async with _pool4_app(payload).run_test(
-        size=(SURF_POOL4_FULL_LAYOUT_COLUMNS, 60)
-    ) as pilot:
-        await pilot.app.screen._do_refresh()
-        await pilot.pause()
-        await pilot.press("e")
-        await pilot.pause()
-        hatch_text = _region_text(
-            pilot.app, pilot.app.screen.query_one(SurfPool4Hatches)
-        )
-    assert _ADOPTED_SOURCE_TX[:10] in hatch_text, (
-        "the citation does not reach the screen at the pinned width"
-    )
+            body = _region_text(pilot.app, pilot.app.screen.query_one(SurfPool4Hatches))
+            assert "discovery" not in body and "via docs" not in body
+            assert _ADOPTED_SOURCE_TX[:10] not in body
+            assert "hook" in body and "owner" in body
+            if width >= SURF_POOL4_FULL_LAYOUT_COLUMNS:
+                assert not _pool4_marked(pilot.app, pilot.app.screen)
+                assert not _clipped_pool4_lines(pilot.app, pilot.app.screen)
 
 
 # =========================================================================

@@ -1,5 +1,24 @@
 # Surfboard follow-ups
 
+## POOL4 discovery segment removed — 2026-10-16
+
+HATCHES now starts with its contract addresses. The discovery verdict, detail,
+source and citation warnings are removed from display; discovery and validation
+in the data layer are unchanged. A public live render at 149×45 was shown before
+the four-payload height sweep. The full-layout height is now 44 rows (was 47),
+with the 138-column width unchanged. Contract copy links and all levers remain.
+
+Validation: 248 affected/composing checks, 125 fast guards, 12 documentation
+pins and both Surf address sweeps passed. Three other assertions fail identically
+on clean pre-change commit b24b429b: the old Surf binding list, generic launchpad
+hero visibility, and the STAKERS 40-character address expectation. No full suite
+was run. Three implementation mutations and the reviewer's unread/empty mutation
+were rejected and restored. Review: Approved.
+
+Minor follow-up: the terminal-layout skill's POOL4 table and row-record paragraph
+still quote 47 rows. Update them to the current 44-row measurement when that
+skill is next edited; the source pin and Surf rules already record the new size.
+
 ## Selected-token dashboard — 2026-10-15
 
 Option 2 is implemented: six native cards above launch/contributors and
