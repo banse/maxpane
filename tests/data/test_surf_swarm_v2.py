@@ -332,8 +332,29 @@ def test_site_rows_newest_updated_first(sites):
         "tx_hash": "0x9d46eec7e6f2cad4ef760022b3edda30cbd85761530934fc3926c40902a25986",
         "block_number": 26021387, "job_id": "115a2caa-323b-411a-bc39-e69977e85e34",
         "superseded_by": None,
+        "named_ts": _iso("2026-09-20T21:22:53.478Z"),
     }
     assert len(stamps) == len(rows)
+
+
+def test_site_rows_keep_publication_time_distinct_from_update_time():
+    rows = fold.site_rows([{
+        "label": "shipped",
+        "namedAt": "2026-10-06T00:20:25.500Z",
+        "updatedAt": "2026-10-06T01:00:00Z",
+    }])
+    assert rows[0]["named_ts"] == 1791246025.5
+    _rows_match(rows, "swarm_site_rows")
+
+
+@pytest.mark.parametrize("named_at", [None, "", "not a date", 1791246025.5, True, []])
+def test_site_rows_unknown_publication_time_stays_none(named_at):
+    row = fold.site_rows([{
+        "namedAt": named_at,
+        "createdAt": "2026-10-06T00:10:00Z",
+        "updatedAt": "2026-10-06T01:00:00Z",
+    }])[0]
+    assert row["named_ts"] is None
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ from textual.widgets import DataTable
 from textual.containers import VerticalScroll
 
 from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen
-from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
+from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches, ShippedRow
 from maxpane_dashboard.widgets.surf import SurfSwarmLaunches, SurfSwarmSites, SurfSwarmThroughput
 from tests.screens.test_surf_screen import _frozen_payload, _screen_text, _surf_app
 from tests.screens.test_surf_swarm_screen import _open
@@ -17,13 +17,13 @@ from tests.surf_launch_fixtures import launch_row
 
 @pytest.mark.parametrize('opening', ['x', 'enter', 'click', 'launches'])
 async def test_latest_routes_snapshot_popup_without_reads(opening):
-    rows = [launch_row(737, created_ts=1000), launch_row(747, created_ts=900)]
+    rows = [launch_row(737, created_ts=1000, updated_ts=1000), launch_row(747, created_ts=900, updated_ts=900)]
     original = deepcopy(rows)
     async with _surf_app(_frozen_payload(swarm_launch_rows=rows, as_of=2000)).run_test(size=(150, 46)) as pilot:
         screen = await _open(pilot)
         assert not list(screen.query(SurfSwarmThroughput))
         latest = screen.query_one(SurfSwarmLatestLaunches)
-        table = (screen.query_one(SurfSwarmLaunches) if opening == 'launches' else latest).query_one(DataTable)
+        table = screen.query_one(SurfSwarmLaunches).query_one(DataTable) if opening == 'launches' else latest.query_one(ShippedRow)
         table.focus()
         reads = screen._data_manager.calls
         if opening == 'click':
@@ -47,7 +47,7 @@ async def test_x_without_production_launch_is_noop(rows):
         assert pilot.app.screen is screen
 
 
-@pytest.mark.parametrize('width', [90, 91, 111, 112, 129, 143, 150, 155, 156, 157, 170, 171])
+@pytest.mark.parametrize('width', [123, 124, 137, 138, 143, 144, 149, 187, 188, 202, 203])
 async def test_launches_liquidity_at_owner_widths(width):
     from tests.widgets.test_surf_swarm_liquidity import liquid_row
     payload = _production_swarm_payload()
@@ -56,7 +56,7 @@ async def test_launches_liquidity_at_owner_widths(width):
         screen = await _open(pilot)
         launches = screen.query_one(SurfSwarmLaunches)
         shown = 'liq' in launches._keys
-        assert shown == (width >= 91)
+        assert shown == (width >= 138)
         assert '4.7K IMD' in _screen_text(pilot.app) if shown else '4.7K IMD' not in _screen_text(pilot.app)
 
 
@@ -141,7 +141,7 @@ async def test_receipt_to_manager_snapshot_to_liquidity_popup(tmp_path, withdraw
             assert word in seen, (word, seen)
 
 
-async def test_liquidity_visibility_is_monotonic_from_91_through_220():
+async def test_liquidity_visibility_is_monotonic_from_138_through_220():
     from tests.widgets.test_surf_swarm_liquidity import liquid_row
     payload = _production_swarm_payload()
     payload['swarm_launch_rows'] = [liquid_row()]
@@ -163,7 +163,7 @@ async def test_liquidity_visibility_is_monotonic_from_91_through_220():
             if first_seen is not None:
                 assert shown, (width, first_seen, launches._tier)
                 assert '4.7K IMD' in '\n'.join(lines[region.y:region.bottom]), width
-        assert first_seen == 91
+        assert first_seen == 138
 
 
 @pytest.mark.parametrize('kind', ['initialize', 'modify'])
@@ -192,3 +192,21 @@ async def test_ambiguous_manager_pool_paints_dash_in_liquidity_cell(tmp_path, ki
         y = table.content_region.y + table.header_height
         cell = screen._compositor.render_strips()[y].crop(x, x + width).text.strip()
         assert cell == '--'
+
+
+async def test_launches_top_left_workflows_full_width_below():
+    from maxpane_dashboard.widgets.surf.swarm_workflows import SurfSwarmWorkflows
+    async with _surf_app(_production_swarm_payload()).run_test(size=(149, 45)) as pilot:
+        screen = await _open(pilot)
+        launches = screen.query_one(SurfSwarmLaunches)
+        recent = screen.query_one(SurfSwarmLatestLaunches)
+        workflows = screen.query_one(SurfSwarmWorkflows)
+        sites = screen.query_one(SurfSwarmSites)
+        assert launches.region.y == recent.region.y
+        assert launches.region.right <= recent.region.x
+        assert workflows.region.y >= launches.region.bottom
+        assert workflows.region.width == sites.region.width
+        assert workflows.region.width > launches.region.width
+        painted = _screen_text(pilot.app)
+        assert painted.index('SHIPPED RECENTLY') < painted.index('WORKFLOWS ·')
+        assert 'parked reason' not in painted

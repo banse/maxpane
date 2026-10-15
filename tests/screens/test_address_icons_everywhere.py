@@ -58,10 +58,9 @@ from tests.widgets.address_probe import icon_targets, link_targets
 #: The sweep's wide terminal: wide and tall enough for every body to render.
 SIZE = (170, 60)
 
-#: 2026-10-06 production launches: v8 MAINNET/Base/RH tokens are already
-#: whole at 110; WORKFLOWS' unlinked failure address now binds completeness
-#: because it shares the top row. In-situ 110–190 walk: absent at 143,
-#: complete from 144. The original 170 pass remains; this is not a body pin.
+#: Keep the established wide SWARM pass above its 141-column body pin so
+#: every helper-using panel itself paints a copy target. Full-width WORKFLOWS'
+#: failure-address onset is independently measured below at 96/97.
 SWARM_WIDE_COLUMNS = 144
 
 
@@ -1217,8 +1216,8 @@ async def test_surf_board_body_has_no_wallet_or_token_address_text():
         assert '0x' not in text and '⧉' not in text
 
 
-@pytest.mark.parametrize("width,whole", [(SWARM_WIDE_COLUMNS - 1, False), (SWARM_WIDE_COLUMNS, True)])
-async def test_swarm_wide_size_is_the_seed_completeness_boundary(width, whole):
+@pytest.mark.parametrize("width,whole", [(96, False), (97, True)])
+async def test_full_width_workflow_address_has_measured_boundary(width, whole):
     from tests.address_sweep.builders import _SWARM_CONTRACT, _SWARM_WORKFLOW
     case = next(case for case in CASES if case.name == "surf")
     app = case.build()

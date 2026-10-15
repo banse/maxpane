@@ -53,7 +53,7 @@ is a new dashboard (no six-surface renumber; `app.py`, `__main__.py`, `GAMES` un
 | `l` | MODE_LAUNCHPAD | LAUNCHPAD COINS over LAUNCHPAD ACTIVITY left; CURVE FLOW / BURN PIPELINE / BURNKEEPERS in the rail | `SurfLaunchpadHero`: COINS / CURVE FLOW / VOLUME / CREATOR FEES / BURN QUEUE / BURNED |
 | `e` | MODE_POOL4 (protocol, experimental, not on the bar) | THE SPLIT over THE RATCHET left; HATCHES over sIMD VAULT in the rail | `SurfHero` stays |
 | `4` | MODE_POOL4_USER (market) | RECENT FLOW beside BURN & SUPPLY over SIGNALS; STAKERS beside IF IMD FALLS | `SurfPool4UserHero`: IMD PRICE / DOWNSIDE BID / STAKING |
-| `s` | MODE_SWARM | WORKFLOWS beside LATEST LAUNCHES; LAUNCHES and SITES full-width; `x` opens the newest production launch | `SurfSwarmRackHero`: FLEET / OUTPUT / WORKFLOWS / LAUNCHES / LATEST WORKFLOW / SITES |
+| `s` | MODE_SWARM | LAUNCHES beside SHIPPED RECENTLY; WORKFLOWS and SITES full-width; `x` opens the newest production launch | `SurfSwarmRackHero`: FLEET / OUTPUT / WORKFLOWS / LAUNCHES / LATEST WORKFLOW / SITES |
 | `a` | MODE_AGENT | seat-card row with COLLAB/NODES; RECORD full-width beneath | `SurfSwarmAgentHero`: SEAT / ACCEPTED JOBS / WORK / REWARDS / RANK / STATUS |
 | `b` | MODE_BOARD | Recorded-seat LEADERBOARD beside FLEET | `SurfSwarmBoardHero`: TOP SEAT / RECORDED / ACCEPT RATE / LAUNCHES / WORKERS / EFFORT |
 
@@ -510,16 +510,15 @@ Rows without either valid name show `--` and have no link;
 superseded or unnamed rows are omitted -- a feed that leaves nothing reads
 `No current site`, an empty feed `No data` (F68). `swarm_site_rows` keeps `superseded_by` for that
 filter only; `failure` left the contract (F69), and the label column is one label wide (F67). RECORD's job id is not an address: it links the IMD explorer (not a chain)
-through `address.job_text`, with no icon; COLLAB teammate tokens pass through no address helper. The `parked_reason` cell in LAUNCHES clips to its column with a
-visible `…` (accepted, `docs/decisions.md`).
+through `address.job_text`, with no icon; COLLAB teammate tokens pass through no address helper. LAUNCHES keeps parked reasons in its detail popup, not in a table column.
 
 **The explorer's own inference headline is deliberately absent**: no public route serves that
 number, so this view shows none of it — absent, never estimated.
 
-**Production launches layout (v2):** WORKFLOWS beside
-LATEST LAUNCHES; full-width LAUNCHES; full-width SITES. The owner approved the offline v9/v8
-fixture render at 150×46 on 2026-10-06; this was not a new live-network measurement. The existing
-SWARM pin holds, measured offline across all five layout payloads. The hero's last three cards
+**Production launches layout (2026-10-15):** LAUNCHES beside SHIPPED RECENTLY;
+full-width WORKFLOWS; full-width SITES. Live public data was previewed at 149×45
+before measurement. The existing 141×38 SWARM pin holds across all five layout
+payloads. The hero's last three cards
 show totals and descending whole status/count pairs that fit the box. SITES and its hero count
 share `is_current_site`; superseded or unnamed builds are excluded. LAUNCHES and WORKFLOWS keep
 one blank footer row. SITES gives one row of its height to a bottom margin, leaving a blank line
@@ -533,16 +532,20 @@ The hourly source is eligible while the rack or native SWARM is visible. The old
 `SurfSwarmHero` is parked. The live 149×45 preview preceded measurement of 141×38;
 LATEST WORKFLOW's outer title binds width, while the larger hero adds three rows.
 
-**LATEST LAUNCHES** shows the five newest production launches by `createdAt` descending, with
-launch number descending as the tiebreak. It uses the launch tier marker and ages against the
-snapshot's `as_of`; Sepolia never appears. Narrow widths shed age, then chain, preserving number
-and verdict. A successful empty read says `no production launch yet`; an unread list says
-`unavailable`. Enter/click opens that row; **`x` opens the top row's `LaunchDetailScreen`**, or
-nothing when no row exists. The hint remains `x more`. The binding stays non-priority so a
-focused widget's own binding wins and Input keeps typed text. Snapshot popups use the
-`RecordDetailScreen` frame: scrollable content, Space/Escape or X to close, with no network await
-while opening. THROUGHPUT is parked in `SWARM_PARKED_WIDGET_SIGNATURES`; its module, popup,
-data, clocks and tests remain, as with IN FLIGHT and CAPABILITY.
+**SHIPPED RECENTLY** uses five plain aligned age/name/type rows, newest known
+time first. It combines live production token deployments, named contract artifacts,
+and current published sites; token helper contracts and confirmed testnet joins are
+excluded. Site age uses `namedAt`, retained as `named_ts`. Launch ages use the API's
+`updatedAt` (then `createdAt`) with `~` and an explanatory tooltip: these are proxies,
+not exact deployment times. Unknown ages show `--` and sort last. Names link through
+existing safe explorer/site helpers; address-backed names retain copy icons. Narrow
+rows fit by display cells and omit type only when necessary; the full type stays on hover.
+A successful empty read says `no shipped items yet`; missing sources are unavailable
+or visibly partial, with the independent joint read marker. Clicking a launch row's
+age/type or pressing Enter opens its snapshot. **`x` still opens the newest production
+launch by request time independently of the mixed list**, or does nothing if none exists.
+The hint remains `x more`; Input bindings still win. No opening action fetches data.
+THROUGHPUT remains parked with its data and tests intact.
 
 **Production launches:** `TIER_SWARM_LAUNCHES` runs detached/single-flight at 60 seconds,
 120-second launches-route failure backoff. Launches read the newest 100 every cycle; sites refresh every 300
@@ -567,8 +570,7 @@ pin after leaving the newest API window. LAUNCHES keeps 12 production + 12 non-p
 number first within each; production is bold with `◆`, other rows dim with verdict `--`. MAINNET / BASE / RH /
 SEPOLIA are the chain words. The token column prefers role `token`, then `hook`, then the first
 artifact. Full columns include kind/repo and `liq` after verdict. Liquidity outranks
-kind, repo and site: roomy sheds kind; compact also sheds repo and site. Tight sheds the
-parked reason and restores `liq` when fourteen cells fit after ticker and verdict.
+kind, repo and site: roomy sheds kind; compact also sheds repo and site. Tight narrows the token and restores `liq` when fourteen cells fit after ticker and verdict.
 Once visible, liquidity stays at every wider width. Tier onsets live in the measured pin comment.
 K2 uses the chain-wide wallet set and factories declared by the launch's own kind; kinds with
 no declared factory, including an absent kind, are judged on sender and receipt status alone.

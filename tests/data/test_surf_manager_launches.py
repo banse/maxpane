@@ -46,6 +46,26 @@ class RPC(FakeSurfClient):
 def manager(tmp_path, swarm=None):
     return SurfManager(clock=FakeClock(NOW), cache_path=str(tmp_path/'cache.json'), client=RPC(), pool4_client=FakePool4Client(), swarm_client=swarm or LaunchSwarm())
 
+
+@pytest.mark.asyncio
+async def test_site_publication_time_survives_manager_cache_roundtrip(tmp_path):
+    m = manager(tmp_path)
+    try:
+        await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW)
+        raw = m.cache.get_last_good(SLOT_SWARM_LAUNCHES).payload['sites']
+        assert next(s for s in raw if s['label'] == 'daemon')['namedAt'] == '2026-10-06T00:20:25.500Z'
+        m.cache.save()
+    finally:
+        await m.close()
+
+    restored = manager(tmp_path)
+    try:
+        rows = restored._swarm_launch_keys()['swarm_site_rows']
+        assert next(s for s in rows if s['label'] == 'daemon')['named_ts'] == 1791246025.5
+        assert restored.swarm_client.calls == []
+    finally:
+        await restored.close()
+
 @pytest.mark.parametrize('mode', ['work', 'oracles'])
 async def test_optimized_views_offer_launch_poll_and_advance_only_launch_signals(tmp_path, monkeypatch, mode):
     from tests.surf_launch_fixtures import launch_event

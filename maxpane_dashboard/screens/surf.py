@@ -1784,6 +1784,16 @@ SURF_POOL4_USER_FULL_LAYOUT_ROWS = 38
 #: at 140x38 only the LATEST WORKFLOW outer title is ellipsised. The new
 #: border-title check catches this separately from CSS content clipping.
 #: SITES/status still clear at 129, and all body table tiers remain unchanged.
+#: 2026-10-15, SHIPPED RECENTLY (live public preview at 149x45): LAUNCHES
+#: now shares the top row with a plain age/name/type list; WORKFLOWS spans
+#: the middle row. Parked reasons remain in the popup only. Re-measured
+#: with scripts/measure_layout.py: capture/production-s at 139..143x38;
+#: worst-s/v3-s/extra-states-s at 140..142x37..39. The 141x38 pin holds:
+#: LATEST WORKFLOW loses its title at 140; body scroll begins at 37 rows.
+#: WORKFLOWS compact/full start at 62/72. Top-left LAUNCHES has no hidden
+#: columns from 124 at 38 rows, 122 at 80; liquidity starts at 138, compact
+#: at 144, roomy at 188, full and capture marker-clear at 203. SHIPPED
+#: RECENTLY retains a 46-column outer cap. SITES tiers are unchanged.
 SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 
 #: The ``s`` SWARM body's own height. 42 on 2026-09-16, 26 the same day for
@@ -3456,7 +3466,7 @@ class SurfScreen(DashboardScreen):
         scrollbar-gutter: stable;
     }
     SurfScreen SurfSwarmWorkflows {
-        width: 1fr;
+        width: 100%;
         height: 1fr;
         min-height: 8;
         padding: 0 1;
@@ -3479,7 +3489,7 @@ class SurfScreen(DashboardScreen):
         padding: 0 1;
     }
     SurfScreen SurfSwarmLaunches {
-        width: 100%;
+        width: 1fr;
         height: 1fr;
         min-height: 8;
         padding: 0 1;
@@ -3744,10 +3754,10 @@ class SurfScreen(DashboardScreen):
         yield SurfOraclesBody(id=ORACLES_BODY_ID)
         with Vertical(id=SWARM_BODY_ID):
             with Horizontal(id=SWARM_TOP_ID):
-                yield SurfSwarmWorkflows()
+                yield SurfSwarmLaunches()
                 yield SurfSwarmLatestLaunches()
             with Horizontal(id=SWARM_BOTTOM_ID):
-                yield SurfSwarmLaunches()
+                yield SurfSwarmWorkflows()
             yield SurfSwarmSites()
 
         # The AGENT rack lives above the full-width RECORD body.

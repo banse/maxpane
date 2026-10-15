@@ -1681,7 +1681,7 @@ SWARM_KEYS: tuple[str, ...] = (
 #: The target widgets of the ``s``, ``a`` and ``b`` bodies (swarm v2 plan §1.4 + A1) and the
 #: contract keys each ``update_data`` takes, verbatim, as keyword parameters. Exported
 #: so the screen test binds to this rather than to a local copy (bound in WP7).
-SWARM_LATEST_LAUNCHES_SIGNATURE = ("swarm_launch_rows", "swarm_launches_as_of_hhmm", "as_of")
+SWARM_LATEST_LAUNCHES_SIGNATURE = ("swarm_launch_rows", "swarm_site_rows", "swarm_launches_as_of_hhmm", "as_of")
 SWARM_THROUGHPUT_SIGNATURE = ("swarm_throughput", "swarm_as_of_hhmm", "swarm_stale")
 
 SURF_ORACLES_WIDGET_SIGNATURES = {"SurfOraclesHero": ("surf_oracles",), "SurfOraclesBody": ("surf_oracles",)}
@@ -2242,6 +2242,7 @@ SURF_ROW_KEYS: dict[str, tuple[str, ...]] = {
         "label", "ens_name", "cid", "bytes", "status", "tx_hash",
         "block_number", "job_id",
         "superseded_by",  # str | None; read only by SITES' filter (a replaced build hides)
+        "named_ts",  # float | None; /sites namedAt publication time
     ),
     # GET /workflows (docs/surf_swarm_workflows_spec.md §2). Strings are raw served text
     # (escaping is the widget's job; no truncation in data/), newest created_ts first.

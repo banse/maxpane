@@ -21,7 +21,6 @@ from maxpane_dashboard.widgets.panels import LOADING
 from maxpane_dashboard.widgets.surf._fmt import DASH
 from maxpane_dashboard.widgets.surf._swarm_chain import CHAIN_COLS, chain_word
 from maxpane_dashboard.widgets.surf._swarm_table import (
-    CELL_PADDING,
     SwarmTableBase,
     table_cols,
 )
@@ -30,7 +29,6 @@ __all__ = [
     "ADDR_COLS",
     "COMPACT_WIDTH",
     "FULL_WIDTH",
-    "PARKED_MIN_COLS",
     "ROOMY_WIDTH",
     "TIGHT_ADDR_COLS",
     "TIGHT_WIDTH",
@@ -50,7 +48,6 @@ TIGHT_ADDR_COLS = MIN_SHORT_COLS
 _PLUS_COLS = 4
 _ARTIFACTS_COLS = ADDR_COLS + ICON_COLS + _PLUS_COLS  # 23
 _TIGHT_ARTIFACTS_COLS = TIGHT_ADDR_COLS + ICON_COLS + _PLUS_COLS  # 17
-PARKED_MIN_COLS = len("parked reason")  # 13, elastic above this floor
 _TIGHT_REPO_COLS = _REPO_COLS
 
 _SPECS = (
@@ -64,15 +61,12 @@ _SPECS = (
     ("liq", "liq", 12),
     ("kind", "kind", _KIND_COLS),
     ("repo", "repo", _REPO_COLS),
-    ("parked", "parked reason", PARKED_MIN_COLS),
 )
 _ALL = tuple(key for key, _l, _w in _SPECS)
 _ROOMY = tuple(key for key in _ALL if key != "kind")
 _COMPACT = tuple(key for key in _ALL if key not in ("kind", "repo", "site"))
-_TIGHT = tuple(key for key in _COMPACT if key not in ("parked", "liq"))
-# full: 144 cells + 22 padding = 166; roomy: 131 + 20 = 151;
-# compact: 91 + 16 = 107;
-# tight: 60 + 12 = 72 (token shrinks from 23 to 17).
+_TIGHT = tuple(key for key in _COMPACT if key != "liq")
+# Widths include the DataTable padding; parked reasons live in the detail popup.
 FULL_WIDTH = table_cols(w for k, _l, w in _SPECS)
 ROOMY_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _ROOMY)
 COMPACT_WIDTH = table_cols(w for k, _l, w in _SPECS if k in _COMPACT)
@@ -136,8 +130,8 @@ class SurfSwarmLaunches(SwarmTableBase):
         ("full", FULL_WIDTH), ("roomy", ROOMY_WIDTH), ("compact", COMPACT_WIDTH), ("tight", TIGHT_WIDTH)
     )
 
-    LOADING_ROW = (LOADING,) + ("",) * 10
-    EMPTY_ROW = ("--", "No data") + ("",) * 9
+    LOADING_ROW = (LOADING,) + ("",) * 9
+    EMPTY_ROW = ("--", "No data") + ("",) * 8
 
     def update_data(
         self,
@@ -159,33 +153,12 @@ class SurfSwarmLaunches(SwarmTableBase):
         self.store(swarm_launch_rows, swarm_launches_as_of_hhmm, swarm_launch_summary)
 
     def column_plan(self, tier: str, budget: int) -> tuple[tuple[str, str, int], ...]:
-        """Elastic reason; tight keeps ticker/verdict and narrows the token."""
-        plan = []
+        """Tight keeps ticker/verdict, narrows the token and restores liquidity when it fits."""
         keep = self.TIER_COLUMNS[tier]
         if tier == "tight" and budget >= TIGHT_WIDTH + 14:
             keep = (*keep, "liq")
-        fixed = [w for k, _l, w in _SPECS if k in keep and k != "parked"]
-        if tier == "tight":
-            fixed = [
-                _TIGHT_ARTIFACTS_COLS if w == _ARTIFACTS_COLS else
-                _TIGHT_REPO_COLS if w == _REPO_COLS else w
-                for w in fixed
-            ]
-        spare = budget - table_cols(fixed) - CELL_PADDING
-        for key, label, width in _SPECS:
-            if key not in keep:
-                continue
-            if key == "token" and tier == "tight":
-                width = _TIGHT_ARTIFACTS_COLS
-            elif key == "repo" and tier == "tight":
-                width = _TIGHT_REPO_COLS
-            elif key == "parked":
-                width = max(PARKED_MIN_COLS, spare)
-            plan.append((key, label, width))
-        return tuple(plan)
-
-    def _parked_cols(self) -> int:
-        return next((w for k, _l, w in (self._installed or ()) if k == "parked"), PARKED_MIN_COLS)
+        return tuple((key, label, _TIGHT_ARTIFACTS_COLS if key == "token" and tier == "tight" else width)
+                     for key, label, width in _SPECS if key in keep)
 
     def build_cells(self, item: dict) -> dict[str, str | Text]:
         raw_status = item.get("status")
@@ -197,10 +170,6 @@ class SurfSwarmLaunches(SwarmTableBase):
         addr_cols = TIGHT_ADDR_COLS if self._tier == "tight" else ADDR_COLS
         repo_cols = _TIGHT_REPO_COLS if self._tier == "tight" else _REPO_COLS
 
-        parked_cols = self._parked_cols()
-        reason = strip_tags(item.get("parked_reason"))
-        if cell_len(reason) > parked_cols and "parked" in self._keys:
-            self._clipped = True
         number = item.get("launch_number")
         number_text = str(number) if isinstance(number, int) and not isinstance(number, bool) else DASH
         production = item.get("production") is True
@@ -225,7 +194,6 @@ class SurfSwarmLaunches(SwarmTableBase):
                 "swarm": "green", "mismatch": "red", "failed": "red",
             }.get((item.get("verdict") or {}).get("state"), "dim") if production else "dim"),
             "liq": liquidity_cell(item),
-            "parked": sanitize_cell(reason, parked_cols),
         }
 
         for key, value in cells.items():

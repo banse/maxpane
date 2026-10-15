@@ -2547,8 +2547,8 @@ SurfScreen #surf-swarm-body {
     scrollbar-gutter: stable;
 }
 
-/* Launches v2: preserve the nine-row top floor. LATEST LAUNCHES paints
- * five rows below its title and blank separator; empty state also fits. */
+/* SHIPPED RECENTLY fits five plain rows beneath its title and blank row.
+ * The top keeps its nine-row floor for the neighboring LAUNCHES table. */
 SurfScreen #surf-swarm-top {
     height: 1fr;
     min-height: 9;
@@ -2558,17 +2558,15 @@ SurfScreen #surf-swarm-top {
     scrollbar-gutter: stable;
 }
 
-/* Production launches layout: WORKFLOWS shares the top row with LATEST LAUNCHES;
- * its objective / failure column takes every spare cell. */
+/* WORKFLOWS spans the full middle row; its objective takes the spare cells. */
 SurfSwarmWorkflows {
-    width: 1fr;
+    width: 100%;
     height: 1fr;
     min-height: 8;
     padding: 0 1;
 }
 
-/* LATEST LAUNCHES retains THROUGHPUT's 46-column outer cap, with 44
- * content cells and two padding cells. Age then chain shed at narrow widths. */
+/* SHIPPED RECENTLY retains the 46-column cap for age, name and type. */
 SurfSwarmLatestLaunches {
     width: 1fr;
     max-width: 46;
@@ -2600,10 +2598,10 @@ SurfSwarmInFlight {
     padding: 0 1;
 }
 
-/* Production launches layout: LAUNCHES spans the full middle row.
- * The old 4:5 IN FLIGHT split above is historical; that widget is parked. */
+/* LAUNCHES shares the top row with SHIPPED RECENTLY.
+ * The old IN FLIGHT split above is historical; that widget is parked. */
 SurfSwarmLaunches {
-    width: 100%;
+    width: 1fr;
     height: 1fr;
     min-height: 8;
     padding: 0 1;

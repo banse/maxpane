@@ -423,6 +423,7 @@ def site_rows(sites: object) -> list[dict[str, Any]]:
             "block_number": _int(site.get("blockNumber")),
             "job_id": _str(site.get("jobId")),
             "superseded_by": _str(site.get("supersededBy")),
+            "named_ts": _ts(site.get("namedAt")),
             "_updated_ts": _ts(site.get("updatedAt")),
         })
     _newest_first(rows, "_updated_ts")
@@ -2431,7 +2432,7 @@ LAUNCH_CACHE_CAP = 500
 _LAUNCH_ROW_FIELDS = ('id', 'launchNumber', 'kind', 'status', 'chainId', 'sourceRepoUrl',
                       'sourceCommit', 'parkedReason', 'artifactCount', 'createdAt', 'updatedAt')
 _SITE_FIELDS = ('id', 'jobId', 'label', 'ensName', 'cid', 'bytes', 'status', 'txHash',
-                'blockNumber', 'createdAt', 'updatedAt', 'supersededBy')
+                'blockNumber', 'createdAt', 'updatedAt', 'supersededBy', 'namedAt')
 
 def _launch_list_row(value):
     from maxpane_dashboard.analytics.surf_launch_checks import mappings, address

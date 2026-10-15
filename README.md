@@ -415,8 +415,8 @@ track can never freeze the list forever. A failed read serves each panel's own l
 × `SURF_SWARM_FULL_LAYOUT_ROWS`, `SURF_AGENT_FULL_LAYOUT_COLUMNS` × `SURF_AGENT_FULL_LAYOUT_ROWS`,
 and `SURF_BOARD_FULL_LAYOUT_COLUMNS` × `SURF_BOARD_FULL_LAYOUT_ROWS`
 in `screens/surf.py` (the `#:` block beside each constant carries the number and how it was
-measured). LAUNCHES is the remaining content exception: compact/full columns start at 116/157,
-and a long parked reason can keep its own `‹ widen` lit even when every column is reachable.
+measured). LAUNCHES is the remaining table exception: compact/full columns start at 144/203.
+Parked reasons are available in the launch detail popup.
 IN FLIGHT is parked and contributes no current layout requirement.
 
 ### THE LIST — the linked-wallet analysis view (`a`)
@@ -794,14 +794,18 @@ Height remains a worst case over payloads: mainnet with twelve hatches needs 47 
 Below that, the detail columns scroll and the title bar says `‹ taller`; all six cards
 fit at the owner's 149×45 size. The app-wide width remains 143 columns.
 
-Surfboard's SWARM view (`s`) is a layout of its own too, pinned by `SURF_SWARM_FULL_LAYOUT_COLUMNS`
-and `SURF_SWARM_FULL_LAYOUT_ROWS` (**129 columns × 35 rows**, re-swept 2026-10-06 after the
-owner approved the live 150×46 layout; 200×48 also measured offline). SITES and the complete status bar bind the width.
-THROUGHPUT's nine fixed lines set the top row's floor; LAUNCHES and SITES each have an eight-line
-floor. The body scrolls with `‹ taller` below 35 rows; its tables scroll internally as their
-histories grow. LAUNCHES remains a content exception: no columns are hidden from 77 columns
-at the row pin, and the capture clears `‹ widen` at 157 (full columns; compact starts at 116). Arbitrarily long parked reasons
-can still mark. IN FLIGHT no longer contributes a layout or address-sweep requirement.
+Surfboard's SWARM view (`s`) has LAUNCHES beside **SHIPPED RECENTLY**, followed by
+full-width WORKFLOWS and SITES. SHIPPED RECENTLY lists the last five tokens, contracts
+or sites as aligned age/name/type lines. Site ages use publication time; `~` marks
+launch ages based on API update/request time. Testnet launches are excluded. Names
+retain their site/explorer links, and `x` still opens the latest production launch.
+The layout remains **141 columns × 38 rows**, checked against live data at 149×45
+and the boundary fixtures on 2026-10-15. The LATEST WORKFLOW card title binds width;
+the nine-row top floor keeps the list and LAUNCHES usable as the body shrinks.
+Below 38 rows the body scrolls with `‹ taller`. LAUNCHES has no hidden columns from
+124 columns at the row pin, shows liquidity from 138, and reaches full columns at
+203. WORKFLOWS reaches full columns at 72. Parked reasons stay in the detail popup.
+IN FLIGHT and THROUGHPUT remain parked.
 The AGENT view (`a`) has its own pair, `SURF_AGENT_FULL_LAYOUT_COLUMNS` ×
 `SURF_AGENT_FULL_LAYOUT_ROWS`, re-measured for the card rows over RECORD. The `#:` blocks
 beside those constants in `screens/surf.py` record the measured dimensions and binding content.

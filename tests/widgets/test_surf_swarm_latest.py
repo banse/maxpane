@@ -1,134 +1,218 @@
-"""The upcoming LATEST LAUNCHES input contract, frozen before its WP3 renderer."""
-from maxpane_dashboard.data import surf_models as models
-
-
-def test_latest_and_throughput_signatures_are_frozen_before_mount_switch():
-    assert models.SWARM_LATEST_LAUNCHES_SIGNATURE == (
-        'swarm_launch_rows', 'swarm_launches_as_of_hhmm', 'as_of')
-    assert models.SWARM_THROUGHPUT_SIGNATURE == (
-        'swarm_throughput', 'swarm_as_of_hhmm', 'swarm_stale')
-
-
+"""SHIPPED RECENTLY mixes proven shipments without turning them into a table."""
 from copy import deepcopy
+
 import pytest
 from textual.app import App
 from textual.widgets import DataTable
-from tests.surf_launch_fixtures import launch_row, fixture
+
+from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
+from tests.surf_launch_fixtures import launch_row
 from tests.widgets.surf_compositing import composite_lines
 
 
-def latest_rows():
-    from maxpane_dashboard.data.surf_swarm import launch_rows
-    from maxpane_dashboard.analytics.surf_launch_checks import is_production
-    raw = fixture('launches_100')['launches']
-    rows = launch_rows(raw)
-    for row, original in zip(rows, raw):
-        row['production'] = is_production(original)
-    return rows
+def site(name='weir', timestamp=1900, **overrides):
+    row = dict(label=name, ens_name=f'{name}.sites.imd.fun', status='named',
+               named_ts=timestamp, superseded_by=None)
+    row.update(overrides)
+    return row
 
 
-async def test_latest_orders_created_time_not_number_and_excludes_sepolia():
-    from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
-    rows = latest_rows()
-    # The captured #747 is newer than #751. Retain five production witnesses.
-    rows = [r for r in rows if r['launch_number'] in (751,747,741,740,737) or not r['production']]
-    expected = sorted((r for r in rows if r['production']),
-        key=lambda r:(r['created_ts'],r['launch_number']), reverse=True)[:5]
+def token(name='EHS', timestamp=1800, **overrides):
+    row = launch_row(ticker=name, updated_ts=timestamp, created_ts=timestamp - 120 if timestamp is not None else None)
+    row.update(overrides)
+    return row
+
+
+async def test_mixed_shipments_plain_aligned_and_newest_first():
+    contract = token(kind='evm_contracts', timestamp=1700)
+    contract['artifacts'] = [dict(contract['artifacts'][0], name='PvPPad', role='contract')]
     class Probe(App):
         def compose(self): yield SurfSwarmLatestLaunches()
-    async with Probe().run_test(size=(46,12)) as pilot:
-        panel=pilot.app.query_one(SurfSwarmLatestLaunches)
-        panel.update_data(swarm_launch_rows=rows,swarm_launches_as_of_hhmm='14:16',as_of=2000000000.)
+    async with Probe().run_test(size=(46, 12)) as pilot:
+        panel = pilot.app.query_one(SurfSwarmLatestLaunches)
+        panel.update_data(swarm_launch_rows=[contract, token()], swarm_site_rows=[site()],
+                         swarm_launches_as_of_hhmm='17:18', as_of=2000)
         await pilot.pause()
-        text='\n'.join(s.text for s in pilot.app.screen._compositor.render_strips())
-        assert [r['launch_number'] for r in panel._selection_rows] == [r['launch_number'] for r in expected]
-        assert len(panel._selection_rows)==5 and text.index('#747')<text.index('#751')
-        assert 'SEPOLIA' not in text and 'LATEST LAUNCHES' in text
-        assert all('#'+str(r['launch_number']) in text for r in expected)
-        assert panel.top_row()['launch_number']==747
+        assert not panel.query(DataTable)
+        lines = [s.text.rstrip() for s in pilot.app.screen._compositor.render_strips()]
+        assert 'SHIPPED RECENTLY · as of 17:18' in lines[0]
+        assert lines[1] == ''
+        assert 'weir' in lines[2] and '$EHS' in lines[3] and 'PvPPad' in lines[4]
+        assert lines[2].index('site') == lines[3].index('token') == lines[4].index('contract')
+        assert '1m' in lines[2] and '~3m' in lines[3] and '~5m' in lines[4]
 
 
-@pytest.mark.parametrize('opening',['click','enter'])
-async def test_latest_selection_opens_immutable_popup_snapshot(opening):
-    from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
+@pytest.mark.parametrize('launches,sites,expected', [(None, None, 'unavailable'),
+    ([], [], 'no shipped items yet'), ([], None, 'partial'), (None, [site()], 'partial')])
+async def test_sources_distinguish_unavailable_empty_and_partial(launches, sites, expected):
+    lines = await composite_lines(SurfSwarmLatestLaunches, (46, 12),
+        swarm_launch_rows=launches, swarm_site_rows=sites, as_of=2000)
+    assert expected in '\n'.join(lines)
+
+
+def test_signature_includes_the_second_source():
+    from maxpane_dashboard.data.surf_models import SWARM_LATEST_LAUNCHES_SIGNATURE
+    assert SWARM_LATEST_LAUNCHES_SIGNATURE == (
+        'swarm_launch_rows', 'swarm_site_rows', 'swarm_launches_as_of_hhmm', 'as_of')
+
+
+def test_shipments_filter_dedupe_and_cap_after_mixing():
+    from maxpane_dashboard.widgets.surf.swarm_latest import shipped_items
+    valid = token()
+    contract = token(kind='evm_contracts', timestamp=1850)
+    a = dict(contract['artifacts'][0], name='Alpha', role='contract', address='0x'+'1'*40)
+    b = dict(a, name='Beta', address='0x'+'2'*40)
+    contract['artifacts'] = [a, b, a, dict(a, name='Bad', address='invalid')]
+    launches = [valid, deepcopy(valid), token('TESTNET', production=False),
+                token('PARKED', status='parked'), token('EMPTY', artifacts=[]), contract]
+    sites = [site('newest', 1950), site('weir', 1900), site('old', 1600),
+             site('replaced', 2000, superseded_by='new'), site('failed', 2000, status='failed')]
+    items = shipped_items(launches, sites)
+    assert [item['name'] for item in items] == ['newest', 'weir', 'Alpha', 'Beta', '$EHS']
+    assert [item['kind'] for item in items] == ['site', 'site', 'contract', 'contract', 'token']
+
+
+def test_site_unknown_time_stays_last_and_known_testnet_join_is_excluded():
+    from maxpane_dashboard.widgets.surf.swarm_latest import shipped_items
+    launches = [token(production=False, chain_id=11155111)]
+    sites = [site('unknown', None), site('testnet', 2200, launch_number=737), site('known', 100)]
+    items = shipped_items(launches, sites)
+    assert [item['name'] for item in items] == ['known', 'unknown']
+
+
+def test_missing_launch_time_and_names_have_honest_fallbacks():
+    from maxpane_dashboard.widgets.surf.swarm_latest import shipped_items
+    row = token(None, timestamp=None, token_name=None, created_ts=None)
+    item = shipped_items([row], [])[0]
+    assert item['name'] == '#737'
+    assert item['timestamp'] is None
+    row.update(token_name='Identity', created_ts=10)
+    item = shipped_items([row], [])[0]
+    assert item['name'] == 'Identity' and item['timestamp'] == 10
+    assert 'request time' in item['timing']
+
+
+@pytest.mark.parametrize('opening', ['click', 'enter'])
+async def test_launch_selection_and_x_snapshot_are_immutable(opening):
     from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen
+    from maxpane_dashboard.widgets.surf.swarm_latest import ShippedRow
     class Probe(App):
         def compose(self): yield SurfSwarmLatestLaunches()
-        def on_surf_swarm_latest_launches_selected(self,event):
+        def on_surf_swarm_latest_launches_selected(self, event):
             self.push_screen(LaunchDetailScreen(event.row))
-    row=launch_row(ticker='[red]X')
-    async with Probe().run_test(size=(46,30)) as pilot:
-        panel=pilot.app.query_one(SurfSwarmLatestLaunches)
-        panel.update_data(swarm_launch_rows=[row],as_of=row['created_ts']+120)
+    row = token('[red]X')
+    async with Probe().run_test(size=(46, 30)) as pilot:
+        panel = pilot.app.query_one(SurfSwarmLatestLaunches)
+        panel.update_data(swarm_launch_rows=[row], swarm_site_rows=[site()], as_of=2000)
         await pilot.pause()
-        row['ticker']='changed'
-        table=panel.query_one(DataTable)
-        if opening=='click': await pilot.click(table,offset=(3,0))
+        assert panel.top_row()['ticker'] == '[red]X'
+        panel.top_row()['ticker'] = 'cannot change stored row'
+        row['ticker'] = 'changed'
+        widget = panel.query_one('#shipped-row-1', ShippedRow)
+        if opening == 'click':
+            await pilot.click(widget, offset=(2, 0))
         else:
-            table.focus()
+            widget.focus()
             await pilot.press('enter')
         await pilot.pause()
-        assert isinstance(pilot.app.screen,LaunchDetailScreen)
-        assert pilot.app.screen.row['ticker']=='[red]X'
-        assert pilot.app.screen.row['as_of']==row['created_ts']+120
+        assert isinstance(pilot.app.screen, LaunchDetailScreen)
+        assert pilot.app.screen.row['ticker'] == '[red]X'
+        assert pilot.app.screen.row['as_of'] == 2000
 
 
-@pytest.mark.parametrize('width,chain,age',[(46,True,True),(37,True,False),(29,False,False),(19,False,False)])
-async def test_latest_width_sheds_age_then_chain_before_identity(width,chain,age):
-    from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
-    row=launch_row(ticker='LONGSYMBOL'*4)
-    text='\n'.join(await composite_lines(SurfSwarmLatestLaunches,(width,12),swarm_launch_rows=[row],as_of=row['created_ts']+180))
-    assert '#737' in text and '✓ swarm' in text
-    assert ('MAINNET' in text)==chain
-    assert ('3m' in text)==age
+@pytest.mark.parametrize('width', [20, 28, 46])
+async def test_literal_hostile_names_and_cjk_stay_on_one_row(width):
+    from rich.cells import cell_len
+    row = token('[red]漢字\x1b\n\u202eLONGTICKER')
+    lines = await composite_lines(SurfSwarmLatestLaunches, (width, 12),
+        swarm_launch_rows=[row], swarm_site_rows=[site('hello.sites.imd.fun')], as_of=2000)
+    assert 'hello' in lines[2] and '.sites.imd.fun' not in '\n'.join(lines)
+    assert '$[red]' in lines[3]
+    assert '\x1b' not in '\n'.join(lines) and '\u202e' not in '\n'.join(lines)
+    assert not lines[4].strip()
+    assert all(cell_len(line) <= width for line in lines)
 
 
-@pytest.mark.parametrize('rows,word',[(None,'unavailable'),([], 'no production launch yet'),([launch_row(production=False)],'no production launch yet')])
-async def test_latest_empty_and_unavailable(rows,word):
-    from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
-    text='\n'.join(await composite_lines(SurfSwarmLatestLaunches,(46,12),swarm_launch_rows=rows))
-    assert word in text
-
-
-async def test_latest_pending_verdict_keeps_full_words_before_ticker():
-    from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
-    row=launch_row(ticker='LONGSYMBOL',verdict={'state':'not_deployed','passed':0,'failed':None})
-    text='\n'.join(await composite_lines(SurfSwarmLatestLaunches,(29,12),swarm_launch_rows=[row]))
-    assert '#737' in text and '-- pending' in text
-
-
-@pytest.mark.parametrize('seconds,word',[(0,'<1m'),(60,'1m'),(3600,'1h'),(86400,'1d')])
-async def test_latest_age_uses_snapshot_clock_and_literal_symbol(seconds,word):
-    from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
-    row=launch_row(ticker='[red]X')
-    text='\n'.join(await composite_lines(SurfSwarmLatestLaunches,(46,12),swarm_launch_rows=[row],as_of=row['created_ts']+seconds))
-    assert '$[red]X' in text and word in text and '\\' not in text
-
-
-async def test_latest_caps_more_than_five_production_launches():
-    from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
-    rows = [dict(launch_row(), launch_number=737+i, created_ts=1000+i) for i in range(7)]
+async def test_hover_discloses_proxy_times_and_missing_source():
+    from maxpane_dashboard.widgets.surf.swarm_latest import ShippedRow
     class Probe(App):
         def compose(self): yield SurfSwarmLatestLaunches()
-    async with Probe().run_test(size=(46, 14)) as pilot:
+    async with Probe().run_test(size=(46, 12)) as pilot:
         panel = pilot.app.query_one(SurfSwarmLatestLaunches)
-        panel.update_data(swarm_launch_rows=rows, as_of=2000)
+        panel.update_data(swarm_launch_rows=[token()], swarm_site_rows=None, as_of=2000)
         await pilot.pause()
-        text = '\n'.join(s.text for s in pilot.app.screen._compositor.render_strips())
-        assert len(panel._payload['rows']) == panel.query_one(DataTable).row_count == 5
-        assert all(f'#{number}' in text for number in range(739, 744))
-        assert '#738' not in text and '#737' not in text
+        hover = panel.query_one(ShippedRow).tooltip.plain
+        assert 'API update time' in hover and 'exact deployment time unavailable' in hover
+        assert 'Sites unavailable' in hover and 'Sites unavailable' in panel.tooltip.plain
 
 
-@pytest.mark.parametrize('width', [20, 28, 32, 33, 46])
-@pytest.mark.parametrize('rows,word', [(None, 'unavailable'), ([], 'no production launch yet'),
-                                     ([launch_row()], '#737')])
-async def test_latest_title_and_first_content_row(width, rows, word):
-    from maxpane_dashboard.widgets.surf.swarm_latest import SurfSwarmLatestLaunches
-    lines = await composite_lines(SurfSwarmLatestLaunches, (width, 14),
-        swarm_launch_rows=rows, swarm_launches_as_of_hhmm='14:16')
-    assert 'LATEST LAUNCHES' in lines[0]
-    assert not lines[1].strip()
-    assert (word if width >= 28 else word[:12]) in lines[2]
-    if width < 31:
-        assert '…' in lines[0]
+async def test_actual_styles_links_and_padding_are_composited():
+    from rich.color import Color
+    from maxpane_dashboard.app import MaxPaneApp
+    from maxpane_dashboard.themes import THEMES
+    from tests.widgets.address_probe import icon_targets, link_targets
+    class Probe(App):
+        CSS_PATH = MaxPaneApp.CSS_PATH
+        def __init__(self):
+            super().__init__()
+            self.register_theme(THEMES['matrix'])
+            self.theme = 'matrix'
+        def compose(self): yield SurfSwarmLatestLaunches()
+    async with Probe().run_test(size=(46, 12)) as pilot:
+        panel = pilot.app.query_one(SurfSwarmLatestLaunches)
+        panel.update_data(swarm_launch_rows=[token()], swarm_site_rows=[site()], as_of=2000)
+        await pilot.pause()
+        lines = [s.text for s in pilot.app.screen._compositor.render_strips()]
+        for y, name in ((2, 'weir'), (3, '$EHS')):
+            assert lines[y][0] == lines[y][-1] == ' '
+            name_style = pilot.app.screen.get_style_at(lines[y].index(name), y)
+            assert name_style.color == Color.parse(pilot.app.get_css_variables()['foreground'])
+            assert not name_style.dim
+            age_style = pilot.app.screen.get_style_at(lines[y].index('m'), y)
+            age_rgb = age_style.color.get_truecolor()
+            assert age_rgb.red == age_rgb.green == age_rgb.blue
+            assert age_style.color != name_style.color
+        assert any(link[3:5] == ('site', 'weir') for link in link_targets(pilot.app))
+        assert icon_targets(pilot.app)[0][2] == next(a['address'] for a in token()['artifacts'] if a['role'] == 'token')
+
+
+@pytest.mark.parametrize('change', [dict(production=False), dict(status='parked'),
+    dict(artifacts=[]), dict(artifacts=[dict(role='token', address='bad')]),
+    dict(artifacts=[dict(role='token', address='0x'+'0'*40)]),
+    dict(artifacts=[dict(role='helper', address='0x'+'1'*40)])])
+def test_only_production_live_deployed_token_is_a_shipment(change):
+    from maxpane_dashboard.widgets.surf.swarm_latest import shipped_items
+    assert shipped_items([token(**change)], []) == []
+
+
+def test_five_items_are_capped_after_sorting_both_sources():
+    from maxpane_dashboard.widgets.surf.swarm_latest import shipped_items
+    items = shipped_items([token(timestamp=1899)], [site(f's{i}', 1900+i) for i in range(6)])
+    assert [item['name'] for item in items] == ['s5', 's4', 's3', 's2', 's1']
+
+
+async def test_refresh_removes_previous_items_and_x_tracks_request_order():
+    from maxpane_dashboard.widgets.surf.swarm_latest import ShippedRow
+    class Probe(App):
+        def compose(self): yield SurfSwarmLatestLaunches()
+    async with Probe().run_test(size=(46, 12)) as pilot:
+        panel = pilot.app.query_one(SurfSwarmLatestLaunches)
+        older = token('older', 1900, created_ts=1000)
+        newer = token('newer', 1800, created_ts=1500, launch_number=999)
+        newer['artifacts'] = [dict(a, address='0x'+'3'*40) for a in newer['artifacts']]
+        panel.update_data(swarm_launch_rows=[older, newer], swarm_site_rows=[], as_of=2000)
+        await pilot.pause()
+        assert '$older' in str(panel.query_one('#shipped-row-0').render())
+        assert panel.top_row()['launch_number'] == 999
+        panel.update_data(swarm_launch_rows=[], swarm_site_rows=[], as_of=2100)
+        await pilot.pause()
+        lines = [s.text for s in pilot.app.screen._compositor.render_strips()]
+        assert not any('$older' in line or '$newer' in line for line in lines)
+        assert all(not row.display for row in panel.query(ShippedRow))
+        assert panel.top_row() is None
+
+
+def test_published_site_on_abandoned_mainnet_is_not_a_testnet_site():
+    from maxpane_dashboard.widgets.surf.swarm_latest import shipped_items
+    launches = [token(production=False, status='abandoned', chain_id=1)]
+    assert [item['name'] for item in shipped_items(launches, [site(launch_number=737)])] == ['weir']

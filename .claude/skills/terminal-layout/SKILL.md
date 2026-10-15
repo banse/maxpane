@@ -19,7 +19,7 @@ it. This file is the method; the constants are the record.
 | surf `l` launchpad (six rack heroes, 2026-10-12) | 138 cols · 33 rows (native COINS table binds width; nine-row hero adds two rows; live preview 149×45) | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `p` pool4 (key `e`, PROTOCOL; padded rack heroes, 2026-10-15) | 138 cols · 47 rows (unavailable CHECKS row binds width; compact labels preserve values; native body remains 99; live preview 149×45) | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `4` pool4 market (hint `4 pl4`; six rack heroes, 2026-10-12) | 148 cols · 38 rows (partial-holder row binds width; native STAKERS remains 119; live preview 149×45) | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `s` swarm (rack heroes, 2026-10-12; WORKFLOWS beside LATEST LAUNCHES, full-width LAUNCHES and SITES; `x` opens the newest launch) | 141 cols · 38 rows (LATEST WORKFLOW outer title binds width; nine-row heroes and nine-line body top floor) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `s` swarm (rack heroes, 2026-10-15; LAUNCHES beside SHIPPED RECENTLY, full-width WORKFLOWS and SITES; `x` opens the newest launch) | 141 cols · 38 rows (LATEST WORKFLOW outer title binds width; nine-row heroes and nine-line body top floor) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `a` agent (twelve rack cards over RECORD, 2026-10-13) | 132 cols · 29 rows; STATUS activity subtitle binds width; RECORD clears at 167; live preview 149×45 | `screens/surf.SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`, `RECORD_NEVER_CLEARS_BELOW` |
 | surf `b` board (neutral rack frames with green primary values; capped LEADERBOARD beside wider FLEET, 2026-10-15) | 142 cols · 43 rows; launch contributors table binds width (recorded seats clears at 140); grouped FLEET metadata/paused detail bind height after heartbeat removal; production render at 149×45 | `screens/surf.SURF_BOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `w` work (six rack heroes, workflow/job/step tree and selected details, 2026-10-13) | 126 cols · 30 rows; BLOCKED footer binds width, child panel floors bind height; long objectives may still mark; live preview at 149×45 | `screens/surf.SURF_WORK_FULL_LAYOUT_{COLUMNS,ROWS}` |
@@ -30,7 +30,7 @@ it. This file is the method; the constants are the record.
 
 CAPABILITY (2026-10-03), IN FLIGHT (2026-10-05) and THROUGHPUT (2026-10-06) are parked and
 mounted on no body, so no current pin certifies their tiers. A future body mounting them must
-re-sweep. SWARM's top floor stays nine lines with LATEST LAUNCHES beside WORKFLOWS; `x` opens
+re-sweep. SWARM's top floor stays nine lines with SHIPPED RECENTLY beside LAUNCHES; `x` opens
 the newest production launch's snapshot. LAUNCHES has an eight-line floor, SITES seven plus a
 one-line bottom margin; both tables scroll internally. The owner approved the offline fixture
 render at 150×46 on 2026-10-06; no new live-network measurement is claimed. The five-payload

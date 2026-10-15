@@ -1,5 +1,35 @@
 # Surfboard follow-ups
 
+## SHIPPED RECENTLY — 2026-10-15
+
+BUILT BY SWARM now puts LAUNCHES beside a plain five-item age/name/type list,
+with full-width WORKFLOWS below. Parked reason stays in launch detail only.
+Tokens, named contracts and current published sites merge newest-first;
+confirmed testnet entries and token helper artifacts are excluded. Publication
+uses retained namedAt; approximate API update/request ages carry a tilde.
+Existing caches gain site timestamps on their next normal site refresh.
+
+Live public renders were shown at 149×45 before boundary hardening, including
+fresh site publication data and the final green linked names. The existing
+141×38 minimum holds across five payloads; WORKFLOWS reaches full columns at
+72 and LAUNCHES at 203. The latter keeps liquidity from 138 and hides no
+column from 124 at the row pin. Name copy links and the independent x shortcut
+remain intact. Data/widget/layout mutations (13) all failed their named tests.
+
+Validation: 176 data checks and 127 guards/docpins passed. The broader 850-case
+UI/address run passed 845 initially; the obsolete column-count assertion and
+wide-address coverage setup were corrected and their containing/table or
+named address cases passed (49 and 3 checks). Three unrelated address-suite
+failures reproduce unchanged on HEAD 9d50e8e5: the old Surf pin-list assertion
+and portfolio/portfolio_live wide sweeps whose TokensHeroCard has no icon.
+They are existing debt, outside this feature.
+
+Final review approved; its publication-time mutation was killed and restored.
+Minor review follow-up: at very narrow widths the list omits type, but the
+row tooltip currently includes the name and timing only. Add type to the
+hover text when swarm_latest.py is next touched; normal 46-column rows show
+all three columns.
+
 ## Inactive numeric readouts — 2026-10-15
 
 Inactive digits with neutral inset borders again use each card's normal white

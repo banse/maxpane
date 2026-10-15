@@ -126,7 +126,7 @@ async def test_an_empty_list_is_a_real_negative_and_differs_from_none():
 
 def test_the_row_tuples_agree_with_the_column_count():
     width = len(SurfSwarmLaunches.COLUMNS)
-    assert width == len(SurfSwarmLaunches.COLUMN_SPECS) == 11
+    assert width == len(SurfSwarmLaunches.COLUMN_SPECS) == 10
     assert len(SurfSwarmLaunches.EMPTY_ROW) == width
     assert len(SurfSwarmLaunches.LOADING_ROW) == width
     assert SurfSwarmLaunches.ROW_CAP == 24
@@ -230,24 +230,13 @@ async def test_status_is_escaped_and_coloured_on_the_raw_word():
         assert "[/x]" not in "\n".join(rows_text) and "parked" in "\n".join(rows_text)
 
 
-async def test_a_hostile_parked_reason_renders_without_raising():
-    rows = [_launch(status="parked", parked_reason="manifest: [[x]/y] broken"),
-            _launch(launch_number=2, status="parked", parked_reason="stuck[reason")]
-    text = await _launches(swarm_launch_rows=rows, swarm_launches_as_of_hhmm=AS_OF)
-    first, second = _data_lines(text)[:2]
-    assert "manifest:" in first and "broken" in first and "[/x]" not in text, first
-    assert "stuck[reason" in second, second
-
-
-async def test_a_clipped_parked_reason_lights_the_title_hint_at_the_full_tier():
-    """The plan says the reason wraps; a base-rendered ``DataTable`` row is one
-    line, so the cell is clipped with ``…`` and the title says so."""
-    short = await _launches(swarm_launch_rows=[_launch(status="parked", parked_reason="no token")],
-                            swarm_launches_as_of_hhmm=AS_OF)
-    assert "no token" in short and "‹" not in short, short
-    long = await _launches(swarm_launch_rows=[_launch(status="parked", parked_reason="x" * 197)],
-                           swarm_launches_as_of_hhmm=AS_OF)
-    assert "…" in long and "‹" in long, long
+async def test_parked_reason_is_absent_even_at_full_width():
+    text = await _launches((220, 20), swarm_launch_rows=[
+        _launch(status="parked", parked_reason="manifest: [[x]/y] broken")],
+        swarm_launches_as_of_hhmm=AS_OF)
+    assert "parked" in text
+    assert "parked reason" not in text and "manifest:" not in text
+    assert "‹" not in text
 
 
 async def test_a_non_dict_row_is_skipped_and_the_cap_holds():
@@ -306,7 +295,7 @@ def test_the_derived_tier_widths_land_inside_their_tiers():
     assert ADDR_COLS > TIGHT_ADDR_COLS
 
 
-async def test_compact_sheds_kind_and_tight_sheds_the_reason_and_narrows_the_address():
+async def test_compact_sheds_kind_and_tight_narrows_the_address():
     row = [_launch(status="parked", parked_reason="no token")]
     full = await _launches((_FULL, 20), swarm_launch_rows=row, swarm_launches_as_of_hhmm=AS_OF)
     compact = await _launches((_COMPACT, 20), swarm_launch_rows=row, swarm_launches_as_of_hhmm=AS_OF)
@@ -315,11 +304,11 @@ async def test_compact_sheds_kind_and_tight_sheds_the_reason_and_narrows_the_add
     head = ADDR[: 2 + 8]           # the 17-cell window keeps 0x + 8 hex
     tight_head = ADDR[: 2 + 4] + "…"  # the 11-cell window keeps 0x + 4 hex
 
-    assert "kind" in full and "evm_project" in full and "parked reason" in full
+    assert "kind" in full and "evm_project" in full and "parked reason" not in full
     assert head in full and "‹" not in full, full
 
     assert "kind" not in compact and "evm_project" not in compact, compact
-    assert "parked reason" in compact and "no token" in compact
+    assert "parked reason" not in compact and "no token" not in compact
     assert head in compact and "‹" in compact
 
     assert "parked reason" not in tight and "no token" not in tight, tight
@@ -336,21 +325,11 @@ async def test_the_full_tier_hides_no_column_at_its_own_threshold():
         await pilot.pause()
         table = pilot.app.query_one(DataTable)
         assert table.max_scroll_x == 0
-        assert len(table.columns) == 11
+        assert len(table.columns) == 10
         text = "\n".join("".join(seg.text for seg in strip)
                          for strip in pilot.app.screen._compositor.render_strips())
-        assert re.search(r"#\s+ticker\s+status\s+chain\s+token\s+site\s+verdict\s+liq\s+kind\s+repo\s+parked reason", text), text
+        assert re.search(r"#\s+ticker\s+status\s+chain\s+token\s+site\s+verdict\s+liq\s+kind\s+repo", text), text
         assert "‹" not in text
-
-
-async def test_the_parked_reason_column_takes_every_spare_column():
-    reason = "y" * 60
-    narrow = await _launches((FULL_WIDTH + GUTTER, 20), swarm_launch_rows=[_launch(parked_reason=reason)],
-                             swarm_launches_as_of_hhmm=AS_OF)
-    wide = await _launches((FULL_WIDTH + GUTTER + 60, 20), swarm_launch_rows=[_launch(parked_reason=reason)],
-                           swarm_launches_as_of_hhmm=AS_OF)
-    assert "…" in narrow and "‹" in narrow, narrow
-    assert reason in wide and "‹" not in wide, wide
 
 
 async def test_repo_cell_drops_controls_before_fitting():

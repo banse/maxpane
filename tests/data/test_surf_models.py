@@ -865,6 +865,15 @@ def test_v8_launch_and_site_rows_freeze_launch_contract():
         assert "swarm_launches_as_of_hhmm" in SWARM_WIDGET_SIGNATURES[widget]
 
 
+def test_shipped_recently_contract_includes_site_publication_time():
+    from maxpane_dashboard.data.surf_models import SURF_ROW_KEYS, SWARM_LATEST_LAUNCHES_SIGNATURE
+
+    assert SWARM_LATEST_LAUNCHES_SIGNATURE == (
+        "swarm_launch_rows", "swarm_site_rows", "swarm_launches_as_of_hhmm", "as_of",
+    )
+    assert "named_ts" in SURF_ROW_KEYS["swarm_site_rows"]
+
+
 def test_surfboard_contract_freezes_plain_data_and_independent_clocks():
     from maxpane_dashboard.data import surf_models as m
     assert m.SURFBOARD_KEYS == ('surfboard_cards','surfboard_overview','surfboard_events','surfboard_hourly','surfboard_sources','surfboard_footer')
