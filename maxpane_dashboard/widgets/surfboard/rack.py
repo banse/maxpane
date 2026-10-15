@@ -363,7 +363,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             color = RED
         palette = self.app.get_css_variables()
         value_style = Style(color=palette['foreground'], bgcolor=palette['background'], dim=False)
-        label_style = Style(color=self.rich_style.color, bgcolor=palette['background'])
+        label_style = Style(color=GREEN if self.key in ('board', 'protocol', 'swarm-tokens')
+                            else self.rich_style.color, bgcolor=palette['background'])
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         border_inset = (Style.parse(MUTED) + Style(bgcolor=palette["background"])
                         if color == AMBER else inset)
