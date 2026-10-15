@@ -21,9 +21,9 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
 #: Rechecked after the 2026-10-14 PROTOCOL inset correction live preview at 149×45.
 #: Six equal fractional columns retain the standard card widths (at most one
-#: cell of rounding difference). PROTOCOL is top-right; FLEET is below ONCHAIN
-#: FEED. The rack retains its 143-column minimum and 23-column card floor;
-#: PROTOCOL uses the standard card padding and matches TOKENS' inset width.
+#: cell of rounding difference). PROTOCOL is top-right with FLEET below it;
+#: TOKENS is below ONCHAIN FEED. The rack retains its 143-column minimum and
+#: 23-column card floor; PROTOCOL and TOKENS use the same inset padding.
 #: Its aligned stats keep a leading blank; at the pin the stress row fits as
 #: "rewarded 100kIMD". Viewport padding and the vertical gutter keep the pin at 146.
 #: Normal, stress, unavailable and wide composites scroll horizontally at
@@ -44,6 +44,8 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: the owner size 149×45 also fits. A nine-cell base daemon uses the trailing
 #: value cell when needed. "astra 6 xhigh" / "opus 5.5 medium" retain both lower
 #: corners. Owner waived another preview; measurements use the production screen.
+#: Rechecked 2026-10-15 after swapping FLEET/TOKENS, live at 149×45. Boundary
+#: composites retain 146×37; captions stay above their original AGENT columns.
 #: App-wide width stays 143.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 146
 SURFBOARD_FULL_LAYOUT_ROWS = 37

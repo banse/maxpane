@@ -384,9 +384,9 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.update_data()
         rack.focus_card("announce")
         rack.move_focus("down")
-        assert rack.focused_card == "board"
-        rack.move_focus("right")
         assert rack.focused_card == "swarm-tokens"
+        rack.move_focus("right")
+        assert rack.focused_card == "board"
         rack.move_focus("up")
         assert rack.focused_card == "protocol"
         rack.move_focus("left")
@@ -395,7 +395,7 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         assert rack.focused_card == "oracles"
         rack.move_focus("left")
         assert rack.focused_card == "work"
-        rack.focus_card("swarm-tokens")
+        rack.focus_card("board")
         rack.move_focus("down")
         assert rack.focused_card == "agent-2"
         rack.move_focus("left")
@@ -883,6 +883,7 @@ async def test_fleet_unknown_zero_missing_effort_and_retained_data_on_resize():
         card.set_data(dict(data, status='stale'))
         for width in (110, 149, 220, 146):
             await pilot.resize_terminal(width, 45)
+            card.scroll_visible(animate=False, force=True)
             await pilot.pause()
             strips = card_strips(pilot.app, card)
             assert all(value in '\n'.join(row.text for row in strips) for value in ('52.5%', '47.4%', '0.1.2'))

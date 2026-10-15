@@ -418,3 +418,17 @@ but hover currently describes current advertised configuration and combined
 daemon builds without explicitly saying “per worker.” Correct that wording
 when the rules file is next touched; the calculations and approved UI are
 unaffected.
+
+## Boardroom FLEET / TOKENS position swap — 2026-10-15
+
+TOKENS now sits below ONCHAIN FEED on the left; FLEET sits below PROTOCOL on
+the right. Card identities, data and destinations stay attached to their cards.
+Arrow navigation follows the new positions. The translated captions remain
+above the original left and right AGENT columns.
+
+Live keyless preview at 149×45 shows the swapped cards. Boundary composites
+retain the 146×37 minimum. Position, navigation and caption regression checks
+reject reversals of both changes; the mutation runner restores the source.
+Final affected/composing checks: 185 passed; fast guards and documentation pins:
+127 passed. Review approved with no findings and independently killed both
+mutants. No outstanding follow-ups for this swap; no full suite was run.
