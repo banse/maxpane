@@ -84,8 +84,7 @@ async def test_post_preview_keeps_unicode_literal_and_address_copy_units(size):
                 assert not next(s.style for s in content[0] if '[bold]' in s.text).bold
             elif text.startswith('a界'):
                 assert [s.crop(left+1,right).text.rstrip() for s in content]==[
-                    'a'+'界'*(9 if size[0]==149 else 8), '界'*9,
-                    '界'*(8 if size[0]==149 else 7)+'...']
+                    'a'+'界'*8, '界'*(9 if size[0]==149 else 8), '界'*7+'...']
             elif text=='Short post':
                 assert 'Short post' in content[0].text
                 assert all(not s.crop(left+1,right).text.strip() for s in content[1:])
@@ -430,8 +429,8 @@ async def test_live_cards_route_and_empty_seats_focus_input_without_opening():
 
 
 @pytest.mark.parametrize("numerator,denominator,expected", [
-    (0, 8, "IDLE ▱▱▱▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "IDLE ▰▰▰▰▰▰▰▱▱▱▱▱▱▱"),
-    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE —"),
+    (0, 8, "IDLE ▱▱▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "IDLE ▰▰▰▰▰▰▱▱▱▱▱▱▱"),
+    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE —"),
     (None, 8, "IDLE —"), (True, 8, "IDLE —"), (9, 8, "IDLE —"),
     (-1, 8, "IDLE —"), (float("inf"), 8, "IDLE —"),
 ])
@@ -471,8 +470,8 @@ async def test_swarm_history_on_wip_footer_stretches_on_resize_and_keeps_unknown
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         card = app.hub.query_one("#surfboard-card-work", SurfboardCard)
-        for width, chart in [(149, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
-                             (140, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▄▄▅▅▆▇▇█")]:
+        for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
+                             (140, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)

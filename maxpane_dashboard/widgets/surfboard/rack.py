@@ -551,14 +551,6 @@ class SurfboardRack(Grid):
         self.focused_card = "announce"
 
     def on_resize(self):
-        # Keep fractional-track rounding, transferring one cell from ORACLES to the left rail.
-        columns = self.styles.grid_size_columns
-        available = self.content_size.width - (columns - 1) * self.styles.grid_gutter_vertical
-        widths = [(index + 1) * available // columns - index * available // columns
-                  for index in range(columns)]
-        widths[0] += 1
-        widths[3] -= 1
-        self.styles.grid_columns = tuple(widths)
         # Fractional tracks distribute spare lines unevenly between cards.
         rows = self.styles.grid_size_rows
         gaps = (rows - 1) * self.styles.grid_gutter_vertical

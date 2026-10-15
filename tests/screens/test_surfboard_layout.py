@@ -64,7 +64,7 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        for width, cells in [(149, 10), (180, 15), (140, 10), (149, 10)]:
+        for width, cells in [(149, 10), (180, 15), (140, 9), (149, 10)]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             card = app.hub.query_one("#surfboard-card-announce", SurfboardCard)
@@ -200,7 +200,7 @@ async def test_projected_pool4_share_rate_fits_owner_size_without_detail(state):
         pool4 = app.hub.query_one("#surfboard-card-pool4")
         footer = app.hub._compositor.render_strips()[pool4.region.bottom - 1].crop(
             pool4.region.x, pool4.region.right)
-        assert footer.text == "╰─ 1 sIMD = 1.30 IMD ─╯"
+        assert footer.text == "╰─ 1 sIMD = 1.303 IMD ─╯"
         assert "‹ widen" not in str(pool4.border_title)
 
 
@@ -388,7 +388,8 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
 @pytest.mark.parametrize("width", boundary_set(SURFBOARD_FULL_LAYOUT_COLUMNS, 110, 160, 143))
 async def test_width_boundary_reserves_six_columns_even_with_vertical_scrolling(kind, width):
     r = await _render(hub_payload(kind), (width, SURFBOARD_FULL_LAYOUT_ROWS - 1))
-    assert r["horizontal"] == (width < SURFBOARD_FULL_LAYOUT_COLUMNS), r
+    # A short viewport needs one real scrollbar cell; tall viewports reserve none.
+    assert r["horizontal"] == (width < SURFBOARD_FULL_LAYOUT_COLUMNS + 1), r
     assert ("‹ widen" in r["text"].splitlines()[0]) == r["horizontal"], r
     assert len({region.y for region in r["cards"].values()}) == 4
     if width >= SURFBOARD_FULL_LAYOUT_COLUMNS:
@@ -403,7 +404,8 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
     r = await _render(payload, (SURFBOARD_FULL_LAYOUT_COLUMNS, height))
     assert r["vertical"] == (height < SURFBOARD_FULL_LAYOUT_ROWS), r
     assert ("‹ taller" in r["text"].splitlines()[0]) == r["vertical"], r
-    assert not r["horizontal"] and not r["clipped"] and r["status_whole"], r
+    assert r["horizontal"] == (height < SURFBOARD_FULL_LAYOUT_ROWS), r
+    assert not r["clipped"] and r["status_whole"], r
     assert all(value >= 7 for value in r["heights"].values()), r
     if height >= SURFBOARD_FULL_LAYOUT_ROWS:
         for card in payload["surfboard_cards"][:8]:
@@ -421,7 +423,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 if kind == "unavailable":
                     assert "—" in text and "unavailable" not in text
                 else:
-                    assert "You can now deploy" in text and "via the swarm" in text and "..." in text
+                    assert "You can now" in text and "deploy via the" in text and "..." in text
                     assert card["secondary"].removesuffix(" replies") in text
                 continue
             if card["key"] == "board":
@@ -485,9 +487,12 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
             assert card["secondary"] in r["card_text"][card["key"]], (card, r)
 
 
-async def test_width_pin_is_the_measured_scroll_transition():
-    below = await _render(hub_payload(), (SURFBOARD_FULL_LAYOUT_COLUMNS - 1, SURFBOARD_FULL_LAYOUT_ROWS - 1))
-    at = await _render(hub_payload(), (SURFBOARD_FULL_LAYOUT_COLUMNS, SURFBOARD_FULL_LAYOUT_ROWS - 1))
+@pytest.mark.parametrize('short', [False, True])
+async def test_width_pin_is_the_measured_scroll_transition(short):
+    height = SURFBOARD_FULL_LAYOUT_ROWS - short
+    width = SURFBOARD_FULL_LAYOUT_COLUMNS + short
+    below = await _render(hub_payload(), (width - 1, height))
+    at = await _render(hub_payload(), (width, height))
     assert below["horizontal"] and not at["horizontal"], (below, at)
     assert "‹ widen" in below["text"].splitlines()[0]
     assert "‹ widen" not in at["text"].splitlines()[0]
@@ -499,6 +504,30 @@ async def test_height_pin_is_the_measured_scroll_transition():
     assert below["vertical"] and not at["vertical"], (below, at)
     assert "‹ taller" in below["text"].splitlines()[0]
     assert "‹ taller" not in at["text"].splitlines()[0]
+
+
+async def test_scrollbars_and_hints_return_after_repeated_short_tall_resizes():
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        for width, height, horizontal, vertical in [
+            (149, 45, False, False), (143, 36, True, True),
+            (143, 37, False, False), (143, 36, True, True),
+            (143, 37, False, False), (142, 45, True, False),
+            (149, 45, False, False),
+        ]:
+            await pilot.resize_terminal(width, height)
+            await pilot.pause()
+            viewport = app.hub.query_one('#surfboard-viewport')
+            title = app.hub._compositor.render_strips()[0].text
+            assert viewport.show_horizontal_scrollbar == horizontal, (width, height)
+            assert viewport.show_vertical_scrollbar == vertical, (width, height)
+            assert ('‹ widen' in title) == horizontal
+            assert ('‹ taller' in title) == vertical
+            if horizontal:
+                viewport.scroll_to(x=viewport.max_scroll_x, animate=False, force=True)
+                await pilot.pause()
+                fleet = app.hub.query_one('#surfboard-card-board')
+                assert fleet.region.right <= viewport.scrollable_content_region.right
 
 
 async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_agent_seats():
@@ -560,24 +589,26 @@ async def test_protocol_inset_matches_tokens_padding_without_losing_stats(size, 
     assert len(set(unit_columns)) == 1
 
 
-async def test_first_column_takes_one_cell_from_oracles_and_keeps_grid_aligned_on_resize():
+@pytest.mark.parametrize('stylesheet', [True, False])
+async def test_boardroom_uses_full_width_equal_columns_and_keeps_grid_aligned_on_resize(stylesheet):
     from rich.cells import cell_len
-    # Existing fractional track widths, before the one-cell transfer.
-    original = [(146, [23, 23, 23, 23, 23, 23]),
-                (149, [23, 24, 23, 24, 23, 24]),
-                (151, [23, 24, 24, 24, 24, 24]),
-                (152, [24, 24, 24, 24, 24, 24]),
-                (180, [28, 29, 29, 28, 29, 29]),
-                (149, [23, 24, 23, 24, 23, 24])]
-    app = HubHarness(hub_payload())
+    class DefaultStylesHarness(HubHarness):
+        CSS_PATH = None
+
+    sizes = [(149, [24, 24, 24, 24, 24, 24]),
+             (143, [23, 23, 23, 23, 23, 23]),
+             (145, [23, 23, 24, 23, 23, 24]),
+             (151, [24, 24, 25, 24, 24, 25]),
+             (180, [29, 29, 29, 29, 29, 30]),
+             (149, [24, 24, 24, 24, 24, 24])]
+    app = (HubHarness if stylesheet else DefaultStylesHarness)(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
-        for width, before in original:
+        for width, expected in sizes:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             rack = app.hub.query_one(SurfboardRack)
-            expected = before.copy()
-            expected[0] += 1
-            expected[3] -= 1
+            assert rack.region.x == 0
+            assert rack.region.width == width
             for card in rack.query(SurfboardCard):
                 column = card.rack_column
                 assert card.region.width == expected[column], (width, card.key, card.region)
@@ -587,7 +618,7 @@ async def test_first_column_takes_one_cell_from_oracles_and_keeps_grid_aligned_o
             terminal = rack.query_one(SurfboardTerminal)
             assert terminal.region.x == rack.query_one('#surfboard-card-swarm').region.x
             assert terminal.region.right == rack.query_one('#surfboard-card-pool4').region.right
-            assert terminal.region.width == sum(before[1:5]) + 3 - 1
+            assert terminal.region.width == sum(expected[1:5]) + 3
             assert rack.region.right == rack.query_one('#surfboard-card-board').region.right
             strips = app.hub._compositor.render_strips()
             for key, label_id, word in [('protocol', 'keep', 'キープ'),
@@ -612,7 +643,7 @@ async def test_boardroom_title_is_centered_muted_after_refresh_and_resize():
             row = app.hub._compositor.render_strips()[0]
             text = row.text.strip()
             assert text.startswith('IMD BOARDROOM')
-            assert ('‹ widen' in text) == (width < SURFBOARD_FULL_LAYOUT_COLUMNS)
+            assert ('‹ widen' in text) == app.hub.query_one('#surfboard-viewport').show_horizontal_scrollbar
             assert abs(row.text.index(text) - (width - len(text)) / 2) <= .5
             ink = next(segment.style.color for segment in row if 'IMD BOARDROOM' in segment.text)
             card = app.hub.query_one('#surfboard-card-announce')

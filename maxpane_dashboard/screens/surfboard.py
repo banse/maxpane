@@ -19,40 +19,41 @@ from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 
-#: Rechecked after the 2026-10-15 one-cell transfer, live preview at 149×45.
-#: Start with six equal fractional tracks, then give the first column one cell
-#: from ORACLES. Other track widths and the rack's right edge stay unchanged.
-#: FLEET is top-right with TOKENS below it; PROTOCOL is below ONCHAIN FEED.
-#: The rack retains its 143-column minimum: 24 cells left, 22 for ORACLES,
-#: 23 for the other tracks. PROTOCOL and TOKENS use the same inset padding;
-#: aligned stats retain a leading blank and the full stress values and IMD units.
-#: Viewport padding and the vertical gutter keep the pin at 146.
-#: Normal, stress, unavailable and wide composites scroll horizontally at
-#: 145×36, but not 146×36; vertical scrolling clears at 146×37. Every card fits
-#: at 146×37 and 149×45. TOKENS keeps its leading blank and right-edge arrows.
+#: Rechecked 2026-10-15 after removing the horizontal reserve, live at 149×45.
+#: Six equal fractional columns fill the viewport, matching the AGENT board.
+#: At 149×45 every card is 24 columns wide, separated by one-cell gutters;
+#: widths at other terminal sizes differ by at most one rounding cell.
+#: The previous first-column/ORACLES transfer is removed. FLEET remains top-right,
+#: TOKENS sits below it, and PROTOCOL remains below ONCHAIN FEED.
+#: The viewport keeps vertical padding but no horizontal padding or idle gutter.
+#: Owner exception to the stable-gutter rule: the vertical scrollbar consumes
+#: one column only while needed. Width onset therefore depends on viewport height.
+#: The rack retains its 143-column minimum and 23-column card floor.
+#: Measured at 37 and 45 rows: 142 columns scroll horizontally, 143 do not.
+#: At 36 rows vertical scrolling consumes a column: 143 scrolls horizontally,
+#: 144 does not. Normal, stress, unavailable and wide boundary composites agree.
+#: The full-layout pin is 143×37; short screens can need a 144-column viewport.
+#: At width 143, height 36 scrolls on both axes and 37 clears both bars.
 #: Four seven-row card floors, three gutters and two extra side-gap rows need
-#: a 33-row rack, restoring the height pin from 35 to 37. The gaps directly below
-#: PROTOCOL and TOKENS are three lines, with regular muted captions in the
-#: middle line before the AGENT seats. All other card gaps remain one line.
-#: All cards remain equally tall. The terminal fills the center to the rack
-#: bottom, measuring 94 columns at the pin and 96 at 149×45. At owner size all
-#: cards remain nine rows tall; the enlarged gaps use the two former spare rows.
-#: WORK IN PROGRESS uses job digits and workflow subtitle in the former
-#: PORTFOLIO slot. Its outer footer shows SWARM's 24H history; build/review
-#: counts appear under BUILT BY SWARM. Both fit the standard card widths.
-#: Rechecked 2026-10-15 for FLEET's three RUNTIMES rows and model/effort footer:
-#: normal, stress, unavailable and wide boundary composites preserve 146×37;
-#: the owner size 149×45 also fits. A nine-cell base daemon uses the trailing
-#: value cell when needed. "astra 6 xhigh" / "opus 5.5 medium" retain both lower
-#: corners. Owner waived another preview; measurements use the production screen.
-#: Rechecked 2026-10-15 after swapping FLEET/TOKENS, live at 149×45. Boundary
-#: composites retain 146×37; captions stay above their original AGENT columns.
-#: Subsequent PROTOCOL/FLEET and TOKENS/PROTOCOL swaps retain both pins and caption
-#: positions in the boundary composites and the live 149×45 preview.
-#: The one-cell transfer also retains both pins across all four payloads.
-#: Resize checks preserve column alignment and centered captions after track changes.
+#: a 33-row rack; vertical padding and title/status rows retain the 37-row pin.
+#: Gaps below PROTOCOL and TOKENS are three lines, with regular muted captions
+#: centered in the middle line above AGENT seats. Other card gaps are one line.
+#: All cards remain equally tall, measuring nine rows at the owner size.
+#: The terminal fills the four center columns down to the rack bottom,
+#: measuring 95 columns at the pin and 99 at 149×45.
+#: PROTOCOL and TOKENS retain equal inset padding and leading blanks; stats
+#: retain the full stress values and IMD units, and token arrows stay right-aligned.
+#: WORK IN PROGRESS keeps job digits and workflow subtitle. Its outer footer
+#: shows SWARM's 24H history; build/review counts stay under BUILT BY SWARM.
+#: FLEET keeps three RUNTIMES rows and the model/effort footer. A nine-cell base
+#: daemon fits the trailing value cell; model footers retain both lower corners.
+#: Normal, stress, unavailable and wide payloads fit at 143×37 and 149×45.
+#: Resize checks preserve card/terminal alignment, captions and visible footers
+#: in both the screen's default CSS and the production stylesheet.
+#: Settled geometry refreshes Textual's scrollbar decision after resizing, so
+#: repeated short/tall transitions retain reachable edges and honest title hints.
 #: App-wide width stays 143.
-SURFBOARD_FULL_LAYOUT_COLUMNS = 146
+SURFBOARD_FULL_LAYOUT_COLUMNS = 143
 SURFBOARD_FULL_LAYOUT_ROWS = 37
 
 
@@ -78,8 +79,8 @@ class SurfboardScreen(DashboardScreen):
     DEFAULT_CSS = """
     SurfboardScreen { background: $background; color: $text; }
     SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $text-muted; padding: 0 1; content-align: center middle; }
-    SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1; overflow: auto auto;
-        scrollbar-gutter: stable; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
+    SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1 0; overflow: auto auto;
+        scrollbar-gutter: auto; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
     """
 
     def __init__(self, manager, poll_interval=30, name="surfboard", *, wallet=None, clock=monotonic, **kwargs):
@@ -160,6 +161,10 @@ class SurfboardScreen(DashboardScreen):
 
     def _render_chrome(self) -> None:
         viewport = self.query_one("#surfboard-viewport", VerticalScroll)
+        # Textual's auto/auto oscillation guard can retain a previous resize's
+        # scrollbar decision. Reconcile against the settled viewport geometry.
+        viewport._scrollbar_changes.clear()
+        viewport._refresh_scrollbars()
         hints = []
         if viewport.show_horizontal_scrollbar:
             hints.append("‹ widen")
