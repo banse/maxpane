@@ -58,6 +58,9 @@ from maxpane_dashboard.data.swarm_tokens_demo import demo_snapshot
 from maxpane_dashboard.screens.swarm_tokens import (
     SwarmTokensScreen, SWARM_TOKENS_FULL_LAYOUT_COLUMNS, SWARM_TOKENS_FULL_LAYOUT_ROWS,
 )
+from maxpane_dashboard.screens.swarm_token_detail import (
+    SwarmTokenScreen, SWARM_TOKEN_FULL_LAYOUT_COLUMNS, SWARM_TOKEN_FULL_LAYOUT_ROWS,
+)
 from maxpane_dashboard.data.portfolio_demo import DemoPortfolioManager, demo_snapshot as portfolio_snapshot
 from maxpane_dashboard.screens.portfolio import (
     PortfolioScreen, PORTFOLIO_FULL_LAYOUT_COLUMNS, PORTFOLIO_FULL_LAYOUT_ROWS,
@@ -718,7 +721,41 @@ def _surfboard_app() -> App:
 
 
 def _swarm_tokens_app() -> App:
-    return _CopyHarness(SwarmTokensScreen(_PayloadManager(_swarm_tokens_payload())))
+    from tests.data.test_swarm_token_detail import Client
+    payload = _swarm_tokens_payload()
+    client = Client()
+    client.sites = []
+    for job in client.jobs.values():
+        job['workflow'] = None
+
+    async def launch(identity):
+        return copy.deepcopy(payload['detail_launches'].get(identity))
+
+    client.fetch_launch_jobs = launch
+    return _CopyHarness(SwarmTokensScreen(_PayloadManager(payload, client=client)))
+
+
+def _open_token_detail(index):
+    async def open_detail(app, pilot):
+        await pilot.press(*(['down'] * index + ['enter']))
+        await pilot.pause()
+        assert isinstance(app.screen, SwarmTokenScreen)
+        await app.screen._data_manager.wait_pending()
+        await app.screen._do_refresh()
+    open_detail.__name__ = f'token_detail_{index}'
+    return open_detail
+
+
+def _swarm_token_detail_payload():
+    from tests.screens.test_swarm_token_detail import detail_payload
+    payload = detail_payload()
+    payload['launch']['objective'] = 'Deploy token ' + _SURF_PROSE
+    payload['token']['paired_symbol'] = _SWARM_CONTRACT
+    return payload
+
+
+def _swarm_token_detail_app() -> App:
+    return _CopyHarness(SwarmTokenScreen(_PayloadManager(_swarm_token_detail_payload())))
 
 
 _PORTFOLIO_WALLET = '0x' + 'ab' * 20
@@ -748,16 +785,34 @@ def _portfolio_live_app() -> App:
 
 
 def _swarm_tokens_payload():
+    from uuid import UUID
+    from tests.data.test_swarm_token_detail import evidence
+    launch, *_ = evidence()
     snapshot = demo_snapshot()
     snapshot['is_mock'] = False
     snapshot['tokens'] = snapshot['tokens'][:3]
+    snapshot['detail_launches'] = {}
     for row, chain, chain_id, contract in zip(snapshot['tokens'], ('eth','base','rh'),
                                             (1,8453,4663), _TOKEN_CONTRACTS):
-        row.update(chain=chain, chain_id=chain_id, token_address=contract)
+        identity = str(UUID(int=chain_id))
+        row.update(chain=chain, chain_id=chain_id, token_address=contract,
+                   launch_uuid=identity, market_pool=contract, launch_pool=contract)
+        detail = copy.deepcopy(launch)
+        detail.update(id=identity, chainId=chain_id,
+                      artifacts=[dict(role='token', name=row['name'], address=contract)])
+        detail['jobs'][0]['objective'] = 'Build token ' + contract
+        snapshot['detail_launches'][identity] = detail
     return snapshot
 
 
 CASES: tuple[SweepCase, ...] = (
+    SweepCase(
+        name="swarm_token_detail", screen_class=SwarmTokenScreen,
+        build=_swarm_token_detail_app, payload=_swarm_token_detail_payload,
+        seeded=('0x' + 'ab' * 20, '0x' + 'cd' * 20, '0x' + 'ef' * 20,
+                _SURF_PROSE, _SWARM_CONTRACT), explorer=ETHEREUM,
+        pins=((SWARM_TOKEN_FULL_LAYOUT_COLUMNS, SWARM_TOKEN_FULL_LAYOUT_ROWS),),
+    ),
     SweepCase(
         name="portfolio_live", screen_class=PortfolioScreen,
         build=_portfolio_live_app, payload=_portfolio_live_payload,
@@ -777,7 +832,7 @@ CASES: tuple[SweepCase, ...] = (
     SweepCase(
         name="swarm_tokens_live", screen_class=SwarmTokensScreen,
         build=_swarm_tokens_app, payload=_swarm_tokens_payload,
-        views=(('enter',), ('down','enter'), ('down','down','enter')),
+        views=tuple(_open_token_detail(index) for index in range(3)),
         seeded=_TOKEN_CONTRACTS, explorer=ETHEREUM,
         explorers=(ETHEREUM,BASE,ROBINHOOD), rows_pick_explorer=True,
         explorer_for=dict(zip(_TOKEN_CONTRACTS,(ETHEREUM,BASE,ROBINHOOD))),

@@ -55,7 +55,7 @@ async def test_live_screen_has_coverage_and_explorer_details_without_mock_label(
         await pilot.press('enter')
         await pilot.pause()
         text = painted(app)
-        assert 'MOCK' not in text and 'DexScreener' in text and 'Contract' in text
+        assert 'MOCK' not in text and 'DexScreener' in text and 'ARTIFACTS' in text
         strips = app.screen._compositor.render_strips()
         segments = [seg for strip in strips for seg in strip if seg.style]
         assert any(seg.style.link == 'https://etherscan.io/address/0x'+'a'*40 for seg in segments)

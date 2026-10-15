@@ -485,6 +485,23 @@ class SwarmTokensManager:
         """Existing live-launch market view, sharing Portfolio's refresh work."""
         return self._snapshot()
 
+    async def fetch_selected_token(self, token_id, *, launch_uuid=None):
+        """Offer existing cache work for exactly one identity; no overview mode change."""
+        now = self._clock()
+        source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
+        tokens = self._tokens(source, now, include_inactive=True)
+        self.offer_catalogue()
+        token = next((row for row in tokens or [] if row['id'] == token_id
+                      and (launch_uuid is None or row['launch_uuid'] == launch_uuid)), None)
+        if token is None:
+            return None
+        self._offer_enrichment([token], now)
+        if self._catalogue_source(tokens, source, now)['state'] == 'stale':
+            for name in ('market', 'history', 'trades', 'liquidity'):
+                if token.get(name + '_read_at') is not None:
+                    token[name + '_state'] = 'stale'
+        return deepcopy(token)
+
     async def fetch_portfolio(self, priority_ids=()):
         """Cached candidates on supported chains, including inactive launches.
 

@@ -12,7 +12,8 @@ from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.swarm_tokens import (
     BestPlays, NewlyLaunched, TokenActivity, TokensHero, TokensTable,
 )
-from maxpane_dashboard.widgets.swarm_tokens.detail import SwarmTokenDetail
+from maxpane_dashboard.data.swarm_token_detail import SwarmTokenDetailManager
+from maxpane_dashboard.screens.swarm_token_detail import SwarmTokenScreen
 from maxpane_dashboard.widgets.swarm_tokens.filter import SwarmTokensFilterEditor
 
 #: Overview remeasured after the live 149x45 panel-order revision (2026-10-10).
@@ -206,8 +207,8 @@ class SwarmTokensScreen(DashboardScreen):
     def on_tokens_table_selected(self,event):
         event.stop()
         if event.token:
-            self.app.push_screen(SwarmTokenDetail(event.token, is_mock=self._is_mock,
-                                                 as_of=self.snapshot.get('as_of')))
+            detail = SwarmTokenDetailManager(self._data_manager, event.token)
+            self.app.push_screen(SwarmTokenScreen(detail))
 
     def action_search(self):
         if not self._filter_open:

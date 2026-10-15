@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rich.text import Text
+from maxpane_dashboard.widgets.surf._swarm_table import _SelectableTable
 from textual.message import Message
 from textual.widgets import DataTable, Static
 
@@ -108,7 +109,7 @@ class TokensTable(TableLeaderboard):
         self._as_of = None
 
     def compose_body(self):
-        yield DataTable(id=self.TABLE_ID, cell_padding=1)
+        yield _SelectableTable(id=self.TABLE_ID, cell_padding=1)
 
     def selected_token(self):
         table = self.query_one(DataTable)

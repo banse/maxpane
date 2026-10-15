@@ -106,6 +106,8 @@ _TOKEN_CHARS = frozenset("0123456789abcdefABCDEFx…")
 #: Widget classes that import the helper yet never produce an icon, each with
 #: the reason. A class, never a module or package.
 EXEMPT: dict[str, str] = {
+    "maxpane_dashboard.widgets.swarm_token_detail.ContributorTable":
+        "Accepted seat IDs, roles and job UUID links only; no contract addresses in contributor rows.",
     "maxpane_dashboard.widgets.surf.oracles.SurfOraclesHero": "Six request/state counts only; no question or answer text.",
     "maxpane_dashboard.widgets.surf.oracles._OracleCard": "Fixed oracle labels, source clocks and numeric counts only.",
     "maxpane_dashboard.widgets.surf.work.SurfWorkHero": "Six numeric counts only; shares a module with the prose-bearing work tree.",
@@ -1127,6 +1129,16 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                         problems.append((label, x, y, link_value, "job link not held in payload"))
                     if name != IMD.name or url != url_for(IMD, "job", link_value):
                         problems.append((label, x, y, url, "wrong job explorer URL"))
+                    continue
+                if link_kind == "site":
+                    from maxpane_dashboard.widgets.explorer import SITES, is_site
+                    values = _strings_in(served)
+                    held = (link_value in values or link_value + '.sites.imd.fun' in values
+                            or link_value + '.site.identitymd.eth' in values)
+                    if not is_site(link_value) or not held:
+                        problems.append((label, x, y, link_value, "site link not held in payload"))
+                    if name != SITES.name or url != url_for(SITES, "site", link_value):
+                        problems.append((label, x, y, url, "wrong site explorer URL"))
                     continue
                 if link_kind == "address" and link_value.lower() in case.unlinked:
                     problems.append((label, x, y, link_value, "link to an address the case renders unlinked"))

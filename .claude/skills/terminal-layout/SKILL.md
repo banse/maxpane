@@ -27,6 +27,7 @@ it. This file is the method; the constants are the record.
 | dashboard 9 `surfboard` (four-row equipment rack with four AGENT seats, re-swept 2026-10-15) | 143 cols · 37 rows; six equal columns without idle gutter; FLEET is top-right and PROTOCOL below ONCHAIN FEED; text rows reserve one blank at both edges; empty seat inputs keep the five-line inset; three-line gaps below PROTOCOL/TOKENS contain regular muted captions on the middle line; terminal fills the center span; live preview at 149×45 | `screens/surfboard.SURFBOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
+| SWARM TOKENS selected token (2026-10-15; six cards above launch/contributors and market/position, full-width artifacts) | 146 cols · 44 rows; rightmost card/gutter binds width, fixed body floors bind height; live preview 149×45 | `screens/swarm_token_detail.SWARM_TOKEN_FULL_LAYOUT_{COLUMNS,ROWS}` |
 
 CAPABILITY (2026-10-03), IN FLIGHT (2026-10-05) and THROUGHPUT (2026-10-06) are parked and
 mounted on no body, so no current pin certifies their tiers. A future body mounting them must

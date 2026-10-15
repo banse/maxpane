@@ -885,6 +885,26 @@ lights widen in every tier; a fitting literal ellipsis does not. Full tier is a 
 guarantee, not a promise that arbitrary notes fit; measured content limits are in surf.py.
 
 
+## Selected SWARM token dashboard
+
+Click or Enter in SWARM TOKENS opens `SwarmTokenScreen` with an immutable
+chain/address and launch UUID. Escape returns to the retained list selection and
+filters. Six native cards show price, cap, volume, launch number, distinct accepted
+contributors, and original position. The body places launch/contributors left,
+market/position right, and artifacts across the bottom. Long objectives have a
+separate two-row scroll area so metadata remains visible. Its own layout pin is
+146×44, measured after the live 149×45 preview.
+
+`SwarmTokenDetailManager` borrows the existing token manager/client, schedules
+selected market reads, and owns only bounded launch/job/workflow/site enrichment.
+The new primitive contract lives in `swarm_token_detail_models.py`; existing
+overview token fields remain unchanged. Contributor rows are accepted non-oracle
+seats, deduplicated by seat/role/job. Frontend joins require matching workflow
+launch and contracts IDs. Sites must belong to proved jobs. Partial counts use
+`≥`; failed reads keep independent last-good clocks and explicit state. Mock
+mode starts no reader and invents no contributors or sites. The original cached
+popup remains available to Portfolio.
+
 ## SURFBOARD HUB (dashboard 9)
 
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.

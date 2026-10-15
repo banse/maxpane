@@ -62,7 +62,12 @@ The liquidity hero sums paired IMD and ETH separately for the filtered rows;
 same paired balances as the main table. Missing balances stay `--`.
 Chain, search and liquidity filters update the table, heroes, newly launched list,
 gainers/losers and activity together. Press `f` for the native filter editor, `/` for
-search, `c` to cycle chains, `o` to sort, and Enter for token details and explorer links.
+search, `c` to cycle chains, and `o` to sort. Click a token or press Enter to open
+its dedicated dashboard: launch details, contributing agents, market history,
+original launch-position liquidity, and linked contracts/sites. Escape returns
+to the token list with its filters and selection preserved. The detail view fits
+at 146×44; unavailable sources stay explicit and contributor totals show `≥`
+when only part of the build history could be read.
 **APPLY FILTER** commits the draft; **RESET ALL** clears it; Escape cancels or returns.
 
 The complete IMD launch catalogue supplies token identity. DexScreener supplies a

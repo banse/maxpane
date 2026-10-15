@@ -120,3 +120,30 @@ Stale, missing or invalid balances do not enter the sum. A known incomplete sum
 is a lower bound (`≥`); an entirely unknown asset sum is `--`. A complete empty
 selection, or a complete selection with no balance in that unit, yields zero.
 Newly Launched now shows these per-token paired amounts instead of LP state.
+
+## Selected-token launch dashboard — 2026-10-15
+
+The approved Built by Swarm layout reuses the exact selected token's existing
+quote/history/launch-position caches. The current token identity and launch UUID
+are captured when the row opens. A same-symbol token or a changed catalogue
+representative cannot replace it. No additional market provider is introduced.
+
+`GET /launches/{uuid}?light=1` supplies launch metadata, artifacts and attached
+jobs. The reader validates UUID, chain and token artifact before admitting it.
+Accepted non-oracle nodes in those jobs form contributor rows. A frontend job
+is admitted only after its workflow names the selected launch and contracts
+job, and the frontend itself names that workflow. Current published sites join
+only through these proved job IDs. Existing captured fixtures under
+`tests/fixtures/surf/launch_contribution/` and `swarm/v9/` supply offline evidence.
+
+The reader bounds jobs, nodes, artifacts, sites and concurrent requests, retains
+successful clocks through failures, and marks truncated/partial joins explicitly.
+The card counts unique seats, not nodes or jobs. The recorded date is the API
+request time, not a claimed deployment time. Leaving closes only selected work;
+the market list and its shared source caches remain available.
+
+Live keyless previews at 149×45 showed MEDICI and BLACKOUT, each with eight
+accepted seats and three deployed artifacts. BLACKOUT's selected market had a
+quote but no available hourly history; launch-position evidence was stale.
+Those states remained explicit in the preview. These are observations from the
+preview, not constants or availability guarantees.

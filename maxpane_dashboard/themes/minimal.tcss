@@ -3078,6 +3078,25 @@ SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $text
 SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1 0; overflow: auto auto;
     scrollbar-gutter: auto; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
 
+/* SWARM TOKEN detail screen */
+SwarmTokenScreen { background: $background; color: $text; }
+    SwarmTokenScreen #token-title { height: 1; text-align: center; color: $text-muted;
+        background: $boost; text-wrap: nowrap; }
+    SwarmTokenScreen #token-viewport { height: 1fr; padding: 0 1; overflow: auto auto;
+        scrollbar-gutter: stable; scrollbar-size: 1 1; }
+    SwarmTokenScreen #token-body { width: 1fr; min-width: 143; height: 1fr; min-height: 42; }
+    SwarmTokenScreen DetailHero { height: 9; margin: 1 0; }
+    SwarmTokenScreen #token-middle { height: 1fr; min-height: 22; margin-bottom: 1; }
+    SwarmTokenScreen #token-main { width: 2fr; height: 1fr; margin-right: 2; }
+    SwarmTokenScreen #token-rail { width: 1fr; height: 1fr; }
+    SwarmTokenScreen LaunchSummary { height: 11; }
+    SwarmTokenScreen ContributorTable { height: 1fr; min-height: 11; }
+    SwarmTokenScreen MarketPanel { height: 12; }
+    SwarmTokenScreen PositionPanel { height: 1fr; min-height: 10; }
+    SwarmTokenScreen ArtifactTable { height: 8; }
+    SwarmTokenScreen DataTable { height: 1fr; background: $background; scrollbar-size: 1 1; }
+    SwarmTokenScreen .panel-title { height: 1; text-wrap: nowrap; text-overflow: ellipsis; }
+
 /* SWARM TOKENS mock screen */
 SwarmTokensScreen { background: $background; color: $text; }
 SwarmTokensScreen #st-viewport { height: 1fr; padding: 0 1; overflow: auto auto;

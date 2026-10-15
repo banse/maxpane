@@ -1,5 +1,27 @@
 # Surfboard follow-ups
 
+## Selected-token dashboard — 2026-10-15
+
+Option 2 is implemented: six native cards above launch/contributors and
+market/position panels, with full-width artifacts below. Click or Enter from
+SWARM TOKENS opens the selected identity; Escape retains list selection and
+filters. Independent source clocks, bounded proven launch/job/site joins and
+owned-task cancellation preserve the existing keyless, read-only behavior.
+
+Live MEDICI/BLACKOUT renders were shown at 149×45 before hardening. The new
+146×44 pin and both neighboring dimensions pass complete/degraded composites.
+Final affected/composing checks: 181 passed, with only the same three baseline
+address failures documented below (old Surf pin list and both Portfolio wide
+coverage cases). The new detail and overview-to-detail address sweeps pass.
+Also passed: 125 fast guards, 80 registration checks, 12 documentation pins
+and the new screen's panel-dispatch agreement. No full suite was run.
+
+Sixteen mutation witnesses were killed and restored. Final review identified
+one wrong-number issue: partial contributor counts lost their lower-bound
+marker when stale. The fix retains coverage separately from freshness; aging,
+failed reads and recovery regressions pass. Scoped re-review: ADDRESSED.
+No new unresolved feature findings.
+
 ## SHIPPED RECENTLY — 2026-10-15
 
 BUILT BY SWARM now puts LAUNCHES beside a plain five-item age/name/type list,
