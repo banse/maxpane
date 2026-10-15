@@ -1,6 +1,7 @@
 """Leaderboard rack cards over independently observed projected facts."""
 from __future__ import annotations
 
+from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid
@@ -97,6 +98,14 @@ class BoardHeroCard(Pool4HeroCard):
     VALUE_COLOR = "foreground"
 
     DEFAULT_CSS = "BoardHeroCard { border-subtitle-align: center; }"
+
+    def render(self):
+        content = super().render()
+        value_color = Style(color=self.app.get_css_variables()[self.VALUE_COLOR]).color
+        for span in tuple(content.spans):
+            if isinstance(span.style, Style) and span.style.color == value_color:
+                content.stylize("bold", span.start, span.end)
+        return content
 
     def _footer(self):
         data = self.data

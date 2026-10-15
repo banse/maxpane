@@ -92,13 +92,14 @@ async def test_inner_metrics_are_green_with_padded_stats_and_neutral_captions(wi
                     assert row.text[right - 1] == ' '
                     assert row.text[right - 1 - len(value):right - 1] == value
                     positions = range(right - 1 - len(value), right - 1)
-                    assert app.screen.get_style_at(card.region.x + left + 2, card.region.y + top + index + 1).color.get_truecolor() != green
+                    label_style = app.screen.get_style_at(card.region.x + left + 2, card.region.y + top + index + 1)
+                    assert label_style.color.get_truecolor() != green and not label_style.bold
                 else:
                     positions = [x for x in range(left + 1, right) if not row.text[x].isspace()]
                     assert positions
                 for x in positions:
                     style = app.screen.get_style_at(card.region.x + x, card.region.y + top + index + 1)
-                    assert style.color.get_truecolor() == green and not style.dim, (key, row.text, style)
+                    assert style.color.get_truecolor() == green and style.bold and not style.dim, (key, row.text, style)
             for index in (top, top + 4, len(rows) - 1):
                 for segment in rows[index]:
                     if segment.text.strip():
