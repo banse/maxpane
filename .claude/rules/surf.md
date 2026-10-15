@@ -922,7 +922,9 @@ Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type 
 footer is centered `Identity.md`. Three-line gaps below PROTOCOL and TOKENS separate them
 from the AGENT seats; regular-weight キープ / ビルディング match the muted card-footer
 labels and are centered on the middle line.
-Other card gaps remain one line; all card sizes stay equal.
+Other vertical card gaps remain one line; all card sizes stay equal. Card widths
+use the smallest whole-cell track width, leaving fractional surplus outside the
+cards and preserving the terminal span. Captions realign after card resizing.
 The terminal hides automatic stale labels (including generated command summaries), unavailable
 placeholders and V/P/D service flags at every width; underlying source metadata remains.
 It supports bounded read-only commands and replaces its recent `/swarm` event window

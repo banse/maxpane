@@ -327,6 +327,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
     def on_resize(self):
         self._update_meter()
         self._update_input()
+        if self.rack_row == 1 and isinstance(self.parent, SurfboardRack):
+            self.call_after_refresh(self.parent._position_taglines)
 
     def render(self):
         width = max(4, self.content_size.width)
@@ -556,7 +558,11 @@ class SurfboardRack(Grid):
         gaps = (rows - 1) * self.styles.grid_gutter_vertical
         # Reserve two extra side-column lines below TOKENS and PROTOCOL.
         card_height = max(7, (self.content_size.height - gaps - 2) // rows)
-        self.query(SurfboardCard).set_styles(height=card_height)
+        # Keep whole-cell card widths equal inside the fractional grid tracks.
+        columns = self.styles.grid_size_columns
+        available_width = self.content_size.width - (columns - 1) * self.styles.grid_gutter_vertical
+        card_width = max(1, available_width // columns)
+        self.query(SurfboardCard).set_styles(height=card_height, width=card_width)
         # The terminal spans the last track and can use its leftover space.
         self.styles.grid_rows = (card_height, card_height + 2, card_height, "1fr")
         self.call_after_refresh(self._position_taglines)

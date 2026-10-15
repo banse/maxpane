@@ -459,3 +459,17 @@ card order or moving the captions with the cards; both mutations were restored.
 All 185 affected/composing checks and 127 guards/documentation pins passed;
 the layout remains 146×37. Review approved with no findings and independently
 rejected both mutations. No outstanding follow-ups; no full suite was run.
+
+## Equal boardroom card widths — 2026-10-15
+
+Fractional grid rounding gave cards widths of 23 or 24 cells at 149×45.
+All cards now use the smallest whole-cell track width; surplus cells stay
+outside the boxes. The fractional tracks retain the terminal's 97-cell width
+at the owner size. Card resize events realign the captions after width changes.
+
+The live keyless 149×45 preview shows equal 23-cell cards. Regression checks
+cover every rounding remainder, larger windows and resize round trips. Mutations
+restoring fractional card widths or stale caption placement are rejected.
+All 192 affected/composing checks and 127 guards/documentation pins passed.
+The 146×37 layout minimum is unchanged. Review approved with no findings and
+independently rejected both mutations. No outstanding follow-ups; no full suite.

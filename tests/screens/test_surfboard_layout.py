@@ -560,13 +560,35 @@ async def test_protocol_inset_matches_tokens_padding_without_losing_stats(size, 
     assert len(set(unit_columns)) == 1
 
 
-@pytest.mark.parametrize('size', [(149, 45), (180, 45)])
+@pytest.mark.parametrize('size', [(146, 37), (147, 45), (148, 45), (149, 45),
+                                 (150, 45), (151, 45), (152, 45), (180, 45)])
 async def test_rack_columns_share_width_equally(size):
     rendered = await _render(hub_payload(), size)
     widths = list(rendered['widths'].values())
-    # Whole terminal cells may leave one extra cell in a fractional track.
-    assert max(widths) - min(widths) <= 1
+    assert len(set(widths)) == 1
     assert not rendered['clipped']
+
+
+async def test_equal_card_widths_resize_without_shrinking_terminal_or_moving_captions():
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        for width in (149, 180, 146, 151, 152, 149):
+            await pilot.resize_terminal(width, 45)
+            await pilot.pause()
+            rack = app.hub.query_one(SurfboardRack)
+            cards = list(rack.query(SurfboardCard))
+            assert len({card.region.width for card in cards}) == 1
+            terminal = rack.query_one(SurfboardTerminal)
+            assert terminal.region.x == rack.query_one('#surfboard-card-swarm').region.x
+            right = rack.query_one('#surfboard-card-swarm-tokens')
+            assert terminal.region.right + 1 == right.region.x
+            for key, caption in (('protocol', 'keep'), ('swarm-tokens', 'building')):
+                card = rack.query_one(f'#surfboard-card-{key}')
+                label = rack.query_one(f'#surfboard-{caption}')
+                assert label.region.x == card.region.x
+                assert label.region.width == card.region.width
+            if width == 149:
+                assert terminal.region.width == 97
 
 
 async def test_boardroom_title_is_centered_muted_after_refresh_and_resize():
