@@ -11,6 +11,7 @@ from textual.app import ComposeResult
 from textual.containers import Grid
 from textual.renderables.digits import Digits
 
+from maxpane_dashboard.widgets.card_inner import inner_styles, padded_inner_row
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import HeroBoxBase
@@ -134,13 +135,14 @@ def news_records(payload: dict | None) -> tuple[HeroRecord, ...]:
 class NewsHeroCard(HeroBoxBase):
     """The rack's five-line inset with a source-aware outer footer."""
 
-    STAT_PADDING = 0
-    VALUE_COLOR = None
+    STAT_PADDING = 1
+    VALUE_BOLD = False
 
     DEFAULT_CSS = """
     NewsHeroCard { height: 9; padding: 0 1; border: round $panel; background: $surface;
         color: $text; content-align: center middle; border-title-color: $text-muted;
-        border-subtitle-color: $text-muted; border-subtitle-align: left; }
+        border-subtitle-color: $text-muted; border-subtitle-align: left;
+        link-color: $foreground; }
     """
 
     def __init__(self, data: HeroRecord):
@@ -172,38 +174,50 @@ class NewsHeroCard(HeroBoxBase):
         self._footer()
         self.refresh()
 
+    def _frame_style(self):
+        palette = self.app.get_css_variables()
+        return Style.parse(palette["accent"] if self.data.accent else "dim") + Style(bgcolor=palette["background"])
+
+    def _text_rows(self, label_style, value_style):
+        rows = [Text(flatten(row), style=label_style) for row in self.data.rows[:3]]
+        if self.data.key == "activity":
+            for row in rows:
+                # The news projection formats age first, then wallet and kind.
+                row.stylize(value_style, 0, len(row.plain.partition(" ")[0]))
+        return rows
+
     def render(self) -> Text:
         data = self.data
         inside = max(4, self.content_size.width) - 2
         palette = self.app.get_css_variables()
-        frame = Style.parse(palette["accent"] if data.accent else "dim") + Style(bgcolor=palette["background"])
-        ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
-        value_ink = ink + Style(color=palette[self.VALUE_COLOR]) if self.VALUE_COLOR else ink
+        frame = self._frame_style()
+        ink, value_ink, digit_ink = inner_styles(
+            palette, active=frame.color in (Color.parse(palette["accent"]), Color.parse("green")))
+        if self.VALUE_BOLD:
+            value_ink += Style(bold=True)
+            digit_ink += Style(bold=True)
+        room = max(0, inside - 2)
         centered = False
         if data.preview:
-            rows = post_preview(data.preview, inside, ink)
+            rows = [padded_inner_row(row, inside) for row in post_preview(data.preview, room, ink)]
         elif data.digits:
-            digit_ink = value_ink if data.digits != "--" else ink
+            digit_ink = digit_ink if data.digits != "--" else ink
             digits = [Text(segment.text, style=digit_ink) for segment in Digits(data.digits).render(Style()) if segment.text != "\n"]
             if data.digits != "--" and all(character in "0123456789.," for character in data.digits) and all(row.cell_len <= inside for row in digits):
                 rows = digits
             else:
-                rows = [Text(""), Text(clip(data.digits, inside), style=digit_ink), Text("")]
+                rows = [Text(""), padded_inner_row(Text(data.digits, style=digit_ink), inside, align="center"), Text("")]
             centered = True
         elif data.stats:
             rows = []
-            padding = " " * self.STAT_PADDING
-            room = max(0, inside - 2 * self.STAT_PADDING)
             for label, value in data.stats[:3]:
                 label, value = flatten(label), clip(flatten(value), room)
                 fitted_label = clip(label, max(0, room - cell_len(value) - 1))
                 gap = max(0, room - cell_len(fitted_label) - cell_len(value))
-                style = ink + Style(color="red" if label == "fired" else "yellow") if label in ("fired", "watch") and value != "--" else ink
-                rows.append(Text(padding + fitted_label + " " * gap, style=style)
-                            .append(value, style=value_ink if self.VALUE_COLOR and value != "--" else style)
-                            .append(padding, style=ink))
+                row = Text(fitted_label + " " * gap, style=ink).append(value, style=value_ink if value != "--" else ink)
+                rows.append(padded_inner_row(row, inside))
         else:
-            rows = [Text(clip(flatten(row), inside), style=ink) for row in data.rows[:3]]
+            rows = [padded_inner_row(row, inside) for row in self._text_rows(ink, value_ink)]
         rows += [Text("", style=ink)] * (3 - len(rows))
         heading = " " + clip(flatten(data.heading), max(0, inside - 2)) + " "
         result = Text("┌" + heading.center(inside, "─") + "┐\n", style=frame)

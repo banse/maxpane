@@ -109,7 +109,7 @@ async def test_zero_price_apr_and_holder_count_are_visible_before_unread():
         app = pilot.app
         for key, glyphs in zero_rows.items():
             assert glyphs in painted(app, key)
-        assert any(line.strip("│ ") == "addresses       0"
+        assert any(line.strip("│ ").split() == ["addresses", "0"]
                    for line in painted(app, "vault").splitlines())
         app.query_one(SurfPool4RackHero).update_data(surf_pool4_hero=None)
         await pilot.pause()
@@ -186,6 +186,7 @@ async def test_clipped_cards_advertise_widen_and_clear_the_marker_on_resize():
         for key in payload():
             assert "‹" not in painted(app, key), (key, painted(app, key))
         assert "DOWNSIDE BID" in painted(app, "bid")
+        assert any("addresses" in line and "1000k" in line for line in painted(app, "vault").splitlines())
         assert any("cap" in line and "12.5k IMD/d" in line for line in painted(app, "queue").splitlines())
         await pilot.resize_terminal(119, 45)
         await pilot.pause()

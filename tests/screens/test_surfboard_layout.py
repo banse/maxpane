@@ -429,7 +429,8 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
             if card["key"] == "board":
                 text = r["card_text"]["board"]
                 assert "RUNTIMES" in text
-                assert all(label in text for label in ('codex', 'claude', 'daemon'))
+                assert all(label in text for label in ('codex', 'claude'))
+                assert 'daemon' in text or 'ver.' in text
                 assert 'top model' not in text and 'TOP AGENTS' not in text
                 if kind == "unavailable":
                     assert "—" in text and "unavailable" not in text
@@ -451,7 +452,8 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
             if card["key"] == "protocol":
                 text = r["card_text"]["protocol"]
                 assert " STATS " in text, r
-                assert all(label in text for label in ("burned", "rewarded", "fees")), r
+                assert all(label in text for label in ("burned", "fees")), r
+                assert 'rewarded' in text or 'rewards' in text, r
                 assert "★" not in text and ":" not in text, r
                 bottom = next(line for line in text.splitlines() if "└" in line)
                 assert not bottom[bottom.index("└")+1:bottom.index("┘")].strip("─ "), r
@@ -582,9 +584,11 @@ async def test_protocol_inset_matches_tokens_padding_without_losing_stats(size, 
     expected = ['1M', '100k', '10k'] if kind == 'stress' else ['33k', '6k', '4k']
     unit_columns = []
     for label, value in zip(('burned', 'rewarded', 'fees'), expected):
-        row = next(line for line in text.splitlines() if label in line)
+        row = next(line for line in text.splitlines()
+                   if label in line or label == 'rewarded' and 'rewards' in line)
         assert value in row and 'IMD' in row and '…' not in row
-        assert row[headers[0].index('┌') + 1:].startswith(' ' + label)
+        assert row[headers[0].index('┌') + 1:].startswith(' ' + (label if label in row else 'rewards'))
+        assert row[headers[0].index('┐') - 1] == ' '
         unit_columns.append(row.index('IMD'))
     assert len(set(unit_columns)) == 1
 

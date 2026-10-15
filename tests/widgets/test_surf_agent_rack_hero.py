@@ -65,6 +65,94 @@ def painted(app, key):
     return "\n".join(strip.text for strip in strips(app, key))
 
 
+def body_rows(app, key):
+    """Read the actual inset cells without either its or the card's frame."""
+    rows = []
+    for strip in strips(app, key)[3:6]:
+        edges = [n for n, char in enumerate(strip.text) if char == "│"]
+        assert len(edges) >= 4, strip.text
+        rows.append(strip.crop(edges[1] + 1, edges[-2]))
+    return rows
+
+
+def word_styles(row, word):
+    start = row.text.index(word)
+    return [segment.style for segment in row.crop(start, start + len(word)) if segment.text.strip()]
+
+
+@pytest.mark.parametrize("width", [132, 149])
+async def test_custom_models_owner_and_runtime_keep_padded_labels_and_values(width):
+    from rich.color import Color
+    data = payload()
+    data["models"]["rows"] = [dict(model="gpt-5.1-fable", effort="high")]
+    data["owner"]["name"] = "owner-name-that-needs-windowing.eth"
+    data["runtime"].update(daemon="0.1.2+long-postfix", daemon_differs=True,
+                           update_state="outdated")
+    async with Harness(data).run_test(size=(width, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        label = app.ansi_theme.ansi_colors[2]
+        value = Color.parse(app.get_css_variables()["foreground"]).get_truecolor()
+        for key in ("owner", "runtime", "models", "nodes"):
+            rows = body_rows(app, key)
+            assert all(row.text.startswith(" ") and row.text.endswith(" ") for row in rows), (key, painted(app, key))
+        model_row = body_rows(app, "models")[1]
+        assert all(style.color.get_truecolor() == value and style.bold for style in word_styles(model_row, "fable"))
+        assert ("…" in model_row.text) == (width == 132)
+        assert all(style.color.get_truecolor() == value and not style.bold for style in word_styles(model_row, "high"))
+        owner_row = body_rows(app, "owner")[1]
+        icon = [segment for segment in owner_row if "⧉" in segment.text]
+        assert icon and all("@click" in segment.style.meta for segment in icon)
+        assert any(segment.style.link for segment in owner_row)
+        assert all(segment.style.color.get_truecolor() == value for segment in owner_row if segment.text.strip())
+        daemon_row = body_rows(app, "runtime")[1]
+        assert "↑" in daemon_row.text and "…" in daemon_row.text
+        assert all(style.color.get_truecolor() == label for style in word_styles(daemon_row, "daemon"))
+        assert all(style.color.get_truecolor() == value for style in word_styles(daemon_row, "↑"))
+        assert border_color(app, "runtime") == app.ansi_theme.ansi_colors[3]
+
+
+@pytest.mark.parametrize("working,capacity,live,meter", [(2, 3, "working", "busy"),
+                                                          (0, 3, "idle", "idle"),
+                                                          (0, 3, "offline", "offline"),
+                                                          (999, 999, "working", "busy")])
+async def test_status_readout_uses_final_frame_color_and_padded_compact_fallback(working, capacity, live, meter):
+    from rich.color import Color
+    data = payload()
+    data["status"].update(working=working, capacity=capacity, live_state=live, meter_state=meter)
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        expected = (app.ansi_theme.ansi_colors[2] if meter == "busy" else
+                    Color.parse(app.get_css_variables()["foreground"]).get_truecolor())
+        rows = body_rows(app, "status")
+        segments = [segment for row in rows for segment in row if segment.text.strip()]
+        assert segments
+        assert {segment.style.color.get_truecolor() for segment in segments} == {expected, (98, 98, 98)}
+        if working == 999:
+            assert rows[1].text.strip() == "999 0F 999"
+            assert all(row.text.startswith(" ") and row.text.endswith(" ") for row in rows)
+
+
+@pytest.mark.parametrize("width", [132, 149])
+@pytest.mark.parametrize("name", [None, "⧉"])
+async def test_owner_address_window_keeps_copy_and_explorer_inside_padding(width, name):
+    data = payload()
+    data["owner"]["name"] = name
+    async with Harness(data).run_test(size=(width, 45)) as pilot:
+        await pilot.pause()
+        row = body_rows(pilot.app, "owner")[1]
+        assert row.text.startswith(" ") and row.text.endswith(" ")
+        assert "⧉" in row.text
+        if width == 149:
+            assert "0x" in row.text and "…" in row.text
+        else:
+            assert "wallet" in row.text
+            assert data["owner"]["address"] in str(pilot.app.query_one("#hero-owner").tooltip)
+        assert any(segment.style.link for segment in row)
+        assert any("⧉" in segment.text and "@click" in segment.style.meta for segment in row)
+
+
 async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
     async with Harness(payload()).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
@@ -241,6 +329,40 @@ async def test_live_runtime_qualifier_and_daemon_difference_remain_readable():
         await pilot.resize_terminal(211, 45)
         await pilot.pause()
         assert '0.1.0+aca0ff06↑' in painted(pilot.app, 'runtime')
+
+
+async def test_narrow_runtime_preserves_version_with_named_compact_label_then_restores():
+    data = payload()
+    data["runtime"].update(runtime="claude 2.1.278 (Claude Code)", daemon="0.1.2+long-postfix")
+    async with Harness(data).run_test(size=(132, 45)) as pilot:
+        await pilot.pause()
+        row = body_rows(pilot.app, "runtime")[0].text
+        assert "cld" in row and "2.1.278" in row, row
+        assert row.startswith(" ") and row.endswith(" ")
+        assert "‹" not in painted(pilot.app, "runtime")
+        assert "claude 2.1.278 (Claude Code)" in str(pilot.app.query_one("#hero-runtime").tooltip)
+        await pilot.resize_terminal(149, 45)
+        await pilot.pause()
+        assert "claude" in body_rows(pilot.app, "runtime")[0].text
+        data["runtime"]["runtime"] = "experimental-runtime 2.1.278"
+        pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+        await pilot.pause()
+        assert "‹" in painted(pilot.app, "runtime")
+        assert "2.1.278" in body_rows(pilot.app, "runtime")[0].text
+
+
+async def test_compact_status_removes_grouping_before_losing_exact_counts():
+    data = payload()
+    data["status"].update(working=99999, capacity=99999)
+    async with Harness(data).run_test(size=(138, 45)) as pilot:
+        await pilot.pause()
+        row = body_rows(pilot.app, "status")[1].text
+        assert row.strip() == "99999 0F 99999", row
+        assert row.startswith(" ") and row.endswith(" ")
+        assert "‹" not in painted(pilot.app, "status")
+        await pilot.resize_terminal(170, 45)
+        await pilot.pause()
+        assert "99,999 0F 99,999" in body_rows(pilot.app, "status")[1].text
 
 
 @pytest.mark.parametrize('state', ['partial', 'stale'])

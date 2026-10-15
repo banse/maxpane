@@ -1,7 +1,6 @@
 """Leaderboard rack cards over independently observed projected facts."""
 from __future__ import annotations
 
-from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid
@@ -94,22 +93,9 @@ def leaderboard_records(payload: dict | None) -> tuple[HeroRecord, ...]:
 class BoardHeroCard(Pool4HeroCard):
     """BOARD keeps metric footers while source qualifications live on hover."""
 
-    STAT_PADDING = 1
-    VALUE_COLOR = "foreground"
+    VALUE_BOLD = True
 
     DEFAULT_CSS = "BoardHeroCard { border-subtitle-align: center; }"
-
-    def render(self):
-        content = super().render()
-        value_color = Style(color=self.app.get_css_variables()[self.VALUE_COLOR]).color
-        for span in tuple(content.spans):
-            if isinstance(span.style, Style) and span.style.color == value_color:
-                content.stylize(Style(color=value_color if self.data.stats else "green", bold=True),
-                                span.start, span.end)
-            elif (self.data.stats and isinstance(span.style, Style)
-                  and span.style.color == self.rich_style.color and span.style.dim is False):
-                content.stylize("green", span.start, span.end)
-        return content
 
     def _footer(self):
         data = self.data

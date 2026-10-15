@@ -68,6 +68,8 @@ def pool4_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                 fields["subtitle"] = "per 1 sIMD" if key == "rate" else "trailing 7d"
         elif key == "vault":
             holders = _count(section.get("holders")) if available else "--"
+            if holders != "--" and _number(section.get("holders")) >= 100000:
+                holders = _amount(section.get("holders"))
             if (section.get("holders_partial") is True or section.get("holders_state") == "partial") and holders != "--":
                 holders = "≥" + holders
             fields["stats"] = (("IMD", _amount(section.get("imd")) if available else "--"),
@@ -105,6 +107,7 @@ class Pool4HeroCard(LocalSourceHeroCard):
     def _update_title(self):
         data = self.data
         inside = max(4, self.content_size.width) - 2
+        text_room = max(0, inside - 2)
         # Textual reserves corners, border stubs and spaces around labels.
         room = max(0, self.region.width - 6)
         title = "⊙ " + flatten(data.title)
@@ -113,12 +116,12 @@ class Pool4HeroCard(LocalSourceHeroCard):
         clipped = (cell_len(title) > room or cell_len(footer) > room
                    or cell_len(flatten(data.heading)) + 2 > inside
                    or bool(data.subtitle) and cell_len(flatten(data.subtitle)) + 2 > inside
-                   or bool(data.digits) and cell_len(data.digits) > inside
+                   or bool(data.digits) and cell_len(data.digits) > text_room
                    or any(cell_len(flatten(label)) + cell_len(flatten(value)) + 1 + 2 * self.STAT_PADDING > inside
                           for label, value in data.stats)
-                   or any(cell_len(flatten(row)) > inside for row in data.rows))
+                   or any(cell_len(flatten(row)) > text_room for row in data.rows))
         if data.preview:
-            clipped |= any(row.plain.endswith("...") for row in post_preview(data.preview, inside, ""))
+            clipped |= any(row.plain.endswith("...") for row in post_preview(data.preview, text_room, ""))
         if clipped:
             fitted = title_with_hint(title, True, room)
             if GLYPH_HINT not in fitted:

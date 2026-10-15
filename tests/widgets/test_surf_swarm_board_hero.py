@@ -82,7 +82,7 @@ async def test_inner_metrics_match_boardroom_colors_with_neutral_captions(width,
         green = app.ansi_theme.ansi_colors[2]
         for key in payload():
             card = app.query_one(f'#hero-{key}')
-            value_color = Color.parse(app.get_css_variables()['foreground']).get_truecolor() if card.data.stats else green
+            value_color = Color.parse(app.get_css_variables()['foreground']).get_truecolor()
             rows = strips(app, key)
             top = next(i for i, row in enumerate(rows) if '┌' in row.text)
             left, right = rows[top].text.index('┌'), rows[top].text.index('┐')
@@ -174,7 +174,8 @@ async def test_empty_records_and_no_attempts_are_real_negatives():
     data["rate"].update(accepted=0, attempts=0, percent=None)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert "no recorded seats" in painted(pilot.app, "top")
+        top = painted(pilot.app, "top")
+        assert "no recorded" in top and "seats" in top
         assert "no attempts" in painted(pilot.app, "rate")
         assert "0 attempts" in painted(pilot.app, "recorded")
         assert "0 online" in painted(pilot.app, "recorded")

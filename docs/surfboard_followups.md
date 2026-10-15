@@ -1,5 +1,36 @@
 # Surfboard follow-ups
 
+## Shared card inner styling — 2026-10-15
+
+All mounted Surf and boardroom card bodies share label/value/digit colors and
+one-cell text-edge padding; frames and captions retain their state colors.
+Live public-source renders were checked at 149×45 for boardroom and every Surf
+mode. The boardroom stress composite remains whole from 143×37, with unchanged
+column geometry. Narrow text uses short labels while keeping complete values.
+Protocol's fitted short labels make CHECKS the new 138-column boundary; the
+market stays at 148, Swarm at 141 and Agent at 132. The Surf address sweep passes.
+Launchpad retains 138 columns using shorter exact counts and a reversible
+`sendable`/`ready` label; Agent keeps full runtime versions and STATUS counts.
+
+Final affected/composing checks passed: 385 Agent, 178 Launchpad, 159 market
+layout, 96 default Surf, and 303 boardroom/protocol/layout cases. The other
+affected widget and screen cases passed in the broader integration run; its
+new failures were resolved in these focused reruns. All 127 selected guards and
+docpins passed. Six deliberate regressions were rejected: inactive-digit color,
+edge padding, warning-frame color, both adjacent protocol pins, and owner rich
+address spans. Scoped review approved both narrow-layout fixes. No full suite
+was run; the existing failures below remain outside this change.
+
+Existing test debt, reproduced on untouched HEAD 191216cc: twelve cases in
+`tests/widgets/test_surfboard_card_activity.py` still expect the retired FLEET
+activity meter/status colors, pre-centered footer widths, or visible unavailable
+subtitles. Its eight remaining cases pass. Update those expectations when that
+footer behavior is next changed; this styling change does not alter the footers.
+Four composing checks also fail on that unchanged baseline: the two hero-routing
+checks in `test_surf_pool4_market_screen.py` still expect the parked `SurfHero`
+for Launchpad, and `test_surf_pool4_screen.py` retains the old binding/body
+expectations. Keep these separate from the padded card layout checks.
+
 ## Seat activity recovery — 2026-10-13
 
 Seat 420's cold idle observation had no stop timestamp and was incorrectly

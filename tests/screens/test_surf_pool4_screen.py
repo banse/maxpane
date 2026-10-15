@@ -147,7 +147,7 @@ POOL4_RAIL_NEED = 50        # SurfPool4Hatches', plus the column's own gutter
 #: makes the whole protocol view 141 columns; its direct-route row binds.
 #: Nine hero rows add two rows over the old hero: 13 chrome + 34 body = 47.
 MEASURED_POOL4_BODY_COLUMNS = 99
-MEASURED_POOL4_COLUMNS = 141
+MEASURED_POOL4_COLUMNS = 138
 MEASURED_POOL4_ROWS = 47
 
 

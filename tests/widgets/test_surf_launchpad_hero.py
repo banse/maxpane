@@ -280,3 +280,19 @@ async def test_large_values_and_narrow_markers_recover_after_resize():
         for key in ("coins", "flow", "fees"):
             assert "1.235e+14" in painted(pilot.app, key)
             assert "‹" not in painted(pilot.app, key)
+
+
+async def test_exact_counts_and_short_queue_label_keep_all_large_values():
+    data = payload()
+    data["flow"]["creators"] = 9999
+    data["queue"].update(accrued=123456.7, staged=123456.7, sendable=123456.7)
+    async with Harness(data).run_test(size=(141, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        assert any("creators" in row and "9,999" in row for row in painted(app, "flow").splitlines())
+        assert any("ready" in row and "123.5k" in row for row in painted(app, "queue").splitlines())
+        assert "‹" not in painted(app, "flow") and "‹" not in painted(app, "queue")
+        assert "sendable 123.5k" in str(app.query_one("#hero-queue").tooltip)
+        await pilot.resize_terminal(149, 45)
+        await pilot.pause()
+        assert any("sendable" in row and "123.5k" in row for row in painted(app, "queue").splitlines())

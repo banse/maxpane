@@ -79,7 +79,8 @@ async def test_unknown_empty_and_zero_remain_distinct():
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "No posts in cache" in painted(app, app.query_one("#hero-announcement"))
+        assert "No posts in" in painted(app, app.query_one("#hero-announcement"))
+        assert "cache" in painted(app, app.query_one("#hero-announcement"))
         assert "No replies in" in painted(app, app.query_one("#hero-reply"))
         assert "cache" in painted(app, app.query_one("#hero-reply"))
         assert "No recent" in painted(app, app.query_one("#hero-activity"))
@@ -116,6 +117,41 @@ async def test_stale_badges_use_their_own_source_clock_and_keep_cached_values():
             assert edge.style.color != Color.parse(app.get_css_variables()["accent"])
 
 
+@pytest.mark.parametrize("state", ["ok", "stale"])
+async def test_body_palette_and_padding_follow_final_frame_without_recoloring_captions(state):
+    data = payload()
+    data["market"]["state"] = state
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        green = app.ansi_theme.ansi_colors[2]
+        value = Color.parse(app.get_css_variables()["foreground"]).get_truecolor()
+        for key in ("announcement", "reply", "signals", "activity", "market", "boards"):
+            card = app.query_one(f"#hero-{key}")
+            rows = painted(app, card).splitlines()
+            top = next(index for index, row in enumerate(rows) if "┌" in row)
+            left, right = rows[top].index("┌"), rows[top].index("┐")
+            for offset, row in enumerate(rows[top + 1:top + 4], 1):
+                if key != "market":
+                    assert row[left + 1] == row[right - 1] == " ", (key, row)
+                for x in range(left + 1, right):
+                    if row[x].isspace():
+                        continue
+                    style = app.screen.get_style_at(card.region.x + x, card.region.y + top + offset)
+                    expected = green
+                    if key == "market":
+                        expected = green if state == "ok" else value
+                    elif key in ("signals", "boards"):
+                        number = card.data.stats[offset - 1][1]
+                        expected = value if x >= right - 1 - len(number) else green
+                    elif key == "activity" and x < left + 4:
+                        expected = value
+                    assert style.color.get_truecolor() == expected and not style.dim, (key, row, x, style)
+            if key == "market":
+                frame = app.screen.get_style_at(card.region.x + left, card.region.y + top)
+                assert (frame.color == Color.parse(app.get_css_variables()["accent"])) == (state == "ok")
+
+
 @pytest.mark.parametrize("price, expected", [(0.0000000042, "4.2e-09"), (0.004123, "0.004123"), (1000000000000, "1.00e+12")])
 async def test_price_precision_and_large_counts_fit_without_false_zero(price, expected):
     data = payload()
@@ -144,6 +180,10 @@ async def test_untrusted_preview_is_literal_and_keeps_address_copy_action():
         assert any(segment.style and "copy_address" in str(segment.style.meta)
                    for strip in app.screen._compositor.render_strips()[card.region.y:card.region.bottom]
                    for segment in strip.crop(card.region.x, card.region.right))
+        for strip in app.screen._compositor.render_strips()[card.region.y:card.region.bottom]:
+            for segment in strip.crop(card.region.x, card.region.right):
+                if segment.style and "copy_address" in str(segment.style.meta):
+                    assert segment.style.color == Color.parse(app.get_css_variables()["foreground"])
 
 
 @pytest.mark.parametrize("width", [60, 90])

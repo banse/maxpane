@@ -2583,7 +2583,10 @@ async def test_refresh_renders_title_and_all_panels():
         hero = _region_text(app, screen.query_one(SurfNewsHero))
         for heading in ("ANNOUNCEMENT", "LATEST REPLY", "SIGNALS", "DEV ACTIVITY", "IMD MARKET", "NFT BOARDS"):
             assert heading in hero
-        assert "A new announcement" in hero and "KNOWN 11/11" in hero
+        announcement = _region_text(app, screen.query_one("#hero-announcement"))
+        # The padded inset wraps the preview onto two lines.
+        assert "A new" in announcement and "announcement" in announcement
+        assert "KNOWN 11/11" in hero
         # The clipping trap: every detector row that keeps its own line
         # reaches the compositor. SurfSignals now carries ten detectors
         # with quiet-collapse (Task 9): this fixture's lp/gate/deploy/burn
@@ -2849,7 +2852,10 @@ async def test_news_hero_is_six_live_cards_and_only_shown_in_news_mode():
         output = _region_text(app, hero)
         for title in ("ANNOUNCEMENT", "LATEST REPLY", "SIGNALS", "DEV ACTIVITY", "IMD MARKET", "NFT BOARDS"):
             assert title in output
-        assert "A new announcement" in output and "A community reply" in output
+        announcement = _region_text(app, screen.query_one("#hero-announcement"))
+        reply = _region_text(app, screen.query_one("#hero-reply"))
+        assert "A new" in announcement and "announcement" in announcement
+        assert "A community" in reply and "reply" in reply
         assert "KNOWN 11/11" in output
         screen.action_toggle_launchpad()
         await pilot.pause()

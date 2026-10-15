@@ -1,12 +1,15 @@
 """Six protocol rack cards over the manager's read-only projection."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 from rich.color import Color
 from rich.style import Style
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid
 
+from maxpane_dashboard.widgets.rowfit import cell_len
 from .news_hero import HeroRecord, _number
 from .pool4_hero import Pool4HeroCard, _amount, _face
 from .pool4_split import COUNTER_WORDS, PATH_DIRECT, PATH_VIA_DISTRIBUTOR
@@ -60,7 +63,7 @@ def protocol_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                 fields["subtitle"] = "* derived" if state != "ok" else ""
             else:
                 fields["heading"] = "ROUTE"
-                fields["rows"] = ("direct to stakers" if path == PATH_DIRECT else "route --",)
+                fields["rows"] = ("to stakers" if path == PATH_DIRECT else "route --",)
                 fields["footer"] = "DIRECT" if path == PATH_DIRECT else "CONFIGURATION"
                 fields["accent"] &= path == PATH_DIRECT
         else:
@@ -85,17 +88,38 @@ def protocol_records(payload: dict | None) -> tuple[HeroRecord, ...]:
 class ProtocolHeroCard(Pool4HeroCard):
     """Accounting failures stay alarming even when their source becomes stale."""
 
+    def _fit_content(self, record):
+        room = max(0, self.content_size.width - 4)
+        short_labels = {"rewarded": "rewards", "headroom": "room"}
+        stats = tuple((short_labels.get(label, label) if cell_len(label) + cell_len(value) + 1 > room else label, value)
+                      for label, value in record.stats)
+        return replace(record, stats=stats)
+
+    def set_record(self, record):
+        self.raw_record = record
+        super().set_record(self._fit_content(record))
+
+    def on_resize(self):
+        self.data = self._fit_content(self.raw_record)
+        super().on_resize()
+
     def _footer(self):
         super()._footer()
         if self.data.footer == "CHECK FAILED" and self.data.state == "ok":
             self.border_subtitle = Text(self.data.footer, style=Style(
                 color=Color.from_triplet(self.app.ansi_theme.ansi_colors[1]), dim=False))
 
-    def render(self):
-        content = super().render()
+    def _frame_style(self):
+        frame = super()._frame_style()
         if self.data.footer == "CHECK FAILED":
-            content.stylize(Style(color=Color.from_triplet(self.app.ansi_theme.ansi_colors[1]), dim=False))
-        return content
+            frame += Style(color=Color.from_triplet(self.app.ansi_theme.ansi_colors[1]), dim=False)
+        return frame
+
+    def _text_rows(self, label_style, value_style):
+        rows = super()._text_rows(label_style, value_style)
+        if self.data.key == "checks" and len(rows) > 1:
+            rows[1].stylize(value_style, len("drift "), len(rows[1].plain) - len(" bps"))
+        return rows
 
 
 class SurfProtocolHero(Grid):

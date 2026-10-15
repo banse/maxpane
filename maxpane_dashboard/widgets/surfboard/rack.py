@@ -14,6 +14,7 @@ from textual.widgets import Input, Static
 
 from maxpane_dashboard.analytics.surfboard import SURFBOARD_AGENT_KEYS as AGENT_KEYS
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
+from maxpane_dashboard.widgets.card_inner import inner_styles, padded_inner_row
 from maxpane_dashboard.widgets.explorer import for_network
 from maxpane_dashboard.widgets.fmt import fmt_age, worked_duration
 from maxpane_dashboard.widgets.markup_safety import flatten
@@ -49,10 +50,10 @@ def _token_line(row, width, style, value_style):
     """Fit age and literal ticker while preserving address copy/link units."""
     age = fmt_age(row.get('age_s')) if _number(row.get('age_s')) else '—'
     chain = flatten(row.get('chain')).upper()
-    symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-5),
+    symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-4),
                              style=value_style if row.get('symbol') else style,
                              explorer=for_network('MAINNET' if chain == 'ETH' else chain))
-    line = Text(clip(' ' + clip(age, 3).ljust(3) + ' ', width), style=style).append_text(symbol)
+    line = Text(clip(clip(age, 3).ljust(3) + ' ', width), style=style).append_text(symbol)
     return line, lost or cell_len(age) > 3
 
 
@@ -60,15 +61,16 @@ def _token_preview(rows, width, style, value_style):
     """Three ranked rows; the data layer owns ordering and price comparison."""
     lines = [(Text('', style=style), False) for _ in range(3)]
     if not rows:
-        lines[1] = fit_prose('—' if rows is None else 'no launches', width, style=style)
+        line, lost = fit_prose('—' if rows is None else 'no launches', max(0, width-2), style=style)
+        lines[1] = padded_inner_row(line, width), lost
         return lines
     for index, row in enumerate(rows[:3]):
         marker, ink = {'up': ('↑', Style.parse(GREEN)), 'down': ('↓', Style.parse(RED))}.get(
             row.get('price_direction'), (' ', style))
-        line, lost = _token_line(row, max(0, width-2), style, value_style)
-        line.align('left', max(0, width-2))
+        line, lost = _token_line(row, max(0, width-4), style, value_style)
+        line.align('left', max(0, width-4))
         line.append(' ').append(marker, style=ink)
-        lines[index] = line, lost
+        lines[index] = padded_inner_row(line, width), lost
     return lines
 
 
@@ -80,17 +82,16 @@ def _fleet_preview(summary, width, style, value_style):
         values.append(f"{value:.1f}".removesuffix('.0') + '%'
                       if _number(value) and value <= 100 else '—')
     values.append(flatten(summary.get('daemon')) or '—')
-    trailing = int(max(map(cell_len, values)) + 9 <= width)
     lines = []
     for label, value in zip(('codex', 'claude', 'daemon'), values):
-        prefix = ' ' + label.ljust(6) + ' '
-        available = max(0, width - cell_len(prefix) - trailing)
+        if label == 'daemon' and cell_len(label) + cell_len(value) + 3 > width:
+            label = 'ver.'
+        prefix = label + ' '
+        available = max(0, width - 2 - cell_len(prefix))
         fitted, lost = fit_prose(value, available, style=value_style if value != '—' else style)
         fitted.align('right', available)
-        line = Text(clip(prefix, width), style=style).append_text(fitted)
-        if cell_len(line.plain) < width:
-            line.append(' ', style=style)
-        lines.append((line, lost or cell_len(prefix) + 1 > width))
+        line = Text(clip(prefix, max(0, width-2)), style=style).append_text(fitted)
+        lines.append((padded_inner_row(line, width), lost or cell_len(prefix) + 3 > width))
     return lines
 
 
@@ -222,6 +223,7 @@ from .terminal import SurfboardTerminal, fit_prose
 
 class SurfboardCard(HeroBoxBase, can_focus=True):
     """A focusable faceplate with an inset readout."""
+    DEFAULT_CSS = "SurfboardCard { link-color: $foreground; }"
     BINDINGS = [Binding("enter", "activate", "Open", show=False)]
     COMPONENT_CLASSES = {"surfboard-card--muted"}
 
@@ -362,9 +364,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if status in ("offline", "error", "failed") and not muted:
             color = RED
         palette = self.app.get_css_variables()
-        value_style = Style(color=palette['foreground'], bgcolor=palette['background'], dim=False)
-        label_style = Style(color=GREEN if self.key in ('board', 'protocol', 'swarm-tokens')
-                            else self.rich_style.color, bgcolor=palette['background'])
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         border_inset = (Style.parse(MUTED) + Style(bgcolor=palette["background"])
                         if color == AMBER else inset)
@@ -380,6 +379,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             border_inset = Style.parse(palette["accent"]) + Style(bgcolor=palette["background"])
         elif self.key == "pool4" and status == "falling":
             border_inset = Style.parse(AMBER) + Style(bgcolor=palette["background"])
+        label_style, value_style, readout_style = inner_styles(
+            palette, active=border_inset.color in (Style.parse(palette['accent']).color, Style.parse(GREEN).color))
         label = ""
         native_digits = False
         numeric_readout = False
@@ -411,9 +412,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if len(stats) != 3:
                 stats = [f"★ {name} — IMD" for name in ("burned", "rewarded", "fees")]
             fields = [flatten(line).removeprefix("★ ").split() for line in stats]
+            available = max(0, inside - 2)
+            fields = [('rewards' if row[0] == 'rewarded' and sum(map(cell_len, row)) + 1 > available
+                       else row[0], *row[1:]) if len(row) == 3 else row for row in fields]
             label_width = max((cell_len(row[0]) for row in fields if len(row) == 3), default=8)
             amount_width = max((cell_len(row[1]) for row in fields if len(row) == 3), default=1)
-            available = max(0, inside - 1)
             unit_gap = " " if label_width + amount_width + 5 <= available else ""
             preview = []
             for parts in fields:
@@ -421,15 +424,15 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 row = f"{name.ljust(label_width)} {amount.ljust(amount_width)}{unit_gap}{unit}"
                 if cell_len(row) > available:
                     row = f"{name} {amount}{unit_gap}{unit}"
-                line = Text(" " + clip(row, available), style=label_style)
+                line = Text(clip(row, available), style=label_style)
                 if amount != '—':
-                    line.stylize(value_style, 1 + row.index(amount, len(name)))
-                preview.append((line, cell_len(row) > available))
+                    line.stylize(value_style, row.index(amount, len(name)))
+                preview.append((padded_inner_row(line, inside), cell_len(row) > available))
         elif self.key == "announce":
             from maxpane_dashboard.widgets.surf._icons import post_preview as _post_preview
             label = " LATEST "
-            ink = self.rich_style.color if status == "active" else self.get_component_rich_style("surfboard-card--muted").color
-            preview = [(line, False) for line in _post_preview(primary, inside, Style(color=ink, bgcolor=palette["background"], dim=status != "active"))]
+            preview = [(padded_inner_row(line, inside), False)
+                       for line in _post_preview(primary, max(0, inside-2), label_style)]
         elif self.key == "board":
             summary = self.data.get("fleet_summary") or {}
             label, secondary = " RUNTIMES ", _fleet_model(summary)
@@ -462,16 +465,13 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             clipped |= _work_footer(self.footer_data, max(0, self.region.width - 6))[1]
         if self.key == "board":
             clipped |= _fleet_footer(self.data, max(0, self.region.width - 6))[1]
-        readout_style = label_style if border_inset.dim else border_inset
-        if numeric_readout and border_inset.color == Style.parse(palette["accent"]).color:
-            readout_style += Style(color=GREEN)
         for index, (raw, bold) in enumerate(rows):
-            style = readout_style + Style(bold=bold) if numeric_readout else Style(
-                color=self.rich_style.color, bgcolor=palette["background"],
-                bold=bold, dim=muted)
+            style = (readout_style if numeric_readout else label_style) + Style(bold=bold)
             line, lost = (preview[index] if preview is not None else
-                          (Text(raw, style=style), False) if native_digits else fit_prose(raw, inside, style=style))
+                          (Text(raw, style=style), False) if native_digits else fit_prose(raw, max(0, inside-2), style=style))
             clipped |= lost
+            if preview is None and not native_digits:
+                line = padded_inner_row(line, inside, align='center')
             line.align("left" if preview is not None else "center", inside)
             body.append("│", style=border_inset).append_text(line).append("│\n", style=border_inset)
         self.border_title = Text(title_with_hint("⊙ " + self.title,

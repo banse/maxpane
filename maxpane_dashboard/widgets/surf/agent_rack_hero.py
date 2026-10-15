@@ -13,7 +13,8 @@ from textual.renderables.digits import Digits
 
 from maxpane_dashboard.analytics.surfboard import count, number
 from maxpane_dashboard.analytics.surf_swarm_signals import runtime_semver
-from maxpane_dashboard.widgets.address import address_text, is_address
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
+from maxpane_dashboard.widgets.card_inner import inner_styles, padded_inner_row
 from maxpane_dashboard.widgets.fmt import hhmm, mmdd
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
@@ -197,6 +198,8 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
 class AgentRackCard(Pool4HeroCard):
     """Shared rack rendering with seat meters and the rich owner affordance."""
 
+    DEFAULT_CSS = "AgentRackCard { link-color: $foreground; }"
+
     def __init__(self, record):
         self.source = {}
         self.raw_record = record
@@ -207,16 +210,24 @@ class AgentRackCard(Pool4HeroCard):
     def _fit_content(self, record):
         if record.key == "owner":
             address = self.source.get("address")
-            room = max(1, self.content_size.width - 4)
+            room = max(1, self.content_size.width - 4 - ICON_COLS)
             self.owner_text = (address_text(address, label=self.source.get("name"), width=min(17, room), explorer=EXPLORER)
                                if record.state in _AVAILABLE and is_address(address) else Text("--"))
+            # Below the safe address-window width keep the link, copy and full tooltip.
+            if self.owner_text.cell_len > room + ICON_COLS:
+                self.owner_text = address_text(address, label="wallet", width=room, explorer=EXPLORER)
             record = replace(record, digits=self.owner_text.plain)
         elif record.key == "runtime" and record.stats:
+            runtime, version = record.stats[0]
+            if cell_len(runtime) + cell_len(version) + 1 > max(0, self.content_size.width - 4):
+                runtime = {"claude": "cld", "codex": "cdx"}.get(runtime, runtime)
             label, daemon = record.stats[1]
             suffix = "↑" if self.source.get("daemon_differs") is True and record.state in _AVAILABLE else ""
-            room = max(1, self.content_size.width - 3 - len(label) - len(suffix))
+            room = max(1, self.content_size.width - 5 - cell_len(label) - cell_len(suffix))
             fitted = clip(daemon, room) + suffix
-            record = replace(record, stats=(record.stats[0], (label, fitted), record.stats[2]))
+            record = replace(record, stats=((runtime, version), (label, fitted), record.stats[2]))
+        elif record.key == "status" and cell_len(record.digits) > max(0, self.content_size.width - 4):
+            record = replace(record, digits=record.digits.replace(",", ""))
         return record
 
     def set_source(self, record, source):
@@ -231,10 +242,8 @@ class AgentRackCard(Pool4HeroCard):
 
     def _update_title(self):
         super()._update_title()
-        if self.data.key == "runtime":
-            self.border_title = Text("⊙ RUNTIME")
         if (self.data.key == "owner" and self.data.state in _AVAILABLE
-                and cell_len(flatten(self.source.get("name"))) > max(1, self.content_size.width - 4)):
+                and cell_len(flatten(self.source.get("name"))) > max(1, self.content_size.width - 4 - ICON_COLS)):
             self.border_title = Text(title_with_hint("⊙ OWNER", True, max(0, self.region.width - 6)))
 
     def _footer(self):
@@ -298,6 +307,8 @@ class AgentRackCard(Pool4HeroCard):
         palette = self.app.get_css_variables()
         frame = self._frame_style()
         ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
+        active = frame.color in (Color.parse(palette["accent"]), Color.parse("green"))
+        _, _, digits = inner_styles(palette, active=active)
         base, surface = self.background_colors
         previous = dim_color(ink.bgcolor, ink.color)
         # Halfway between the card background and the original dim text.
@@ -308,11 +319,10 @@ class AgentRackCard(Pool4HeroCard):
         rows = []
         if len(groups) == 3 and all(value != "--" for value in values) and sum(len(group[0]) for group in groups) + 2 <= inside:
             for n in range(3):
-                rows.append(Text(groups[0][n] + " ", style=ink).append(groups[1][n], style=separator).append(" " + groups[2][n], style=ink))
+                rows.append(Text(groups[0][n] + " ", style=digits).append(groups[1][n], style=separator).append(" " + groups[2][n], style=digits))
         else:
-            row = Text(values[0] + " ", style=ink).append("0F", style=separator).append(" " + values[-1], style=ink)
-            row.truncate(inside, overflow="ellipsis")
-            rows = [Text(""), row, Text("")]
+            row = Text(values[0] + " ", style=digits).append("0F", style=separator).append(" " + values[-1], style=digits)
+            rows = [Text(""), padded_inner_row(row, inside, align="center"), Text("")]
         heading = " " + clip(data.heading, inside - 2) + " "
         content = Text("┌" + heading.center(inside, "─") + "┐\n", style=frame)
         for row in rows:
@@ -326,14 +336,14 @@ class AgentRackCard(Pool4HeroCard):
         data = self.data
         inside = max(4, self.content_size.width) - 2
         frame = self._frame_style()
-        ink = Style(color=self.rich_style.color, bgcolor=self.app.get_css_variables()["background"], dim=False)
+        _, ink, _ = inner_styles(self.app.get_css_variables())
+        room = max(0, inside - 2)
         rows = []
         for model, effort in data.stats:
-            fitted = clip(model, max(1, inside - cell_len(effort) - bool(effort)))
+            fitted = clip(model, max(1, room - cell_len(effort) - bool(effort)))
             row = Text(fitted, style=ink + Style(bold=bool(effort)))
             if effort:
                 row.append(" " + effort, style=ink + Style(bold=False))
-            row.truncate(inside, overflow="ellipsis")
             rows.append(row)
         if len(rows) == 1:
             rows.insert(0, Text("", style=ink))
@@ -341,7 +351,7 @@ class AgentRackCard(Pool4HeroCard):
         heading = " " + clip(data.heading, inside - 2) + " "
         result = Text("┌" + heading.center(inside, "─") + "┐\n", style=frame)
         for row in rows[:3]:
-            row.align("center", inside)
+            row = padded_inner_row(row, inside, align="center")
             result.append("│", style=frame).append_text(row).append("│\n", style=frame)
         subtitle = " " + clip(data.subtitle, inside - 2) + " " if data.subtitle else ""
         return result.append("└" + subtitle.center(inside, "─") + "┘", style=frame)
@@ -349,18 +359,6 @@ class AgentRackCard(Pool4HeroCard):
     def render(self):
         content = (self._status_content() if self.data.key == "status" else
                    self._models_content() if self.data.key == "models" and self.data.stats else super().render())
-        if self.data.key in ("seat", "rank", "runtime"):
-            # Recolor only the inset frame and its captions, never the digits.
-            frame = self._frame_style()
-            offset = 0
-            lines = content.plain.splitlines()
-            for n, line in enumerate(lines):
-                if n in (0, len(lines) - 1):
-                    content.stylize(frame, offset, offset + len(line))
-                else:
-                    content.stylize(frame, offset, offset + 1)
-                    content.stylize(frame, offset + len(line) - 1, offset + len(line))
-                offset += len(line) + 1
         if self.data.key == "owner":
             offset = content.plain.find(self.owner_text.plain)
             if offset >= 0:

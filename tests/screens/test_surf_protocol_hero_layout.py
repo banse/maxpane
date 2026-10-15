@@ -36,7 +36,7 @@ def _protocol_payload(kind):
 def _lost_card_text(app, card):
     """Unfitted record facts checked against the actual compositor, not render()."""
     text = _region_text(app, card)
-    record = card.data
+    record = card.raw_record
     footer = card.border_subtitle
     footer = footer.plain if hasattr(footer, "plain") else strip_tags(footer)
     expected = [record.title, record.heading, footer, *record.rows]
@@ -44,13 +44,16 @@ def _lost_card_text(app, card):
         expected.append(record.subtitle)
     lost = [part for part in expected if part and part not in text]
     for label, value in record.stats:
-        if not any(label in line and value in line for line in text.splitlines()):
+        # Only these approved short labels may replace the original fact;
+        # its entire formatted value (including sign and units) must survive.
+        short = {"rewarded": "rewards", "headroom": "room"}.get(label, label)
+        if not any((label in line or short in line) and value in line for line in text.splitlines()):
             lost.append((label, value))
     return lost
 
 
 @pytest.mark.parametrize("kind", ["direct", "mainnet", "partial", "stale", "unavailable", "signed-large"])
-@pytest.mark.parametrize("width", boundary_set(SURF_POOL4_FULL_LAYOUT_COLUMNS, 100, 170))
+@pytest.mark.parametrize("width", boundary_set(SURF_POOL4_FULL_LAYOUT_COLUMNS, 100, 170, 134, 137, 138))
 async def test_protocol_view_is_whole_at_width_and_advertises_each_lost_card(width, kind):
     async with _pool4_app(_protocol_payload(kind)).run_test(size=(width, 60)) as pilot:
         app = pilot.app
@@ -75,24 +78,24 @@ async def test_protocol_view_is_whole_at_width_and_advertises_each_lost_card(wid
             assert not _clipped_pool4_lines(app, app.screen)
 
 
-async def test_protocol_width_pin_is_bound_by_the_direct_route_row():
-    """A pin one column too low OR high fails against painted route text."""
-    async with _pool4_app(_protocol_payload("direct")).run_test(
+async def test_protocol_width_pin_is_bound_by_the_unavailable_checks_row():
+    """A pin one column too low OR high fails against painted status text."""
+    async with _pool4_app(_protocol_payload("unavailable")).run_test(
         size=(SURF_POOL4_FULL_LAYOUT_COLUMNS - 1, 60)
     ) as pilot:
         app = pilot.app
         await app.screen._do_refresh()
         await pilot.press("e")
         await pilot.pause()
-        card = app.screen.query_one(SurfProtocolHero).query_one("#hero-split")
-        assert "direct to stakers" not in _region_text(app, card)
+        card = app.screen.query_one(SurfProtocolHero).query_one("#hero-checks")
+        assert "not established" not in _region_text(app, card)
         assert "‹" in _region_text(app, card)
         assert not _pool4_marked(app, app.screen), "the native body has its own 99-column boundary"
         await pilot.resize_terminal(SURF_POOL4_FULL_LAYOUT_COLUMNS, 60)
         await pilot.pause()
-        assert "direct to stakers" in _region_text(app, card)
+        assert "not established" in _region_text(app, card)
         assert "‹" not in _region_text(app, card)
-        assert card.content_size.width - 2 == cell_len("direct to stakers")
+        assert card.content_size.width - 4 == cell_len("not established")
         assert SURF_POOL4_FULL_LAYOUT_COLUMNS == MEASURED_POOL4_COLUMNS
 
 

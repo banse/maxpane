@@ -15,6 +15,23 @@ Key history and withdrawn statements are in `docs/decisions.md`; this file state
 true now. Layout pins live beside their constants in `#:` blocks; the terminal-layout skill's
 table names them and this file repeats no numbers.
 
+## Shared card inner bodies
+
+Every mounted Surf hero and boardroom card uses the same body palette: light ANSI
+green labels/prose and theme-foreground values. Numeric readouts use light green
+only when their final inset frame is green; neutral, orange and red frames retain
+their existing colors while the digits use foreground. Headings, inset subtitles,
+outer captions and state decisions are unchanged. BOARD values remain bold.
+Text rows reserve one blank cell inside each edge, including previews, compact
+readouts, owner links and models. Native tall digits retain their centered width.
+Rich links/copy actions survive padding; linked addresses use foreground. Unknown
+placeholders may use label ink. AGENT STATUS keeps its muted `0F` separator.
+Boardroom compact labels may use `rewards` and daemon `ver.` at narrow widths to
+preserve complete values and edge blanks; the normal labels return when they fit.
+The native PROTOCOL hero similarly uses `rewards`/`room` only when `rewarded`/
+`headroom` cannot fit, and retains each full numeric value. Its ROUTE row reads
+`to stakers` beneath the existing DIRECT caption.
+
 ## Keys and bodies
 
 Surf is position 1, the `--game` default, and the dashboard prefetched at launch. Its status
@@ -353,8 +370,10 @@ fleets have no reference. Daemon comparison is equality only, never hash orderin
 An outdated runtime has an explicit update subtitle; a differing daemon keeps a
 trailing `↑` within the fit budget. A valid Claude CLI version drops its display-only
 banner suffix; the full runtime and daemon remain in the literal tooltip. A
-clipped daemon retains its label, ellipsis and update arrow; the RUNTIME widen hint is
-intentionally omitted. Only a confirmed outdated runtime turns the inset orange;
+clipped daemon retains its label, ellipsis and update arrow without a redundant
+RUNTIME widen hint. Other clipped runtime fields still show the hint. Narrow
+insets may use `cld` for Claude while retaining the complete version; the full
+name returns when it fits. Only a confirmed outdated runtime turns the inset orange;
 daemon differences alone stay neutral. Unknown checks have no inner bottom caption.
 The outer `since MM-DD HH:MM` uses the latest matching-seat/runtime worker connection,
 with a compact time at narrow widths. It is not a verified restart receipt. Missing
@@ -838,8 +857,8 @@ By explicit owner request, LEADERBOARD has no visible widen hint in either tab a
 Responsive columns, ellipses and full hover details remain; tests inspect actual columns
 and clipping instead of treating the missing hint as evidence of a complete table.
 
-The six BOARD cards retain neutral gray frames, labels and captions. Their main digits and
-right-hand statistics values use the leaderboard foreground; statistics rows keep one blank
+The six BOARD cards retain neutral gray frames and captions. Their body labels use light green;
+main digits and right-hand statistics values use the leaderboard foreground. Statistics rows keep one blank
 cell inside each edge. TOP SEAT shows AGENT with acceptance percentage below
 the ID and accepted count in the outer footer. RECORDED shows distinct online recorded seats
 below the total and attempts in its footer. ACCEPT RATE uses ACCEPTED above its digits, `%`
@@ -867,7 +886,7 @@ guarantee, not a promise that arbitrary notes fit; measured content limits are i
 
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
 The title is centered muted gray `IMD BOARDROOM`. ONCHAIN FEED uses white active inset
-borders and border text, matching its body; SWARM BUILDS retains its activity colors.
+borders and border text; its body follows the shared palette. SWARM BUILDS retains its activity colors.
 The top row is ONCHAIN FEED, BUILT BY SWARM, WIP, ORACLES, POOL4, FLEET.
 PROTOCOL sits below ONCHAIN FEED, opposite TOKENS below FLEET beside the terminal.
 The キープ and ビルディング captions stay over the left and right AGENT columns.
@@ -915,7 +934,7 @@ Shares deduplicate devices, count a both-runtime seat once in each runtime, and 
 until the roster and runtime metadata are complete. The daemon strips `+build` before grouping;
 the most-used advertised model/effort pair forms the inner footer without a label. Counts are
 per worker for daemon and model settings; hover preserves source coverage.
-Only the three row values use the leaderboard foreground; labels and frames stay neutral.
+The three row values use the leaderboard foreground; labels use light green and frames stay neutral.
 Long metadata fits with ellipsis and retains full text on hover. Its centered outer footer is
 `worked Ny Nw Nd`, using the complete contributor
 summary's `wall_clock_ms` across all devices. Whole days are split into 365-day years,
@@ -950,7 +969,7 @@ feedback timestamps cannot reset it. Without either source, cold idle has a dash
 not a full orange bar. The last green segment remains until the full 24h expires.
 PROTOCOL uses label / amount / IMD columns, neutral inset borders/title, and a centered
 outer `x% burned` footer. Its inset uses the same horizontal padding as the other cards.
-Stats retain a leading blank and aligned columns; spare trailing space and then the
+Stats retain one blank at both edges and aligned columns; spare trailing space and then the
 amount/unit gap give way when needed to keep complete values at narrow widths.
 POOL4's inset borders/title/USD label compare consecutive valid
 USD price reads: green up, orange down, neutral on first or unchanged reads. Source clocks

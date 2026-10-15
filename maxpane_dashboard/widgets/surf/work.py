@@ -45,15 +45,11 @@ class _WorkHeroCard(NewsHeroCard):
             title = clip(title, max(1, room - len(WIDEN_HINT) - 1)) + " " + WIDEN_HINT
         self.border_title = Text(title)
 
-    def render(self):
-        result = super().render()
+    def _frame_style(self):
+        frame = super()._frame_style()
         if self.data.key == "work-blocked" and self.data.accent:
-            # Recolor the inherited frame only; digits retain their own ink.
-            frame = result.style
-            result.style = frame + Style(color="red")
-            result.spans = [span._replace(style=span.style + Style(color="red"))
-                            if span.style == frame else span for span in result.spans]
-        return result
+            frame += Style(color="red")
+        return frame
 
 
 class SurfWorkHero(Grid):

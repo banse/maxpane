@@ -22,6 +22,26 @@ def neutral_inset_color(app):
     return Color.parse('#9e9e9e' if app.theme == 'matrix' else '#999999').get_truecolor()
 
 
+async def test_card_text_rows_keep_one_blank_cell_inside_both_edges():
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        samples = {
+            'announce': dict(primary='A long post ' * 20, status='active'),
+            'protocol': dict(primary='burned 33k IMD\nrewarded 6k IMD\nfees 4k IMD'),
+            'board': fleet_card_data(),
+            'swarm-tokens': token_card_data(),
+        }
+        for key, data in samples.items():
+            card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
+            card.set_data(data)
+            await pilot.pause()
+            strips = card_strips(pilot.app, card)
+            top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
+            left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
+            for row in strips[top+1:top+4]:
+                assert row.crop(left+1, left+2).text == ' ', key
+                assert row.crop(right-1, right).text == ' ', key
+
+
 @pytest.mark.parametrize('size', [(149,45),(140,36)])
 async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
     async with RackApp().run_test(size=size) as pilot:
@@ -39,11 +59,11 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
             assert strips[top].text.strip('│┌┐─ ') == 'LATEST'
             assert not header.style.bold and header.style.color == inset_border_color(strips[top])
             assert [s.text[left+1:right] for s in strips[top+1:top+4]]==[
-                text[:inside],text[inside:inside*2],text[inside*2:inside*3-3]+'...']
+                ' '+text[:inside-2]+' ', ' '+text[inside-2:(inside-2)*2]+' ',
+                ' '+text[(inside-2)*2:(inside-2)*3-3]+'... ']
             assert strips[top+4].text[left+1:right].strip('─ ') == '7 new'
-            ink=next(iter(strips[top+1].crop(left+1,left+2))).style
-            # Neutral news ink is independent of the editable AGENT card's surface.
-            assert ink.color==(card.rich_style.color if status=='active' else Color.parse('#6f6f6f'))
+            ink=next(iter(strips[top+1].crop(left+2,left+3))).style
+            assert ink.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
             edge=next(iter(strips[top].crop(left,left+1))).style.color.get_truecolor()
             neutral=neutral_inset_color(pilot.app)
             status_ink=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
@@ -83,8 +103,8 @@ async def test_post_preview_keeps_unicode_literal_and_address_copy_units(size):
                 assert '[bold]' in content[0].text
                 assert not next(s.style for s in content[0] if '[bold]' in s.text).bold
             elif text.startswith('a界'):
-                assert [s.crop(left+1,right).text.rstrip() for s in content]==[
-                    'a'+'界'*8, '界'*(9 if size[0]==149 else 8), '界'*7+'...']
+                assert [s.crop(left+2,right-1).text.rstrip() for s in content]==[
+                    'a'+'界'*7, '界'*(8 if size[0]==149 else 7), '界'*6+'...']
             elif text=='Short post':
                 assert 'Short post' in content[0].text
                 assert all(not s.crop(left+1,right).text.strip() for s in content[1:])
@@ -114,7 +134,7 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
             for strip, expected in zip(strips[top+1:top+4], glyphs):
                 assert strip.text[left+1:right].strip() == expected.strip()
                 if primary != '—':
-                    digit_ink = app.ansi_theme.ansi_colors[2] if status == 'assessing' else card.rich_style.color.get_truecolor()
+                    digit_ink = app.ansi_theme.ansi_colors[2] if status == 'assessing' else Color.parse(app.get_css_variables()['foreground']).get_truecolor()
                     assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                                for s in strip.crop(left+1, right) if s.text.strip())
             assert subtitle in strips[top+4].text
@@ -237,7 +257,7 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
                 padding = (right - left - 1 - len(row)) // 2
                 assert strip.text[left + 1:right] == (" " * padding + row).ljust(right - left - 1)
                 digit_ink = (pilot.app.ansi_theme.ansi_colors[2] if status == 'working' else
-                             ink if status == 'offline' else card.rich_style.color.get_truecolor())
+                             Color.parse(pilot.app.get_css_variables()['foreground']).get_truecolor())
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for s in strip.crop(left+1, right) if s.text.strip())
             assert "slots" not in strips[top + 4].text
@@ -339,8 +359,8 @@ async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
             unit_columns, label_columns = set(), set()
             for strip, name, value in zip(strips[top+1:top+4], ('burned', 'rewarded', 'fees'), expected):
                 line = strip.text[left+1:right]
-                assert line.split() == [name, value, 'IMD']
-                assert line.startswith(' ' + name)
+                assert line.strip().removeprefix(name).strip().replace(' ', '') == value + 'IMD'
+                assert line.startswith(' ' + name) and line.endswith(' ')
                 assert not line[line.index('IMD')+3:].strip()
                 unit_columns.add(line.index('IMD'))
                 label_columns.add(line.index(name))
@@ -625,7 +645,8 @@ async def test_tokens_ranked_rows_direction_ink_volume_footer_and_activity(size)
                 left = strips[top].text.index('┌')
                 assert strip.crop(left+1, left+3).text == ' ' + words[0][0]
                 right = strips[top].text.index('┐')
-                assert strip.crop(right-1, right).text == (icon or ' ')
+                assert strip.crop(right-1, right).text == ' '
+                assert strip.crop(right-2, right-1).text == (icon or ' ')
                 for word, ink in zip(words, (pilot.app.ansi_theme.ansi_colors[2],
                         Color.parse(pilot.app.get_css_variables()['foreground']).get_truecolor())):
                     start = strip.text.index(word)
@@ -636,7 +657,7 @@ async def test_tokens_ranked_rows_direction_ink_volume_footer_and_activity(size)
                     continue
                 marker = next(s for s in strip if icon in s.text)
                 expected_ink = (pilot.app.ansi_theme.ansi_colors[2] if icon == '↑'
-                                else pilot.app.ansi_theme.ansi_colors[1] if icon == '↓' else card.rich_style.color.get_truecolor())
+                                else pilot.app.ansi_theme.ansi_colors[1])
                 assert marker.style.color.get_truecolor() == expected_ink
             assert strips[top+4].text.strip('│└┘─ ') == (footer if status == 'active' else '')
             bottom = next(s for s in strips[top+4] if '└' in s.text)
@@ -730,7 +751,8 @@ async def test_token_hostile_wide_tickers_preserve_age_marker_and_advertise_clip
         left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
         row = strips[top+1].crop(left+1, right)
         assert row.text.startswith(' —   [/x]') and '…' in row.text
-        assert row.crop(right-left-2, right-left-1).text == '↑'
+        assert row.crop(right-left-3, right-left-2).text == '↑'
+        assert row.crop(right-left-2, right-left-1).text == ' '
         assert all(s.crop(right, right+1).text == '│' for s in strips[top+1:top+4])
         assert '‹' in strips[0].text
         assert '\x1b' not in ''.join(s.text for s in strips) and '\u202e' not in ''.join(s.text for s in strips)
@@ -843,7 +865,7 @@ async def test_fleet_worked_footer_floors_time_and_centers_without_activity_bar(
 
 
 @pytest.mark.parametrize('size', [(149, 45), (146, 37)])
-async def test_fleet_long_base_daemon_uses_available_edge_cell(size):
+async def test_fleet_long_base_daemon_keeps_padded_edges(size):
     async with RackApp().run_test(size=size) as pilot:
         card = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
         data = fleet_card_data()
@@ -992,7 +1014,7 @@ async def test_pool4_price_direction_colors_whole_inset_and_resets_to_neutral():
                 assert next(seg.style.color.get_truecolor() for seg in row if label in seg.text) == ink
             digits = next(seg for seg in strips[top + 1] if '╭─╮' in seg.text)
             digit_ink = (pilot.app.ansi_theme.ansi_colors[2] if status == 'active' else
-                         ink if status == 'falling' else card.rich_style.color.get_truecolor())
+                         Color.parse(pilot.app.get_css_variables()['foreground']).get_truecolor())
             assert digits.style.color.get_truecolor() == digit_ink and not digits.style.dim
 
 
@@ -1067,7 +1089,7 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
                 for x in (left, right):
                     assert next(iter(row.crop(x, x+1))).style.color.get_truecolor() == expected
             if primary != '—':
-                digit_ink = app.ansi_theme.ansi_colors[2] if primary in ('5', '1,000') else card.rich_style.color.get_truecolor()
+                digit_ink = app.ansi_theme.ansi_colors[2] if primary in ('5', '1,000') else Color.parse(app.get_css_variables()['foreground']).get_truecolor()
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for row in strips[top+1:top+4] for s in row.crop(left+1, right) if s.text.strip())
             for row, label in ((strips[top], 'ACTIVE JOBS'), (strips[top+4], secondary)):

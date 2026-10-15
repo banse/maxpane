@@ -150,6 +150,15 @@ async def test_accounting_faults_are_visible_red_and_never_healthy(counters, dri
         red = app.ansi_theme.ansi_colors[1]
         frames = [segment for strip in strips(app, "checks") for segment in strip if "┌" in segment.text]
         assert frames and all(segment.style.color.get_truecolor() == red for segment in frames)
+        card = app.query_one("#hero-checks")
+        lines = output.splitlines()
+        index = next(i for i, row in enumerate(lines) if "drift " in row)
+        row = lines[index]
+        amount_start, amount_end = row.index("drift ") + len("drift "), row.index(" bps")
+        for x in range(amount_start, amount_end):
+            assert app.screen.get_style_at(card.region.x + x, card.region.y + index).color == Color.parse(app.get_css_variables()["foreground"])
+        for text in ("drift", "bps"):
+            assert app.screen.get_style_at(card.region.x + row.index(text), card.region.y + index).color.get_truecolor() == app.ansi_theme.ansi_colors[2]
 
 
 @pytest.mark.parametrize("counters", ["window-limited", "unchecked", None])
@@ -177,6 +186,8 @@ async def test_stale_fault_retains_alarm_and_a_fresh_recovery_clears_it(local_cl
         assert "MISMATCH" in painted(app, "checks") and "stale 04:50" in painted(app, "checks")
         red = app.ansi_theme.ansi_colors[1]
         assert any(segment.style.color.get_truecolor() == red
+                   for strip in strips(app, "checks") for segment in strip if "┌" in segment.text)
+        assert any(segment.style.color.get_truecolor() == app.ansi_theme.ansi_colors[2]
                    for strip in strips(app, "checks") for segment in strip if "MISMATCH" in segment.text)
         app.query_one(SurfProtocolHero).update_data(surf_protocol_hero=payload())
         await pilot.pause()
@@ -187,7 +198,7 @@ async def test_stale_fault_retains_alarm_and_a_fresh_recovery_clears_it(local_cl
                    for strip in strips(app, "checks") for segment in strip if "┌" in segment.text)
 
 
-@pytest.mark.parametrize("route,expected", [("direct", "direct to stakers"), ("[/x]\x1b", "route --"), (None, "route --")])
+@pytest.mark.parametrize("route,expected", [("direct", "to stakers"), ("[/x]\x1b", "route --"), (None, "route --")])
 async def test_routes_never_invent_distributor_allocations(route, expected):
     data = payload()
     data["split"]["path"] = data["checks"]["path"] = route
@@ -234,3 +245,19 @@ async def test_clipping_marks_and_recovers_at_the_owner_width():
         await pilot.resize_terminal(149, 45)
         await pilot.pause()
         assert all("‹" not in painted(pilot.app, key) for key in payload())
+
+
+async def test_short_labels_keep_full_signed_values_and_restore_on_resize():
+    data = payload()
+    data["totals"]["rewarded"] = 1_234_567.89
+    data["inventory"]["headroom"] = -1_234_567.89
+    async with Harness(data).run_test(size=(141, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        assert any("rewards" in row and "1.235M" in row for row in painted(app, "totals").splitlines())
+        assert any("room" in row and "-1.235M" in row for row in painted(app, "inventory").splitlines())
+        assert "‹" not in painted(app, "totals") and "‹" not in painted(app, "inventory")
+        await pilot.resize_terminal(149, 45)
+        await pilot.pause()
+        assert any("rewarded" in row and "1.235M" in row for row in painted(app, "totals").splitlines())
+        assert any("headroom" in row and "-1.235M" in row for row in painted(app, "inventory").splitlines())

@@ -2,6 +2,7 @@
 import time
 
 import pytest
+from rich.color import Color
 from textual.app import App
 
 from maxpane_dashboard.themes import THEMES
@@ -82,6 +83,23 @@ async def test_approved_six_card_geometry_and_values():
         assert "other" not in painted(app, "pools")
         assert app.query_one("#hero-volume").data.digits == "124.8"
         assert "╷" in painted(app, "volume")  # Native large-digit face.
+
+
+async def test_liquidity_keeps_amount_before_asset_with_separate_colors_and_padding():
+    async with Harness(payload()).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app, card = pilot.app, pilot.app.query_one("#hero-liquidity")
+        lines = painted(app, "liquidity").splitlines()
+        top = next(index for index, row in enumerate(lines) if "┌" in row)
+        left, right = lines[top].index("┌"), lines[top].index("┐")
+        for index, amount, asset in ((top + 1, "≥12.4k", "IMD"), (top + 2, "≥3.8", "ETH")):
+            row = lines[index]
+            assert row[left + 1] == row[right - 1] == " "
+            assert amount + " " + asset in row
+            for text, color in ((amount, Color.parse(app.get_css_variables()["foreground"]).get_truecolor()),
+                                (asset, app.ansi_theme.ansi_colors[2])):
+                for x in range(row.index(text), row.index(text) + len(text)):
+                    assert app.screen.get_style_at(card.region.x + x, card.region.y + index).color.get_truecolor() == color
 
 
 async def test_partial_and_stale_keep_coverage_and_their_own_clocks(local_clock):

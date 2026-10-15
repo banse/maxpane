@@ -441,7 +441,7 @@ async def test_the_hero_survives_the_launchpad_body_swap() -> None:
         assert {card.region.height for card in rack.children} == {9}
         for title in ("COINS", "CURVE FLOW", "VOLUME", "CREATOR FEES", "BURN QUEUE", "BURNED"):
             assert title in hero, f"the hero lost its {title} box under `l`"
-        assert "36 new /24h" in hero and "4.683k" in hero
+        assert "36 new /24h" in hero and "4,683" in hero
         assert "READY" in hero
 
 _LAUNCHPAD_CSS_SELECTORS = (
@@ -602,7 +602,7 @@ def _lost_launchpad_card_text(app, card):
     from textual.renderables.digits import Digits
     from maxpane_dashboard.widgets.markup_safety import strip_tags
 
-    record = card.data
+    record = card.raw_record
     text = _region_text(app, card)
     footer = card.border_subtitle
     footer = footer.plain if hasattr(footer, "plain") else strip_tags(footer)
@@ -619,7 +619,8 @@ def _lost_launchpad_card_text(app, card):
     if " ".join(footer.split()) not in " ".join(text.split()):
         lost.append(footer)
     lost.extend((label, value) for label, value in record.stats
-                if not any(label in line and value in line for line in text.splitlines()))
+                if not any((label in line or label == "sendable" and "ready" in line) and value in line
+                           for line in text.splitlines()))
     return lost
 
 

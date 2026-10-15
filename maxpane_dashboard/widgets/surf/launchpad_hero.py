@@ -1,12 +1,15 @@
 """Launchpad rack cards over projected, independently observed facts."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid
 
 from maxpane_dashboard.analytics.surfboard import count, number
 from maxpane_dashboard.widgets.fmt import hhmm
+from maxpane_dashboard.widgets.rowfit import cell_len
 from .news_hero import HeroRecord, _count
 from .pool4_hero import Pool4HeroCard, _amount, _face
 
@@ -38,7 +41,15 @@ def launchpad_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         elif key in ("flow", "queue"):
             columns = ("swaps", "traders", "creators") if key == "flow" else ("accrued", "staged", "sendable")
             validate = count if key == "flow" else number
-            stats = tuple((column, _amount(validate(section.get(column)))) for column in columns)
+            stats = []
+            for column in columns:
+                value = validate(section.get(column))
+                amount = _amount(value)
+                if key == "flow" and value is not None:
+                    # Exact small counts can be shorter than a compact suffix.
+                    amount = min(amount, f"{value:,}", key=cell_len)
+                stats.append((column, amount))
+            stats = tuple(stats)
             fields["stats"] = stats
             fields["accent"] &= all(value != "--" for _, value in stats)
             if key == "queue":
@@ -71,6 +82,26 @@ def launchpad_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     return tuple(records)
 
 
+class LaunchpadHeroCard(Pool4HeroCard):
+    """Keep complete queue amounts within the padded inset at narrow sizes."""
+
+    def _fit_content(self, record):
+        room = max(0, self.content_size.width - 4)
+        stats = tuple(("ready" if label == "sendable" and cell_len(label) + cell_len(value) + 1 > room else label, value)
+                      for label, value in record.stats)
+        return replace(record, stats=stats)
+
+    def set_record(self, record):
+        self.raw_record = record
+        super().set_record(self._fit_content(record))
+        if record.stats:
+            self.tooltip = Text(str(self.tooltip) + "\n" + "\n".join(f"{label} {value}" for label, value in record.stats))
+
+    def on_resize(self):
+        self.data = self._fit_content(self.raw_record)
+        super().on_resize()
+
+
 class SurfLaunchpadHero(Grid):
     DEFAULT_CSS = """
     SurfLaunchpadHero { width: 1fr; height: 9; grid-size: 6 1; grid-columns: 1fr;
@@ -79,7 +110,7 @@ class SurfLaunchpadHero(Grid):
 
     def compose(self) -> ComposeResult:
         for record in launchpad_records(None):
-            yield Pool4HeroCard(record)
+            yield LaunchpadHeroCard(record)
 
     def update_data(self, *, surf_launchpad_hero=None, **kwargs):
         for record in launchpad_records(surf_launchpad_hero):

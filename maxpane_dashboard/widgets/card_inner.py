@@ -1,0 +1,21 @@
+"""Shared body colors and rich text padding for Surf card insets."""
+from rich.style import Style
+from rich.text import Text
+
+
+def inner_styles(palette, *, active=False):
+    """Return label, value and numeric-readout styles for the final frame."""
+    label = Style(color="green", bgcolor=palette["background"], dim=False)
+    value = Style(color=palette["foreground"], bgcolor=palette["background"], dim=False)
+    return label, value, label if active else value
+
+
+def padded_inner_row(row: Text, inside: int, *, align="left") -> Text:
+    """Fit a copied rich row between one blank cell at each inset edge."""
+    inside = max(0, inside)
+    if inside < 2:
+        return Text(" " * inside, style=row.style)
+    fitted = row.copy()
+    fitted.truncate(inside - 2, overflow="ellipsis")
+    fitted.align(align, inside - 2)
+    return Text(" ", style=row.style).append_text(fitted).append(" ")

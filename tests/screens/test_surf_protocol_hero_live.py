@@ -1,6 +1,7 @@
 """The approved protocol overview uses the production projection and screen."""
 from maxpane_dashboard.data.surf_protocol_hero import project
 from maxpane_dashboard.widgets.surf.protocol_hero import SurfProtocolHero
+from maxpane_dashboard.widgets.surf.launchpad_hero import SurfLaunchpadHero
 from maxpane_dashboard.widgets.surf import SurfHero, SurfNewsHero, SurfPool4RackHero
 from tests.screens.test_surf_screen import _surf_app, _mainnet_pool4_payload, _region_text
 
@@ -24,7 +25,7 @@ async def test_protocol_live_projection_replaces_only_protocol_hero():
         for text in ('TOTALS', 'INVENTORY', 'REWARD SPLIT', 'UNSETTLED', 'DELIVERY', 'CHECKS',
                      'burned', 'rewarded', 'fees', '7.44k', '250', '1.2k/d'):
             assert text in pixels
-        for key, cls in [('4', SurfPool4RackHero), ('l', SurfHero), ('escape', SurfNewsHero), ('e', SurfProtocolHero)]:
+        for key, cls in [('4', SurfPool4RackHero), ('l', SurfLaunchpadHero), ('escape', SurfNewsHero), ('e', SurfProtocolHero)]:
             await pilot.press(key)
             await pilot.pause()
             shown = [child for child in app.screen.query_one('#hero-row').children if child.display]

@@ -684,6 +684,10 @@ SURF_FULL_LAYOUT_COLUMNS = 143
 #: In-situ themed measurements retain 138 columns: COINS marks at 137 and
 #: clears at 138; the hero fits the approved precise fee and volume fields.
 #: Live public-data preview was shown at the owner's 149×45 before this sweep.
+#: 2026-10-15, one-cell inset text padding: the large FLOW count uses the
+#: shorter exact "9,999" and BURN QUEUE uses "ready" when "sendable" cannot
+#: fit beside the complete amount. The original label returns at wider sizes.
+#: Large/capture width, height and resize composites retain the 138 boundary.
 SURF_LAUNCHPAD_FULL_LAYOUT_COLUMNS = 138
 
 #: The ``l`` LAUNCHPAD body's own measured **height** (2026-08-25) -- new
@@ -1076,7 +1080,16 @@ SURF_LAUNCHPAD_FULL_LAYOUT_ROWS = 33
 #: boundary and check full hero content at 140/141/142. Huge values may
 #: still mark locally, as other data-dependent card rows do. No app-wide
 #: width change: the complete protocol view remains within 143 columns.
-SURF_POOL4_FULL_LAYOUT_COLUMNS = 141
+#:
+#: **2026-10-15 — shared inset palette and one-cell text padding, 141 -> 138.**
+#: Measured after live 149x45 previews. ROUTE uses "to stakers" below its
+#: DIRECT caption; narrow TOTALS/INVENTORY labels use "rewards"/"room" without
+#: changing values. Full labels return when space permits. The complete
+#: direct and signed-large payloads clear from 137; mainnet, partial and stale
+#: from 134; unavailable CHECKS binds at 138 with "not established" (15 cells
+#: between the two edge blanks), still cut and marked at 137. The native body
+#: retains its independent 99-column boundary; card widths stay fractional.
+SURF_POOL4_FULL_LAYOUT_COLUMNS = 138
 
 #: The ``p`` POOL4 body's own measured **height**, re-swept 2026-09-02 for
 #: the mainnet deployment, again after the panels were shortened, and again
@@ -1472,6 +1485,12 @@ SURF_POOL4_FULL_LAYOUT_ROWS = 47
 #: partial-holder row (addresses ≥1000.0K) clips and marks at 147;148–150
 #: stay whole. Normal/stale clears 142; native STAKERS remains 119. Grid
 #: rounding gives isolated fits below 148, so the stable boundary is pinned.
+#: 2026-10-15: one-cell text padding retains the overall 148 boundary;
+#: compact counts keep the partial row complete as "addresses ≥1000k".
+#: Re-measured ordinary/capture queue rows clear at 138 (cut at 137),
+#: unavailable at 126 (cut at 125), wide/stale at 142, partial at 148.
+#: Existing isolated whole widths remain 140 for wide/stale and 146 for
+#: partial. The native STAKERS body still clears at 119.
 SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 148
 
 #: The ``4`` POOL4 MARKET body's own full-layout height, swept in situ on
@@ -1888,6 +1907,10 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 38
 #: RECORD remains the named content exception. Full/compact/tight require
 #: 102/94/53 table cells with five screen cells of gutters/padding:
 #: full from 107, compact from 99. Its answer-clearance onset is below.
+#: 2026-10-15, one-cell inset text padding: capture420 and worst-a measured
+#: by scripts/measure_layout.py remain whole at 132/133 and marked at 131.
+#: RUNTIME uses "cld" only when needed to retain the full Claude version;
+#: compact STATUS drops grouping commas before losing count digits.
 SURF_AGENT_FULL_LAYOUT_COLUMNS = 132
 
 #: AGENT height, re-swept 2026-10-13: 25 -> 29.

@@ -71,15 +71,12 @@ def _wrapped_prose(value, width, explorer, *, style=""):
 
 
 class _OracleCard(LocalSourceHeroCard):
-    def render(self):
-        result = super().render()
+    def _frame_style(self):
+        frame = super()._frame_style()
         tone = _COLORS.get(self.data.key.removeprefix("oracle-"))
         if tone and self.data.accent:
-            frame = result.style
-            result.style = frame + Style(color=tone)
-            result.spans = [span._replace(style=span.style + Style(color=tone))
-                            if span.style == frame else span for span in result.spans]
-        return result
+            frame += Style(color=tone)
+        return frame
 
 
 class SurfOraclesHero(Grid):

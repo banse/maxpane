@@ -91,6 +91,13 @@ def token_records(payload: dict | None) -> tuple[HeroRecord, ...]:
 class TokensHeroCard(LocalSourceHeroCard):
     """LAUNCHES card using the shared local source footer."""
 
+    def _text_rows(self, label_style, value_style):
+        rows = super()._text_rows(label_style, value_style)
+        if self.data.key == "liquidity":
+            for row in rows:
+                row.stylize(value_style, 0, len(row.plain.rpartition(" ")[0]))
+        return rows
+
 
 class TokensHero(Grid):
     DEFAULT_CSS = """

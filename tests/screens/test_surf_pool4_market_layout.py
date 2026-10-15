@@ -752,13 +752,15 @@ async def _render(payload, size):
 #: (``pool4u_stakers.py``: "119 and 121 on the `4` body"), so the second tier
 #: threshold stays at 121 even though the new hero now binds the overall pin.
 _MARKET_WHOLE_FROM = MARKET_BODY_COLUMNS + 2
-# Stable whole-from widths measured after the live rack preview. Textual's
+# Stable whole-from widths measured after the live card-style preview. Textual's
 # fractional grid allocates one wider VAULT cell at 140/146, then loses it
 # again at 141/147. These real islands must not be mistaken for stable pins.
-_PAYLOAD_COLUMNS = {name: 126 for name in MARKET_PAYLOADS}
+# One-cell inset padding moves the ordinary queue rows to 138 and unknown
+# facts to 126; compact holder counts keep the widest partial boundary at 148.
+_PAYLOAD_COLUMNS = {name: 138 for name in MARKET_PAYLOADS}
 _PAYLOAD_COLUMNS.update({"wide-stakers": 142, "widest": 142,
                          "hero-stale": 142, "hero-partial": 148,
-                         "hero-unavailable": 123})
+                         "hero-unavailable": 126})
 _GRID_WHOLE_ISLANDS = {"wide-stakers": {140}, "widest": {140},
                        "hero-stale": {140}, "hero-partial": {146}}
 _WIDTH_SWEEP = [
@@ -863,7 +865,7 @@ async def test_the_market_column_pin_is_the_partial_vault_holder_row() -> None:
     under = await _render(_hero_source_payload("partial"), (pin - 1, 50))
     assert not at["marked"] and not at["clipped"], at["clipped"]
     assert under["marked"] == {"SurfPool4RackHero"}
-    assert ("SurfPool4RackHero", "vault: addresses ≥1000.0K") in under["clipped"]
+    assert ("SurfPool4RackHero", "vault: addresses ≥1000k") in under["clipped"]
     assert MEASURED_MARKET_COLUMNS == max(_PAYLOAD_COLUMNS.values()) == pin
 
 
