@@ -104,7 +104,10 @@ class BoardHeroCard(Pool4HeroCard):
         value_color = Style(color=self.app.get_css_variables()[self.VALUE_COLOR]).color
         for span in tuple(content.spans):
             if isinstance(span.style, Style) and span.style.color == value_color:
-                content.stylize("bold", span.start, span.end)
+                content.stylize("bold green", span.start, span.end)
+            elif (self.data.stats and isinstance(span.style, Style)
+                  and span.style.color == self.rich_style.color and span.style.dim is False):
+                content.stylize("green", span.start, span.end)
         return content
 
     def _footer(self):
