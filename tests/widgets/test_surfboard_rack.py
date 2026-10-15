@@ -334,6 +334,12 @@ async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
                 unit_columns.add(line.index('IMD'))
                 label_columns.add(line.index(name))
                 assert '★' not in line and ':' not in line
+                for word in (name, value, 'IMD'):
+                    start = strip.text.index(word)
+                    ink = (Color.parse(pilot.app.get_css_variables()['foreground'])
+                           if word != name and value != '—' else card.rich_style.color)
+                    assert all(segment.style.color == ink
+                               for segment in strip.crop(start, start + len(word)))
             assert len(unit_columns) == len(label_columns) == 1
             assert strips[top+4].text[left+1:right].strip('─ ') == ''
             assert '0.47% burned' in strips[-1].text and 'BURN' not in strips[-1].text
@@ -609,9 +615,11 @@ async def test_tokens_ranked_rows_direction_ink_volume_footer_and_activity(size)
                 assert strip.crop(left+1, left+3).text == ' ' + words[0][0]
                 right = strips[top].text.index('┐')
                 assert strip.crop(right-1, right).text == (icon or ' ')
-                for segment in strip:
-                    if any(word in segment.text for word in words):
-                        assert segment.style.color == card.rich_style.color
+                for word, ink in zip(words, (card.rich_style.color,
+                        Color.parse(pilot.app.get_css_variables()['foreground']))):
+                    start = strip.text.index(word)
+                    for segment in strip.crop(start, start + len(word)):
+                        assert segment.style.color == ink
                         assert not segment.style.dim
                 if not icon:
                     continue
@@ -785,7 +793,7 @@ async def test_fleet_runtime_rows_values_green_frame_and_model_neutral(size):
                 for segment in strip.crop(value_start, value_start+len(value)):
                     assert segment.style.color.get_truecolor() == green and not segment.style.dim
                 label_start = strip.text.index(label)
-                assert next(iter(strip.crop(label_start, label_start+len(label)))).style.color.get_truecolor() == neutral
+                assert next(iter(strip.crop(label_start, label_start+len(label)))).style.color == card.rich_style.color
             assert len(set(value_ends)) == 1
             assert strips[top+4].crop(left+1, right).text.strip('─ ') == 'astra 6 xhigh'
             for strip in strips[top:top+5]:
@@ -858,7 +866,7 @@ async def test_fleet_unknown_zero_missing_effort_and_retained_data_on_resize():
                 assert strip.text.strip('│ ').split() == [label, value]
                 if value == '—':
                     segment = next(segment for segment in strip if '—' in segment.text)
-                    assert segment.style.color.get_truecolor() == neutral_inset_color(pilot.app)
+                    assert segment.style.color == card.rich_style.color
             assert strips[top+4].text.strip('│└┘─ ') == model
         data = fleet_card_data()
         card.set_data(dict(data, status='stale'))
@@ -971,7 +979,7 @@ async def test_pool4_price_direction_colors_whole_inset_and_resets_to_neutral():
             for row, label in ((strips[top], 'IMD PRICE'), (strips[top + 4], 'USD')):
                 assert next(seg.style.color.get_truecolor() for seg in row if label in seg.text) == ink
             digits = next(seg for seg in strips[top + 1] if '╭─╮' in seg.text)
-            assert digits.style.color == card.rich_style.color
+            assert digits.style.color == Color.parse(pilot.app.get_css_variables()['foreground'])
 
 
 @pytest.mark.parametrize('points', [[0]*8, [1, None, 3, 4, 5, 6, 7, 8], None])
