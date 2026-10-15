@@ -63,9 +63,9 @@ async def test_worker_groups_pair_runtime_os_slots_and_append_model_omissions(wi
 async def test_empty_metadata_is_none_reported_and_unread_is_unavailable():
     assert 'none reported' in await render(dict(FLEET,runtimes=[]))
     text=await render(None)
-    assert 'runtime    unavailable' in text and 'served' in text
+    assert 'runtime    —' in text and 'served' in text
     text=await render(FLEET,None)
-    assert 'tokens/job' in text and 'unavailable' in text and 'runtime    unavailable' not in text
+    assert 'tokens/job' in text and '—' in text and 'runtime    —' not in text
 async def test_only_the_most_used_daemon_is_shown_and_hostile_text_is_sanitized():
     values=[{'value':'[/x]alpha','count':9}]+[{'value':f'daemon{i}','count':8-i} for i in range(7)]
     text=await render(dict(FLEET,daemons=values))
@@ -179,12 +179,12 @@ async def test_contributor_hours_round_and_under_half_an_hour_read_minutes(ms,sh
 async def test_an_unread_contributor_value_is_unavailable_never_zero():
     text=await render(summary=dict(SUMMARY,devices=None,receipt_attempts=None,input_tokens=None,
                                    wall_clock_ms=None))
-    assert 'devices    unavailable' in text and 'tokens     unavailable' in text
+    assert 'devices    —' in text and 'tokens     —' in text
     assert any(l.strip()==f"accepted   {SUMMARY['receipt_accepted']:,}" for l in text.splitlines())
     assert any(l.strip()==f"turns      {SUMMARY['turns']:,}" for l in text.splitlines())
     none=await render(summary=None)
     for label in ('devices','accepted','rejected','turns','tokens'):
-        assert f'{label:<11}unavailable' in none
+        assert f'{label:<11}—' in none
 
 
 async def test_a_contributor_pair_too_wide_for_its_line_counts_its_second_value():
@@ -196,7 +196,7 @@ async def test_polish_model_missing_none_and_hostile_values_are_distinct():
     none=await render(dict(FLEET,models=[dict(model=None,effort=None,count=3)]))
     assert 'model      none reported' in none and 'advertised' not in none
     unread=await render(dict(FLEET,models=None))
-    assert 'model      unavailable' in unread and 'none 3' not in unread
+    assert 'model      —' in unread and 'none 3' not in unread
     hostile=await render(dict(FLEET,models=[dict(model='[/x]astra',effort='[$success]high',count=2)]))
     assert 'astra high 2' in hostile and '[/x]' not in hostile and '[$success]' not in hostile
     long=await render(dict(FLEET,models=[dict(model='x'*64,effort='high',count=99999)]))
@@ -356,7 +356,7 @@ async def test_hover_keeps_omitted_raw_metadata_and_refresh_clears_empty_and_unk
             if name=='model':
                 assert 'gpt-6-astrahigh30' in text and 'none50' in text
             pilot.app.screen._clear_tooltip()
-        for value,word in [([], 'none reported'),(None,'unavailable')]:
+        for value,word in [([], 'none reported'),(None,'—')]:
             widget.update_data(swarm_fleet=dict(FLEET,**{key:value for key in
                 ('runtimes','models','daemons','os','profiles','concurrency')}))
             await pilot.pause()

@@ -5,6 +5,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
+from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen, SurfStatusBar
 from maxpane_dashboard.widgets.swarm_token_detail._fmt import metric_label
 from maxpane_dashboard.widgets.rowfit import clip
 from maxpane_dashboard.widgets.status_bar import StatusBar
@@ -35,8 +36,9 @@ class TokenStatusBar(StatusBar):
         return 'q quit · esc tokens · r refresh · tab panels'
 
 
-class SwarmTokenScreen(DashboardScreen):
+class SwarmTokenScreen(SurfDashboardScreen):
     GAME_NAME = 'SWARM TOKEN'
+    LOADING_CHROME = "_chrome"
     REFRESH_WORKER_NAME = 'swarm-token-detail-refresh'
     JOIN_STARTUP_PREFETCH = False
     PANELS = (
@@ -106,6 +108,7 @@ class SwarmTokenScreen(DashboardScreen):
         viewport = self.query_one('#token-viewport', VerticalScroll)
         suffix = (' · ‹ widen' if viewport.max_scroll_x > 0 else '')
         suffix += ' · ‹ taller' if viewport.max_scroll_y > 0 else ''
+        suffix += self.loading_suffix
         title = clip(title, max(1, self.size.width - len(suffix)))
         self.query_one('#token-title', Static).update(Text(title + suffix, style='bold'))
 

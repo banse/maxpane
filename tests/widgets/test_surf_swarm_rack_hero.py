@@ -91,16 +91,16 @@ async def test_empty_zero_and_unavailable_keep_different_meanings():
         assert any("online" in line and "0" in line for line in painted(app, "fleet").splitlines())
         assert any("enrolled" in line and "--" in line for line in painted(app, "fleet").splitlines())
         assert "0 cached" in painted(app, "workflows") and "No workflows" in painted(app, "workflows")
-        assert "unavailable" in painted(app, "launches") and "0 cached" not in painted(app, "launches")
+        assert "—" in painted(app, "launches") and "0 cached" not in painted(app, "launches")
         assert "No workflows in" in painted(app, "workflow") and "cache" in painted(app, "workflow")
-        assert "24H unavailable" in painted(app, "output")
+        assert "24H" in painted(app, "output")
         app.query_one(SurfSwarmRackHero).update_data(surf_swarm_hero=None)
         await pilot.pause()
-        assert all("unavailable" in painted(app, key) for key in payload())
+        assert all("unavailable" not in painted(app, key) for key in payload())
         assert all("0 cached" not in painted(app, key) for key in ("workflows", "launches"))
 
 
-@pytest.mark.parametrize("state,label", [("stale", "24H stale 03:00"), ("unavailable", "24H unavailable")])
+@pytest.mark.parametrize("state,label", [("stale", "24H"), ("unavailable", "24H")])
 async def test_output_chart_failure_does_not_degrade_current_overview(state, label):
     data = payload()
     data["output"].update(points_state=state, points_read_ts=1791774000.0)
@@ -108,8 +108,8 @@ async def test_output_chart_failure_does_not_degrade_current_overview(state, lab
         await pilot.pause()
         output = painted(pilot.app, "output")
         assert "2,621" in output and "224" in output
-        assert label in output and "█" not in output
-        assert "ok" in str(pilot.app.query_one("#hero-output").tooltip)
+        assert label in output and ("█" in output) == (state == "stale")
+        assert "as of" in str(pilot.app.query_one("#hero-output").tooltip)
 
 
 async def test_cached_records_keep_values_with_their_own_stale_clock():
@@ -118,9 +118,9 @@ async def test_cached_records_keep_values_with_their_own_stale_clock():
     data["sites"].update(state="stale", read_ts=1791774600.0)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert "stale 03:00" in painted(pilot.app, "workflows")
+        assert "stale" not in painted(pilot.app, "workflows")
         assert "149 cached" in painted(pilot.app, "workflows")
-        assert "stale 03:10" in painted(pilot.app, "sites")
+        assert "stale" not in painted(pilot.app, "sites")
 
 
 async def test_hostile_statuses_and_objectives_stay_literal_and_fitted():
@@ -160,7 +160,7 @@ async def test_missing_objective_is_not_mistaken_for_an_empty_workflow_cache():
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         output = painted(pilot.app, "workflow")
-        assert "Objective" in output and "unavailable" in output and "8m ago" in output
+        assert "—" in output and "unavailable" not in output and "8m ago" in output
         assert "No workflows" not in output
 
 
@@ -171,7 +171,7 @@ async def test_missing_or_short_history_never_draws_an_invented_chart(points):
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         output = painted(pilot.app, "output")
-        assert "24H unavailable" in output and "2,621" in output
+        assert "24H" in output and "2,621" in output
         assert not any(block in output for block in "▁▂▃▄▅▆▇█")
 
 
@@ -182,5 +182,5 @@ async def test_nonempty_cache_without_statuses_is_not_an_empty_cache(key):
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         output = painted(pilot.app, key)
-        assert "Status" in output and "unavailable" in output
+        assert "—" in output and "unavailable" not in output
         assert "3 cached" in output and f"No {key}" not in output

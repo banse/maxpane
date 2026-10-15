@@ -120,7 +120,7 @@ __all__ = ["SurfBurnPipeline", "SurfCurveFlow", "SurfLaunchpadCoins"]
 # ---------------------------------------------------------------------------
 
 COINS_TITLE = "LAUNCHPAD COINS"
-COINS_UNAVAILABLE = "launchpad unavailable"
+COINS_UNAVAILABLE = "—"
 COINS_EMPTY = "no coins launched yet"
 
 #: The bare hint (SurfMarket's ``SHORT_HINT``/curator's own convention):
@@ -628,7 +628,7 @@ class SurfLaunchpadCoins(Vertical):
             return "", False
         coins = self._payload.get("coins")
         if coins is None:
-            return f"⚠ {COINS_UNAVAILABLE}", True
+            return "", False
         coin_count = self._payload.get("coin_count")
         launch_count = self._payload.get("launch_count")
         try:
@@ -792,7 +792,7 @@ class SurfLaunchpadCoins(Vertical):
             # Plain "yellow", not "$warning" -- see the note on `$`-tokens
             # in _pct_cell; this is a DataTable cell too. 8 dashes: nine
             # columns total since Task 11 added SWAPS ALL, minus this cell.
-            table.add_row(f"[yellow]{COINS_UNAVAILABLE}[/]", *([DASH] * 8))
+            table.add_row(f"[dim]{COINS_UNAVAILABLE}[/]", *([DASH] * 8))
             return
 
         fit = self._rows_that_fit()

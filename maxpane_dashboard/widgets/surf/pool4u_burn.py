@@ -99,7 +99,7 @@ __all__ = [
 TITLE = "BURN & SUPPLY"
 
 #: Nothing was read at all -- every input to this panel is ``None``.
-UNAVAILABLE_LINE = "burn & supply unavailable"
+UNAVAILABLE_LINE = "—"
 
 #: The sweep ran and the flow window holds no events. A real state, and a
 #: different sentence from :data:`UNAVAILABLE_LINE`: the curator rail bug is a
@@ -393,7 +393,7 @@ class SurfPool4UBurn(Vertical):
         if cell is None:
             points = burn_points(self._payload.get("flow"))
             if points is None:
-                return f"[yellow]⚠ {safe_markup(UNAVAILABLE_LINE)}[/]"
+                return f"[dim]{safe_markup(UNAVAILABLE_LINE)}[/]"
             return f"[dim]{safe_markup(EMPTY_LINE)}[/]"
         return f"{self._label(ROW_LABELS[0], tier)}{cell}"
 
@@ -470,7 +470,7 @@ class SurfPool4UBurn(Vertical):
 
         if self._is_blank():
             self._widen = False
-            paint(Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"))
+            paint(Text(UNAVAILABLE_LINE, style="dim"))
             return
 
         # Measure what was actually built rather than comparing the budget

@@ -154,20 +154,19 @@ TITLE = "STAKERS"
 STAKER_STATES: tuple[str, ...] = ("pending", "sweeping", "failed")
 _PENDING, _SWEEPING, _FAILED = STAKER_STATES
 
-#: An attempt was made and it FAILED. The only line on this panel that wears
-#: the warning, and the only state that has ever deserved it.
-UNAVAILABLE_LINE = "stakers unavailable"
+#: Missing data is a neutral placeholder. Source failures remain internal.
+UNAVAILABLE_LINE = "—"
 
 #: A fold is in flight right now. Neutral, dim, no ``⚠`` -- the sweep is a
 #: multi-minute ``Transfer`` walk and this is what a reader sees for most of a
 #: cold start.
-SWEEPING_LINE = "sweeping the vault …"
+SWEEPING_LINE = "◌ loading"
 
 #: Nothing has been swept yet and nothing is in flight -- usually because the
 #: pool4 sweep has not named a vault for this one to walk. Also the line an
 #: ``unknown`` state falls to, because the rule on this panel is ``⚠`` **iff**
 #: ``failed``: an absent word is not evidence of a fault.
-PENDING_LINE = "stakers not swept yet"
+PENDING_LINE = "—"
 
 #: The fold ran and found no holders. A **different** sentence from
 #: :data:`UNAVAILABLE_LINE`, and the distinction is the curator rail bug: an
@@ -456,23 +455,9 @@ def staker_cells(row: object) -> tuple[str, str, str, str] | None:
 
 
 def no_rows_line(state) -> tuple[str, str]:
-    """``(text, rich style)`` for an empty panel, from ``pool4_stakers_state``.
-
-    **The warning is earned, not the default.** ``pool4_stakers`` is ``None``
-    for three different reasons and they used to render as one: the fold is
-    detached so first paint cannot sit behind it (PRD 7.2), which makes an
-    empty panel the *ordinary* state of tick 1 -- and a transient failure backs
-    the tier off 300 s, so the panel stayed on that same warning for five
-    minutes afterwards. A reader acts differently on each, and the curator rail
-    bug is exactly this: one render for several different facts.
-
-    Only ``failed`` gets ``⚠`` and the yellow. Every other value -- including
-    an unrecognised word, and ``None`` from a payload that predates the key --
-    falls to the dim pending line, because an absent state is not evidence of
-    a fault and this panel must never invent one.
-    """
+    """Show a loader only during a sweep; otherwise use a neutral placeholder."""
     if state == _FAILED:
-        return f"⚠ {UNAVAILABLE_LINE}", "yellow"
+        return UNAVAILABLE_LINE, "dim"
     if state == _SWEEPING:
         return SWEEPING_LINE, "dim"
     return PENDING_LINE, "dim"
@@ -524,44 +509,11 @@ def fold_is_stale(stakers_hhmm, body_hhmm) -> bool:
 
 
 def footer_line(count, top_pct, stale: bool = False, shown=None) -> str:
-    """``66 addresses · top 3 = 32% of vault`` -- plain text, already fitted.
+    """Show holder coverage and concentration without a source-state badge.
 
-    ``top_pct is None`` renders ``top 3 = --`` and never a number computed
-    from the visible rows: the fold was incomplete, and a subset's share is a
-    smaller number than the truth (PRD §7.4).
-
-    ``count is None`` drops the addresses clause rather than printing
-    ``-- addresses``: the concentration half is the half a reader acts on and
-    it should not be pushed along by a dash.
-
-    ``stale`` appends :data:`STALE_WORD` -- see that constant, and
-    :func:`fold_is_stale` for when it is true. It is **six cells plus the
-    separator**, and that is the whole reason it is a word and not the age:
-    the widest footer this panel can paint (``999,999 addresses · top 3 =
-    100% of vault``) is 41 cells, and ``· stale`` takes it to 49.
-
-    **The budget that sentence is measured against was wrong by two and is
-    corrected here** (2026-09-12). It read "the column is 50 at
-    ``SURF_POOL4_USER_FULL_LAYOUT_COLUMNS``", which was this panel's *outer*
-    width of 52 less its own ``padding: 0 1``. Textual's ``size`` is already
-    the content size, so the footer ``Static``'s own ``padding: 0 1`` comes
-    off as well: the real budget at a 52-column panel was **48**, and the
-    49-cell worst case above was clipped to ``· sta…`` by CSS with no marker
-    to say so. It is visible in the ``wide-stakers`` fixture at the old pin.
-
-    The full address moved the panel to 73 columns and the budget to 69, so
-    the worst case now clears it by twenty and the defect is gone with the
-    layout rather than with a shortened value. ``· stale 1h37m`` is still not
-    on the table: the reason it is a word and not an age is that an age is a
-    per-panel clock, which this body does not have (see :data:`STALE_WORD`).
-
-    ``shown`` is the number of rows the table actually draws, passed only when
-    the population exceeds :data:`MAX_ROWS` (fix round 1, item 4). The
-    addresses clause then reads ``showing 999 of 1,200 addresses``, so a
-    capped table says so on the line it already has rather than on a new one.
-    The widest footer this makes, ``showing 999 of 999,999 addresses · top 3 =
-    100% of vault · stale``, is 64 cells against the footer's 69 at the ``4``
-    body's width pin.
+    Missing concentration stays unknown rather than being derived from a partial
+    table. ``shown`` preserves the cap's coverage. ``stale`` remains an accepted
+    argument for existing callers, but never adds presentation text.
     """
     parts: list[str] = []
     n = as_float(count)
@@ -574,8 +526,6 @@ def footer_line(count, top_pct, stale: bool = False, shown=None) -> str:
     pct = as_float(top_pct)
     shown = f"{pct:.0f}%" if pct is not None else DASH
     parts.append(f"top {TOP_N} = {shown} of vault")
-    if stale:
-        parts.append(STALE_WORD)
     return " · ".join(parts)
 
 
@@ -862,10 +812,7 @@ class SurfPool4UStakers(Vertical):
         elif not rows:
             markup.append(f"[dim]{safe_markup(EMPTY_LINE)}[/]")
         else:
-            # The staleness word rides THIS line and never one of its own, so
-            # a fold that has missed a cycle costs the layout nothing. It is
-            # attached only to the real footer: the three empty branches above
-            # are already saying something louder about the fold than "old".
+            # Keep the coverage line independent of source-notice visibility.
             # Only a population past the table's own cap is ever cut short:
             # the producer publishes every holder up to the same number.
             population = as_float(payload.get("count"))

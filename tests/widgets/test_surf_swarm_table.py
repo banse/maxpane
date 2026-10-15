@@ -188,7 +188,7 @@ async def test_an_empty_list_under_a_footer_paints_the_footer_and_no_no_data():
 async def test_none_is_unavailable_never_no_data_even_under_a_footer():
     rows, facts = await _mounted(_Table, (FULL + 4, 10), rows=None, summary=("2 things",))
     text = "\n".join(rows)
-    assert "unavailable" in text and "No data" not in text
+    assert "—" in text and "No data" not in text
     assert facts["row_count"] == 1 and facts["footer_display"]
 
 
@@ -214,10 +214,10 @@ async def test_the_degraded_word_lands_in_the_first_column_wide_enough():
         EMPTY_ROW = ("No data", "", "")
 
     rows, facts = await _mounted(_Narrow, (FULL + 4, 10), rows=None)
-    line = next(line for line in rows if "unavailable" in line)
+    line = next(line for line in rows if "—" in line)
     # column ``#`` is 4 cells; the word sits under ``beta``, whole.
     header = next(line for line in rows if "beta" in line)
-    assert line.index("unavailable") >= header.index("beta") - 1
+    assert line.index("—") < header.index("beta")
 
 
 # -- footer sentence home ---------------------------------------------------
@@ -235,9 +235,9 @@ async def test_a_sentence_table_writes_its_empty_line_under_an_empty_table():
 
 async def test_a_sentence_table_says_unavailable_for_none_and_for_a_non_list():
     rows, _f = await _mounted(_Sentence, (FULL + 4, 10), rows=None)
-    assert "unavailable" in "\n".join(rows) and "nothing here yet" not in "\n".join(rows)
+    assert "unavailable" not in "\n".join(rows) and "nothing here yet" not in "\n".join(rows) and not _f["row_count"]
     rows, _f = await _mounted(_Sentence, (FULL + 4, 10), rows={"not": "a list"})
-    assert "unavailable" in "\n".join(rows) and "nothing here yet" not in "\n".join(rows)
+    assert "unavailable" not in "\n".join(rows) and "nothing here yet" not in "\n".join(rows) and not _f["row_count"]
 
 
 async def test_a_sentence_table_hides_the_footer_once_rows_arrive():

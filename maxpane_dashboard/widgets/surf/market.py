@@ -225,7 +225,6 @@ from textual.containers import Vertical
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.markup_safety import visible_len
-from maxpane_dashboard.widgets.panels import UNAVAILABLE
 from maxpane_dashboard.widgets.rowfit import SHORT_HINT
 from maxpane_dashboard.widgets.sparkline_common import (
     SPARK_WIDTH,
@@ -239,7 +238,7 @@ from maxpane_dashboard.widgets.surf._fmt import (
     fmt_price,
 )
 
-_WAITING = "[dim]waiting for data...[/]"
+_WAITING = "[dim]—[/]"
 
 #: Panel title.  Deliberately *not* imported by the tests that assert it:
 #: they spell the string out, so a rename reddens them and has to be made on
@@ -309,7 +308,7 @@ BRIDGE_MECHANISM = "IMD is FP bridged 1:1 from Base"
 
 #: The explicit unavailable state for the whole bridge block.  Rendered
 #: verbatim and asserted verbatim by the widget tests.
-SPREAD_UNAVAILABLE = "spread unavailable"
+SPREAD_UNAVAILABLE = "—"
 
 #: The caveat that qualifies **the spread**, in whichever form the spread is
 #: currently on screen.  It rides the dollar cell while that cell exists and
@@ -523,7 +522,7 @@ def _fmt_parity(value) -> str:
 def _spark(series) -> str:
     """A block sparkline, waiting for a short list, or unavailable on a failed read."""
     if not isinstance(series, list):
-        return UNAVAILABLE
+        return "[dim]—[/]"
     points = coerce_points(series)
     if len(points) < 2:
         return _WAITING
@@ -710,13 +709,13 @@ def _rows_for(tier: str, parts: dict) -> list[tuple[str, str]]:
         # figure -- but not the explicit unavailable warning it shares a row
         # with, which is why this tier exists.
         left_bridge = (
-            "" if parts["measurable"] else f"  [yellow]⚠ {SPREAD_UNAVAILABLE}[/]"
+            "" if parts["measurable"] else f"  [dim]{SPREAD_UNAVAILABLE}[/]"
         )
     elif parts["measurable"]:
         left_bridge = f"  [dim]{BRIDGE_MECHANISM}[/]"
     else:
         left_bridge = (
-            f"  [dim]{BRIDGE_MECHANISM} ·[/] [yellow]⚠ {SPREAD_UNAVAILABLE}[/]"
+            f"  [dim]{BRIDGE_MECHANISM} · {SPREAD_UNAVAILABLE}[/]"
         )
     right_bridge = "" if "flow" in gone else parts["direction"]
 

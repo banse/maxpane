@@ -49,7 +49,6 @@ from textual.widgets import Static
 
 from maxpane_dashboard.widgets.fmt import fmt_eth
 from maxpane_dashboard.widgets.markup_safety import safe_markup
-from maxpane_dashboard.widgets.panels import UNAVAILABLE
 from maxpane_dashboard.widgets.sparkline_common import (
     build_sparkline,
     coerce_points,
@@ -80,7 +79,7 @@ __all__ = [
 ]
 
 TITLE = "THE RATCHET"
-UNAVAILABLE_LINE = "ratchet unavailable"
+UNAVAILABLE_LINE = "—"
 
 #: The one word this panel is allowed to attach to the floor. The hook is
 #: unverified source: ``capFloor()`` has been *seen* to stop a burn to the wei
@@ -252,7 +251,7 @@ def _reserve_spark(series: object) -> str:
     and only one of those is true on a cold cache.
     """
     if not isinstance(series, list):
-        return UNAVAILABLE
+        return "[dim]—[/]"
     points = coerce_points(series)
     if len(points) < 2:
         return ""
@@ -483,7 +482,7 @@ class SurfPool4Ratchet(Vertical):
                     [
                         Text(self._title_text(), style="dim"),
                         Text(""),
-                        Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"),
+                        Text(UNAVAILABLE_LINE, style="dim"),
                     ]
                 )
             )

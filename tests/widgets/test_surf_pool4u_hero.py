@@ -124,12 +124,12 @@ async def test_the_backstop_card_tells_no_band_apart_from_no_read() -> None:
         "pool4_backstop_lower_tick": 68280,
     })
     assert "24.4" in deployed and "0.84" in deployed
-    assert UNAVAILABLE not in deployed
+    assert "unavailable" not in deployed
     assert NO_BAND not in deployed
 
     absent = await _text({**PRICE_OK, **STAKING_OK, "pool4_backstop_state": "none"})
     assert NO_BAND in absent
-    assert UNAVAILABLE not in absent
+    assert "unavailable" not in absent
 
     unread = await _text({**PRICE_OK, **STAKING_OK, "pool4_backstop_state": None})
     assert UNAVAILABLE in unread
@@ -154,7 +154,7 @@ async def test_the_backstop_card_branches_on_state_and_not_on_the_eth_amount() -
     })
     assert "-- ETH" in out
     assert NO_BAND not in out
-    assert UNAVAILABLE not in out
+    assert "unavailable" not in out
     assert "0.84" in out
 
 
@@ -175,7 +175,7 @@ async def test_an_unread_tick_costs_the_distance_and_not_the_card() -> None:
     })
     assert "24.4" in out
     assert "distance unread" in out
-    assert UNAVAILABLE not in out
+    assert "unavailable" not in out
 
 
 # ---------------------------------------------------------------------------

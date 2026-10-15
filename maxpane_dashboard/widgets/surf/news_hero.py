@@ -95,7 +95,7 @@ def news_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         available = state != "unavailable"
         if key in ("announcement", "reply"):
             text = flatten(section.get("text")) if available else ""
-            fields["preview"] = text or (f"No {'posts' if key == 'announcement' else 'replies'} in cache" if available else "unavailable")
+            fields["preview"] = text or (f"No {'posts' if key == 'announcement' else 'replies'} in cache" if available else "—")
             age = _number(section.get("age_s"))
             fields["subtitle"] = fmt_age(age) + " ago" if text and age is not None else ""
             fields["accent"] = state == "ok" and key == "announcement" and bool(text)
@@ -114,7 +114,7 @@ def news_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                 if not rows:
                     fields["preview"] = "No recent activity"
             else:
-                fields["preview"] = "unavailable"
+                fields["preview"] = "—"
             count = _count(section.get("wallet_count"))
             fields["subtitle"] = f"{count} {'wallet' if count == '1' else 'wallets'}" if count != "--" else ""
         elif key == "market":
@@ -152,22 +152,16 @@ class NewsHeroCard(HeroBoxBase):
     def set_record(self, data: HeroRecord):
         self.data = data
         self.border_title = Text("⊙ " + flatten(data.title))
-        self.tooltip = Text(f"{data.title} · {data.state} · as of {_clock(data.read_ts)} UTC")
+        self.tooltip = Text(f"{data.title} · as of {_clock(data.read_ts)} UTC")
         self._footer()
         self.refresh()
 
     def _footer(self):
         data = self.data
-        if data.state != "ok":
-            label = "stale " + _clock(data.read_ts) if data.state == "stale" else "unavailable"
-            footer = Text(label, style="yellow")
-        else:
-            footer = Text(flatten(data.footer), style="dim")
-            available = max(0, self.size.width - cell_len(data.footer) - 7)
-            if data.points and len(data.points) >= 2 and available:
-                footer.append(" " + build_sparkline(list(data.points), width=available, pad=False), style=Style(color="green", dim=False))
-            elif data.key == "market":
-                footer = Text("history unavailable" if data.points is None else "history pending", style="dim")
+        footer = Text(flatten(data.footer), style="dim")
+        available = max(0, self.size.width - cell_len(data.footer) - 7)
+        if data.points and len(data.points) >= 2 and available:
+            footer.append(" " + build_sparkline(list(data.points), width=available, pad=False), style=Style(color="green", dim=False))
         self.border_subtitle = footer
 
     def on_resize(self):
@@ -236,13 +230,12 @@ class LocalSourceHeroCard(NewsHeroCard):
 
     def set_record(self, data: HeroRecord):
         super().set_record(data)
-        self.tooltip = Text(f"{data.title} · {data.state} · as of {hhmm(data.read_ts, unknown='--:--')} local")
+        coverage = " · partial" if data.state == "partial" else ""
+        self.tooltip = Text(f"{data.title}{coverage} · as of {hhmm(data.read_ts, unknown='--:--')} local")
 
     def _footer(self):
-        if self.data.state in ("partial", "stale", "unavailable"):
-            label = self.data.state
-            if label != "unavailable":
-                label += " " + hhmm(self.data.read_ts, unknown="--:--")
+        if self.data.state == "partial":
+            label = "partial " + hhmm(self.data.read_ts, unknown="--:--")
             orange = Color.from_triplet(self.app.ansi_theme.ansi_colors[3])
             self.border_subtitle = Text(label, style=Style(color=orange))
         else:

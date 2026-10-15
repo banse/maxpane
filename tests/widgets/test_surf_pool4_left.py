@@ -235,7 +235,7 @@ async def test_a_buy_row_and_a_dead_panel_do_not_say_the_same_thing() -> None:
 
     buy_lines = buy.split("\n")
     assert _cells(buy_lines[_index_of(buy_lines, SIDE_WORDS["buy"])]).count("0") == 2
-    assert UNAVAILABLE_LINE not in buy
+    assert "unavailable" not in buy
 
     assert UNAVAILABLE_LINE in dead
     assert all("0" not in _cells(line) for line in dead.split("\n"))
@@ -251,7 +251,7 @@ async def test_a_quiet_sweep_and_a_dead_one_do_not_say_the_same_thing() -> None:
     _l, dead = await _flow(None)
 
     assert quiet != dead
-    assert EMPTY_LINE in quiet and UNAVAILABLE_LINE not in quiet
+    assert EMPTY_LINE in quiet and "unavailable" not in quiet
     assert UNAVAILABLE_LINE in dead and EMPTY_LINE not in dead
 
 

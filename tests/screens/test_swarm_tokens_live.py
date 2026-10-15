@@ -50,7 +50,7 @@ async def test_live_screen_has_coverage_and_explorer_details_without_mock_label(
         text = painted(app)
         assert 'MOCK' not in text
         assert 'quotes 5/24' in text and 'as of' in text and '30s' in text
-        assert 'trades unavailable' in text
+        assert 'ACTIVITY' in text and 'trades unavailable' not in text
         app.screen.query_one(DataTable).focus()
         await pilot.press('enter')
         await pilot.pause()
@@ -70,7 +70,7 @@ async def test_live_unavailable_does_not_paint_zero_tokens():
     async with app.run_test(size=(149,45)) as pilot:
         await pilot.pause()
         text = painted(app)
-        assert 'unavailable' in text.lower()
+        assert 'unavailable' not in text.lower() and '—' in text
         assert '0 deployed' not in text and 'No matching tokens' not in text
 
 

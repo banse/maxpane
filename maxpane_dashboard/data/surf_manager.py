@@ -7251,6 +7251,40 @@ class SurfManager:
 
     # -- public API ----------------------------------------------------------
 
+    def is_loading(self, view: str | None = None) -> bool:
+        """Observe relevant pending work without offering a read or changing state."""
+        if self._closing:
+            return False
+        sources = self._hub_source_tasks
+        tokens = getattr(self, '_swarm_tokens_manager', None)
+        token_tasks = getattr(tokens, '_tasks', {})
+        groups = {
+            'dashboard': (self._full_task, self._launchpad_task, self._swarm_task,
+                          self._swarm_launches_task, sources.get('overview')),
+            'launchpad': (self._full_task, self._launchpad_task),
+            'pool4': (self._full_task, self._pool4_task, self._pool4_stakers_task),
+            'pool4_user': (self._full_task, self._pool4_task, self._pool4_stakers_task),
+            'swarm': (self._full_task, self._swarm_task, self._swarm_scores_task,
+                      self._swarm_launches_task, sources.get('overview'), sources.get('hourly')),
+            'agent': (self._full_task, self._swarm_task, self._swarm_scores_task,
+                      self._swarm_board_task, self._swarm_seat_task, self._runtime_task,
+                      sources.get('records')),
+            'board': (self._full_task, self._swarm_board_task, sources.get('records'),
+                      self._launch_contribution_reader.task, token_tasks.get('catalogue')),
+            'work': (self._work_reader.task, self._swarm_launches_task),
+            'oracles': (self._oracles_reader.task, self._swarm_launches_task),
+            'surfboard': (self._full_task, self._pool4_task, self._swarm_board_task,
+                          self._swarm_seat_task, self._work_reader.task,
+                          None if self._oracles_reader._reading_detail else self._oracles_reader.task,
+                          *sources.values(), *(token_tasks.get(name) for name in ('catalogue', 'markets', 'volume'))),
+        }
+        tasks = (task for group in groups.values() for task in group) if view is None else groups.get(view, ())
+        return any(task is not None and not task.done() and not task.cancelling() for task in tasks)
+
+    def get_snapshot(self) -> dict[str, Any]:
+        """Passive cache projection for a completed background read repaint."""
+        return self.get_hub_snapshot()
+
     def set_hub_active(self, active: bool) -> None:
         """Visibility changes eligibility; manager tasks retain their owner."""
         self._hub_active = bool(active)
@@ -7610,7 +7644,7 @@ class SurfManager:
             key = card['key']
             known = card.get('primary') not in (None, '', '—', 'unavailable')
             if key == 'announce':
-                known = card.get('secondary') not in (None, 'unavailable')
+                known = card.get('secondary') not in (None, '', '—', 'unavailable')
             elif key == 'protocol':
                 known = any(hub.number(data.get(field)) is not None for field in
                             ('pool4_total_burned', 'pool4_total_rewarded', 'pool4_total_fee_token'))
@@ -7620,7 +7654,7 @@ class SurfManager:
             elif key == 'pool4':
                 known = known or card.get('share_price') is not None
             elif key == 'swarm':
-                known = known or card.get('secondary') not in (None, 'unavailable')
+                known = known or card.get('secondary') not in (None, '', '—', 'unavailable')
             # A loaded chart, empty ranking or zero count is data too.
             known = known or card.get('points') is not None or card.get('numerator') is not None
             if key in hub.SURFBOARD_AGENT_KEYS:

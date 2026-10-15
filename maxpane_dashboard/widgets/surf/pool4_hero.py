@@ -84,7 +84,7 @@ def pool4_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                 fields["footer"] = "DEPLOYED"
                 fields["accent"] = state == "ok" and fields["digits"] != "--"
             else:
-                fields["preview"] = "none deployed" if status == "none" else "unavailable"
+                fields["preview"] = "none deployed" if status == "none" else "—"
                 fields["accent"] = False
         else:
             fields["stats"] = tuple((label, (_amount(section.get(field)) if available else "--") + unit)
@@ -149,4 +149,5 @@ class SurfPool4RackHero(Grid):
                 source = source if isinstance(source, dict) else {}
                 state = source.get("holders_state")
                 state = state if state in ("ok", "partial", "stale", "unavailable") else "unavailable"
-                card.tooltip = Text(str(card.tooltip) + f"\nholders {state} · as of {hhmm(source.get('holders_read_ts'), unknown='--:--')} local")
+                coverage = " partial" if state == "partial" else ""
+                card.tooltip = Text(str(card.tooltip) + f"\nholders{coverage} · as of {hhmm(source.get('holders_read_ts'), unknown='--:--')} local")

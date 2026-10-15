@@ -86,7 +86,8 @@ async def test_unavailable_and_empty_counts_are_distinct(rows, expected):
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         assert pilot.app.query_one(NewsHeroCard).data.digits == expected
-        assert ("unavailable" if rows is None else "No matching requests") in painted(pilot.app, SurfOraclesBody)
+        assert ("No matching requests" in painted(pilot.app, SurfOraclesBody)) == (rows == [])
+        assert "unavailable" not in painted(pilot.app, SurfOraclesBody)
 
 
 async def test_selection_clears_wrong_detail_and_requests_exact_new_id():
@@ -210,9 +211,9 @@ async def test_stale_and_detail_unavailable_have_independent_read_clocks():
     data = payload() | dict(state="stale", detail_state="unavailable", detail=None)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert "stale" in painted(pilot.app, "#oracle-coverage")
+        assert "stale" not in painted(pilot.app, "#oracle-coverage")
         assert "as of" in painted(pilot.app, "#oracle-coverage")
-        assert "unavailable" in painted(pilot.app, "#oracle-summary")
+        assert "unavailable" not in painted(pilot.app, "#oracle-summary")
         assert "YES" not in painted(pilot.app, "#oracle-summary")
 
 
@@ -261,7 +262,8 @@ async def test_request_detail_identity_mismatch_never_renders_previous_answer():
     data["detail"]["job_id"] = data["rows"][1]["job_id"]
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert "mismatch" in painted(pilot.app, "#oracle-summary")
+        assert "mismatch" not in painted(pilot.app, "#oracle-summary")
+        assert "Question 0 [literal]" in painted(pilot.app, "#oracle-summary")
         assert "YES" not in painted(pilot.app, "#oracle-summary")
         assert not pilot.app.query_one(Tree).root.children
 
@@ -348,7 +350,7 @@ async def test_refreshed_member_evidence_keeps_current_leaf_cursor(leaf_index):
         assert tree.cursor_node.label.plain == before
 
 
-@pytest.mark.parametrize("members,expected", [(None, "unavailable"), ([], "No answer records loaded")])
+@pytest.mark.parametrize("members,expected", [(None, "ANSWERS"), ([], "No answer records loaded")])
 async def test_unread_members_are_distinct_from_a_known_empty_panel(members, expected):
     data = payload()
     data["detail"]["members"] = members

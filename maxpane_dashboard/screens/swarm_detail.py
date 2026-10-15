@@ -44,8 +44,8 @@ class WorkflowDetailScreen(RecordDetailScreen):
         yield from self.section('CONTRACTS JOB', job_text(row.get('contracts_job_id'), 36, explorer=JOB_EXPLORER))
         yield from self.section('FRONTEND JOB', job_text(row.get('frontend_job_id'), 36, explorer=JOB_EXPLORER))
         waiting = row.get('waiting_for_hosting')
-        word = 'yes' if waiting is True else 'no' if waiting is False else 'unavailable'
-        yield from self.section('WAITING FOR HOSTING', Text(word, style='yellow' if word == 'unavailable' else ''))
+        word = 'yes' if waiting is True else 'no' if waiting is False else '—'
+        yield from self.section('WAITING FOR HOSTING', Text(word, style='yellow' if word == '—' else ''))
         yield from self.section('OBJECTIVE', _prose(row.get('objective')))
         yield from self.section('FAILURE', _prose(row.get('failure')))
 
@@ -97,7 +97,7 @@ class LaunchDetailScreen(RecordDetailScreen):
             for item in value:
                 yield from self._evidence(item, prefix)
         else:
-            yield self._literal(prefix + ('unavailable' if value is None else str(value)))
+            yield self._literal(prefix + ('—' if value is None else str(value)))
 
     def compose_sections(self):
         row = self.row
@@ -122,8 +122,8 @@ class LaunchDetailScreen(RecordDetailScreen):
         if row.get('site_ens_name') or row.get('site_label'):
             yield from self.section('SITE', site_text(row.get('site_ens_name'), 80,
                 label=row.get('site_label'), explorer=SITES), self._literal(
-                f"{row.get('site_link_method') or 'unavailable'} · "
-                f"{'trusted' if row.get('site_link_trusted') is True else 'untrusted' if row.get('site_link_trusted') is False else 'unavailable'}"))
+                f"{row.get('site_link_method') or '—'} · "
+                f"{'trusted' if row.get('site_link_trusted') is True else 'untrusted' if row.get('site_link_trusted') is False else '—'}"))
         else:
             yield from self.section('SITE', Text('none' if row.get('production') is True else '--'))
         checks = row.get('checks') or {}

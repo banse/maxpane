@@ -259,7 +259,12 @@ class SurfSwarmInFlight(RichLogFeed):
         self._note_cols = min(MIN_NOTE_COLS + max(free - MIN_NOTE_COLS - MIN_OBJECTIVE_COLS, 0) // 2, free)
         self._objective_cols = max(free - self._note_cols, 0)
         self._note_clipped = False
-        self.render_events(rows)
+        if rows is None:
+            log.clear()
+            log.write(Text("  —", style="dim"))
+            self._drawn = False
+        else:
+            self.render_events(rows)
         # A painted row may shed columns or clip its note. An unavailable or
         # empty snapshot did neither, and a fitting literal ellipsis is not loss.
         self._set_title(bool(rows) and (self._tier != "full" or self._note_clipped))

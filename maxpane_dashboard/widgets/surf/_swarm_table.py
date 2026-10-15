@@ -76,7 +76,7 @@ from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.markup_safety import flatten, strip_tags, visible_len
-from maxpane_dashboard.widgets.panels import UNAVAILABLE, TableLeaderboard
+from maxpane_dashboard.widgets.panels import TableLeaderboard
 from maxpane_dashboard.widgets.surf._fmt import DASH
 
 __all__ = [
@@ -159,7 +159,7 @@ class SwarmTableBase(TableLeaderboard):
     EMPTY_LINE: str | None = None
 
     #: The footer sentence for an unread list when :attr:`EMPTY_LINE` is set.
-    UNAVAILABLE_LINE: str = "unavailable"
+    UNAVAILABLE_LINE: str = ""
 
     #: The table's vertical scrollbar, reserved whether or not it is showing.
     GUTTER_COLS = 2
@@ -400,7 +400,7 @@ class SwarmTableBase(TableLeaderboard):
 
     def _build_row(self, item) -> tuple | None:
         if item is UNAVAILABLE_ITEM:
-            return self._degraded_row(UNAVAILABLE)
+            return self._degraded_row("—")
         if item is _EMPTY_ITEM:
             word = next((cell for cell in self.EMPTY_ROW if cell and cell != DASH), "")
             return self._degraded_row(word)

@@ -78,17 +78,17 @@ async def test_no_args_renders_every_row_unavailable_and_never_loading():
     lines = await _lines()
     assert "Loading" not in "\n".join(lines)
     # window, median, p90, max, completed 24h, states, cancel reasons
-    assert sum("unavailable" in l for l in lines) == 5, lines
+    assert sum("—" in l for l in lines) == 5, lines
 
 
 async def test_every_key_none_renders_unavailable():
     text = await _text(**{k: None for k in SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmThroughput"]})
-    assert text.count("unavailable") == 5, text
+    assert text.count("—") == 5, text
 
 
 async def test_a_non_dict_payload_is_unavailable_not_a_crash():
     text = await _text(swarm_throughput="fast")
-    assert text.count("unavailable") == 5, text
+    assert text.count("—") == 5, text
 
 
 # -- window row ---------------------------------------------------------------
@@ -203,7 +203,7 @@ from maxpane_dashboard.widgets.surf.swarm_throughput import throughput_detail_bl
 
 @pytest.mark.parametrize("states,cancels,words", [
     (THROUGHPUT["states"], [], ["completed", "98", "executing", "2", "none"]),
-    (None, None, ["unavailable"]),
+    (None, None, ["—"]),
     ([], [], ["none"]),
     ([{"state": "[/x]", "count": 3}, "junk", {"count": 1}],
      [{"reason": "needs a [/x] reviewer", "count": 4}], ["[/x]", "3", "needs a [/x] reviewer", "4"]),
@@ -223,8 +223,9 @@ async def test_detail_blocks_composite_rollups_and_unavailable(states, cancels, 
             assert text.index("completed") < text.index("executing") if states == THROUGHPUT["states"] else True
         if states is None:
             lines = [strip.text for strip in pilot.app.screen._compositor.render_strips()]
-            y = next(i for i, line in enumerate(lines) if "unavailable" in line)
-            assert pilot.app.screen.get_style_at(lines[y].index("unavailable"), y).color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
+            y = next(i for i, line in enumerate(lines) if "—" in line)
+            color = pilot.app.screen.get_style_at(lines[y].index("—"), y).color.get_truecolor()
+            assert color.red == color.green == color.blue
 
 
 async def test_inline_throughput_is_short_and_always_hints_popup():
@@ -243,12 +244,12 @@ async def test_the_stale_word_appears_only_when_told_true():
         lines = await _lines(swarm_throughput=THROUGHPUT, swarm_stale=value)
         assert STALE_WORD not in lines[0], (value, lines[0])
     lines = await _lines(swarm_throughput=THROUGHPUT, swarm_stale=True)
-    assert f"· {STALE_WORD}" in lines[0], lines[0]
+    assert STALE_WORD not in lines[0], lines[0]
 
 
 async def test_the_title_carries_the_marker_only_when_it_is_real():
     marked = await _lines(swarm_throughput=THROUGHPUT, swarm_as_of_hhmm="12:34", swarm_stale=True)
-    assert marked[0].strip() == f"THROUGHPUT · as of 12:34 · {STALE_WORD} · x more", marked[0]
+    assert marked[0].strip() == "THROUGHPUT · as of 12:34 · x more", marked[0]
     for absent in (None, ""):
         bare = await _lines(swarm_throughput=THROUGHPUT, swarm_as_of_hhmm=absent)
         assert bare[0].strip() == "THROUGHPUT · x more", bare[0]

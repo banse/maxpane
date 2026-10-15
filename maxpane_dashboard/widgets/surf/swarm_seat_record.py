@@ -274,12 +274,11 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         return text
 
     def _filtered_footer(self) -> Text:
-        """``summary · N match · N not read yet · N unavailable · +N older · more``.
+        """``summary · N match · +N older · more`` without source-warning counts.
 
         The summary is clipped first, and dropped below ``_SUMMARY_MIN_COLS``;
         then the counts' words shorten (``_COUNT_WORDS``), never a figure.
-        Dim throughout but for ``unavailable``, which keeps the palette's
-        plain yellow (spans, not a base style, so the dim does not reach it).
+        Counts stay dim and source read states remain in the stored view.
         """
         room = max(self.size.width - self.FOOTER_PADDING_COLS, 0)
         for words in _COUNT_WORDS:
@@ -297,11 +296,6 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         counts = Text()
         if view.rows or view.not_read or view.unavailable or view.older:
             counts.append(f"{fmt_int(len(view.rows))} match", style="dim")
-            if view.not_read:
-                counts.append(f" · {fmt_int(view.not_read)} {not_read_word}", style="dim")
-            if view.unavailable:
-                counts.append(" · ", style="dim").append(f"{fmt_int(view.unavailable)} {unavailable_word}",
-                                                         style="yellow")
         else:
             counts.append(NO_MATCH_LINE, style="dim")
         older = self._older_tail(older_word)
@@ -331,8 +325,6 @@ class SurfSwarmSeatRecord(SwarmTableBase):
                                           meta={"@click": f"screen.record_filter('{mode}')"}))
         if rowfit.has_marker(as_of):
             title.append(f" · as of {rowfit.clip(as_of, 5)}")
-        if self._state == "ok" and self._read == "busy":
-            title.append(" · ").append("busy", style="yellow")
         room = max(self.size.width - self.TITLE_PADDING_COLS, 0)
         hinted = rowfit.title_with_hint(title.plain, self._widen or self._clipped, room)
         title.append(hinted[len(title.plain):])
@@ -417,18 +409,18 @@ class SurfSwarmSeatRecord(SwarmTableBase):
         style = ""
         if state != "read":
             words = {"not_read": "not read", "not_served": "not served", "no_reply": "no reply"}
-            text = words.get(state, "unavailable")
+            text = words.get(state, "—")
             if state == "not_read" and valid_identity(item.get("job_id"), item.get("submission_hash")):
                 text = "loading…"
-            style = "dim" if state in words else "yellow"
+            style = "dim"
         else:
             text = strip_tags(item.get("answer"))
         if item.get("panel_state") in ("outvoted", "no_quorum_out"):
             if item.get("panel_answer_type") == "bool":
                 answer = item.get("panel_answer_bool")
-                figure = ("YES" if answer else "NO") if type(answer) is bool else "unavail"
+                figure = ("YES" if answer else "NO") if type(answer) is bool else "—"
             else:
-                figure = strip_tags(item.get("panel_figure")) or "unavail"
+                figure = strip_tags(item.get("panel_figure")) or "—"
             text = f"panel {figure} · {text}"
         width = self._answer_cols
         eligible = can_open_submission(item)

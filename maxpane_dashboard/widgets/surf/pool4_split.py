@@ -304,7 +304,7 @@ COUNTER_NOTES = {
 #: A mismatch with no detail. The absence is **stated**, never left as a bare
 #: banner: "something disagrees" with the "by how much" silently missing looks
 #: identical to a panel that simply did not render it.
-COUNTER_NO_DETAIL = "detail unavailable"
+COUNTER_NO_DETAIL = "—"
 
 
 def _wrap(text: str, width: int) -> list[str]:

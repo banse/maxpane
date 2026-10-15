@@ -369,7 +369,7 @@ def hhmm(ts: object) -> str:
 
 def _value(value: object, suffix: str = "") -> str:
     if number(value) is None:
-        return "unavailable"
+        return "—"
     return f"{value:,.0f}{suffix}" if type(value) is int else f"{value:,.2f}{suffix}"
 
 
@@ -454,7 +454,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         if n is not None and d is not None:
             detail += f" · {n:,} / {d:,}" if fraction is not None else (" · no attempts" if key in ("agent", "board") else " · no coins" if key == "launchpad" else " · no supply" if key == "pool4" else " · no flow") if d==0 else " · invalid ratio"
         row=dict.fromkeys(SURFBOARD_CARD_FIELDS)
-        if state == "active" and primary == "unavailable" and (secondary == "unavailable" or secondary == "signals unavailable"):
+        if state == "active" and primary in ("unavailable", "—") and secondary in ("unavailable", "—", "signals unavailable"):
             state = "unavailable"
         if key == "protocol":
             state = "experimental"
@@ -467,7 +467,8 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         meter = work_activity.meter(observed, live_state, now=now)
         state = meter["meter_state"]
         result[-1].update(meter, status="working" if state == "busy" else state)
-        result[-1]["detail"] += (f" · activity {state} · workers read {hhmm(observed['as_of'])}"
+        activity_label = f"activity {state}" if state in ("busy", "idle", "offline", "paused") else "activity"
+        result[-1]["detail"] += (f" · {activity_label} · workers read {hhmm(observed['as_of'])}"
                                 f" · last work / observed stop {hhmm(observed['stopped_ts'])} · green to orange 0–24h · orange to empty 24–72h")
     states=[data.get(f"sig_{name}_state") for name in SIGNAL_NAMES]
     known=sum(s in ("ok","watch","fired") for s in states); fired=states.count("fired")
@@ -486,7 +487,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     new_announcement = age is not None and age < FIRED_TTL_S
     reply_text = f"{replies:,} new {'reply' if replies == 1 else 'replies'}" if replies is not None else "unavailable"
     card("announce", "SURFBOARD", latest["text"] if latest else "—", reply_text,
-         f"ALERT · {known}/{len(states)} detectors known · {fired} signals · 24h replies (cached channel) · last announcement {compact_age(age)}"
+         f"ALERT · {known}/{len(states)} detectors known · {fired} signals · 24h replies (cached channel) · last announcement {compact_age(age) if age is not None else '—'}"
          f" · post read {hhmm(announce_read_ts)} · snapshot {hhmm(data.get('as_of'))}", "dashboard",fired if known==len(states) else None,len(states) if known==len(states) else None)
     overview=data.get("surfboard_overview") or {}; hourly=data.get("surfboard_hourly") or {}
     points=hourly.get("points")
@@ -518,10 +519,10 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         if active is not None and capacity is not None and active>capacity:
             slot_text=f'{active:,} working'  # Oracle work may exceed maxConcurrency.
         acceptance_text=(f'{acceptance:.1%} accepted' if acceptance is not None else
-                         'no submitted record' if outcome.get('listed') is False else 'acceptance unavailable')
+                         'no submitted record' if outcome.get('listed') is False else 'acceptance —')
         card(key,'AGENT',f'IDMD #{token}',slot_text,
-             f"{acceptance_text} · summary cache ≤10m · records {(sources.get('records') or {}).get('state','unavailable')}"
-             f" · workers {live_state or 'unavailable'} · as of {data.get('swarm_workers_as_of_hhmm') or '—'}",
+             f"{acceptance_text} · summary cache ≤10m"
+             f" · workers {live_state or '—'} · as of {data.get('swarm_workers_as_of_hhmm') or '—'}",
              'agent',source='records')
         result[-1].update(seat_slot=slot, token_id=token)
         activity_meter(token, live_state)
@@ -530,7 +531,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
             result[-1]['secondary'] = api_status.strip() if isinstance(api_status, str) and api_status.strip() else 'offline'
     fleet = fleet_summary(workers, worker_source)
     card("board", "FLEET", "", "",
-         f"FLEET · workers {fleet['state']} · read {hhmm(fleet['read_ts'])}"
+         f"FLEET · workers read {hhmm(fleet['read_ts'])}"
          f" · runtime metadata {_value(fleet['runtime_known'])}/{_value(fleet['online'])} online seats"
          " · each distinct seat counts once per runtime; both counts in each"
          " · current advertised model and effort; daemon builds combined by base version"
@@ -562,15 +563,15 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          + f" · {_value(chains)} chains"
          + (" · " + " · ".join(f"{counts[state]:,} {state}" for state in count_names)
             if loaded is not None else "")
-         + f" · {oracle_state} · read {hhmm(oracles.get('read_ts'))} · Enter to open", "oracles")
+         + f" · {'partial · ' if oracle_state == 'partial' else ''}read {hhmm(oracles.get('read_ts'))} · Enter to open", "oracles")
     result[-1].update(meter_kind="oracles", meter_state=oracle_state, numerator=chains, denominator=loaded,
                      status=("assessing" if assessing else "idle") if oracle_state in ("ok", "partial") else oracle_state)
     price = number(data.get("pool4_price_usd"))
     change = data.get("imd_change_24h_pct")
     valid_change = type(change) in (int, float) and number(abs(change)) is not None
-    change_text = f"{change:+.2f}%" if valid_change else "unavailable"
+    change_text = f"{change:+.2f}%" if valid_change else "—"
     share_price = number(data.get("pool4_share_price"))
-    share_text = f"{share_price:,.6f}" if share_price is not None else "unavailable"
+    share_text = f"{share_price:,.6f}" if share_price is not None else "—"
     card("pool4","POOL4",f"{price:,.2f}" if price is not None else "unavailable","USD",
          f"1 sIMD = {share_text} IMD · 24h {change_text}"
          +f" · {data.get('pool4_network') or 'unknown network'} · price color compares consecutive reads","pool4_user")
@@ -587,13 +588,13 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     supply_state = supply_source.get("state", "unavailable")
     supply_text = percent + " of supply" if percent is not None else "unavailable"
     card("protocol","PROTOCOL",_protocol_stats(burn, reward, fee), supply_text,
-         f"BURN · global supply {supply_state} · as of {hhmm(supply_source.get('read_ts'))}"
+         f"BURN · global supply · as of {hhmm(supply_source.get('read_ts'))}"
          f" · {_value(burn,' burned')} · {_value(reward,' rewarded')} · measured flow · EXPERIMENTAL"
          +f" · {data.get('pool4_network') or 'unknown network'} · as of {data.get('pool4_as_of_hhmm') or '—'}","pool4",burn,denominator)
     burn_age = number(data.get("sig_burn_age_s"))
     recent_burn = data.get("sig_burn_state") == "fired" and burn_age is not None and burn_age < FIRED_TTL_S
     result[-1]["status"] = ("active" if recent_burn else "ready" if data.get("burn_ready") is True else "experimental")
-    result[-1]["detail"] += f" · burn signal {data.get('sig_burn_state') or 'unavailable'} · ready {data.get('burn_ready')} · signal snapshot {hhmm(data.get('as_of'))}"
+    result[-1]["detail"] += f" · burn signal {data.get('sig_burn_state') if data.get('sig_burn_state') in ('ok', 'watch', 'fired') else '—'} · ready {data.get('burn_ready')} · signal snapshot {hhmm(data.get('as_of'))}"
     families = family_sources or {}
     for row in result:
         names = {"announce": ("announce", "signals"), "swarm": ("hourly",),
@@ -607,7 +608,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
             state = source.get("state", "unavailable")
             states.append(state)
             clock_label = "evaluated" if name == "signals" else "read"
-            row["detail"] += f" · {name} {state} · {clock_label} {hhmm(source.get('read_ts'))}"
+            row["detail"] += f" · {name} · {clock_label} {hhmm(source.get('read_ts'))}"
         # The pure projection remains honest when callers only have the
         # legacy degradation list, even before per-family metadata is ready.
         degraded = data.get("degraded") or []
@@ -631,7 +632,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     ranking = catalogue.get("ranking") or {}
     new = count(ranking.get("total"))
     card("swarm-tokens", "TOKENS", primary, f"{new:,} new" if new is not None else "unavailable",
-         f"TOKENS · {primary} tokens · production-chain markets · catalogue {catalogue_state} · read {hhmm(catalogue.get('as_of'))}"
+         f"TOKENS · {primary if total is not None else '—'} tokens · production-chain markets · catalogue read {hhmm(catalogue.get('as_of'))}"
          f" · launched in last 24h · evaluated {hhmm(now)}", "swarm-tokens")
     result[-1]["status"] = "unavailable" if new is None else "active" if new else "idle"
     volume = catalogue.get("volume") or {}
@@ -640,12 +641,12 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     volumes = [number(row.get("volume_usd")) for row in ranking.get("rows") or []]
     result[-1]["detail"] += (f" · launched in last 24h · ranked by selected-pool 24h USD volume"
                             f" · {ranking.get('known', 0)}/{ranking.get('total') if ranking.get('total') is not None else '—'} tokens"
-                            f" · {ranking.get('state', 'unavailable')} · read {hhmm(ranking.get('read_ts'))}"
+                            f" · {'partial · ' if ranking.get('state') == 'partial' else ''}read {hhmm(ranking.get('read_ts'))}"
                             f" · ranked USD volumes {', '.join(f'{v:,.2f}' for v in volumes if v is not None) or '—'}"
                             " · price arrows compare successive loads"
                             " · USD volume 24h across all swarm tokens · 3h buckets"
                             f" · {volume.get('known', 0)}/{volume.get('total', '—')} tokens"
-                            f" · {volume.get('state', 'unavailable')} · read {hhmm(volume.get('as_of'))}"
+                            f" · {'partial · ' if volume.get('state') == 'partial' else ''}read {hhmm(volume.get('as_of'))}"
                             f" · until {hhmm(volume.get('until'))}")
     work = data.get("surf_work") or {}
     summary = {key: count((work.get("summary") or {}).get(key)) for key in SURF_WORK_SUMMARY_KEYS}
@@ -658,7 +659,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          + f" · loaded {_value(work.get('jobs_loaded'))} jobs · {_value(work.get('workflows_loaded'))} workflows"
          + f" · {_value(work.get('details_loaded'))}/{_value(work.get('details_expected'))} details"
          + (" · partial" if work.get("partial") else "")
-         + f" · {state} · read {hhmm(work.get('read_ts'))} · Enter to open", "work")
+         + f" · read {hhmm(work.get('read_ts'))} · Enter to open", "work")
     result[-1].update(work_summary=summary, meter_kind="work", meter_state=state,
                      status=("active" if jobs else "idle") if state == "ok" and jobs is not None else
                      "stale" if state == "stale" else "unavailable")

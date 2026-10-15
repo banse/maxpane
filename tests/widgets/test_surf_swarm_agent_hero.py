@@ -126,16 +126,16 @@ async def test_newer_seat_detail_cannot_override_canonical_outcomes_or_supply_mi
     outcomes = dict(token_id=420, listed=True, attempts=10, accepted=9, accept_rate=.9, rank=2, ranked_of=30)
     body = await _box_text(BOX_IDS["accepted"], swarm_seat_summary=summary,
                            swarm_seat_outcome=outcomes, swarm_outcomes_source=dict(state="stale", read_ts=1_700_000_000))
-    assert "9 of 10" in body and "stale" in body and "999" not in body
+    assert "9 of 10" in body and "read" in body and "stale" not in body and "999" not in body
     missing = await _box_text(BOX_IDS["accepted"], swarm_seat_summary=summary,
                               swarm_seat_outcome=None, swarm_outcomes_source=None)
-    assert "unavailable" in missing and "999" not in missing
+    assert "—" in missing and "999" not in missing
 
 
 async def test_a_previous_selected_seats_outcomes_cannot_paint_under_a_new_seat_identity():
     text = await _box_text(BOX_IDS["accepted"], swarm_seat_selected=dict(SELECTED, token_id=12345),
                            swarm_seat_outcome=OUTCOME)
-    assert "unavailable" in text and f"{OUTCOME['accepted']} of" not in text
+    assert "—" in text and f"{OUTCOME['accepted']} of" not in text
 
 
 @pytest.mark.parametrize("box", ["accepted", "rank"])
@@ -145,7 +145,7 @@ async def test_absent_summary_record_keeps_its_source_clock_and_stale_state_at_t
     text = await _box_text(BOX_IDS[box], size=(139, 9),
                            swarm_seat_outcome=dict(OUTCOME, listed=False), swarm_outcomes_source=source)
     assert "no record" in text and "in summary" in text
-    assert ("stale " if state == "stale" else "read ") + hhmm(SOURCE["read_ts"]) in text
+    assert "read " + hhmm(SOURCE["read_ts"]) in text
     assert "…" not in text
     assert len(_lines(text)) == 4  # Title and the existing three content rows.
 
@@ -197,7 +197,7 @@ async def test_no_args_and_all_none_render_unavailable_without_raising():
     bare = "\n".join(await composite_lines(SurfSwarmAgentHero, SIZE, css_path=CSS_PATH))
     # Six: the three stat boxes, RANK (no contributors read), STATUS's
     # worker word and its accepted line.
-    assert bare.count("unavailable") == 6 and "Loading" not in bare
+    assert bare.count("—") == 6 and "Loading" not in bare
     assert NO_SEAT_LINE in bare
     none = "\n".join(await composite_lines(SurfSwarmAgentHero, SIZE, css_path=CSS_PATH,
                                            **{k: None for k in SIGNATURE}))
@@ -281,7 +281,7 @@ async def test_pending_says_loading_in_the_stat_boxes_and_still_names_the_seat()
     # SUMMARY (seat #420's numbers) was passed in and must not reach a pixel.
     whole = "\n".join(boxes.values())
     assert f"{SUMMARY['accepted']} of" not in whole and "13.87 IMD" not in whole
-    assert "unavailable" in boxes["accepted"]
+    assert "—" in boxes["accepted"]
 
 
 async def test_a_failed_read_is_unavailable_never_zero_and_still_names_the_seat():
@@ -291,14 +291,14 @@ async def test_a_failed_read_is_unavailable_never_zero_and_still_names_the_seat(
     assert "unavailable" not in boxes["seat"]
     for key in STAT_BOXES:
         body = [line.strip("│ ") for line in boxes[key].splitlines()]
-        assert "unavailable" in body, (key, boxes[key])
+        assert "—" in body, (key, boxes[key])
         assert "0" not in body and "0 of 0" not in boxes[key], (key, boxes[key])
 
 
 async def test_a_malformed_state_is_unavailable():
     boxes = await _boxes(swarm_seat_state="garbage")
     for key in STAT_BOXES:
-        assert "unavailable" in boxes[key], key
+        assert "—" in boxes[key], key
 
 
 @pytest.mark.parametrize("width", PINS)
@@ -363,7 +363,7 @@ async def test_a_field_the_source_did_not_carry_is_unavailable_in_its_own_box_on
     missing = _folded(attempts=_DROP)
     assert missing["attempts"] is None and missing["accepted"] == SUMMARY["accepted"]
     boxes = await _boxes(swarm_seat_summary=missing, swarm_seat_outcome=_outcome(missing))
-    assert "unavailable" in boxes["accepted"]
+    assert "—" in boxes["accepted"]
     assert " of 0" not in boxes["accepted"] and " of " not in boxes["accepted"]
     assert "13.87 IMD" in _lines(boxes["rewards"])
     assert f"{WORKING_GLYPH} 0 of 2" in boxes["status"]
@@ -374,14 +374,14 @@ async def test_a_field_the_source_did_not_carry_is_unavailable_in_its_own_box_on
 
 @pytest.mark.parametrize("rewards, state, expected", [
     (None, "pending", ["REWARDS", "Loading..."]),
-    (None, None, ["REWARDS", "unavailable"]),
-    (REWARDS, None, ["REWARDS", "unavailable"]),     # a value with no ok state is not shown
-    ("garbage", "ok", ["REWARDS", "unavailable"]),
-    ({"imd": None, "usd": 1.0, "seats": 1}, "ok", ["REWARDS", "unavailable"]),
-    ({"imd": float("nan"), "usd": 1.0, "seats": 1}, "ok", ["REWARDS", "unavailable"]),
-    ({"imd": -1.0, "usd": 1.0, "seats": 1}, "ok", ["REWARDS", "unavailable"]),
+    (None, None, ["REWARDS", "—"]),
+    (REWARDS, None, ["REWARDS", "—"]),     # a value with no ok state is not shown
+    ("garbage", "ok", ["REWARDS", "—"]),
+    ({"imd": None, "usd": 1.0, "seats": 1}, "ok", ["REWARDS", "—"]),
+    ({"imd": float("nan"), "usd": 1.0, "seats": 1}, "ok", ["REWARDS", "—"]),
+    ({"imd": -1.0, "usd": 1.0, "seats": 1}, "ok", ["REWARDS", "—"]),
     ({"imd": 0.0, "usd": 0.0, "seats": 1}, "ok", ["REWARDS", "0.00 IMD", "$0.00"]),
-    ({"imd": 13.8662, "usd": None, "seats": 1}, "ok", ["REWARDS", "13.87 IMD", "unavailable"]),
+    ({"imd": 13.8662, "usd": None, "seats": 1}, "ok", ["REWARDS", "13.87 IMD", "—"]),
     ({"imd": 0.001, "usd": 0.004, "seats": 1}, "ok", ["REWARDS", "<0.01 IMD", "<$0.01"]),
 ])
 async def test_rewards_says_which_kind_of_missing(rewards, state, expected):
@@ -390,8 +390,8 @@ async def test_rewards_says_which_kind_of_missing(rewards, state, expected):
     assert _lines(text) == expected, text
 
 
-@pytest.mark.parametrize("seat_state, word", [("pending", "Loading..."), ("busy", "busy · retrying"),
-                                              (None, "unavailable"), ("unknown_seat", "—")])
+@pytest.mark.parametrize("seat_state, word", [("pending", "Loading..."), ("busy", "—"),
+                                              (None, "—"), ("unknown_seat", "—")])
 async def test_the_seat_state_gates_rewards_before_its_own_state(seat_state, word):
     text = await _box_text(BOX_IDS["rewards"], swarm_seat_state=seat_state)
     assert _lines(text) == ["REWARDS", word] and "IMD" not in text
@@ -411,12 +411,12 @@ async def test_reward_amounts_shorten_honestly(value, shown):
 
 async def test_malformed_payloads_land_on_unavailable_not_a_crash():
     whole = await _hero(swarm_seat_summary="garbage")
-    assert "unavailable" in whole
+    assert "—" in whole
     seat = await _box_text(BOX_IDS["seat"], swarm_seat_selected=["not", "a", "dict"])
-    assert "unavailable" in seat
+    assert "—" in seat
     typed = dict(SUMMARY, accepted="lots", online="yes")
     boxes = await _boxes(swarm_seat_summary=typed, swarm_seat_outcome=_outcome(typed),swarm_seat_live={"live":"yes"})
-    assert "unavailable" in boxes["accepted"] and "unavailable" in boxes["status"]
+    assert "—" in boxes["accepted"] and "—" in boxes["status"]
     assert f"#{CONTRIB['rank']} of" in boxes["rank"]
 
 
@@ -430,7 +430,7 @@ async def test_rank_follows_the_records_read_not_the_seat(state):
 
 
 @pytest.mark.parametrize("contrib,expected", [({**OUTCOME, "listed": False}, "no record"),
-                                               (None, "unavailable")])
+                                               (None, "—")])
 async def test_rank_says_not_listed_apart_from_a_failed_read(contrib, expected):
     rank = await _box_text(BOX_IDS["rank"], swarm_seat_outcome=contrib)
     assert expected in rank and "#" not in rank
@@ -491,7 +491,7 @@ async def test_status_says_worked_for_a_seat_with_no_accepted_work():
     assert f"worked {mmdd(worked)}" in text and "none accepted" not in text
 
 
-@pytest.mark.parametrize("accepted,expected", [(0, "none accepted yet"), (3, "accepted unavailable"), (None, "accepted unavailable")])
+@pytest.mark.parametrize("accepted,expected", [(0, "none accepted yet"), (3, "accepted —"), (None, "accepted —")])
 async def test_status_distinguishes_no_wins_from_missing_win_timestamp(accepted, expected):
     text = await _box_text(BOX_IDS["status"], swarm_seat_summary=dict(SUMMARY, accepted=accepted, last_won_ts=None))
     assert expected in text and "??" not in text
@@ -512,10 +512,10 @@ async def test_worker_status_survives_bad_seats_without_stale_accepted_date(stat
                         swarm_seat_live=LIVE,swarm_workers_as_of_hhmm='05:07')
     assert f'{WORKING_GLYPH} 3 of 8' in text and 'until' in text and '×7' in text
     assert '05:07' not in text
-    assert 'accepted unavailable' in text and mmdd(SUMMARY['last_won_ts']) not in text
+    assert 'accepted —' in text and mmdd(SUMMARY['last_won_ts']) not in text
     assert len(_lines(text)) == 4  # one title, exactly three body lines
 
-@pytest.mark.parametrize('live,expected',[(None,'unavailable'),({'live':False,'live_state':'offline'},'offline')])
+@pytest.mark.parametrize('live,expected',[(None,'—'),({'live':False,'live_state':'offline'},'offline')])
 async def test_worker_status_distinguishes_offline_from_unavailable(live,expected):
     text=await _box_text(BOX_IDS['status'],size=(180,9),swarm_seat_live=live)
     assert expected in _lines(text)
@@ -532,7 +532,7 @@ async def test_seats_clock_leaves_the_hero_for_record():
 
 @pytest.mark.parametrize('live_state,word,color',[
     ('working',WORKING_LINE,2),('idle',ONLINE_LINE,2),('offline','offline',1),
-    ('paused','paused',1),(None,'unavailable',3),
+    ('paused','paused',1),(None,'—',3),
 ])
 async def test_polish_worker_status_words_and_composited_colors(live_state,word,color):
     live=dict(live=live_state!='offline',live_state=live_state,working=2 if live_state=='working' else 0,
@@ -570,7 +570,7 @@ async def test_polish_unknown_pause_fold_reaches_unavailable_not_idle():
     row.pop('paused')
     unknown=fold.seat_live(dict(count=1,workers=[row]),token)
     assert idle['live_state']=='idle' and unknown['live_state'] is None
-    for live,expected in ((idle,ONLINE_LINE),(unknown,'unavailable')):
+    for live,expected in ((idle,ONLINE_LINE),(unknown,'—')):
         text=await _box_text(BOX_IDS['status'],swarm_seat_live=live)
         assert _lines(text)[1].startswith(expected),text
         assert ('online' in text)==(expected==ONLINE_LINE) and 'idle' not in text
@@ -616,7 +616,7 @@ async def test_work_output_tokens_are_bounded_and_honest(tokens, expected):
     assert _lines(text) == ['WORK', f"{CONTRIB['wall_clock_s']/3600:.1f} h", "read 05:08", expected]
 
 
-@pytest.mark.parametrize('contrib,word', [(None,'unavailable'),({'listed':False},'not listed')])
+@pytest.mark.parametrize('contrib,word', [(None,'—'),({'listed':False},'not listed')])
 async def test_work_uses_contributor_availability(contrib,word):
     text = await _box_text(BOX_IDS['work'], swarm_seat_contrib=contrib)
     assert _lines(text) == ['WORK', word]

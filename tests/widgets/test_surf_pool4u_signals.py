@@ -452,7 +452,7 @@ async def test_a_read_band_alone_is_not_an_unread_panel() -> None:
     file keeps finding.
     """
     out = await _text({"pool4_backstop_state": "none", "pool4_network": "MAINNET"})
-    assert UNAVAILABLE_LINE not in out
+    assert "unavailable" not in out
     assert NO_BAND in out
 
 

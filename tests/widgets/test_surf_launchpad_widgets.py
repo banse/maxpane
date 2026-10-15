@@ -329,13 +329,13 @@ async def test_the_note_shares_the_title_line_and_the_next_row_is_blank() -> Non
 
 
 @pytest.mark.asyncio
-async def test_the_unavailable_note_moves_up_with_the_rest_of_the_note() -> None:
+async def test_the_unavailable_source_does_not_add_a_title_notice() -> None:
     """A dead sweep must still say so, from the title line, composited."""
     from maxpane_dashboard.widgets.surf.launchpad import COINS_UNAVAILABLE
     _widget, text = await _render_coins(None, coin_count=None)
     rows = text.splitlines()
     i = next(n for n, row in enumerate(rows) if "LAUNCHPAD COINS" in row)
-    assert COINS_UNAVAILABLE in rows[i], rows[i]
+    assert "unavailable" not in rows[i] and "⚠" not in rows[i], rows[i]
 
 
 @pytest.mark.asyncio
@@ -801,7 +801,7 @@ def test_the_table_still_needs_exactly_seventy_five_columns():
 
 
 @pytest.mark.asyncio
-async def test_the_unavailable_warning_outranks_the_widen_marker_when_both_dont_fit() -> None:
+async def test_the_unavailable_source_leaves_room_for_the_widen_marker() -> None:
     """Mirror of ``test_the_widen_marker_survives_the_whole_wrap_prone_width_
     band`` for the degraded case: at a narrow width, with ``coins=None``, the
     ``COINS_UNAVAILABLE`` warning must survive and the ``‹ widen`` marker
@@ -831,8 +831,8 @@ async def test_the_unavailable_warning_outranks_the_widen_marker_when_both_dont_
             rows = ["".join(seg.text for seg in strip) for strip in strips]
 
         i = next(n for n, row in enumerate(rows) if "LAUNCHPAD COINS" in row)
-        assert COINS_UNAVAILABLE in rows[i], (width, rows[i])
-        assert COINS_WIDEN_HINT not in rows[i], (width, rows[i])
+        assert "unavailable" not in rows[i] and "⚠" not in rows[i], (width, rows[i])
+        assert COINS_WIDEN_HINT in rows[i], (width, rows[i])
 
 
 # ---------------------------------------------------------------------------

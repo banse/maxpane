@@ -211,7 +211,7 @@ async def test_unread_stakers_and_an_empty_vault_are_different_sentences() -> No
 
     _, empty = await _stakers(**dict(STAKERS_KW, pool4_stakers=[]))
     assert STAKERS_EMPTY_LINE in empty
-    assert STAKERS_UNAVAILABLE_LINE not in empty
+    assert "unavailable" not in empty
 
 
 @pytest.mark.asyncio
@@ -244,7 +244,7 @@ async def test_the_three_reasons_for_an_empty_panel_are_three_sentences() -> Non
     )
 
     assert STAKERS_UNAVAILABLE_LINE in failed
-    assert "⚠" in failed
+    assert "⚠" not in failed
 
     assert STAKERS_SWEEPING_LINE in sweeping
     assert STAKERS_PENDING_LINE in pending
@@ -255,7 +255,7 @@ async def test_the_three_reasons_for_an_empty_panel_are_three_sentences() -> Non
         assert "unavailable" not in quiet, f"{word} says unavailable"
 
     # ...and the three really are three, not two that happen to share a line.
-    assert len({failed, sweeping, pending}) == 3
+    assert failed == pending and sweeping != pending
 
 
 @pytest.mark.asyncio
@@ -273,7 +273,7 @@ async def test_an_unknown_state_falls_to_the_quiet_line_and_never_the_alarm() ->
         )
         assert STAKERS_PENDING_LINE in out, unknown
         assert "⚠" not in out, unknown
-        assert STAKERS_UNAVAILABLE_LINE not in out, unknown
+        assert "unavailable" not in out, unknown
 
 
 def test_the_widget_restates_the_contracts_staker_vocabulary() -> None:
@@ -288,9 +288,10 @@ def test_the_widget_restates_the_contracts_staker_vocabulary() -> None:
 
     assert STAKER_STATES == POOL4_STAKERS_STATES
     assert set(STAKER_STATES) == set(POOL4_STAKERS_STATES)
-    # Only one of them may ever be the alarm.
-    alarming = [w for w in STAKER_STATES if "⚠" in no_rows_line(w)[0]]
-    assert alarming == ["failed"]
+    # Source states remain distinct internally; only an active sweep loads.
+    assert all("⚠" not in no_rows_line(state)[0] for state in STAKER_STATES)
+    loading = [state for state in STAKER_STATES if "loading" in no_rows_line(state)[0]]
+    assert loading == ["sweeping"]
 
 
 @pytest.mark.asyncio
@@ -421,7 +422,7 @@ async def test_the_panel_prints_neither_clock() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_footer_says_stale_when_the_fold_has_missed_a_cycle() -> None:
+async def test_the_footer_omits_stale_when_the_fold_has_missed_a_cycle() -> None:
     """What replaced the marker, and the half a one-directional test can see.
 
     The rows ride an 1800 s tier and the body's clock a 600 s one, so a fold
@@ -433,7 +434,7 @@ async def test_the_footer_says_stale_when_the_fold_has_missed_a_cycle() -> None:
         **dict(STAKERS_KW, pool4_stakers_as_of_hhmm="13:52"),
         pool4_as_of_hhmm="15:29",
     )
-    assert f"of vault · {STALE_WORD}" in out, out
+    assert "of vault" in out and STALE_WORD not in out, out
 
 
 @pytest.mark.asyncio
@@ -929,7 +930,7 @@ async def test_unread_flow_and_a_quiet_window_are_different_sentences() -> None:
 
     _, quiet = await _burn(**dict(BURN_KW, pool4_flow=[]))
     assert BURN_EMPTY_LINE in quiet
-    assert BURN_UNAVAILABLE_LINE not in quiet
+    assert "unavailable" not in quiet
 
 
 @pytest.mark.asyncio
@@ -1181,7 +1182,7 @@ def test_the_rail_panels_share_one_label_column() -> None:
 
 
 @pytest.mark.parametrize("series", [None, [], {}], ids=["none", "empty", "non-list"])
-async def test_burn_failed_series_is_yellow_and_empty_is_quiet(series):
+async def test_burn_failed_series_is_neutral_and_empty_is_quiet(series):
     class _A(App):
         def compose(self):
             yield SurfPool4UBurn()
@@ -1193,9 +1194,9 @@ async def test_burn_failed_series_is_yellow_and_empty_is_quiet(series):
                 for strip in pilot.app.screen._compositor.render_strips()]
         text = "\n".join(rows)
         if isinstance(series, list):
-            assert BURN_EMPTY_LINE in text and BURN_UNAVAILABLE_LINE not in text
+            assert BURN_EMPTY_LINE in text and "unavailable" not in text
         else:
             assert BURN_UNAVAILABLE_LINE in text and BURN_EMPTY_LINE not in text
-            y = next(y for y, row in enumerate(rows) if "unavailable" in row)
-            style = pilot.app.screen.get_style_at(rows[y].index("unavailable"), y)
-            assert style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
+            y = next(y for y, row in enumerate(rows) if "—" in row)
+            style = pilot.app.screen.get_style_at(rows[y].index("—"), y)
+            assert len(set(style.color.get_truecolor())) == 1 and "unavailable" not in text

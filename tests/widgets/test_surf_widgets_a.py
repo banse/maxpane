@@ -217,13 +217,13 @@ def test_launchpad_card_zero_new_is_a_number_not_a_dash() -> None:
     assert "-- new" not in text
 
 
-def test_launchpad_card_collapses_to_no_read_yet_when_wholly_unread() -> None:
+def test_launchpad_card_uses_a_neutral_placeholder_when_wholly_unread() -> None:
     """Only when *every* field is unread does the box say so -- a single
     missing field still renders its own dash, not this collapse (see the
     test below)."""
     lines = _launchpad_lines(None, None, None, None, tier="compact")
     text = " ".join(lines)
-    assert "no read yet" in text
+    assert "—" in text and "no read yet" not in text
     assert "0 coins" not in text
 
 
@@ -277,7 +277,7 @@ async def test_zero_new_launches_is_a_number_not_a_dash():
 async def test_an_unread_launchpad_slot_shows_no_numbers_at_all():
     _, out = await _render_hero(launchpad_coin_count=None, launchpad_new_24h=None,
                                 launchpad_creator_count=None)
-    assert "0 coins" not in out and "no read yet" in out
+    assert "0 coins" not in out and "—" in out and "no read yet" not in out
 
 
 async def test_the_launchpad_boxes_carry_their_own_slower_clock():
@@ -443,7 +443,7 @@ async def test_hero_no_args_and_all_none_render_dashes_never_zero():
         # LAUNCHPAD/FLOW: wholly unread, both collapse to the honest phrase
         # rather than a dash-filled shape that would look like a completed,
         # empty read.
-        assert "no read yet" in screen
+        assert "—" in screen and "no read yet" not in screen
         assert "0 coins" not in screen
         assert "0 swaps" not in screen
         # A dead RPC must not render as a zero supply or a zero burn
@@ -1062,15 +1062,15 @@ async def test_market_supply_sparkline_shows_the_burn_steps():
         assert "2.4M" in supply_line          # the live end-state, labelled
 
 
-async def test_market_empty_waits_but_missing_is_unavailable():
+async def test_market_empty_and_missing_history_are_neutral_without_false_loading():
     widget = SurfMarket()
     app = _Harness(widget)
     async with app.run_test(size=(80, 14)) as pilot:
         widget.update_data(**{**_FULL_MARKET, "supply_series": [], "price_series": None})
         await pilot.pause()
         screen = _screen_text(app)
-        assert screen.count("waiting for data") == 1
-        assert "unavailable" in next(line for line in screen.splitlines() if "price" in line)
+        assert "waiting for data" not in screen
+        assert "—" in next(line for line in screen.splitlines() if "price" in line)
 
 
 async def test_market_no_args_and_all_none_render_dashes_never_zero():
@@ -1420,7 +1420,7 @@ async def test_market_bridge_block_follows_the_side_the_live_prices_put_rich():
         assert "IMD bridges back" not in panel
 
 
-async def test_market_bridge_block_is_explicitly_unavailable_without_parity():
+async def test_market_bridge_block_is_neutral_without_parity():
     """No spread, no direction, no stale number -- and it says why in words.
 
     ``parity_pct`` is ``None`` whenever either price read fails, and a block
@@ -1436,7 +1436,7 @@ async def test_market_bridge_block_is_explicitly_unavailable_without_parity():
         widget.update_data(**{**_FULL_MARKET, "parity_pct": None})
         await pilot.pause()
         panel = _screen_text(app)
-        assert "spread unavailable" in panel
+        assert "unavailable" not in panel and "—" in panel
         assert "IMD is FP bridged 1:1 from Base" in panel   # not a market read
         for stale in ("under FP", "over FP", "bridges back", "bridges in"):
             assert stale not in panel, f"{stale!r} survived the failed read"
@@ -1445,7 +1445,7 @@ async def test_market_bridge_block_is_explicitly_unavailable_without_parity():
         widget.update_data(**_none_payload(widget))
         await pilot.pause()
         panel = _screen_text(app)
-        assert "spread unavailable" in panel
+        assert "unavailable" not in panel and "—" in panel
         assert "$0.00" not in panel
 
 
@@ -1466,7 +1466,7 @@ async def test_market_never_shows_a_parity_the_prices_could_not_produce():
             widget.update_data(**{**_FULL_MARKET, missing: None})
             await pilot.pause()
             panel = _screen_text(app)
-            assert "spread unavailable" in panel, missing
+            assert "unavailable" not in panel and "—" in panel, missing
             assert "-2.75%" not in panel, (
                 f"{missing} could not be read, yet the panel states a parity:"
                 f"\n{panel}"
@@ -1904,7 +1904,7 @@ async def test_market_the_parity_percentage_survives_every_tier():
         assert "parity ▼ -2.75%" in rows, f"the {tier} tier lost the parity:\n{rows}"
 
 
-async def test_market_narrowest_tier_keeps_the_unavailable_warning_whole():
+async def test_market_narrowest_tier_keeps_a_neutral_placeholder():
     """``⚠ spread unavailable`` shares a row with the mechanism sentence.
 
     Together they are 54 columns, so on a narrow panel the *warning* is what
@@ -1916,7 +1916,7 @@ async def test_market_narrowest_tier_keeps_the_unavailable_warning_whole():
     width = _tier_width("bare", payload)
     rows, title = await _render_at(payload, width)
     body = "\n".join(rows)
-    assert "⚠ spread unavailable" in body, body
+    assert "—" in body and "unavailable" not in body, body
     assert "…" not in body, body
     assert _market.BRIDGE_MECHANISM not in body       # the field that paid for it
     assert _market.WIDEN_HINTS["bare"] in title
@@ -2158,7 +2158,7 @@ def test_the_boards_box_drops_quotes_and_dash_only_at_the_minimal_tier():
 
 
 @pytest.mark.parametrize("series", [None, [], {}], ids=["none", "empty", "non-list"])
-async def test_market_failed_series_is_yellow_and_empty_waits(series):
+async def test_market_failed_and_empty_series_use_neutral_placeholders(series):
     widget = SurfMarket()
     async with _Harness(widget).run_test(size=(140, 14)) as pilot:
         widget.update_data(**{**_FULL_MARKET, "price_series": series, "supply_series": series})
@@ -2167,9 +2167,7 @@ async def test_market_failed_series_is_yellow_and_empty_waits(series):
                 for strip in pilot.app.screen._compositor.render_strips()]
         for label in ("price", "supply"):
             y = next(y for y, row in enumerate(rows) if label in row)
-            if isinstance(series, list):
-                assert "waiting for data" in rows[y] and "unavailable" not in rows[y]
-            else:
-                assert "unavailable" in rows[y] and "waiting for data" not in rows[y]
-                style = pilot.app.screen.get_style_at(rows[y].index("unavailable"), y)
-                assert style.color.get_truecolor() == (255, 255, 0)
+            assert "—" in rows[y] and "unavailable" not in rows[y]
+            assert "waiting for data" not in rows[y]
+            style = pilot.app.screen.get_style_at(rows[y].index("—"), y)
+            assert len(set(style.color.get_truecolor())) == 1

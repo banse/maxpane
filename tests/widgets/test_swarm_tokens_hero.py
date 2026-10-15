@@ -112,19 +112,18 @@ async def test_partial_and_stale_keep_coverage_and_their_own_clocks(local_clock)
         await pilot.pause()
         app = pilot.app
         assert "partial 05:00" in painted(app, "volume") and "41/48 known" in painted(app, "volume")
-        assert "partial" in str(app.query_one("#hero-volume").tooltip)
+        assert "stale" not in str(app.query_one("#hero-volume").tooltip)
         assert "05:00 local" in str(app.query_one("#hero-volume").tooltip)
-        assert "stale 05:10" in painted(app, "liquidity") and "43/48 known" in painted(app, "liquidity")
+        assert "stale" not in painted(app, "liquidity") and "43/48 known" in painted(app, "liquidity")
         assert "-- IMD" in painted(app, "liquidity") and "-- ETH" in painted(app, "liquidity")
         assert "41/48 known" in painted(app, "top_volume")
         assert "2 other" in painted(app, "pools")
         card = app.query_one("#hero-volume")
         footer = app.screen._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
-        stale_card = app.query_one("#hero-liquidity")
-        stale_footer = app.screen._compositor.render_strips()[stale_card.region.bottom - 1].crop(stale_card.region.x, stale_card.region.right)
-        stale_ink = next(segment.style.color for segment in stale_footer if "stale" in segment.text)
-        assert stale_ink.get_truecolor() == app.ansi_theme.ansi_colors[3]
-        assert any(segment.style.color == stale_ink for segment in footer if "partial" in segment.text)
+        assert "05:10 local" in str(app.query_one("#hero-liquidity").tooltip)
+        assert any(segment.style.color.get_truecolor() == app.ansi_theme.ansi_colors[3]
+                   for segment in footer if "partial" in segment.text)
+
 
 
 async def test_empty_selection_zero_and_unknown_are_distinct():
@@ -141,7 +140,7 @@ async def test_empty_selection_zero_and_unknown_are_distinct():
         assert "No matching" in painted(app, "top_volume") and "tokens" in painted(app, "top_volume")
         app.query_one(TokensHero).update_data(tokens_hero=None)
         await pilot.pause()
-        assert all("unavailable" in painted(app, key) for key in payload())
+        assert all("unavailable" not in painted(app, key) for key in payload())
         assert "0/0 known" not in painted(app, "volume")
 
 

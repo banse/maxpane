@@ -24,7 +24,7 @@ class _TextPanel(PanelBase):
 
     def compose_body(self):
         with VerticalScroll():
-            yield Static(Text('unavailable'), classes='detail-body')
+            yield Static(Text('—'), classes='detail-body')
 
     def on_resize(self):
         if hasattr(self, '_data'):
@@ -131,7 +131,7 @@ class _DetailTable(TableLeaderboard):
         status.display = not rows
         self.query_one(DataTable).display = bool(rows)
         if not rows:
-            message = 'unavailable' if rows is None else empty
+            message = '—' if rows is None else empty
             status.update(Text(message, style='dim'))
 
 

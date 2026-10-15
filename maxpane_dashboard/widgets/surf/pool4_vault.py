@@ -96,7 +96,7 @@ __all__ = [
 ]
 
 TITLE = "sIMD VAULT"
-UNAVAILABLE_LINE = "vault unavailable"
+UNAVAILABLE_LINE = "—"
 
 #: The phrase ``pool4_backlog_days`` is rendered as, at **every** tier. The
 #: number alone is meaningless beside a balance; "days of runway" is the
@@ -417,7 +417,7 @@ class SurfPool4Vault(Vertical):
                     [
                         Text(self._title_text(), style="dim"),
                         Text(""),
-                        Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"),
+                        Text(UNAVAILABLE_LINE, style="dim"),
                     ]
                 )
             )

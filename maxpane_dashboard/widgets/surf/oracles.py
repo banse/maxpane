@@ -271,7 +271,7 @@ class SurfOraclesBody(Horizontal):
             status = flatten(row.get("status")) or "unknown"
             cells = [Text(clip(_age(row, self._payload.get("now_ts")), 4), style="dim"),
                      Text(clip(_chain(row), 5)), fit_prose(_STATES.get(status, status), 9, style=_COLORS.get(status, "grey62")),
-                     link_prose(fit_prose(flatten(row.get("question")) or "Question unavailable", question.width),
+                     link_prose(fit_prose(flatten(row.get("question")) or "—", question.width),
                                 explorer=for_chain_id(row.get("chain_id")))]
             with table.prevent(DataTable.RowHighlighted):
                 if changed:
@@ -289,14 +289,13 @@ class SurfOraclesBody(Horizontal):
                 table.scroll_to(x=scroll.x, y=scroll.y, animate=False, immediate=True)
         self._select(selected)
         table.refresh(layout=True)
-        state = self._payload.get("state", "unavailable")
         coverage = f"LATEST 100 · {len(rows)} shown / {len(self._rows)} loaded · {_STATES.get(self._filter, self._filter)} · {self._chain_filter}"
         other = sum(row.get("status") not in _STATES for row in self._rows.values())
         if other:
             coverage += f" · {other} other"
         if self._payload.get("rows") is None:
-            coverage = "Requests unavailable"
-        coverage += f" · {state} · as of {hhmm(self._payload.get('read_ts'), unknown='--:--')}"
+            coverage = ""
+        coverage += (" · " if coverage else "") + f"as of {hhmm(self._payload.get('read_ts'), unknown='--:--')}"
         self.query_one("#oracle-coverage", Static).update(Text(coverage))
         clipped = any(address_prose(flatten(row.get("question"))).cell_len > question.width or len(_chain(row)) > 5 or len(flatten(row.get("status"))) > 9 for row in rows)
         self.query_one("#oracle-request-panel .panel-title", Static).update(Text(title_with_hint("REQUESTS", clipped, table.size.width)))
@@ -332,7 +331,7 @@ class SurfOraclesBody(Horizontal):
         width = self.query_one("#oracle-summary", Static).content_size.width
         if row:
             explorer = for_chain_id(row.get("chain_id"))
-            out.append_text(_wrapped_prose((detail or row).get("question") or "Question unavailable", width, explorer))
+            out.append_text(_wrapped_prose((detail or row).get("question") or "—", width, explorer))
             status = flatten((detail or row).get("status")) or "unknown"
             out.append("\n\n" + _STATES.get(status, status).upper(), style=_COLORS.get(status, "grey62"))
             out.append(f" · {_chain(row)} · {_age(row, self._payload.get('now_ts'))}\n", style="dim")
@@ -343,12 +342,16 @@ class SurfOraclesBody(Horizontal):
                 out.append(f"{_count(detail.get('agreed'))} agreed · {_count(detail.get('quorum'))} required\n{_count(detail.get('panel_size'))} seats target\n", style="dim")
             elif state == "ok":
                 state = "unavailable"
-            out.append(f"{state} · as of {hhmm(self._payload.get('detail_read_ts'), unknown='--:--')}", style="dim" if state == "ok" else "yellow")
+            if state == "loading":
+                out.append("◌ loading · ", style="dim")
+            elif state == "partial":
+                out.append("partial · ", style="dim")
+            out.append(f"as of {hhmm(self._payload.get('detail_read_ts'), unknown='--:--')}", style="dim")
         else:
-            out.append("Requests unavailable" if self._payload.get("rows") is None else "No matching requests", style="dim")
+            out.append("" if self._payload.get("rows") is None else "No matching requests", style="dim")
         self.query_one("#oracle-summary", Static).update(out)
         members = detail.get("members") if row and detail and state in ("ok", "stale", "partial") else None
-        heading = "ANSWERS · unavailable" if detail and members is None else ""
+        heading = "ANSWERS" if detail and members is None else ""
         if detail and members is not None:
             heading = f"ANSWERS · {len(members)} loaded / {_count(detail.get('member_count'))} reported"
             if detail.get("truncated"):

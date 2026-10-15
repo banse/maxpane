@@ -11,6 +11,20 @@ paths:
 
 # surf — the Surfboard dashboard and its five swapped bodies
 
+## Source display override — 2026-10-16
+
+The owner removed visible stale/unavailable/source-failure notices from every
+Surf body, the boardroom and the token overview/detail dashboards. This overrides
+older display prescriptions below: source states, TTLs, errors and last-good
+values remain internal; missing values use neutral dashes. Operational statuses
+(such as blocked, revoked, offline, rejected) and partial coverage remain visible.
+Neutral source timestamps stay. Never filter third-party prose for these words.
+`SurfDashboardScreen` animates existing title chrome only while the guarded
+refresh or view-relevant manager task is running, including reopen. Completed
+background reads repaint through passive `get_snapshot()` without starting a
+retry. The UI timer stops on suspend/unmount. No layout pin changes are intended.
+
+
 Key history and withdrawn statements are in `docs/decisions.md`; this file states only what is
 true now. Layout pins live beside their constants in `#:` blocks; the terminal-layout skill's
 table names them and this file repeats no numbers.

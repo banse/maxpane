@@ -108,7 +108,7 @@ async def test_no_args_renders_unavailable_in_every_box_and_never_loading():
     rows, regions, _ = await _render([{}])
     for box_id in BOX_IDS:
         text = "\n".join(_slice(rows, regions[box_id]))
-        assert "unavailable" in text, (box_id, text)
+        assert "—" in text, (box_id, text)
         assert "Loading" not in text, (box_id, text)
 
 
@@ -116,7 +116,7 @@ async def test_every_key_none_renders_unavailable_in_every_box():
     rows, regions, _ = await _render([{k: None for k in KW}])
     for box_id in BOX_IDS:
         text = "\n".join(_slice(rows, regions[box_id]))
-        assert "unavailable" in text, (box_id, text)
+        assert "—" in text, (box_id, text)
 
 
 async def test_the_six_labels_stand_in_row_order():
@@ -155,7 +155,7 @@ async def test_agents_missing_half_is_a_dash_not_a_zero():
 
 async def test_agents_both_missing_is_unavailable():
     text = await _box(AGENTS, swarm_agents_online=None, swarm_agents_enrolled=None)
-    assert "unavailable" in text, text
+    assert "—" in text, text
     assert "/" not in text.splitlines()[-1] if text.splitlines() else True
 
 
@@ -172,14 +172,14 @@ async def test_working_three_states():
     assert "2" in (await _box(WORKING)).splitlines()[2]
     zero = await _box(WORKING, swarm_working_now=0)
     assert zero.splitlines()[2].strip() == "0 quiet", zero
-    assert "unavailable" in await _box(WORKING, swarm_working_now=None)
+    assert "—" in await _box(WORKING, swarm_working_now=None)
 
 
 async def test_accepted_24h_is_grouped_and_three_states():
     assert "1,177" in await _box(ACCEPTED)
     zero = await _box(ACCEPTED, swarm_accepted_today=0)
     assert zero.splitlines()[2].strip() == "0", zero
-    assert "unavailable" in await _box(ACCEPTED, swarm_accepted_today=None)
+    assert "—" in await _box(ACCEPTED, swarm_accepted_today=None)
 
 
 async def test_global_network_figures_disclose_their_independent_overview_clock():
@@ -187,7 +187,7 @@ async def test_global_network_figures_disclose_their_independent_overview_clock(
     source = {"state": "stale", "read_ts": 1_700_000_000}
     for box in (AGENTS, WORKING, ACCEPTED):
         text = await _box(box, surfboard_sources={"overview": source}, swarm_as_of_hhmm="01:01")
-        assert "stale " + hhmm(source["read_ts"]) in text
+        assert "read " + hhmm(source["read_ts"]) in text
         assert "01:01" not in text
 
 
@@ -224,9 +224,10 @@ async def test_summary_cards_keep_only_whole_pairs(size):
 async def test_summary_cards_distinguish_unavailable_from_empty(key, box):
     rows, regions, styles = await _render([{key: None}])
     region = regions[box]
-    y = next(y for y in range(region.y, region.bottom) if "unavailable" in rows[y][region.x:region.right])
-    x = rows[y].index("unavailable", region.x)
-    assert styles[x, y].color.get_truecolor() == _A().ansi_theme.ansi_colors[3]
+    y = next(y for y in range(region.y, region.bottom) if "—" in rows[y][region.x:region.right])
+    x = rows[y].index("—", region.x)
+    color = styles[x, y].color.get_truecolor()
+    assert color.red == color.green == color.blue
     empty = {"by_status": []} if key == "swarm_launch_summary" else []
     text = await _box(box, **{key: empty})
     assert text.splitlines()[2].strip() == "0"

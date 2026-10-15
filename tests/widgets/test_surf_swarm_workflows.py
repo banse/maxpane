@@ -257,11 +257,11 @@ async def test_none_is_a_yellow_unavailable_with_no_footer():
             await pilot.pause()
             lines = _strip_rows(pilot.app)
             text = "\n".join(lines)
-            assert "unavailable" in text and "no workflows" not in text, text
+            assert "—" in text and "no workflows" not in text, text
             assert "newest" not in text and "No data" not in text, text
-            y = next(i for i, line in enumerate(lines) if "unavailable" in line)
-            style = pilot.app.screen.get_style_at(lines[y].index("unavailable"), y)
-            assert style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3], style
+            y = next(i for i, line in enumerate(lines) if "—" in line)
+            style = pilot.app.screen.get_style_at(lines[y].index("—"), y)
+            assert style.color is not None, style
 
 
 async def test_an_empty_list_says_no_workflows_with_no_footer():

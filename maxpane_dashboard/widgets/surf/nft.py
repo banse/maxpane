@@ -112,7 +112,7 @@ from maxpane_dashboard.widgets.surf._fmt import DASH, as_float, mmdd
 PANEL_TITLE = "IDENTITY.MD"
 
 #: The explicit floor state.  Tested verbatim (PRD §5 nft group).
-FLOOR_UNAVAILABLE = "n/a — no keyless source"
+FLOOR_UNAVAILABLE = "—"
 
 #: Sales lines rendered at most.  Three rather than four since the blank row
 #: above the block was added: the panel's height is what the screen's
@@ -236,7 +236,7 @@ def _floor_row(floor) -> tuple[str, str]:
 #: discovering every such pair in this module rather than listing them.
 _SALES_HEAD = ("  last sales (Seaport)", "  [dim]last sales (Seaport)[/]")
 _SALES_HEAD_DEAD = ("  last sales", "  [dim]last sales[/]")
-_SALES_UNAVAILABLE = ("  ⚠ sales unavailable", "  [yellow]⚠ sales unavailable[/]")
+_SALES_UNAVAILABLE = ("  —", "  [dim]—[/]")
 _SALES_EMPTY = ("  no sales in window", "  [dim]no sales in window[/]")
 
 

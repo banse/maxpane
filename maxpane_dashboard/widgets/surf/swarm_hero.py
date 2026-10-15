@@ -14,7 +14,7 @@ from rich.text import Text
 
 from maxpane_dashboard.widgets.fmt import DASH, fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell
-from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
+from maxpane_dashboard.widgets.panels import HeroBoxBase, HeroRow
 from maxpane_dashboard.widgets.rowfit import clip
 from ._swarm_summary import launch_counts, row_counts, summary_body
 from ._swarm_seat import outcomes_clock
@@ -60,21 +60,21 @@ def _agents_body(online, enrolled) -> str:
     o = _int_or_none(online)
     e = _int_or_none(enrolled)
     if o is None and e is None:
-        return UNAVAILABLE
+        return "—"
     return _value(f"{fmt_int(o)}/{fmt_int(e)}")
 
 
 def _count_body(value) -> str:
     """One grouped integer; ``0`` is a number; ``None`` is unavailable."""
     if _int_or_none(value) is None:
-        return UNAVAILABLE
+        return "—"
     return _value(fmt_int(value))
 
 
 def _working_body(value) -> Text:
     count = _int_or_none(value)
     if count is None:
-        return Text.from_markup(UNAVAILABLE)
+        return Text("—", style="dim")
     if count == 0:
         return Text().append("0", style="bold dim").append(" quiet", style="dim")
     return Text(fmt_int(count), style="bold green")

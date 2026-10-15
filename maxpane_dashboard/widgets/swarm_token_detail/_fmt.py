@@ -28,10 +28,8 @@ def token_source(token, name):
 
 
 def source_label(item):
-    state = item.get('state', 'unavailable')
-    if item.get('partial') and state != 'partial':
-        state += ' · partial'
-    return ('' if state == 'ok' else state + ' · ') + 'as of ' + hhmm(item.get('read_ts'), unknown='--:--')
+    partial = item.get('partial') or item.get('state') == 'partial'
+    return ('partial · ' if partial else '') + 'as of ' + hhmm(item.get('read_ts'), unknown='--:--')
 
 
 def title(panel, item):

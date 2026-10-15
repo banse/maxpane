@@ -33,6 +33,7 @@ from textual.app import App
 from textual.widgets import Static
 
 import maxpane_dashboard.screens as screens_pkg
+from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
 from maxpane_dashboard.screens.ocm import OCMScreen
 from maxpane_dashboard.widgets.status_bar import StatusBar
@@ -467,7 +468,7 @@ def _dispatching_screen_classes() -> list[type]:
             if (
                 inspect.isclass(obj)
                 and issubclass(obj, DashboardScreen)
-                and obj is not DashboardScreen
+                and obj not in (DashboardScreen, SurfDashboardScreen)
                 and obj.__module__ == module.__name__
                 and "_do_refresh" not in vars(obj)
             ):

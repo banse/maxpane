@@ -484,7 +484,7 @@ async def test_feed_unavailable_vs_empty_are_different_states():
         widget.update_data(feed_nonce=14, feed_items=[])
         await pilot.pause()
         screen = _screen_text(app)
-        assert UNAVAILABLE_LINE not in screen
+        assert "unavailable" not in screen
         assert "no posts in window" in screen
 
 
@@ -1977,7 +1977,7 @@ async def test_activity_unavailable_vs_empty_vs_none_args():
     async with app.run_test(size=(110, 20)) as pilot:
         widget.update_data(dev_activity=None)
         await pilot.pause()
-        assert "activity unavailable" in _screen_text(app)
+        assert "—" in _screen_text(app) and "unavailable" not in _screen_text(app)
 
         widget.update_data(dev_activity=[])
         await pilot.pause()
@@ -1988,7 +1988,7 @@ async def test_activity_unavailable_vs_empty_vs_none_args():
         widget.update_data()
         widget.update_data(**_none_payload(widget))
         await pilot.pause()
-        assert "activity unavailable" in _screen_text(app)
+        assert "—" in _screen_text(app) and "unavailable" not in _screen_text(app)
 
 
 # -- SurfDevActivity: the launchpad label allowlist ----------------------
@@ -2198,7 +2198,7 @@ async def test_nft_floor_is_the_explicit_unavailable_state_never_a_number():
         await pilot.pause()
         screen = _screen_text(app)
         assert "0.250 ETH" in screen
-        assert FLOOR_UNAVAILABLE not in screen
+        assert "unavailable" not in screen
 
 
 @pytest.mark.parametrize("theme_name", sorted(THEMES))
@@ -2311,7 +2311,7 @@ async def test_nft_sales_unavailable_vs_empty():
     async with app.run_test(size=(90, 16)) as pilot:
         widget.update_data(**{**_FULL_NFT, "nft_last_sales": None})
         await pilot.pause()
-        assert "sales unavailable" in _screen_text(app)
+        assert "—" in _screen_text(app) and "unavailable" not in _screen_text(app)
 
         widget.update_data(**{**_FULL_NFT, "nft_last_sales": []})
         await pilot.pause()
@@ -2672,7 +2672,7 @@ def test_package_root_reexports_the_six_widget_classes():
     # retype them (see the deliverable summary).
     assert DETECTOR_LABELS[0] == "NEW POST"
     assert FEED_TITLE == "ANNOUNCE FEED"
-    assert FLOOR_UNAVAILABLE.startswith("n/a")
+    assert FLOOR_UNAVAILABLE == "—"
 
 
 # ---------------------------------------------------------------------------

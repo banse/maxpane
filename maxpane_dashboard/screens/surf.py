@@ -246,6 +246,7 @@ from maxpane_dashboard.widgets.surf.oracles import SurfOraclesBody, SurfOraclesH
 from maxpane_dashboard.widgets.surf._swarm_summary import SERVICE_NAMES
 from maxpane_dashboard.screens.swarm_detail import LaunchDetailScreen, WorkflowDetailScreen
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
+from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen, SurfStatusBar
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
 from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell
 from maxpane_dashboard.widgets.status_bar import StatusBar
@@ -2515,44 +2516,8 @@ def _fmt_hhmm(ts) -> str:
 
 
 def _fmt_degraded(sources, *, compact: bool = False, separator: str = " · ") -> str:
-    """``· ⚠ logs, market`` — or an empty string when all is well.
-
-    Only ``None``/``[]`` (or anything else falsy) genuinely mean "nothing is
-    degraded" and may render empty. Every other input must render
-    *something* visibly wrong, even if it is a shape the manager should
-    never actually produce: a bare ``except: return ""`` here would let a
-    malformed ``degraded`` value collapse the title bar to the healthy line
-    on the single most prominent row of the screen, which is the exact
-    failure this whole project exists to prevent.
-
-    The prefix was the word ``degraded: `` until 2026-08-12. ``⚠`` is this
-    codebase's warning idiom already (``⚠ feed unavailable``, ``⚠ sales
-    unavailable``, ``⚠ LP owner changed`` on this very row), so it needs no
-    new vocabulary and buys eight columns back on a row whose overflow is
-    *silent*. The **names** are untouched: they are the manager's own
-    ``SOURCES`` members and nothing here abbreviates or re-words them.
-    """
-    if not sources:
-        return ""
-
-    # A bare string is one group name, not a sequence of one-letter groups
-    # (``"logs"`` iterates to ``"l", "o", "g", "s"`` otherwise).
-    if isinstance(sources, (str, bytes)):
-        sources = [sources]
-
-    try:
-        names = [str(s).strip() for s in sources if str(s).strip()]
-    except TypeError:
-        # Truthy but not iterable (an int, a float, ...) -- an unexpected
-        # shape the manager never emits today, but "unreachable today" is
-        # not a reason to fail toward looking healthy.
-        return separator + "⚠ ?"
-
-    if not names:
-        return separator + "⚠ ?"
-    if compact:
-        return f"{separator}⚠ {len(names)} src"
-    return separator + "⚠ " + ", ".join(names)
+    """Source degradation stays internal; Surf no longer paints these notices."""
+    return ""
 
 
 def _agent_title_head(data: dict) -> str:
@@ -2596,9 +2561,7 @@ def _swarm_alarm_words(data: dict, *, compact: bool = False, health_cols: int = 
         elif down:
             parts.append(f"{len(down)} {'svc' if compact else 'services'} down")
     health = data.get("swarm_health_status")
-    if not isinstance(health, str) or not health.strip():
-        parts.append(f"health {sanitize_cell('unavailable', health_cols)}")
-    elif health != "ok":
+    if isinstance(health, str) and health.strip() and health not in ("ok", "unavailable", "stale"):
         parts.append(f"health {sanitize_cell(health, health_cols)}")
     rows = data.get("swarm_launch_rows")
     mismatches = [row for row in rows if isinstance(row, dict)
@@ -2753,7 +2716,7 @@ def _title_line(data: dict, row_hint: bool = False, agent: bool = False,
     return line
 
 
-class SurfScreen(DashboardScreen):
+class SurfScreen(SurfDashboardScreen):
     """surfsurf.eth Surfboard dashboard.
 
     Lifecycle (constructor, resume, suspend) comes from
@@ -2889,6 +2852,7 @@ class SurfScreen(DashboardScreen):
 
     #: The words the status bar shows for this dashboard.
     GAME_NAME = "surf"
+    LOADING_CHROME = "_render_title"
 
     #: Worker name for the guarded refresh (see RefreshGuard).
     REFRESH_WORKER_NAME = "surf-refresh"
@@ -3779,14 +3743,14 @@ class SurfScreen(DashboardScreen):
             yield SurfSwarmLeaderboard()
             yield SurfSwarmFleet()
 
-        yield StatusBar()
+        yield SurfStatusBar()
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     def on_mount(self) -> None:
-        self._show_mode()
+        self._show_mode(refresh=False)
 
     @property
     def return_context(self) -> str | None:
@@ -3939,7 +3903,7 @@ class SurfScreen(DashboardScreen):
     # Mode toggle -- ``l`` LAUNCHPAD / ``escape`` back to the dashboard
     # ------------------------------------------------------------------
 
-    def _show_mode(self) -> None:
+    def _show_mode(self, *, refresh: bool = True) -> None:
         """Apply ``self._mode`` to every body and hero's visibility.
 
         **Curator's ``y``/``f`` shape, hero swap included since 2026-09-11.**
@@ -4023,8 +3987,10 @@ class SurfScreen(DashboardScreen):
         if self._mode == MODE_ORACLES:
             self.call_after_refresh(self.query_one(SurfOraclesBody).focus_requests)
         self._prime_status_bar(self.query_one(StatusBar))
-        if self.is_current and self._mode in (MODE_AGENT, MODE_SWARM, MODE_WORK, MODE_ORACLES):
+        # ScreenResume owns the first fetch; body switches need their own.
+        if refresh and self.is_current:
             self.start_refresh()
+            self._tick_loading()
         # The row marker is about whichever body is now showing (only the
         # dashboard body's right rail can scroll), so it has to be re-read --
         # deferred, exactly like ``on_resize``, because the newly-shown body
@@ -4558,10 +4524,12 @@ class SurfScreen(DashboardScreen):
         else:
             line = _title_line(self._title_data, row_hint=cut, agent=self._mode == MODE_AGENT,
                                swarm=self._mode == MODE_SWARM,
-                               columns=self.query_one("#title-bar", Static).content_size.width,
+                               columns=max(1, self.query_one("#title-bar", Static).content_size.width
+                                           - len(self.loading_suffix)),
                                accent=self.app.get_css_variables().get("accent", "cyan"))
         try:
-            self.query_one("#title-bar", Static).update(Text.from_markup(line))
+            loading = self.loading_suffix.removeprefix(" · ") + " · " if self.loading_suffix else ""
+            self.query_one("#title-bar", Static).update(Text.from_markup(loading + line))
         except Exception as exc:  # noqa: BLE001 -- a title must never crash
             logger.debug("Failed to update title bar: %s", exc)
 
@@ -4606,7 +4574,7 @@ class SurfScreen(DashboardScreen):
 
     async def _do_refresh(self) -> None:
         try:
-            data = await self._data_manager.fetch_and_compute()
+            data = await self._fetch_data()
         except Exception as exc:
             # Belt and braces: WP4's SurfManager.fetch_and_compute() never
             # raises -- it guarantees the full SURF_KEYS dict with None

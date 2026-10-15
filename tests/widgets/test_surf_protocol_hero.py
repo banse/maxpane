@@ -115,7 +115,7 @@ async def test_zero_unknown_and_negative_headroom_survive_refresh_then_clear():
         app.query_one(SurfProtocolHero).update_data(surf_protocol_hero=None)
         await pilot.pause()
         for key in payload():
-            assert "unavailable" in painted(app, key)
+            assert "unavailable" not in painted(app, key)
         assert "-5k" not in painted(app, "inventory")
         assert "reconciled" not in painted(app, "checks")
         assert "0/d" not in painted(app, "delivery")
@@ -127,7 +127,7 @@ async def test_partial_stale_source_times_and_derived_marker(local_clock):
     data["split"].update(state="partial", read_ts=1791773400., nodes_pct=None)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert "stale 05:00" in painted(pilot.app, "totals")
+        assert "stale" not in painted(pilot.app, "totals") and "05:00" in str(pilot.app.query_one("#hero-totals").tooltip)
         assert "33.3k" in painted(pilot.app, "totals")
         assert "partial 04:50" in painted(pilot.app, "split")
         assert "* derived" in painted(pilot.app, "split")
@@ -183,7 +183,7 @@ async def test_stale_fault_retains_alarm_and_a_fresh_recovery_clears_it(local_cl
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "MISMATCH" in painted(app, "checks") and "stale 04:50" in painted(app, "checks")
+        assert "MISMATCH" in painted(app, "checks") and "stale" not in painted(app, "checks") and "04:50" in str(app.query_one("#hero-checks").tooltip)
         red = app.ansi_theme.ansi_colors[1]
         assert any(segment.style.color.get_truecolor() == red
                    for strip in strips(app, "checks") for segment in strip if "┌" in segment.text)
@@ -221,7 +221,7 @@ async def test_invalid_values_and_dates_do_not_leave_old_data_or_raise(bad):
         pilot.app.query_one(SurfProtocolHero).update_data(surf_protocol_hero=data)
         await pilot.pause()
         text = painted(pilot.app, "totals")
-        assert "33.3k" not in text and "stale --:--" in text
+        assert "33.3k" not in text and "stale" not in text and "--:--" in str(pilot.app.query_one("#hero-totals").tooltip)
         assert any("burned" in row and "--" in row for row in text.splitlines())
         assert "reconciled" not in painted(pilot.app, "checks")
 

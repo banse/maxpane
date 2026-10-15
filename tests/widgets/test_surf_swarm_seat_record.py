@@ -95,18 +95,18 @@ async def test_a_splatted_key_outside_the_signature_is_never_painted():
 
 async def test_no_args_and_all_none_render_unavailable_without_raising():
     bare = "\n".join(await composite_lines(SurfSwarmSeatRecord, SIZE))
-    assert "unavailable" in bare and "Loading" not in bare and EMPTY_LINE not in bare
+    assert "unavailable" not in bare and "—" in bare and "Loading" not in bare and EMPTY_LINE not in bare
     none = "\n".join(await composite_lines(
         SurfSwarmSeatRecord, SIZE, **{k: None for k in SIGNATURE},
     ))
-    assert "unavailable" in none and EMPTY_LINE not in none
+    assert "unavailable" not in none and "—" in none and EMPTY_LINE not in none
 
 
 async def test_a_failed_read_is_unavailable_and_never_the_real_empty_sentence():
     """State ``None`` (read failed, no last-good) -- even beside ``[]`` rows."""
     for rows in (None, [], ROWS_420):
         text = "\n".join(await _record(swarm_seat_work_rows=rows, swarm_seat_state=None))
-        assert "unavailable" in text, rows
+        assert "unavailable" not in text and "—" in text, rows
         assert EMPTY_LINE not in text and _job(NEWEST) not in text
 
 
@@ -115,9 +115,9 @@ async def test_ok_with_empty_rows_is_the_real_empty_sentence():
     assert EMPTY_LINE in text and "unavailable" not in text
 
 
-async def test_ok_with_unread_rows_is_unavailable():
+async def test_ok_with_unread_rows_has_no_source_warning_or_false_empty_message():
     text = "\n".join(await _record(swarm_seat_work_rows=None))
-    assert "unavailable" in text and EMPTY_LINE not in text
+    assert "unavailable" not in text and EMPTY_LINE not in text and _job(NEWEST) not in text
 
 
 async def test_unknown_seat_says_never_paired_not_the_empty_sentence():
@@ -134,7 +134,7 @@ async def test_pending_says_loading_and_paints_no_row():
 
 async def test_a_malformed_state_is_unavailable():
     text = "\n".join(await _record(swarm_seat_state="bogus"))
-    assert "unavailable" in text and _job(NEWEST) not in text
+    assert "unavailable" not in text and "—" in text and _job(NEWEST) not in text
 
 
 # -- rows ---------------------------------------------------------------------------
@@ -243,8 +243,10 @@ async def test_a_failed_attempt_writes_its_read_answer_in_red():
 
         assert colour("wrote outside") == red
         assert colour("not read") != red, "F65: an unread word keeps its own style"
-        assert colour("unavailable") == Color.parse("yellow").get_truecolor(theme), \
-            "F65: a could-not-read answer stays yellow on a failed row"
+        y = next(i for i, line in enumerate(painted) if '0000dddd' in line)
+        answer = pilot.app.screen.get_style_at(painted[y].rindex('—'), y)
+        assert answer.color.get_truecolor(theme) != red
+        assert 'unavailable' not in painted[y]
         assert colour("check passes") != red, "only failed, never rejected"
 
 
@@ -361,7 +363,7 @@ import pytest
 
 
 @pytest.mark.parametrize('state,word',[
-    ('read','Built the artifact.'),('not_read','loading…'),('unavailable','unavailable'),
+    ('read','Built the artifact.'),('not_read','loading…'),('unavailable','—'),
     ('not_served','not served'),('no_reply','no reply'),
 ])
 async def test_polish_answer_states_and_same_read_usage(state,word):
@@ -375,7 +377,7 @@ async def test_polish_answer_states_and_same_read_usage(state,word):
     if state in ('read','no_reply'):
         assert 'sonnet 5' in line and '7m' in line
     else:
-        assert 'sonnet 5' not in line and '7m' not in line and line.count('—')==3
+        assert 'sonnet 5' not in line and '7m' not in line and line.count('—')==(4 if state == 'unavailable' else 3)
 
 
 @pytest.mark.parametrize('seconds,expected',[(420,'7m'),(3840,'1h 04m'),(0,'<1m'),(0.1,'<1m'),(59.99,'<1m'),(60,'1m'),(None,'—')])
@@ -395,7 +397,7 @@ async def test_polish_answer_sanitization_and_actual_clipping_drive_widen():
     assert 'fits …' in text and '‹' not in text and '[$success]' not in text
 
 
-async def test_polish_answer_unavailable_yellow_and_other_states_dim_in_composite():
+async def test_polish_answer_source_placeholders_are_neutral_in_composite():
     class _A(App):
         def compose(self):yield SurfSwarmSeatRecord()
     rows=[dict(NEWEST,job_id=f'{i:08x}',answer_state=state,answer=None,model=None,took_s=None)
@@ -406,17 +408,15 @@ async def test_polish_answer_unavailable_yellow_and_other_states_dim_in_composit
         await pilot.pause()
         lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
         colors=[]
-        for word in ('not read','unavailable','not served','no reply'):
-            y=next(i for i,line in enumerate(lines) if word in line)
-            style=pilot.app.screen.get_style_at(lines[y].index(word),y)
-            colors.append(style.color)
-            if word=='unavailable':
-                assert style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[3]
-            else:
-                # Zebra backgrounds alter the resolved dim RGB per row. Compare
-                # against the plain job cell on that same composited row.
-                job=rows[('not read','unavailable','not served','no reply').index(word)]['job_id']
-                assert style.color!=pilot.app.screen.get_style_at(lines[y].index(job),y).color
+        for index, word in enumerate(('not read','—','not served','no reply')):
+            job = rows[index]['job_id']
+            y = next(i for i, line in enumerate(lines) if job in line)
+            x = lines[y].rindex(word) if word == '—' else lines[y].index(word)
+            style = pilot.app.screen.get_style_at(x, y)
+            assert 'unavailable' not in lines[y]
+            assert style.color != pilot.app.screen.get_style_at(lines[y].index(job), y).color
+            assert style.color.get_truecolor() != pilot.app.ansi_theme.ansi_colors[3]
+
 
 
 async def test_polish_committed_hostile_submission_reaches_record_safely():
@@ -491,7 +491,7 @@ def test_short_model_exact_cleaned_patterns(raw,expected):
     ('no_quorum_in','✓ no-q','green',True),('no_quorum_out','✗ no-q','red',True),
     ('assessing','… of 112','yellow',False),('blocked','blocked',None,True),
     ('off_panel','–',None,True),('not_oracle','–',None,True),
-    ('not_read','loading…',None,True),('unavailable','unavail','yellow',False),
+    ('not_read','loading…',None,True),('unavailable','—',None,True),
 ])
 async def test_panel_states_and_styles_reach_compositor(state,word,color,dim):
     class Harness(App):
@@ -503,7 +503,7 @@ async def test_panel_states_and_styles_reach_compositor(state,word,color,dim):
         await pilot.pause()
         lines=[''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
         y=next(i for i,line in enumerate(lines) if _job(row) in line)
-        x=lines[y].index(word)
+        x=lines[y].rindex(word) if word == '—' else lines[y].index(word)
         style=pilot.app.screen.get_style_at(x,y)
         from textual.filter import dim_color
         if color:
@@ -521,7 +521,7 @@ async def test_missing_panel_counts_are_unavailable(state,field):
     row=dict(NEWEST,panel_state=state,panel_agreed=35,panel_quorum=36,panel_size=112)
     row[field]=None
     text='\n'.join(await _record(swarm_seat_work_rows=[row]))
-    assert 'unavail' in _row_with(text.splitlines(),_job(row))
+    assert '—' in _row_with(text.splitlines(),_job(row)) and 'unavail' not in text
     assert 'None' not in text and '?/?' not in text
 
 
@@ -574,7 +574,7 @@ async def test_red_rows_prefix_exact_wei_even_before_answer_read(state,answer_st
     assert 'panel 457162630000000001 · '+('Done.' if answer_state=='read' else 'loading…') in text
 
 
-@pytest.mark.parametrize('answer,word',[(True,'YES'),(False,'NO'),(None,'unavail')])
+@pytest.mark.parametrize('answer,word',[(True,'YES'),(False,'NO'),(None,'—')])
 async def test_bool_prefix_uses_explicit_answer(answer,word):
     row=dict(NEWEST,panel_state='outvoted',panel_agreed=35,panel_quorum=36,panel_figure='263154',
              panel_answer_type='bool',panel_answer_bool=answer,answer_state='read',answer='Done.')
@@ -771,7 +771,8 @@ async def test_launches_tab_counts_unknown_membership_without_showing_unconfirme
         await pilot.pause()
         text = '\n'.join(strip.text for strip in pilot.app.screen._compositor.render_strips())
         assert record.query_one(DataTable).row_count == 0
-        assert '0 match · 1 not read yet · 1 unavailable' in text
+        assert '0 match' in text and 'unavailable' not in text and 'not read yet' not in text
+        assert record._view.not_read == record._view.unavailable == 1
         assert 'no matching records' not in text
         assert "'i' to change seat · 'f' to filter records" in text
         rows[1]['launch_state'] = 'launched'
@@ -779,7 +780,8 @@ async def test_launches_tab_counts_unknown_membership_without_showing_unconfirme
         await pilot.pause()
         text = '\n'.join(strip.text for strip in pilot.app.screen._compositor.render_strips())
         assert record.query_one(DataTable).row_count == 1
-        assert '1 match · 1 unavailable' in text
+        assert '1 match' in text and 'unavailable' not in text
+        assert record._view.unavailable == 1
 
 
 def test_record_view_maximum_agrees_with_retained_data():
@@ -820,7 +822,7 @@ async def test_record_malformed_items_are_neither_shown_nor_counted(launches_onl
 
 
 @pytest.mark.parametrize('width', [70, 139, 180])
-async def test_busy_record_title_is_yellow_and_keeps_its_own_as_of(width):
+async def test_busy_record_title_keeps_its_own_as_of_without_source_notice(width):
     class Harness(App):
         def compose(self):
             yield SurfSwarmSeatRecord()
@@ -835,13 +837,7 @@ async def test_busy_record_title_is_yellow_and_keeps_its_own_as_of(width):
             y = next(i for i, line in enumerate(lines) if 'RECORD' in line)
             title = lines[y]
             assert f'as of {AS_OF}' in title
-            assert (' · busy' in title) == (read == 'busy')
-            if read == 'busy':
-                assert f'as of {AS_OF} · busy' in title
-                style = pilot.app.screen.get_style_at(title.index('busy'), y)
-                assert style.color.get_truecolor(pilot.app.ansi_theme) == Color.parse('yellow').get_truecolor(pilot.app.ansi_theme)
-                if width == 70:
-                    assert "'i' to change seat · 'f' to filter records" not in title
+            assert 'busy' not in title and 'unavailable' not in title
             assert _job(NEWEST) in '\n'.join(lines)
 
 
@@ -868,7 +864,7 @@ async def test_a_shrink_paints_what_a_fresh_mount_at_that_size_paints():
     assert await painted((159, 20), (149, 20)) == fresh
 
 
-async def test_busy_record_without_last_good_has_yellow_footer_and_no_stale_rows():
+async def test_busy_record_without_last_good_has_neutral_footer_and_no_rows():
     class Harness(App):
         def compose(self):
             yield SurfSwarmSeatRecord()
@@ -879,12 +875,9 @@ async def test_busy_record_without_last_good_has_yellow_footer_and_no_stale_rows
         await pilot.pause()
         lines = [''.join(s.text for s in strip) for strip in pilot.app.screen._compositor.render_strips()]
         text = '\n'.join(lines)
-        assert 'busy · retrying' in text and 'unavailable' not in text and _job(NEWEST) not in text
-        y = next(i for i, line in enumerate(lines) if 'busy · retrying' in line)
-        style = pilot.app.screen.get_style_at(lines[y].index('busy'), y)
-        # A Static's whole-text style resolves through Textual's CSS palette.
-        from textual.color import Color as CSSColor
-        assert style.color == CSSColor.parse('yellow').rich_color
+        assert '—' in text and 'unavailable' not in text and _job(NEWEST) not in text
+        assert 'busy' not in text and 'retrying' not in text
+
 
 
 @pytest.mark.parametrize('changes,words', [
@@ -993,7 +986,7 @@ async def test_the_filtered_word_exists_only_while_a_filter_is_stored():
         assert _style_of(pilot.app, 'filtered').meta['@click'] == "screen.record_filter('filtered')"
 
 
-async def test_the_filtered_footer_states_the_filter_then_what_it_cannot_judge():
+async def test_the_filtered_footer_shows_filter_and_matches_without_source_counts():
     from textual.widgets import DataTable
     from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
     async with _RecordApp().run_test(size=(139, 20)) as pilot:
@@ -1003,11 +996,9 @@ async def test_the_filtered_footer_states_the_filter_then_what_it_cannot_judge()
         await pilot.pause()
         footer = record.query_one(f'#{record.footer_id}')
         text = '\n'.join(_lines(pilot.app))
-        assert 'opus 4.1 · 6 match · 3 not read yet · 1 unavailable' in text
+        assert 'opus 4.1 · 6 match' in text and 'unavailable' not in text and 'not read yet' not in text
+        assert record._view.not_read == 3 and record._view.unavailable == 1
         assert record.query_one(DataTable).row_count == 6
-        theme = pilot.app.ansi_theme
-        assert _style_of(pilot.app, '1 unavailable').color.get_truecolor(theme) == \
-            Color.parse('yellow').get_truecolor(theme)
         assert footer.display
         record.set_record_view(40, False, RecordFilter(models=frozenset({'claude-opus-4-1'}),
                                                        nodes=frozenset({'adversarial_review'})))
@@ -1036,7 +1027,7 @@ async def test_the_counts_and_the_older_tail_survive_a_narrow_footer(width, summ
     rows = _filter_rows() * 8  # 88 base rows, 48 past the 40 cap
     spec = RecordFilter(models=frozenset({'claude-opus-4-1', 'gpt-6-astra', 'claude-sonnet-5'}),
                         nodes=frozenset({'oracle_assess', 'adversarial_review'}), answer='replied')
-    counts = '24 match · 12 not read yet · 4 unavailable · +48 older · more'
+    counts = '24 match · +48 older · more'
     async with _RecordApp().run_test(size=(width, 20)) as pilot:
         record = pilot.app.query_one(SurfSwarmSeatRecord)
         record.update_data(swarm_seat_work_rows=rows, swarm_seat_state='ok', swarm_seat_as_of_hhmm=AS_OF)
@@ -1044,10 +1035,9 @@ async def test_the_counts_and_the_older_tail_survive_a_narrow_footer(width, summ
         await pilot.pause()
         line = next(l for l in _lines(pilot.app) if 'match' in l).strip()
         assert line.endswith(counts), line
-        if summary == 'clipped':
-            assert line.startswith('oracle or review · ') and '… · ' + counts in line, line
-        else:
-            assert line == counts, 'below the summary floor it goes whole, the counts stay'
+        assert line.startswith('oracle or review · '), line
+        assert record._view.not_read == 12 and record._view.unavailable == 4
+        assert 'unavailable' not in line and 'not read yet' not in line
 
 
 @pytest.mark.parametrize('spec', ['models', None, 'inactive'])
@@ -1128,13 +1118,11 @@ _WORST_COUNTS = dict(match=100, not_read=100, unavailable=100, older=12_345)
 #: 61 and 53 cells in its three forms: each threshold is crossed (71/70, 63/62).
 _FOOTER_WIDTHS = (57, 62, 63, 70, 71, 80)
 #: The three forms, longest first (``swarm_seat_record._COUNT_WORDS``).
-_WORST_FORMS = ('100 match · 100 not read yet · 100 unavailable · +12,345 older · more',
-                '100 match · 100 not read · 100 unavail · +12,345 older · more',
-                '100 match · 100 unread · 100 unavail · +12,345 · more')
+_WORST_FORMS = ('100 match · +12,345 older · more',)
 
 
 @pytest.mark.parametrize('width', _FOOTER_WIDTHS)
-async def test_the_filtered_counts_keep_every_figure_and_more_at_every_width(width, monkeypatch):
+async def test_the_filtered_counts_keep_matches_and_older_at_every_width(width, monkeypatch):
     """F-RF3: the counts outgrew the footer under ~69 cells and the CSS
     ellipsis cut ``+N older`` or the ``more`` link. Their words now shorten
     (``not read yet`` -> ``not read`` -> ``unread``, ``unavailable`` ->
@@ -1152,7 +1140,8 @@ async def test_the_filtered_counts_keep_every_figure_and_more_at_every_width(wid
         line = next(l for l in _lines(pilot.app) if ' match' in l).strip()
         room = record.size.width - record.FOOTER_PADDING_COLS
         assert '…' not in line and line.endswith(' · more'), (room, line)
-        for figure in ('100 match', '· 100 ', '· +12,345'):
+        for figure in ('100 match', '· +12,345'):
             assert figure in line, (room, figure, line)
-        assert line.count('100') == 3, line
-        assert line == next(form for form in _WORST_FORMS if len(form) <= room), (room, line)
+        assert line.count('100') == 1, line
+        assert record._view.not_read == record._view.unavailable == 100
+        assert line.endswith(_WORST_FORMS[0]), (room, line)

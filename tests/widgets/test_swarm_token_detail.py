@@ -116,7 +116,8 @@ async def test_partial_contributors_are_lower_bound_and_unknown_is_not_zero(stat
     async with harness(DetailHero, data).run_test(size=(149, 11)) as pilot:
         await pilot.pause()
         card = pilot.app.query_one('#hero-token-contributors')
-        assert card.data.digits == '≥2' and state in painted(pilot.app)
+        assert card.data.digits == '≥2'
+        assert 'stale' not in painted(pilot.app)
         data['contributors'] = None
         pilot.app.query_one(DetailHero).update_data(**data)
         await pilot.pause()
@@ -173,7 +174,7 @@ async def test_market_and_position_keep_separate_clocks_gaps_and_zero():
     async with harness(PositionPanel, dict(token=token)).run_test(size=(49, 10)) as pilot:
         await pilot.pause()
         output = painted(pilot.app)
-        assert 'stale' in output and '0 IMD' in output and '0%' in output
+        assert 'stale' not in output and '0 IMD' in output and '0%' in output
         assert any('DEMO' in line and '--' in line for line in output.splitlines())
 
 
@@ -190,7 +191,7 @@ async def test_pool_identifier_is_a_fitted_hash_not_an_address():
         assert not icon_targets(pilot.app)
 
 
-@pytest.mark.parametrize('rows,state,expected', [(None, 'unavailable', 'unavailable'),
+@pytest.mark.parametrize('rows,state,expected', [(None, 'unavailable', '—'),
     ([], 'ok', 'No accepted contributors'), ([], 'partial', 'No contributors loaded')])
 async def test_contributor_empty_states_are_honest(rows, state, expected):
     from maxpane_dashboard.widgets.swarm_token_detail import ContributorTable
@@ -215,3 +216,16 @@ async def test_contributor_and_artifact_tables_use_safe_links_and_literal_text()
         assert '[/x]漢字' in output and '\x1b' not in output and '\u202e' not in output
         assert TOKEN_ADDRESS in {item[2] for item in icon_targets(pilot.app)}
         assert any(item[3:5] == ('site', 'demo') for item in link_targets(pilot.app))
+
+
+@pytest.mark.parametrize('state', ['stale', 'unavailable'])
+async def test_source_warnings_are_hidden_but_cached_market_values_remain(state):
+    from maxpane_dashboard.widgets.swarm_token_detail import MarketPanel
+    token = payload()['token']
+    token.update(market_state=state, history_state=state)
+    async with harness(MarketPanel, dict(token=token)).run_test(size=(49, 12)) as pilot:
+        await pilot.pause()
+        output = painted(pilot.app)
+        assert state not in output
+        assert state not in str(pilot.app.query_one(MarketPanel).tooltip)
+        assert '$0.00124' in output

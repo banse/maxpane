@@ -189,7 +189,7 @@ _MAX_ROWS = 25
 #: The explicit unavailable line -- ``pool4_flow is None``.  Tested verbatim,
 #: and tested to be **different text** from what a quiet sweep or a zero-legged
 #: buy renders.
-UNAVAILABLE_LINE = "pool4 flow unavailable"
+UNAVAILABLE_LINE = "—"
 
 #: The explicit quiet line -- ``pool4_flow == []``, a sweep that ran and found
 #: no swaps.  A different sentence from :data:`UNAVAILABLE_LINE` on purpose.
@@ -798,7 +798,7 @@ class SurfPool4Flow(Vertical):
             # The whole-panel unavailable state, and the only thing ``None``
             # ever means here.  A row's own zero legs are zeros.
             self._set_title()
-            note("yellow", f"⚠ {UNAVAILABLE_LINE}")
+            note("dim", UNAVAILABLE_LINE)
             return
 
         try:

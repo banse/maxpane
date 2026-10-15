@@ -14,6 +14,7 @@ from textual.widgets import Input, Static
 from maxpane_dashboard.data.surf_models import SURFBOARD_WIDGET_SIGNATURES
 from maxpane_dashboard.launch_notifications import SurfLaunchesUpdated
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
+from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen, SurfStatusBar
 from maxpane_dashboard.screens.surf import MODE_AGENT, MODE_WORK, MODE_ORACLES
 from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
@@ -57,8 +58,9 @@ SURFBOARD_FULL_LAYOUT_COLUMNS = 143
 SURFBOARD_FULL_LAYOUT_ROWS = 37
 
 
-class SurfboardScreen(DashboardScreen):
+class SurfboardScreen(SurfDashboardScreen):
     GAME_NAME = "SURFBOARD HUB"
+    LOADING_CHROME = "_render_chrome"
     REFRESH_WORKER_NAME = "surfboard-refresh"
     JOIN_STARTUP_PREFETCH = False
     PANELS = (
@@ -101,7 +103,7 @@ class SurfboardScreen(DashboardScreen):
         yield Static(Text("IMD BOARDROOM"), id="surfboard-title")
         with VerticalScroll(id="surfboard-viewport"):
             yield SurfboardRack(id="surfboard-rack")
-        yield StatusBar()
+        yield SurfStatusBar()
 
     @on(events.ScreenResume)
     def _resume_hub(self) -> None:
@@ -142,10 +144,15 @@ class SurfboardScreen(DashboardScreen):
                 self.start_refresh()
 
     async def _fetch_data(self) -> dict:
+        if self._loading_projection:
+            return await super()._fetch_data()
         if self._cache_only:
             self._cache_only = False
             return self._data_manager.get_hub_snapshot()
         return await self._data_manager.fetch_hub_snapshot()
+
+    def _loading_view(self):
+        return "surfboard"
 
     def _prime_status_bar(self, bar: StatusBar) -> None:
         bar.set_key_hints("arrows cards · enter open · w work · / command · esc menu")
@@ -171,7 +178,7 @@ class SurfboardScreen(DashboardScreen):
         if viewport.show_vertical_scrollbar:
             hints.append("‹ taller")
         self.query_one("#surfboard-title", Static).update(Text(
-            "IMD BOARDROOM" + (" · " + " · ".join(hints) if hints else "")))
+            "IMD BOARDROOM" + (" · " + " · ".join(hints) if hints else "") + self.loading_suffix))
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
         if event.seat_slot is not None:

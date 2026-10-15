@@ -106,7 +106,7 @@ def panel_text(row, *, detail=False):
         'no_quorum_in': ('✓ no-q', 'dim green'), 'no_quorum_out': ('✗ no-q', 'dim red'),
         'blocked': ('blocked', 'dim'), 'off_panel': ('–', 'dim'),
         'not_oracle': ('–', 'dim'), 'not_read': ('not read', 'dim'),
-    }.get(state, ('unavail', 'yellow'))
+    }.get(state, ('—', 'dim'))
     if state == 'not_read' and row.get('node_key') in ORACLE_NODE_KEYS and valid_identity(
             row.get('job_id'), row.get('submission_hash')):
         text = 'loading…'
@@ -116,8 +116,9 @@ def panel_text(row, *, detail=False):
         style = 'green' if state == 'agreed' else 'red'
     elif state == 'assessing':
         text = '…' + (f' of {size}' if size != '—' else '')
+        style = 'yellow'
     if detail:
-        word = {'unavail': 'unavailable'}.get(text, text)
+        word = text
         if state in ('agreed', 'outvoted'):
             word = '' if state == 'agreed' else 'outvoted · '
         else:

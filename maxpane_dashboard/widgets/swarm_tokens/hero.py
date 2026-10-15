@@ -81,9 +81,9 @@ def token_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                     stats.append((symbol, "$" + amount if amount != "--" else amount))
                 fields["stats"] = tuple(stats)
                 if not stats:
-                    fields["preview"] = "unavailable"
+                    fields["preview"] = "—"
             else:
-                fields["preview"] = "No matching tokens" if available and rows == [] and _number(section.get("total")) == 0 else "unavailable"
+                fields["preview"] = "No matching tokens" if available and rows == [] and _number(section.get("total")) == 0 else "—"
         records.append(HeroRecord(**fields))
     return tuple(records)
 

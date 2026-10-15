@@ -600,14 +600,14 @@ def test_the_market_key_sweep_is_not_empty() -> None:
 #:    triangle -- that is the whole point of the key. So even without rows,
 #:    flipping the value to ``None`` changes no pixel.
 #:
-#: The pair therefore drops the rows (so the state speaks) and flips ``failed``
-#: to ``None`` (so the two states it distinguishes actually differ on screen).
+#: The pair therefore drops the rows (so the state speaks) and flips ``sweeping``
+#: to ``None`` (only the genuinely active sweep displays a loader).
 #: An override is a claim that the default probe is wrong for this key, not a
 #: way to quiet it -- ``test_every_conditional_probe_really_needs_one`` proves
 #: each one is necessary by running the default probe and requiring it to fail.
 _CONDITIONAL_PROBES: dict[str, tuple[dict, dict]] = {
     "pool4_stakers_state": (
-        {"pool4_stakers": None, "pool4_stakers_state": "failed"},
+        {"pool4_stakers": None, "pool4_stakers_state": "sweeping"},
         {"pool4_stakers": None, "pool4_stakers_state": None},
     ),
 }
@@ -677,6 +677,11 @@ async def test_the_market_body_dispatches_every_key_it_declares(key) -> None:
         await _open_market(pilot)
         without = _market_text(pilot.app)
 
+    if key in {"pool4_as_of_hhmm", "pool4_stakers_as_of_hhmm"}:
+        # These source clocks previously decided the removed stale badge.
+        # They remain accepted for contract compatibility without changing values.
+        assert full == without
+        return
     assert full != without, (
         f"{key} is dispatched to a market panel that renders nothing from "
         "it: the body composites identically with the key set to None. "

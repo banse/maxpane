@@ -2253,7 +2253,7 @@ def test_title_line_renders_degraded_and_lp_owner_warning():
     line = surf_mod._title_line(
         _frozen_payload(degraded=["logs", "market"], lp_owner_ok=False)
     )
-    assert "· ⚠ logs, market" in line
+    assert "logs, market" not in line
     assert "⚠ LP owner changed" in line    # position #1167726 left frenpet.eth
 
 
@@ -2337,10 +2337,8 @@ def test_degraded_sources_ride_the_house_warning_glyph_not_the_word():
     """
     from maxpane_dashboard.data.surf_manager import SOURCES
 
-    assert surf_mod._fmt_degraded(["activity"]) == " · ⚠ activity"
-    assert surf_mod._fmt_degraded(sorted(SOURCES)) == (
-        " · ⚠ activity, chain, channel, logs, market, nft, p4, pad"
-    )
+    assert surf_mod._fmt_degraded(["activity"]) == ""
+    assert surf_mod._fmt_degraded(sorted(SOURCES)) == ""
     assert sorted(SOURCES) == [
         "activity", "chain", "channel", "logs", "market", "nft", "p4", "pad"
     ], "a source group was renamed -- the title bar's vocabulary follows it"
@@ -2373,21 +2371,19 @@ def test_fmt_degraded_healthy_inputs_render_empty():
 def test_fmt_degraded_bare_string_is_one_group_not_characters():
     # A string is iterable character-by-character; treat it as a single
     # group name instead of exploding "logs" into "l, o, g, s".
-    assert surf_mod._fmt_degraded("logs") == " · ⚠ logs"
+    assert surf_mod._fmt_degraded("logs") == ""
 
 
 def test_fmt_degraded_list_with_a_non_string_element_still_renders():
-    assert surf_mod._fmt_degraded(["logs", 42]) == " · ⚠ logs, 42"
+    assert surf_mod._fmt_degraded(["logs", 42]) == ""
 
 
 def test_fmt_degraded_unexpected_shapes_never_render_the_healthy_line():
-    # None of these mean "nothing is degraded" -- an int cannot be iterated
-    # and a dict is not a list of names -- so none may collapse to "", which
-    # the title line renders identically to a genuinely healthy state.
-    assert surf_mod._fmt_degraded(42) != ""
-    assert surf_mod._fmt_degraded({"logs": True}) != ""
-    assert "⚠" in surf_mod._fmt_degraded(42)
-    assert "⚠" in surf_mod._fmt_degraded({"logs": True})
+    # Source notices stay hidden even for malformed source-state payloads.
+    assert surf_mod._fmt_degraded(42) == ""
+    assert surf_mod._fmt_degraded({"logs": True}) == ""
+    assert "⚠" not in surf_mod._fmt_degraded(42)
+    assert "⚠" not in surf_mod._fmt_degraded({"logs": True})
 
 
 def test_title_line_with_a_malformed_degraded_value_never_reads_healthy():
@@ -2395,8 +2391,8 @@ def test_title_line_with_a_malformed_degraded_value_never_reads_healthy():
     assert "⚠" not in healthy
     for bad in (42, {"logs": True}, ["logs", 42]):
         line = surf_mod._title_line(_frozen_payload(degraded=bad))
-        assert line != healthy
-        assert "⚠" in line
+        assert line == healthy
+        assert "⚠" not in line
 
 
 # -- refresh dispatch ----------------------------------------------------
@@ -2599,8 +2595,8 @@ async def test_refresh_renders_title_and_all_panels():
                       "BURN READY", "HOT COIN"):
             assert label in text, f"detector row {label!r} clipped or missing"
         assert "5 quiet" in text
-        # The floor is explicitly unavailable, never faked (PRD §4).
-        assert "no keyless source" in text
+        # The missing floor stays unknown, without a source-warning message.
+        assert "floor —" in text and "no keyless source" not in text
 
 
 async def test_screen_survives_manager_exception():
@@ -2627,10 +2623,10 @@ async def test_screen_survives_manager_exception():
         # launchpad`` could be named there, and ``StatusBar._ordinary_status``
         # trades the freshness segment for the hints segment when a screen
         # sets one -- the same tradeoff curator already made for its own
-        # hints. The error count is unaffected; it is appended either way.
+        # hints. Source errors now stay internal in every Surf view.
         assert "x more" in rendered
         assert "updated" not in rendered
-        assert "3 errors" in rendered   # manager's _error_count is surfaced
+        assert "errors" not in rendered   # source failures stay internal
 
         # The title bar was not half-overwritten with a broken frame -- and
         # it still names the dashboard the menu names. This is the *only*
@@ -2647,7 +2643,7 @@ async def test_screen_survives_manager_exception():
 
 
 async def test_screen_survives_all_none_payload():
-    """A full outage renders explicit unavailable states, never zeros."""
+    """A full outage renders neutral placeholders, never zeros or source warnings."""
     manager = _FakeManager(payload=_all_none_payload())
     screen = SurfScreen(manager, poll_interval=30, name="surf")
     app = _Harness(screen)
@@ -2660,7 +2656,7 @@ async def test_screen_survives_all_none_payload():
         assert "SURFBOARD · IMD — · parity — · as of —" in title
         text = _screen_text(app)
         assert "$0.00" not in text     # a None price is never a zero price
-        assert "no keyless source" in text
+        assert "floor —" in text and "no keyless source" not in text
 
 
 async def test_degraded_sources_reach_the_title_bar():
@@ -2674,7 +2670,7 @@ async def test_degraded_sources_reach_the_title_bar():
         await screen._do_refresh()
         await pilot.pause()
         text = _screen_text(app)
-        assert "⚠ logs, market" in text
+        assert "logs, market" not in text
         assert "LP owner changed" in text
 
 
@@ -3556,12 +3552,10 @@ async def test_a_cold_cache_still_says_as_of_rather_than_going_quiet():
         assert "as of —" in row0, row0
 
 
-#: The narrowest terminal on which the **whole** worst-case title bar reaches
-#: a pixel: the board's name, every figure, the ``as of`` marker,
-#: ``‹ taller``, the LP warning and **all eight** degraded groups, all on the
-#: one row of this screen that cannot ellipsise. Swept over the real screen rather than counted -- ``⚠``
-#: is not a one-column glyph on every width table, so the arithmetic is not
-#: the test.
+#: Historical title boundary retained as a regression width. Source notices
+#: were removed on 2026-10-16, so this no longer claims a minimum width;
+#: the test verifies the complete operational-warning tail at this width
+#: and the adjacent smaller width. The earlier measurements follow.
 #:
 #: **139** (final fix wave, I4; was 142, and 137 before that across six
 #: source groups). The row gained ``as of HH:MM`` -- this screen had no
@@ -3611,42 +3605,15 @@ WORST_CASE_TITLE_COLUMNS = 143
 
 
 async def test_the_worst_case_title_bar_keeps_its_whole_tail_from_here():
-    """Both directions, so the number is tight rather than merely generous.
-
-    A wrapping ``height: 1`` ``Static`` loses its tail with no ``…`` and no
-    scrollbar, so "where does it start losing it" is a real measurement and
-    not a detail -- and it moves whenever this row's copy *or the source
-    vocabulary* moves. The sentinel is the last name the row prints, read
-    from ``SOURCES``: hard-coding ``"nft"`` would keep passing if a seventh
-    group were appended after it, which is the mutation this measurement
-    exists to catch.
-    """
-    from maxpane_dashboard.data.surf_manager import SOURCES
-
-    last_name = sorted(SOURCES)[-1]
+    """The operational-warning tail still fits after source notices are removed."""
     payload = _worst_case_title_payload()
-    async with _screen_at(WORST_CASE_TITLE_COLUMNS, 30, payload=payload) as (
-        app, _screen, _p
-    ):
-        assert last_name in _screen_text(app).split("\n")[0], (
-            f"the tail is already gone at {WORST_CASE_TITLE_COLUMNS} columns"
-        )
-    async with _screen_at(WORST_CASE_TITLE_COLUMNS - 1, 30, payload=payload) as (
-        app, _screen, _p
-    ):
-        assert last_name not in _screen_text(app).split("\n")[0], (
-            f"the whole line already fits at {WORST_CASE_TITLE_COLUMNS - 1} -- "
-            "the copy got shorter, re-measure this"
-        )
+    for width in (WORST_CASE_TITLE_COLUMNS, WORST_CASE_TITLE_COLUMNS - 1):
+        async with _screen_at(width, 30, payload=payload) as (app, _screen, _p):
+            title = _screen_text(app).split("\n")[0]
+            assert "SURFBOARD" in title and "as of" in title
+            assert "⚠ LP owner changed" in title
+            assert "activity, chain" not in title and "p4, pad" not in title
 
-    # The claim the number is *for*: at the width the whole dashboard is
-    # measured to need, a total outage still prints every group it names.
-    # Two independently swept constants, not one compared with itself.
-    assert WORST_CASE_TITLE_COLUMNS <= SURF_FULL_LAYOUT_COLUMNS, (
-        f"the worst-case title bar needs {WORST_CASE_TITLE_COLUMNS} columns "
-        f"but the surf layout is measured at {SURF_FULL_LAYOUT_COLUMNS}: at "
-        "the full layout a full outage would silently lose group names"
-    )
 
 
 #: A width where ``SurfDevActivity`` is genuinely below its widest tier, for

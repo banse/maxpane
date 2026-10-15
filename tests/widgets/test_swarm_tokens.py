@@ -17,7 +17,7 @@ async def test_live_history_keeps_gaps_and_stale_quotes_are_marked():
         await pilot.pause()
         text = painted(pilot.app)
         assert '▁ ▄ █' in text
-        assert '~$0.0042' in text
+        assert '$0.0042' in text and '~$0.0042' not in text
 
 
 NOW = 1_800_000_000
@@ -141,7 +141,7 @@ async def test_hero_distinguishes_empty_from_unknown_coverage():
         tokens_text = card_text(pilot.app, hero.query_one('#hero-tokens'))
         assert any('tracked' in row and '0' in row for row in tokens_text.splitlines())
         assert any('new 24h' in row and '0' in row for row in tokens_text.splitlines())
-        assert 'unavailable' in card_text(pilot.app, hero.query_one('#hero-volume'))
+        assert 'unavailable' not in card_text(pilot.app, hero.query_one('#hero-volume'))
         hero.update_data(tokens_hero={'volume': dict(state='partial', read_ts=NOW,
             amount=0, known=1, total=2)})
         await pilot.pause()

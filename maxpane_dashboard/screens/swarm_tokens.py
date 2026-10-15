@@ -6,6 +6,7 @@ from textual.widgets import DataTable, Input, Select, Static
 
 from maxpane_dashboard.analytics.swarm_tokens import project_snapshot
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
+from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen, SurfStatusBar
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.fmt import hhmm
@@ -46,8 +47,9 @@ class DemoStatusBar(StatusBar):
                                   + ('' if self.is_mock else ' · 30s'))
 
 
-class SwarmTokensScreen(DashboardScreen):
+class SwarmTokensScreen(SurfDashboardScreen):
     GAME_NAME = 'SWARM TOKENS'
+    LOADING_CHROME = "_chrome"
     REFRESH_WORKER_NAME = 'swarm-tokens-refresh'
     # This provider schedules its own sources independently of SURF's prefetch.
     JOIN_STARTUP_PREFETCH = False
@@ -115,7 +117,7 @@ class SwarmTokensScreen(DashboardScreen):
         yield bar
 
     async def _fetch_data(self):
-        raw = await self._data_manager.fetch_and_compute()
+        raw = await super()._fetch_data()
         return project_snapshot(raw, chain=self.chain, query=self.search_query,
                                 lp_state=self.lp_state, sort=self.sort)
 
@@ -146,24 +148,20 @@ class SwarmTokensScreen(DashboardScreen):
         selection=f' · {self.lp_state}' if self.lp_state!='all' else ''
         selection+=f' · search: {flatten(self.search_query)}' if self.search_query else ''
         total=(self.snapshot.get('metrics') or {}).get('total')
-        count='unavailable' if total is None else f'{total} tokens' if total else 'No matching tokens'
+        count='—' if total is None else f'{total} tokens' if total else 'No matching tokens'
         sources=self.snapshot.get('sources') or {}
         cat=sources.get('catalogue') or {}
         source_text=''
         if sources:
-            source_text=f" · as of {hhmm(cat.get('as_of'))} · {cat.get('state','unavailable')}"
+            source_text=f" · as of {hhmm(cat.get('as_of'))}"
             rows=self.snapshot.get('tokens') or []
             quoted=sum(row.get('market_state')=='ok' and row.get('price_usd') is not None for row in rows)
             source_text+=f" · quotes {quoted}/{len(rows)}"
-            if any(row.get('market_state')=='stale' for row in self.snapshot.get('tokens') or []):
-                source_text+=' · ~ stale quotes'
         self.query_one(TokensTable).query_one('.panel-title',Static).update(Text(
-            f'ALL TOKENS · {count}{suffix} · {chain}{selection} · sort: {self.sort}{source_text}', style='bold'))
+            f'ALL TOKENS{self.loading_suffix} · {count}{suffix} · {chain}{selection} · sort: {self.sort}{source_text}', style='bold'))
         if sources:
-            trades=sources.get('trades') or {}
-            state=trades.get('state','unavailable')
             self.query_one(TokenActivity).query_one('.panel-title',Static).update(Text(
-                f"ACTIVITY · trades {state}",style='bold'))
+                "ACTIVITY",style='bold'))
 
     def _show_filter(self, editing):
         self._filter_open=editing

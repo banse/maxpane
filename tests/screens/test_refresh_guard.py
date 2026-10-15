@@ -36,6 +36,7 @@ from textual.app import App
 from textual.screen import Screen
 
 import maxpane_dashboard.screens as screens_pkg
+from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.refresh_guard import PREFETCH_WORKER_NAME, RefreshGuard
 from maxpane_dashboard.screens.talismans import TalismansScreen
@@ -298,7 +299,7 @@ def _dashboard_screen_classes() -> list[type]:
                 inspect.isclass(obj)
                 and issubclass(obj, Screen)
                 and obj.__module__ == module.__name__
-                and obj is not DashboardScreen
+                and obj not in (DashboardScreen, SurfDashboardScreen)
                 and (issubclass(obj, DashboardScreen) or "_do_refresh" in vars(obj))
             ):
                 found.append(obj)

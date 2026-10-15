@@ -582,3 +582,35 @@ card order or moving the captions with the cards; both mutations were restored.
 All 185 affected/composing checks and 127 guards/documentation pins passed;
 the layout remains 146×37. Review approved with no findings and independently
 rejected both mutations. No outstanding follow-ups; no full suite was run.
+
+
+## Source notices and loading — 2026-10-16
+
+Removed explicit stale/unavailable/source-failure presentation throughout Surf,
+boardroom and token overview/detail screens, including source tooltips. Cached
+values, neutral timestamps, partial coverage and operational statuses remain;
+missing values use dashes. Real pending tasks drive an animated title indicator
+on opening/reopening. Background completion uses a passive projection, avoiding
+extra fetches or failure retry loops. Source TTLs and state contracts are retained.
+
+Live public data was rendered at 149×45 for boardroom and Built by Swarm before
+hardening. No CSS or layout constants changed. The affected/composing run covered
+61 files: 2,886 passed initially; obsolete source-notice assertions were updated,
+and two regressions (duplicate startup fetch, oracle assessing color) were fixed.
+Focused reruns passed, including all 254 boardroom projection cases and 27
+loading/oracle cases. Review found fast detached reads could escape the first
+loading sample and long titles could clip loading. Both received failing
+regression tests, production fixes and focused checks: 21 lifecycle/title/startup
+cases pass. Twelve lifecycle/task/title mutations were rejected and restored.
+Fast guards and documentation pins passed after registering the new
+shared screen as abstract. No full repository suite ran.
+
+Scoped re-review confirmed both findings addressed, reran the three regression
+tests and independently rejected the fast-completion mutation. No open findings
+remain for this change.
+
+Seven remaining failures were reproduced against clean HEAD `e3b7074f` and are
+unrelated follow-ups: two old POOL4 binding/body assertions, two old launchpad
+hero assertions, two site fixtures missing `named_ts`, and an old swarm widget
+ordering assertion. Update those tests when their respective files are next
+touched for those behaviors. They were not weakened to make this task green.

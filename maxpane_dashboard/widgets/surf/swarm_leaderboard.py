@@ -130,7 +130,7 @@ class SurfSwarmLeaderboard(SwarmTableBase):
     def _present_view(self):
         if self._view_mode=='recorded':
             self.EMPTY_LINE='no submitted records yet'
-            self.UNAVAILABLE_LINE='unavailable'
+            self.UNAVAILABLE_LINE=''
             self.store(self._recorded_rows,None)
             if self.write('.board-clocks',Text(self._recorded_clocks)):
                 self.query_one('.board-clocks',Static).tooltip=None
@@ -143,7 +143,7 @@ class SurfSwarmLeaderboard(SwarmTableBase):
                   for row in rows if isinstance(row,dict)]
         state=source.get('state','pending')
         self.EMPTY_LINE='no launch contributions' if state=='ok' else 'no confirmed contributions in this read'
-        self.UNAVAILABLE_LINE='◌ loading' if state=='pending' else 'load failed'
+        self.UNAVAILABLE_LINE=''
         self.store(rows,None)
 
     def _cursor_state(self):
@@ -181,19 +181,20 @@ class SurfSwarmLeaderboard(SwarmTableBase):
     def _render_launch_source(self):
         source=self._contribution
         state=source.get('state','pending')
-        detail=strip_tags(flatten(source.get('detail') or ''))
+        detail=strip_tags(flatten(source.get('detail') or '')) if state in ('ok','partial') else ''
+        if not detail and seat_token(source.get('loaded')) is not None:
+            total=seat_token(source.get('total'))
+            detail=f"{source['loaded']}/{total} production launches" if total is not None else f"{source['loaded']} launches read"
         parts=[]
-        if state in ('failed','stale','unavailable') and isinstance(source.get('rows'),list):
-            parts.append('load failed')
-        elif state=='partial':
+        if state=='partial':
             parts.append('partial')
         if source.get('read_ts') is not None:
             parts.append(f"as of {hhmm(source['read_ts'])}")
         if detail:
             parts.append(detail)
-        self.write('.board-clocks',Text(' · '.join(parts),style='red' if state in ('failed','stale','unavailable') else 'dim'))
+        self.write('.board-clocks',Text(' · '.join(parts),style='dim'))
         if not isinstance(source.get('rows'),list) and state!='pending':
-            self._write_footer(('load failed',),style='red')
+            self._write_footer(())
         try:
             self.query_one('.board-clocks',Static).tooltip=Text(detail) if detail else None
         except Exception:
@@ -291,7 +292,7 @@ class SurfSwarmLeaderboard(SwarmTableBase):
         token=seat_token(item.get('token_id'))
         if token is None: return None
         state=item.get('live_state')
-        unknown='—' if self._view_mode=='launches' else 'unavailable'
+        unknown='—'
         state_text={'idle':'○ idle','offline':'offline'}.get(state,unknown)
         if state=='working': state_text=f"● working {fmt_int(item.get('working'))}"
         elif state=='paused': state_text=f"⏸ {hhmm(item.get('paused_until_ts'))} ×{fmt_int(item.get('failures'))}"
@@ -310,7 +311,7 @@ class SurfSwarmLeaderboard(SwarmTableBase):
                        build_review=f'{counts[0]} / {counts[1]}' if counts is not None else '— / —')
             details=('Current advertised settings:\n'+'\n'.join(f'{model} · {effort or "—"}' for model,effort in pairs)
                      if pairs else 'No current advertised settings' if item.get('advertised_models')==[]
-                     else 'Current advertised settings unavailable')
+                     else 'Current advertised settings —')
             self._row_tooltips[token]=Text(details+'\n'+_BUILD_REVIEW_NOTE)
         cells={}
         for key,_,width in self.COLUMN_SPECS:

@@ -91,7 +91,7 @@ def leaderboard_records(payload: dict | None) -> tuple[HeroRecord, ...]:
 
 
 class BoardHeroCard(Pool4HeroCard):
-    """BOARD keeps metric footers while source qualifications live on hover."""
+    """BOARD keeps metric footers and neutral observation clocks on hover."""
 
     VALUE_BOLD = True
 
@@ -99,14 +99,7 @@ class BoardHeroCard(Pool4HeroCard):
 
     def _footer(self):
         data = self.data
-        if data.state == "unavailable":
-            super()._footer()
-        elif (data.key == "launches" and data.state in ("pending", "failed")
-              and all(value == "--" for _, value in data.stats) and data.footer == "--%"):
-            self.border_subtitle = Text("◌ loading" if data.state == "pending" else "load failed",
-                                        style="dim" if data.state == "pending" else "red")
-        else:
-            self.border_subtitle = Text(data.footer, style="dim")
+        self.border_subtitle = Text(data.footer, style="dim")
 
 
 class SurfSwarmBoardHero(Grid):
@@ -139,22 +132,18 @@ class SurfSwarmBoardHero(Grid):
             "rate": "Canonical recorded seats", "launches": "Launch contributions",
             "workers": "Current worker roster", "effort": "Contributor receipts",
         }[record.key]]
-        if record.state == "stale":
-            details.append("retained values")
         if record.key in ("recorded", "launches"):
             prefix = "online" if record.key == "recorded" else "runtime"
-            state = _state(source.get(f"{prefix}_state"))
             clock = hhmm(source.get(f"{prefix}_read_ts"), unknown="--:--")
-            details.append(f"{prefix} workers {state} · as of {clock} local")
+            details.append(f"{prefix} workers · as of {clock} local")
         if record.key == "launches":
             known, seats = (_count(seat_token(source.get(key))) for key in ("runtime_known", "seats"))
             details.append(f"{known} of {seats} seats have current reported runtimes.")
             details.append("Seats reporting both runtimes count once in each; current metadata, not historical usage.")
             total = _count(seat_token(source.get('total_seats')))
             details.append(f"{seats} of {total} recorded seats contributed to launches.")
-            state = _state(source.get('records_state'))
             clock = hhmm(source.get('records_read_ts'), unknown='--:--')
-            details.append(f"recorded seats {state} · as of {clock} local")
+            details.append(f"recorded seats · as of {clock} local")
         elif record.key == "workers":
             known, total, count = (_count(seat_token(source.get(key))) for key in
                                    ('runtime_known', 'runtime_total', 'runtime_count'))

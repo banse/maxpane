@@ -197,7 +197,7 @@ async def test_known_zero_rate_and_counts_are_distinct_from_cold_and_recover():
         assert any("capacity" in line and "0" in line for line in painted(app, "workers").splitlines())
         app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=None)
         await pilot.pause()
-        assert all("unavailable" in painted(app, key) for key in payload())
+        assert all("unavailable" not in painted(app, key) for key in payload())
         assert "╰─╯•╰─╯" not in painted(app, "rate") and "0 accepted" not in painted(app, "top")
         app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=payload())
         await pilot.pause()
@@ -215,7 +215,7 @@ async def test_partial_stale_and_failed_sources_remain_independent(local_clock):
         assert "4.188k accepted" in painted(app, "top")
         assert "worked 1y 32w 3d" in painted(app, "effort") and "18.4M" in painted(app, "effort")
         assert all("stale" not in painted(app, key) and "partial" not in painted(app, key) for key in data)
-        assert "stale" in app.query_one("#hero-top").tooltip.plain
+        assert "stale" not in app.query_one("#hero-top").tooltip.plain
         assert "04:50" in app.query_one("#hero-top").tooltip.plain
         assert "partial" in app.query_one("#hero-effort").tooltip.plain
         assert "05:00" in app.query_one("#hero-effort").tooltip.plain
@@ -224,7 +224,7 @@ async def test_partial_stale_and_failed_sources_remain_independent(local_clock):
         data["workers"]["state"] = "unavailable"
         app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=data)
         await pilot.pause()
-        assert "966" not in painted(app, "workers") and "unavailable" in painted(app, "workers")
+        assert "966" not in painted(app, "workers") and "unavailable" not in painted(app, "workers")
         assert "18.4M" in painted(app, "effort")
 
 
@@ -294,9 +294,9 @@ async def test_online_and_runtime_hover_keep_their_independent_sources(local_clo
         assert "-- online" in painted(app, "recorded")
         assert "100k attempts" in painted(app, "recorded")
         online = app.query_one("#hero-recorded").tooltip.plain
-        assert "online workers unavailable" in online and "--:--" in online
+        assert "online workers · as of" in online and "--:--" in online
         launch = app.query_one("#hero-launches").tooltip.plain
-        assert "runtime workers stale" in launch and "04:50" in launch
+        assert "runtime workers · as of" in launch and "04:50" in launch
         assert "900 of 940" in launch and "current reported runtimes" in launch
         assert "both runtimes" in launch and "once in each" in launch
         assert "historical" in launch
@@ -319,11 +319,11 @@ async def test_launch_refresh_updates_only_its_card_and_retains_neutral_values(s
         frame = next(segment for strip in strips(app, "launches") for segment in strip if "┌" in segment.text)
         foreground = frame.style.color.get_truecolor()
         assert foreground.red == foreground.green == foreground.blue
-        assert state in app.query_one("#hero-launches").tooltip.plain
+        assert "as of" in app.query_one("#hero-launches").tooltip.plain
         assert "901 of 941" in app.query_one("#hero-launches").tooltip.plain
 
 
-@pytest.mark.parametrize("state, footer", [("pending", "◌ loading"), ("failed", "load failed")])
+@pytest.mark.parametrize("state, footer", [("pending", "--%"), ("failed", "--%")])
 async def test_launch_first_read_status_keeps_unknown_and_known_zero_distinct(state, footer):
     data = payload()
     data["launches"] = dict(state=state)
@@ -334,10 +334,7 @@ async def test_launch_first_read_status_keeps_unknown_and_known_zero_distinct(st
         assert footer in text
         assert all(any(label in line and "--" in line for line in text.splitlines())
                    for label in ("seats", "claude", "codex"))
-        if state == "failed":
-            failure = next(segment for strip in strips(app, "launches") for segment in strip if "load failed" in segment.text)
-            color = failure.style.color.get_truecolor()
-            assert color.red > color.green and color.red > color.blue
+        assert "loading" not in text and "load failed" not in text
         app.query_one(SurfSwarmBoardHero).set_launch_contribution({
             "summary": dict(state=state, seats=0, claude=0, codex=0, jobs=0, runtime_known=0, percent=0, total_seats=1024)})
         await pilot.pause()
@@ -374,7 +371,7 @@ async def test_invalid_source_clocks_are_explicit_and_never_painted(widget_name)
         swarm_board_rows=fold.board_rows(swarm_capture_v3("contributors"), swarm_capture_v3("workers")),
         swarm_fleet=fold.fleet(swarm_capture_v3("workers")),
         swarm_board_as_of_hhmm="[/x]PWNED", swarm_workers_as_of_hhmm="99:99"))
-    assert "unavailable" in text
+    assert "--" in text and "unavailable" not in text
     assert "PWNED" not in text and "99:99" not in text and "[/x]" not in text
 
 
@@ -388,7 +385,7 @@ async def test_share_footers_keep_denominators_on_hover_and_unknowns_unknown(loc
         assert '--%' in painted(app, 'launches').splitlines()[8]
         assert '--% run --' in painted(app, 'workers').splitlines()[8]
         launch = app.query_one('#hero-launches').tooltip.plain
-        assert 'recorded seats unavailable' in launch and '--:--' in launch
+        assert 'recorded seats · as of' in launch and '--:--' in launch
         assert '900 of 966' in app.query_one('#hero-workers').tooltip.plain
         app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=payload())
         await pilot.pause()

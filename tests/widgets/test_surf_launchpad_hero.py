@@ -139,7 +139,7 @@ async def test_queue_readiness_survives_degraded_footer(ready, label, local_cloc
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         text = painted(pilot.app, "queue")
-        assert label in text and "stale 05:00" in text and "250" in text
+        assert label in text and "stale" not in text and "05:00" in str(pilot.app.query_one("#hero-queue").tooltip) and "250" in text
         assert "[/x]" not in text
 
 
@@ -177,7 +177,7 @@ async def test_unread_and_partial_volume_do_not_keep_a_chart_and_full_refresh_re
         app.query_one(SurfLaunchpadHero).update_data(surf_launchpad_hero=None)
         await pilot.pause()
         for key in data:
-            assert "unavailable" in painted(app, key)
+            assert "unavailable" not in painted(app, key)
         assert "12.4k" not in painted(app, "flow") and "READY" not in painted(app, "queue")
         assert "3.2k" not in str(app.query_one("#hero-volume").tooltip)
         app.query_one(SurfLaunchpadHero).update_data(surf_launchpad_hero=payload())
@@ -208,14 +208,14 @@ async def test_stale_volume_keeps_its_value_and_clock_then_unavailable_clears_it
         await pilot.pause()
         app = pilot.app
         assert "  ╵╰─╴•╰─╯" in painted(app, "volume")
-        assert "stale 04:50" in painted(app, "volume") and "2h to 05:00" in painted(app, "volume")
+        assert "stale" not in painted(app, "volume") and "04:50" in str(app.query_one("#hero-volume").tooltip) and "2h to 05:00" in painted(app, "volume")
         assert "05:30" in str(app.query_one("#hero-volume").tooltip)
         for section in data.values():
             section["state"] = "unavailable"
         app.query_one(SurfLaunchpadHero).update_data(surf_launchpad_hero=data)
         await pilot.pause()
         for key in data:
-            assert "unavailable" in painted(app, key)
+            assert "unavailable" not in painted(app, key)
         assert "  ╵╰─╴•╰─╯" not in painted(app, "volume") and "2h to --:--" in painted(app, "volume")
         assert "12.4k" not in painted(app, "flow") and "250" not in painted(app, "queue")
 
@@ -226,7 +226,7 @@ async def test_failed_usd_read_keeps_covered_volume_metadata_in_tooltip(local_cl
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "unavailable" in painted(app, "volume")
+        assert "unavailable" not in painted(app, "volume")
         assert "  ╵╰─╴•╰─╯" not in painted(app, "volume")
         tip = str(app.query_one("#hero-volume").tooltip)
         assert all(word in tip for word in ("210/210", "until 05:00 local", "volume read 05:20 local", "ETH/USD --", "quote read --:-- local")), tip
@@ -259,7 +259,7 @@ async def test_invalid_values_and_dates_are_safe_unknowns(bad):
         await pilot.pause()
         app = pilot.app
         assert "-- new /24h" in painted(app, "coins")
-        assert "stale --:--" in painted(app, "fees")
+        assert "stale" not in painted(app, "fees") and "--:--" in str(app.query_one("#hero-fees").tooltip)
         assert "2h to --:--" in painted(app, "volume")
         assert "--" in painted(app, "fees")
         assert all("PWNED" not in painted(app, key) for key in data)

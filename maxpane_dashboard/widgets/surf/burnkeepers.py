@@ -79,7 +79,7 @@ __all__ = [
 ]
 
 TITLE = "BURNKEEPERS"
-UNAVAILABLE_LINE = "burnkeepers unavailable"
+UNAVAILABLE_LINE = "—"
 EMPTY_LINE = "no burns yet"
 # ``WIDEN_HINT`` (in ``__all__``) is the repo-wide marker, shared in
 # ``widgets/rowfit.py`` since Branch 3.
@@ -332,7 +332,7 @@ class SurfBurnkeepers(Vertical):
         rows_payload = self._payload.get("rows")
 
         if rows_payload is None:
-            lines.append(Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"))
+            lines.append(Text(UNAVAILABLE_LINE, style="dim"))
             body.update(Text("\n").join(lines))
             return
 

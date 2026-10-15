@@ -117,7 +117,7 @@ TITLE_STAKING = "STAKING"
 #: What a card renders when its own read failed. One spelling, shared by all
 #: three, so ``out.count("unavailable") == 3`` on an empty payload is a
 #: meaningful assertion rather than an accident of three separate wordings.
-UNAVAILABLE = "unavailable"
+UNAVAILABLE = "—"
 
 #: DOWNSIDE BID's middle state: ``pool4_backstop_state == "none"``. **We
 #: looked and there is no band**, which is a different sentence from
@@ -424,7 +424,7 @@ class SurfPool4UserHero(Horizontal):
         markup = [
             _dim(label),
             "",
-            value or f"[yellow]{UNAVAILABLE}[/]",
+            value or f"[dim]{UNAVAILABLE}[/]",
             _dim(subtitle),
         ]
         lines = [t for t in (parse_line(m) for m in markup) if t is not None]

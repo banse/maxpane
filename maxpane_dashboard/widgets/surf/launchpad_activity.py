@@ -125,7 +125,7 @@ __all__ = [
 _MAX_ROWS = 40
 
 #: The explicit degraded line. Tested verbatim.
-UNAVAILABLE_LINE = "activity unavailable"
+UNAVAILABLE_LINE = "—"
 
 #: The explicit quiet line -- a sweep that ran and found nothing, distinct
 #: from one that did not run at all.
@@ -498,7 +498,7 @@ class SurfLaunchpadActivity(Vertical):
         rows_payload = self._payload.get("rows")
         if rows_payload is None:
             self._set_title()
-            log.write(f"[yellow]⚠ {UNAVAILABLE_LINE}[/]")
+            log.write(f"[dim]{UNAVAILABLE_LINE}[/]")
             return
 
         try:

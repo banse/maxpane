@@ -96,7 +96,7 @@ async def test_no_bid_zero_balances_and_missing_values_remain_distinct():
         assert "0 IMD" in painted(app, "queue") and "0 IMD/d" in painted(app, "queue") and "--d" in painted(app, "queue")
         app.query_one(SurfPool4RackHero).update_data(surf_pool4_hero=None)
         await pilot.pause()
-        assert all("unavailable" in painted(app, key) for key in payload())
+        assert all("unavailable" not in painted(app, key) for key in payload())
         assert "none deployed" not in painted(app, "bid")
 
 
@@ -115,7 +115,7 @@ async def test_zero_price_apr_and_holder_count_are_visible_before_unread():
         await pilot.pause()
         for key, glyphs in zero_rows.items():
             output = painted(app, key)
-            assert "--" in output and "unavailable" in output and glyphs not in output
+            assert "--" in output and "unavailable" not in output and glyphs not in output
         assert any("addresses" in line and "--" in line
                    for line in painted(app, "vault").splitlines())
 
@@ -128,10 +128,10 @@ async def test_source_clocks_and_holder_provenance_remain_distinct(local_clock):
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "stale 05:00" in painted(app, "rate")
+        assert "stale" not in painted(app, "rate") and "05:00" in str(app.query_one("#hero-rate").tooltip)
         assert "partial 04:50" in painted(app, "vault")
         assert "82.4k" in painted(app, "vault")
-        assert "holders stale" in str(app.query_one("#hero-vault").tooltip)
+        assert "holders · as of" in str(app.query_one("#hero-vault").tooltip)
         assert "04:50 local" in str(app.query_one("#hero-vault").tooltip)
         card = app.query_one("#hero-vault")
         footer = app.screen._compositor.render_strips()[card.region.bottom-1].crop(card.region.x, card.region.right)
@@ -200,8 +200,8 @@ async def test_stale_incomplete_holders_keep_their_lower_bound_and_date(local_cl
     async with Harness(data).run_test(size=(149,45)) as pilot:
         await pilot.pause()
         text=painted(pilot.app,'vault')
-        assert '≥126' in text and 'stale 04:50' in text
-        assert 'holders stale' in str(pilot.app.query_one('#hero-vault').tooltip)
+        assert '≥126' in text and 'stale' not in text and '04:50' in str(pilot.app.query_one('#hero-vault').tooltip)
+        assert 'holders · as of' in str(pilot.app.query_one('#hero-vault').tooltip)
 
 
 def test_parked_legacy_hero_signature_stays_frozen():

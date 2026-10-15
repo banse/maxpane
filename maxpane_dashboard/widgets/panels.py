@@ -652,6 +652,8 @@ class RichLogFeed(PanelBase):
     not the panel (review C1: ``data/dota_manager.py`` did exactly that).
     """
 
+    UNAVAILABLE_LINE = UNAVAILABLE_LINE
+
     #: Widget id of the log.
     LOG_ID: str = ""
 
@@ -770,7 +772,7 @@ class RichLogFeed(PanelBase):
                 # nothing. Both clear, because a snapshot never keeps a row.
                 log.clear()
                 log.write(
-                    UNAVAILABLE_LINE if events is None else self.EMPTY_LINE
+                    self.UNAVAILABLE_LINE if events is None else self.EMPTY_LINE
                 )
                 self._drawn = False
                 return
@@ -842,7 +844,7 @@ class RichLogFeed(PanelBase):
             # one this ``clear()`` is a no-op.
             if self.HEADER_LINE is not None:
                 log.clear()
-            log.write(UNAVAILABLE_LINE if self.SNAPSHOT else self.EMPTY_LINE)
+            log.write(self.UNAVAILABLE_LINE if self.SNAPSHOT else self.EMPTY_LINE)
         else:
             self._drawn = True
 

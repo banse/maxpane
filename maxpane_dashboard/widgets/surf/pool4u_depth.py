@@ -185,7 +185,7 @@ PANEL_COLUMNS = 45
 #: the position's liquidity was unavailable. A rendered sentence, never an empty
 #: table: an empty table under a live title bar is what a hook bidding nothing
 #: looks like.
-UNAVAILABLE_LINE = "ladder unavailable"
+UNAVAILABLE_LINE = "—"
 
 #: ``band used`` when the band itself was not read -- ``pool4_backstop_state``
 #: is ``None``, or it says ``deployed`` and the band's numbers are missing.
@@ -512,7 +512,7 @@ class SurfPool4UDepth(Vertical):
 
         markup: list[str] = []
         if not self._payload.get("seen") or rows is None:
-            markup.append(f"[yellow]⚠ {safe_markup(UNAVAILABLE_LINE)}[/]")
+            markup.append(f"[dim]{safe_markup(UNAVAILABLE_LINE)}[/]")
         else:
             markup.append(f"[dim]{safe_markup(CAPTION)}[/]")
 

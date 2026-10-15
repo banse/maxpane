@@ -95,7 +95,7 @@ async def test_a_dead_sweep_and_a_quiet_one_say_different_things() -> None:
     _w, dead = await _render(None)
     _w, quiet = await _render([])
     assert UNAVAILABLE_LINE in dead and EMPTY_LINE not in dead
-    assert EMPTY_LINE in quiet and UNAVAILABLE_LINE not in quiet
+    assert EMPTY_LINE in quiet and "unavailable" not in quiet
 
 
 @pytest.mark.asyncio

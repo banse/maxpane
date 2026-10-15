@@ -146,7 +146,7 @@ TITLE = "SIGNALS"
 #: Not one of this panel's four inputs was read. Rendered in place of the rows
 #: rather than as four repetitions of :data:`UNKNOWN`, which would fill the
 #: panel with a word that means the same thing four times.
-UNAVAILABLE_LINE = "signals unavailable"
+UNAVAILABLE_LINE = "—"
 
 #: What a single row says when *its own* input was not read. A distinct word
 #: from every state below, so "we could not look" is never paintable by a state
@@ -545,7 +545,7 @@ class SurfPool4USignals(Vertical):
 
         if self._is_blank():
             self._widen = False
-            paint(Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"))
+            paint(Text(UNAVAILABLE_LINE, style="dim"))
             return
 
         # Measure what was actually built rather than comparing the budget

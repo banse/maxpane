@@ -387,7 +387,8 @@ async def test_a_switch_pending_composite_shows_no_number_of_the_old_seat(tmp_pa
                 assert shown == needles, sorted(set(needles) - set(shown))
             else:
                 assert shown == [], shown
-                assert "AGENT #1836" in _screen_text(pilot.app) and "loading" in hero
+                # A frozen pending snapshot has no active task to animate.
+                assert "AGENT #1836" in _screen_text(pilot.app) and "loading" not in hero
                 assert "of 1" in hero and "of 2" in hero
                 assert "AGENT #420" not in _screen_text(pilot.app)
 
@@ -640,7 +641,7 @@ async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_u
         assert "╶─╮ ╶─╮╭─╴╶─╮" in accepted
         assert "WORKER" in status and "IDLE" in status and "unavailable" not in status
         assert "⧉" not in owner
-        assert ("loading" if state else "unavailable") in owner
+        assert "--" in owner and "loading" not in owner and "unavailable" not in owner
 
 @pytest.mark.parametrize("row_index", [0,1])
 async def test_board_first_click_saves_clicked_seat_once_and_opens_agent(monkeypatch,row_index):
@@ -888,7 +889,9 @@ async def test_record_filtered_empty_footer_and_unread_are_distinct(monkeypatch)
         assert 'no matching records' in _region_text(pilot.app,record)
         record.update_data(swarm_seat_work_rows=None,swarm_seat_state='ok')
         await pilot.pause()
-        assert 'unavailable' in _region_text(pilot.app,record)
+        text = _region_text(pilot.app,record)
+        assert 'unavailable' not in text and 'no matching records' not in text
+        assert record.query_one(DataTable).row_count == 0
 
 
 @pytest.mark.parametrize('width,tier', [(58,'tight'),(99,'compact'),(107,'full'),(139,'full')])
@@ -1280,7 +1283,7 @@ def test_the_agent_title_names_the_idmd_seat_in_place_of_the_market(selected, wo
     assert "IMD $" not in line and "parity" not in line
     assert TALLER_HINT in line and "⚠ LP owner changed" in line
     assert "⚠ logs" not in line and "activity" not in line
-    assert "⚠ logs, activity" in surf_mod._title_line(payload)
+    assert "⚠ logs, activity" not in surf_mod._title_line(payload)
     assert surf_mod._title_line(payload) == surf_mod._title_line(payload, agent=False)
     assert "AGENT" not in surf_mod._title_line(payload)
 

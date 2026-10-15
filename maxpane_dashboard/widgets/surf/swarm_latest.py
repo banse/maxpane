@@ -69,7 +69,7 @@ def shipped_items(launches, sites):
                 name = flatten(artifact.get('name'))
             name = name or (('contract ' if kind == 'contract' else '') + f"#{row.get('launch_number', '--')}")
             items.append(dict(kind=kind, name=name, timestamp=timestamp, approximate=True,
-                timing=source + ' (approximate; exact deployment time unavailable)',
+                timing=source + ' (approximate)',
                 address=artifact['address'], chain_id=row.get('chain_id'), launch=deepcopy(row),
                 key=('launch', row.get('chain_id'), artifact['address'].lower())))
     for row in _rows(sites):
@@ -131,7 +131,7 @@ class SurfSwarmLatestLaunches(PanelBase):
         self._top_launch = None
 
     def compose_body(self):
-        yield Static(Text('Loading...', style='dim'), classes='panel-line shipped-status')
+        yield Static(Text(''), classes='panel-line shipped-status')
         for index in range(self.ROW_CAP):
             yield ShippedRow('', id=f'shipped-row-{index}')
 
@@ -177,8 +177,7 @@ class SurfSwarmLatestLaunches(PanelBase):
         coverage = ''
         if payload:
             available = payload['available']
-            missing = [name for name, present in zip(('Launches', 'Sites'), available) if not present]
-            coverage = '; '.join(name + ' unavailable' for name in missing)
+            coverage = 'partial' if any(available) and not all(available) else ''
             if any(available) and not all(available):
                 title += ' · partial'
             if rowfit.has_marker(payload['marker']):
@@ -190,7 +189,7 @@ class SurfSwarmLatestLaunches(PanelBase):
         status = self.query_one('.shipped-status', Static)
         status.display = not items
         if payload:
-            word = ('unavailable' if not any(payload['available']) else
+            word = ('' if not any(payload['available']) else
                     'no shipped items in available data' if not all(payload['available']) else 'no shipped items yet')
             status.update(Text(rowfit.clip(word, room), style='dim'))
         for index, widget in enumerate(self.query(ShippedRow)):
@@ -199,7 +198,7 @@ class SurfSwarmLatestLaunches(PanelBase):
                 item = items[index]
                 widget.update(self._item_text(item, room, payload['as_of']))
                 widget.tooltip = Text(item['name'] + '\n' + item['timing'] +
-                    (' unavailable' if item['timestamp'] is None else '') +
+                    (' —' if item['timestamp'] is None else '') +
                     ('\n' + coverage if coverage else ''))
 
     def _item_text(self, item, room, now):

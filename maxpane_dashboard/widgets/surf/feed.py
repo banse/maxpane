@@ -170,7 +170,7 @@ FULL_TEXT_WIDTH = 71
 # -- the repo-wide marker, shared in ``widgets/rowfit.py`` since Branch 3.
 
 #: The explicit degraded line.  Tested verbatim.
-UNAVAILABLE_LINE = "feed unavailable"
+UNAVAILABLE_LINE = "—"
 
 #: Badge for the announce wallet's own answer to a question.  **Interface**:
 #: exported because the threading tests assert it separately from ``ACTION``,
@@ -777,8 +777,6 @@ class SurfFeed(Vertical):
         age = fmt_age(age_s)
         if age != DASH:
             parts.append(f"· last {age} ago")
-        if unavailable:
-            parts.append("· [yellow]unavailable[/]")
         text = " ".join(parts)
         if clipped:
             text += f"  [yellow]{WIDEN_HINT}[/]"
@@ -1048,7 +1046,7 @@ class SurfFeed(Vertical):
             # Source dead: explicit state, never a blank panel (PRD §5 meta).
             self._set_title(nonce, age_s, clipped=False, unavailable=True)
             self._mount_rows(
-                body, [SurfFeedRow(Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"))]
+                body, [SurfFeedRow(Text(UNAVAILABLE_LINE, style="dim"))]
             )
             return
 

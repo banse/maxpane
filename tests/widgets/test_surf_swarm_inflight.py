@@ -98,13 +98,13 @@ def test_update_data_takes_exactly_the_frozen_keys_in_order():
 
 async def test_no_args_renders_unavailable():
     text = await _text()
-    assert "unavailable" in text, text
+    assert "—" in text, text
     assert "Loading" not in text
 
 
 async def test_every_key_none_renders_unavailable():
     text = await _text(**{k: None for k in SWARM_PARKED_WIDGET_SIGNATURES["SurfSwarmInFlight"]})
-    assert "unavailable" in text, text
+    assert "—" in text, text
 
 
 # -- None vs [] (snapshot) ----------------------------------------------------
@@ -113,7 +113,7 @@ async def test_every_key_none_renders_unavailable():
 async def test_none_is_unavailable_and_an_empty_list_is_nothing_executing():
     unread = await _text(swarm_inflight_rows=None, swarm_as_of_hhmm="12:34")
     empty = await _text(swarm_inflight_rows=[], swarm_as_of_hhmm="12:34")
-    assert "unavailable" in unread and "nothing executing" not in unread, unread
+    assert "—" in unread and "nothing executing" not in unread, unread
     assert "nothing executing" in empty and "unavailable" not in empty, empty
     assert EMPTY_LINE.count("nothing executing") == 1
 
@@ -121,13 +121,13 @@ async def test_none_is_unavailable_and_an_empty_list_is_nothing_executing():
 async def test_the_unavailable_line_is_written_once_over_nothing():
     lines = await _lines(swarm_inflight_rows=None)
     body = [l for l in lines if l.strip()]
-    assert sum("unavailable" in l for l in body) == 1, lines
+    assert sum("—" in l for l in body) == 1, lines
     assert len(body) == 2, lines  # title + the one line
 
 
 async def test_an_uniterable_rows_value_is_unavailable_not_a_crash():
     text = await _text(swarm_inflight_rows=7)
-    assert "unavailable" in text, text
+    assert "—" in text, text
 
 
 # -- rows -------------------------------------------------------------------

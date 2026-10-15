@@ -214,7 +214,7 @@ async def test_detail_failure_preserves_selected_id_and_independent_records(stat
         assert "of 1,000" in painted(pilot.app, "accepted")
         assert "example.eth" not in painted(pilot.app, "owner")
         assert "up to date" not in painted(pilot.app, "runtime")
-        expected = {"unknown_seat": "never paired", "empty": "EMPTY", "pending": "loading", "busy": "busy"}.get(state, state)
+        expected = {"unknown_seat": "never paired", "empty": "EMPTY"}.get(state, "--")
         assert expected in painted(pilot.app, "owner")
 
 
@@ -234,7 +234,7 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
         assert "0 new" in painted(app, "earnings")
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=None)
         await pilot.pause()
-        assert all("loading" in painted(app, key) for key in data)
+        assert all("loading" not in painted(app, key) and "unavailable" not in painted(app, key) for key in data)
         assert "up to date" not in painted(app, "runtime") and "example.eth" not in painted(app, "owner")
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=payload())
         await pilot.pause()
@@ -421,7 +421,7 @@ async def test_unknown_runtime_check_fixed_wording_fits_owner_terminal(state):
 
 
 @pytest.mark.parametrize('state,word,ansi', [
-    ('pending', 'loading', 3), ('busy', 'busy', 3), ('unknown_seat', 'never paired', 3),
+    ('unknown_seat', 'never paired', 3),
 ])
 async def test_warning_footer_colors_reach_actual_compositor(state, word, ansi):
     data = payload()
@@ -521,15 +521,15 @@ async def test_pending_uses_loading_indicator_without_masking_failed_sources():
     async with Harness(None).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert all("loading" in painted(app, key) for key in payload())
+        assert all("loading" not in painted(app, key) for key in payload())
         assert all("unavailable" not in painted(app, key) for key in payload())
         data = payload()
         data["rewards"]["state"] = "unavailable"
         data["runtime"]["state"] = "pending"
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
-        assert "unavailable" in painted(app, "rewards")
-        assert "loading" in painted(app, "runtime")
+        assert "unavailable" not in painted(app, "rewards")
+        assert "loading" not in painted(app, "runtime")
         assert "AGENT #8127" in painted(app, "seat")
 
 
@@ -592,7 +592,7 @@ async def test_premium_footer_survives_independent_contributor_failure(state):
         data["effort"].update(premium_percent=None, premium_jobs=None, model_jobs=None, work_jobs=None)
         pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
-        assert ("loading" if state == "pending" else "unavailable") in strips(pilot.app, "effort")[-1].text
+        assert "loading" not in strips(pilot.app, "effort")[-1].text and "unavailable" not in strips(pilot.app, "effort")[-1].text
 
 
 async def test_second_row_uses_neutral_frames_except_outdated_runtime():
@@ -744,9 +744,9 @@ async def test_earnings_loading_failure_and_recovery_have_distinct_footers():
     data["earnings"]["state"] = "pending"
     async with Harness(data).run_test(size=(132, 45)) as pilot:
         app = pilot.app
-        for state, expected, ansi in (("unavailable", "unavailable", 3),
-                                      ("pending", "◌ loading", 3), ("failed", "load failed", 1),
-                                      ("pending", "◌ loading", 3), ("ok", "2 new worked on", None)):
+        for state, expected, ansi in (("unavailable", "", None),
+                                      ("pending", "-- new", None), ("failed", "-- new", None),
+                                      ("pending", "-- new", None), ("ok", "2 new worked on", None)):
             data["earnings"]["state"] = state
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()

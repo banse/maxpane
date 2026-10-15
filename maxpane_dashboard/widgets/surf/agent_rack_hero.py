@@ -150,7 +150,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                                ("devices", _count(count(section.get("devices")))))
             update = section.get("update_state")
             current = state == "ok" and update == "current" and hhmm(number(section.get("checked_ts")), unknown="--") != "--"
-            fields["subtitle"] = "up to date" if current else "update available" if update == "outdated" else "check pending" if update == "pending" else "not checked" if update == "not_checked" else ""
+            fields["subtitle"] = "up to date" if current else "update available" if update == "outdated" else ""
             if section.get("daemon_differs") is True and update in ("current", "outdated"):
                 fields["subtitle"] = "runtime + daemon ↑" if update == "outdated" else "daemon differs"
             connected = number(section.get("connected_ts"))
@@ -250,12 +250,8 @@ class AgentRackCard(Pool4HeroCard):
         data = self.data
         if data.key == "effort" and data.footer != "--% premium":
             self.border_subtitle = Text().append(data.footer, style="dim")
-        elif data.state in ("pending", "busy"):
-            self.border_subtitle = Text().append("◌ loading" if data.state == "pending" else "busy", style="yellow")
-        elif data.key == "earnings" and data.state == "failed":
-            self.border_subtitle = Text().append("load failed", style="red")
         elif data.state in ("unknown_seat", "stale_unknown_seat", "empty", "unavailable"):
-            word = {"unknown_seat": "never paired", "stale_unknown_seat": "never paired", "empty": "EMPTY"}.get(data.state, "unavailable")
+            word = {"unknown_seat": "never paired", "stale_unknown_seat": "never paired", "empty": "EMPTY"}.get(data.state, "")
             # The selected identity remains meaningful if only its detail read failed.
             self.border_subtitle = Text().append(data.footer if data.key == "seat" else word, style="dim" if data.key == "seat" or data.state == "empty" else "yellow")
         elif data.key == "status":
@@ -369,12 +365,12 @@ class AgentRackCard(Pool4HeroCard):
 
     @staticmethod
     def _source_tooltip(record, source):
-        state = "never paired" if record.state == "stale_unknown_seat" else "retained" if record.state == "stale" else record.state
-        tip = Text(f"{record.title} · {state} · as of {hhmm(record.read_ts, unknown='--:--')} local")
+        coverage = " · partial" if record.state == "partial" else ""
+        tip = Text(f"{record.title}{coverage} · as of {hhmm(record.read_ts, unknown='--:--')} local")
         rows = _rows(source)
         if record.key == "nodes":
             tip.append(f"\nlaunch membership known for {_count(count(source.get('known_jobs')))} of {_count(count(source.get('total_jobs')))} accepted non-oracle jobs")
-            tip.append(f"\nlaunch reads {flatten(source.get('launch_state')) or 'unavailable'} · as of {hhmm(number(source.get('launch_read_ts')), unknown='--:--')} local")
+            tip.append(f"\nlaunch reads · as of {hhmm(number(source.get('launch_read_ts')), unknown='--:--')} local")
         if record.key == "owner" and record.state in _AVAILABLE and is_address(source.get("address")):
             tip.append("\n").append_text(address_text(source["address"], explorer=EXPLORER))
             tip.append("\npaired " + mmdd_hhmm(number(source.get("paired_ts"))))
@@ -384,21 +380,17 @@ class AgentRackCard(Pool4HeroCard):
         elif record.key == "runtime":
             tip.append(f"\n{flatten(source.get('runtime'))} · daemon {flatten(source.get('daemon'))}"
                        f"\nlast connected {mmdd_hhmm(number(source.get('connected_ts')))} local; connection time, not a verified restart"
-                       f"\nconnection read {flatten(source.get('connected_state')) or 'unavailable'} · as of {hhmm(number(source.get('connected_read_ts')), unknown='--:--')} local"
+                       f"\nconnection read · as of {hhmm(number(source.get('connected_read_ts')), unknown='--:--')} local"
                        f"\nlatest {flatten(source.get('latest_version')) or '--'} · checked {hhmm(number(source.get('checked_ts')), unknown='--:--')} local"
                        f"\nfleet daemon {flatten(source.get('fleet_daemon')) or '--'} · {_count(count(source.get('fleet_count')))}/{_count(count(source.get('fleet_total')))} workers")
             if source.get("daemon_differs") is True:
                 tip.append(" · daemon differs")
         elif record.key == "rewards":
-            usd_state = source.get("usd_state") if source.get("usd_state") in _STATES else "unavailable"
-            usd_state = "retained" if usd_state == "stale" else usd_state
             tip.append(f"\nowner share across {_count(count(source.get('seats')))} seats"
                        f"\nlast paid {mmdd_hhmm(number(source.get('last_paid_ts')))} local"
-                       f"\nUSD {usd_state} · as of {hhmm(number(source.get('usd_read_ts')), unknown='--:--')} local")
+                       f"\nUSD · as of {hhmm(number(source.get('usd_read_ts')), unknown='--:--')} local")
         elif record.key == "status":
-            work_state = source.get("work_state") if source.get("work_state") in _STATES else "unavailable"
-            work_state = "retained" if work_state == "stale" else work_state
-            tip.append(f"\nlast work {mmdd_hhmm(number(source.get('last_work_ts')))} · {work_state}"
+            tip.append(f"\nlast work {mmdd_hhmm(number(source.get('last_work_ts')))}"
                        f"\nwork read {hhmm(number(source.get('work_read_ts')), unknown='--:--')} local")
             if source.get("live_state") == "paused":
                 tip.append(f"\npaused until {mmdd_hhmm(number(source.get('paused_until_ts')))} · {_count(count(source.get('failures')))} failures")

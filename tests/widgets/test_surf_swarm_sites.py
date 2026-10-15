@@ -89,7 +89,7 @@ def test_update_data_names_exactly_the_frozen_signature_and_takes_kwargs():
 async def test_no_args_and_all_none_render_unavailable_not_no_data():
     for kwargs in ({}, {key: None for key in SIG}):
         text = await _sites(**kwargs)
-        assert "unavailable" in text and "No data" not in text, text
+        assert "—" in text and "No data" not in text, text
         assert "SITES" in text
 
 

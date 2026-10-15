@@ -208,7 +208,7 @@ async def test_an_unreadable_position_says_so_instead_of_showing_an_empty_table(
     """
     out = await _text({"pool4_current_tick": None, "pool4_position_liquidity": None})
     assert UNAVAILABLE_LINE in out
-    assert "unavailable" in out
+    assert "unavailable" not in out and "—" in out
     assert CAPTION not in out          # the quote clause belongs to a quote
 
 
@@ -220,7 +220,7 @@ async def test_no_band_deployed_is_not_an_unreadable_position() -> None:
     band consumed is none of a band that does not exist.
     """
     out = await _text(NO_BAND)
-    assert UNAVAILABLE_LINE not in out
+    assert "unavailable" not in out
     assert CAPTION in out
     assert "0.0%" in out
     assert UNREAD_BAND not in out

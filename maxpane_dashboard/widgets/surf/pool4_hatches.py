@@ -136,7 +136,7 @@ def fit_cell(value: object, cols: int) -> str:
 # ---------------------------------------------------------------------------
 
 TITLE = "HATCHES"
-UNAVAILABLE_LINE = "hatches unavailable"
+UNAVAILABLE_LINE = "—"
 
 #: Rows drawn before the list is cut. Nine labels across five scopes as of
 #: 2026-09-02 (`distributor` and its `dripper` lever joined when pool4 went
@@ -557,7 +557,7 @@ class SurfPool4Hatches(Vertical):
 
         rows_payload = payload.get("rows")
         if rows_payload is None:
-            markup.append(f"[yellow]⚠ {UNAVAILABLE_LINE}[/]")
+            markup.append(f"[dim]{UNAVAILABLE_LINE}[/]")
         else:
             try:
                 rows = list(rows_payload)[:MAX_ROWS]
@@ -606,7 +606,7 @@ class SurfPool4Hatches(Vertical):
             lines = [
                 Text(self._title_text(), style="dim"),
                 Text(""),
-                Text(f"⚠ {UNAVAILABLE_LINE}", style="yellow"),
+                Text(UNAVAILABLE_LINE, style="dim"),
             ]
             body.update(join_lines(lines))
             return

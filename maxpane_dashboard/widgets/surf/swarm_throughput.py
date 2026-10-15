@@ -20,7 +20,7 @@ from textual.widgets import Static
 from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.fmt import DASH, as_float, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
-from maxpane_dashboard.widgets.panels import UNAVAILABLE_LINE, SignalsPanelBase
+from maxpane_dashboard.widgets.panels import SignalsPanelBase
 
 __all__ = [
     "ACCUMULATING_WORD",
@@ -179,7 +179,7 @@ def _rollup_text(heading: str, entries, name_key: str, name_cols: int) -> Text:
     text.append(_INDENT + heading, style="dim")
     if entries is None:
         text.append("\n")
-        text.append_text(Text.from_markup(UNAVAILABLE_LINE))
+        text.append("  —", style="dim")
         return text
     rows: list[tuple[str, int | None]] = []
     for entry in entries:
@@ -275,8 +275,6 @@ class SurfSwarmThroughput(SignalsPanelBase):
         text = TITLE
         if rowfit.has_marker(payload.get("as_of")):
             text += f" · as of {payload['as_of']}"
-        if payload.get("stale") is True:
-            text += f" · {STALE_WORD}"
         room = max(self.content_size.width - self._TITLE_PADDING_COLS, 0)
         text = _with_hint(text, MORE_HINT, room)
         title.update(Text(text))
@@ -287,7 +285,7 @@ class SurfSwarmThroughput(SignalsPanelBase):
         tp = raw if isinstance(raw, dict) else None
 
         def sig(build):
-            return None if tp is None else build()
+            return _signal("", "—", "dim") if tp is None else build()
 
         self.render_signal(
             f"#{_WINDOW_ID}", "window", sig(lambda: _window_signal(tp)), labelled=False,

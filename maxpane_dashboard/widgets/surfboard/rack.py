@@ -159,7 +159,7 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     if key in (*AGENT_KEYS, "board"):
         label = {"busy": "BUSY", "idle": "IDLE", "offline": "OFF", "empty": "EMPTY"}.get(state, "—")
         label_ink = MUTED if state in ("idle", "empty") else RED if state == "offline" else AMBER
-    elif key == "launchpad" and state in ("partial", "stale"):
+    elif key == "launchpad" and state == "partial":
         label = "~" + label
         label_ink = AMBER
     out = Text().append(label + " ", style=label_ink)
@@ -269,7 +269,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
 
     @property
     def detail(self):
-        return flatten(self.data.get("detail")) or f"{self.title} · unavailable"
+        return flatten(self.data.get("detail")) or self.title
 
     def set_data(self, data, *, footer_data=None):
         self.data = dict(data) if isinstance(data, dict) else {}
@@ -279,13 +279,13 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self.data.setdefault("token_id", None)
         if self.key == "swarm-tokens":
             self.data["destination"] = "swarm-tokens"
-            self.data.setdefault("detail", "TOKENS · production-chain markets · unavailable · Enter to open")
+            self.data.setdefault("detail", "TOKENS · production-chain markets · Enter to open")
             self.tooltip = Text(self.detail)
         if self.key == "oracles":
             self.data["destination"] = "oracles"
             self.data.setdefault("primary", "—")
             self.data.setdefault("secondary", "in progress")
-            self.data.setdefault("detail", "ORACLES · unavailable · Enter to open")
+            self.data.setdefault("detail", "ORACLES · Enter to open")
             self.tooltip = Text(self.detail)
         if self.key == "board":
             self.data["destination"] = "board"
@@ -293,7 +293,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self.data["destination"] = "work"
             self.data.setdefault("primary", "—")
             self.data.setdefault("secondary", "— workflows")
-            self.data.setdefault("detail", "WORK IN PROGRESS · unavailable · Enter to open")
+            self.data.setdefault("detail", "WORK IN PROGRESS · Enter to open")
             self.tooltip = Text(self.detail)
         if self.empty_seat:
             self.data.update(status="empty", primary="", secondary="type in", destination=None,

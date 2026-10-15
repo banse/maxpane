@@ -28,7 +28,7 @@ from rich.text import Text
 
 from maxpane_dashboard.widgets.fmt import fmt_int, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
-from maxpane_dashboard.widgets.panels import LOADING, UNAVAILABLE, HeroBoxBase, HeroRow
+from maxpane_dashboard.widgets.panels import LOADING, HeroBoxBase, HeroRow
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, fmt_win_rate, mmdd_hhmm, source_clock
 from maxpane_dashboard.widgets.surf._swarm_seat import (
     _UNSIZED,
@@ -201,7 +201,7 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
         if selected is None:
             return Text(NO_SEAT_LINE, style="dim")
         if not isinstance(selected, dict):
-            return UNAVAILABLE
+            return "—"
         token = seat_token(selected.get("token_id"))
         body = Text()
         body.append(f"IDMD #{DASH if token is None else token}", style="bold")
@@ -228,7 +228,7 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
         if line is not None:
             return line
         if not isinstance(summary, dict):
-            return UNAVAILABLE
+            return "—"
         return build(summary)
 
     @staticmethod
@@ -236,7 +236,7 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
         accepted = _count(summary.get("accepted"))
         attempts = _count(summary.get("attempts"))
         if accepted is None or attempts is None or accepted > attempts:
-            return UNAVAILABLE
+            return "—"
         body = Text()
         body.append(fmt_int(accepted), style="bold green" if accepted else "bold")
         body.append(" of ", style="dim")
@@ -263,14 +263,14 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
         if state == "pending":
             return Text.from_markup(LOADING)
         if state != "ok" or not isinstance(rewards, dict):
-            return UNAVAILABLE
+            return "—"
         imd = _amount(rewards.get("imd"))
         if imd is None:
-            return UNAVAILABLE
+            return "—"
         body = Text().append(imd, style="bold").append(" IMD", style="dim").append("\n\n")
         usd = _amount(rewards.get("usd"))
         if usd is None:
-            return body + Text.from_markup(UNAVAILABLE)
+            return body + Text("—", style="dim")
         less = usd.startswith("<")
         return body.append("<$" if less else "$", style="dim").append(usd.lstrip("<"), style="bold")
 
@@ -281,7 +281,7 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
             return Text("no attempts", style="dim")
         rate = summary.get("accept_rate")
         if isinstance(rate, bool) or not isinstance(rate, (int, float)) or not math.isfinite(rate) or not 0 <= rate <= 1:
-            return UNAVAILABLE
+            return "—"
         return Text().append(fmt_win_rate(rate), style="bold")
 
     @staticmethod
@@ -300,7 +300,7 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
         if over:
             counts = f"{WORKING_GLYPH} {fmt_int(active)} working"
         word = {"working": WORKING_LINE, "idle": ONLINE_LINE}.get(live_state) or (
-            live_state if live_state in ("offline", "paused") else "unavailable")
+            live_state if live_state in ("offline", "paused") else "—")
         if live_state == "working" and active is not None and capacity is not None:
             # After ``● working`` the over-capacity count drops its own word (F-S4).
             short = f"{WORKING_GLYPH} {fmt_int(active)}" if over else counts
@@ -324,7 +324,7 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
     def _newest_line(summary, state) -> str:
         """The newest thing the seat did: ``worked`` beats an older ``accepted``."""
         if state != "ok" or not isinstance(summary, dict):
-            return "accepted unavailable"
+            return "accepted —"
         won, worked = summary.get("last_won_ts"), summary.get("last_worked_ts")
         if worked is not None and (won is None or worked > won):
             return f"worked {mmdd_hhmm(worked)}"
@@ -332,4 +332,4 @@ class SurfSwarmAgentHero(MeasuredRow, HeroRow):
             return "none accepted yet"
         if won is not None:
             return f"accepted {mmdd_hhmm(won)}"
-        return "accepted unavailable"
+        return "accepted —"

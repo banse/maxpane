@@ -13,7 +13,7 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.fmt import fmt_int
 from maxpane_dashboard.widgets.markup_safety import flatten, strip_controls
-from maxpane_dashboard.widgets.panels import UNAVAILABLE, HeroBoxBase, HeroRow
+from maxpane_dashboard.widgets.panels import HeroBoxBase, HeroRow
 from maxpane_dashboard.widgets.surf._fmt import (
     ANTI_POISONING_COLS,
     EMDASH,
@@ -149,7 +149,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         if blocked is not None:
             return blocked
         if not isinstance(summary, dict):
-            return UNAVAILABLE
+            return "—"
         return build(summary)
 
     # -- seats bodies -------------------------------------------------------
@@ -158,11 +158,11 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         owner = summary.get("owner")
         # ``address_text`` flattens the label and keeps the icon on the address.
         body = (address_text(owner, label=ens_name, width=ANTI_POISONING_COLS, explorer=EXPLORER)
-                if isinstance(owner, str) else Text("unavailable", style="yellow"))
+                if isinstance(owner, str) else Text("—", style="dim"))
         body.append("\n")
         paired = summary.get("paired_ts")
         if paired is None:
-            return body.append("paired unavailable", style="yellow")
+            return body.append("paired —", style="dim")
         return body.append("paired ", style="dim").append(mmdd_hhmm(paired), style="bold")
 
     def _runtime_body(self, summary: dict, latest=None, clocks=None, majority=None) -> Text:
@@ -175,13 +175,13 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         if runtime_id not in ("claude", "codex"):
             tooltip.append("runtime not checked")
         elif not isinstance(latest, dict) or runtime_id not in latest:
-            tooltip.append("update check pending")
+            tooltip.append("latest version —")
         elif runtime_semver(runtime_id, newest) is None:
-            tooltip.append("update check unavailable")
+            tooltip.append("latest version —")
         else:
             package = "claude-code" if runtime_id == "claude" else "codex"
             stamp = clocks.get(runtime_id) if isinstance(clocks, dict) else None
-            tooltip.append(strip_controls(f"latest {package} {newest} (npm, as of {flatten(stamp) or 'unavailable'})"))
+            tooltip.append(strip_controls(f"latest {package} {newest} (npm, as of {flatten(stamp) or '--:--'})"))
         if isinstance(majority, (tuple, list)) and len(majority) == 3:
             tooltip.append(strip_controls(f"\nfleet daemon {majority[0]} on {majority[1]}/{majority[2]} reporting workers"))
         else:
@@ -189,7 +189,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         self.query_one(f"#{SEAT_BOX_IDS['runtime']}").tooltip = tooltip
         body = Text()
         if runtime is None:
-            body.append("unavailable", style="yellow")
+            body.append("—", style="dim")
         elif outdated is True:
             body.append(self._fit("runtime", runtime, reserved=2) + " ↑", style="yellow")
         else:
@@ -197,7 +197,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         body.append("\n")
         daemon = summary.get("daemon")
         if daemon is None:
-            body.append("daemon unavailable", style="yellow")
+            body.append("daemon —", style="dim")
         elif different is True:
             body.append(self._fit("runtime", "daemon " + daemon, reserved=2) + " ↑", style="yellow")
         else:
@@ -206,7 +206,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         body.append("\n")
         devices = count(summary.get("devices"))
         if devices is None:
-            return body.append("devices unavailable", style="yellow")
+            return body.append("devices —", style="dim")
         return body.append(devices, style="bold").append(
             " device" if summary.get("devices") == 1 else " devices", style="dim")
 
@@ -236,7 +236,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
         """
         pairs = summary.get("models")
         if not isinstance(pairs, list):
-            return Text("unavailable", style="yellow")
+            return Text("—", style="dim")
         pairs = [pair for pair in pairs if isinstance(pair, dict)]
         if not pairs:
             return Text("not advertised", style="dim")
@@ -270,7 +270,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
     def _collab_body(summary: dict, mates) -> str | Text:
         seats = count(summary.get("collaborators"))
         if seats is None:
-            return UNAVAILABLE
+            return "—"
         body = Text().append(seats, style="bold").append(
             " seat" if summary.get("collaborators") == 1 else " seats", style="dim")
         return body.append("\n") + SurfSwarmSeatCards._teammates_body(mates)
@@ -278,7 +278,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
     @staticmethod
     def _teammates_body(mates) -> str | Text:
         if not isinstance(mates, list):
-            return Text("unavailable", style="yellow")
+            return Text("—", style="dim")
         parts = [(seat_token(r.get("token_id")), seat_token(r.get("shared_jobs")))
                  for r in mates if isinstance(r, dict)]
         parts = [(t, n) for t, n in parts if t is not None and n is not None]
@@ -295,7 +295,7 @@ class SurfSwarmSeatCards(SurfSwarmAgentCards):
 
     def _nodes_body(self, rows) -> str | Text:
         if not isinstance(rows, list):
-            return UNAVAILABLE
+            return "—"
         parts = [r for r in rows if isinstance(r, dict)
                  and any(seat_token(r.get(k)) for k in ("accepted", "attempts"))]
         order = {key: i for i, key in enumerate(NODE_TITLES)}

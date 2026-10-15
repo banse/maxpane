@@ -42,7 +42,7 @@ async def test_mixed_shipments_plain_aligned_and_newest_first():
         assert '1m' in lines[2] and '~3m' in lines[3] and '~5m' in lines[4]
 
 
-@pytest.mark.parametrize('launches,sites,expected', [(None, None, 'unavailable'),
+@pytest.mark.parametrize('launches,sites,expected', [(None, None, ''),
     ([], [], 'no shipped items yet'), ([], None, 'partial'), (None, [site()], 'partial')])
 async def test_sources_distinguish_unavailable_empty_and_partial(launches, sites, expected):
     lines = await composite_lines(SurfSwarmLatestLaunches, (46, 12),
@@ -142,8 +142,8 @@ async def test_hover_discloses_proxy_times_and_missing_source():
         panel.update_data(swarm_launch_rows=[token()], swarm_site_rows=None, as_of=2000)
         await pilot.pause()
         hover = panel.query_one(ShippedRow).tooltip.plain
-        assert 'API update time' in hover and 'exact deployment time unavailable' in hover
-        assert 'Sites unavailable' in hover and 'Sites unavailable' in panel.tooltip.plain
+        assert 'API update time' in hover and 'approximate' in hover
+        assert 'partial' in hover and 'partial' in panel.tooltip.plain and 'unavailable' not in hover
 
 
 async def test_actual_styles_links_and_padding_are_composited():

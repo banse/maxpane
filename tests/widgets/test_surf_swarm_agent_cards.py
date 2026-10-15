@@ -218,9 +218,9 @@ async def test_model_served_empty_is_a_real_negative_and_unread_is_unavailable()
     empty = await _model([], words=("MODEL", "not advertised"))
     assert empty.lines == ["MODEL", "not advertised"] and empty.tooltip is None
     assert empty.style["not advertised"].color == empty.style["MODEL"].color
-    unread = await _model(None, words=("unavailable",))
-    assert unread.lines == ["MODEL", "unavailable"] and unread.tooltip is None
-    assert unread.style["unavailable"].color.get_truecolor(None) == unread.yellow
+    unread = await _model(None, words=("—",))
+    assert unread.lines == ["MODEL", "—"] and unread.tooltip is None
+    assert unread.style["—"].color.get_truecolor().red == unread.style["—"].color.get_truecolor().green
 
 
 async def test_model_from_a_capture_with_no_premium_model_says_not_advertised():
@@ -295,7 +295,7 @@ async def test_model_tooltip_is_cleared_on_the_next_paint(over):
         assert box.tooltip is None
 
 
-@pytest.mark.parametrize("state, needle", [("pending", "loading"), ("busy", "busy · retrying"), ("error", "unavailable")])
+@pytest.mark.parametrize("state, needle", [("pending", "loading"), ("busy", "—"), ("error", "—")])
 async def test_a_seat_state_replaces_every_seats_card(state, needle):
     boxes = await _seat(swarm_seat_state=state)
     for key in ("owner", "runtime", "feedback", "model", "collab", "nodes"):
@@ -391,7 +391,7 @@ async def test_collab_keeps_count_and_only_two_sorted_teammates():
     assert _lines(boxes["collab"]) == ["COLLAB", "261 seats", "#1626 ×161", "#1 ×151"]
 
 
-@pytest.mark.parametrize(('value','nodes','mates'), [(None, 'unavailable', 'unavailable'), ([], 'no nodes yet', 'none yet')])
+@pytest.mark.parametrize(('value','nodes','mates'), [(None, '—', '—'), ([], 'no nodes yet', 'none yet')])
 async def test_empty_and_unread_nodes_and_teammates_differ(value, nodes, mates):
     boxes = await _seat(swarm_seat_node_rows=value, swarm_seat_teammates=value)
     assert _lines(boxes['nodes']) == ['NODES', nodes]
@@ -455,7 +455,7 @@ async def test_long_unknown_node_keeps_exact_accepted_count(accepted, attempts, 
     ('codex codex-cli 0.155.0-alpha.9.2', '0.155.0', '0.1.0+abc', ('0.1.0+abc',2,3), True, False, 'latest codex 0.155.0'),
     ('claude 9.0.0', '2.1.282', '0.1.0+abc', ('0.1.0+abc',2,3), False, False, 'npm, as of 17:33'),
     ('unknown [/x]', '2.1.282', '0.1.0+abc', ('0.1.0+abc',2,3), False, False, 'runtime not checked'),
-    ('claude 2.1.278 (Claude Code)', None, '0.1.0+abc', ('0.1.0+abc',2,3), False, False, 'update check unavailable'),
+    ('claude 2.1.278 (Claude Code)', None, '0.1.0+abc', ('0.1.0+abc',2,3), False, False, 'latest version —'),
     ('claude 2.1.282', '2.1.282', '0.1.0+def', ('0.1.0+abc',2,3), False, True, 'fleet daemon 0.1.0+abc on 2/3'),
     ('claude 2.1.282', '2.1.282', '0.1.0+def', None, False, False, 'no fleet majority'),
 ])
@@ -495,11 +495,11 @@ async def test_runtime_card_checks_fit_arrows_and_explain_basis(width, runtime, 
 
 
 @pytest.mark.parametrize('latest,expected', [
-    (None, 'update check pending'),
-    ({}, 'update check pending'),
-    ({'codex': '0.156.1'}, 'update check pending'),
-    ({'claude': None}, 'update check unavailable'),
-    ({'claude': '[/x]'}, 'update check unavailable'),
+    (None, 'latest version —'),
+    ({}, 'latest version —'),
+    ({'codex': '0.156.1'}, 'latest version —'),
+    ({'claude': None}, 'latest version —'),
+    ({'claude': '[/x]'}, 'latest version —'),
     ({'claude': '2.1.282'}, 'latest claude-code 2.1.282 (npm, as of 17:33)'),
 ])
 async def test_runtime_tooltip_distinguishes_pending_from_failed_without_changing_body(latest, expected):

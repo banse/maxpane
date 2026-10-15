@@ -266,7 +266,7 @@ def _launchpad_lines(coin_count, new_24h, creator_count, as_of_hhmm, tier: str) 
 
     if count is None and new is None and creators is None:
         # Nobody has ever answered -- distinct from a real "0 new" below.
-        second = "[dim]no read yet[/]"
+        second = "[dim]—[/]"
         third = "[dim] [/]"
     else:
         new_str = f"{new:,}" if new is not None else DASH
@@ -310,7 +310,7 @@ def _flow_lines(swap_count, trader_count, creator_eth_owed, as_of_hhmm, tier: st
     big = f"[bold]{swaps:,} swaps[/]" if swaps is not None else f"[dim]{EMDASH}[/]"
 
     if swaps is None and traders is None and eth is None:
-        second = "[dim]no read yet[/]"
+        second = "[dim]—[/]"
         third = "[dim] [/]"
     else:
         traders_str = f"{traders:,} traders" if traders is not None else f"{DASH} traders"

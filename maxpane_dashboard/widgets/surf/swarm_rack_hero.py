@@ -6,7 +6,7 @@ from textual.containers import Grid
 
 from maxpane_dashboard.widgets.markup_safety import flatten
 from ._fmt import fmt_age
-from .news_hero import HeroRecord, NewsHeroCard, _clock, _count, _number
+from .news_hero import HeroRecord, NewsHeroCard, _count, _number
 
 
 def swarm_records(payload: dict | None) -> tuple[HeroRecord, ...]:
@@ -35,12 +35,8 @@ def swarm_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                 raw_points = section.get("points")
                 points = tuple(_number(point) for point in raw_points) if isinstance(raw_points, (list, tuple)) else ()
                 points_state = section.get("points_state")
-                if points_state == "ok" and len(points) >= 2 and None not in points:
+                if points_state in ("ok", "stale") and len(points) >= 2 and None not in points:
                     fields["points"] = points
-                elif points_state == "stale":
-                    fields["footer"] = "24H stale " + _clock(section.get("points_read_ts"))
-                else:
-                    fields["footer"] = "24H unavailable"
         elif key in ("workflows", "launches"):
             total = _count(section.get("total")) if available else "--"
             fields["subtitle"] = f"{total} cached"
@@ -49,19 +45,19 @@ def swarm_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                 fields["stats"] = tuple((flatten(row.get("status")) or "unknown", _count(row.get("count")))
                                         for row in statuses[:3] if isinstance(row, dict))
                 if not statuses:
-                    fields["preview"] = f"No {key} in cache" if total == "0" else "Status unavailable"
+                    fields["preview"] = f"No {key} in cache" if total == "0" else "—"
             else:
-                fields["preview"] = "unavailable"
+                fields["preview"] = "—"
         elif key == "workflow":
             objective = flatten(section.get("objective")) if available else ""
             age = _number(section.get("age_s")) if available else None
             status = flatten(section.get("status")) if available else ""
             if not available:
-                fields["preview"] = "unavailable"
+                fields["preview"] = "—"
             elif objective:
                 fields["preview"] = objective
             else:
-                fields["preview"] = "Objective unavailable" if age is not None or status else "No workflows in cache"
+                fields["preview"] = "—" if age is not None or status else "No workflows in cache"
             fields["subtitle"] = fmt_age(age) + " ago" if age is not None else ""
             fields["footer"] = status.upper() or footer
             fields["accent"] = state == "ok" and bool(objective)

@@ -84,6 +84,7 @@ def _chart(token, width):
 
 
 class TokensTable(TableLeaderboard):
+    UNAVAILABLE_LINE = "—"
     TITLE = "ALL TOKENS"
     TABLE_ID = "st-token-table"
     ROW_CAP = None
@@ -122,10 +123,10 @@ class TokensTable(TableLeaderboard):
         change = item.get("change_24h")
         values = (fmt_int(item.get("launch_id")), item.get("symbol", "--"),
             flatten(item.get("chain", "--")).upper(), _age(item, self._as_of),
-            ('~' if item.get('market_state') == 'stale' else '') + _usd(item.get("price_usd"), price=True), _change(change),
+            _usd(item.get("price_usd"), price=True), _change(change),
             _usd(item.get("mcap_usd")), _usd(item.get("volume_24h")),
             f"{_quantity(item.get('buys_24h'))}/{_quantity(item.get('sells_24h'))}",
-            _paired(item), ('~' if item.get('history_state') == 'stale' else '') + _chart(item,self.SPARK_WIDTH), item.get("verdict", "--"))
+            _paired(item), _chart(item,self.SPARK_WIDTH), item.get("verdict", "--"))
         styles = {1: "bold", 5: _change_color(change), 10: _change_color(change)}
         return tuple(Text(pad(value, width), style=styles[i]) if i == 10 else
                      _cell(value, width, styles.get(i, ""), right=4 <= i <= 9)
@@ -165,6 +166,7 @@ class TokensTable(TableLeaderboard):
 
 
 class _CompactFeed(RichLogFeed):
+    UNAVAILABLE_LINE = "—"
     SNAPSHOT = True
     WRAP = False
     HIGHLIGHT = False
@@ -215,7 +217,7 @@ class BestPlays(PanelBase):
                     result += Text() + _cell(marker, 2, _lp_color(state)) + _cell(name, 11) + _cell(_change(item.get("change_24h")), 8,
                         _change_color(item.get("change_24h")), right=True)
                 else:
-                    result += _cell("unavailable" if entries is None and index == 0 else "none" if index == 0 else "", 21, "dim white")
+                    result += _cell("—" if entries is None and index == 0 else "none" if index == 0 else "", 21, "dim white")
                 if not side:
                     result += Text(" ")
             result += Text("\n")

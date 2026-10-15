@@ -56,9 +56,9 @@ class RecordFilterResetRequested(Message):
 WHEN_LABELS = {"24h": "Last 24 h", "7d": "Last 7 days", "30d": "Last 30 days"}
 PANEL_LABELS = {"agreed": "Agreed", "outvoted": "Outvoted", "no_quorum": "No quorum",
                 "assessing": "Assessing", "blocked": "Blocked", "off_panel": "Off panel",
-                "unavailable": "Unavailable"}
+                "unavailable": "Unknown"}
 ANSWER_LABELS = {"replied": "Replied", "no_reply": "No reply", "not_served": "Not served",
-                 "unavailable": "Unavailable"}
+                 "unavailable": "Unknown"}
 
 
 def _options(labels: Mapping[str, str], keys) -> tuple[tuple[str, str], ...]:

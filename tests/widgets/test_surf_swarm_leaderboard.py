@@ -21,7 +21,7 @@ async def test_lifetime_columns_marker_and_two_clocks():
     other=await render(selected={'token_id':ROWS[1]['token_id']})
     assert f"▸#{ROWS[1]['token_id']}" in other and f"▸#{ROWS[0]['token_id']}" not in other
 async def test_unread_and_empty_are_distinct():
-    assert 'unavailable' in await render(None)
+    assert 'unavailable' not in await render(None)
     assert 'no submitted records yet' in await render([])
 async def test_hostile_runtime_is_sanitized_with_visible_clip():
     text=await render([dict(ROWS[0],runtime='[/x]PWNED'+'x'*64)])
@@ -53,7 +53,7 @@ async def test_counters_rate_hours_and_live_state_reach_the_row():
 
 async def test_worker_unavailable_and_offline_are_whole_and_distinct():
     unread=await render([dict(ROWS[0],runtime=None,live_state=None)])
-    assert unread.count('unavailable')==2 and 'unavai…' not in unread
+    assert unread.count('—')>=2 and 'unavailable' not in unread
     offline=await render([dict(ROWS[0],runtime='offline',live_state='offline')])
     assert offline.count('offline')==2 and 'unavailable' not in offline
 
@@ -188,7 +188,7 @@ async def test_selected_and_live_states_have_composited_styles(cursor_row):
         for column_index,column in enumerate(table.ordered_columns):
             start=sum(c.width+2 for c in table.ordered_columns[:column_index])+table.region.x+1
             assert pilot.app.screen.get_style_at(start,selected_y).bold,(column.key,lines[selected_y])
-        for token,word,color in ((1,'working',2),(3,'⏸',1),(4,'unavailable',3)):
+        for token,word,color in ((1,'working',2),(3,'⏸',1),(4,'—',3)):
             y=next(y for y,line in enumerate(lines) if f'#{token} ' in line)
             style=pilot.app.screen.get_style_at(lines[y].index(word),y)
             assert style.color.get_truecolor()==pilot.app.ansi_theme.ansi_colors[color],(token,style)
@@ -265,7 +265,7 @@ async def test_launch_tab_titles_are_clickable_and_counts_join_only_worker_facts
 
 
 @pytest.mark.parametrize('state,rows,word',[
-    ('pending',None,'loading'),('failed',None,'load failed'),
+    ('pending',None,'317/317 production launches'),('failed',None,'317/317 production launches'),
     ('ok',[],'no launch contributions'),('partial',[],'no confirmed contributions'),
 ])
 async def test_launch_tab_distinguishes_loading_failed_empty_and_partial(state,rows,word):
@@ -275,12 +275,8 @@ async def test_launch_tab_distinguishes_loading_failed_empty_and_partial(state,r
             detail='17/317 production launches',read_ts=None))
         widget.set_view('launches');await pilot.pause()
         text='\n'.join(_painted_rows(pilot.app))
-        assert word in text and '17/317 production launches' in text
+        assert word in text and 'loading' not in text and 'load failed' not in text
         assert not tokens(widget)
-        if state=='failed':
-            y=next(y for y,line in enumerate(_painted_rows(pilot.app)) if 'load failed' in line)
-            x=_painted_rows(pilot.app)[y].index('load failed')
-            assert pilot.app.screen.get_style_at(x,y).color.get_truecolor()==Color.parse('#ff0000').get_truecolor()
 
 
 @pytest.mark.parametrize('state',['pending','partial','stale','failed'])
@@ -297,9 +293,9 @@ async def test_launch_refresh_retains_snapshot_and_source_clock_without_loading(
         painted=_painted_rows(pilot.app)
         assert next(line for line in painted if '#7 ' in line)==next(line for line in before if '#7 ' in line)
         text='\n'.join(painted)
-        assert '17/317 production launches' in text and hhmm(1700000000) in text
+        assert ('17/317 production launches' if state=='partial' else '317/317 production launches') in text and hhmm(1700000000) in text
         assert 'loading' not in text
-        if state in ('failed','stale'):assert 'load failed' in text
+        assert 'load failed' not in text
 
 
 async def test_launch_and_recorded_views_keep_independent_sort_cursor_and_scroll():
@@ -353,7 +349,7 @@ async def test_launch_progress_updates_preserve_recorded_rows_clocks_and_worker_
         widget.set_view('launches');await pilot.pause()
         widget.set_launch_contribution(contribution(None,state='pending',detail='2/317 production launches'))
         await pilot.pause()
-        assert '2/317 production launches' in '\n'.join(_painted_rows(pilot.app))
+        assert '317/317 production launches' in '\n'.join(_painted_rows(pilot.app))
         widget.set_launch_contribution(contribution([dict(rank=1,token_id=7,jobs=12,launches=3)]))
         await pilot.pause()
         launch_row=next(line for line in _painted_rows(pilot.app) if '▸#7 ' in line)
@@ -468,7 +464,7 @@ async def test_launch_tooltip_follows_actual_hover_and_keyboard_row_without_mode
         assert 'Current advertised settings' in '\n'.join(_painted_rows(pilot.app))
         pilot.app.screen._clear_tooltip()
         table.focus();await pilot.press('up','down');await pilot.pause()
-        assert 'Current advertised settings unavailable' in table.tooltip.plain
+        assert 'Current advertised settings —' in table.tooltip.plain
         widget.set_view('recorded');await pilot.pause()
         assert table.tooltip is None
 
@@ -502,7 +498,7 @@ async def test_both_leaderboard_views_omit_widen_hint_at_every_width(mode,width)
 
 
 @pytest.mark.parametrize('models,label',[
-    (None,'Current advertised settings unavailable'),
+    (None,'Current advertised settings —'),
     ([], 'No current advertised settings'),
 ])
 async def test_launch_hover_distinguishes_unavailable_from_no_advertised_models(models,label):

@@ -166,7 +166,7 @@ def fmt_win_rate(rate: float) -> str:
 def source_clock(value) -> str:
     """A source's own HH:MM marker; never borrow another endpoint's clock."""
     import re
-    return value if isinstance(value, str) and re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', value) else 'unavailable'
+    return value if isinstance(value, str) and re.fullmatch(r'(?:[01][0-9]|2[0-3]):[0-5][0-9]', value) else '--:--'
 
 
 def short_model(raw: object) -> str | None:

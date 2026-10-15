@@ -46,13 +46,13 @@ class SwarmTokenDetail(RecordDetailScreen):
             yield Static(Text('Paired token       ')+address_text(row['paired_symbol'],explorer=explorer))
         if row.get('withdrawn_pct') is not None:
             yield Static(Text(f"Position withdrawn {row['withdrawn_pct']:.1f}%"))
-        yield from self.section('SOURCES',Text(flatten(f"Market             {row.get('market_source') or 'unavailable'}")))
+        yield from self.section('SOURCES',Text(flatten(f"Market             {row.get('market_source') or '—'}")))
         pool=row.get('market_pool')
         if pool:
             yield Static(Text('Market pool        ')+(address_text(pool,explorer=explorer)
                          if is_address(pool) else Text(flatten(pool))))
         for label,key in [('Quotes','market'),('Launch liquidity','liquidity'),('Price history','history'),('Recent trades','trades')]:
-            yield Static(Text(flatten(f"{label:18} {row.get(key+'_state','unknown')} · as of {hhmm(row.get(key+'_read_at'))}")))
+            yield Static(Text(flatten(f"{label:18} as of {hhmm(row.get(key+'_read_at'))}")))
         yield Static(Text('Quotes, 24h volume and trades describe the selected indexed pool.'))
         yield Static(Text('Liquidity describes the original launch position; missing data is --.'))
         yield Static(Text('Age is the launch record time. Trade history is a recent window.'))

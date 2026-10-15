@@ -211,6 +211,23 @@ class SwarmTokenDetailManager:
                     launch.update(site_label=site['label'], site_ens_name=site['ens_name'])
         self._publish('artifacts', artifacts, 'partial' if artifacts_partial else 'ok')
 
+    def is_loading(self, view: str | None = None) -> bool:
+        """Combine this reader with only its selected token's borrowed reads."""
+        if self._closed:
+            return False
+        if self._task is not None and not self._task.done() and not self._task.cancelling():
+            return True
+        loading = getattr(self.overview, 'is_loading', None)
+        return bool(loading(token_id=self._identity[0])) if loading is not None else False
+
+    def _accept_token(self, token):
+        if (isinstance(token, dict) and (token.get('id'), token.get('chain_id'),
+                address(token.get('token_address'))) == self._identity
+                and token.get('launch_uuid') == self._launch_id):
+            self._token = deepcopy(token)
+        else:
+            _stale_token(self._token)
+
     async def fetch_and_compute(self):
         now = self._clock()
         if not self._closed:
@@ -220,16 +237,19 @@ class SwarmTokenDetailManager:
                     token = await refresh(self._identity[0], launch_uuid=self._launch_id)
                 except Exception:
                     token = None
-                if (isinstance(token, dict) and (token.get('id'), token.get('chain_id'),
-                        address(token.get('token_address'))) == self._identity
-                        and token.get('launch_uuid') == self._launch_id):
-                    self._token = deepcopy(token)
-                else:
-                    _stale_token(self._token)
+                self._accept_token(token)
             if (self._enabled and (self._task is None or self._task.done())
                     and (self._attempt is None or now - self._attempt >= self.TTL)):
                 self._attempt = now
                 self._task = asyncio.create_task(self._refresh())
+        return self.get_snapshot()
+
+    def get_snapshot(self):
+        """Refresh completed borrowed values and project without scheduling I/O."""
+        getter = getattr(self.overview, 'get_selected_token', None)
+        if getter is not None and not self.is_mock and not self._closed:
+            self._accept_token(getter(self._identity[0], launch_uuid=self._launch_id))
+        now = self._clock()
         sources = deepcopy(self._sources)
         for source in sources.values():
             if source['read_ts'] is not None and not 0 <= now - source['read_ts'] < self.TTL:

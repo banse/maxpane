@@ -11,12 +11,11 @@ state               what the panel says
 ``"pending"``       :data:`~maxpane_dashboard.widgets.panels.LOADING` --
                     no read of this token has finished yet, a switch in
                     flight included (plan Q-A)
-``"busy"``          yellow ``busy · retrying`` -- the host asks us to wait
+``"busy"``          neutral dash -- source backoff is not worker activity
 ``"unknown_seat"``  ``#N never paired`` -- the 404 real negative, a fact
                     about the seat and not a failure (decision D1)
-``None``            :data:`~maxpane_dashboard.widgets.panels.UNAVAILABLE` --
-                    the read failed and there is no last-good for this token
-anything else       ``UNAVAILABLE`` too: a malformed state is not a fact
+``None``            neutral dash -- no observed value for this token
+anything else       neutral dash too: a malformed state is not a fact
 ==================  =====================================================
 
 Private to the surf package, not a shared ``widgets/*.py`` (plan §9 O): it
@@ -34,7 +33,7 @@ from maxpane_dashboard.widgets import rowfit
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
 
 from maxpane_dashboard.widgets.fmt import fmt_float, fmt_int, hhmm
-from maxpane_dashboard.widgets.panels import LOADING, UNAVAILABLE, HeroBoxBase
+from maxpane_dashboard.widgets.panels import LOADING, HeroBoxBase
 
 __all__ = [
     "contrib_body",
@@ -131,12 +130,12 @@ def seat_state_line(state: object, token: object = None) -> Text | None:
     if state == "ok":
         return None
     if state == "busy":
-        return Text("busy · retrying", style="yellow")
+        return Text("—", style="dim")
     if state == "pending":
         return Text.from_markup(LOADING)
     if state == "unknown_seat":
         return Text(never_paired(token), style=NEVER_PAIRED_STYLE)
-    return Text.from_markup(UNAVAILABLE)
+    return Text("—", style="dim")
 
 
 # -- Independent outcome, effort and rank facts ---------------------------
@@ -149,13 +148,13 @@ def count(value) -> str | None:
 
 
 def contrib_body(contrib, build) -> str | Text:
-    """``build(contrib)`` for a listed seat; ``not listed`` / ``unavailable`` apart."""
+    """``build(contrib)`` for a listed seat; distinguish unlisted from unobserved."""
     if not isinstance(contrib, dict):
-        return UNAVAILABLE
+        return "—"
     if contrib.get("listed") is not True:
         if contrib.get("listed") is False:
             return Text("not listed", style="dim")
-        return UNAVAILABLE
+        return "—"
     return build(contrib)
 
 
@@ -164,17 +163,17 @@ def outcomes_clock(source) -> str:
     source = source if isinstance(source, dict) else {}
     stamp = source.get("read_ts")
     valid = isinstance(stamp, (int, float)) and not isinstance(stamp, bool) and math.isfinite(stamp) and stamp >= 0
-    return ("stale " if source.get("state") == "stale" else "read ") + (hhmm(stamp) if valid else "unavailable")
+    return "read " + (hhmm(stamp) if valid else "--:--")
 
 
 def outcome_body(outcome, source, build) -> str | Text:
     """Canonical summary values never borrow the detail or contributor state."""
     if not isinstance(outcome, dict) or not isinstance(source, dict) or source.get("state") not in ("ok", "stale"):
-        return UNAVAILABLE
+        return "—"
     if outcome.get("listed") is False:
         return Text("no record\nin summary\n" + outcomes_clock(source), style="dim")
     if outcome.get("listed") is not True:
-        return UNAVAILABLE
+        return "—"
     return build(outcome)
 
 

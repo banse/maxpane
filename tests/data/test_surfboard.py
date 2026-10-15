@@ -138,7 +138,10 @@ def test_oracle_card_counts_only_loaded_rows_and_retains_source_state(
     assert row['meter_kind'] == 'oracles' and row['meter_state'] == meter
     assert row['numerator'] == (min(len(rows), 2) if rows is not None else None)
     assert row['denominator'] == (len(rows) if rows is not None else None)
-    assert 'newest 100' in row['detail'] and meter in row['detail']
+    assert 'newest 100' in row['detail']
+    assert 'stale' not in row['detail'] and 'unavailable' not in row['detail']
+    if meter == 'partial':
+        assert 'partial' in row['detail']
     if rows is not None:
         assert f'read {hub.hhmm(900)}' in row['detail']
         for name in set(rows):
@@ -281,7 +284,8 @@ def test_agent_card_uses_the_selected_seat_live_slots(state, working, capacity, 
     assert agent['primary']=='IDMD #420' and agent['secondary']==slots
     assert agent['status']==status
     assert (agent['numerator'],agent['denominator'])==(86400 if status == 'working' else None,86400)
-    assert '95.9% accepted' in agent['detail'] and 'records stale' in agent['detail']
+    assert '95.9% accepted' in agent['detail'] and 'records read '+hub.hhmm(100) in agent['detail']
+    assert 'stale' not in agent['detail'] and 'unavailable' not in agent['detail']
     assert 'workers' in agent['detail'] and '12:34' in agent['detail']
 
 
@@ -290,7 +294,7 @@ def test_pool4_share_rate_uses_protocol_value_with_explicit_unknown(price,expect
     row=next(c for c in hub.cards({'pool4_share_price':price},{},now=100) if c['key']=='pool4')
     assert row['share_price']==expected
     assert row['numerator'] is row['denominator'] is None
-    assert (f'1 sIMD = {expected:,.6f} IMD' if expected is not None else '1 sIMD = unavailable IMD') in row['detail']
+    assert (f'1 sIMD = {expected:,.6f} IMD' if expected is not None else '1 sIMD = — IMD') in row['detail']
 
 @pytest.mark.parametrize('value',[1e300,-1e300,float('inf'),True])
 def test_unrepresentable_timestamps_are_rejected_and_format_safely(value):
@@ -312,7 +316,8 @@ def test_swarm_stale_hourly_retains_chart_and_discloses_both_read_clocks():
     card=next(c for c in hub.cards(data,sources,now=200) if c['key']=='swarm')
     assert card['status']=='stale' and card['points']==[1]*8
     assert 'overview read '+hub.hhmm(200) in card['detail']
-    assert 'hourly stale · read '+hub.hhmm(100) in card['detail']
+    assert 'hourly · read '+hub.hhmm(100) in card['detail']
+    assert 'stale' not in card['detail']
 
 
 def test_degraded_pool4_never_labels_retained_numbers_active():
@@ -557,7 +562,8 @@ def test_tokens_card_preserves_unknown_partial_and_stale_catalogue(catalogue, pr
     assert row['secondary'] == 'unavailable'
     assert row['status'] != 'active'
     assert row['destination'] == 'swarm-tokens'
-    assert (catalogue or {'state':'unavailable'})['state'] in row['detail']
+    assert 'catalogue read '+hub.hhmm((catalogue or {}).get('as_of')) in row['detail']
+    assert 'stale' not in row['detail'] and 'unavailable' not in row['detail']
 
 
 @pytest.mark.parametrize('ranked', [None, [], [dict(id='eth:token', age_s=7200,
@@ -895,4 +901,26 @@ def test_token_volume_projection_is_independent_of_recent_launch_ranking(state, 
     assert row['meter_kind'] == 'sparkline' and row['meter_state'] == state
     assert row['points'] == points
     assert 'all swarm tokens' in row['detail'] and '20/178' in row['detail']
-    assert state in row['detail'] and hub.hhmm(9000) in row['detail']
+    assert 'read '+hub.hhmm(9000) in row['detail']
+    assert 'stale' not in row['detail'] and 'unavailable' not in row['detail']
+    if state == 'partial':
+        assert 'partial' in row['detail']
+
+
+def test_card_details_omit_source_warnings_but_keep_internal_state():
+    from maxpane_dashboard.data.surfboard import cards
+    rows = cards({}, {}, now=1_800_000_000)
+    assert any(row['status'] == 'unavailable' for row in rows)
+    for row in rows:
+        assert 'unavailable' not in row['detail']
+        assert 'stale' not in row['detail']
+
+
+def test_agent_card_hides_stale_activity_in_tooltip(monkeypatch):
+    from maxpane_dashboard.data import surfboard
+    monkeypatch.setattr(surfboard.work_activity, 'project', lambda *args, **kwargs:
+                        dict(state='stale', remaining=None, as_of=1000, stopped_ts=None))
+    rows = surfboard.cards({}, {}, now=2000, agent_seats=[{'token_id': 3}])
+    agent = next(row for row in rows if row.get('token_id') == 3)
+    assert agent['meter_state'] == 'stale'
+    assert 'stale' not in agent['detail']

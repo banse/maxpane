@@ -786,10 +786,8 @@ async def test_a_dead_pool4_sweep_leaves_every_panel_explicit() -> None:
         text = _screen_text(pilot.app)
     for line in (HATCHES_UNAVAILABLE, RATCHET_UNAVAILABLE, VAULT_UNAVAILABLE):
         assert line in text, line
-    assert FLOW_UNAVAILABLE not in text, (
-        "POOL4 FLOW's unavailable line composited on the `p` body, which has "
-        "not carried that panel since 2026-09-14"
-    )
+    assert "RECENT FLOW" not in text
+    assert "unavailable" not in text and "stale" not in text
     # The network word is the em dash, not a guessed chain.
     assert "SEPOLIA" not in text and "MAINNET" not in text
 
@@ -821,16 +819,16 @@ async def test_a_quiet_pool4_sweep_is_not_a_dead_one() -> None:
         await pilot.app.screen._do_refresh()
         await pilot.press("4")
         await pilot.pause()
-        quiet = _screen_text(pilot.app)
+        quiet = _region_text(pilot.app, pilot.app.screen.query_one(SurfPool4Flow))
     async with _pool4_app(_frozen_payload(pool4_flow=None)).run_test(
         size=(150, 50)
     ) as pilot:
         await pilot.app.screen._do_refresh()
         await pilot.press("4")
         await pilot.pause()
-        dead = _screen_text(pilot.app)
+        dead = _region_text(pilot.app, pilot.app.screen.query_one(SurfPool4Flow))
 
-    assert EMPTY_LINE in quiet and UNAVAILABLE_LINE not in quiet
+    assert EMPTY_LINE in quiet and "unavailable" not in quiet
     assert UNAVAILABLE_LINE in dead and EMPTY_LINE not in dead
 
 

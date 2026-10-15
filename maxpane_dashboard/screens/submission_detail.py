@@ -38,7 +38,7 @@ class SubmissionDetailScreen(RecordDetailScreen):
             if row.get('job_blocked_reason'):
                 job += ' · ' + row['job_blocked_reason']
         else:
-            job = 'not read yet' if row.get('job_read') == 'not_read' else 'unavailable'
+            job = 'not read yet' if row.get('job_read') == 'not_read' else '—'
             if row.get('job_read') == 'not_read' and can_open_submission(row):
                 job = 'loading…'
         if row.get('job_read') != 'not_read' and row.get('job_read_ts') is not None:

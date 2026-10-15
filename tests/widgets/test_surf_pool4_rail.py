@@ -415,7 +415,7 @@ async def test_a_reserve_below_its_floor_is_a_number_not_an_error():
     assert "-2.4%" in row
     assert "+" not in row              # not clamped to a zero-or-above reading
     assert "⚠" not in _body(lines)
-    assert R.UNAVAILABLE_LINE not in _body(lines)
+    assert "unavailable" not in _body(lines)
 
 
 @pytest.mark.asyncio
@@ -475,7 +475,7 @@ async def test_a_single_dead_getter_is_one_dash_not_a_dead_ratchet():
                                pool4_ref_tick=None)
     )
     body = _body(lines)
-    assert R.UNAVAILABLE_LINE not in body
+    assert "unavailable" not in body
     assert "152.0M" in body
     assert "--" in _line_starting(lines, "tick")
 
@@ -578,7 +578,7 @@ async def test_the_ceiling_half_answers_on_both_chains():
              pool4_cap_decay_per_day=None),
     )
     assert "--" in _line_starting(lines, "cap")
-    assert R.UNAVAILABLE_LINE not in _body(lines)      # one dash, not a dead panel
+    assert "unavailable" not in _body(lines)      # one dash, not a dead panel
 
 
 # ---------------------------------------------------------------------------
@@ -834,7 +834,7 @@ async def test_unread_levers_and_an_empty_lever_list_say_different_things():
         SurfPool4Hatches, dict(HATCHES_HEALTHY, pool4_hatches=[])
     )
     assert H.UNAVAILABLE_LINE in _body(unread)
-    assert H.UNAVAILABLE_LINE not in _body(empty)
+    assert "unavailable" not in _body(empty)
     assert "no levers reported" in _body(empty)
 
 
@@ -914,7 +914,7 @@ async def test_an_inventory_above_its_cap_renders_negative_and_is_not_clamped():
     assert "-94.7" in headroom, headroom
     assert "+" not in headroom
     assert "⚠" not in _body(lines)
-    assert R.UNAVAILABLE_LINE not in _body(lines)
+    assert "unavailable" not in _body(lines)
 
 
 @pytest.mark.asyncio
@@ -1406,7 +1406,7 @@ async def test_hatches_with_no_network_word_links_nothing():
 
 
 @pytest.mark.parametrize("series", [None, [], {}], ids=["none", "empty", "non-list"])
-async def test_ratchet_failed_series_is_yellow_and_empty_has_no_spark(series):
+async def test_ratchet_failed_series_is_neutral_and_empty_has_no_spark(series):
     class _A(App):
         def compose(self):
             yield SurfPool4Ratchet()
@@ -1423,6 +1423,6 @@ async def test_ratchet_failed_series_is_yellow_and_empty_has_no_spark(series):
         if isinstance(series, list):
             assert "unavailable" not in rows[y]
         else:
-            assert "unavailable" in rows[y]
-            style = pilot.app.screen.get_style_at(rows[y].index("unavailable"), y)
-            assert style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[3]
+            assert "—" in rows[y] and "unavailable" not in rows[y]
+            style = pilot.app.screen.get_style_at(rows[y].index("—"), y)
+            assert len(set(style.color.get_truecolor())) == 1

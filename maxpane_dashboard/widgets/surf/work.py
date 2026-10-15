@@ -120,7 +120,7 @@ class _WorkTree(Tree):
 class _WorkTreePanel(PanelBase):
     TITLE = "WORK TREE"
     def compose_body(self):
-        yield Static(Text("unavailable"), id="work-coverage")
+        yield Static(Text(""), id="work-coverage")
         yield Input(placeholder="find workflow, job or seat", id="work-find")
         tree = _WorkTree("work", id="work-tree")
         tree.show_root = False
@@ -283,7 +283,7 @@ class SurfWorkBody(Horizontal):
             add_others()
         if not self._entries:
             unavailable = jobs is None or workflows is None
-            tree.root.add_leaf(Text("unavailable" if unavailable else "No matching work" if self._search or self._filter != "all" else "No work in progress", style="dim"))
+            tree.root.add_leaf(Text("" if unavailable else "No matching work" if self._search or self._filter != "all" else "No work in progress", style="dim"))
         if selected not in self._entries:
             def newest(rows):
                 return sorted(rows, key=lambda row: (row.get("updated_ts") or row.get("created_ts") or 0,
@@ -320,7 +320,7 @@ class SurfWorkBody(Horizontal):
         tree = self.query_one("#work-tree", _WorkTree)
         clipped = any(cell_len(node.label.plain) > tree.label_width(node) - (2 if node.allow_expand else 0) for node in self._work_nodes.values())
         state = self._payload.get("state", "unavailable")
-        title = f"WORK TREE · {self._filter} · {state} · as of {hhmm(self._payload.get('read_ts'), unknown='--:--')}"
+        title = f"WORK TREE · {self._filter} · as of {hhmm(self._payload.get('read_ts'), unknown='--:--')}"
         panel = self.query_one("#work-tree-panel", PanelBase)
         room = max(1, panel.content_size.width - 2)
         if cell_len(title) + (len(WIDEN_HINT) + 2 if clipped else 0) > room:
@@ -331,7 +331,7 @@ class SurfWorkBody(Horizontal):
         if self._payload.get("partial"):
             coverage += " · partial"
         if state == "unavailable":
-            coverage = "Work unavailable"
+            coverage = ""
         self.query_one("#work-coverage", Static).update(fit_prose(coverage, max(1, tree.content_size.width)))
 
     @on(Tree.NodeHighlighted, "#work-tree")
@@ -357,7 +357,7 @@ class SurfWorkBody(Horizontal):
         panel = self.query_one("#work-detail-panel", PanelBase)
         if entry is None:
             panel.query_one(".panel-title", Static).update(Text("SELECTED WORK"))
-            self.query_one("#work-detail", Static).update(Text("Work unavailable" if self._payload.get("state", "unavailable") == "unavailable" else "Select a workflow, job or step.", style="dim"))
+            self.query_one("#work-detail", Static).update(Text("" if self._payload.get("state", "unavailable") == "unavailable" else "Select a workflow, job or step.", style="dim"))
             return
         _, kind, row, _, _ = entry
         panel.query_one(".panel-title", Static).update(Text("SELECTED " + kind.upper()))
@@ -370,7 +370,7 @@ class SurfWorkBody(Horizontal):
             out.append_text(address_prose(flatten(value) or "--", style=style, explorer=None)).append("\n")
         now = self._payload.get("now_ts")
         if kind in ("job", "workflow"):
-            objective = flatten(row.get("objective")) or "Objective unavailable"
+            objective = flatten(row.get("objective")) or "—"
             preview = post_preview(objective, max(8, panel.content_size.width - 2), Style())
             out.append_text(Text("\n").join(preview)).append("\n\n")
             if kind == "job":
@@ -395,7 +395,7 @@ class SurfWorkBody(Horizontal):
             nodes = row.get("nodes")
             out.append("\nSTEPS\n", style="dim")
             if nodes is None:
-                out.append("Step details unavailable\n", style="yellow")
+                out.append("—\n", style="dim")
             elif not nodes:
                 out.append("No steps reported\n", style="dim")
             else:
@@ -440,7 +440,7 @@ class SurfWorkBody(Horizontal):
             field("ATTEMPT", _count(row.get("attempt")))
             field("REVISIONS", _count(row.get("revisions")))
             dependencies = row.get("depends_on")
-            section("DEPENDENCIES", ", ".join(dependencies) if dependencies else "none" if dependencies == [] else "unavailable")
+            section("DEPENDENCIES", ", ".join(dependencies) if dependencies else "none" if dependencies == [] else "—")
             verdict = row.get("verdict")
             if verdict:
                 section("VERDICT", f"{verdict.get('status') or '--'} · {verdict.get('detail') or '--'}")

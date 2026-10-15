@@ -111,7 +111,7 @@ from maxpane_dashboard.widgets.surf._fmt import (
 _MAX_ROWS = 25
 
 #: The explicit degraded line.  Tested verbatim.
-UNAVAILABLE_LINE = "activity unavailable"
+UNAVAILABLE_LINE = "—"
 
 #: Panel title.  A hint is appended to it, never substituted for it, so the
 #: screen tests' ``"DEV ACTIVITY" in text`` stays true at every width.
@@ -661,7 +661,7 @@ class SurfDevActivity(Vertical):
         dev_activity = self._payload.get("rows")
         if dev_activity is None:
             self._set_title()
-            log.write(f"[yellow]⚠ {UNAVAILABLE_LINE}[/]")
+            log.write(f"[dim]{UNAVAILABLE_LINE}[/]")
             return
 
         try:

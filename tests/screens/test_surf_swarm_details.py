@@ -70,17 +70,17 @@ async def test_throughput_popup_uses_snapshot_and_space_closes():
 
 
 @pytest.mark.parametrize('value', [None, {}, {'states': None, 'cancel_reasons': None}])
-async def test_throughput_missing_blocks_are_yellow_unavailable(value):
+async def test_throughput_missing_blocks_use_neutral_dashes(value):
     from maxpane_dashboard.screens.swarm_detail import ThroughputDetailScreen
     async with _surf_app(_frozen_payload(swarm_throughput=value)).run_test(size=(200, 48)) as pilot:
         await _open(pilot)
         await pilot.app.push_screen(ThroughputDetailScreen(value))
         await pilot.pause()
         matches = [seg for strip in pilot.app.screen._compositor.render_strips()
-                   for seg in strip if 'unavailable' in seg.text]
+                   for seg in strip if '—' in seg.text]
         assert len(matches) == 2
-        assert all(seg.style.color.get_truecolor(pilot.app.ansi_theme) == pilot.app.ansi_theme.ansi_colors[3]
-                   for seg in matches)
+        assert all(len(set(seg.style.color.get_truecolor(pilot.app.ansi_theme))) == 1 for seg in matches)
+        assert 'unavailable' not in _screen_text(pilot.app)
 
 
 @pytest.mark.parametrize('fields,alarm', [
@@ -146,7 +146,7 @@ async def test_swarm_unread_health_is_explicit_without_reporting_a_service_down(
     async with _surf_app(payload).run_test(size=(200, 48)) as pilot:
         screen = await _open(pilot)
         title = _region_text(pilot.app, screen.query_one('#title-bar'))
-        assert 'health unavailable' in title
+        assert 'health unavailable' not in title
         assert 'down' not in title and 'breaker open' not in title
         await pilot.press('a')
         await pilot.pause()
@@ -167,7 +167,7 @@ async def test_compact_swarm_title_keeps_every_alarm_at_the_existing_pin(down):
         title = _region_text(pilot.app, screen.query_one('#title-bar')).strip()
         assert 'IMD $0.71' in title and 'par -2.7%' in title
         assert 'as of ' in title and '‹ taller' in title and 'LP changed' in title
-        assert f'⚠ {len(SOURCES)} src' in title
+        assert f'⚠ {len(SOURCES)} src' not in title
         assert 'breaker open' in title
         assert ('3 svc down' if len(down) > 1 else 'pub down') in title
         assert title.endswith('health abcdefghijkl')

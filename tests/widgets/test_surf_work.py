@@ -94,7 +94,7 @@ async def test_keyboard_selection_step_detail_and_refresh_preserve_identity_and_
         app.query_one(SurfWorkBody).focus_tree()
         await pilot.press("enter")
         assert app.focused.id == "work-detail-scroll"
-        assert "unavailable" in painted(app, "#work-detail-panel")
+        assert "—" in painted(app, "#work-detail-panel") and "unavailable" not in painted(app, "#work-detail-panel")
 
 
 async def test_find_and_filter_are_local_and_restore_tree_focus():
@@ -137,8 +137,8 @@ async def test_missing_reads_and_missing_linked_jobs_are_explicit():
         app.query_one(SurfWorkHero).update_data(surf_work=None)
         app.query_one(SurfWorkBody).update_data(surf_work=None)
         await pilot.pause()
-        assert "unavailable" in painted(app, "#work-tree-panel")
-        assert all("unavailable" in painted(app, f"#hero-work-{key}") for key in ["jobs", "workflows", "seats", "build", "review", "blocked"])
+        assert "unavailable" not in painted(app, "#work-tree-panel")
+        assert all("unavailable" not in painted(app, f"#hero-work-{key}") for key in ["jobs", "workflows", "seats", "build", "review", "blocked"])
 
 
 async def test_third_party_prose_preserves_brackets_cjk_and_address_copy_without_guessing_chain():
@@ -207,7 +207,7 @@ async def test_known_zero_stale_and_unknown_are_not_fresh_activity():
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "stale" in painted(app, "#hero-work-jobs")
+        assert "stale" not in painted(app, "#hero-work-jobs")
         assert app.query_one("#hero-work-jobs").data.digits == "0"
         assert "--" in painted(app, "#hero-work-seats")
         tree = app.query_one("#work-tree", Tree)

@@ -458,7 +458,8 @@ async def test_cards_use_legacy_source_failure_and_success_clocks(manager):
     cards={c['key']:c for c in m._project_hub(refresh_legacy=False)['surfboard_cards']}
     assert 'launchpad' not in cards and cards['oracles']['status']=='unavailable'
     assert cards['pool4']['status']=='stale'
-    assert 'pool4 stale · read '+__import__('maxpane_dashboard.data.surfboard',fromlist=['hhmm']).hhmm(910) in cards['pool4']['detail']
+    assert 'pool4 · read '+__import__('maxpane_dashboard.data.surfboard',fromlist=['hhmm']).hhmm(910) in cards['pool4']['detail']
+    assert 'stale' not in cards['pool4']['detail']
     assert 'market' in cards['pool4']['detail'] and 'read' in cards['pool4']['detail']
     await m.close()
 
@@ -668,7 +669,7 @@ async def test_tokens_card_shares_retained_catalogue_and_counts_24h_without_full
         clock.now = 4600
         card = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
         assert (card['primary'], card['secondary'], card['status']) == ('3', '3 new', 'active')
-        assert 'catalogue stale' in card['detail']
+        assert 'catalogue read' in card['detail'] and 'stale' not in card['detail']
         assert card['token_ranking']['state'] == 'stale'
         assert all(row['price_direction'] is None for row in card['token_ranking']['rows'])
         clock.now = 900 + 86400

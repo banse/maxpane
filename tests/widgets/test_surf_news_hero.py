@@ -86,14 +86,14 @@ async def test_unknown_empty_and_zero_remain_distinct():
         assert "No recent" in painted(app, app.query_one("#hero-activity"))
         assert "activity" in painted(app, app.query_one("#hero-activity"))
         signals = painted(app, app.query_one("#hero-signals"))
-        assert "known 0/11" in signals and "unavailable" in signals
+        assert "known 0/11" in signals and "unavailable" not in signals
         assert all(any(label in line and "--" in line for line in signals.splitlines()) for label in ("fired", "watch", "quiet"))
         boards = painted(app, app.query_one("#hero-boards"))
         assert any("holders" in line and "0" in line for line in boards.splitlines())
         assert any("written" in line and "--" in line for line in boards.splitlines())
         app.query_one(SurfNewsHero).update_data(surf_news_hero=None)
         await pilot.pause()
-        assert all("unavailable" in painted(app, card) for card in app.query(NewsHeroCard))
+        assert all("unavailable" not in painted(app, card) for card in app.query(NewsHeroCard))
         assert "known 0/11" in painted(app, app.query_one("#hero-signals"))
 
 
@@ -106,8 +106,8 @@ async def test_stale_badges_use_their_own_source_clock_and_keep_cached_values():
         app = pilot.app
         announcement = app.query_one("#hero-announcement")
         market = app.query_one("#hero-market")
-        assert "stale 03:00" in painted(app, announcement)
-        assert "stale 03:10" in painted(app, market)
+        assert "OFFICIAL" in painted(app, announcement) and "03:00" in str(announcement.tooltip)
+        assert "PRICE" in painted(app, market) and "03:10" in str(market.tooltip)
         assert "18m ago" in painted(app, announcement)
         assert "+2.3% · 24h" in painted(app, market)
         strips = app.screen._compositor.render_strips()
@@ -164,7 +164,7 @@ async def test_price_precision_and_large_counts_fit_without_false_zero(price, ex
         assert expected in market and "0.00" not in market.replace(expected, "")
         boards = painted(app, app.query_one("#hero-boards"))
         assert "1.23e+14" in boards and "987.7M" in boards and "12.3M" in boards
-        assert "history pending" in market
+        assert "history pending" not in market and "PRICE" in market
 
 
 async def test_untrusted_preview_is_literal_and_keeps_address_copy_action():

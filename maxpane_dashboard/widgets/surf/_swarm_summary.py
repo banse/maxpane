@@ -5,7 +5,6 @@ from rich.text import Text
 from maxpane_dashboard.analytics.surf_launch_sites import is_current_site
 from maxpane_dashboard.widgets.fmt import DASH, fmt_int
 from maxpane_dashboard.widgets.markup_safety import strip_tags
-from maxpane_dashboard.widgets.panels import UNAVAILABLE
 
 SERVICE_NAMES = ("verifier", "publisher", "deployer")
 
@@ -30,7 +29,7 @@ def row_counts(rows, *, sites=False):
 
 def summary_body(summary, width):
     if summary is None:
-        return Text.from_markup(UNAVAILABLE)
+        return Text("—", style="dim")
     total, counts = summary
     parts = []
     for word, count in sorted(counts, key=lambda item: (-item[1], item[0])):
