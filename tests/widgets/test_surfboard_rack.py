@@ -1,5 +1,6 @@
 """The approved rack is a fixed six-column machine faceplate, not a reflow."""
 from textual.app import App
+from textual.filter import dim_color
 from rich.color import Color
 import pytest
 
@@ -1069,7 +1070,8 @@ async def test_work_card_approved_digits_workflows_and_step_footer(size):
         assert '1 workflow' in strips[top+4].text
         footer = strips[-1].text
         assert ('5 build · 4 review' if card.region.width >= 24 else '5 build · 4 rev') in footer
-        assert inset_border_color(strips[top]).get_truecolor() == Color.parse(app.get_css_variables()['accent']).get_truecolor()
+        assert inset_border_color(strips[top]) == dim_color(
+            Color.parse(app.get_css_variables()['surface']), Color.parse(app.get_css_variables()['foreground']))
         assert card.region.height == app.query_one('#surfboard-card-oracles').region.height
         assert len(app.query(SurfboardCard)) == 12
         assert not app.query('#surfboard-card-portfolio')
@@ -1099,14 +1101,15 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
             await pilot.pause()
             strips = card_strips(app, card)
             top = next(i for i, s in enumerate(strips) if 'ACTIVE JOBS' in s.text)
-            expected = (Color.parse(app.get_css_variables()['accent']).get_truecolor()
+            expected = (title_color.get_truecolor()
                         if primary in ('5', '1,000') else neutral_inset_color(app))
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
             for row in strips[top:top+5]:
                 for x in (left, right):
                     assert next(iter(row.crop(x, x+1))).style.color.get_truecolor() == expected
             if primary != '—':
-                digit_ink = title_color.get_truecolor() if primary in ('5', '1,000') else card.rich_style.color.get_truecolor()
+                digit_ink = (Color.parse(app.get_css_variables()['accent']).get_truecolor()
+                             if primary in ('5', '1,000') else card.rich_style.color.get_truecolor())
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for row in strips[top+1:top+4] for s in row.crop(left+1, right) if s.text.strip())
             for row, label in ((strips[top], 'ACTIVE JOBS'), (strips[top+4], secondary)):
