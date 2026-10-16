@@ -1,6 +1,5 @@
 """The approved rack is a fixed six-column machine faceplate, not a reflow."""
 from textual.app import App
-from textual.filter import dim_color
 from rich.color import Color
 import pytest
 
@@ -1070,8 +1069,7 @@ async def test_work_card_approved_digits_workflows_and_step_footer(size):
         assert '1 workflow' in strips[top+4].text
         footer = strips[-1].text
         assert ('5 build · 4 review' if card.region.width >= 24 else '5 build · 4 rev') in footer
-        assert inset_border_color(strips[top]) == dim_color(
-            Color.parse(app.get_css_variables()['surface']), Color.parse(app.get_css_variables()['foreground']))
+        assert inset_border_color(strips[top]) == Color.parse(app.get_css_variables()['accent'])
         assert card.region.height == app.query_one('#surfboard-card-oracles').region.height
         assert len(app.query(SurfboardCard)) == 12
         assert not app.query('#surfboard-card-portfolio')
@@ -1083,8 +1081,6 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
     async with HubHarness(hub_payload()).run_test(size=(149, 45)) as pilot:
         app = pilot.app
         await pilot.pause()
-        title_row = app.screen._compositor.render_strips()[0]
-        title_color = next(s.style.color for s in title_row if 'IMD BOARDROOM' in s.text)
         card = app.hub.query_one('#surfboard-card-work', SurfboardCard)
         for state, primary, secondary, counts in [
             ('active', '5', '1 workflow', dict(build=5, review=4)),
@@ -1101,7 +1097,7 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
             await pilot.pause()
             strips = card_strips(app, card)
             top = next(i for i, s in enumerate(strips) if 'ACTIVE JOBS' in s.text)
-            expected = (title_color.get_truecolor()
+            expected = (Color.parse(app.get_css_variables()['accent']).get_truecolor()
                         if primary in ('5', '1,000') else neutral_inset_color(app))
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
             for row in strips[top:top+5]:

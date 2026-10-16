@@ -388,11 +388,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             palette, active=border_inset.color in (Style.parse(palette['accent']).color, Style.parse(GREEN).color),
             frame_color=border_inset.color, ansi_theme=self.app.ansi_theme, text_color=self.rich_style.color)
         if self.key == "work" and active:
-            # Use the muted title green for the frame and its bright green for digits.
-            border_color = Color.parse(palette["surface"]).blend(
-                Color.parse(palette["foreground"]), DIM_FACTOR)
             readout_style += Style(color=border_inset.color, dim=False)
-            border_inset += Style(color=border_color.rich_color, dim=False)
         label = ""
         marker, marker_ink = _price_indicator(self._price_direction)
         marker_width = 0
