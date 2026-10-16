@@ -10,7 +10,7 @@ logs RPC           recent-window ``eth_getLogs`` only (bridge mints,
                    IdentityHashUpdated, v4 Initialize, Seaport OrderFulfilled).
 Blockscout REST    v2 GETs only: channel bodies, dev tx pages, token counters.
                    v1 ``eth_call`` is broken (HTTP 400) — never used.
-market REST        GeckoTerminal + DexScreener, cross-checked. GeckoTerminal
+market REST        Exact-pool DexScreener primary, GeckoTerminal fallback. GeckoTerminal
                    serves a STALE token name ("Vibe Coins") — display names
                    come from DexScreener/onchain, never from GeckoTerminal.
 =================  =========================================================
@@ -36,6 +36,7 @@ import re
 import math
 import time
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, Callable, NamedTuple
 from urllib.parse import urlparse
@@ -43,7 +44,6 @@ from urllib.parse import urlparse
 import httpx
 
 from maxpane_dashboard.analytics import surf_launchpad
-from maxpane_dashboard.analytics.surfboard import number as nonnegative_number
 from maxpane_dashboard.data import surf_addresses as A
 from maxpane_dashboard.data import surf_v4
 from maxpane_dashboard.data.evm_abi import (
@@ -1181,6 +1181,125 @@ class _LogRangeError(RuntimeError):
 def _addr_topic(addr: str) -> str:
     """Left-pad a 20-byte address into a 32-byte ``eth_getLogs`` topic word."""
     return "0x" + pad_left(strip0x(addr).lower(), 64)
+
+
+def _market_object(value: object) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _market_number(value: object, *, positive: bool = False,
+                   signed: bool = False) -> float | None:
+    """Provider human units; reject booleans and nonfinite/invalid numbers."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        parsed = float(value)
+    except (ValueError, OverflowError):
+        return None
+    if not math.isfinite(parsed) or (positive and parsed <= 0):
+        return None
+    return parsed if signed or parsed >= 0 else None
+
+
+def _market_pool_id(value: object) -> str | None:
+    # This path is the discovered v4 reference pool, whose identity is bytes32.
+    return value.lower() if isinstance(value, str) and re.fullmatch(
+        r'0x[0-9a-fA-F]{64}', value
+    ) else None
+
+
+def _market_side(base: object, quote: object) -> str | None:
+    """DS wraps the reference pool's native ETH; Gecko reports zero ETH."""
+    if not isinstance(base, str) or not isinstance(quote, str):
+        return None
+    base, quote = base.lower(), quote.lower()
+    eth = {A.WETH.lower(), '0x' + '00' * 20}
+    if base == A.IMD_TOKEN.lower() and quote in eth:
+        return 'base'
+    if quote == A.IMD_TOKEN.lower() and base in eth:
+        return 'quote'
+    return None
+
+
+def _decode_imd_dex(body: object, real_pool_id: str) -> MarketSnapshot | None:
+    """Only the exact Ethereum v4 reference pair with verified token roles."""
+    pool = _market_pool_id(real_pool_id)
+    pairs = _market_object(body).get('pairs')
+    if pool is None or not isinstance(pairs, list):
+        return None
+    for candidate in pairs:
+        pair = _market_object(candidate)
+        if pair.get('chainId') != 'ethereum' or _market_pool_id(pair.get('pairAddress')) != pool:
+            continue
+        base = _market_object(pair.get('baseToken'))
+        quote = _market_object(pair.get('quoteToken'))
+        side = _market_side(base.get('address'), quote.get('address'))
+        # priceUsd, priceChange and marketCap describe the base token in DS's
+        # pair contract. There is no explicit quote-USD field to relabel.
+        if side != 'base':
+            continue
+        price = _market_number(pair.get('priceUsd'), positive=True)
+        if price is None:
+            continue
+        liq = _market_object(pair.get('liquidity'))
+        return MarketSnapshot(
+            imd_price_usd=price, imd_price_usd_gecko=None,
+            imd_change_24h_pct=_market_number(
+                _market_object(pair.get('priceChange')).get('h24'), signed=True),
+            imd_vol_24h_usd=_market_number(_market_object(pair.get('volume')).get('h24')),
+            pool_liquidity_usd=_market_number(liq.get('usd')),
+            pool_imd=_market_number(liq.get('base')),
+            pool_weth=_market_number(liq.get('quote')),
+            fp_price_usd=None, fdv_usd=_market_number(pair.get('fdv')),
+            market_cap_usd=_market_number(pair.get('marketCap')), eth_usd=None,
+            indexer_name=base.get('name') if isinstance(base.get('name'), str) else None,
+            indexer_symbol=base.get('symbol') if isinstance(base.get('symbol'), str) else None,
+            market_source='DexScreener', chain_id=1, pool_id=pool,
+            base_token=base['address'].lower(), quote_token=quote['address'].lower(),
+            target_side=side,
+        )
+    return None
+
+
+def _decode_imd_gecko(body: object, real_pool_id: str) -> MarketSnapshot | None:
+    """Read pool relationships by identity, independent of included ordering."""
+    pool = _market_pool_id(real_pool_id)
+    data = _market_object(_market_object(body).get('data'))
+    attrs = _market_object(data.get('attributes'))
+    if (pool is None or data.get('id') != f'eth_{pool}'
+            or _market_pool_id(attrs.get('address')) != pool
+            or data.get('type', 'pool') != 'pool'):
+        return None
+    relationships = _market_object(data.get('relationships'))
+    tokens = []
+    for role in ('base_token', 'quote_token'):
+        relation = _market_object(_market_object(relationships.get(role)).get('data'))
+        identity = relation.get('id')
+        if (relation.get('type') != 'token' or not isinstance(identity, str)
+                or not re.fullmatch(r'eth_0x[0-9a-fA-F]{40}', identity)):
+            return None
+        tokens.append(identity[4:].lower())
+    base, quote = tokens
+    side = _market_side(base, quote)
+    if side is None:
+        return None
+    price = _market_number(attrs.get(f'{side}_token_price_usd'), positive=True)
+    if price is None:
+        return None
+    return MarketSnapshot(
+        imd_price_usd=price, imd_price_usd_gecko=price,
+        imd_change_24h_pct=(_market_number(
+            _market_object(attrs.get('price_change_percentage')).get('h24'), signed=True
+        ) if side == 'base' else None),
+        imd_vol_24h_usd=_market_number(_market_object(attrs.get('volume_usd')).get('h24')),
+        pool_liquidity_usd=_market_number(attrs.get('reserve_in_usd')),
+        pool_imd=None, pool_weth=None, fp_price_usd=None,
+        fdv_usd=_market_number(attrs.get('fdv_usd')) if side == 'base' else None,
+        market_cap_usd=_market_number(attrs.get('market_cap_usd')) if side == 'base' else None,
+        eth_usd=None, indexer_name=None, indexer_symbol=None,
+        market_source='GeckoTerminal', chain_id=1, pool_id=pool,
+        base_token=base, quote_token=quote, target_side=side,
+    )
 
 
 class SurfClient(OwnedHttpClient):
@@ -2825,43 +2944,8 @@ class SurfClient(OwnedHttpClient):
         return out
 
     # ------------------------------------------------------------------
-    # Market REST — GeckoTerminal + DexScreener, cross-checked
+    # Market REST — exact-pool primary and fallback, independent ETH quote
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _pick_imd_pair(body: Any, real_pool_id: str | None) -> dict | None:
-        """The live v4 pair, matched by pool id -- never by liquidity size.
-
-        Fix round 10a. 38 ETH/IMD v4 pools exist on mainnet and 37 are
-        third-party decoys at other fee tiers (some squatting within one pip
-        of the real 1% tier), and DexScreener returns them in the *same*
-        response as the real pair -- "pick the deepest pair" (the old
-        fallback this method used to have) is not merely imprecise, it is
-        exploitable: anyone can fund a decoy past the real pool's liquidity
-        and take over this panel. It already had: the drained v3 pair's
-        ~$2,195 rendered while the live v4 pool held ~$805,927 -- a ~370x
-        under-report of the dashboard's own subject.
-
-        ``real_pool_id`` is the dev's own on-chain declaration
-        (``LaunchpadHook.imdEthPoolId()``, via ``fetch_pool_v4()``) of which
-        pool is his. DexScreener represents a v4 pool's ``pairAddress`` as
-        that same bytes32 pool id -- v4 has no per-pool contract address the
-        way v2/v3 do -- so matching the two directly is an exact identity
-        check, not a heuristic.
-
-        ``None`` -- never a guess -- when ``real_pool_id`` is not yet known
-        (the launchpad sweep has not landed this process) or when no pair in
-        the response matches it. Both are "cannot verify", and this repo's
-        rule for "cannot verify" is ``None``, not "pick the closest-looking
-        one".
-        """
-        if not real_pool_id:
-            return None
-        target = str(real_pool_id).lower()
-        for p in (body or {}).get("pairs") or []:
-            if str(p.get("pairAddress", "")).lower() == target:
-                return p
-        return None
 
     @staticmethod
     def _f(value: Any) -> float | None:
@@ -2873,96 +2957,52 @@ class SurfClient(OwnedHttpClient):
         except (TypeError, ValueError):
             return None
 
+    async def fetch_eth_usd(self) -> float | None:
+        """Independent reference quote; no market failure can hide this read."""
+        body = await self._get_json(COINGECKO_ETH_URL)
+        return _market_number(
+            _market_object(_market_object(body).get('ethereum')).get('usd'), positive=True
+        )
+
     async def fetch_market(self, real_pool_id: str | None = None) -> MarketSnapshot | None:
-        """IMD + FP market data, DexScreener primary, GeckoTerminal check.
+        """One exact-pool source, with same-pool fallback only on a primary gap."""
+        pool = _market_pool_id(real_pool_id)
+        if pool is None:
+            return None
 
-        GeckoTerminal serves a STALE token name for IMD ("Vibe Coins") — its
-        numbers are welcome, its strings are not (PRD §6 rule 3).
+        async def imd_market() -> MarketSnapshot | None:
+            primary = _decode_imd_dex(await self._get_json(
+                f'https://api.dexscreener.com/latest/dex/pairs/ethereum/{pool}'
+            ), pool)
+            if primary is not None:
+                return primary
+            return _decode_imd_gecko(await self._get_json(
+                f'https://api.geckoterminal.com/api/v2/networks/eth/pools/{pool}'
+            ), pool)
 
-        ``real_pool_id`` (fix round 10a) is the live v4 pool id the caller
-        already holds from a prior ``fetch_pool_v4()`` read (the manager
-        threads it through from the launchpad slot) -- it costs no extra
-        request here, it is only how ``_pick_imd_pair`` tells the real pair
-        from a decoy. ``None`` when the caller does not have it yet (a cold
-        cache before the launchpad sweep first lands): the v4 pair is then
-        honestly unmatched rather than guessed, and every field this method
-        would otherwise derive from it falls back through the existing
-        Gecko path below, exactly as it already does on a total DexScreener
-        outage.
-        """
-        dex_body, gecko_body, fp_body, eth_body = await asyncio.gather(
-            self._get_json(f"{DEXSCREENER_TOKENS_API}/{A.IMD_TOKEN}"),
-            self._get_json(GECKO_TOKEN_API.format(address=A.IMD_TOKEN.lower()),
-                           params={"include": "top_pools"}),
-            self._get_json(f"{DEXSCREENER_TOKENS_API}/{A.FP_TOKEN_BASE}"),
-            self._get_json(COINGECKO_ETH_URL),
-        )
-        eth_usd = self._f(((eth_body or {}).get("ethereum") or {}).get("usd"))
-
-        pair = self._pick_imd_pair(dex_body, real_pool_id)
-        gecko_price = None
-        gecko_pool = None
-        if isinstance(gecko_body, dict):
-            attrs = ((gecko_body.get("data") or {}).get("attributes") or {})
-            gecko_price = self._f(attrs.get("price_usd"))
-            included = gecko_body.get("included") or []
-            gecko_pool = (included[0].get("attributes") or {}) if included else None
-        if pair is None and gecko_price is None:
-            return None  # both IMD sources dead — no snapshot, no zeros
-
-        price_dex = self._f((pair or {}).get("priceUsd"))
-        price = price_dex if price_dex is not None else gecko_price
-        agree: bool | None = None
-        if price_dex is not None and gecko_price is not None:
-            mid = (price_dex + gecko_price) / 2
-            agree = (
-                abs(price_dex - gecko_price) / mid * 100
-                <= PRICE_AGREE_TOLERANCE_PCT
-                if mid > 0 else False
-            )
-
-        fp_pair = None
-        if isinstance(fp_body, dict):
-            fp_pair = max(
-                fp_body.get("pairs") or [],
-                key=lambda p: ((p.get("liquidity") or {}).get("usd") or 0.0),
-                default=None,
-            )
-
-        liq = (pair or {}).get("liquidity") or {}
-        change = (pair or {}).get("priceChange") or {}
-        vol = (pair or {}).get("volume") or {}
-        return MarketSnapshot(
-            imd_price_usd=price,
-            imd_price_usd_gecko=gecko_price,
-            imd_change_24h_pct=(
-                self._f(change.get("h24"))
-                if pair is not None
-                else self._f((gecko_pool or {}).get(
-                    "price_change_percentage", {}).get("h24"))
-            ),
-            imd_vol_24h_usd=(
-                self._f(vol.get("h24"))
-                if pair is not None
-                else self._f(((gecko_pool or {}).get("volume_usd") or {}).get("h24"))
-            ),
-            pool_liquidity_usd=(
-                self._f(liq.get("usd"))
-                if pair is not None
-                else self._f((gecko_pool or {}).get("reserve_in_usd"))
-            ),
-            pool_imd=self._f(liq.get("base")),
-            pool_weth=self._f(liq.get("quote")),
-            fp_price_usd=self._f((fp_pair or {}).get("priceUsd")),
-            fdv_usd=nonnegative_number((pair or {}).get("fdv")),
-            market_cap_usd=nonnegative_number((pair or {}).get("marketCap")),
-            # 0.0 would be a sentinel, and an ETH price of zero is not a number
-            # anyone should see rendered as one.
-            eth_usd=(eth_usd if (eth_usd or 0) > 0 else None),
-            indexer_name=((pair or {}).get("baseToken") or {}).get("name"),
-            indexer_symbol=((pair or {}).get("baseToken") or {}).get("symbol"),
-            sources_agree=agree,
-        )
+        tasks = [asyncio.create_task(imd_market()), asyncio.create_task(
+            self._get_json(f'{DEXSCREENER_TOKENS_API}/{A.FP_TOKEN_BASE}')
+        )]
+        try:
+            market, fp_body = await asyncio.gather(*tasks)
+        finally:
+            # gather does not cancel siblings on every exceptional exit.
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        if market is None:
+            return None
+        pairs = _market_object(fp_body).get('pairs')
+        fp_pairs = [p for p in pairs if isinstance(p, dict)
+                    and p.get('chainId') == 'base'
+                    and isinstance(_market_object(p.get('baseToken')).get('address'), str)
+                    and _market_object(p.get('baseToken'))['address'].lower()
+                    == A.FP_TOKEN_BASE.lower()] if isinstance(pairs, list) else []
+        fp_pair = max(fp_pairs, key=lambda p: _market_number(
+            _market_object(p.get('liquidity')).get('usd')
+        ) or 0, default={})
+        return replace(market, fp_price_usd=_market_number(fp_pair.get('priceUsd'), positive=True))
 
     # ------------------------------------------------------------------
     # Blockscout REST + state RPC — IDMD collection stats

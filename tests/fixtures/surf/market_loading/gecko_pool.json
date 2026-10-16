@@ -1,0 +1,96 @@
+{
+  "data": {
+    "id": "eth_0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3",
+    "attributes": {
+      "base_token_price_usd": "5.42278794913207",
+      "base_token_price_native_currency": "0.00278233942433895",
+      "quote_token_price_usd": "2420.9",
+      "quote_token_price_native_currency": "1.0",
+      "base_token_price_quote_token": "0.002782339424",
+      "quote_token_price_base_token": "359.409779861",
+      "address": "0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3",
+      "name": "VIBE / ETH 1%",
+      "pool_name": "VIBE / ETH",
+      "pool_fee_percentage": "1",
+      "pool_created_at": "2026-07-29T19:32:47Z",
+      "fdv_usd": "17034279.2105597",
+      "market_cap_usd": null,
+      "price_change_percentage": {
+        "m5": "0.023",
+        "m15": "1.016",
+        "m30": "1.272",
+        "h1": "-1.554",
+        "h6": "-13.826",
+        "h24": "-21.465"
+      },
+      "transactions": {
+        "m5": {
+          "buys": 4,
+          "sells": 1,
+          "buyers": 4,
+          "sellers": 1
+        },
+        "m15": {
+          "buys": 10,
+          "sells": 3,
+          "buyers": 7,
+          "sellers": 3
+        },
+        "m30": {
+          "buys": 12,
+          "sells": 4,
+          "buyers": 8,
+          "sellers": 4
+        },
+        "h1": {
+          "buys": 20,
+          "sells": 11,
+          "buyers": 16,
+          "sellers": 10
+        },
+        "h6": {
+          "buys": 169,
+          "sells": 104,
+          "buyers": 107,
+          "sellers": 82
+        },
+        "h24": {
+          "buys": 443,
+          "sells": 227,
+          "buyers": 299,
+          "sellers": 185
+        }
+      },
+      "volume_usd": {
+        "m5": "819.5107870689",
+        "m15": "7726.2185308552",
+        "m30": "8062.9110743544",
+        "h1": "31279.3591028684",
+        "h6": "357382.428484271",
+        "h24": "614365.298742396"
+      },
+      "reserve_in_usd": "2284446.6712",
+      "locked_liquidity_percentage": null
+    },
+    "relationships": {
+      "base_token": {
+        "data": {
+          "id": "eth_0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+          "type": "token"
+        }
+      },
+      "quote_token": {
+        "data": {
+          "id": "eth_0x0000000000000000000000000000000000000000",
+          "type": "token"
+        }
+      },
+      "dex": {
+        "data": {
+          "id": "uniswap-v4-ethereum",
+          "type": "dex"
+        }
+      }
+    }
+  }
+}

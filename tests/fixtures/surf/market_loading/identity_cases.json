@@ -1,0 +1,30 @@
+{
+  "provenance": {
+    "dex_pair.json": "Trimmed committed tests/fixtures/surf/client/dexscreener_imd.json, captured 2026-08-08; provider pair object is unchanged.",
+    "gecko_pool.json": {
+      "source": "docs/research_notes/Keyless Marktdaten f\u00fcr Surfboard/market_probe_results.json gt_pair_imd cold coverage",
+      "url": "https://api.geckoterminal.com/api/v2/networks/eth/pools/0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3",
+      "observed_utc": "2026-10-16T22:20:22.986267+00:00",
+      "note": "Probe retained id/attributes/relationships only; resource type was omitted by probe and is not invented here."
+    }
+  },
+  "invalid_prices": [
+    null,
+    true,
+    false,
+    0,
+    -1,
+    "NaN",
+    "Infinity",
+    "-Infinity",
+    {},
+    []
+  ],
+  "bad_pool_ids": [
+    null,
+    "",
+    "0x1234",
+    true,
+    "not-a-pool"
+  ]
+}
