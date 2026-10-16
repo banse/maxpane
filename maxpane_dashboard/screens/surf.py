@@ -2001,16 +2001,16 @@ MODE_POOL4_USER = "pool4_user"
 #: place (``docs/surf_swarm_workflows_spec.md``).
 MODE_SWARM = "swarm"
 #: WORK IN PROGRESS, measured after a keyless live preview at 149×45 on
-#: 2026-10-13. Its six rack cards share equal fractional columns and remain
+#: 2026-10-16. Its six rack cards share equal fractional columns and remain
 #: nine rows high. At the owner's size each card receives 24 columns.
-#: The width binder is BLOCKED's outer footer, "needs attention". In the
-#: production compositor it needs a 21-column card, reached at terminal
-#: width 126 because the final fractional column receives the remainder.
-#: At 125 that footer clips and the card explicitly advertises ‹ widen.
-#: The sweep began at 110, then checked 124..130 around the observed edge;
+#: The width binder is BLOCKED's inner caption, "needs attention". In the
+#: production compositor it needs a 23-column card, reached at terminal
+#: width 138 because the final fractional column receives the remainder.
+#: At 137 that caption clips and the card advertises the compact ‹ hint.
+#: The sweep began at 110, then checked 134..149 around the observed edge;
 #: it did not start from a candidate pin. Capture, long/CJK stress and
 #: known-empty payloads all bind at the same width. Stale and unavailable
-#: footers are shorter and clear below it; they do not set the normal pin.
+#: retain the same captions; outer footers stay empty in every state.
 #: The tree reserves its right-hand status and seat text, fitting objective
 #: previews on the remaining cells. Long unbounded titles may still show
 #: ‹ widen at any width; the full selected objective is in the detail pane.
@@ -2030,25 +2030,25 @@ MODE_SWARM = "swarm"
 #: tests/screens/test_surf_work_layout.py certifies both adjacent boundaries
 #: and the owner size. scripts/measure_layout.py w uses that same helper.
 #: App-wide width remains 143; this body does not raise another body's pin.
-SURF_WORK_FULL_LAYOUT_COLUMNS = 126
+SURF_WORK_FULL_LAYOUT_COLUMNS = 138
 SURF_WORK_FULL_LAYOUT_ROWS = 30
 MODE_WORK = "work"
 WORK_BODY_ID = "surf-work-body"
 #: ORACLES, measured after the keyless live API render at 149×45 on
-#: 2026-10-13. REQUESTS retains the approved 66% of the body and the
+#: 2026-10-16. REQUESTS retains the approved 66% of the body and the
 #: selected detail uses the remaining width. Both panels reserve gutters.
 #: Six equal fractional hero columns remain nine terminal rows high.
-#: The width sweep began at 118 and extended through 139: the final
-#: clipping footer is REQUESTS' "request history" at 130. At 131 every
-#: fixed hero label, heading and footer fits; the adjacent boundary test
+#: The width sweep began at 110 and extended through 149: the final
+#: clipping inner caption is REQUESTS' "request history" at 142. At 143 every
+#: fixed hero label, heading and caption fits; the adjacent boundary test
 #: checks actual compositor text, not a derived character-width formula.
 #: REQUESTS has a responsive question column, using all remaining cells
 #: after AGE, CHAIN and STATE. Long questions intentionally ellipsise and
 #: light that panel's widen hint. Their full text wraps in the selected
 #: detail, so unbounded request prose does not determine the width pin.
-#: Capped pages show partial with their source clock, while complete-page
-#: and known-empty states retain the descriptive hero footers. The latter
-#: bind width; short unavailable/stale footers do not lower the normal pin.
+#: Every state retains the descriptive inner captions in the frame's color.
+#: Partial coverage and its source clock remain in the tooltip; no outer
+#: footer is painted. Neutral unread/stale cards have the same width needs.
 #: Numeric/boolean consensus values wrap without float conversion. Address
 #: units keep their copy action and chain-specific explorer in detail text.
 #: Answer-tree leaves fit within their depth and expose the complete cached
@@ -2065,7 +2065,7 @@ WORK_BODY_ID = "surf-work-body"
 #: o is its tool selector, while the actual application shortcut is Ctrl+o.
 #: Both pin ±1 mutations must fail the corresponding boundary test.
 #: App-wide width stays 143; this body's new pin changes no other view.
-SURF_ORACLES_FULL_LAYOUT_COLUMNS = 131
+SURF_ORACLES_FULL_LAYOUT_COLUMNS = 143
 SURF_ORACLES_FULL_LAYOUT_ROWS = 42
 MODE_ORACLES = "oracles"
 ORACLES_BODY_ID = "surf-oracles-body"

@@ -61,6 +61,34 @@ def painted(app, selector):
                      app.screen._compositor.render_strips()[region.y:region.bottom])
 
 
+@pytest.mark.parametrize("state", ["initial", "ok", "partial", "stale", "unavailable", "empty"])
+async def test_hero_captions_share_inner_bottom_border_and_color(state, monkeypatch):
+    data = payload()
+    data["state"] = "ok" if state == "empty" else state
+    if state in ("empty", "unavailable"):
+        data.update(rows=[] if state == "empty" else None, detail=None)
+    if state == "initial":
+        monkeypatch.setattr(Harness, "on_mount", lambda self: None)
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        for key, _title, _heading, caption in SurfOraclesHero.CARDS:
+            card = app.query_one("#hero-oracle-" + key)
+            region = card.region
+            rows = [row.crop(region.x, region.right) for row in
+                    app.screen._compositor.render_strips()[region.y:region.bottom]]
+            bottom = next(row for row in rows if "└" in row.text)
+            assert caption in bottom.text
+            assert caption not in rows[-1].text
+            assert not card.border_subtitle
+            if state == "partial":
+                assert "partial" in str(card.tooltip)
+            start = bottom.text.index(caption)
+            corner = bottom.text.index("└")
+            frame_style = list(bottom.crop(corner, corner + 1))[0].style
+            assert all(segment.style == frame_style for segment in bottom.crop(start, start + len(caption)))
+
+
 async def test_hero_counts_unknown_states_coverage_and_approved_layout():
     async with Harness(payload()).run_test(size=(149, 45)) as pilot:
         await pilot.pause()

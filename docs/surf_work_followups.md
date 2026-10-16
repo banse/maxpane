@@ -1,5 +1,23 @@
 # WORK IN PROGRESS follow-ups
 
+## Inner captions (2026-10-16)
+
+The twelve native WORK and ORACLES captions now occupy their inner bottom
+borders and inherit the complete frame style. Fresh live 149×45 renders were
+shown before measuring the new width pins: WORK 138, ORACLES 143. Height pins
+remain 30 and 42. All eleven payload variants fit at and above those widths,
+and the boundary checks detect clipping below them. The scoped run passed
+137 tests plus 128 fast guard/docpin checks. Nine implementer mutations and
+the reviewer's partial-footer mutation were killed and restored.
+
+Final review approved with no Critical or Important findings. Minor F-C1:
+the caption tests in `tests/widgets/test_surf_work.py` and
+`tests/widgets/test_surf_oracles.py` read their expected wording from production
+`CARDS`. They protect placement/style but do not independently pin literal
+wording: `assigned seats` → `assigned teams` survived the WORK `[ok]` test.
+Bind the approved literals independently when those test files are next touched.
+The review mutation was restored; production retains the approved wording.
+
 The initial newest-100/24-detail limitation was extended on 2026-10-16.
 Active discovery now scans up to 100 total pages, revalidates prior active IDs,
 and loads each active project's versions and linked workflows by ID regardless

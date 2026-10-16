@@ -14,6 +14,7 @@ from maxpane_dashboard.widgets.surf.oracles import SurfOraclesHero
 from tests.screens.test_surf_screen import (
     _FakeManager, _ThemedHarness, _frozen_payload, _region_text, _screen_text,
 )
+from tests.screens._sweeps import boundary_set
 
 
 def oracle_payload(kind="capture"):
@@ -47,14 +48,14 @@ async def _render(payload, size):
         missing = []
         for card in cards:
             text = _region_text(pilot.app, card)
-            expected = [card.data.title, card.data.heading,
-                        card.data.footer if card.data.state == "ok" else card.data.state]
+            expected = [card.data.title, card.data.heading, card.data.subtitle]
             missing.extend(f"{card.id}:{word}" for word in expected if word not in text)
         body = screen.query_one("#surf-oracles-body")
         panels = [screen.query_one("#oracle-request-panel"), screen.query_one("#oracle-detail-panel")]
         table = screen.query_one("#oracle-requests")
         status = screen.query_one(StatusBar)
         return dict(missing=missing,
+                    marked_cards=[card.id for card in cards if "‹" in _region_text(pilot.app, card)],
                     overflow=[p.id for p in panels if p.region.right > body.region.right or p.region.bottom > body.region.bottom],
                     status_whole=status.region.bottom <= size[1] and "esc back" in _region_text(pilot.app, status),
                     taller="‹ taller" in _region_text(pilot.app, screen.query_one("#title-bar")),
@@ -80,12 +81,16 @@ async def test_oracles_fixed_chrome_at_owner_size_and_pin(kind, size):
 
 
 @pytest.mark.sweep
-async def test_oracles_width_pin_is_bound_by_requests_footer():
-    below = await _render(oracle_payload("complete"), (SURF_ORACLES_FULL_LAYOUT_COLUMNS - 1, 45))
-    whole = await _render(oracle_payload("complete"), (SURF_ORACLES_FULL_LAYOUT_COLUMNS, 45))
-    assert below["missing"] == ["hero-oracle-requests:request history"]
-    assert "‹ widen" in below["text"]
-    assert not whole["missing"] and whole["table_headers"]
+async def test_oracles_width_pin_is_bound_by_requests_inner_caption():
+    pin = SURF_ORACLES_FULL_LAYOUT_COLUMNS
+    for width in boundary_set(pin, 110, 149):
+        result = await _render(oracle_payload("complete"), (width, 45))
+        assert bool(result["missing"]) == (width < pin), result
+        assert {word.split(":")[0] for word in result["missing"]} <= set(result["marked_cards"])
+        if width == pin - 1:
+            assert result["missing"] == ["hero-oracle-requests:request history"]
+        if width >= pin:
+            assert not result["marked_cards"] and result["table_headers"]
 
 
 @pytest.mark.sweep

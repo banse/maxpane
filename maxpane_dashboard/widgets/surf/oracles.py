@@ -21,7 +21,8 @@ from maxpane_dashboard.widgets.panels import PanelBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
 from ._icons import fit_prose, keep_units, link_in_order, link_prose, mark_addresses, unmark
 from ._oracle_answer import consensus_value, failed_answer, panel_text, seat_value
-from .news_hero import HeroRecord, LocalSourceHeroCard, _count
+from .news_hero import HeroRecord, NewsHeroCard, _count
+from .pool4_hero import Pool4HeroCard
 
 _STATES = {"assessing": "assessing", "attested": "attested", "disagreed": "no quorum", "blocked": "blocked"}
 _COLORS = {"assessing": "yellow", "attested": "green", "disagreed": "yellow", "blocked": "red"}
@@ -70,7 +71,10 @@ def _wrapped_prose(value, width, explorer, *, style=""):
     return Text("\n").join(lines)
 
 
-class _OracleCard(LocalSourceHeroCard):
+class _OracleCard(Pool4HeroCard):
+    # Source coverage remains in the tooltip; the outer footer stays empty.
+    _footer = NewsHeroCard._footer
+
     def _frame_style(self):
         frame = super()._frame_style()
         tone = _COLORS.get(self.data.key.removeprefix("oracle-"))
@@ -93,7 +97,7 @@ class SurfOraclesHero(Grid):
 
     def compose(self):
         for key, title, heading, footer in self.CARDS:
-            yield _OracleCard(HeroRecord("oracle-" + key, title, heading, footer,
+            yield _OracleCard(HeroRecord("oracle-" + key, title, heading, "", subtitle=footer,
                                          digits="--", state="unavailable", accent=False))
 
     def update_data(self, *, surf_oracles=None, **_):
@@ -107,7 +111,7 @@ class SurfOraclesHero(Grid):
             if key == "networks" and any(_chain(row) == "--" for row in rows or []):
                 value = "--"
             self.query_one(f"#hero-oracle-{key}", _OracleCard).set_record(HeroRecord(
-                "oracle-" + key, title, heading, footer, digits=value, state=state,
+                "oracle-" + key, title, heading, "", subtitle=footer, digits=value, state=state,
                 read_ts=payload.get("read_ts"), accent=state in ("ok", "partial") and key in _COLORS and value not in ("0", "--")))
 
 

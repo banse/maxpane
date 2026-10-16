@@ -52,6 +52,32 @@ def painted(app, selector):
     return "\n".join(strip.crop(region.x, region.right).text for strip in app.screen._compositor.render_strips()[region.y:region.bottom])
 
 
+@pytest.mark.parametrize("state", ["initial", "ok", "partial", "stale", "unavailable", "empty"])
+async def test_hero_captions_share_inner_bottom_border_and_color(state, monkeypatch):
+    data = payload()
+    data["state"] = "ok" if state == "empty" else state
+    if state == "empty":
+        data["summary"] = dict.fromkeys(data["summary"], 0)
+    if state == "initial":
+        monkeypatch.setattr(Harness, "on_mount", lambda self: None)
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        for key, _title, _heading, caption in SurfWorkHero.CARDS:
+            card = app.query_one("#hero-work-" + key)
+            region = card.region
+            rows = [row.crop(region.x, region.right) for row in
+                    app.screen._compositor.render_strips()[region.y:region.bottom]]
+            bottom = next(row for row in rows if "└" in row.text)
+            assert caption in bottom.text
+            assert caption not in rows[-1].text
+            assert not card.border_subtitle
+            start = bottom.text.index(caption)
+            corner = bottom.text.index("└")
+            frame_style = list(bottom.crop(corner, corner + 1))[0].style
+            assert all(segment.style == frame_style for segment in bottom.crop(start, start + len(caption)))
+
+
 def node(tree, key):
     def walk(parent):
         for child in parent.children:
@@ -451,12 +477,12 @@ async def test_default_selection_uses_latest_update_and_hides_superseded_work():
         assert "Replaced" not in painted(pilot.app, "#work-tree-panel")
 
 
-@pytest.mark.parametrize("width", [125, 130])
-async def test_hero_advertises_footer_clipping_at_its_actual_border_budget(width):
+@pytest.mark.parametrize("width", [125, 130, 149])
+async def test_hero_advertises_caption_clipping_at_its_actual_inner_budget(width):
     async with Harness(payload()).run_test(size=(width, 45)) as pilot:
         await pilot.pause()
         output = painted(pilot.app, "#hero-work-blocked")
-        assert ("‹ widen" in output) == ("needs attention" not in output)
+        assert ("‹" in output) == ("needs attention" not in output)
 
 
 async def test_find_workflow_by_id_keeps_its_job_path():

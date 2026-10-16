@@ -14,6 +14,7 @@ from maxpane_dashboard.widgets.surf.work import SurfWorkHero
 from tests.screens.test_surf_screen import (
     _FakeManager, _ThemedHarness, _frozen_payload, _region_text, _screen_text,
 )
+from tests.screens._sweeps import boundary_set
 
 
 def work_payload(kind="capture"):
@@ -44,7 +45,7 @@ async def _render(payload, size):
         missing = []
         for card in cards:
             text = _region_text(pilot.app, card)
-            expected = [card.data.title, card.data.heading, card.data.footer]
+            expected = [card.data.title, card.data.heading, card.data.subtitle]
             missing.extend(f"{card.id}:{word}" for word in expected if word not in text)
             assert "stale" not in text and "unavailable" not in text
         status = screen.query_one(StatusBar)
@@ -53,6 +54,7 @@ async def _render(payload, size):
         overflow = [p.id for p in panels if p.region.right > body.region.right or p.region.bottom > body.region.bottom]
         return {
             "missing": missing, "overflow": overflow,
+            "marked_cards": [card.id for card in cards if "‹" in _region_text(pilot.app, card)],
             "status_whole": status.region.bottom <= size[1] and "esc back" in _region_text(pilot.app, status),
             "taller": "‹ taller" in _region_text(pilot.app, screen.query_one("#title-bar")),
             "widths": [c.region.width for c in cards],
@@ -84,13 +86,16 @@ async def test_work_fixed_chrome_fits_at_pin_and_owner_size(kind, size):
 
 
 @pytest.mark.sweep
-async def test_work_width_pin_is_bound_by_blocked_footer():
+async def test_work_width_pin_is_bound_by_blocked_inner_caption():
     pin = SURF_WORK_FULL_LAYOUT_COLUMNS
-    below = await _render(work_payload(), (pin - 1, 45))
-    whole = await _render(work_payload(), (pin, 45))
-    assert "hero-work-blocked:needs attention" in below["missing"]
-    assert "‹ widen" in below["text"]
-    assert not whole["missing"]
+    for width in boundary_set(pin, 110, 149):
+        result = await _render(work_payload(), (width, 45))
+        assert bool(result["missing"]) == (width < pin), result
+        assert {word.split(":")[0] for word in result["missing"]} <= set(result["marked_cards"])
+        if width == pin - 1:
+            assert result["missing"] == ["hero-work-blocked:needs attention"]
+        if width >= pin:
+            assert not result["marked_cards"]
 
 
 @pytest.mark.sweep

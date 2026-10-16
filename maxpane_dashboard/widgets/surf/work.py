@@ -17,6 +17,7 @@ from maxpane_dashboard.widgets.rowfit import WIDEN_HINT, cell_len, clip, pad, ti
 from ._fmt import JOB_EXPLORER
 from ._icons import fit_prose, post_preview
 from .news_hero import HeroRecord, NewsHeroCard, _count, _number
+from .pool4_hero import Pool4HeroCard
 
 _BUILD = {"implement", "integrate", "test", "tests"}
 _TERMINAL = {"completed", "cancelled", "failed", "superseded"}
@@ -45,15 +46,9 @@ def _project_job_ids(project, workflows):
     return list(ids)
 
 
-class _WorkHeroCard(NewsHeroCard):
-    def _footer(self):
-        super()._footer()
-        room = self.size.width - 2
-        title = "⊙ " + self.data.title
-        footer = Text.from_markup(self.border_subtitle).plain
-        if room > 0 and (cell_len(footer) > room or cell_len(title) > room):
-            title = clip(title, max(1, room - len(WIDEN_HINT) - 1)) + " " + WIDEN_HINT
-        self.border_title = Text(title)
+class _WorkHeroCard(Pool4HeroCard):
+    # Source coverage remains in the tooltip; the outer footer stays empty.
+    _footer = NewsHeroCard._footer
 
     def _frame_style(self):
         frame = super()._frame_style()
@@ -76,7 +71,8 @@ class SurfWorkHero(Grid):
 
     def compose(self) -> ComposeResult:
         for key, title, heading, footer in self.CARDS:
-            yield _WorkHeroCard(HeroRecord("work-" + key, title, heading, footer, digits="--", state="unavailable", accent=False))
+            yield _WorkHeroCard(HeroRecord("work-" + key, title, heading, "", subtitle=footer,
+                                          digits="--", state="unavailable", accent=False))
 
     def update_data(self, *, surf_work=None, **_kwargs):
         payload = surf_work if isinstance(surf_work, dict) else {}
@@ -84,7 +80,7 @@ class SurfWorkHero(Grid):
         state = payload.get("state", "unavailable")
         for key, title, heading, footer in self.CARDS:
             count = _count(summary.get(key)) if state != "unavailable" else "--"
-            record = HeroRecord("work-" + key, title, heading, footer, digits=count,
+            record = HeroRecord("work-" + key, title, heading, "", subtitle=footer, digits=count,
                                 state=state, read_ts=_number(payload.get("read_ts")),
                                 accent=state == "ok" and count not in ("--", "0"))
             self.query_one(f"#hero-work-{key}", _WorkHeroCard).set_record(record)
