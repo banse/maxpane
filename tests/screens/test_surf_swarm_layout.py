@@ -112,7 +112,7 @@ from tests.surf_swarm_fixtures import (
 #: own: a pin that moves without a re-sweep reddens the agreement test.
 MEASURED_SWARM_COLUMNS = 141
 MEASURED_SWARM_ROWS = 38
-MEASURED_AGENT_COLUMNS = 132
+MEASURED_AGENT_COLUMNS = 137
 MEASURED_AGENT_ROWS = 29
 
 #: The top-left LAUNCHES table clears its capture marker once full columns fit.
@@ -132,9 +132,9 @@ _S_THRESHOLDS = (
 _A_THRESHOLDS = (
     99, 107,  # native RECORD compact/full tiers, unchanged
     129,      # complete status bar
-    132,      # STATUS subtitle on all three AGENT payloads
+    137,      # STATUS subtitle/counts in the first column after the OWNER swap
 )
-_AGENT_WHOLE_FROM = {"capture": 132, "capture420": 132, "duplicates420": 132, "worst-a": 132}
+_AGENT_WHOLE_FROM = {"capture": 137, "capture420": 137, "duplicates420": 137, "worst-a": 137}
 
 
 
@@ -981,7 +981,7 @@ async def test_workflows_tiers_are_the_measured_onsets(width, tier) -> None:
 
 
 def test_the_pins_are_the_measured_numbers_and_fit_the_app() -> None:
-    """Independent measured pins: SWARM 141x38, AGENT rack132x29; app width143."""
+    """Independent measured pins: SWARM 141x38, AGENT rack137x29; app width143."""
     assert SURF_SWARM_FULL_LAYOUT_COLUMNS == MEASURED_SWARM_COLUMNS
     assert SURF_SWARM_FULL_LAYOUT_ROWS == MEASURED_SWARM_ROWS
     assert SURF_AGENT_FULL_LAYOUT_COLUMNS == MEASURED_AGENT_COLUMNS
@@ -1338,8 +1338,8 @@ async def test_agent_rack_rows_boundary(kind, height):
     assert result['taller'] == (height < SURF_AGENT_FULL_LAYOUT_ROWS)
     assert not result['overflow']
     cards = result['hero_cards']
-    assert [name for name, _ in cards] == ['seat', 'accepted', 'effort', 'rewards', 'rank', 'status',
-                                         'owner', 'runtime', 'models', 'earnings', 'collab', 'nodes']
+    assert [name for name, _ in cards] == ['seat', 'accepted', 'effort', 'rewards', 'rank', 'owner',
+                                         'status', 'runtime', 'models', 'earnings', 'collab', 'nodes']
     regions = [region for _, region in cards]
     assert {region[3] for region in regions} == {9}
     assert max(region[2] for region in regions) - min(region[2] for region in regions) <= 1
@@ -1351,7 +1351,7 @@ async def test_agent_rack_rows_boundary(kind, height):
 @pytest.mark.parametrize('kind', ['capture', 'capture420', 'duplicates420', 'worst-a', 'polish',
                                   'v3', 'pending', 'seats-unavailable', 'workers-unavailable',
                                   'contributors-unavailable', 'absent', 'no-seat'])
-@pytest.mark.parametrize('width', boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 125, 160, 129, 132))
+@pytest.mark.parametrize('width', boundary_set(SURF_AGENT_FULL_LAYOUT_COLUMNS, 125, 160, 129, 137))
 async def test_agent_rack_cards_width_boundary(kind, width):
     payload = (PAYLOADS[kind]() if kind in PAYLOADS else
                _polish_agent_payload() if kind == 'polish' else _v3_agent_payload(kind))
@@ -1360,7 +1360,7 @@ async def test_agent_rack_cards_width_boundary(kind, width):
     if width >= SURF_AGENT_FULL_LAYOUT_COLUMNS:
         _assert_whole(result, (kind, width))
     elif (kind in ('capture', 'capture420', 'duplicates420', 'worst-a', 'polish', 'v3')
-          and width < _AGENT_WHOLE_FROM.get(kind, 132)):
+          and width < _AGENT_WHOLE_FROM.get(kind, 137)):
         assert 'SurfSwarmAgentRackHero' in result['marked_besides_exceptions']
         assert any(name == 'SurfSwarmAgentRackHero' for name, _ in result['clipped'])
 
