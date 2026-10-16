@@ -91,6 +91,27 @@ async def test_project_history_includes_completed_and_blocked_versions_without_a
         assert "legacy_step" in painted(app, "#work-tree-panel")
 
 
+async def test_completed_jobs_and_accepted_steps_match_working_heading_green():
+    data = project_payload()
+    data["workflows"] = []
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        app = pilot.app
+        tree = app.query_one("#work-tree", Tree)
+        node(tree, "job:" + data["jobs"][3]["id"]).expand()
+        await pilot.pause()
+
+        def color(selector, text):
+            region = app.query_one(selector).region
+            segments = [segment for strip in app.screen._compositor.render_strips()[region.y:region.bottom]
+                        for segment in strip.crop(region.x, region.right) if text in segment.text]
+            assert segments, text
+            return segments[0].style.color.get_truecolor(app.ansi_theme)
+
+        heading_green = color("#hero-work-seats", "WORKING")
+        assert color("#work-tree-panel", "Earlier release") == heading_green
+        assert color("#work-tree-panel", "legacy_step") == heading_green
+
+
 async def test_project_nests_terminal_workflows_and_deduplicates_jobs_across_links():
     data = project_payload()
     data["projects"][0].update(workflow_ids=["flow-a", "flow-old", "flow-duplicate"], active_job_ids=["job-a", "job-c"])

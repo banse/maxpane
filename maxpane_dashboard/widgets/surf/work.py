@@ -249,7 +249,9 @@ class SurfWorkBody(Horizontal):
         def add(parent, key, kind, row, label, children=False, suffix="", expanded=True):
             label, suffix = flatten(label), flatten(suffix)
             entry = (key, kind, row, label, suffix)
-            node = parent.add(Text(label + ("  " + suffix if suffix else ""), style=_tone(row.get("state", row.get("status")))),
+            state = row.get("state", row.get("status"))
+            tone = self.app.get_css_variables()["accent"] if state in ("completed", "accepted") else _tone(state)
+            node = parent.add(Text(label + ("  " + suffix if suffix else ""), style=tone),
                               data=entry, allow_expand=children,
                               expand=bool(self._search) or self._expansion.get(key, expanded))
             self._work_nodes[key], self._entries[key] = node, entry
