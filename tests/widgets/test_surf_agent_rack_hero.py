@@ -136,7 +136,7 @@ async def test_status_readout_uses_final_frame_color_and_padded_compact_fallback
             assert all(row.text.startswith(" ") and row.text.endswith(" ") for row in rows)
 
 
-@pytest.mark.parametrize("width", [127, 128, 132, 149])
+@pytest.mark.parametrize("width", [129, 130, 132, 149])
 @pytest.mark.parametrize("name", [None, "⧉"])
 async def test_owner_address_window_keeps_copy_and_explorer_inside_padding(width, name):
     data = payload()
@@ -146,7 +146,7 @@ async def test_owner_address_window_keeps_copy_and_explorer_inside_padding(width
         row = body_rows(pilot.app, "owner")[1]
         assert row.text.startswith(" ") and row.text.endswith(" ")
         assert "⧉" in row.text
-        if width >= 128:
+        if width >= 130:
             assert "0x" in row.text and "…" in row.text
         else:
             assert "wallet" in row.text
@@ -162,8 +162,8 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         hero = app.query_one(SurfSwarmAgentRackHero)
         cards = list(hero.children)
         assert [card.data.key for card in cards] == [
-            "seat", "status", "runtime", "rewards", "rank", "owner",
-            "accepted", "effort", "models", "earnings", "collab", "nodes",
+            "seat", "status", "accepted", "rewards", "rank", "effort",
+            "runtime", "owner", "models", "earnings", "collab", "nodes",
         ]
         assert len(cards) == 12 and hero.region.height == 19
         assert {card.region.height for card in cards} == {9}
@@ -633,7 +633,7 @@ async def test_premium_footer_survives_independent_contributor_failure(state):
 
 async def test_second_row_uses_neutral_frames_except_outdated_runtime():
     data = payload()
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data).run_test(size=(151, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         neutral = border_color(app, "accepted")

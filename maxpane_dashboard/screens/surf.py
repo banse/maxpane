@@ -1909,11 +1909,11 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 38
 #: The keyless live 149x45 render was shown before this measurement.
 #: In-situ scripts/measure_layout.py uses the real AGENT container,
 #: stylesheet, reserved scrollbar gutter and committed capture payloads.
-#: After swapping STATUS and ACCEPTED, capture420 swept 130..138; capture,
-#: duplicate-seat and five-digit stress checked 130/133/134/135/149 are
-#: whole from 134. STATUS is second in the top row; ACCEPTED starts row two.
+#: After the ACCEPTED/RUNTIME and EFFORT/OWNER swaps, capture420 checked
+#: 132..135; capture, duplicate-seat and five-digit stress checked
+#: 133/134/135/149 remain whole from 134. STATUS is second in the top row.
 #: The STATUS subtitle "accepted 06:10" clips through 133; five-digit
-#: inline worker counts share that boundary. OWNER ends the first row.
+#: inline worker counts share that boundary. RUNTIME and OWNER start row two.
 #: ACCEPTED's shortened "of 3,392" fits sooner; grouped digits remain whole.
 #: STATUS uses three tall groups when they fit, complete inline counts
 #: otherwise. REWARDS sheds only "paid " on narrow footers, keeping its date.
