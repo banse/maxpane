@@ -106,7 +106,7 @@ def project(capture, seat, *, now):
     earned = earnings.summarize(point['rows'], work.accepted_job_ids(seat), now) if point else {}
     accepted = work.accepted_rows(seat)
     if earned and (accepted is None or any(parse_job_id(row.get('jobId')) is None for row in accepted)):
-        earned.update(worked_on=None, worked_on_24h=None, worked_recent=None)
+        earned.update(earned=None, earned_24h=None, worked_on=None, worked_on_24h=None, worked_recent=None)
     points = capture.get('work', {})
     nodes = work.summarize(seat, points, now)
     jobs = work.candidates(seat)

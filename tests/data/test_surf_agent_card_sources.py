@@ -44,9 +44,9 @@ async def test_success_clocks_distinct_assets_and_selected_seat_join(reader):
     assert earnings.fetch.await_count == swarm.fetch_job.await_count == 1
     other_seat = dict(seat(), work=[])
     data, _ = sources.project(r.capture(NOW), other_seat, now=NOW)
-    assert data['_agent_earnings']['earned'] == 1
+    assert data['_agent_earnings']['earned'] == 0
     assert data['_agent_earnings']['worked_on'] == 0
-    assert data['_agent_earnings']['earned_24h'] == 1
+    assert data['_agent_earnings']['earned_24h'] == 0
     assert data['_agent_earnings']['worked_on_24h'] == 0
     data, meta = sources.project(r.capture(NOW), seat('0x'+'9'*40), now=NOW)
     assert data['_agent_earnings'] == {} and meta['earnings']['state'] == 'unavailable'
@@ -113,15 +113,34 @@ def test_cache_validation_is_per_owner_and_never_treats_invalid_rows_as_empty():
     assert sources.coerce_earnings({OWNER: dict(valid, rows=[])}, NOW)[OWNER]['rows'] == []
 
 
-def test_unknown_accepted_job_identity_does_not_claim_zero_worked_on():
+@pytest.mark.parametrize('work', [None, [dict(nodeKey='audit_math', status='accepted', jobId=None)]])
+def test_unknown_accepted_job_identity_does_not_claim_zero_earnings(work):
     capture = dict(earnings={OWNER: dict(read_ts=NOW, rows=earned())})
-    raw = dict(seat(), work=[dict(nodeKey='audit_math', status='accepted', jobId=None)])
+    raw = dict(seat(), work=work)
     data, _ = sources.project(capture, raw, now=NOW)
-    assert data['_agent_earnings']['earned'] == 1
+    assert data['_agent_earnings']['earned'] is None
     assert data['_agent_earnings']['worked_on'] is None
-    assert data['_agent_earnings']['earned_24h'] == 1
+    assert data['_agent_earnings']['earned_24h'] is None
     assert data['_agent_earnings']['worked_on_24h'] is None
     assert data['_agent_earnings']['worked_recent'] is None
+
+
+def test_owner_change_rejoins_rewards_to_the_same_seat_not_the_new_wallet_total():
+    new_owner = '0x' + '9' * 40
+    matched = earned()[0]
+    unrelated = dict(matched, token_address='0x' + '2' * 40,
+                     job_id='11111111-1111-1111-1111-111111111111')
+    capture = dict(earnings={
+        OWNER: dict(read_ts=NOW, rows=[matched]),
+        new_owner: dict(read_ts=NOW, rows=[matched, unrelated]),
+    })
+    for owner in (OWNER, new_owner):
+        data, _ = sources.project(capture, seat(owner), now=NOW)
+        assert data['_agent_earnings']['earned'] == 1
+        assert data['_agent_earnings']['earned_24h'] == 1
+    other_seat = dict(seat(new_owner), work=[])
+    data, _ = sources.project(capture, other_seat, now=NOW)
+    assert data['_agent_earnings']['earned'] == data['_agent_earnings']['earned_24h'] == 0
 
 
 async def test_unread_failed_jobs_do_not_starve_later_membership_reads(reader):

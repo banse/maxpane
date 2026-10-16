@@ -58,7 +58,7 @@ def test_legacy_early_rewards_and_unknown_claim_do_not_hide_earned_tokens():
     assert [row['builder'] for row in parsed] == [False, True, False]
     assert [row['claimed'] for row in parsed] == [False, False, None]
     jobs = {row['jobId'] for row in rows}
-    expected = dict(earned=3, worked_on=1, earned_24h=0, worked_on_24h=0, worked_recent=False)
+    expected = dict(earned=1, worked_on=1, earned_24h=0, worked_on_24h=0, worked_recent=False)
     assert summarize(parsed, jobs, NOW) == expected
     assert coerce_rows(json.loads(json.dumps(parsed))) == parsed
     confirmed = dict(parsed[-1], claimed=True)
@@ -93,17 +93,31 @@ def test_earned_counts_assets_not_rows_or_units_and_matches_selected_builder_job
     row = parse_earned_html(page([raw_rows()[2]]), OWNER)[0]
     row['launched_ts'] = NOW - 1
     duplicate = dict(row, builder=False, claimed=True)
-    other_chain = dict(row, chain_id=1 if row['chain_id'] != 1 else 4663, builder=False)
+    other_chain = dict(row, chain_id=1 if row['chain_id'] != 1 else 4663)
     rows = [row, duplicate, other_chain]
     assert summarize(rows, {row['job_id']}, NOW) == {
-        'earned': 2, 'worked_on': 1, 'earned_24h': 2, 'worked_on_24h': 1, 'worked_recent': True,
+        'earned': 2, 'worked_on': 2, 'earned_24h': 2, 'worked_on_24h': 2, 'worked_recent': True,
     }
     assert summarize(rows, {'11111111-1111-1111-1111-111111111111'}, NOW) == {
-        'earned': 2, 'worked_on': 0, 'earned_24h': 2, 'worked_on_24h': 0, 'worked_recent': False,
+        'earned': 0, 'worked_on': 0, 'earned_24h': 0, 'worked_on_24h': 0, 'worked_recent': False,
     }
     raw = raw_rows()[0]
     raw['amount'] = 0
-    assert summarize(parse_earned_html(page([raw]), OWNER), set(), NOW)['earned'] == 1
+    assert summarize(parse_earned_html(page([raw]), OWNER), set(), NOW)['earned'] == 0
+
+
+def test_wallet_rewards_for_other_seats_do_not_inflate_selected_seat_totals():
+    row = parse_earned_html(page([raw_rows()[2]]), OWNER)[0]
+    row['launched_ts'] = NOW - 60
+    another_seat = dict(row, job_id='11111111-1111-1111-1111-111111111111',
+                        token_address='0x' + '1' * 40, launched_ts=None)
+    shared_reward = dict(row, token_address='0x' + '2' * 40, builder=False)
+    rows = [row, dict(row), another_seat, shared_reward]
+    result = summarize(rows, {row['job_id']}, NOW)
+    assert result == dict(earned=1, worked_on=1, earned_24h=1, worked_on_24h=1, worked_recent=True)
+    # No accepted work is a confirmed zero, even in a wallet full of rewards.
+    assert summarize(rows, set(), NOW) == dict(
+        earned=0, worked_on=0, earned_24h=0, worked_on_24h=0, worked_recent=False)
 
 
 @pytest.mark.parametrize('age,recent', [(0, True), (86399.999, True), (86400, False), (-1, False)])
@@ -123,8 +137,8 @@ def test_new_token_counts_use_earliest_asset_date_and_selected_agent_work():
     # The later row does not make an already earned asset new; chains stay distinct.
     for rows in ([row, old, another_chain], [another_chain, old, row]):
         result = summarize(rows, {row['job_id']}, NOW)
-        assert result['earned'] == 2 and result['worked_on'] == 1
-        assert result['earned_24h'] == 1 and result['worked_on_24h'] == 0
+        assert result['earned'] == result['worked_on'] == 1
+        assert result['earned_24h'] == result['worked_on_24h'] == 0
         assert result['worked_recent'] is True  # Existing green rule is unchanged.
 
 

@@ -188,14 +188,13 @@ def parse_earned_html(html: str, owner: str) -> list[dict] | None:
 
 
 def summarize(rows: list[dict], accepted_job_ids: set[str], now: float) -> dict:
-    """Wallet asset totals; builder participation belongs to the selected seat."""
+    """Distinct rewards linked to the selected seat's accepted builder work."""
     accepted = {job.lower() for job in accepted_job_ids}
-    earned, worked, undated = set(), set(), set()
+    worked, undated = set(), set()
     earliest = {}
     recent = False
     for row in rows:
         asset = (row['chain_id'], row['token_address'])
-        earned.add(asset)
         launched = row['launched_ts']
         if launched is None:
             undated.add(asset)
@@ -207,9 +206,9 @@ def summarize(rows: list[dict], accepted_job_ids: set[str], now: float) -> dict:
     # A known old date rules out newness even if another row has no date.
     undated -= {asset for asset, stamp in earliest.items() if now - stamp >= 86400}
     new = {asset for asset, stamp in earliest.items() if 0 <= now - stamp < 86400} - undated
-    return {'earned': len(earned), 'worked_on': len(worked),
-            'earned_24h': None if undated else len(new),
-            'worked_on_24h': None if undated & worked else len(new & worked), 'worked_recent': recent}
+    recent_count = None if undated & worked else len(new & worked)
+    return {'earned': len(worked), 'worked_on': len(worked),
+            'earned_24h': recent_count, 'worked_on_24h': recent_count, 'worked_recent': recent}
 
 
 class AgentEarningsClient(OwnedHttpClient):

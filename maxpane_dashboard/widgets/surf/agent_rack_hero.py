@@ -406,9 +406,9 @@ class AgentRackCard(Pool4HeroCard):
             tip.append(f"\n{_count(count(source.get('accepted')))} / {_count(count(source.get('attempts')))} · {_face(source.get('percent'), 1)}%")
         elif record.key == "earnings":
             recent, worked = (count(source.get(key)) for key in ("earned_24h", "worked_on_24h"))
-            tip.append(f"\nDistinct token assets earned by the owner's wallet: {_count(count(source.get('earned')))} total."
+            tip.append(f"\nDistinct token assets linked to this agent's accepted work: {_count(count(source.get('earned')))} total."
                        f"\nLast 24h: {_count(recent)} earned; {_count(worked)} worked on by this agent."
-                       "\nUses each token's earliest launch/earned timestamp. Worked on requires this agent's accepted builder work.")
+                       "\nUses each token's earliest launch/earned timestamp. Counts require this agent's accepted work and a builder reward for its current owner.")
             if recent is None or worked is None:
                 tip.append("\n-- means unknown; an unknown worked-on count is omitted from the footer.")
             if is_address(source.get("owner")):

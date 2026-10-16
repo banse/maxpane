@@ -743,6 +743,8 @@ async def test_earnings_footer_shows_recent_distinct_tokens_and_only_positive_wo
         assert "CLAIMED" not in painted(app, "earnings")
         assert "7 worked on" in painted(app, "earnings")
         tooltip = str(app.query_one("#hero-earnings").tooltip)
+        assert "this agent's accepted work" in tooltip
+        assert "owner's wallet:" not in tooltip
         assert "earliest launch/earned timestamp" in tooltip
         assert f"Last 24h: {new if new is not None else '--'} earned" in tooltip
         assert f"{worked if worked is not None else '--'} worked on by this agent" in tooltip
