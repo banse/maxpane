@@ -411,3 +411,135 @@ def test_first_rewards_read_stays_pending_with_retained_known_seat(snapshot):
     snapshot['sources']['rewards'] = dict(state='pending', read_ts=None)
     result = hero.project(**snapshot)['rewards']
     assert result['state'] == 'pending' and result['imd'] is None
+
+
+@pytest.fixture
+def current_snapshot(snapshot):
+    from tests.surf_swarm_fixtures import swarm_details_v2
+    detail = deepcopy(next(row for row in swarm_details_v2().values() if row['state'] == 'executing'))
+    detail['nodes'][0]['seat']['tokenId'] = '420'
+    snapshot['data']['swarm_seat_live'].update(live_state='working', working=1)
+    snapshot['data']['_agent_swarm'] = dict(jobs=[dict(id=detail['id'], state='executing')], details=[detail])
+    snapshot['sources']['swarm'] = dict(state='ok', read_ts=NOW-5)
+    return snapshot
+
+
+@pytest.mark.parametrize('key,role,expected', [
+    ('oracle_assess', 'implement', 'oracling'),
+    ('AUDIT-review_2', 'implement', 'auditing'),
+    ('adversarial_review', 'implement', 'reviewing'),
+    ('manifest_project', 'implement', 'manifesting'),
+    ('research-report', 'implement', 'researching'),
+    ('write_foundry_tests', 'implement', 'testing'),
+    ('design critic', 'implement', 'designing'),
+    ('build_frontend', 'implement', 'frontending'),
+    ('build_contract_project_4', 'implement', 'building'),
+    ('implement_component', 'review', 'implementing'),
+    ('auditing', None, 'auditing'),
+    ('reviewed', None, 'reviewing'),
+    ('testing', None, 'testing'),
+    ('built', None, 'building'),
+    ('implementation', None, 'implementing'),
+    ('unknown', 'research', 'researching'),
+    ('preview', 'contest', None),
+    ('builderboard', 'manifestation', None),
+    (None, None, None),
+])
+def test_current_action_maps_node_category_before_role(current_snapshot, key, role, expected):
+    current_snapshot['data']['_agent_swarm']['details'][0]['nodes'][0].update(key=key, role=role)
+    assert hero.project(**current_snapshot)['status']['current_action'] == expected
+
+
+@pytest.mark.parametrize('source,state,partial', [
+    ('workers', 'stale', False), ('workers', 'failed', False), ('workers', 'pending', False),
+    ('workers', 'partial', False), ('workers', 'ok', True),
+    ('swarm', 'stale', False), ('swarm', 'failed', False), ('swarm', 'unavailable', False),
+    ('swarm', 'partial', False), ('swarm', 'pending', False),
+])
+def test_current_action_requires_fresh_complete_sources(current_snapshot, source, state, partial):
+    current_snapshot['sources'][source].update(state=state, partial=partial)
+    assert hero.project(**current_snapshot)['status']['current_action'] is None
+
+
+@pytest.mark.parametrize('live_state,working', [('idle', 0), ('paused', 1), ('offline', 1), ('working', 0), ('working', None)])
+def test_current_action_requires_confirmed_working_count(current_snapshot, live_state, working):
+    current_snapshot['data']['swarm_seat_live'].update(live_state=live_state, working=working)
+    assert hero.project(**current_snapshot)['status']['current_action'] is None
+
+
+def test_current_action_uses_selected_seat_across_parallel_nodes_and_refreshes(current_snapshot):
+    data = current_snapshot['data']
+    detail = data['_agent_swarm']['details'][0]
+    mine = detail['nodes'][0]
+    other = deepcopy(mine)
+    other.update(key='design', updatedAt='2026-10-13T00:00:00.000Z')
+    other['seat']['tokenId'] = '421'
+    detail['nodes'].insert(0, other)
+    assert hero.project(**current_snapshot)['status']['current_action'] == 'oracling'
+    data['swarm_seat_selected']['token_id'] = 421
+    assert hero.project(**current_snapshot)['status']['current_action'] == 'designing'
+    data['swarm_seat_selected']['token_id'] = 420
+    mine.update(key='adversarial_review')
+    assert hero.project(**current_snapshot)['status']['current_action'] == 'reviewing'
+    mine['state'] = 'accepted'
+    assert hero.project(**current_snapshot)['status']['current_action'] is None
+    # Submission history is deliberately not evidence of a current assignment.
+    data['swarm_seat_work_rows'] = [dict(node_key='oracle_assess', job_state='executing', state='pending')]
+    assert hero.project(**current_snapshot)['status']['current_action'] is None
+
+
+@pytest.mark.parametrize('change', ['missing', 'jobs_not_list', 'details_not_list', 'not_listed',
+                                  'list_completed', 'detail_completed', 'wrong_id', 'no_nodes',
+                                  'node_waiting', 'no_seat', 'bad_token'])
+def test_current_action_rejects_missing_malformed_and_terminal_inputs(current_snapshot, change):
+    raw = current_snapshot['data']['_agent_swarm']
+    detail, node = raw['details'][0], raw['details'][0]['nodes'][0]
+    if change == 'missing': current_snapshot['data'].pop('_agent_swarm')
+    elif change == 'jobs_not_list': raw['jobs'] = {}
+    elif change == 'details_not_list': raw['details'] = {}
+    elif change == 'not_listed': raw['jobs'] = []
+    elif change == 'list_completed': raw['jobs'][0]['state'] = 'completed'
+    elif change == 'detail_completed': detail['state'] = 'completed'
+    elif change == 'wrong_id': detail['id'] = 'another-job'
+    elif change == 'no_nodes': detail['nodes'] = None
+    elif change == 'node_waiting': node['state'] = 'waiting'
+    elif change == 'no_seat': node['seat'] = None
+    elif change == 'bad_token': node['seat']['tokenId'] = True
+    assert hero.project(**current_snapshot)['status']['current_action'] is None
+
+
+def test_current_action_chooses_newest_valid_timestamp_then_stable_job_and_node(current_snapshot):
+    raw = current_snapshot['data']['_agent_swarm']
+    first = raw['details'][0]
+    first['id'] = 'a'
+    first['nodes'][0].update(key='build', updatedAt='2026-10-12T00:00:00.000Z')
+    second = deepcopy(first)
+    second['id'] = 'b'
+    second['nodes'][0].update(key='test', updatedAt='2026-10-12T01:00:00.000Z')
+    raw.update(jobs=[dict(id=key, state='executing') for key in ('a', 'b')], details=[second, first])
+    assert hero.project(**current_snapshot)['status']['current_action'] == 'testing'
+    # Future/invalid/missing dates cannot outrank a valid timestamp, even when
+    # that node started long ago; the enclosing source has just been confirmed.
+    for stamp in ('2099-01-01T00:00:00Z', 'broken', None):
+        second['nodes'][0]['updatedAt'] = stamp
+        assert hero.project(**current_snapshot)['status']['current_action'] == 'building'
+    first['nodes'][0]['updatedAt'] = None
+    second['nodes'][0]['updatedAt'] = None
+    assert hero.project(**current_snapshot)['status']['current_action'] == 'building'
+    extra = deepcopy(first['nodes'][0])
+    extra['key'] = 'audit'
+    first['nodes'].append(extra)
+    assert hero.project(**current_snapshot)['status']['current_action'] == 'auditing'
+    first['nodes'].reverse()
+    raw['details'].reverse()
+    assert hero.project(**current_snapshot)['status']['current_action'] == 'auditing'
+    # Select the current node before mapping, never borrow an older known type.
+    second['nodes'][0].update(key='unknown', role='unknown', updatedAt='2026-10-12T01:00:00.000Z')
+    assert hero.project(**current_snapshot)['status']['current_action'] is None
+
+
+@pytest.mark.parametrize('name,age', [('swarm', 61), ('workers', 121)])
+def test_current_action_rechecks_source_age_at_projection(current_snapshot, name, age):
+    # A detached cycle can outlive the state captured at its start.
+    current_snapshot['sources'][name]['read_ts'] = NOW-age
+    assert hero.project(**current_snapshot)['status']['current_action'] is None

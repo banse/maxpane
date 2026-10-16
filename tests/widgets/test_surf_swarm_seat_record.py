@@ -163,11 +163,11 @@ async def test_a_work_row_renders_every_column():
     assert header == ["when", "job", "node", "state", "model", "took", "tok", "panel", "answer"]
 
 
-async def test_the_title_has_no_blank_row_under_it():
-    """Owner, 2026-09-22: RECORD alone drops ``PanelBase``'s blank row."""
+async def test_the_title_has_exactly_one_blank_row_under_it():
     lines = await _record()
     y = next(i for i, line in enumerate(lines) if "RECORD" in line)
-    assert lines[y + 1].split()[:3] == ["when", "job", "node"], lines[y:y + 2]
+    assert not lines[y + 1].strip(), lines[y:y + 3]
+    assert lines[y + 2].split()[:3] == ["when", "job", "node"], lines[y:y + 3]
 
 
 async def test_every_known_node_key_shows_its_card_word_and_an_unknown_one_is_fitted():
@@ -846,8 +846,9 @@ async def test_a_shrink_paints_what_a_fresh_mount_at_that_size_paints():
     at that text's height: Textual 8.1.1 keys a widget's box model on a counter
     that ``refresh(layout=True)`` bumps only when no layout is already pending,
     and the resize leaves one pending -- so the one-line title kept the two rows
-    the wider title wrapped to, a blank row above the header, until the next
-    poll (159x80 -> 149x31 on AGENT, 2026-10-05)."""
+    the wider title wrapped to, an extra blank row above the header, until the
+    next poll (159x80 -> 149x31 on AGENT, 2026-10-05). Preserve only the requested
+    one-row title gap after resize."""
     async def painted(*sizes):
         async with _RecordApp().run_test(size=sizes[0]) as pilot:
             pilot.app.query_one(SurfSwarmSeatRecord).update_data(
@@ -860,7 +861,8 @@ async def test_a_shrink_paints_what_a_fresh_mount_at_that_size_paints():
             return _lines(pilot.app)
 
     fresh = await painted((149, 20))
-    assert "'i' to change seat · 'f' to filter records" in fresh[0] and 'when' in fresh[1], fresh[:2]
+    assert "'i' to change seat · 'f' to filter records" in fresh[0], fresh[:3]
+    assert not fresh[1].strip() and 'when' in fresh[2], fresh[:3]
     assert await painted((159, 20), (149, 20)) == fresh
 
 

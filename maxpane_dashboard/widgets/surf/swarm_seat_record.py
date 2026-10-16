@@ -158,14 +158,6 @@ class SurfSwarmSeatRecord(SwarmTableBase):
     TABLE_ID = "surf-swarm-seat-record-table"
     CURSOR_TYPE = "none"
 
-    #: The one panel title with no blank row under it (owner, 2026-09-22):
-    #: the exception to ``PanelBase``'s ``margin: 0 0 1 0``, stated here
-    #: where the panel is declared and pinned in the title-blank-row test.
-    DEFAULT_CSS = """
-    SurfSwarmSeatRecord > .panel-title {
-        margin: 0;
-    }
-    """
     #: Kept at 40 for lifetime rows (plan §9 G); the footer counts the rest.
     ROW_CAP = 40
     MAX_CAP = 400

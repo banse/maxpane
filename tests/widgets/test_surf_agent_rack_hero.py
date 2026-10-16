@@ -24,6 +24,7 @@ def payload():
         rewards=dict(source, imd=12.84, usd=120.82, seats=3, usd_state="ok", usd_read_ts=1791775800., last_paid_ts=1791775680., paid_recent=True),
         rank=dict(source, listed=True, rank=27, ranked_of=1024, delta=2),
         status=dict(source, live_state="working", working=2, capacity=3, devices=2,
+                    current_action="reviewing",
                     paused_until_ts=None, failures=0, last_work_ts=1791775680., last_work_kind="worked",
                     work_state="ok", work_read_ts=1791775800., meter_kind="activity", meter_state="busy", numerator=1., denominator=1.),
         owner=dict(source, address="0x0000000000000000000000000000000000000001", name="example.eth", paired_ts=1790812800.),
@@ -166,13 +167,13 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         assert [(card.region.x, card.region.width) for card in cards[:6]] == [(card.region.x, card.region.width) for card in cards[6:]]
         assert cards[6].region.y - cards[0].region.bottom == 1
         for key, words in {
-            "seat": ("IDMD", "working", "AGENT #8127"),
+            "seat": ("AGENT", "working", "ERC-8004 #8127"),
             "accepted": ("of 1,000", "96%", "▰"),
             "effort": ("HOURS", "1.8M tokens", "75% premium"),
             "rewards": ("IMD", "$120.82", "paid "),
             "rank": ("POSITION", "of 1,024", "↑ 2"),
-            "status": ("WORKER", "active", "BUSY", "▰"),
-            "owner": ("WALLET", "example.eth ⧉", "paired", "OPEN / COPY"),
+            "status": ("WORKER", "reviewing", "BUSY", "▰"),
+            "owner": ("WALLET", "example.eth ⧉", "paired"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "up to date"),
             "models": ("model A", "high", "model B", "medium", "2 models"),
             "earnings": ("EARNINGS", "TOKENS", "7 worked on", "2 new worked on"),
@@ -183,11 +184,39 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             assert all(word in text for word in words), (key, text)
             footer = strips(app, key)[-1].text
             label = footer.strip("╰─╯ ")
+            if key in ("owner", "models", "nodes"):
+                assert not label, (key, footer)
+                continue
             left = footer.index(label)
             assert abs(left - (len(footer) - left - len(label))) <= 1, (key, footer)
         # 420 and 960, asserted as digit glyphs that actually reach the terminal.
         assert "  ╵╰─╴╰─╯" in painted(app, "seat")
         assert "╶─╯╰─╯╰─╯" in painted(app, "accepted")
+
+
+async def test_working_status_uses_current_action_and_clears_it_on_idle_or_unknown():
+    data = payload()
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        hero = pilot.app.query_one(SurfSwarmAgentRackHero)
+        for action in ("oracling", "auditing", "reviewing", "building", "manifesting",
+                       "researching", "testing", "designing", "frontending", "implementing"):
+            data["status"]["current_action"] = action
+            hero.update_data(surf_agent_hero=data)
+            await pilot.pause()
+            text = painted(pilot.app, "status")
+            assert action in text and "active" not in text and "worked" not in text, text
+        for invalid in (None, "", "active", "[/x]\x1b[31m researching", [], {}, True):
+            data["status"]["current_action"] = invalid
+            hero.update_data(surf_agent_hero=data)
+            await pilot.pause()
+            text = painted(pilot.app, "status")
+            assert "working" in text and "implementing" not in text and "active" not in text, text
+        data["status"].update(current_action="building", working=0, live_state="idle", meter_state="idle")
+        hero.update_data(surf_agent_hero=data)
+        await pilot.pause()
+        text = painted(pilot.app, "status")
+        assert "worked" in text and "building" not in text, text
 
 
 async def test_owner_keeps_copy_and_explorer_links_when_name_is_hostile_or_long():
@@ -214,7 +243,7 @@ async def test_detail_failure_preserves_selected_id_and_independent_records(stat
         assert "of 1,000" in painted(pilot.app, "accepted")
         assert "example.eth" not in painted(pilot.app, "owner")
         assert "up to date" not in painted(pilot.app, "runtime")
-        expected = {"unknown_seat": "never paired", "empty": "EMPTY"}.get(state, "--")
+        expected = "never paired" if state == "unknown_seat" else "--"
         assert expected in painted(pilot.app, "owner")
 
 
@@ -259,7 +288,7 @@ async def test_status_meter_colors_and_unknown_worker_never_claim_offline(live, 
             assert "revoked" not in painted(app, "seat")
             assert border_color(app, "seat") != app.ansi_theme.ansi_colors[1]
         assert word in text, text
-        assert ("active" in text) == (live == "working")
+        assert ("reviewing" in text) == (live == "working")
         if live == "working":
             assert "worked" not in text
         elif live in ("idle", "offline"):
@@ -420,22 +449,24 @@ async def test_unknown_runtime_check_fixed_wording_fits_owner_terminal(state):
         assert '‹' not in text
 
 
-@pytest.mark.parametrize('state,word,ansi', [
-    ('unknown_seat', 'never paired', 3),
-])
-async def test_warning_footer_colors_reach_actual_compositor(state, word, ansi):
+async def test_owner_models_and_nodes_outer_footers_stay_blank_in_every_source_state():
     data = payload()
-    key = 'status' if state in ('paused', 'unknown_worker') else 'owner'
-    if key == 'status':
-        data[key]['live_state'] = 'paused' if state == 'paused' else None
-    else:
-        data[key]['state'] = state
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        segments = [segment for segment in strips(pilot.app, key)[-1] if word in segment.text]
-        assert segments, painted(pilot.app, key)
-        assert all(segment.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[ansi]
-                   for segment in segments)
+        for state in ("ok", "partial", "stale", "unavailable", "pending", "busy",
+                      "unknown_seat", "stale_unknown_seat", "empty", "failed", "malformed"):
+            for key in ("owner", "models", "nodes"):
+                data[key]["state"] = state
+            pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+            await pilot.pause()
+            for key in ("owner", "models", "nodes"):
+                footer = strips(pilot.app, key)[-1].text
+                assert set(footer) <= set(" ╰─╯"), (state, key, footer)
+                if state in ("unknown_seat", "stale_unknown_seat"):
+                    assert "never paired" in painted(pilot.app, key)
+            if state in ("ok", "partial", "stale"):
+                for key, word in (("owner", "paired"), ("models", "2 models"), ("nodes", "work by type")):
+                    assert word in painted(pilot.app, key)
 
 
 def border_color(app, key):
@@ -444,8 +475,8 @@ def border_color(app, key):
     return frames[0].style.color.get_truecolor()
 
 
-@pytest.mark.parametrize("live,word,color", [("working", "working", "accent"), ("idle", "online", "accent"),
-                                          ("paused", "online", "accent"), ("offline", "offline", "red")])
+@pytest.mark.parametrize("live,word,color", [("working", "working", "accent"), ("idle", "ONLINE", "accent"),
+                                          ("paused", "ONLINE", "accent"), ("offline", "offline", "red")])
 @pytest.mark.parametrize("api_status", [None, "revoked", "suspended", "", "  ", 123])
 async def test_seat_uses_worker_presence_and_erc8004_registration(live, word, color, api_status):
     from rich.color import Color
@@ -459,7 +490,8 @@ async def test_seat_uses_worker_presence_and_erc8004_registration(live, word, co
         await pilot.pause()
         app = pilot.app
         assert word in painted(app, "seat")
-        assert "AGENT #8127" in painted(app, "seat")
+        assert "ERC-8004 #8127" in painted(app, "seat")
+        assert "IDMD" not in painted(app, "seat")
         assert "stale" not in painted(app, "seat")
         expected = (Color.parse(app.get_css_variables()["accent"]).get_truecolor() if color == "accent"
                     else app.ansi_theme.ansi_colors[1])
@@ -484,7 +516,7 @@ async def test_accepted_and_status_tracks_fill_footer_and_show_formatted_digits(
         assert all(word not in status for word in ("working", "capacity", "devices"))
         # Three tall groups: two active slots, a muted 0F, three capacity slots.
         assert "╶─╮ ╭─╮╭─╴ ╶─╮" in status
-        assert "active" in status
+        assert "reviewing" in status
         middle = [segment for strip in strips(app, "status") for segment in strip
                   if "╭─╮╭─╴" in segment.text]
         assert middle
@@ -530,7 +562,7 @@ async def test_pending_uses_loading_indicator_without_masking_failed_sources():
         await pilot.pause()
         assert "unavailable" not in painted(app, "rewards")
         assert "loading" not in painted(app, "runtime")
-        assert "AGENT #8127" in painted(app, "seat")
+        assert "ERC-8004 #8127" in painted(app, "seat")
 
 
 @pytest.mark.parametrize("width", [132, 134])

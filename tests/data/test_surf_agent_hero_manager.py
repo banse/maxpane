@@ -258,3 +258,92 @@ async def test_retained_never_paired_result_keeps_its_stale_clock(agent, reason,
             assert 'never paired' in painted(pilot.app, 'seat')
     finally:
         await manager.close()
+
+
+@pytest.fixture
+async def working_agent(agent, monkeypatch):
+    from tests.surf_swarm_fixtures import swarm_details_v2
+    from maxpane_dashboard.data.surf_cache import TIER_SWARM, TIER_SWARM_BOARD
+    manager, clock, swarm, _ = agent
+    detail = deepcopy(next(row for row in swarm_details_v2().values() if row['state'] == 'executing'))
+    detail['nodes'][0]['seat']['tokenId'] = '420'
+    swarm._jobs = [dict(id=detail['id'], state='executing', createdAt=detail['createdAt'])]
+    swarm._details = {detail['id']: detail}
+    worker = deepcopy(swarm.workers['workers'][0])
+    worker.update(working=1, maxConcurrency=2)
+    worker['seat']['tokenId'] = '420'
+    swarm.workers = dict(count=1, workers=[worker])
+    monkeypatch.setattr(manager, '_offer_hub_source', lambda *args: None)
+    await manager._pool_swarm({TIER_SWARM}, clock())
+    await manager._pool_swarm_board({TIER_SWARM_BOARD}, clock())
+    return manager, clock, swarm, detail
+
+
+async def test_current_action_direct_agent_uses_existing_live_snapshot_and_refreshes(working_agent):
+    from maxpane_dashboard.data.surf_cache import TIER_SWARM, TIER_SWARM_BOARD
+    manager, clock, swarm, detail = working_agent
+    try:
+        assert manager._work_reader.task is None
+        calls = deepcopy(swarm.calls)
+        assert manager._project_hub()['surf_agent_hero']['status']['current_action'] == 'oracling'
+        assert swarm.calls == calls  # projection performs no new reads
+        detail['nodes'][0]['key'] = 'build_contract_project_4'
+        clock.advance(10)
+        await manager._pool_swarm({TIER_SWARM}, clock())
+        assert manager._project_hub()['surf_agent_hero']['status']['current_action'] == 'building'
+        manager.set_seat(421)
+        assert manager._project_hub()['surf_agent_hero']['status']['current_action'] is None
+        manager.set_seat(420)
+        assert manager._project_hub()['surf_agent_hero']['status']['current_action'] == 'building'
+        # An unchanged complete worker read remains fresh independently.
+        swarm.workers['workers'][0]['working'] = 0
+        await manager._pool_swarm_board({TIER_SWARM_BOARD}, clock())
+        assert manager._project_hub()['surf_agent_hero']['status']['current_action'] is None
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize('reason', ['failed', 'expired', 'unconfirmed', 'partial_workers', 'failed_workers'])
+async def test_current_action_retained_snapshot_cannot_claim_current_work(working_agent, reason):
+    from maxpane_dashboard.data.surf_cache import TIER_SWARM, TIER_SWARM_BOARD
+    manager, clock, swarm, _ = working_agent
+    try:
+        assert manager._project_hub()['surf_agent_hero']['status']['current_action'] == 'oracling'
+        if reason == 'failed':
+            swarm._fail = True
+            await manager._pool_swarm({TIER_SWARM}, clock())
+        elif reason == 'expired':
+            clock.advance(61)
+        elif reason == 'unconfirmed':
+            manager.cache._tier_last_fetch.pop(TIER_SWARM)  # restored cache has no live confirmation
+        elif reason == 'partial_workers':
+            swarm.workers['count'] += 1
+            await manager._pool_swarm_board({TIER_SWARM_BOARD}, clock())
+        else:
+            swarm.fail_workers = True
+            await manager._pool_swarm_board({TIER_SWARM_BOARD}, clock())
+        assert manager._project_hub()['surf_agent_hero']['status']['current_action'] is None
+    finally:
+        await manager.close()
+
+
+async def test_current_action_capture_keeps_payload_with_its_confirmation(working_agent):
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM, TIER_SWARM
+    manager, clock, _, _ = working_agent
+    try:
+        data = manager._project_hub()
+        capture = manager._agent_hero_capture(None, now=clock())
+        board_sources = dict(workers=dict(state='ok', read_ts=clock(), partial=False))
+        before = manager._agent_hero(data, capture, board_sources, {}, now=clock())['status']
+        replacement = deepcopy(manager.cache.get_last_good(SLOT_SWARM).payload)
+        replacement['details'][0]['nodes'][0]['key'] = 'test'
+        clock.advance(1)
+        manager.cache.store_last_good(SLOT_SWARM, replacement, ts=clock())
+        manager.cache.mark_fetched(TIER_SWARM, clock())
+        assert manager._agent_hero(data, capture, board_sources, {}, now=clock())['status'] == before
+        assert manager._project_hub()['surf_agent_hero']['status']['current_action'] == 'testing'
+        replacement = dict(replacement, details=[])
+        manager.cache.store_last_good(SLOT_SWARM, replacement, ts=clock())
+        assert manager._project_hub()['surf_agent_hero']['status']['current_action'] is None
+    finally:
+        await manager.close()

@@ -197,8 +197,7 @@ _TITLED = [(k, c) for k, (_id, panels, _h) in _BODIES.items() for c in panels]
 
 @pytest.mark.parametrize("key,cls", _TITLED, ids=[c.__name__ for _k, c in _TITLED])
 async def test_every_swarm_panel_paints_a_blank_row_under_its_title(key, cls):
-    """RECORD is the one exception, and it is asserted, not skipped: the owner
-    removed its blank row for the AGENT body only (2026-09-22)."""
+    """RECORD follows the shared title gap again (owner, 2026-10-16)."""
     from tests.surf_launch_fixtures import launch_row
     payload = _frozen_payload(swarm_launch_rows=[launch_row()])
     async with _surf_app(payload).run_test(size=_SIZE) as pilot:
@@ -207,9 +206,6 @@ async def test_every_swarm_panel_paints_a_blank_row_under_its_title(key, cls):
         rows = _region_text(pilot.app, panel).split("\n")
 
     assert rows[0].strip(), f"{cls.__name__} has no title row"
-    if cls is SurfSwarmSeatRecord:
-        assert rows[1].strip().startswith("when"), "RECORD's header must follow its title directly"
-        return
     assert not rows[1].strip(), f"{cls.__name__} has no blank row under its title"
     assert rows[2].strip(), f"{cls.__name__} has no content row"
 
@@ -896,7 +892,7 @@ async def test_record_filtered_empty_footer_and_unread_are_distinct(monkeypatch)
 
 @pytest.mark.parametrize('width,tier', [(58,'tight'),(99,'compact'),(107,'full'),(139,'full')])
 async def test_record_filter_title_is_whole_at_every_tier(width,tier):
-    async with _surf_app(_record_view_payload()).run_test(size=(width,25)) as pilot:
+    async with _surf_app(_record_view_payload()).run_test(size=(width,surf_mod.SURF_AGENT_FULL_LAYOUT_ROWS)) as pilot:
         screen = await _open(pilot,'a'); record = screen.query_one(SurfSwarmSeatRecord)
         title = record.query_one('.panel-title')
         text = _region_text(pilot.app,title)

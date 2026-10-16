@@ -5,9 +5,11 @@ from maxpane_dashboard.analytics.surf_launch_checks import address
 from maxpane_dashboard.analytics.surf_swarm_signals import runtime_outdated, daemon_differs
 from maxpane_dashboard.analytics.surfboard import count, number, ratio, seat_token
 from maxpane_dashboard.data import surfboard_activity as activity_history
+from maxpane_dashboard.data.surf_cache import TIER_SWARM, TIER_SWARM_BOARD, TIER_TTL_SECONDS
 from maxpane_dashboard.data.surf_models import SURF_AGENT_HERO_FIELDS
 from maxpane_dashboard.data.surf_news_hero import _stamp
 from maxpane_dashboard.data.surf_pool4_hero import _facts as _read_facts, _source as _read_source
+from maxpane_dashboard.data.surf_swarm import _ts, parse_seat_token
 
 
 def _mapping(value):
@@ -123,6 +125,59 @@ def _runtime(data, summary, detail, sources, now):
     return result
 
 
+_NODE_ACTIONS = (
+    ('oracling', {'oracle', 'oracles', 'oracling'}),
+    ('auditing', {'audit', 'audits', 'audited', 'auditing'}),
+    ('reviewing', {'review', 'reviews', 'reviewed', 'reviewing'}),
+    ('manifesting', {'manifest', 'manifests', 'manifested', 'manifesting'}),
+    ('researching', {'research', 'researches', 'researched', 'researching'}),
+    ('testing', {'test', 'tests', 'tested', 'testing'}),
+    ('designing', {'design', 'designs', 'designed', 'designing'}),
+    ('frontending', {'frontend', 'frontends', 'frontending'}),
+    ('building', {'build', 'builds', 'built', 'building'}),
+    ('implementing', {'implement', 'implements', 'implemented', 'implementing', 'implementation'}),
+)
+
+
+def _node_action(node):
+    for value in (node.get('key'), node.get('role')):
+        words = set(re.split(r'[-_\s]+', value.casefold())) if isinstance(value, str) else set()
+        for action, forms in _NODE_ACTIONS:
+            if words & forms:
+                return action
+    return None
+
+
+def _current_action(data, sources, status, token, now):
+    """An action needs a current assignment and independent live worker evidence."""
+    for name, tier in (('swarm', TIER_SWARM), ('workers', TIER_SWARM_BOARD)):
+        source = _source(sources, name, now)
+        if source['state'] != 'ok' or now - source['read_ts'] > TIER_TTL_SECONDS[tier]:
+            return None
+    if (_mapping(sources.get('workers')).get('partial') is True
+            or status['live_state'] != 'working' or not status['working']):
+        return None
+    raw = _mapping(data.get('_agent_swarm'))
+    jobs, details = raw.get('jobs'), raw.get('details')
+    if not isinstance(jobs, list) or not isinstance(details, list):
+        return None
+    executing = {job['id'] for job in jobs if isinstance(job, dict)
+                 and isinstance(job.get('id'), str) and job['id'] and job.get('state') == 'executing'}
+    candidates = []
+    for detail in details:
+        if (not isinstance(detail, dict) or not isinstance(detail.get('id'), str)
+                or detail['id'] not in executing or detail.get('state') != 'executing'
+                or not isinstance(detail.get('nodes'), list)):
+            continue
+        for node in detail['nodes']:
+            if (not isinstance(node, dict) or node.get('state') != 'working'
+                    or parse_seat_token(_mapping(node.get('seat')).get('tokenId')) != token):
+                continue
+            stamp = _stamp(_ts(node.get('updatedAt')), now)
+            candidates.append((-(stamp or 0), detail['id'], _text(node.get('key')) or '', node))
+    return _node_action(min(candidates, key=lambda row: row[:3])[3]) if candidates else None
+
+
 def _status(data, summary, detail, workers, sources, token, now, activity):
     live = _mapping(data.get('swarm_seat_live'))
     incomplete = _mapping(sources.get('workers')).get('partial') is True
@@ -145,6 +200,7 @@ def _status(data, summary, detail, workers, sources, token, now, activity):
     observed = activity_history.project(activity, token, now=now)
     meter = activity_history.meter(observed, result['live_state'], now=now)
     result.update(meter)
+    result['current_action'] = _current_action(data, sources, result, token, now)
     return result
 
 

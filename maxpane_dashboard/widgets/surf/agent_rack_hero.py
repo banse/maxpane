@@ -25,6 +25,8 @@ from .pool4_hero import Pool4HeroCard, _amount, _face
 
 _STATES = ("ok", "partial", "stale", "unavailable", "pending", "busy", "unknown_seat", "stale_unknown_seat", "empty", "failed")
 _AVAILABLE = ("ok", "partial", "stale")
+_CURRENT_ACTIONS = ("oracling", "auditing", "reviewing", "building", "manifesting",
+                    "researching", "testing", "designing", "frontending", "implementing")
 
 
 def _source(payload, key):
@@ -58,18 +60,18 @@ def _earnings_footer(source, *, compact=False):
 def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     records = []
     for key, title, heading, footer in (
-        ("seat", "SEAT", "IDMD", "AGENT #--"),
+        ("seat", "SEAT", "AGENT", "ERC-8004 #--"),
         ("accepted", "ACCEPTED", "WORK", "--%"),
         ("effort", "EFFORT", "HOURS", "--% premium"),
         ("rewards", "REWARDS", "IMD", "paid --"),
         ("rank", "RANK", "POSITION", ""),
         ("status", "STATUS", "WORKER", "UNKNOWN"),
-        ("owner", "OWNER", "WALLET", "OPEN / COPY"),
+        ("owner", "OWNER", "WALLET", ""),
         ("runtime", "RUNTIME", "SOFTWARE", "since --"),
-        ("models", "MODELS", "ADVERTISED", "CONFIGURATION"),
+        ("models", "MODELS", "ADVERTISED", ""),
         ("earnings", "EARNINGS", "TOKENS", "-- new"),
         ("collab", "COLLAB", "SEATS", "TOP --"),
-        ("nodes", "NODES", "ACCEPTED", "HISTORY"),
+        ("nodes", "NODES", "ACCEPTED", ""),
     ):
         raw = _source(payload, key)
         state = raw.get("state")
@@ -84,13 +86,13 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             token = count(raw.get("token_id"))
             fields["digits"] = str(token) if token is not None and number(token) is not None else "--"
             presence = _source(payload, "status").get("live_state")
-            fields["subtitle"] = {"working": "working", "idle": "online", "paused": "online", "offline": "offline"}.get(presence, "status --")
+            fields["subtitle"] = {"working": "working", "idle": "ONLINE", "paused": "ONLINE", "offline": "offline"}.get(presence, "status --")
             if presence == "offline":
                 api_status = raw.get("api_status")
                 fields["subtitle"] = (flatten(api_status) if isinstance(api_status, str) else "") or "offline"
             agent_id = raw.get("agent_id")
             agent_id = agent_id if isinstance(agent_id, str) and agent_id.isascii() and agent_id.isdecimal() else "--"
-            fields["footer"] = f"AGENT #{agent_id}"
+            fields["footer"] = f"ERC-8004 #{agent_id}"
             if token is None and state == "empty":
                 fields.update(digits="", preview="no seat selected", subtitle="")
             fields["accent"] = token is not None and presence in ("working", "idle", "paused")
@@ -132,7 +134,8 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             kind = kind if kind in ("worked", "accepted") else "work"
             fields["subtitle"] = f"{kind} {hhmm(number(section.get('last_work_ts')), unknown='--:--')}"
             if (count(section.get("working")) or 0) > 0:
-                fields["subtitle"] = "active"
+                action = section.get("current_action")
+                fields["subtitle"] = action if action in _CURRENT_ACTIONS else "working"
             elif section.get("live_state") == "paused":
                 fields["subtitle"] = "until " + hhmm(number(section.get("paused_until_ts")), unknown="--:--")
             fields["accent"] = section.get("meter_state") == "busy"
@@ -248,7 +251,9 @@ class AgentRackCard(Pool4HeroCard):
 
     def _footer(self):
         data = self.data
-        if data.key == "effort" and data.footer != "--% premium":
+        if data.key in ("owner", "models", "nodes"):
+            self.border_subtitle = Text()
+        elif data.key == "effort" and data.footer != "--% premium":
             self.border_subtitle = Text().append(data.footer, style="dim")
         elif data.state in ("unknown_seat", "stale_unknown_seat", "empty", "unavailable"):
             word = {"unknown_seat": "never paired", "stale_unknown_seat": "never paired", "empty": "EMPTY"}.get(data.state, "")

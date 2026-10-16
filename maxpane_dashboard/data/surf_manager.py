@@ -6502,8 +6502,14 @@ class SurfManager:
         """Freeze selected-point confirmations before any detached read can replace them."""
         seats = (sw.coerce_seat_slot(getattr(seat_entry, 'payload', None), now=now) or {}).get('seats', {})
         reward_entry = self.cache.get_last_good(SLOT_SWARM_SEAT_REWARDS)
+        swarm_entry = self.cache.get_last_good(SLOT_SWARM)
+        swarm_stamp = getattr(swarm_entry, 'ts', None)
+        swarm_source = news_hero.source(swarm_stamp, now=now, ttl=TIER_TTL_SECONDS[TIER_SWARM],
+            failed=self.cache.last_failure_ts(TIER_SWARM) is not None
+                   or self.cache.last_fetch_ts(TIER_SWARM) != swarm_stamp)
         return dict(seats={key: self._agent_seat_source(int(key), point, now=now) for key, point in seats.items()},
                     seat_points=seats, card_sources=self._agent_card_sources.capture(now),
+                    swarm=getattr(swarm_entry, 'payload', None), swarm_source=swarm_source,
                     workers=(sw.coerce_workers_slot(getattr(self.cache.get_last_good(SLOT_SWARM_WORKERS), 'payload', None)) or {}).get('workers', []),
                     rewards=sw.coerce_rewards_slot(getattr(reward_entry, 'payload', None), now=now) or {},
                     rewards_failed=set(self._seat_rewards_failed), runtime=self._runtime_points(now),
@@ -6513,7 +6519,8 @@ class SurfManager:
         selected = data.get('swarm_seat_selected') or {}
         token = selected.get('token_id')
         sources = dict(board_sources, records=data.get('swarm_outcomes_source'),
-                       seat=capture['seats'].get(str(token)), market=market_source)
+                       seat=capture['seats'].get(str(token)), market=market_source,
+                       swarm=capture.get('swarm_source'))
         point = capture['rewards'].get(str(token))
         identity = self._rewards_identity(data.get('swarm_seat_summary') or {})
         if point is None or (point['owner'], point['paired_ts']) != identity:
@@ -6533,7 +6540,7 @@ class SurfManager:
             token, data.get('swarm_seat_outcome'), sources.get('records'), now=now))
         selected_point = capture.get('seat_points', {}).get(str(token)) or {}
         facts, metadata = agent_card_sources.project(capture.get('card_sources', {}), selected_point.get('seat'), now=now)
-        hero_data.update(facts, _agent_workers=capture.get('workers', []))
+        hero_data.update(facts, _agent_workers=capture.get('workers', []), _agent_swarm=capture.get('swarm'))
         sources.update(metadata)
         return agent_hero.project(data=hero_data, sources=sources, now=now, activity=capture['activity'])
 
