@@ -923,7 +923,7 @@ popup remains available to Portfolio.
 ## SURFBOARD HUB (dashboard 9)
 
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
-The title is centered muted gray `IMD BOARDROOM`. ONCHAIN FEED uses white active inset
+The title is centered `IMD BOARDROOM`, using the dim dashboard foreground like activity timestamps. ONCHAIN FEED uses white active inset
 borders and border text; its body follows the shared palette. SWARM BUILDS retains its activity colors.
 The top row is ONCHAIN FEED, BUILT BY SWARM, WIP, ORACLES, POOL4, FLEET.
 PROTOCOL sits below ONCHAIN FEED, opposite TOKENS below FLEET beside the terminal.
@@ -981,8 +981,8 @@ carry `meter_kind=duration`, milliseconds in `numerator` and no denominator. Unk
 time is `worked —`; known zero is `worked 0y 0w 0d`. FLEET has no activity label or bar.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
 footer is centered `Identity.md`. Three-line gaps below PROTOCOL and TOKENS separate them
-from the AGENT seats; regular-weight キープ / ビルディング match the muted card-footer
-labels and are centered on the middle line.
+from the AGENT seats; regular-weight キープ / ビルディング use the same dim dashboard
+foreground as the title and are centered on the middle line.
 Other card gaps remain one line; all card sizes stay equal.
 The terminal hides automatic stale labels (including generated command summaries), unavailable
 placeholders and V/P/D service flags at every width; underlying source metadata remains.

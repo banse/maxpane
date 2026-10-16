@@ -532,8 +532,10 @@ async def test_scrollbars_and_hints_return_after_repeated_short_tall_resizes():
                 assert fleet.region.right <= viewport.scrollable_content_region.right
 
 
-async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_agent_seats():
+async def test_translated_side_labels_are_muted_green_in_three_line_gap_above_agent_seats():
     from rich.cells import cell_len
+    from rich.color import Color
+    from textual.filter import dim_color
     app = HubHarness(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
         for height in (45, 37, 35, 47, 48, 45):
@@ -541,9 +543,6 @@ async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_
             await pilot.pause()
             rack = app.hub.query_one(SurfboardRack)
             strips = app.hub._compositor.render_strips()
-            news = rack.query_one('#surfboard-card-announce')
-            footer = strips[news.region.bottom - 1].crop(news.region.x, news.region.right)
-            label_ink = next(segment.style.color for segment in footer if 'SIGNALS' in segment.text)
             for word, above, below in [('キープ', 'protocol', 'agent'),
                                        ('ビルディング', 'swarm-tokens', 'agent-2')]:
                 card = rack.query_one(f'#surfboard-card-{above}')
@@ -555,8 +554,10 @@ async def test_translated_side_labels_match_footer_gray_in_three_line_gap_above_
                 line = gap[1]
                 assert abs(cell_len(line.text[:line.text.index(word)]) -
                            (card.region.width - cell_len(word)) / 2) <= .5
-                assert any(segment.style.color == label_ink and not segment.style.bold
-                           for segment in line if word in segment.text)
+                caption = next(segment for segment in line if word in segment.text)
+                assert caption.style.color == dim_color(
+                    caption.style.bgcolor, Color.parse(app.get_css_variables()['foreground']))
+                assert not caption.style.bold
                 assert sum(word in strip.text for strip in strips) == 1
             terminal = rack.query_one(SurfboardTerminal)
             assert terminal.region.y == rack.query_one('#surfboard-card-protocol').region.y
@@ -636,8 +637,9 @@ async def test_boardroom_uses_full_width_equal_columns_and_keeps_grid_aligned_on
                            (card.region.width - cell_len(word)) / 2) <= .5
 
 
-async def test_boardroom_title_is_centered_muted_after_refresh_and_resize():
+async def test_boardroom_title_is_centered_muted_green_after_refresh_and_resize():
     from rich.color import Color
+    from textual.filter import dim_color
     app = HubHarness(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
         for width in (149, 180, 143):
@@ -649,9 +651,11 @@ async def test_boardroom_title_is_centered_muted_after_refresh_and_resize():
             assert text.startswith('IMD BOARDROOM')
             assert ('‹ widen' in text) == app.hub.query_one('#surfboard-viewport').show_horizontal_scrollbar
             assert abs(row.text.index(text) - (width - len(text)) / 2) <= .5
-            ink = next(segment.style.color for segment in row if 'IMD BOARDROOM' in segment.text)
+            title = next(segment for segment in row if 'IMD BOARDROOM' in segment.text)
             card = app.hub.query_one('#surfboard-card-announce')
             card_title = app.hub._compositor.render_strips()[card.region.y].crop(card.region.x, card.region.right)
             title_ink = next(seg.style.color for seg in card_title if 'ONCHAIN FEED' in seg.text)
-            assert ink == title_ink
-            assert ink != Color.parse(app.get_css_variables()['accent'])
+            assert title.style.color == dim_color(
+                title.style.bgcolor, Color.parse(app.get_css_variables()['foreground']))
+            assert title.style.color != title_ink
+            assert title.style.color != Color.parse(app.get_css_variables()['accent'])

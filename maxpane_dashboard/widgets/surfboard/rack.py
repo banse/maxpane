@@ -6,6 +6,7 @@ import math
 from rich.style import Style
 from rich.text import Text
 from textual.binding import Binding
+from textual.color import Color
 from textual.constants import DIM_FACTOR
 from textual.containers import Grid
 from textual.message import Message
@@ -583,14 +584,10 @@ class SurfboardRack(Grid):
         for key, label_id in (("protocol", "keep"), ("swarm-tokens", "building")):
             card = self.query_one(f"#surfboard-card-{key}", SurfboardCard)
             label = self.query_one(f"#surfboard-{label_id}", Static)
-            # Match the dim footer ink while leaving the gap background unchanged.
-            base, surface = card.background_colors
-            ink = card.styles.border_subtitle_color
-            if card.styles.auto_border_subtitle_color:
-                ink = base.get_contrast_text(ink.a)
-            background = base + surface
+            # Match dim activity timestamps using the dashboard foreground.
+            base, surface = label.background_colors
             label.styles.auto_color = False
-            label.styles.color = background.blend(background + ink, DIM_FACTOR)
+            label.styles.color = (base + surface).blend(Color.parse(self.app.get_css_variables()['foreground']), DIM_FACTOR)
             label.styles.width = card.region.width
             label.styles.offset = (card.region.x - self.content_region.x,
                 card.region.bottom - self.content_region.y + 1)

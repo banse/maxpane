@@ -100,7 +100,7 @@ class SurfboardScreen(SurfDashboardScreen):
         self._cache_only = False
 
     def compose(self) -> ComposeResult:
-        yield Static(Text("IMD BOARDROOM"), id="surfboard-title")
+        yield Static(Text("IMD BOARDROOM", style=f"dim {self.app.get_css_variables()['foreground']}"), id="surfboard-title")
         with VerticalScroll(id="surfboard-viewport"):
             yield SurfboardRack(id="surfboard-rack")
         yield SurfStatusBar()
@@ -177,8 +177,9 @@ class SurfboardScreen(SurfDashboardScreen):
             hints.append("‹ widen")
         if viewport.show_vertical_scrollbar:
             hints.append("‹ taller")
-        self.query_one("#surfboard-title", Static).update(Text(
-            "IMD BOARDROOM" + (" · " + " · ".join(hints) if hints else "") + self.loading_suffix))
+        self.query_one("#surfboard-title", Static).update(Text.assemble(
+            ("IMD BOARDROOM", f"dim {self.app.get_css_variables()['foreground']}"),
+            (" · " + " · ".join(hints) if hints else "") + self.loading_suffix))
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
         if event.seat_slot is not None:
