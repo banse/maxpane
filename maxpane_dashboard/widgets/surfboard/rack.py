@@ -451,11 +451,16 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             label = " LAST 24h "
             preview = _token_preview(ranking.get("rows"), inside,
                                      label_style, value_style)
+        caption_style = Style(bold=False)
+        if self.key == "work":
+            # Match the dim boardroom title without dimming the inset frame.
+            caption_color = Color.parse(palette["surface"]).blend(
+                Color.parse(palette["foreground"]), DIM_FACTOR)
+            caption_style += Style(color=caption_color.rich_color, dim=False)
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
-            body.stylize(Style(bold=False) + (value_style if self.key == "work" else Style()),
-                         start, start + len(label.strip()))
+            body.stylize(caption_style, start, start + len(label.strip()))
         bottom = f" {secondary} " if label else ""
         if self.key == "protocol":
             bottom = ""
@@ -499,7 +504,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                       style=border_inset + Style(bold=False))
         if self.key == "work" and (caption := fitted_bottom.strip()):
             start = footer.plain.index(caption)
-            footer.stylize(value_style, start, start + len(caption))
+            footer.stylize(caption_style, start, start + len(caption))
         if self.empty_seat and self._seat_error:
             footer.stylize(Style(color=RED, dim=False), 1, len(footer) - 1)
         return body.append_text(footer)

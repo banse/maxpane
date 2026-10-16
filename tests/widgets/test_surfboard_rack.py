@@ -1076,9 +1076,14 @@ async def test_work_card_approved_digits_workflows_and_step_footer(size):
 
 
 async def test_work_card_highlights_positive_jobs_across_source_states():
-    async with RackApp().run_test(size=(149, 45)) as pilot:
+    from tests.screens.test_surfboard_layout import HubHarness
+    from tests.surfboard_fixtures import hub_payload
+    async with HubHarness(hub_payload()).run_test(size=(149, 45)) as pilot:
         app = pilot.app
-        card = app.query_one('#surfboard-card-work', SurfboardCard)
+        await pilot.pause()
+        title_row = app.screen._compositor.render_strips()[0]
+        title_color = next(s.style.color for s in title_row if 'IMD BOARDROOM' in s.text)
+        card = app.hub.query_one('#surfboard-card-work', SurfboardCard)
         for state, primary, secondary, counts in [
             ('active', '5', '1 workflow', dict(build=5, review=4)),
             ('idle', '0', '0 workflows', dict(build=0, review=0)),
@@ -1106,7 +1111,7 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
                            for row in strips[top+1:top+4] for s in row.crop(left+1, right) if s.text.strip())
             for row, label in ((strips[top], 'ACTIVE JOBS'), (strips[top+4], secondary)):
                 caption = next(s for s in row if label in s.text)
-                assert caption.style.color.get_truecolor() == Color.parse(app.get_css_variables()['foreground']).get_truecolor()
+                assert caption.style.color == title_color
                 assert not caption.style.bold
             assert secondary in '\n'.join(s.text for s in strips)
             if primary == '—':
