@@ -94,6 +94,55 @@ async def test_work_reader_cancels_only_after_both_consumers_leave(manager, firs
         await m.close()
 
 
+@pytest.mark.parametrize('first', ['hub', 'work'])
+@pytest.mark.parametrize('destination', ['hub', 'work'])
+async def test_work_reentry_restarts_cancelled_refresh_and_replaces_cached_data(manager, first, destination):
+    m, clock = manager
+    raw = json.loads(Path('tests/fixtures/surf/work/captured.json').read_text())
+    clock.now = raw['read_ts']
+    entered = asyncio.Event()
+    calls = 0
+    async def jobs(*, limit):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            entered.set()
+            await asyncio.Event().wait()
+        return raw['jobs']
+    m.swarm_client.fetch_jobs = AsyncMock(side_effect=jobs)
+    m.swarm_client.fetch_workflows = AsyncMock(return_value=raw['workflows'])
+    m.swarm_client.fetch_job = AsyncMock(side_effect=lambda identity: next(
+        (d for d in raw['details'] if d['id'] == identity), None))
+    fetch = m.fetch_hub_snapshot if first == 'hub' else m.fetch_and_compute
+    getattr(m, f'set_{first}_active')(True)
+    try:
+        await fetch()
+        await m._work_reader.task
+        assert m._work_reader.project()['summary']['jobs'] == 2
+        clock.now += 60
+        await fetch()
+        await asyncio.wait_for(entered.wait(), 1)
+        previous = m._work_reader.task
+        raw['jobs'][0]['state'] = raw['details'][0]['state'] = 'completed'
+        # Suspend can cancel the old fetch immediately before resume offers one.
+        getattr(m, f'set_{first}_active')(False)
+        getattr(m, f'set_{destination}_active')(True)
+        await (m.fetch_hub_snapshot() if destination == 'hub' else m.fetch_and_compute())
+        replacement = m._work_reader.task
+        assert replacement is not previous
+        assert not replacement.cancelling()
+        assert m._work_reader.project()['summary']['jobs'] == 2
+        await asyncio.wait_for(replacement, 1)
+        assert previous.cancelled()
+        data = m.get_hub_snapshot()
+        assert data['surf_work']['summary']['jobs'] == 1
+        assert data['surf_work']['read_ts'] == clock.now
+        assert next(c for c in data['surfboard_cards'] if c['key'] == 'work')['primary'] == '1'
+        assert calls == 3
+    finally:
+        await m.close()
+
+
 async def test_inactive_or_closing_hub_does_not_offer_work(manager):
     m, _ = manager
     try:

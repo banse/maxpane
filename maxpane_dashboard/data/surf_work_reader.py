@@ -15,11 +15,18 @@ class WorkReader:
 
     def offer(self):
         if self.task is not None and not self.task.done():
+            if self.task.cancelling():
+                self.task = asyncio.create_task(self._read_after_cancel(self.task))
             return self.task
         if not self.cache.is_due(TIER_SURF_WORK, self.clock()):
             return None
         self.task = asyncio.create_task(self._read())
         return self.task
+
+    async def _read_after_cancel(self, prior):
+        # Screen suspend may cancel just before the view is reopened.
+        await asyncio.gather(prior, return_exceptions=True)
+        await self._read()
 
     def cancel(self):
         if self.task is not None and not self.task.done():
