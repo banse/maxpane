@@ -484,6 +484,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if preview is None and not native_digits:
                 line = padded_inner_row(line, inside, align='center')
             line.align("left" if preview is not None else "center", inside)
+            if marker_width and index == 1:
+                arrow_at = line.plain.index(marker)
+                if arrow_at + 1 < len(line):
+                    # Move into the next padding cell without shifting the price.
+                    line = line[:arrow_at] + Text(' ', style=style) + line[arrow_at:arrow_at+1] + line[arrow_at+2:]
             body.append("│", style=border_inset).append_text(line).append("│\n", style=border_inset)
         self.border_title = Text(title_with_hint("⊙ " + self.title,
             clipped, max(0, self.size.width - 4)))

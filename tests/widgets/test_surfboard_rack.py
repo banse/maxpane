@@ -328,7 +328,8 @@ async def test_pool4_digit_face(size,key,primary,secondary,label,expected,green,
         assert not header.style.bold and header.style.color == inset_border_color(strips[top])
         for strip,row in zip(strips[top+1:top+4],expected):
             padding=(right-left-1-len(row))//2
-            assert strip.text[left+1:right]==(' '*padding+row).ljust(right-left-1)
+            old_row=(' '*padding+row).ljust(right-left-1)
+            assert strip.text[left+1:right]==old_row.replace('↑ ', ' ↑')
         footer=next(segment for segment in strips[top+4] if footer_text in segment.text)
         assert strips[top+4].text[left+1:right].strip('─ ')==footer_text
         assert not footer.style.bold and footer.style.color.get_truecolor()==ink
@@ -1023,9 +1024,10 @@ async def test_pool4_price_direction_only_colors_centered_indicator(primary):
                     if segment.text.strip() and not any(char in segment.text for char in '↑↓'):
                         assert segment.style.color == card.rich_style.color and not segment.style.dim
             if primary != '8.77':
-                face = primary + (' ' + marker if marker else '')
+                face = primary + ('  ' + marker if marker else '')
                 assert content[1].text.strip() == face
-                assert abs(content[1].text.index(face) - (right-left-1-len(face))/2) <= .5
+                original_width = len(primary) + (2 if marker else 0)
+                assert abs(content[1].text.index(face) - (right-left-1-original_width)/2) <= .5
 
 
 @pytest.mark.parametrize('points', [[0]*8, [1, None, 3, 4, 5, 6, 7, 8], None])
