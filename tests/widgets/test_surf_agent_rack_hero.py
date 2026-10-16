@@ -162,8 +162,8 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         hero = app.query_one(SurfSwarmAgentRackHero)
         cards = list(hero.children)
         assert [card.data.key for card in cards] == [
-            "seat", "accepted", "effort", "rewards", "rank", "owner",
-            "status", "runtime", "models", "earnings", "collab", "nodes",
+            "seat", "accepted", "runtime", "rewards", "rank", "owner",
+            "status", "effort", "models", "earnings", "collab", "nodes",
         ]
         assert len(cards) == 12 and hero.region.height == 19
         assert {card.region.height for card in cards} == {9}
