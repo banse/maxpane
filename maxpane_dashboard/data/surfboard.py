@@ -574,7 +574,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     share_text = f"{share_price:,.6f}" if share_price is not None else "—"
     card("pool4","POOL4",f"{price:,.2f}" if price is not None else "unavailable","USD",
          f"1 sIMD = {share_text} IMD · 24h {change_text}"
-         +f" · {data.get('pool4_network') or 'unknown network'} · price color compares consecutive reads","pool4_user")
+         +f" · {data.get('pool4_network') or 'unknown network'} · price arrow compares consecutive reads","pool4_user")
     result[-1]["share_price"] = share_price
     result[-1]["status"] = ("unavailable" if price is None else
                             {"up": "active", "down": "falling"}.get(pool4_price_direction, "idle"))

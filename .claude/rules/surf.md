@@ -1009,8 +1009,10 @@ PROTOCOL uses label / amount / IMD columns, neutral inset borders/title, and a c
 outer `x% burned` footer. Its inset uses the same horizontal padding as the other cards.
 Stats retain one blank at both edges and aligned columns; spare trailing space and then the
 amount/unit gap give way when needed to keep complete values at narrow widths.
-POOL4's inset borders/title/USD label compare consecutive valid
-USD price reads: green up, orange down, neutral on first or unchanged reads. Source clocks
+POOL4 keeps neutral inset borders/title/USD and white price digits. Consecutive valid
+USD price reads drive the same green ↑ / red ↓ indicators as TOKENS, with no indicator
+on first or unchanged reads. The indicator sits beside the price on its middle row;
+price and indicator center together. Source clocks
 prevent cached repaints from clearing direction; failed/stale/missing reads do not advance
 the baseline, and network/pool changes reset it. The session-local comparison is independent
 of the 24h change retained in detail. POOL4's outer footer reuses the protocol's live sIMD

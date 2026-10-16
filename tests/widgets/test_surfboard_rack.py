@@ -281,7 +281,7 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
 async def test_card_activity_colors_update_from_current_counts():
     async with RackApp().run_test(size=(149,45)) as pilot:
         for key,status,primary,secondary,ink in [
-            ('pool4','active','8.77','USD',2),
+            ('pool4','active','8.77','USD',3),
             ('pool4','idle','8.77','USD',3),
             ('board','stale','527','4,176 accepted jobs',3),
             ('oracles','idle','0','100 loaded',3),
@@ -311,7 +311,7 @@ async def test_card_activity_colors_update_from_current_counts():
 @pytest.mark.parametrize('size',[(149,45),(140,36)])
 @pytest.mark.parametrize('key,primary,secondary,label,expected,green,footer_text',[
     ('pool4','8.77','USD','IMD PRICE',
-     ['╭─╮ ╶─┐╶─┐','├─┤   │  │','╰─╯•  ╵  ╵'],True,'USD'),
+     ['╭─╮ ╶─┐╶─┐  ','├─┤   │  │ ↑','╰─╯•  ╵  ╵  '],False,'USD'),
 ])
 async def test_pool4_digit_face(size,key,primary,secondary,label,expected,green,footer_text):
     async with RackApp().run_test(size=size) as pilot:
@@ -996,28 +996,36 @@ async def test_all_boardroom_card_footers_center_on_resize():
                 assert abs(row.index(label) - (card.region.width - len(label)) / 2) <= .5
 
 
-async def test_pool4_price_direction_colors_whole_inset_and_resets_to_neutral():
+@pytest.mark.parametrize('primary', ['8.77', '12345.67', '—'])
+async def test_pool4_price_direction_only_colors_centered_indicator(primary):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-pool4', SurfboardCard)
         for status in ('active', 'falling', 'idle', 'stale', 'unavailable', 'active'):
-            card.set_data(dict(status=status, primary='8.77', secondary='USD'))
+            card.set_data(dict(status=status, primary=primary, secondary='USD'))
             await pilot.pause()
             strips = card_strips(pilot.app, card)
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
-            ink = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
-                   if status == 'active' else pilot.app.ansi_theme.ansi_colors[3]
-                   if status == 'falling' else neutral_inset_color(pilot.app))
+            ink = neutral_inset_color(pilot.app)
             for row in strips[top:top + 5]:
                 for x in (left, right):
                     assert next(iter(row.crop(x, x + 1))).style.color.get_truecolor() == ink
             for row, label in ((strips[top], 'IMD PRICE'), (strips[top + 4], 'USD')):
                 assert next(seg.style.color.get_truecolor() for seg in row if label in seg.text) == ink
-            digits = next(seg for seg in strips[top + 1] if '╭─╮' in seg.text)
-            digit_ink = (pilot.app.ansi_theme.ansi_colors[2] if status == 'active' else
-                         Color.parse(pilot.app.get_css_variables()['foreground']).get_truecolor() if status == 'falling' else
-                         card.rich_style.color.get_truecolor())
-            assert digits.style.color.get_truecolor() == digit_ink and not digits.style.dim
+            marker = {'active': '↑', 'falling': '↓'}.get(status, '') if primary != '—' else ''
+            content = [strip.crop(left + 1, right) for strip in strips[top+1:top+4]]
+            assert [row.text.count('↑') + row.text.count('↓') for row in content] == [0, int(bool(marker)), 0]
+            if marker:
+                arrow = next(seg for seg in content[1] if marker in seg.text)
+                assert arrow.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2 if marker == '↑' else 1]
+            for row in content:
+                for segment in row:
+                    if segment.text.strip() and not any(char in segment.text for char in '↑↓'):
+                        assert segment.style.color == card.rich_style.color and not segment.style.dim
+            if primary != '8.77':
+                face = primary + (' ' + marker if marker else '')
+                assert content[1].text.strip() == face
+                assert abs(content[1].text.index(face) - (right-left-1-len(face))/2) <= .5
 
 
 @pytest.mark.parametrize('points', [[0]*8, [1, None, 3, 4, 5, 6, 7, 8], None])

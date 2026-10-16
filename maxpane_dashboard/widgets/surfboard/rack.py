@@ -57,6 +57,10 @@ def _token_line(row, width, style, value_style):
     return line, lost or cell_len(age) > 3
 
 
+def _price_indicator(direction):
+    return {'up': ('↑', GREEN), 'down': ('↓', RED)}.get(direction, ('', ''))
+
+
 def _token_preview(rows, width, style, value_style):
     """Three ranked rows; the data layer owns ordering and price comparison."""
     lines = [(Text('', style=style), False) for _ in range(3)]
@@ -65,11 +69,10 @@ def _token_preview(rows, width, style, value_style):
         lines[1] = padded_inner_row(line, width), lost
         return lines
     for index, row in enumerate(rows[:3]):
-        marker, ink = {'up': ('↑', Style.parse(GREEN)), 'down': ('↓', Style.parse(RED))}.get(
-            row.get('price_direction'), (' ', style))
+        marker, ink = _price_indicator(row.get('price_direction'))
         line, lost = _token_line(row, max(0, width-4), style, value_style)
         line.align('left', max(0, width-4))
-        line.append(' ').append(marker, style=ink)
+        line.append(' ').append(marker or ' ', style=ink or style)
         lines[index] = padded_inner_row(line, width), lost
     return lines
 
@@ -242,6 +245,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         self.key, self.title, self.rack_row, self.rack_column = key, title, row, column
         self.seat_slot = AGENT_KEYS.index(key) if key in AGENT_KEYS else None
         self.data = {}
+        self._price_direction = None
         self._seat_error = ""
         self.set_data(None)
 
@@ -274,6 +278,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
     def set_data(self, data, *, footer_data=None):
         self.data = dict(data) if isinstance(data, dict) else {}
         self.data.update(key=self.key, title=self.title)
+        if self.key == 'pool4' and self.data.get('status') != 'loading':
+            self._price_direction = {'active': 'up', 'falling': 'down'}.get(self.data.get('status'))
         if self.seat_slot is not None:
             self.data["seat_slot"] = self.seat_slot
             self.data.setdefault("token_id", None)
@@ -367,7 +373,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         border_inset = (Style.parse(MUTED) + Style(bgcolor=palette["background"])
                         if color == AMBER else inset)
-        if self.key in ("protocol", "board"):
+        if self.key in ("protocol", "board", "pool4"):
             border_inset = Style.parse(MUTED) + Style(bgcolor=palette["background"])
         elif self.key == "work":
             jobs = primary.replace(",", "")
@@ -377,12 +383,12 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             border_inset = Style(color=self.rich_style.color, bgcolor=palette["background"])
         elif self.key == "oracles" and status == "assessing":
             border_inset = Style.parse(palette["accent"]) + Style(bgcolor=palette["background"])
-        elif self.key == "pool4" and status == "falling":
-            border_inset = Style.parse(AMBER) + Style(bgcolor=palette["background"])
         label_style, value_style, readout_style = inner_styles(
             palette, active=border_inset.color in (Style.parse(palette['accent']).color, Style.parse(GREEN).color),
             frame_color=border_inset.color, ansi_theme=self.app.ansi_theme, text_color=self.rich_style.color)
         label = ""
+        marker, marker_ink = _price_indicator(self._price_direction)
+        marker_width = 0
         native_digits = False
         numeric_readout = False
         rows = [("", False), (primary, not muted), (secondary, False)]
@@ -397,7 +403,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             readout = count if self.key == "pool4" else digits
             # Use the same native 3x3 renderer as Textual's Digits widget.
             numeric_readout = digits.isascii() and digits.isdecimal()
-            native_digits = numeric_readout and Digits.get_width(readout) <= inside
+            marker_width = 2 if marker and numeric_readout else 0
+            native_digits = numeric_readout and Digits.get_width(readout) <= inside - marker_width
             if native_digits:
                 rows = [(segment.text, False) for segment in Digits(readout).render(Style())
                         if segment.text != "\n"]
@@ -468,9 +475,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.key == "board":
             clipped |= _fleet_footer(self.data, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
-            style = (readout_style if numeric_readout else label_style) + Style(bold=bold)
+            style = (readout_style if numeric_readout or self.key == 'pool4' else label_style) + Style(bold=bold)
             line, lost = (preview[index] if preview is not None else
-                          (Text(raw, style=style), False) if native_digits else fit_prose(raw, max(0, inside-2), style=style))
+                          (Text(raw, style=style), False) if native_digits else fit_prose(raw, max(0, inside-2-marker_width), style=style))
+            if marker_width:
+                line.append(' ').append(marker if index == 1 else ' ', style=marker_ink)
             clipped |= lost
             if preview is None and not native_digits:
                 line = padded_inner_row(line, inside, align='center')
