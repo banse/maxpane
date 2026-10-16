@@ -114,8 +114,9 @@ async def test_a_job_detail_is_returned_whole():
         return httpx.Response(200, json=swarm_details_v2()[_EXECUTING_DETAIL])
 
     async with _client(handler) as client:
-        job = await client.fetch_job("4ba29896-6fd6-4e0f-aef3-82f1ec15f7c6")
+        job = await client.fetch_job(_EXECUTING_DETAIL)
 
+    assert job == swarm_details_v2()[_EXECUTING_DETAIL]
     assert job["nodes"], "the detail must carry its subtasks"
 
 
@@ -364,8 +365,8 @@ async def test_fetch_job_with_a_plain_id_still_asks_the_host():
         return httpx.Response(200, json=swarm_details_v2()[_EXECUTING_DETAIL])
 
     async with _client(handler) as client:
-        assert await client.fetch_job("1c47e615-c14e-4eac-bec5-6b0229c18e78") is not None
-    assert [r.url.path for r in seen] == ["/jobs/1c47e615-c14e-4eac-bec5-6b0229c18e78"]
+        assert await client.fetch_job(_EXECUTING_DETAIL) is not None
+    assert [r.url.path for r in seen] == ["/jobs/" + _EXECUTING_DETAIL]
 
 
 async def test_pacing_is_once_per_request_even_when_the_request_rotated():
@@ -871,7 +872,7 @@ async def test_fetch_job_all_hosts_busy_returns_busy_and_one_host_busy_is_not():
         assert first == SEAT_BUSY
         first["error"] = "tampered"
         assert await client.fetch_job(_JOB) == SEAT_BUSY
-    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST, FIRST_HOST, SECOND_HOST]
+    assert _hosts(seen) == [FIRST_HOST, SECOND_HOST]
     detail = {"id": _JOB, "state": "executing", "nodes": []}
     def respond(request):
         if request.url.host == FIRST_HOST:

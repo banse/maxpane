@@ -19,6 +19,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import json
+import math
+import time
+from collections import OrderedDict
+from copy import deepcopy
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -60,7 +65,7 @@ def _is_path_segment(value: object) -> bool:
 
 __all__ = [
     "SWARM_API", "SWARM_API_HOSTS", "SWARM_INTER_CALL_DELAY", "SWARM_REQUEST_TIMEOUT",
-    "SwarmClient", "UNKNOWN_SEAT", "SEAT_BUSY",
+    "SwarmClient", "JobDetailRead", "UNKNOWN_SEAT", "SEAT_BUSY",
 ]
 
 #: The swarm's control plane, as a pool.  Measured 2026-09-21 (plan §0 R1):
@@ -105,6 +110,55 @@ SEAT_BUSY: MappingProxyType[str, str] = MappingProxyType({"error": "busy"})
 SUBMISSIONS_NOT_FOUND = MappingProxyType({"error": "submissions_not_found"})
 
 
+_DETAIL_API_VERSION = "jobs-v1"
+_DETAIL_MAX_ENTRIES = 400
+_DETAIL_MAX_BYTES = 16 * 1024 * 1024
+_DETAIL_MAX_ENTRY_BYTES = 512 * 1024
+_TERMINAL_JOBS = frozenset(("completed", "failed", "cancelled"))
+
+
+@dataclass(frozen=True)
+class JobDetailRead:
+    """A consumer-owned payload and the original HTTP observation."""
+
+    payload: dict | None
+    observed_at: float | None
+    started_mono: float
+    revision: str | None
+    from_cache: bool
+
+
+@dataclass
+class _DetailMemo:
+    read: JobDetailRead
+    expires: float
+    epoch: int
+    size: int
+    last_good: JobDetailRead | None
+
+
+@dataclass
+class _DetailFlight:
+    task: asyncio.Task
+    waiters: int = 0
+
+
+def _detail_metadata(body: dict) -> dict[str, str]:
+    metadata = {}
+    revision = body.get("updatedAt")
+    if isinstance(revision, str) and re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z", revision):
+        try:
+            datetime.fromisoformat(revision)
+            metadata["updatedAt"] = revision
+        except ValueError:
+            pass
+    state = body.get("state", body.get("status"))
+    if isinstance(state, str) and state and state.strip() == state:
+        metadata["state"] = state
+    return metadata
+
+
 @dataclass(frozen=True)
 class _Answered404:
     """A 404 whose body the caller's predicate accepted as an answer."""
@@ -129,6 +183,8 @@ class SwarmClient(OwnedHttpClient):
         base_url: str | None = None,
         inter_call_delay: float = SWARM_INTER_CALL_DELAY,
         sleep: Callable[[float], Awaitable[None]] | None = None,
+        clock: Callable[[], float] = time.time,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         # ``follow_redirects=False`` (WP7): a redirect is a host this client
         # did not choose. The pool is an allowlist of two names that are one
@@ -150,6 +206,15 @@ class SwarmClient(OwnedHttpClient):
         self._delay = float(inter_call_delay)
         self._sleep = sleep or asyncio.sleep
         self._last_call: float = 0.0
+        self._clock, self._monotonic = clock, monotonic
+        self._detail_memo: OrderedDict[str, _DetailMemo] = OrderedDict()
+        self._detail_flights: dict[str, _DetailFlight] = {}
+        self._detail_tasks: set[asyncio.Task] = set()  # Includes retiring scopes until done.
+        self._detail_epochs: dict[str, int] = {}
+        self._detail_hints: dict[str, dict[str, str]] = {}
+        self._detail_slots = asyncio.Semaphore(8)
+        self._detail_scope = self._current_detail_scope()
+        self._detail_closed = False
 
     async def _get(
         self,
@@ -159,6 +224,7 @@ class SwarmClient(OwnedHttpClient):
         params: Mapping[str, str] | None = None,
         answers_404: Callable[[Any], bool] | None = None,
         seat_busy: bool = False,
+        _on_start: Callable[[], None] | None = None,
     ) -> Any:
         """One GET, tried once per host in pool order.
 
@@ -178,6 +244,8 @@ class SwarmClient(OwnedHttpClient):
         if "?" in path:
             raise ValueError(f"the swarm API takes no query parameters: {path!r}")
         await self._sleep(self._delay)
+        if _on_start is not None:
+            _on_start()
         busy_hosts = 0
         for attempt, host in enumerate(self._hosts):
             try:
@@ -304,7 +372,19 @@ class SwarmClient(OwnedHttpClient):
             params["before"] = before
         if q is not None:
             params["q"] = q
-        return await self._list("/jobs", "jobs", params=params)
+        rows = await self._list("/jobs", "jobs", params=params)
+        for row in rows or ():
+            if not isinstance(row, dict):
+                continue
+            job = row.get("id")
+            if not isinstance(job, str) or job not in self._detail_epochs:
+                continue
+            metadata = _detail_metadata(row)
+            previous = self._detail_hints.setdefault(job, {})
+            if any(previous.get(key) != value for key, value in metadata.items()):
+                self._detail_epochs[job] += 1
+            previous.update(metadata)
+        return rows
 
     async def fetch_launches(self) -> list[dict[str, Any]] | None:
         return await self._list("/launches", "launches", params={"limit": "100"})
@@ -390,24 +470,153 @@ class SwarmClient(OwnedHttpClient):
             before = cursor
         return rows, False
 
-    async def fetch_job(self, job_id: str) -> dict[str, Any] | None:
-        """One job's detail, a fresh copy of :data:`SEAT_BUSY` when every host
-        sheds the read (F-S3), or ``None`` -- also for an id that is no path
-        segment.
+    def _current_detail_scope(self) -> tuple:
+        return tuple(sorted(str(httpx.URL(host)).rstrip("/") for host in self._hosts)), _DETAIL_API_VERSION
 
-        The id is interpolated into the path.  One carrying ``?``, ``/``,
-        ``#`` or whitespace, an empty one or a non-string would build a
-        request this API does not serve (``_get`` raises on ``?``), and the
-        getter contract is ``None``, never a raise -- so it is refused here,
-        before any request (WP2 review, 2026-09-21).
-        """
-        if not _is_path_segment(job_id):
-            logger.debug("swarm fetch_job refused an id that is no path segment: %r", job_id)
-            return None
-        body = await self._get(f"/jobs/{job_id}", seat_busy=True)
-        if body is SEAT_BUSY:
-            return dict(SEAT_BUSY)
-        return body if isinstance(body, dict) and body.get("error") != "busy" else None
+    def _forget_detail(self, job: str) -> None:
+        if job not in self._detail_memo and job not in self._detail_flights:
+            self._detail_epochs.pop(job, None)
+            self._detail_hints.pop(job, None)
+
+    def _finish_detail(self, job: str, flight: _DetailFlight) -> None:
+        self._detail_tasks.discard(flight.task)
+        if flight.task.done() and not flight.task.cancelled():
+            flight.task.exception()  # Retrieve errors even if its final waiter was cancelled.
+        if flight.waiters == 0 and self._detail_flights.get(job) is flight:
+            self._detail_flights.pop(job)
+            self._forget_detail(job)
+
+    async def _check_detail_scope(self) -> None:
+        scope = self._current_detail_scope()
+        if scope == self._detail_scope:
+            return
+        self._detail_scope = scope
+        tasks = [flight.task for flight in self._detail_flights.values()]
+        for task in tasks:
+            task.cancel()
+        self._detail_flights.clear()
+        self._detail_memo.clear()
+        self._detail_epochs.clear()
+        self._detail_hints.clear()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _remember_detail(self, job: str, read: JobDetailRead, epoch: int) -> None:
+        old = self._detail_memo.get(job)
+        good = read if read.observed_at is not None else old.last_good if old else None
+        size = len(json.dumps(read.payload, ensure_ascii=False, separators=(",", ":")).encode())
+        if good is not None and good is not read:
+            size += len(json.dumps(good.payload, ensure_ascii=False, separators=(",", ":")).encode())
+        if size > _DETAIL_MAX_ENTRY_BYTES:
+            self._detail_memo.pop(job, None)
+            return
+        ttl = (600 if _detail_metadata(read.payload or {}).get("state") in _TERMINAL_JOBS else 30
+               ) if read.observed_at is not None else 15
+        self._detail_memo[job] = _DetailMemo(read, self._monotonic() + ttl, epoch, size, good)
+        self._detail_memo.move_to_end(job)
+        total = sum(entry.size for entry in self._detail_memo.values())
+        while len(self._detail_memo) > _DETAIL_MAX_ENTRIES or total > _DETAIL_MAX_BYTES:
+            removed, entry = self._detail_memo.popitem(last=False)
+            total -= entry.size
+            self._forget_detail(removed)
+
+    async def _load_job_detail(self, job: str) -> tuple[JobDetailRead, int, tuple]:
+        async with self._detail_slots:
+            started, epoch = self._monotonic(), self._detail_epochs[job]
+            scope = self._detail_scope
+
+            def begin():
+                nonlocal started, epoch
+                started, epoch = self._monotonic(), self._detail_epochs[job]
+
+            body = await self._get("/jobs/" + job, seat_busy=True, _on_start=begin)
+            observed = self._clock()
+            if body is SEAT_BUSY:
+                payload = dict(SEAT_BUSY)
+            elif (isinstance(body, dict) and body.get("error") is None
+                  and body.get("id") == job):
+                payload = body
+            else:
+                payload = None
+            good = payload is not None and payload.get("error") != "busy"
+            read = JobDetailRead(payload, observed if good else None, started,
+                                 _detail_metadata(payload or {}).get("updatedAt") if good else None, False)
+            if (not self._detail_closed and scope == self._detail_scope
+                    and epoch == self._detail_epochs.get(job)):
+                if good:
+                    self._detail_hints.setdefault(job, {}).update(_detail_metadata(payload))
+                self._remember_detail(job, read, epoch)
+            return read, epoch, scope
+
+    async def read_job_detail(self, job_id: str, *, fresh_after: float | None = None) -> JobDetailRead:
+        """Share bounded detail reads; freshness constrains the real HTTP start."""
+        if (not _is_path_segment(job_id) or self._detail_closed or
+                (fresh_after is not None and (isinstance(fresh_after, bool) or
+                 not isinstance(fresh_after, (int, float)) or not math.isfinite(fresh_after)))):
+            return JobDetailRead(None, None, self._monotonic(), None, False)
+        await self._check_detail_scope()
+        while not self._detail_closed:
+            epoch = self._detail_epochs.setdefault(job_id, 0)
+            memo = self._detail_memo.get(job_id)
+            if (memo is not None and memo.epoch == epoch and self._monotonic() < memo.expires
+                    and (fresh_after is None or memo.read.started_mono >= fresh_after)):
+                self._detail_memo.move_to_end(job_id)
+                read = memo.read
+                return JobDetailRead(deepcopy(read.payload), read.observed_at,
+                                     read.started_mono, read.revision, True)
+            flight = self._detail_flights.get(job_id)
+            if flight is not None and flight.task.cancelling():
+                try:
+                    await asyncio.shield(flight.task)
+                except asyncio.CancelledError:
+                    if asyncio.current_task().cancelling():
+                        raise
+                if self._detail_flights.get(job_id) is flight:
+                    self._detail_flights.pop(job_id)
+                continue
+            if flight is not None and flight.task.done():
+                self._detail_flights.pop(job_id)
+                flight = None
+            if flight is None:
+                flight = _DetailFlight(asyncio.create_task(self._load_job_detail(job_id)))
+                self._detail_flights[job_id] = flight
+                self._detail_tasks.add(flight.task)
+                flight.task.add_done_callback(
+                    lambda _, flight=flight: self._finish_detail(job_id, flight))
+            flight.waiters += 1
+            try:
+                read, result_epoch, result_scope = await asyncio.shield(flight.task)
+                current = (result_epoch == self._detail_epochs.get(job_id)
+                           and result_scope == self._detail_scope)
+            finally:
+                flight.waiters -= 1
+                if flight.waiters == 0:
+                    if not flight.task.done():
+                        flight.task.cancel()
+                    elif self._detail_flights.get(job_id) is flight:
+                        self._detail_flights.pop(job_id)
+                        self._forget_detail(job_id)
+            if current and (fresh_after is None or read.started_mono >= fresh_after):
+                return JobDetailRead(deepcopy(read.payload), read.observed_at,
+                                     read.started_mono, read.revision, False)
+        return JobDetailRead(None, None, self._monotonic(), None, False)
+
+    async def fetch_job(self, job_id: str) -> dict[str, Any] | None:
+        """Compatibility adapter; every consumer owns its whole payload copy."""
+        return (await self.read_job_detail(job_id)).payload
+
+    async def close(self) -> None:
+        """Drain all detail tasks before closing our owned HTTP client."""
+        self._detail_closed = True
+        tasks = list(self._detail_tasks)
+        for task in tasks:
+            if not task.cancelling():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._detail_flights.clear()
+        self._detail_memo.clear()
+        self._detail_epochs.clear()
+        self._detail_hints.clear()
+        await super().close()
 
     async def submissions(self, job_id: str) -> dict[str, Any] | None:
         """One job's submissions, explicit 404 sentinel, or transient-failure None."""
