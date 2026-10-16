@@ -1,6 +1,89 @@
-# HANDOVER — open maintenance backlog (written 2026-09-18)
+# HANDOVER — current session and open maintenance backlog
 
-## Current session handoff — 2026-10-10
+## Current session handoff — 2026-10-16
+
+**Resume here.** All requested work is complete. The owner explicitly asked to save
+the current state for the next session. Working directory:
+`/Users/banse/codex/maxpane`; branch: `feature/surfboard-hub-9`.
+Latest implementation commit: **`1bbc08a5`** (`fix(surf): reorder agent accepted
+effort runtime and owner cards`). Changes are committed locally; no push or merge
+was performed. There is no pending implementation request. Wait for the owner's
+next direction; the older handoffs and maintenance instructions below are historical.
+
+### Approved AGENT board order
+
+| Row | Column 1 | Column 2 | Column 3 | Column 4 | Column 5 | Column 6 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Top | SEAT | STATUS | ACCEPTED | REWARDS | RANK | EFFORT |
+| Bottom | RUNTIME | OWNER | MODELS | EARNINGS | COLLAB | NODES |
+
+The last four commits only reordered cards and maintained layout checks:
+`2e94d368` STATUS/OWNER, `7214092d` RUNTIME/EFFORT, `4a04c82f` STATUS/ACCEPTED,
+then `1bbc08a5` ACCEPTED/RUNTIME and EFFORT/OWNER. Preserve the final table above;
+do not replay the intermediate orders. Card values, colors, captions and update
+behavior were preserved. Two equal rows of six nine-line cards have one blank row
+between them. The AGENT full-layout minimum is **134 columns × 29 rows**;
+the owner's terminal is **149×45**. STATUS's full activity subtitle or compact
+worker counts bind the width. The latest live preview used seat #1581.
+
+### Earlier completed changes to preserve
+
+- `415f36af`: SEAT inner heading `AGENT`, idle subtitle `ONLINE`, footer
+  `ERC-8004 #…`; STATUS uses the current job action when known. OWNER, MODELS and
+  NODES have no outer footer. One blank line separates RECORD's title and table.
+- `80d61ffd`: EARNINGS counts tokens linked to this selected seat's accepted work,
+  not the current owner's entire wallet. Missing work coverage remains unknown.
+- `4c9ec0b3`: WIP and ORACLES card captions moved from outer footers to the inner
+  bottom border, using its color. Their measured minima are 138×30 and 143×42.
+- `43ae60f4`: WIP reentry restarts reads that were being cancelled. This is already
+  implemented; do not reopen it without evidence of a new problem.
+- Earlier BOARDROOM/SURFBOARD layout, palette, source-display and token-dashboard
+  changes are already in the current code. The October 10 design below is
+  superseded and must not be used to restore old card positions or colors.
+
+### Verification and known residuals
+
+- Latest swaps were shown with fresh public data at 149×45. The capture and stress
+  layout measurements still fit from 134 columns. Both swap reversals were caught
+  independently by the card-order regression. Scoped review approved without findings.
+- Final widget/live integration files: **100 passed**. Fast guards: **125 passed**.
+  The broader touched/composing/address run had 617 passes and three failures;
+  one obsolete bare-harness width expectation was then corrected and covered by
+  the final 100-pass run. No production fix was needed: the real screen at 149 columns
+  renders RUNTIME's `update available` caption fully; the bare harness needs 151.
+- Two pre-existing failures remain in `tests/screens/test_surf_swarm_layout.py`:
+  `test_busy_agent_cards_keep_independent_records_at_the_pin` and
+  `test_the_status_bar_edge_is_where_it_was_measured`. They are filed as F-R4/F-R5
+  in `docs/surf_agent_record_view_followups.md` and were reproduced against
+  pre-swap production code. Do not describe the whole test suite as green.
+  F-R2/F-R3 in that document and the Minor caption-test finding in
+  `docs/surf_work_followups.md` are separate recorded follow-ups, not pending orders.
+- No full suite was run. Use `.venv/bin/python`; unset `NO_COLOR` for color previews
+  and isolate HOME for parallel tests. `CLAUDE.md` triage applies; Superpowers is
+  disabled. The terminal-layout skill and `scripts/measure_layout.py` own sizing.
+
+### Files and workspace
+
+Card order/rendering: `maxpane_dashboard/widgets/surf/agent_rack_hero.py`.
+Screen and AGENT size constants: `maxpane_dashboard/screens/surf.py`.
+Tests: `tests/widgets/test_surf_agent_rack_hero.py`,
+`tests/screens/test_surf_agent_hero_live.py`, and
+`tests/screens/test_surf_swarm_layout.py`. OWNER's compact-address boundary is now
+129/130 in its bare-harness test; its copy, explorer link and padding checks remain.
+The layout's current `#:` block records the measured evidence.
+
+Tracked implementation files were clean after `1bbc08a5`. Existing untracked
+`.codex/`, `.venv311/`, `.worktrees/` and
+`docs/codex_swarm_launches_{fix1,fix2,fix3,fix4,v2_fix1,v2_fix2,v2_plan}.md`
+are unrelated material: do not delete, revert or stage them. Temporary live-preview
+tools and SVG/PNG captures under `/private/tmp/` and `/tmp/` may not survive restart.
+
+---
+
+## Historical session handoff — 2026-10-10 (superseded)
+
+The following describes the October 10 state only; the October 16 handoff above
+is authoritative for resuming work.
 
 **Resume here.** The owner ended the session with all requested work completed.
 Working directory: `/Users/banse/codex/maxpane`; branch: `feature/surfboard-hub-9`.
