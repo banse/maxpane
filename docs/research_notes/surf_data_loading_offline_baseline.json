@@ -1,0 +1,37 @@
+{
+  "captured_at": "2026-10-17",
+  "mode": "controlled committed fixtures and asyncio.Event; no network",
+  "original_client": {
+    "logical_job_reads": 5,
+    "transport_attempts": 5,
+    "distinct_jobs": 1
+  },
+  "original_seat_path": {
+    "membership_before_first_release": 4,
+    "membership_total_before_earnings_release": 64,
+    "submission_reads_before_earnings_release": 0,
+    "submission_reads_after_release": 4,
+    "seat_slot_published_before_enrichment": true
+  },
+  "original_full_path": {
+    "chain_held": true,
+    "market_started": false,
+    "seat_offered": false
+  },
+  "warm_selection": {
+    "popup_transport_attempts": 0,
+    "work_transport_attempts": 0
+  },
+  "a_b_a": {
+    "seat_request_sequence": [
+      420,
+      421,
+      420
+    ],
+    "first_two_cancelled": true,
+    "published_selected_seat": 420,
+    "exact_submission_hash_preserved": true
+  },
+  "paint": null,
+  "latency": null
+}

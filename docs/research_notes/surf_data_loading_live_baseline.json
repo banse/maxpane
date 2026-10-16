@@ -1,0 +1,2509 @@
+{
+  "samples": [
+    {
+      "censored": true,
+      "reason": "observed_request_budget",
+      "elapsed_ms": 6423.049,
+      "first_useful_snapshot_ms": 3952.317,
+      "first_paint_ms": null,
+      "events": [
+        {
+          "kind": "request_start",
+          "ms": 0.4,
+          "attempt": 1,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "logical_start",
+          "ms": 3.496,
+          "method": "fetch_chain_state",
+          "identity": null
+        },
+        {
+          "kind": "request_end",
+          "ms": 70.061,
+          "attempt": 1,
+          "status": 200,
+          "bytes": 171
+        },
+        {
+          "kind": "request_start",
+          "ms": 121.479,
+          "attempt": 2,
+          "route": "https://api.imd.fun/swarm",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 121.914,
+          "attempt": 3,
+          "route": "https://api.imd.fun/seats/records",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 122.256,
+          "attempt": 4,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 149.603,
+          "attempt": 4,
+          "status": 200,
+          "bytes": 4135
+        },
+        {
+          "kind": "logical_end",
+          "ms": 149.773,
+          "method": "fetch_chain_state"
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 150.149,
+          "slot": "chain"
+        },
+        {
+          "kind": "logical_start",
+          "ms": 150.345,
+          "method": "fetch_market",
+          "identity": "None"
+        },
+        {
+          "kind": "request_start",
+          "ms": 243.339,
+          "attempt": 5,
+          "route": "https://api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 243.732,
+          "attempt": 6,
+          "route": "https://api.geckoterminal.com/api/v2/networks/eth/tokens/0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7?include=top_pools",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 243.94,
+          "attempt": 7,
+          "route": "https://api.dexscreener.com/latest/dex/tokens/0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 244.376,
+          "attempt": 8,
+          "route": "https://eth.blockscout.com/api/v2/tokens/0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 244.56,
+          "attempt": 9,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x000008061ccac597a321a75E3470a3E8fAF9dD2d/logs",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 244.748,
+          "attempt": 10,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0xE764dA9bDeA91d845AAc2C7D53A8DfE59A369095/transactions",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 244.999,
+          "attempt": 11,
+          "route": "https://eth.blockscout.com/api/v2/tokens/0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D/counters",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 245.21,
+          "attempt": 12,
+          "route": "https://eth.blockscout.com/api/v2/tokens/0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D/transfers",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 245.42,
+          "attempt": 13,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7/transactions",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 245.605,
+          "attempt": 14,
+          "route": "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 245.791,
+          "attempt": 15,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 245.989,
+          "attempt": 16,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 246.16,
+          "attempt": 17,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 246.307,
+          "attempt": 18,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 271.503,
+          "attempt": 19,
+          "route": "https://api.imd.fun/launches?limit=100",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 271.814,
+          "attempt": 20,
+          "route": "https://api.imd.fun/health",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 272.023,
+          "attempt": 21,
+          "route": "https://api.imd.fun/jobs?limit=100",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 272.212,
+          "attempt": 22,
+          "route": "https://api.imd.fun/contributors",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 614.858,
+          "attempt": 16,
+          "status": 200,
+          "bytes": 3175
+        },
+        {
+          "kind": "request_start",
+          "ms": 615.0,
+          "attempt": 23,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 698.232,
+          "attempt": 3,
+          "status": 200,
+          "bytes": 156783
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 703.393,
+          "slot": "surfboard_records"
+        },
+        {
+          "kind": "request_end",
+          "ms": 716.008,
+          "attempt": 14,
+          "status": 200,
+          "bytes": 28
+        },
+        {
+          "kind": "request_end",
+          "ms": 720.604,
+          "attempt": 2,
+          "status": 200,
+          "bytes": 497050
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 727.283,
+          "slot": "surfboard_overview"
+        },
+        {
+          "kind": "request_end",
+          "ms": 728.011,
+          "attempt": 17,
+          "status": 200,
+          "bytes": 487
+        },
+        {
+          "kind": "request_start",
+          "ms": 735.848,
+          "attempt": 24,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1006.259,
+          "attempt": 8,
+          "status": 200,
+          "bytes": 305
+        },
+        {
+          "kind": "request_end",
+          "ms": 1006.742,
+          "attempt": 18,
+          "status": 200,
+          "bytes": 45
+        },
+        {
+          "kind": "request_start",
+          "ms": 1006.84,
+          "attempt": 25,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1007.823,
+          "attempt": 11,
+          "status": 200,
+          "bytes": 56
+        },
+        {
+          "kind": "request_end",
+          "ms": 1034.199,
+          "attempt": 24,
+          "status": 200,
+          "bytes": 808
+        },
+        {
+          "kind": "request_end",
+          "ms": 1040.893,
+          "attempt": 15,
+          "status": 200,
+          "bytes": 140563
+        },
+        {
+          "kind": "request_end",
+          "ms": 1064.523,
+          "attempt": 6,
+          "status": 200,
+          "bytes": 5260
+        },
+        {
+          "kind": "request_end",
+          "ms": 1073.56,
+          "attempt": 25,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 1127.488,
+          "attempt": 26,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions?index=81&value=0&hash=0xf7627028bffaf0dc67a4ce040a6df1855a58b5df71928a4ee09cddae6d9a9ee3&inserted_at=2026-09-02T23%3A20%3A30.714091Z&block_number=25892855&fee=13874635654272&items_count=50",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1128.033,
+          "attempt": 27,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1162.603,
+          "attempt": 7,
+          "status": 200,
+          "bytes": 32659
+        },
+        {
+          "kind": "request_end",
+          "ms": 1171.59,
+          "attempt": 12,
+          "status": 200,
+          "bytes": 1438130
+        },
+        {
+          "kind": "request_end",
+          "ms": 1207.984,
+          "attempt": 27,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 1209.32,
+          "attempt": 10,
+          "status": 200,
+          "bytes": 118696
+        },
+        {
+          "kind": "request_end",
+          "ms": 1224.331,
+          "attempt": 23,
+          "status": 200,
+          "bytes": 45
+        },
+        {
+          "kind": "request_end",
+          "ms": 1235.916,
+          "attempt": 20,
+          "status": 200,
+          "bytes": 3257
+        },
+        {
+          "kind": "request_start",
+          "ms": 1249.153,
+          "attempt": 28,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1249.843,
+          "attempt": 29,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0xE764dA9bDeA91d845AAc2C7D53A8DfE59A369095/transactions?index=141&value=0&hash=0xae1b07c436632d3a5ac773f03d3472ae422a5ac7dc83a49e0be8a352d25de727&inserted_at=2026-09-17T19%3A49%3A54.890043Z&block_number=25999410&fee=9301901591229&items_count=50",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1250.363,
+          "attempt": 30,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1357.544,
+          "attempt": 31,
+          "route": "https://api.imd.fun/jobs?limit=100",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1512.118,
+          "attempt": 26,
+          "status": 200,
+          "bytes": 112522
+        },
+        {
+          "kind": "request_start",
+          "ms": 1512.737,
+          "attempt": 32,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions?index=378&value=0&hash=0xfc0f98c7d0022fcfa84bff9773bc2cd8a8927949d49721328f3331ae40fc08bf&inserted_at=2026-05-17T20%3A30%3A39.922407Z&block_number=25117311&fee=3575604418560&items_count=50",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1544.854,
+          "attempt": 21,
+          "status": 200,
+          "bytes": 56490
+        },
+        {
+          "kind": "logical_start",
+          "ms": 1545.145,
+          "method": "fetch_job",
+          "identity": "d3efaf1a-4ac5-4774-ac52-f621042e2e14"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1553.008,
+          "attempt": 28,
+          "status": 200,
+          "bytes": 156258
+        },
+        {
+          "kind": "request_end",
+          "ms": 1558.194,
+          "attempt": 30,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 1572.408,
+          "attempt": 19,
+          "status": 200,
+          "bytes": 126798
+        },
+        {
+          "kind": "request_end",
+          "ms": 1588.767,
+          "attempt": 31,
+          "status": 200,
+          "bytes": 56490
+        },
+        {
+          "kind": "logical_start",
+          "ms": 1589.041,
+          "method": "fetch_job",
+          "identity": "1336f7b0-b673-420e-9479-a25a6a184cab"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1632.735,
+          "attempt": 33,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1633.234,
+          "attempt": 34,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1642.16,
+          "attempt": 22,
+          "status": 200,
+          "bytes": 404369
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 1647.265,
+          "slot": "swarm_contributors"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1666.32,
+          "attempt": 35,
+          "route": "https://api.imd.fun/jobs/d3efaf1a-4ac5-4774-ac52-f621042e2e14",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1694.457,
+          "attempt": 36,
+          "route": "https://api.imd.fun/sites",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1709.621,
+          "attempt": 37,
+          "route": "https://api.imd.fun/jobs/1336f7b0-b673-420e-9479-a25a6a184cab",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1713.857,
+          "attempt": 13,
+          "status": 200,
+          "bytes": 620007
+        },
+        {
+          "kind": "request_end",
+          "ms": 1720.042,
+          "attempt": 34,
+          "status": 200,
+          "bytes": 5863
+        },
+        {
+          "kind": "request_end",
+          "ms": 1727.5,
+          "attempt": 33,
+          "status": 200,
+          "bytes": 19247
+        },
+        {
+          "kind": "request_end",
+          "ms": 1747.927,
+          "attempt": 32,
+          "status": 200,
+          "bytes": 11530
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 1749.726,
+          "slot": "channel"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1753.818,
+          "attempt": 38,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1754.415,
+          "attempt": 39,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1754.945,
+          "attempt": 40,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7/transactions?index=34&value=0&hash=0x00538d57509bd9017ac4a2cafc8be929de8914f11e97d815aece01015380c8c1&inserted_at=2026-10-12T23%3A25%3A11.431207Z&block_number=26179666&fee=14695297530705&items_count=50",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1768.293,
+          "attempt": 41,
+          "route": "https://api.imd.fun/workers",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1993.981,
+          "attempt": 36,
+          "status": 200,
+          "bytes": 78123
+        },
+        {
+          "kind": "request_end",
+          "ms": 1995.093,
+          "attempt": 37,
+          "status": 200,
+          "bytes": 6931
+        },
+        {
+          "kind": "logical_end",
+          "ms": 1995.148,
+          "method": "fetch_job"
+        },
+        {
+          "kind": "logical_start",
+          "ms": 1995.152,
+          "method": "fetch_job",
+          "identity": "6f93b595-4b07-4715-83a5-2cf9b397005d"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2037.526,
+          "attempt": 29,
+          "status": 200,
+          "bytes": 114841
+        },
+        {
+          "kind": "request_end",
+          "ms": 2066.374,
+          "attempt": 39,
+          "status": 200,
+          "bytes": 1190
+        },
+        {
+          "kind": "request_start",
+          "ms": 2066.533,
+          "attempt": 42,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 2114.744,
+          "attempt": 43,
+          "route": "https://api.imd.fun/launch/policies",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 2115.282,
+          "attempt": 44,
+          "route": "https://api.imd.fun/jobs/6f93b595-4b07-4715-83a5-2cf9b397005d",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2142.089,
+          "attempt": 42,
+          "status": 200,
+          "bytes": 5800
+        },
+        {
+          "kind": "request_start",
+          "ms": 2186.647,
+          "attempt": 45,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2208.031,
+          "attempt": 41,
+          "status": 200,
+          "bytes": 1517016
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 2238.078,
+          "slot": "surfboard_activity"
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 2238.099,
+          "slot": "swarm_workers"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2245.773,
+          "attempt": 38,
+          "status": 200,
+          "bytes": 6316362
+        },
+        {
+          "kind": "request_end",
+          "ms": 2274.398,
+          "attempt": 45,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 2274.559,
+          "attempt": 44,
+          "status": 200,
+          "bytes": 13257
+        },
+        {
+          "kind": "logical_end",
+          "ms": 2274.616,
+          "method": "fetch_job"
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 2274.627,
+          "slot": "swarm"
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 2274.87,
+          "slot": "swarm_jobs_seen"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2298.419,
+          "attempt": 43,
+          "status": 200,
+          "bytes": 39925
+        },
+        {
+          "kind": "request_start",
+          "ms": 2307.577,
+          "attempt": 46,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 2308.223,
+          "attempt": 47,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2351.7,
+          "attempt": 5,
+          "status": 200,
+          "bytes": 7925
+        },
+        {
+          "kind": "logical_end",
+          "ms": 2351.838,
+          "method": "fetch_market"
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 2351.86,
+          "slot": "market"
+        },
+        {
+          "kind": "request_start",
+          "ms": 2421.144,
+          "attempt": 48,
+          "route": "https://api.imd.fun/launches/f5809e80-6666-4851-a51b-b295413d6f5f",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2580.538,
+          "attempt": 46,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 2580.695,
+          "attempt": 49,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2635.299,
+          "attempt": 49,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 2672.652,
+          "attempt": 9,
+          "status": 200,
+          "bytes": 6966
+        },
+        {
+          "kind": "request_start",
+          "ms": 2700.897,
+          "attempt": 50,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 2701.493,
+          "attempt": 51,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2727.966,
+          "attempt": 50,
+          "status": 200,
+          "bytes": 104
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 2728.008,
+          "slot": "nft"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2741.667,
+          "attempt": 48,
+          "status": 200,
+          "bytes": 380455
+        },
+        {
+          "kind": "request_end",
+          "ms": 2761.257,
+          "attempt": 51,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 2822.659,
+          "attempt": 52,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 2864.511,
+          "attempt": 53,
+          "route": "https://api.imd.fun/launches/d9d36742-8783-4881-b4f6-2c352528facc",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 3143.27,
+          "attempt": 47,
+          "status": 200,
+          "bytes": 232720
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 3144.424,
+          "slot": "logs"
+        },
+        {
+          "kind": "request_end",
+          "ms": 3159.474,
+          "attempt": 52,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 3159.646,
+          "attempt": 54,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 3232.177,
+          "attempt": 54,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 3280.768,
+          "attempt": 55,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 3337.812,
+          "attempt": 55,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 3401.837,
+          "attempt": 56,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 3668.103,
+          "attempt": 40,
+          "status": 200,
+          "bytes": 877998
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 3670.402,
+          "slot": "activity"
+        },
+        {
+          "kind": "request_start",
+          "ms": 3763.188,
+          "attempt": 57,
+          "route": "https://pool4.imd.fun/docs",
+          "method": "GET"
+        },
+        {
+          "kind": "first_useful_snapshot",
+          "ms": 3952.317
+        },
+        {
+          "kind": "logical_start",
+          "ms": 4150.883,
+          "method": "fetch_seat",
+          "identity": "527"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4151.875,
+          "attempt": 56,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 4152.027,
+          "attempt": 58,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4208.614,
+          "attempt": 58,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 4264.48,
+          "attempt": 57,
+          "status": 200,
+          "bytes": 72318
+        },
+        {
+          "kind": "request_start",
+          "ms": 4269.802,
+          "attempt": 59,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4271.109,
+          "attempt": 60,
+          "route": "https://api.imd.fun/seats/527",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4272.087,
+          "attempt": 61,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4391.433,
+          "attempt": 59,
+          "status": 200,
+          "bytes": 1451
+        },
+        {
+          "kind": "request_start",
+          "ms": 4399.038,
+          "attempt": 62,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4615.124,
+          "attempt": 62,
+          "status": 200,
+          "bytes": 4693
+        },
+        {
+          "kind": "request_start",
+          "ms": 4618.199,
+          "attempt": 63,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4645.208,
+          "attempt": 63,
+          "status": 200,
+          "bytes": 193
+        },
+        {
+          "kind": "request_start",
+          "ms": 4739.282,
+          "attempt": 64,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4739.687,
+          "attempt": 65,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4739.955,
+          "attempt": 66,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4740.216,
+          "attempt": 67,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4789.153,
+          "attempt": 35,
+          "status": 503,
+          "bytes": 104
+        },
+        {
+          "kind": "request_start",
+          "ms": 4789.462,
+          "attempt": 68,
+          "route": "https://identitymdcontrol-plane-production.up.railway.app/jobs/d3efaf1a-4ac5-4774-ac52-f621042e2e14",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4790.681,
+          "attempt": 66,
+          "status": 200,
+          "bytes": 464
+        },
+        {
+          "kind": "request_end",
+          "ms": 4858.713,
+          "attempt": 61,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 4859.137,
+          "attempt": 69,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 5158.203,
+          "attempt": 69,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 5158.39,
+          "attempt": 70,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 5164.482,
+          "attempt": 67,
+          "status": 200,
+          "bytes": 193
+        },
+        {
+          "kind": "request_end",
+          "ms": 5216.053,
+          "attempt": 70,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 5279.479,
+          "attempt": 71,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 5760.568,
+          "attempt": 64,
+          "status": 200,
+          "bytes": 41050
+        },
+        {
+          "kind": "request_start",
+          "ms": 5760.991,
+          "attempt": 72,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 5762.027,
+          "attempt": 65,
+          "status": 200,
+          "bytes": 23062
+        },
+        {
+          "kind": "request_end",
+          "ms": 5880.799,
+          "attempt": 71,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 5880.971,
+          "attempt": 73,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 5881.579,
+          "attempt": 74,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 5940.653,
+          "attempt": 72,
+          "status": 200,
+          "bytes": 58890
+        },
+        {
+          "kind": "request_end",
+          "ms": 5946.577,
+          "attempt": 74,
+          "status": 200,
+          "bytes": 34305
+        },
+        {
+          "kind": "request_start",
+          "ms": 6002.695,
+          "attempt": 75,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 6003.098,
+          "attempt": 76,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 6278.541,
+          "attempt": 76,
+          "status": 200,
+          "bytes": 123034
+        },
+        {
+          "kind": "request_end",
+          "ms": 6290.064,
+          "attempt": 53,
+          "status": 200,
+          "bytes": 381075
+        },
+        {
+          "kind": "request_end",
+          "ms": 6297.029,
+          "attempt": 75,
+          "status": 200,
+          "bytes": 73570
+        },
+        {
+          "kind": "request_start",
+          "ms": 6297.498,
+          "attempt": 77,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 6331.355,
+          "attempt": 77,
+          "status": 200,
+          "bytes": 1192
+        },
+        {
+          "kind": "request_start",
+          "ms": 6413.04,
+          "attempt": 78,
+          "route": "https://api.imd.fun/launches/1f2af212-1ea8-43b1-af2d-a26281ff0b2e",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 6418.016,
+          "attempt": 79,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 6418.379,
+          "attempt": 80,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 6419.355,
+          "attempt": 60,
+          "error": "CancelledError"
+        },
+        {
+          "kind": "logical_end",
+          "ms": 6419.361,
+          "method": "fetch_seat"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 6420.122,
+          "attempt": 73,
+          "error": "CancelledError"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 6420.759,
+          "attempt": 78,
+          "error": "CancelledError"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 6421.404,
+          "attempt": 68,
+          "error": "CancelledError"
+        },
+        {
+          "kind": "logical_end",
+          "ms": 6421.408,
+          "method": "fetch_job"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 6422.524,
+          "attempt": 80,
+          "error": "ReadError"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 6422.666,
+          "attempt": 79,
+          "error": "ReadError"
+        }
+      ],
+      "scenario": "cold",
+      "selected_seat": 527,
+      "size": "149x45",
+      "observed_attempts": 80,
+      "total_attempts": null,
+      "transport_coverage_complete": false
+    },
+    {
+      "censored": true,
+      "reason": "observed_request_budget",
+      "elapsed_ms": 5092.934,
+      "first_useful_snapshot_ms": 3997.204,
+      "first_paint_ms": null,
+      "events": [
+        {
+          "kind": "request_start",
+          "ms": 8.837,
+          "attempt": 1,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "logical_start",
+          "ms": 9.083,
+          "method": "fetch_chain_state",
+          "identity": null
+        },
+        {
+          "kind": "request_end",
+          "ms": 79.175,
+          "attempt": 1,
+          "status": 200,
+          "bytes": 171
+        },
+        {
+          "kind": "request_start",
+          "ms": 129.949,
+          "attempt": 2,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 259.336,
+          "attempt": 2,
+          "status": 200,
+          "bytes": 4135
+        },
+        {
+          "kind": "logical_end",
+          "ms": 259.492,
+          "method": "fetch_chain_state"
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 259.562,
+          "slot": "chain"
+        },
+        {
+          "kind": "logical_start",
+          "ms": 277.771,
+          "method": "fetch_market",
+          "identity": "None"
+        },
+        {
+          "kind": "request_start",
+          "ms": 277.9,
+          "attempt": 3,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 359.77,
+          "attempt": 3,
+          "status": 200,
+          "bytes": 45
+        },
+        {
+          "kind": "request_start",
+          "ms": 395.509,
+          "attempt": 4,
+          "route": "https://api.imd.fun/launches?limit=100",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 395.877,
+          "attempt": 5,
+          "route": "https://api.imd.fun/health",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 396.184,
+          "attempt": 6,
+          "route": "https://api.imd.fun/jobs?limit=100",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 398.076,
+          "attempt": 7,
+          "route": "https://api.imd.fun/contributors",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 398.332,
+          "attempt": 8,
+          "route": "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 398.689,
+          "attempt": 9,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x000008061ccac597a321a75E3470a3E8fAF9dD2d/logs",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 398.98,
+          "attempt": 10,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7/transactions",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 399.205,
+          "attempt": 11,
+          "route": "https://api.dexscreener.com/latest/dex/tokens/0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 399.408,
+          "attempt": 12,
+          "route": "https://eth.blockscout.com/api/v2/tokens/0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D/counters",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 399.658,
+          "attempt": 13,
+          "route": "https://api.geckoterminal.com/api/v2/networks/eth/tokens/0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7?include=top_pools",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 399.91,
+          "attempt": 14,
+          "route": "https://eth.blockscout.com/api/v2/tokens/0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D/transfers",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 400.119,
+          "attempt": 15,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0xE764dA9bDeA91d845AAc2C7D53A8DfE59A369095/transactions",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 400.349,
+          "attempt": 16,
+          "route": "https://api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 400.552,
+          "attempt": 17,
+          "route": "https://eth.blockscout.com/api/v2/tokens/0x0000eC93127BAA929E58E97dd0095A2BFb38ec1D",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 400.832,
+          "attempt": 18,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 401.017,
+          "attempt": 19,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 401.27,
+          "attempt": 20,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 401.484,
+          "attempt": 21,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 455.256,
+          "attempt": 18,
+          "status": 200,
+          "bytes": 3175
+        },
+        {
+          "kind": "request_end",
+          "ms": 494.456,
+          "attempt": 21,
+          "status": 200,
+          "bytes": 36
+        },
+        {
+          "kind": "request_start",
+          "ms": 522.643,
+          "attempt": 22,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 523.017,
+          "attempt": 23,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 534.915,
+          "attempt": 13,
+          "status": 200,
+          "bytes": 5260
+        },
+        {
+          "kind": "request_end",
+          "ms": 535.492,
+          "attempt": 8,
+          "status": 200,
+          "bytes": 28
+        },
+        {
+          "kind": "request_end",
+          "ms": 535.972,
+          "attempt": 12,
+          "status": 200,
+          "bytes": 56
+        },
+        {
+          "kind": "request_end",
+          "ms": 764.237,
+          "attempt": 19,
+          "status": 200,
+          "bytes": 487
+        },
+        {
+          "kind": "request_start",
+          "ms": 764.972,
+          "attempt": 24,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 766.54,
+          "attempt": 17,
+          "status": 200,
+          "bytes": 305
+        },
+        {
+          "kind": "request_end",
+          "ms": 767.189,
+          "attempt": 22,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 813.829,
+          "attempt": 9,
+          "status": 200,
+          "bytes": 6966
+        },
+        {
+          "kind": "request_end",
+          "ms": 822.033,
+          "attempt": 24,
+          "status": 200,
+          "bytes": 808
+        },
+        {
+          "kind": "request_end",
+          "ms": 824.579,
+          "attempt": 20,
+          "status": 200,
+          "bytes": 140563
+        },
+        {
+          "kind": "request_end",
+          "ms": 856.748,
+          "attempt": 23,
+          "status": 200,
+          "bytes": 46
+        },
+        {
+          "kind": "request_start",
+          "ms": 885.994,
+          "attempt": 25,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 886.673,
+          "attempt": 26,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 887.216,
+          "attempt": 27,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions?index=81&value=0&hash=0xf7627028bffaf0dc67a4ce040a6df1855a58b5df71928a4ee09cddae6d9a9ee3&inserted_at=2026-09-02T23%3A20%3A30.714091Z&block_number=25892855&fee=13874635654272&items_count=50",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 969.974,
+          "attempt": 25,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 980.463,
+          "attempt": 16,
+          "status": 200,
+          "bytes": 7925
+        },
+        {
+          "kind": "request_end",
+          "ms": 983.966,
+          "attempt": 6,
+          "status": 200,
+          "bytes": 56490
+        },
+        {
+          "kind": "logical_start",
+          "ms": 984.229,
+          "method": "fetch_job",
+          "identity": "d3efaf1a-4ac5-4774-ac52-f621042e2e14"
+        },
+        {
+          "kind": "request_end",
+          "ms": 999.251,
+          "attempt": 11,
+          "status": 200,
+          "bytes": 32819
+        },
+        {
+          "kind": "logical_end",
+          "ms": 999.528,
+          "method": "fetch_market"
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 999.546,
+          "slot": "market"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1003.615,
+          "attempt": 26,
+          "status": 200,
+          "bytes": 156258
+        },
+        {
+          "kind": "request_end",
+          "ms": 1004.226,
+          "attempt": 5,
+          "status": 200,
+          "bytes": 3257
+        },
+        {
+          "kind": "request_start",
+          "ms": 1007.54,
+          "attempt": 28,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1008.197,
+          "attempt": 29,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1047.233,
+          "attempt": 14,
+          "status": 200,
+          "bytes": 1438130
+        },
+        {
+          "kind": "request_end",
+          "ms": 1068.712,
+          "attempt": 4,
+          "status": 200,
+          "bytes": 126798
+        },
+        {
+          "kind": "request_end",
+          "ms": 1073.666,
+          "attempt": 29,
+          "status": 200,
+          "bytes": 5863
+        },
+        {
+          "kind": "request_end",
+          "ms": 1092.257,
+          "attempt": 28,
+          "status": 200,
+          "bytes": 19247
+        },
+        {
+          "kind": "request_end",
+          "ms": 1103.886,
+          "attempt": 15,
+          "status": 200,
+          "bytes": 118696
+        },
+        {
+          "kind": "request_start",
+          "ms": 1105.257,
+          "attempt": 30,
+          "route": "https://api.imd.fun/jobs/d3efaf1a-4ac5-4774-ac52-f621042e2e14",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1125.22,
+          "attempt": 31,
+          "route": "https://api.imd.fun/jobs?limit=100",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1128.556,
+          "attempt": 32,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1129.08,
+          "attempt": 33,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1129.856,
+          "attempt": 34,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1130.478,
+          "attempt": 35,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0xE764dA9bDeA91d845AAc2C7D53A8DfE59A369095/transactions?index=141&value=0&hash=0xae1b07c436632d3a5ac773f03d3472ae422a5ac7dc83a49e0be8a352d25de727&inserted_at=2026-09-17T19%3A49%3A54.890043Z&block_number=25999410&fee=9301901591229&items_count=50",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1190.518,
+          "attempt": 36,
+          "route": "https://api.imd.fun/sites",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1288.747,
+          "attempt": 7,
+          "status": 200,
+          "bytes": 404369
+        },
+        {
+          "kind": "request_end",
+          "ms": 1299.51,
+          "attempt": 27,
+          "status": 200,
+          "bytes": 112522
+        },
+        {
+          "kind": "request_start",
+          "ms": 1300.133,
+          "attempt": 37,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions?index=378&value=0&hash=0xfc0f98c7d0022fcfa84bff9773bc2cd8a8927949d49721328f3331ae40fc08bf&inserted_at=2026-05-17T20%3A30%3A39.922407Z&block_number=25117311&fee=3575604418560&items_count=50",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1316.693,
+          "attempt": 34,
+          "status": 200,
+          "bytes": 104
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 1316.742,
+          "slot": "nft"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1364.46,
+          "attempt": 32,
+          "status": 200,
+          "bytes": 1190
+        },
+        {
+          "kind": "request_end",
+          "ms": 1413.239,
+          "attempt": 31,
+          "status": 200,
+          "bytes": 56490
+        },
+        {
+          "kind": "logical_start",
+          "ms": 1413.504,
+          "method": "fetch_job",
+          "identity": "1336f7b0-b673-420e-9479-a25a6a184cab"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1417.08,
+          "attempt": 36,
+          "status": 200,
+          "bytes": 78123
+        },
+        {
+          "kind": "request_start",
+          "ms": 1418.264,
+          "attempt": 38,
+          "route": "https://api.imd.fun/workers",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1420.093,
+          "attempt": 39,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1489.83,
+          "attempt": 39,
+          "status": 200,
+          "bytes": 5800
+        },
+        {
+          "kind": "request_start",
+          "ms": 1533.789,
+          "attempt": 40,
+          "route": "https://api.imd.fun/jobs/1336f7b0-b673-420e-9479-a25a6a184cab",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1537.707,
+          "attempt": 41,
+          "route": "https://api.imd.fun/launch/policies",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1540.787,
+          "attempt": 42,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1543.105,
+          "attempt": 37,
+          "status": 200,
+          "bytes": 11530
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 1545.026,
+          "slot": "channel"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1815.597,
+          "attempt": 42,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 1815.849,
+          "attempt": 43,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1816.388,
+          "attempt": 41,
+          "status": 200,
+          "bytes": 39925
+        },
+        {
+          "kind": "request_end",
+          "ms": 1834.849,
+          "attempt": 33,
+          "status": 200,
+          "bytes": 6316362
+        },
+        {
+          "kind": "request_end",
+          "ms": 1881.451,
+          "attempt": 43,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 1887.718,
+          "attempt": 38,
+          "status": 200,
+          "bytes": 1517016
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 1912.349,
+          "slot": "surfboard_activity"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1937.013,
+          "attempt": 44,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1937.732,
+          "attempt": 45,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 1938.75,
+          "attempt": 46,
+          "route": "https://api.imd.fun/launches/f5809e80-6666-4851-a51b-b295413d6f5f",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 1997.004,
+          "attempt": 10,
+          "status": 200,
+          "bytes": 620007
+        },
+        {
+          "kind": "request_end",
+          "ms": 2018.993,
+          "attempt": 44,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 2045.378,
+          "attempt": 45,
+          "status": 200,
+          "bytes": 232720
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 2045.811,
+          "slot": "logs"
+        },
+        {
+          "kind": "request_start",
+          "ms": 2058.832,
+          "attempt": 47,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 2059.473,
+          "attempt": 48,
+          "route": "https://eth.blockscout.com/api/v2/addresses/0x047F606fD5b2BaA5f5C6c4aB8958E45CB6B054B7/transactions?index=34&value=0&hash=0x00538d57509bd9017ac4a2cafc8be929de8914f11e97d815aece01015380c8c1&inserted_at=2026-10-12T23%3A25%3A11.431207Z&block_number=26179666&fee=14695297530705&items_count=50",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2121.626,
+          "attempt": 47,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 2180.567,
+          "attempt": 49,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2387.57,
+          "attempt": 49,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 2387.73,
+          "attempt": 50,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2395.83,
+          "attempt": 35,
+          "status": 200,
+          "bytes": 114841
+        },
+        {
+          "kind": "request_end",
+          "ms": 2493.646,
+          "attempt": 50,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 2508.842,
+          "attempt": 51,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2606.003,
+          "attempt": 51,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 2629.949,
+          "attempt": 52,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2861.523,
+          "attempt": 52,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 2861.722,
+          "attempt": 53,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 2920.444,
+          "attempt": 53,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 2982.817,
+          "attempt": 54,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 3051.897,
+          "attempt": 54,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 3103.904,
+          "attempt": 55,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 3158.614,
+          "attempt": 55,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 3224.948,
+          "attempt": 56,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 3382.625,
+          "attempt": 56,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 3382.788,
+          "attempt": 57,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 3434.526,
+          "attempt": 57,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 3503.364,
+          "attempt": 58,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 3517.112,
+          "attempt": 48,
+          "status": 200,
+          "bytes": 877998
+        },
+        {
+          "kind": "slot_publish",
+          "ms": 3520.027,
+          "slot": "activity"
+        },
+        {
+          "kind": "request_start",
+          "ms": 3801.76,
+          "attempt": 59,
+          "route": "https://pool4.imd.fun/docs",
+          "method": "GET"
+        },
+        {
+          "kind": "first_useful_snapshot",
+          "ms": 3997.204
+        },
+        {
+          "kind": "logical_start",
+          "ms": 4205.773,
+          "method": "fetch_seat",
+          "identity": "527"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4206.703,
+          "attempt": 58,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 4206.854,
+          "attempt": 60,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4227.967,
+          "attempt": 30,
+          "status": 503,
+          "bytes": 104
+        },
+        {
+          "kind": "request_start",
+          "ms": 4228.054,
+          "attempt": 61,
+          "route": "https://identitymdcontrol-plane-production.up.railway.app/jobs/d3efaf1a-4ac5-4774-ac52-f621042e2e14",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4326.953,
+          "attempt": 62,
+          "route": "https://api.imd.fun/seats/527",
+          "method": "GET"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4435.54,
+          "attempt": 60,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 4435.69,
+          "attempt": 63,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4476.207,
+          "attempt": 59,
+          "status": 200,
+          "bytes": 72318
+        },
+        {
+          "kind": "request_start",
+          "ms": 4481.642,
+          "attempt": 64,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4507.085,
+          "attempt": 63,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 4556.202,
+          "attempt": 65,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4575.009,
+          "attempt": 64,
+          "status": 200,
+          "bytes": 1451
+        },
+        {
+          "kind": "request_start",
+          "ms": 4602.776,
+          "attempt": 66,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4618.581,
+          "attempt": 65,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 4645.068,
+          "attempt": 66,
+          "status": 200,
+          "bytes": 4693
+        },
+        {
+          "kind": "request_end",
+          "ms": 4656.011,
+          "attempt": 40,
+          "status": 503,
+          "bytes": 104
+        },
+        {
+          "kind": "request_start",
+          "ms": 4656.088,
+          "attempt": 67,
+          "route": "https://identitymdcontrol-plane-production.up.railway.app/jobs/1336f7b0-b673-420e-9479-a25a6a184cab",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4677.241,
+          "attempt": 68,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4723.817,
+          "attempt": 69,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4724.206,
+          "attempt": 70,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4724.443,
+          "attempt": 71,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4724.629,
+          "attempt": 72,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4738.921,
+          "attempt": 68,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_start",
+          "ms": 4798.617,
+          "attempt": 73,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4813.301,
+          "attempt": 72,
+          "status": 200,
+          "bytes": 193
+        },
+        {
+          "kind": "request_start",
+          "ms": 4844.927,
+          "attempt": 74,
+          "route": "https://ethereum-rpc.publicnode.com",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4854.878,
+          "attempt": 73,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 4858.262,
+          "attempt": 70,
+          "status": 200,
+          "bytes": 23062
+        },
+        {
+          "kind": "request_end",
+          "ms": 4864.32,
+          "attempt": 69,
+          "status": 200,
+          "bytes": 41050
+        },
+        {
+          "kind": "request_start",
+          "ms": 4919.623,
+          "attempt": 75,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4966.231,
+          "attempt": 76,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_start",
+          "ms": 4966.567,
+          "attempt": 77,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 4967.021,
+          "attempt": 71,
+          "status": 200,
+          "bytes": 464
+        },
+        {
+          "kind": "request_end",
+          "ms": 4971.847,
+          "attempt": 74,
+          "status": 200,
+          "bytes": 181
+        },
+        {
+          "kind": "request_end",
+          "ms": 5018.737,
+          "attempt": 75,
+          "status": 200,
+          "bytes": 37
+        },
+        {
+          "kind": "request_end",
+          "ms": 5019.345,
+          "attempt": 76,
+          "status": 200,
+          "bytes": 34305
+        },
+        {
+          "kind": "request_end",
+          "ms": 5028.418,
+          "attempt": 77,
+          "status": 200,
+          "bytes": 58890
+        },
+        {
+          "kind": "request_start",
+          "ms": 5040.571,
+          "attempt": 78,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_end",
+          "ms": 5075.444,
+          "attempt": 46,
+          "status": 503,
+          "bytes": 104
+        },
+        {
+          "kind": "request_start",
+          "ms": 5075.517,
+          "attempt": 79,
+          "route": "https://identitymdcontrol-plane-production.up.railway.app/launches/f5809e80-6666-4851-a51b-b295413d6f5f",
+          "method": "GET"
+        },
+        {
+          "kind": "request_start",
+          "ms": 5087.655,
+          "attempt": 80,
+          "route": "https://gateway.tenderly.co/public/mainnet",
+          "method": "POST"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 5088.956,
+          "attempt": 62,
+          "error": "CancelledError"
+        },
+        {
+          "kind": "logical_end",
+          "ms": 5088.961,
+          "method": "fetch_seat"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 5089.613,
+          "attempt": 78,
+          "error": "CancelledError"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 5090.121,
+          "attempt": 79,
+          "error": "CancelledError"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 5090.625,
+          "attempt": 67,
+          "error": "CancelledError"
+        },
+        {
+          "kind": "logical_end",
+          "ms": 5090.63,
+          "method": "fetch_job"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 5091.005,
+          "attempt": 61,
+          "error": "CancelledError"
+        },
+        {
+          "kind": "logical_end",
+          "ms": 5091.008,
+          "method": "fetch_job"
+        },
+        {
+          "kind": "request_exit",
+          "ms": 5092.595,
+          "attempt": 80,
+          "error": "ReadError"
+        }
+      ],
+      "scenario": "warm",
+      "selected_seat": 527,
+      "size": "149x45",
+      "observed_attempts": 80,
+      "total_attempts": null,
+      "transport_coverage_complete": false
+    }
+  ],
+  "summary": {
+    "n": 2,
+    "complete_n": 0,
+    "censored_n": 2,
+    "median_ms": null,
+    "range_ms": null
+  },
+  "paint": "not measured: manager-only probe",
+  "captured_at": "2026-10-17",
+  "budget": {
+    "requested_max_requests_per_run": 80,
+    "requested_deadline_seconds_per_run": 90,
+    "requested_stop_on_429": true,
+    "total_attempt_budget_verified": false,
+    "all_client_429_coverage_verified": false
+  },
+  "note": "Pre-implementation manager-only capture; no real paint. Both runs censored at 80 observed attempts. Total actual attempts unknown; no completed latency distribution or verified total-request cap.",
+  "measurement_validity": "Incomplete transport coverage: the capture predates instrumentation of late-owned launch/adapter clients. Observed counts only; total attempts unknown. Do not certify the requested 80-attempt cap or absence of 429 on unobserved clients."
+}
