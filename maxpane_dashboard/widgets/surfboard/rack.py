@@ -454,7 +454,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
-            body.stylize(Style(bold=False), start, start + len(label.strip()))
+            body.stylize(Style(bold=False) + (value_style if self.key == "work" else Style()),
+                         start, start + len(label.strip()))
         bottom = f" {secondary} " if label else ""
         if self.key == "protocol":
             bottom = ""
@@ -496,6 +497,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         fitted_bottom = clip(bottom, inside)
         footer = Text("└" + fitted_bottom.center(inside + len(fitted_bottom) - cell_len(fitted_bottom), "─") + "┘",
                       style=border_inset + Style(bold=False))
+        if self.key == "work" and (caption := fitted_bottom.strip()):
+            start = footer.plain.index(caption)
+            footer.stylize(value_style, start, start + len(caption))
         if self.empty_seat and self._seat_error:
             footer.stylize(Style(color=RED, dim=False), 1, len(footer) - 1)
         return body.append_text(footer)
