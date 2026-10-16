@@ -1106,12 +1106,12 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
                 for x in (left, right):
                     assert next(iter(row.crop(x, x+1))).style.color.get_truecolor() == expected
             if primary != '—':
-                digit_ink = app.ansi_theme.ansi_colors[2] if primary in ('5', '1,000') else card.rich_style.color.get_truecolor()
+                digit_ink = title_color.get_truecolor() if primary in ('5', '1,000') else card.rich_style.color.get_truecolor()
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for row in strips[top+1:top+4] for s in row.crop(left+1, right) if s.text.strip())
             for row, label in ((strips[top], 'ACTIVE JOBS'), (strips[top+4], secondary)):
                 caption = next(s for s in row if label in s.text)
-                assert caption.style.color == title_color
+                assert caption.style.color.get_truecolor() == expected
                 assert not caption.style.bold
             assert secondary in '\n'.join(s.text for s in strips)
             if primary == '—':

@@ -387,6 +387,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         label_style, value_style, readout_style = inner_styles(
             palette, active=border_inset.color in (Style.parse(palette['accent']).color, Style.parse(GREEN).color),
             frame_color=border_inset.color, ansi_theme=self.app.ansi_theme, text_color=self.rich_style.color)
+        if self.key == "work" and active:
+            # Match the dim boardroom title on the active readout only.
+            digit_color = Color.parse(palette["surface"]).blend(
+                Color.parse(palette["foreground"]), DIM_FACTOR)
+            readout_style += Style(color=digit_color.rich_color, dim=False)
         label = ""
         marker, marker_ink = _price_indicator(self._price_direction)
         marker_width = 0
@@ -451,16 +456,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             label = " LAST 24h "
             preview = _token_preview(ranking.get("rows"), inside,
                                      label_style, value_style)
-        caption_style = Style(bold=False)
-        if self.key == "work":
-            # Match the dim boardroom title without dimming the inset frame.
-            caption_color = Color.parse(palette["surface"]).blend(
-                Color.parse(palette["foreground"]), DIM_FACTOR)
-            caption_style += Style(color=caption_color.rich_color, dim=False)
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
-            body.stylize(caption_style, start, start + len(label.strip()))
+            body.stylize(Style(bold=False), start, start + len(label.strip()))
         bottom = f" {secondary} " if label else ""
         if self.key == "protocol":
             bottom = ""
@@ -502,9 +501,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         fitted_bottom = clip(bottom, inside)
         footer = Text("└" + fitted_bottom.center(inside + len(fitted_bottom) - cell_len(fitted_bottom), "─") + "┘",
                       style=border_inset + Style(bold=False))
-        if self.key == "work" and (caption := fitted_bottom.strip()):
-            start = footer.plain.index(caption)
-            footer.stylize(caption_style, start, start + len(caption))
         if self.empty_seat and self._seat_error:
             footer.stylize(Style(color=RED, dim=False), 1, len(footer) - 1)
         return body.append_text(footer)
