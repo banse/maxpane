@@ -3,6 +3,11 @@
 Status: proposal 2 and mock data approved by the owner, 2026-10-13.
 Tier 2: one new Surf body with a new data contract and detached source tier.
 
+2026-10-16 extension: [active project context](surf_work_context_spec.md) supersedes
+the initial recent-page/detail budgets, duplicate-job tree behavior and historical
+count scope below. WIP now discovers older active jobs and loads their complete
+served project versions and linked workflow steps within explicit bounds.
+
 ## 1. Approved scope
 
 The request is “design a new dashboard for work in progress. jobs being

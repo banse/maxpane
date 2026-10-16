@@ -144,3 +144,16 @@ def test_page_count_excludes_extra_linked_details(captured):
     for bad in (True, -1, 4, 101):
         slot['jobs_loaded'] = bad
         assert work.coerce_snapshot(slot, now=raw['read_ts']) is None
+
+
+def test_legacy_snapshot_migrates_to_partial_empty_projects(captured):
+    slot = snapshot(captured)
+    for key in ('projects', 'current_job_ids', 'current_workflow_ids', 'context_job_ids', 'context_workflow_ids', 'active_scan_complete'):
+        slot.pop(key)
+    migrated = work.coerce_snapshot(slot, now=captured['read_ts'])
+    assert migrated['projects'] == [] and migrated['partial']
+    assert not migrated['active_scan_complete']
+    data = work.project(migrated, now=captured['read_ts'])
+    assert data['summary']['jobs'] == 2 and data['summary']['seats'] is None
+    from maxpane_dashboard.data.surf_models import SURF_WORK_FIELDS
+    assert set(data) == set(SURF_WORK_FIELDS)

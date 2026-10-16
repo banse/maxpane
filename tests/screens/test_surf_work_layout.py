@@ -44,9 +44,9 @@ async def _render(payload, size):
         missing = []
         for card in cards:
             text = _region_text(pilot.app, card)
-            expected = [card.data.title, card.data.heading]
-            expected.append(card.data.footer if card.data.state == "ok" else card.data.state)
+            expected = [card.data.title, card.data.heading, card.data.footer]
             missing.extend(f"{card.id}:{word}" for word in expected if word not in text)
+            assert "stale" not in text and "unavailable" not in text
         status = screen.query_one(StatusBar)
         body = screen.query_one("#surf-work-body")
         panels = [screen.query_one("#work-tree-panel"), screen.query_one("#work-detail-panel")]

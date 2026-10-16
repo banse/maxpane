@@ -60,6 +60,176 @@ def node(tree, key):
     return next(n for n in walk(tree.root) if n.data and n.data[0] == key)
 
 
+def project_payload():
+    data = payload()
+    previous = deepcopy(data["jobs"][0])
+    previous.update(id="11111111-1111-4111-8111-111111111111", objective="Earlier release", state="completed", updated_ts=11000)
+    previous["nodes"] = [dict(previous["nodes"][0], key="legacy_step", seat=999, state="accepted")]
+    blocked = dict(previous, id="previous-blocked", objective="Earlier blocked attempt", state="blocked", nodes=[])
+    data["jobs"].extend([previous, blocked])
+    data["projects"] = [dict(id="project-a", objective="Vault project", job_ids=[previous["id"], blocked["id"], "job-a", "job-b"], workflow_ids=[], active_job_ids=["job-a"])]
+    data["jobs_loaded"] = len(data["jobs"])
+    return data
+
+
+async def test_project_history_includes_completed_and_blocked_versions_without_a_workflow():
+    data = project_payload()
+    data["workflows"] = []
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        tree = app.query_one("#work-tree", Tree)
+        output = painted(app, "#work-tree-panel")
+        assert all(text in output for text in ["Vault project", "Earlier release", "Earlier blocked attempt", "BunkerVault", "Repair logging"]), output
+        assert output.index("Vault project") < output.index("OTHER JOBS")
+        assert "legacy_step" not in output
+        assert not node(tree, "job:" + data["jobs"][3]["id"]).is_expanded
+        assert node(tree, "job:job-a").is_expanded
+        assert "BunkerVault [limits]" in painted(app, "#work-detail-panel")
+        node(tree, "job:" + data["jobs"][3]["id"]).expand()
+        await pilot.pause()
+        assert "legacy_step" in painted(app, "#work-tree-panel")
+
+
+async def test_project_nests_terminal_workflows_and_deduplicates_jobs_across_links():
+    data = project_payload()
+    data["projects"][0].update(workflow_ids=["flow-a", "flow-old", "flow-duplicate"], active_job_ids=["job-a", "job-c"])
+    data["projects"][0]["job_ids"].append("job-c")
+    data["workflows"][1]["contracts_job_id"] = data["jobs"][3]["id"]
+    data["workflows"].append(dict(data["workflows"][0], id="flow-duplicate", objective="Second workflow reference"))
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        tree = app.query_one("#work-tree", Tree)
+        output = painted(app, "#work-tree-panel")
+        assert "Vault project" in output and "Old completed workflow" in output
+        assert "OTHER JOBS" not in output
+        assert node(tree, "workflow:flow-a").parent is node(tree, "project:project-a")
+        assert node(tree, "job:" + data["jobs"][3]["id"]).parent is node(tree, "workflow:flow-old")
+        def jobs(parent):
+            return [child.data[0] for child in parent.children if child.data and child.data[1] == "job"] + [key for child in parent.children for key in jobs(child)]
+        keys = jobs(tree.root)
+        assert len(keys) == len(set(keys)) == 5
+        assert "BunkerVault [limits]" in painted(app, "#work-detail-panel")
+
+
+@pytest.mark.parametrize("query", ["Earlier release", "legacy_step", "999"])
+async def test_project_history_search_reveals_steps_and_restores_collapse(query):
+    data = project_payload()
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        body = app.query_one(SurfWorkBody)
+        body.focus_find()
+        app.query_one("#work-find", Input).value = query
+        await pilot.pause()
+        output = painted(app, "#work-tree-panel")
+        assert all(text in output for text in ["Vault project", "Earlier release", "legacy_step", "#999"]), output
+        assert "Repair logging" not in output
+        assert app.query_one("#hero-work-jobs").data.digits == "2"
+        body.close_find()
+        await pilot.pause()
+        assert "Earlier release" in painted(app, "#work-tree-panel")
+        assert "legacy_step" not in painted(app, "#work-tree-panel")
+
+
+async def test_project_filters_exclude_historical_working_nodes_but_keep_parent_path():
+    data = project_payload()
+    data["jobs"][3]["nodes"][0].update(state="working", role="implement")
+    data["jobs"][3]["nodes"].append(dict(data["jobs"][3]["nodes"][0], role="review", key="legacy_review"))
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        body = pilot.app.query_one(SurfWorkBody)
+        body.cycle_filter()
+        await pilot.pause()
+        output = painted(pilot.app, "#work-tree-panel")
+        assert "Vault project" in output and "BunkerVault" in output
+        assert "Earlier release" not in output
+        body.cycle_filter()
+        await pilot.pause()
+        assert "Vault project" in painted(pilot.app, "#work-tree-panel")
+        assert "Earlier release" not in painted(pilot.app, "#work-tree-panel")
+        body.cycle_filter()
+        await pilot.pause()
+        output = painted(pilot.app, "#work-tree-panel")
+        assert "Vault project" in output and "Earlier blocked attempt" in output
+        assert pilot.app.query_one("#hero-work-blocked").data.digits == "1"
+
+
+async def test_project_history_selection_expansion_and_removal_follow_fresh_snapshot():
+    data = project_payload()
+    previous_id = data["jobs"][3]["id"]
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        body = app.query_one(SurfWorkBody)
+        tree = app.query_one("#work-tree", Tree)
+        node(tree, "job:" + previous_id).expand()
+        tree.select_node(node(tree, f"step:{previous_id}:legacy_step"))
+        await pilot.pause()
+        body.update_data(surf_work=deepcopy(data))
+        await pilot.pause()
+        assert node(tree, "job:" + previous_id).is_expanded
+        assert "legacy_step" in painted(app, "#work-detail-panel")
+        node(tree, "project:project-a").collapse()
+        body.update_data(surf_work=deepcopy(data))
+        await pilot.pause()
+        assert not node(tree, "project:project-a").is_expanded
+        assert "legacy_step" in painted(app, "#work-detail-panel")
+        data.update(projects=[], jobs=[], workflows=[])
+        body.update_data(surf_work=data)
+        await pilot.pause()
+        assert "No work in progress" in painted(app, "#work-tree-panel")
+        assert "legacy_step" not in painted(app, "#work-detail-panel")
+
+
+async def test_project_details_show_linked_history_unknown_states_and_literal_prose():
+    data = project_payload()
+    previous_id = data["jobs"][3]["id"]
+    data["projects"][0]["objective"] = "部署 [bold] project\x1b\u202e"
+    data["projects"][0]["job_ids"].extend(["unknown-job", "missing-job"])
+    data["jobs"].append(dict(id="unknown-job", state=None, objective="Unknown version", nodes=None))
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        tree = app.query_one("#work-tree", Tree)
+        tree.select_node(node(tree, "project:project-a"))
+        await pilot.pause()
+        detail = painted(app, "#work-detail-panel")
+        assert all(text in detail for text in ["SELECTED PROJECT", "部署 [bold]", previous_id, "completed", "blocked", "executing", "unknown", "not loaded"]), detail
+        assert "\x1b" not in detail and "\u202e" not in detail
+        region = app.query_one("#work-detail-panel").region
+        segments = [seg for strip in app.screen._compositor.render_strips()[region.y:region.bottom] for seg in strip.crop(region.x, region.right)]
+        assert any(seg.style and seg.style.link and previous_id in seg.style.link for seg in segments)
+        tree.select_node(node(tree, "job:job-a"))
+        await pilot.pause()
+        assert previous_id in painted(app, "#work-detail-panel")
+        node(tree, "project:project-a").expand()
+        await pilot.pause()
+        assert "job not loaded" in painted(app, "#work-tree-panel")
+
+
+async def test_project_details_include_workflow_siblings_outside_version_ids():
+    data = project_payload()
+    data["projects"][0].update(job_ids=["job-a"], workflow_ids=["flow-a", "missing-workflow"])
+    data["jobs"][1]["state"] = None
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        tree = app.query_one("#work-tree", Tree)
+        assert "workflow not loaded" in painted(app, "#work-tree-panel")
+        tree.select_node(node(tree, "project:project-a"))
+        await pilot.pause()
+        assert "job-b" in painted(app, "#work-detail-panel")
+        assert "unknown" in painted(app, "#work-detail-panel")
+        tree.select_node(node(tree, "workflow:flow-a"))
+        await pilot.pause()
+        assert "unknown" in painted(app, "#work-detail-panel")
+        tree.select_node(node(tree, "job:job-b"))
+        await pilot.pause()
+        assert "job-a" in painted(app, "#work-detail-panel")
+
+
 async def test_six_cards_tree_and_default_job_detail_are_painted():
     async with Harness(payload()).run_test(size=(149, 45)) as pilot:
         await pilot.pause()

@@ -1046,15 +1046,24 @@ Native Tree handles nested click/Space folding. Width/height pins are documented
 
 The approved tree/detail body is `MODE_WORK`, reachable from Surf and the boardroom.
 It shares SurfScreen and SurfManager; no new top-level game registration. Six rack heroes
-and the body consume only `surf_work`. The work reader owns a separate 60s cache tier,
-120s failure backoff, fresh 100-job/100-workflow pages and at most 24 detail reads.
+and the body consume only `surf_work`. The work reader owns a separate 60s cache tier
+and 120s failure backoff. Start with fresh 100-job/100-workflow pages; discover older
+executing jobs through up to 100 total job pages (subsequent pages up to 500), using
+the overview count only as a stopping hint. Revalidate previously active IDs.
+Active details authorize project versions and formal workflow references, read directly
+regardless of age: at most 512 required job details, 128 workflow details and 256 versions
+per project; unrelated optional detail enrichment keeps its 24-read budget.
 The boardroom card and visible Work body share that reader; it cancels when
-neither consumer is visible. No history merge or
-unrelated Surf collectors run on its refresh path. Busy stops detail fanout and retains
+neither consumer is visible. No unrelated Surf collectors run on its refresh path.
+History is linked context, never a merge of cached executing states. Busy stops fanout and retains
 the previous snapshot; missing individual details remain explicit partial coverage.
 
-Counts apply to loaded jobs/workflows and every working node of executing jobs. Seats
-are distinct assigned token IDs; missing executing details make step/seat counts unknown.
+Counts apply to current loaded jobs/workflows and every working node of executing jobs.
+Historical blocked attempts and unfinished workflows added only for context cannot inflate
+current counts. Seats are distinct assigned token IDs; missing executing details or incomplete
+active discovery make step/seat counts unknown. Incomplete discovery with no observed active jobs
+cannot claim zero activity. Persisted current/context scopes are validated and stay internal;
+legacy snapshots migrate with empty projects and partial coverage until refreshed.
 Creation age never claims execution duration. Current node state controls activity,
 even when an older verdict says accepted. Job and workflow states have separate meanings.
 
@@ -1067,8 +1076,10 @@ green, including retained counts during stale or pending reads. Zero and unknown
 use the default inset color. Coverage and read details remain in the card tooltip.
 Click/Enter opens Work and Escape returns to the retained boardroom.
 
-The tree groups workflow jobs and steps, then other unfinished jobs. Selection and
-collapsed branches survive refreshes. Local `/` search and `f` filters preserve parents;
+The tree groups active projects → optional workflows → jobs → steps, then other unfinished
+work. Historical jobs start collapsed; active branches expand. Each job appears once.
+Selection and collapsed branches survive refreshes. Local `/` search and `f` filters preserve parents;
 heroes remain unfiltered. Enter focuses details, and Escape closes search before leaving.
 Addresses in objective/dependency/note prose use copy helpers without a guessed chain;
-job IDs link to the existing job explorer. See `docs/surf_work_PRD.md` and plan.
+job IDs link to the existing job explorer. See `docs/surf_work_PRD.md`, its
+`docs/surf_work_context_spec.md` extension and their plans.

@@ -1,0 +1,109 @@
+{
+  "provenance": "Public keyless /jobs/{id} response captured 2026-10-16; irrelevant fields removed; historical details intentionally absent.",
+  "read_ts": 1792117583.4324858,
+  "active_detail": {
+    "id": "b240aab0-4e0d-4bb4-9d66-00e57a350fed",
+    "state": "executing",
+    "template": "skill:build-website",
+    "objective": "Audit and review the website and contract carefully, \n\nIt is not able to read the wallet and identify swarm launched tokens.\n\nDo a full review end to end, \n\n1. It should be able to read the swarm tokens, use 0x0acE1DBE8AAb293cd58D5e3Ea38814f0ccb74782 for test case, since this wallet has a lot of warm launched tokens.\n2. Check if the contract is able to sell all and return one cummulative amount of $IMD (0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7)\n3. Check if a 2% fee is being deducted and sent to reward wallet.\n4. Check if failed txn are being refunded.\n5. do all other necessary checks",
+    "blockedReason": null,
+    "createdAt": "2026-10-15T19:30:48.689Z",
+    "updatedAt": "2026-10-15T19:30:48.689Z",
+    "parentJobId": "0c4b5c8c-6b77-4b40-a7d7-b6e5609be253",
+    "project": {
+      "id": "35d16e4a-e1e6-43b7-9efe-3b7b1fe99404",
+      "head": "0c4b5c8c-6b77-4b40-a7d7-b6e5609be253",
+      "running": "b240aab0-4e0d-4bb4-9d66-00e57a350fed",
+      "versions": [
+        {
+          "jobId": "35d16e4a-e1e6-43b7-9efe-3b7b1fe99404",
+          "workflowId": null,
+          "objective": "Build this:\n\nA protocol that enables a user to one click sell all swarm launched tokens in his wallet onchain on Ethereum\n1. build a website where user connects his wallet. It reads all the tokens in his wallet, identifies the ones launched by the swarm, lists them on the website, shows number of tokens and their USD value\n2. Shows total USD values of all those tokens.\n3. Option to one click sell all of them, receive $IMD (0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7) for all the sale.\n4. deduct 2% of all IMD to be received as sell tax and send to the treasury wallet (0xFC3ad9C531e1736690b2d5f24FebD35ebf051cFB)\n5. Make sure to sell tokens only which are sellable, have enough liquidity to be sold and receive IMD/ETH, if token is not sellable, do not initiate txn and highlight on the list of tokens on the frontend.\n6. in case of a failed txn, refund the failed txn token back to the user.\n7. conduct full testing end to end",
+          "baseCommit": "0243d7da4a4337ae8b16bcdf15bb4ead736fd68f",
+          "state": "completed",
+          "createdAt": "2026-10-14T03:25:30.071Z"
+        },
+        {
+          "jobId": "0c4b5c8c-6b77-4b40-a7d7-b6e5609be253",
+          "workflowId": null,
+          "objective": "Build a website on top of the contract\n\n1. The wesbite is called swarmsweep.\n2. It asks the user to connect his wallet. The contract/website reads the wallet and identies and lists all the swarm released tokens.\n3. It identied the sell route for each token and shows the number of tokens and USD value of each.\n4. The tokens for which no sell route is identied, they are greyed out with \"no sell route found\"\n5. The user can click on \"sell all\" or select specific tokens and click on \"sell selected\".\n6. A confirmation box appears showing the list of tokens to be sold and the total $IMD the user will receive.\n7. Of the total proceed, deduct 2% fee which is transferred to the wallet 0xFC3ad9C531e1736690b2d5f24FebD35ebf051cFB\n8. For any failed txn, refund the original tokens to the user.\n9. The user pays the gas fee\n10. After sell out, show the status of each token \"sold\", \"unsold\" in green and red respectively",
+          "baseCommit": "5868d48cb3dde129938da537f9ba9729984fb5b0",
+          "state": "completed",
+          "createdAt": "2026-10-15T17:49:41.771Z"
+        },
+        {
+          "jobId": "b240aab0-4e0d-4bb4-9d66-00e57a350fed",
+          "workflowId": null,
+          "objective": "Audit and review the website and contract carefully, \n\nIt is not able to read the wallet and identify swarm launched tokens.\n\nDo a full review end to end, \n\n1. It should be able to read the swarm tokens, use 0x0acE1DBE8AAb293cd58D5e3Ea38814f0ccb74782 for test case, since this wallet has a lot of warm launched tokens.\n2. Check if the contract is able to sell all and return one cummulative amount of $IMD (0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7)\n3. Check if a 2% fee is being deducted and sent to reward wallet.\n4. Check if failed txn are being refunded.\n5. do all other necessary checks",
+          "baseCommit": "e6a695d9a368642617f5c801a7759494caf0b81d",
+          "state": "executing",
+          "createdAt": "2026-10-15T19:30:48.689Z"
+        }
+      ]
+    },
+    "workflow": null,
+    "nodes": [
+      {
+        "key": "build_website",
+        "role": "implement",
+        "state": "submitted",
+        "attempt": 1,
+        "revisions": 1,
+        "judgeRevisions": 0,
+        "dependsOn": [],
+        "allowedPaths": [],
+        "failureReason": null,
+        "dispatchNote": null,
+        "dispatchNoteAt": null,
+        "updatedAt": "2026-10-15T20:53:32.080Z",
+        "verdict": {
+          "status": "accepted",
+          "profile": "none",
+          "evaluation": "structural",
+          "rejectionCode": null,
+          "detail": "paths and tree verified; no suite was run for this kind of work",
+          "verifierVersion": "0.1.0+8fbf00a5",
+          "verifiedTreeHash": "f2830f7f090beeb8e4ad42ab3e97e6a5b6dfad2b",
+          "at": "2026-10-15T20:03:30.677Z",
+          "failedChecks": []
+        },
+        "seat": {
+          "tokenId": "1514",
+          "agentId": "51082"
+        },
+        "live": {
+          "seat": {
+            "tokenId": "153",
+            "agentId": "51022"
+          },
+          "runtime": "claude",
+          "model": "claude-fable-5-1",
+          "state": "submitted",
+          "since": "2026-10-15T20:22:55.010Z"
+        }
+      },
+      {
+        "key": "design_critic",
+        "role": "review",
+        "state": "waiting",
+        "attempt": 0,
+        "revisions": 1,
+        "judgeRevisions": 0,
+        "dependsOn": [
+          "build_website"
+        ],
+        "allowedPaths": [],
+        "failureReason": null,
+        "dispatchNote": null,
+        "dispatchNoteAt": null,
+        "updatedAt": "2026-10-15T20:22:51.583Z",
+        "verdict": null,
+        "seat": {
+          "tokenId": "1765",
+          "agentId": "53927"
+        },
+        "live": null
+      }
+    ]
+  }
+}

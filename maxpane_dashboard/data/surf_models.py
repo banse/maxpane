@@ -1693,7 +1693,7 @@ SURF_ORACLES_DETAIL_FIELDS = ("id", "job_id", "status", "chain_id", "question", 
 
 SURF_WORK_WIDGET_SIGNATURES = {"SurfWorkHero": ("surf_work",), "SurfWorkBody": ("surf_work",)}
 SURF_WORK_FIELDS = ("state", "read_ts", "now_ts", "partial", "jobs_loaded", "workflows_loaded",
-                    "details_loaded", "details_expected", "summary", "jobs", "workflows")
+                    "details_loaded", "details_expected", "summary", "jobs", "workflows", "projects")
 SURF_WORK_SUMMARY_KEYS = ("jobs", "workflows", "seats", "build", "review", "blocked")
 SURF_WORK_JOB_FIELDS = ("id", "state", "template", "objective", "created_ts", "updated_ts",
                        "blocked_reason", "detail_state", "nodes")
@@ -1701,6 +1701,7 @@ SURF_WORK_NODE_FIELDS = ("key", "role", "state", "seat", "agent_id", "attempt", 
                         "depends_on", "updated_ts", "dispatch_note", "dispatch_ts", "failure", "verdict")
 SURF_WORK_WORKFLOW_FIELDS = ("id", "status", "objective", "failure", "contracts_job_id",
                             "frontend_job_id", "created_ts", "updated_ts", "waiting_for_hosting")
+SURF_WORK_PROJECT_FIELDS = ("id", "objective", "job_ids", "workflow_ids", "active_job_ids")
 
 SWARM_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     **SURF_WORK_WIDGET_SIGNATURES,

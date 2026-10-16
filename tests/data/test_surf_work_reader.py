@@ -20,10 +20,15 @@ def setup(tmp_path):
 
     class Client:
         calls = []
-        async def fetch_jobs(self, *, limit):
-            self.calls.append(('jobs', limit)); return raw['jobs']
+        async def fetch_jobs(self, *, limit, before=None):
+            self.calls.append(('jobs', before or limit))
+            return raw.get('next_jobs') if before else raw['jobs']
         async def fetch_workflows(self, *, limit):
             self.calls.append(('workflows', limit)); return raw['workflows']
+        async def fetch_overview(self):
+            return {'counts': {'jobStates': {'executing': raw.get('executing_count', sum(j.get('state') == 'executing' for j in raw['jobs']))}}}
+        async def fetch_workflow(self, identity):
+            self.calls.append(('workflow', identity)); return raw.get('workflow_details', {}).get(identity)
         async def fetch_job(self, identity):
             self.calls.append(('detail', identity))
             return next((d for d in raw['details'] if d['id'] == identity), None)
@@ -99,7 +104,7 @@ async def test_detail_budget_deduplicates_and_marks_missing(setup):
     raw['jobs'] = [dict(raw['jobs'][0], id=f'00000000-0000-0000-0000-{n:012d}') for n in range(30)]
     raw['workflows'] = []
     await reader.offer()
-    assert sum(call[0] == 'detail' for call in client.calls) == 24
+    assert sum(call[0] == 'detail' for call in client.calls) == 30
     data = reader.project()
     assert data['details_expected'] == 30 and data['details_loaded'] == 0
     assert data['partial'] and data['summary']['build'] is None
@@ -197,3 +202,367 @@ async def test_read_clock_starts_before_slow_collection(setup):
     assert data['state'] == 'stale'
     assert data['summary']['jobs'] == 2
     assert reader.offer() is None  # refresh TTL starts at completion
+
+
+@pytest.fixture
+def project_setup(setup):
+    reader, client, cache, clock, raw = setup
+    active = copy.deepcopy(raw['details'][0])
+    old = copy.deepcopy(raw['details'][1])
+    old['state'] = 'blocked'
+    old['createdAt'] = '2020-01-01T00:00:00.000Z'
+    old['nodes'][0]['state'] = 'failed'
+    project = dict(id=old['id'], versions=[
+        dict(jobId=old['id'], state='blocked', objective='Earlier attempt', workflowId=None),
+        dict(jobId=active['id'], state='executing', objective='Current attempt', workflowId=None)])
+    active['project'] = copy.deepcopy(project)
+    old['project'] = copy.deepcopy(project)
+    raw.update(jobs=[copy.deepcopy(active)], workflows=[], details=[active, old])
+    return setup
+
+
+@pytest.mark.asyncio
+async def test_complete_project_reads_old_blocked_versions_and_all_steps(project_setup):
+    reader, client, _, _, raw = project_setup
+    await reader.offer()
+    data = reader.project()
+    project = data['projects'][0]
+    assert project['id'] == raw['details'][1]['id']
+    assert project['job_ids'] == [raw['details'][1]['id'], raw['details'][0]['id']]
+    assert project['active_job_ids'] == [raw['details'][0]['id']]
+    assert project['workflow_ids'] == []
+    old = next(j for j in data['jobs'] if j['id'] == raw['details'][1]['id'])
+    assert [n['state'] for n in old['nodes']] == ['failed', 'accepted', 'accepted', 'accepted', 'accepted']
+    assert data['summary'] == dict(jobs=1, workflows=0, seats=1, build=1, review=0, blocked=0)
+    assert not data['partial']
+    assert len([c for c in client.calls if c[0] == 'detail']) == 2
+
+
+@pytest.mark.asyncio
+async def test_shared_project_and_nested_workflow_are_read_once(project_setup):
+    reader, client, _, _, raw = project_setup
+    active, old = raw['details']
+    old['state'] = 'executing'
+    old['project']['versions'][0]['state'] = 'executing'
+    active['project'] = copy.deepcopy(old['project'])
+    raw['jobs'].append(copy.deepcopy(old))
+    flow_id = '08854072-c20d-4147-b9fd-c0d48956c55c'
+    for job in raw['details']:
+        job['workflow'] = dict(id=flow_id)
+        for version in job['project']['versions']: version['workflowId'] = flow_id
+    raw['workflow_details'] = {flow_id: dict(id=flow_id, status='frontend',
+        contracts={'id': old['id']}, frontend={'id': active['id']})}
+    await reader.offer()
+    data = reader.project()
+    assert len(data['projects']) == 1 and len(data['workflows']) == 1
+    assert len(data['projects'][0]['active_job_ids']) == 2
+    assert data['projects'][0]['workflow_ids'] == [flow_id]
+    assert data['summary']['workflows'] == 1
+    assert len([c for c in client.calls if c[0] == 'detail']) == 2
+    assert len([c for c in client.calls if c[0] == 'workflow']) == 1
+
+
+@pytest.mark.asyncio
+async def test_active_discovery_beyond_first_hundred_and_prior_revalidation(project_setup):
+    reader, client, cache, clock, raw = project_setup
+    active = copy.deepcopy(raw['jobs'][0])
+    recent = [dict(active, id=f'00000000-0000-0000-0000-{n:012d}', state='completed') for n in range(100)]
+    recent[-1]['createdAt'] = '2026-10-12T00:00:00.000Z'
+    raw['jobs'] = recent
+    raw['next_jobs'] = [active]
+    raw['executing_count'] = 1
+    await reader.offer()
+    assert reader.project()['summary']['jobs'] == 1
+    assert ('jobs', recent[-1]['createdAt']) in client.calls
+    clock.now += 60
+    raw['next_jobs'] = []
+    raw['executing_count'] = 0
+    raw['details'][0]['state'] = 'completed'
+    client.calls.clear()
+    await reader.offer()
+    data = reader.project()
+    assert ('detail', active['id']) in client.calls
+    assert data['summary']['jobs'] == 0 and data['projects'] == []
+    assert cache.get_last_good(SLOT_SURF_WORK).payload['active_scan_complete']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure', ['missing_count', 'failed_page', 'repeated_page'])
+async def test_incomplete_discovery_never_claims_zero_activity(project_setup, failure):
+    reader, client, _, _, raw = project_setup
+    base = raw['jobs'][0]
+    raw['jobs'] = [dict(base, id=f'00000000-0000-0000-0000-{n:012d}', state='completed') for n in range(100)]
+    raw['executing_count'] = None if failure == 'missing_count' else 1
+    raw['next_jobs'] = raw['jobs'] if failure == 'repeated_page' else None
+    await reader.offer()
+    data = reader.project()
+    assert data['partial'] and data['state'] == 'ok'
+    assert all(data['summary'][key] is None for key in ('jobs', 'seats', 'build', 'review'))
+    assert len([c for c in client.calls if c[0] == 'jobs']) <= 2
+
+
+@pytest.mark.asyncio
+async def test_missing_historical_executing_metadata_is_not_current_activity(project_setup):
+    reader, _, _, _, raw = project_setup
+    raw['details'][0]['project']['versions'][0]['state'] = 'executing'
+    old_id = raw['details'].pop()['id']
+    await reader.offer()
+    data = reader.project()
+    old = next(j for j in data['jobs'] if j['id'] == old_id)
+    assert old['state'] == 'executing' and old['nodes'] is None
+    assert old['detail_state'] == 'unavailable'
+    assert data['summary']['jobs'] == 1 and data['summary']['build'] == 1
+    assert data['partial'] and old_id in data['projects'][0]['job_ids']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('corruption', ['foreign_id', 'missing_seed', 'duplicate', 'malformed', 'foreign_project'])
+async def test_untrusted_project_membership_is_rejected(project_setup, corruption):
+    reader, _, _, _, raw = project_setup
+    active, old = raw['details']
+    if corruption == 'foreign_id': active['id'] = old['id']
+    if corruption == 'missing_seed': active['project']['versions'].pop()
+    if corruption == 'duplicate': active['project']['versions'].append(active['project']['versions'][0])
+    if corruption == 'malformed': active['project']['versions'] = 'bad'
+    if corruption == 'foreign_project': old['project']['id'] = active['id']
+    await reader.offer()
+    data = reader.project()
+    assert data['partial']
+    if corruption == 'foreign_project':
+        assert next(j for j in data['jobs'] if j['id'] == old['id'])['nodes'] is None
+    else:
+        assert data['projects'] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stage', ['job', 'workflow'])
+async def test_context_busy_keeps_prior_snapshot(project_setup, stage):
+    reader, client, cache, clock, raw = project_setup
+    await reader.offer()
+    before = copy.deepcopy(cache.get_last_good(SLOT_SURF_WORK))
+    clock.now += 60
+    if stage == 'job': raw['details'][1] = {'id': raw['details'][1]['id'], 'error': 'busy'}
+    else:
+        flow_id = '08854072-c20d-4147-b9fd-c0d48956c55c'
+        raw['details'][0]['workflow'] = {'id': flow_id}
+        raw['workflow_details'] = {flow_id: {'error': 'busy'}}
+    await reader.offer()
+    assert cache.get_last_good(SLOT_SURF_WORK) == before
+    assert reader.project()['state'] == 'stale'
+
+
+@pytest.mark.asyncio
+async def test_active_context_exceeds_optional_budget_with_explicit_hard_cap(project_setup, monkeypatch):
+    from maxpane_dashboard.data import surf_work as work
+    reader, client, _, _, raw = project_setup
+    active = raw['details'][0]
+    versions = [dict(active, id=f'00000000-0000-0000-0000-{n:012d}', state='completed', project=None) for n in range(30)]
+    active['project']['versions'] = [dict(jobId=j['id'], state=j['state']) for j in versions + [active]]
+    raw['details'] += versions
+    await reader.offer()
+    assert reader.project()['details_loaded'] == 31
+    assert not reader.project()['partial']
+    monkeypatch.setattr(work, 'CONTEXT_DETAIL_LIMIT', 4)
+    reader.clock = lambda: raw['read_ts'] + 60
+    client.calls.clear()
+    await reader.offer()
+    data = reader.project()
+    assert len([c for c in client.calls if c[0] == 'detail']) == 4
+    assert data['partial'] and data['details_expected'] == 31
+
+
+@pytest.mark.asyncio
+async def test_workflow_without_project_loads_old_peer_without_inflating_blocked(project_setup):
+    reader, _, _, _, raw = project_setup
+    active, old = raw['details']
+    active['project'] = None
+    flow_id = '08854072-c20d-4147-b9fd-c0d48956c55c'
+    active['workflow'] = old['workflow'] = {'id': flow_id}
+    raw['workflow_details'] = {flow_id: dict(id=flow_id, status='frontend',
+        contracts={'id': old['id']}, frontend={'id': active['id']})}
+    await reader.offer()
+    data = reader.project()
+    assert data['projects'] == [] and len(data['jobs']) == 2
+    assert data['summary']['jobs'] == 1 and data['summary']['blocked'] == 0
+    assert not data['partial']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('corruption', ['identity', 'membership', 'duplicate', 'malformed', 'peer_workflow', 'peer_identity'])
+async def test_direct_workflow_identity_and_peer_membership_are_validated(project_setup, corruption):
+    reader, _, _, _, raw = project_setup
+    active, old = raw['details']
+    flow_id = '08854072-c20d-4147-b9fd-c0d48956c55c'
+    active['workflow'] = old['workflow'] = {'id': flow_id}
+    flow = dict(id=flow_id, status='frontend', contracts={'id': old['id']}, frontend={'id': active['id']})
+    raw['workflow_details'] = {flow_id: flow}
+    if corruption == 'identity': flow['id'] = old['id']
+    if corruption == 'membership': flow['frontend'] = None
+    if corruption == 'duplicate': flow['contracts'] = flow['frontend']
+    if corruption == 'malformed': flow['contracts'] = ['bad']
+    if corruption == 'peer_workflow': old['workflow'] = None
+    if corruption == 'peer_identity': old['id'] = active['id']
+    await reader.offer()
+    data = reader.project()
+    assert data['partial'] and data['summary']['jobs'] == 1
+    if corruption.startswith('peer_'):
+        old_row = next(j for j in data['jobs'] if j['id'] != active['id'])
+        assert old_row['nodes'] is None
+    else:
+        assert data['workflows'] == []
+
+
+@pytest.mark.asyncio
+async def test_rejected_historical_project_cannot_recursively_expand(project_setup):
+    reader, client, _, _, raw = project_setup
+    old = raw['details'][1]
+    extra_id = '00000000-0000-0000-0000-000000000999'
+    old['project']['versions'].append(dict(jobId=extra_id, state='executing'))
+    old['parentJobId'] = old['id']
+    await reader.offer()
+    data = reader.project()
+    assert ('detail', extra_id) not in client.calls
+    assert data['partial'] and data['summary']['jobs'] == 1
+    assert next(j for j in data['jobs'] if j['id'] == old['id'])['nodes'] is None
+
+
+@pytest.mark.asyncio
+async def test_cancellation_mid_context_does_not_publish(project_setup):
+    reader, client, cache, clock, raw = project_setup
+    await reader.offer()
+    before = copy.deepcopy(cache.get_last_good(SLOT_SURF_WORK))
+    clock.now += 60
+    old_id = raw['details'][1]['id']
+    fetch, entered = client.fetch_job, asyncio.Event()
+    async def hanging(identity):
+        if identity != old_id: return await fetch(identity)
+        entered.set(); await asyncio.Event().wait()
+    client.fetch_job = hanging
+    task = reader.offer()
+    await entered.wait()
+    await reader.close()
+    assert task.cancelled()
+    assert cache.get_last_good(SLOT_SURF_WORK) == before
+    assert cache.last_failure_ts(TIER_SURF_WORK) is None
+
+
+@pytest.mark.asyncio
+async def test_scan_cap_and_workflow_cap_publish_partial(project_setup, monkeypatch):
+    from maxpane_dashboard.data import surf_work as work
+    reader, _, _, _, raw = project_setup
+    active = raw['jobs'][0]
+    raw['jobs'] = [dict(active, id=f'00000000-0000-0000-0000-{n:012d}', state='completed') for n in range(100)]
+    raw['executing_count'] = 1
+    monkeypatch.setattr(work, 'SCAN_PAGES', 0)
+    await reader.offer()
+    assert reader.project()['partial'] and reader.project()['summary']['jobs'] is None
+    reader.clock = lambda: raw['read_ts'] + 60
+    raw['jobs'] = [active]
+    raw['details'][0]['workflow'] = {'id': '08854072-c20d-4147-b9fd-c0d48956c55c'}
+    monkeypatch.setattr(work, 'WORKFLOW_DETAIL_LIMIT', 0)
+    await reader.offer()
+    assert reader.project()['partial'] and reader.project()['summary']['jobs'] == 1
+
+
+@pytest.mark.asyncio
+async def test_persisted_project_scopes_and_coverage_are_validated(project_setup):
+    from maxpane_dashboard.data import surf_work as work
+    reader, _, cache, clock, _ = project_setup
+    await reader.offer()
+    slot = cache.get_last_good(SLOT_SURF_WORK).payload
+    assert work.coerce_snapshot(slot, now=clock.now) == slot
+    for mutate in (
+        lambda s: s['projects'].append(s['projects'][0]),
+        lambda s: s['projects'][0]['job_ids'].append('bad'),
+        lambda s: s['projects'][0]['active_job_ids'].append(s['projects'][0]['job_ids'][0]),
+        lambda s: s['current_job_ids'].append(s['projects'][0]['job_ids'][0]),
+        lambda s: s.update(details_expected=0),
+        lambda s: s.update(active_scan_complete='yes'),
+        lambda s: s.update(context_job_ids=[]),
+    ):
+        changed = copy.deepcopy(slot); mutate(changed)
+        assert work.coerce_snapshot(changed, now=clock.now) is None
+    cold = SurfCache(path=cache.path, clock=lambda: clock.now)
+    cold.load(slot_coercers={SLOT_SURF_WORK: lambda v: work.coerce_snapshot(v, now=clock.now)})
+    assert cold.get_last_good(SLOT_SURF_WORK).payload == slot
+
+
+@pytest.mark.asyncio
+async def test_malformed_initial_row_cannot_prove_empty_active_population(project_setup):
+    reader, _, _, _, raw = project_setup
+    raw['jobs'] = [dict(raw['jobs'][0], state='completed'), {'id': False}]
+    raw['executing_count'] = 0
+    await reader.offer()
+    assert reader.project()['partial']
+    assert reader.project()['summary']['jobs'] is None
+
+
+@pytest.mark.asyncio
+async def test_scan_page_bound_includes_initial_page(project_setup, monkeypatch):
+    from maxpane_dashboard.data import surf_work as work
+    reader, client, _, _, raw = project_setup
+    raw['jobs'] = [dict(raw['jobs'][0], id=f'00000000-0000-0000-0000-{n:012d}', state='completed') for n in range(100)]
+    raw['executing_count'] = 1
+    monkeypatch.setattr(work, 'SCAN_PAGES', 1)
+    await reader.offer()
+    assert len([c for c in client.calls if c[0] == 'jobs']) == 1
+    assert reader.project()['partial']
+
+
+@pytest.mark.asyncio
+async def test_malformed_historical_versions_cannot_supply_step_evidence(project_setup):
+    reader, _, _, _, raw = project_setup
+    raw['details'][1]['project']['versions'] = 'not a list'
+    await reader.offer()
+    data = reader.project()
+    assert data['partial']
+    assert next(j for j in data['jobs'] if j['id'] == raw['details'][1]['id'])['nodes'] is None
+
+
+@pytest.mark.asyncio
+async def test_captured_project_versions_have_exact_public_contract(setup):
+    from maxpane_dashboard.data.surf_models import SURF_WORK_FIELDS, SURF_WORK_PROJECT_FIELDS
+    reader, _, _, clock, raw = setup
+    capture = json.loads(Path('tests/fixtures/surf/work/project_context.json').read_text())
+    job = capture['active_detail']
+    clock.now = capture['read_ts']
+    raw.update(jobs=[job], details=[job], workflows=[])
+    await reader.offer()
+    data = reader.project()
+    assert set(data) == set(SURF_WORK_FIELDS)
+    assert len(data['projects']) == 1
+    project = data['projects'][0]
+    assert set(project) == set(SURF_WORK_PROJECT_FIELDS)
+    assert project['job_ids'] == [version['jobId'] for version in job['project']['versions']]
+    assert project['active_job_ids'] == [job['id']]
+    assert project['workflow_ids'] == []
+    assert len(data['jobs']) == 3 and data['details_loaded'] == 1
+    assert data['summary']['jobs'] == 1 and data['partial']
+    assert 'context_job_ids' not in data and 'active_scan_complete' not in data
+
+
+@pytest.mark.asyncio
+async def test_revalidated_prior_job_does_not_hide_other_active_jobs_on_cursor_page(project_setup):
+    reader, client, cache, clock, raw = project_setup
+    await reader.offer()
+    prior = copy.deepcopy(raw['details'][0])
+    fresh = dict(copy.deepcopy(prior), id='00000000-0000-0000-0000-000000999999',
+                 project=None, createdAt='2026-10-11T00:00:00.000Z')
+    prior['createdAt'] = '2026-10-10T00:00:00.000Z'
+    raw['jobs'] = [dict(prior, id=f'00000000-0000-0000-0000-{n:012d}', state='completed',
+                        createdAt='2026-10-12T00:00:00.000Z') for n in range(100)]
+    raw['next_jobs'] = [fresh, prior]
+    raw['executing_count'] = 2
+    raw['details'].append(fresh)
+    clock.now += 60
+    client.calls.clear()
+    await reader.offer()
+    data = reader.project()
+    assert data['summary']['jobs'] == 2
+    assert client.calls.count(('detail', prior['id'])) == 1
+    assert client.calls.count(('detail', fresh['id'])) == 1
+    identities = [job['id'] for job in data['jobs']]
+    assert fresh['id'] in identities and len(identities) == len(set(identities))
+    assert data['jobs_loaded'] == 102 and data['details_loaded'] == 3
+    assert not data['partial']
+    assert cache.get_last_good(SLOT_SURF_WORK).payload['active_scan_complete']
