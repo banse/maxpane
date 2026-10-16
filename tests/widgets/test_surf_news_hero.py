@@ -139,7 +139,9 @@ async def test_body_palette_and_padding_follow_final_frame_without_recoloring_ca
                         continue
                     style = app.screen.get_style_at(card.region.x + x, card.region.y + top + offset)
                     expected = green
-                    if key == "market":
+                    if key in ("announcement", "reply"):
+                        expected = card.rich_style.color.get_truecolor()
+                    elif key == "market":
                         expected = green if state == "ok" else card.rich_style.color.get_truecolor()
                     elif key in ("signals", "boards"):
                         number = card.data.stats[offset - 1][1]

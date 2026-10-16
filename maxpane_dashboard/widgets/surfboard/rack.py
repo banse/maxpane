@@ -432,8 +432,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         elif self.key == "announce":
             from maxpane_dashboard.widgets.surf._icons import post_preview as _post_preview
             label = " LATEST "
+            prose_style = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
             preview = [(padded_inner_row(line, inside), False)
-                       for line in _post_preview(primary, max(0, inside-2), label_style)]
+                       for line in _post_preview(primary, max(0, inside-2), prose_style)]
         elif self.key == "board":
             summary = self.data.get("fleet_summary") or {}
             label, secondary = " RUNTIMES ", _fleet_model(summary)

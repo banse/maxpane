@@ -53,6 +53,25 @@ class CardHarness(App):
         yield self.card_type(self.record)
 
 
+@pytest.mark.parametrize('content', [dict(preview='Plain text 123'), dict(rows=('to stakers',))])
+async def test_plain_inner_text_uses_card_white_without_changing_frame(monkeypatch, content):
+    monkeypatch.delenv('NO_COLOR', raising=False)
+    record = HeroRecord('plain', 'CARD', 'HEADING', 'FOOTER', **content)
+    async with CardHarness(NewsHeroCard, record).run_test(size=(30, 12)) as pilot:
+        await pilot.pause()
+        app, card = pilot.app, pilot.app.query_one(NewsHeroCard)
+        strips = app.screen._compositor.render_strips()
+        y = next(i for i, strip in enumerate(strips) if 'Plain text' in strip.text or 'to stakers' in strip.text)
+        word = 'Plain text 123' if content.get('preview') else 'to stakers'
+        x = strips[y].text.index(word)
+        for offset in range(len(word)):
+            style = app.screen.get_style_at(x + offset, y)
+            assert style.color == card.rich_style.color and not style.dim
+        top = next(i for i, strip in enumerate(strips) if 'HEADING' in strip.text)
+        x = strips[top].text.index('HEADING')
+        assert app.screen.get_style_at(x, top).color == Color.parse(app.get_css_variables()['accent'])
+
+
 @pytest.mark.parametrize("card_type,key,accent,frame_color,bright", [
     (NewsHeroCard, "ordinary", True, "accent", True),
     (NewsHeroCard, "ordinary", False, None, False),

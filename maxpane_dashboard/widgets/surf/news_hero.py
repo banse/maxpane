@@ -193,8 +193,9 @@ class NewsHeroCard(HeroBoxBase):
             digit_ink += Style(bold=True)
         room = max(0, inside - 2)
         centered = False
+        prose_ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
         if data.preview:
-            rows = [padded_inner_row(row, inside) for row in post_preview(data.preview, room, ink)]
+            rows = [padded_inner_row(row, inside) for row in post_preview(data.preview, room, prose_ink)]
         elif data.digits:
             digit_ink = digit_ink if data.digits != "--" else ink
             digits = [Text(segment.text, style=digit_ink) for segment in Digits(data.digits).render(Style()) if segment.text != "\n"]
@@ -212,7 +213,12 @@ class NewsHeroCard(HeroBoxBase):
                 row = Text(fitted_label + " " * gap, style=ink).append(value, style=value_ink if value != "--" else ink)
                 rows.append(padded_inner_row(row, inside))
         else:
-            rows = [padded_inner_row(row, inside) for row in self._text_rows(ink, value_ink)]
+            text_rows = self._text_rows(ink, value_ink)
+            # Value spans distinguish structured rows from plain prose.
+            if not any(row.spans for row in text_rows):
+                for row in text_rows:
+                    row.style = prose_ink
+            rows = [padded_inner_row(row, inside) for row in text_rows]
         rows += [Text("", style=ink)] * (3 - len(rows))
         heading = " " + clip(flatten(data.heading), max(0, inside - 2)) + " "
         result = Text("┌" + heading.center(inside, "─") + "┐\n", style=frame)

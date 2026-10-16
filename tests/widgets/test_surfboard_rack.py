@@ -63,7 +63,7 @@ async def test_latest_post_three_lines_ellipsis_and_age_ink(size):
                 ' '+text[(inside-2)*2:(inside-2)*3-3]+'... ']
             assert strips[top+4].text[left+1:right].strip('─ ') == '7 new'
             ink=next(iter(strips[top+1].crop(left+2,left+3))).style
-            assert ink.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
+            assert ink.color.get_truecolor() == card.rich_style.color.get_truecolor()
             edge=next(iter(strips[top].crop(left,left+1))).style.color.get_truecolor()
             neutral=neutral_inset_color(pilot.app)
             status_ink=(Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
