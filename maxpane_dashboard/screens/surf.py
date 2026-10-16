@@ -1902,18 +1902,18 @@ SURF_SWARM_FULL_LAYOUT_COLUMNS = 141
 #: unchanged. Boundary tests also check this at the new 141-column pin.
 SURF_SWARM_FULL_LAYOUT_ROWS = 38
 
-#: AGENT full-layout width, re-swept 2026-10-16: 132 -> 137.
+#: AGENT full-layout width, re-swept 2026-10-16: 137 -> 134.
 #: The approved live rack replaces the weighted seven-line hero and seat
 #: row with twelve equal nine-line cards in two rows of six. One blank
 #: row separates them; native RECORD uses the remaining body space.
 #: The keyless live 149x45 render was shown before this measurement.
 #: In-situ scripts/measure_layout.py uses the real AGENT container,
 #: stylesheet, reserved scrollbar gutter and committed capture payloads.
-#: After swapping STATUS and OWNER, capture420 swept 128..140; capture,
-#: duplicate-seat and five-digit stress checked 128/136/137/138/149 are
-#: whole from 137. STATUS now starts the second row, beneath SEAT.
-#: Its subtitle "accepted 06:10" clips through 136; five-digit inline
-#: worker counts share that boundary. OWNER now ends the first row.
+#: After swapping STATUS and ACCEPTED, capture420 swept 130..138; capture,
+#: duplicate-seat and five-digit stress checked 130/133/134/135/149 are
+#: whole from 134. STATUS is second in the top row; ACCEPTED starts row two.
+#: The STATUS subtitle "accepted 06:10" clips through 133; five-digit
+#: inline worker counts share that boundary. OWNER ends the first row.
 #: ACCEPTED's shortened "of 3,392" fits sooner; grouped digits remain whole.
 #: STATUS uses three tall groups when they fit, complete inline counts
 #: otherwise. REWARDS sheds only "paid " on narrow footers, keeping its date.
@@ -1932,7 +1932,7 @@ SURF_SWARM_FULL_LAYOUT_ROWS = 38
 #: by scripts/measure_layout.py remain whole at 132/133 and marked at 131.
 #: RUNTIME uses "cld" only when needed to retain the full Claude version;
 #: compact STATUS drops grouping commas before losing count digits.
-SURF_AGENT_FULL_LAYOUT_COLUMNS = 137
+SURF_AGENT_FULL_LAYOUT_COLUMNS = 134
 
 #: AGENT height, re-swept 2026-10-13: 25 -> 29.
 #: Capture swept 25..36 rows: 25..28 show taller; 29..36 are whole.

@@ -61,12 +61,12 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     records = []
     for key, title, heading, footer in (
         ("seat", "SEAT", "AGENT", "ERC-8004 #--"),
-        ("accepted", "ACCEPTED", "WORK", "--%"),
+        ("status", "STATUS", "WORKER", "UNKNOWN"),
         ("runtime", "RUNTIME", "SOFTWARE", "since --"),
         ("rewards", "REWARDS", "IMD", "paid --"),
         ("rank", "RANK", "POSITION", ""),
         ("owner", "OWNER", "WALLET", ""),
-        ("status", "STATUS", "WORKER", "UNKNOWN"),
+        ("accepted", "ACCEPTED", "WORK", "--%"),
         ("effort", "EFFORT", "HOURS", "--% premium"),
         ("models", "MODELS", "ADVERTISED", ""),
         ("earnings", "EARNINGS", "TOKENS", "-- new"),
