@@ -110,6 +110,14 @@ async def test_completed_jobs_and_accepted_steps_match_working_heading_green():
         heading_green = color("#hero-work-seats", "WORKING")
         assert color("#work-tree-panel", "Earlier release") == heading_green
         assert color("#work-tree-panel", "legacy_step") == heading_green
+        tree.select_node(node(tree, "job:" + data["jobs"][3]["id"]))
+        await pilot.pause()
+        assert color("#work-detail-panel", "completed") == heading_green
+        assert color("#work-detail-panel", "accepted") == heading_green
+        assert color("#work-detail-panel", "legacy_step") != heading_green
+        tree.select_node(node(tree, "step:" + data["jobs"][3]["id"] + ":legacy_step"))
+        await pilot.pause()
+        assert color("#work-detail-panel", "accepted") == heading_green
 
 
 async def test_project_nests_terminal_workflows_and_deduplicates_jobs_across_links():

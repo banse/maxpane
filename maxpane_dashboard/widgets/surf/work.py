@@ -22,10 +22,12 @@ _BUILD = {"implement", "integrate", "test", "tests"}
 _TERMINAL = {"completed", "cancelled", "failed", "superseded"}
 
 
-def _tone(state):
+def _tone(state, accent):
     if state in ("blocked", "failed", "rejected"):
         return "red"
-    if state in ("working", "executing", "accepted", "completed", "pass"):
+    if state in ("accepted", "completed"):
+        return accent
+    if state in ("working", "executing", "pass"):
         return "green"
     return "yellow" if state in ("queued", "waiting", "pending") else "grey62"
 
@@ -250,7 +252,7 @@ class SurfWorkBody(Horizontal):
             label, suffix = flatten(label), flatten(suffix)
             entry = (key, kind, row, label, suffix)
             state = row.get("state", row.get("status"))
-            tone = self.app.get_css_variables()["accent"] if state in ("completed", "accepted") else _tone(state)
+            tone = _tone(state, self.app.get_css_variables()["accent"])
             node = parent.add(Text(label + ("  " + suffix if suffix else ""), style=tone),
                               data=entry, allow_expand=children,
                               expand=bool(self._search) or self._expansion.get(key, expanded))
@@ -435,6 +437,7 @@ class SurfWorkBody(Horizontal):
             out.append("\n" + label + "\n", style="dim")
             out.append_text(address_prose(flatten(value) or "--", style=style, explorer=None)).append("\n")
         now = self._payload.get("now_ts")
+        accent = self.app.get_css_variables()["accent"]
         if kind in ("project", "job", "workflow"):
             objective = flatten(row.get("objective")) or "—"
             preview = post_preview(objective, max(8, panel.content_size.width - 2), Style())
@@ -442,7 +445,7 @@ class SurfWorkBody(Horizontal):
             if kind == "job":
                 out.append("JOB            ", style="dim").append_text(job_text(row.get("id"), 36, explorer=JOB_EXPLORER)).append("\n")
             if kind != "project":
-                field("STATE", row.get("state", row.get("status")), _tone(row.get("state", row.get("status"))))
+                field("STATE", row.get("state", row.get("status")), _tone(row.get("state", row.get("status")), accent))
                 field("CREATED", _age(row.get("created_ts"), now))
                 field("LAST UPDATE", _age(row.get("updated_ts"), now))
         if kind == "project":
@@ -451,7 +454,7 @@ class SurfWorkBody(Horizontal):
             for jid in _project_job_ids(row, self._payload.get("workflows")):
                 out.append_text(job_text(jid, 36, explorer=JOB_EXPLORER))
                 state = (jobs[jid].get("state") or "unknown") if jid in jobs else "not loaded"
-                out.append(" · " + flatten(state) + "\n", style=_tone(state))
+                out.append(" · " + flatten(state) + "\n", style=_tone(state, accent))
         elif kind == "workflow":
             jobs = {j["id"]: j for j in self._payload.get("jobs") or []}
             out.append("\nLINKED JOBS\n", style="dim")
@@ -485,7 +488,7 @@ class SurfWorkBody(Horizontal):
                     fitted = fit_prose(key, key_width)
                     fitted.pad_right(max(0, key_width - fitted.cell_len))
                     out.append_text(fitted).append("  " + pad(clip(seat, 7), 7) + "  ")
-                    out.append(pad(clip(state, 10), 10), style=_tone(step.get("state")))
+                    out.append(pad(clip(state, 10), 10), style=_tone(step.get("state"), accent))
                     out.append("  " + _age(step.get("updated_ts"), now) + "\n")
                 if clipped:
                     panel.query_one(".panel-title", Static).update(Text("SELECTED JOB · " + WIDEN_HINT))
@@ -513,7 +516,7 @@ class SurfWorkBody(Horizontal):
             field("STEP", row.get("key"))
             field("SEAT", f"#{row['seat']}" if row.get("seat") is not None else "--")
             field("ROLE", row.get("role"))
-            field("STATE", row.get("state"), _tone(row.get("state")))
+            field("STATE", row.get("state"), _tone(row.get("state"), accent))
             field("LAST UPDATE", _age(row.get("updated_ts"), now))
             field("ATTEMPT", _count(row.get("attempt")))
             field("REVISIONS", _count(row.get("revisions")))
