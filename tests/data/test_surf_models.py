@@ -7,6 +7,7 @@ drifting while later work packages code against it in parallel.
 from __future__ import annotations
 
 import dataclasses
+from typing import get_type_hints
 
 import pytest
 
@@ -86,6 +87,9 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
         "imd_vol_24h_usd", "pool_liquidity_usd", "pool_imd", "pool_weth",
         "fp_price_usd", "fdv_usd", "eth_usd", "indexer_name", "indexer_symbol",
         "sources_agree", "market_cap_usd",
+        "market_source", "chain_id", "pool_id", "base_token", "quote_token",
+        "base_decimals", "quote_decimals", "target_side", "provider_ts",
+        "block_number",
     ),
     LogWindow: (
         "from_block", "to_block", "bridge_mints", "identity_updates",
@@ -114,6 +118,52 @@ CONSTRUCTOR_KWARGS: dict[type, tuple[str, ...]] = {
     LaunchpadEvent: ("kind", "ticker", "wallet", "eth", "age_s"),
     Burnkeeper: ("wallet", "imd_burned", "eth_paid", "burns"),
 }
+
+
+@pytest.mark.parametrize("use_keywords", [False, True])
+def test_market_metadata_defaults_preserve_legacy_snapshot(use_keywords) -> None:
+    """Adding provenance must preserve every old positional and keyword value."""
+    legacy_values = {
+        "imd_price_usd": 0.002, "imd_price_usd_gecko": 0.0021,
+        "imd_change_24h_pct": -3.0, "imd_vol_24h_usd": 0.0,
+        "pool_liquidity_usd": 1200.0, "pool_imd": 300000.0,
+        "pool_weth": 0.2, "fp_price_usd": 0.01, "fdv_usd": 2000.0,
+        "eth_usd": 3000.0, "indexer_name": "IdentityMD",
+        "indexer_symbol": "IMD", "sources_agree": True,
+        "market_cap_usd": None,
+    }
+    snapshot = (MarketSnapshot(**legacy_values) if use_keywords
+                else MarketSnapshot(*legacy_values.values()))
+
+    assert dataclasses.asdict(snapshot) == {
+        **legacy_values,
+        "market_source": None, "chain_id": None, "pool_id": None,
+        "base_token": None, "quote_token": None, "base_decimals": None,
+        "quote_decimals": None, "target_side": None, "provider_ts": None,
+        "block_number": None,
+    }
+
+
+def test_market_identity_does_not_imply_provider_timestamp() -> None:
+    """Known venue/token identity must not invent a quote clock or decimals."""
+    assert get_type_hints(MarketSnapshot)["chain_id"] == int | None
+    snapshot = MarketSnapshot(
+        *([None] * 12), market_source="DexScreener", chain_id=1,
+        pool_id="0xpool", base_token="0ximd", quote_token="0xweth",
+        target_side="base",
+    )
+
+    assert (snapshot.market_source, snapshot.chain_id, snapshot.pool_id) == (
+        "DexScreener", 1, "0xpool",
+    )
+    assert (snapshot.base_token, snapshot.quote_token, snapshot.target_side) == (
+        "0ximd", "0xweth", "base",
+    )
+    assert snapshot.provider_ts is None
+    assert snapshot.block_number is None
+    assert snapshot.base_decimals is None
+    assert snapshot.quote_decimals is None
+    assert snapshot.eth_usd is None
 
 
 @pytest.mark.parametrize("model", ALL_MODELS)

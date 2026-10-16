@@ -234,6 +234,18 @@ class MarketSnapshot:
     indexer_symbol: str | None
     sources_agree: bool | None = None
     market_cap_usd: float | None = None
+    #: Pool provenance is independent of the ETH reference and observation time.
+    #: Missing token decimals never imply an 18-decimal token.
+    market_source: str | None = None
+    chain_id: int | None = None
+    pool_id: str | None = None
+    base_token: str | None = None
+    quote_token: str | None = None
+    base_decimals: int | None = None
+    quote_decimals: int | None = None
+    target_side: str | None = None  # "base" | "quote" | None
+    provider_ts: float | None = None
+    block_number: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
