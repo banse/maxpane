@@ -56,6 +56,7 @@ async def _render(payload, size):
             "status_whole": status.region.bottom <= size[1] and "esc back" in _region_text(pilot.app, status),
             "taller": "‹ taller" in _region_text(pilot.app, screen.query_one("#title-bar")),
             "widths": [c.region.width for c in cards],
+            "panel_widths": [p.region.width for p in panels],
             "heights": [c.region.height for c in cards],
             "body_bottom": body.region.bottom, "status_top": status.region.y,
             "text": _screen_text(pilot.app),
@@ -77,6 +78,7 @@ async def test_work_fixed_chrome_fits_at_pin_and_owner_size(kind, size):
     assert not result["missing"] and not result["overflow"], result
     assert not result["taller"] and result["status_whole"]
     assert max(result["widths"]) - min(result["widths"]) <= 1
+    assert abs(result["panel_widths"][0] - result["panel_widths"][1]) <= 1
     assert set(result["heights"]) == {9}
     assert result["body_bottom"] < result["status_top"]
 

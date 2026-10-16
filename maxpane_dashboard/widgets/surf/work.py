@@ -147,7 +147,7 @@ class SurfWorkBody(Horizontal):
     """Local tree navigation and detail selection; consumes one projected snapshot."""
     DEFAULT_CSS = """
     SurfWorkBody { width: 1fr; height: 1fr; min-height: 16; }
-    SurfWorkBody > _WorkTreePanel { width: 42%; height: 1fr; min-height: 16; margin-right: 1; }
+    SurfWorkBody > _WorkTreePanel { width: 1fr; height: 1fr; min-height: 16; margin-right: 1; }
     SurfWorkBody > _WorkDetailPanel { width: 1fr; height: 1fr; min-height: 16; }
     SurfWorkBody PanelBase { border: round $panel; background: $background; padding: 0 1; }
     SurfWorkBody .panel-title { height: 1; text-wrap: nowrap; }
