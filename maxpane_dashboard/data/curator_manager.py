@@ -667,6 +667,7 @@ class CuratorManager:
         self._nft_running_request: _NftScanRequest | None = None
         self._nft_queued_request: _NftScanRequest | None = None
         self._nft_failed_until: dict[tuple[str, str], float] = {}
+        self._active_view, self._view_epoch, self._retired = 'curator', 0, set()
         self.poll_interval = poll_interval
         self._clock = clock
         self._cache_path = str(cache_path)
@@ -732,6 +733,30 @@ class CuratorManager:
             logger.warning("Curator cache load failed: %s", exc)
 
     # -- lifecycle -----------------------------------------------------------
+
+    def set_active_view(self, view):
+        """Retire detached reads without closing clients or clearing evidence."""
+        if view == getattr(self, '_active_view', 'curator'):
+            return
+        self._active_view = view
+        self._view_epoch = getattr(self, '_view_epoch', 0) + 1
+        self._retired = getattr(self, '_retired', set())
+        self._nft_queued_request = None
+        for task in (self._nft_task, self._crosscheck_task, self._analysis_task):
+            if task is not None and not task.done():
+                task.cancel()
+                self._retired.add(task)
+
+    async def drain_reads(self):
+        tasks = tuple(getattr(self, '_retired', ()))
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self._retired.difference_update(tasks)
+
+    def is_loading(self, view=None):
+        return getattr(self, '_active_view', 'curator') is not None and any(
+            task is not None and not task.done() and not task.cancelling()
+            for task in (self._nft_task, self._crosscheck_task, self._analysis_task))
 
     def save_cache(self) -> None:
         try:
@@ -853,6 +878,9 @@ class CuratorManager:
         wallets: tuple[str, ...],
         fingerprint: str,
     ) -> None:
+        if (getattr(self, '_active_view', 'curator') is None
+                or any(not task.done() for task in getattr(self, '_retired', ()))):
+            return
         request = _NftScanRequest(collections, wallets, fingerprint)
         running = self._nft_task
         if running is not None and not running.done():
@@ -869,6 +897,7 @@ class CuratorManager:
     async def _run_nft_scan_queue(
         self, request: _NftScanRequest
     ) -> None:
+        epoch = getattr(self, '_view_epoch', 0)
         try:
             current: _NftScanRequest | None = request
             while current is not None:
@@ -889,11 +918,15 @@ class CuratorManager:
                             collection, current.wallets
                         )
                     except Exception as exc:  # source degradation boundary
+                        if epoch != getattr(self, '_view_epoch', 0):
+                            return
                         logger.warning("NFT holder scan failed: %s", exc)
                         self._nft_failed_until[failure_key] = (
                             self._clock() + NFT_FAILURE_BACKOFF_SECONDS
                         )
                         continue
+                    if epoch != getattr(self, '_view_epoch', 0):
+                        return
                     if (
                         not scan.complete
                         or scan.checked != len(current.wallets)
@@ -915,8 +948,9 @@ class CuratorManager:
                 current = self._nft_queued_request
                 self._nft_queued_request = None
         finally:
-            self._nft_running_request = None
-            self._nft_task = None
+            if self._nft_task is asyncio.current_task():
+                self._nft_running_request = None
+                self._nft_task = None
 
     def _nft_filter_context(
         self,
@@ -1089,6 +1123,7 @@ class CuratorManager:
     async def _cancel_nft_scan(self) -> None:
         task = self._nft_task
         self._nft_task = None
+        self._nft_running_request = None
         self._nft_queued_request = None
         if task is None:
             return
@@ -1113,6 +1148,8 @@ class CuratorManager:
         walking, and saving in a ``finally`` means a client that throws on the
         way out cannot cost the user the whole game's history.
         """
+        self.set_active_view(None)
+        await self.drain_reads()
         await self._cancel_nft_scan()
         if self._nft_client is not None:
             try:
@@ -1601,7 +1638,7 @@ class CuratorManager:
         it; a cross-check that pages only down to a persisted verified-to-block
         watermark is the real answer and is PRD §12 material, not v1.
         """
-        if TIER_SLOW not in tiers:
+        if getattr(self, '_active_view', 'curator') is None or TIER_SLOW not in tiers:
             return None
         running = self._crosscheck_task
         if running is not None and not running.done():
@@ -1753,7 +1790,7 @@ class CuratorManager:
         slot — a marker taken at the end of a long read claims the data is
         fresher than it is.
         """
-        if TIER_ANALYSIS not in tiers:
+        if getattr(self, '_active_view', 'curator') is None or TIER_ANALYSIS not in tiers:
             return None
         running = self._analysis_task
         if running is not None and not running.done():
@@ -2273,6 +2310,9 @@ class CuratorManager:
         render a traceback.  The screen's own ``try``/``except`` is belt and
         braces for a mis-wired manager, never the documented outage path.
         """
+        await self.drain_reads()
+        if getattr(self, '_active_view', 'curator') is None:
+            raise asyncio.CancelledError('inactive Curator dashboard')
         try:
             return await self._cycle()
         except Exception as exc:  # noqa: BLE001 — the outermost guard

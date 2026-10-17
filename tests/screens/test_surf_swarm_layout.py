@@ -123,15 +123,16 @@ LAUNCHES_HIDES_NO_COLUMN_FROM = 124
 #: Every measured edge enters the width boundary set.
 _S_THRESHOLDS = (
     62, 72,       # full-width WORKFLOWS compact/full
+    73,           # compact shared footer, including complete right metadata
     93,           # SHIPPED RECENTLY fixed-width plateau
     101, 103,     # SITES no hidden columns at 80/38 rows
     122, 124,     # top-left LAUNCHES no hidden columns at 80/38 rows
     138, 144, 188, 203,  # LAUNCHES liq/compact/roomy/full
-    121, 129,     # SITES compact/full; status bar whole from 129
+    121, 129,     # SITES compact/full
 )
 _A_THRESHOLDS = (
     99, 107,  # native RECORD compact/full tiers, unchanged
-    129,      # complete status bar
+    73,       # complete compact status bar
     134,      # STATUS subtitle/counts in the second column after the ACCEPTED swap
 )
 _AGENT_WHOLE_FROM = {"capture": 134, "capture420": 134, "duplicates420": 134, "worst-a": 134}
@@ -751,7 +752,7 @@ def _measure(pilot, key: str) -> dict:
     bar = screen.query_one(StatusBar)
     right = bar.query_one("#status-right")
     line = _screen_text(pilot.app).split("\n")[bar.region.y]
-    status_whole = KEY_HINT_PHRASE in line and _status_bar_whole(pilot.app)
+    status_whole = _status_bar_whole(pilot.app)
     widths = {name: w.size.width for name, w in widgets.items()}
     heights = {name: w.region.height for name, w in widgets.items()}
     overflow = _overflow(screen, key, widgets)
@@ -1080,13 +1081,10 @@ async def test_no_height_loses_a_row_of_either_body_in_silence(key, payload_name
 
 KEY_HINT_PHRASE = "x more · 4 pl4 · s swm · a agt · b brd"
 
-#: Whole status bar measured after §11 abbreviations: cropped through 133,
-#: whole from 134, including poll/errors and full right version/theme/game text.
-#: Body binders are now LAUNCHPAD 138, SWARM 138 (LAUNCHES since 2026-10-03;
-#: CAPABILITY bound 141 before it was parked), AGENT now134 and BOARD143.
-#: Pool4 protocol 99 and market 119 retain their body-only status exceptions.
-#: 2026-10-05: x more replaces l launchpad; complete from 129, cropped at 128.
-STATUS_BAR_WHOLE_FROM = 129
+#: Compact shared footer under this harness's textual-dark theme: the right
+#: metadata clips at 72 and is whole at 73 (measured 2026-10-17). The body
+#: layout constants remain separate; loading centring has its own widget tests.
+STATUS_BAR_WHOLE_FROM = 73
 
 
 def test_the_key_hint_is_the_measured_phrase() -> None:
@@ -1102,11 +1100,9 @@ async def _bar_state(width: int) -> tuple[bool, str]:
         bar = pilot.app.screen.query_one(StatusBar)
         right = bar.query_one("#status-right")
         line = _screen_text(pilot.app).split("\n")[bar.region.y]
-        whole = (
-            KEY_HINT_PHRASE in line
-            and " poll" in line
-            and _status_bar_whole(pilot.app)
-        )
+        whole = _status_bar_whole(pilot.app)
+        assert KEY_HINT_PHRASE not in line
+        assert " poll" not in line
         return whole, line
 
 
@@ -1118,8 +1114,8 @@ async def _bar_state(width: int) -> tuple[bool, str]:
         SURF_BOARD_FULL_LAYOUT_COLUMNS, FULL_LAYOUT_COLUMNS,
     }),
 )
-async def test_the_key_hint_fits_the_status_bar(width) -> None:
-    """The whole current hint, poll word and complete right label must reach pixels at every listed body pin."""
+async def test_the_compact_footer_fits_each_body_layout(width) -> None:
+    """Common navigation and complete right metadata fit every listed body pin."""
     whole, line = await _bar_state(width)
     assert whole, (width, "the bar is cropped by the terminal edge", line)
 

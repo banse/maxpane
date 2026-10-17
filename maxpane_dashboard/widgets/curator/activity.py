@@ -112,7 +112,7 @@ from maxpane_dashboard.widgets.rowfit import Ladder, SHORT_HINT
 ACTIVITY_TITLE = "ACTIVITY"
 
 #: The two explicit states, tested verbatim and deliberately different.
-ACTIVITY_UNAVAILABLE = "activity unavailable"
+ACTIVITY_UNAVAILABLE = "—"
 ACTIVITY_EMPTY = "no deposits yet"
 
 #: Rows rendered per refresh.  The feed is a *recent* window, not a history:
@@ -399,7 +399,7 @@ class CuratorActivity(Vertical):
         rows = self._payload.get("rows")
         if rows is None:
             self._set_title()
-            log.write(f"[yellow]⚠ {ACTIVITY_UNAVAILABLE}[/]")
+            log.write(f"[dim]{ACTIVITY_UNAVAILABLE}[/]")
             return
 
         try:

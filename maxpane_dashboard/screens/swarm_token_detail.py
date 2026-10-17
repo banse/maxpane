@@ -32,8 +32,7 @@ SWARM_TOKEN_FULL_LAYOUT_ROWS = 44
 
 
 class TokenStatusBar(StatusBar):
-    def _ordinary_status(self, *_args):
-        return 'q quit · esc tokens · r refresh · tab panels'
+    """Use the same compact footer as the token overview."""
 
 
 class SwarmTokenScreen(SurfDashboardScreen):
@@ -70,7 +69,7 @@ class SwarmTokenScreen(SurfDashboardScreen):
     SwarmTokenScreen .panel-title { height: 1; text-wrap: nowrap; text-overflow: ellipsis; }
     '''
 
-    def __init__(self, manager, poll_interval=5, **kwargs):
+    def __init__(self, manager, poll_interval=30, **kwargs):
         super().__init__(manager, poll_interval, **kwargs)
         self.snapshot = {}
 

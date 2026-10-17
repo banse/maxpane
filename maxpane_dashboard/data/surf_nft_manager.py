@@ -43,6 +43,23 @@ class SurfNftManager:
         self._error_count = 0
         self._inspection_attempts = {}
         self.last_budget = None
+        self._active_view = 'legacy'
+        self._retired = set()
+
+    def set_active_view(self, view):
+        if view == self._active_view:
+            return
+        self._active_view = view
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+            self._retired.add(self._task)
+        self._task = None
+        self._last_offer = None
+
+    async def drain_reads(self):
+        if self._retired:
+            await asyncio.gather(*self._retired, return_exceptions=True)
+            self._retired.clear()
 
     def select(self, identity):
         """Only mark priority. Rows and asynchronous completions keep their own IDs."""
@@ -53,17 +70,21 @@ class SurfNftManager:
                     and not self._task.done() and not self._task.cancelling())
 
     def offer_hub(self):
-        if self._closed or self.is_loading():
+        self._offer(proof_only=True)
+
+    def _offer(self, *, proof_only=False):
+        if self._closed or self._active_view is None or self._retired or self.is_loading():
             return
         now = self._clock()
         interval = self.FAILURE_BACKOFF if self._failed else self.POLL_SECONDS
         if self._last_offer is not None and now - self._last_offer < interval:
             return
         self._last_offer = now
-        self._task = asyncio.create_task(self._cycle())
+        self._task = asyncio.create_task(self._cycle(proof_only=True) if proof_only else self._cycle())
 
     async def fetch_and_compute(self):
-        self.offer_hub()
+        await self.drain_reads()
+        self._offer()
         return self.get_snapshot()
 
     def _source(self, identity, observed_at, *, block=None, state='partial', coverage=None):
@@ -129,11 +150,12 @@ class SurfNftManager:
                                   _stamp(self.state.get('evidence', {}).get(item[0], {}).get('checkedAt')) or 0))
         return due
 
-    async def _inspect(self, identity, candidate, budget):
+    async def _inspect(self, identity, candidate, budget, *, proof_only=False):
         stages = self.state.setdefault('progress', {})
         if identity not in stages and len(stages) >= SurfNftCache.MAX_STAGES:
             return
-        result = await self.inspector.advance(candidate, stages.get(identity), budget=budget)
+        options = dict(proof_only=True) if proof_only else {}
+        result = await self.inspector.advance(candidate, stages.get(identity), budget=budget, **options)
         self._inspection_attempts[identity] = self._clock()
         if result.complete:
             stages.pop(identity, None)
@@ -209,8 +231,9 @@ class SurfNftManager:
         self.state['records'] = records
         self.state['discovery']['raw']['coverage'] = catalog['coverage']
 
-    async def _cycle(self):
-        budget = Budget(monotonic=self._monotonic)
+    async def _cycle(self, *, proof_only=False):
+        budget = (Budget(http_limit=12, rpc_limit=96, deadline_seconds=8, monotonic=self._monotonic)
+                  if proof_only else Budget(monotonic=self._monotonic))
         self.last_budget = budget
         self.state['last_attempt'] = self._clock()
         self._failed = False
@@ -219,6 +242,18 @@ class SurfNftManager:
             await self._discover(budget, page_limit=1, detail_limit=0, launch_limit=0)
             candidates = self._candidates()
             pending = self._pending(candidates)
+            if proof_only:
+                # Keep discovery/proof separate from mint/getter/source history.
+                # Recent proofs need no detail work to render collection counts.
+                for identity, candidate in pending:
+                    evidence = self.state.get('evidence', {}).get(identity, {})
+                    checked = _stamp(evidence.get('checkedAt'))
+                    if checked is not None and self._clock() - checked < self.CHAIN_TTL:
+                        continue
+                    await self._inspect(identity, candidate, budget, proof_only=True)
+                    if not budget.can_admit():
+                        break
+                return
             priority = pending[0][0] if pending else None
             if priority is not None:
                 with budget.limit(http=6, rpc=64):
@@ -265,6 +300,7 @@ class SurfNftManager:
         if self._closed:
             return
         self._closed = True
+        await self.drain_reads()
         if self._task is not None and not self._task.done():
             self._task.cancel()
         await self.wait_pending()

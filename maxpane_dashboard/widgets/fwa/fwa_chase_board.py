@@ -417,9 +417,9 @@ class FWAChaseBoard(Vertical):
         crown_listing_id = self._payload["crown_listing_id"]
 
         if not self._payload["available"]:
-            table.add_row(*self._cells({"collection": "[dim]unavailable[/]"}, columns))
+            table.add_row(*self._cells({"collection": "[dim]—[/]"}, columns))
             self._set_note(
-                "[yellow]  ⚠ positions unavailable — no sweep this cycle[/]"
+                "[dim]  —[/]"
             )
             return
 

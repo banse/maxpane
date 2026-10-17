@@ -190,7 +190,7 @@ async def test_sparkline_draws_the_trend_arrow():
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "history, word",
-    [([], "waiting for data..."), (None, "unavailable")],
+    [([], "waiting for data..."), (None, "—")],
     ids=["empty", "none"],
 )
 async def test_an_empty_series_says_waiting_and_a_failed_one_unavailable_beside_its_label(
@@ -284,18 +284,18 @@ async def test_signal_malformed_value_after_a_good_poll_is_a_yellow_unavailable_
     # The degraded row keeps the live row's geometry: label at 4, the word
     # right-aligned to end at 36, the dot at 38 and nothing after it.
     assert buy.index("Buy/Sell") == 4, repr(buy)
-    assert buy.index("unavailable") + len("unavailable") == 36, repr(buy)
+    assert buy.index("—") + len("—") == 36, repr(buy)
     assert buy.index("●") == 38 and buy.rstrip().endswith("●"), repr(buy)
     assert "Rising" in _line_with(rows, "Volume"), rows
     assert "Neutral" in _line_with(rows, "Whale Activity"), rows
     strip = strips[rows.index(buy)]
-    word = [seg for seg in strip if "unavailable" in seg.text]
+    word = [seg for seg in strip if "—" in seg.text]
     assert len(word) == 1, strip
-    _YELLOW = (255, 255, 0)  # Textual resolves the markup's ``yellow`` to #ffff00
-    assert word[0].style.color.get_truecolor() == _YELLOW, word[0].style
+    _NEUTRAL_DIM = (153, 153, 153)  # Textual composites the shared dim dash.
+    assert word[0].style.color.get_truecolor() == _NEUTRAL_DIM, word[0].style
     assert not word[0].style.bold, word[0].style
     dot = [seg for seg in strip if "●" in seg.text]
-    assert dot and dot[0].style.color.get_truecolor() == _YELLOW, strip
+    assert dot and dot[0].style.color.get_truecolor() == _NEUTRAL_DIM, strip
 
 
 @pytest.mark.asyncio
@@ -425,17 +425,16 @@ async def test_best_plays_malformed_entry_after_a_good_poll_lands_on_unavailable
         rows = _strips(pilot.app)
         strips = pilot.app.screen._compositor.render_strips()
     # Title, blank, header, gap, then the degraded first row -- and only it.
-    assert rows[4].strip() == "unavailable", repr(rows[4])
+    assert rows[4].strip() == "—", repr(rows[4])
     # Column 4: the ``.panel-line`` padding (2) plus ``UNAVAILABLE_LINE``'s
     # own two -- the same column the good row's ``* ALPHA`` star sits after.
-    assert rows[4].index("unavailable") == 4 == good[4].index("ALPHA"), (rows[4], good[4])
+    assert rows[4].index("—") == 4 == good[4].index("ALPHA"), (rows[4], good[4])
     assert not any("ALPHA" in r or "+12.0%" in r or "AAA" in r for r in rows), rows
     assert all(not r.strip() for r in rows[5:14]), rows[5:14]
-    word = [seg for seg in strips[4] if "unavailable" in seg.text]
+    word = [seg for seg in strips[4] if "—" in seg.text]
     assert len(word) == 1, strips[4]
-    # Textual resolves the markup's ``yellow`` to ``#ffff00``; compare the
-    # triplet, not the name.
-    assert word[0].style.color.get_truecolor() == (255, 255, 0), word[0].style
+    # Pin the composited shared dim placeholder, keeping its original column.
+    assert word[0].style.color.get_truecolor() == (153, 153, 153), word[0].style
 
 
 # -- BTOverviewHero ---------------------------------------------------------------
@@ -451,7 +450,7 @@ async def test_hero_says_no_data_for_a_missing_gainer_and_dots_for_none():
         top_gainer_name=None, top_gainer_pct=None,
     )
     assert any("No data" in line for line in rows), rows
-    assert not any("unavailable" in line for line in rows), rows
+    assert not any("—" in line or "unavailable" in line for line in rows), rows
     dots = _line_with(rows, "...")
     assert dots.count("...") == 3, repr(dots)
 

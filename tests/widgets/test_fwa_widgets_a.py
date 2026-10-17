@@ -395,7 +395,8 @@ async def test_hero_crown_vacant_renders_vacant_not_zero():
 
         # unavailable crown is explicit, not a zero pot
         widget.update_data(**{**_FULL_HERO, "crown_available": False})
-        assert "crown unavailable" in _plain(widget, "#fwa-hero-crown")
+        assert "—" in _plain(widget, "#fwa-hero-crown")
+        assert "0.000" not in _plain(widget, "#fwa-hero-crown")
 
 
 async def test_hero_price_gap_is_live_never_hardcoded():
@@ -448,7 +449,7 @@ async def test_hero_vrf_leg_only_when_tuple_says_nonzero():
         assert "vrf" not in _plain(widget, "#fwa-hero-price")
 
         widget.update_data(**{**_FULL_HERO, "price_available": False})
-        assert "quote unavailable" in _plain(widget, "#fwa-hero-price")
+        assert "—" in _plain(widget, "#fwa-hero-price")
 
 
 # ---------------------------------------------------------------------
@@ -543,8 +544,8 @@ async def test_odds_board_unavailable_and_stale_states():
         widget.update_data(collection_odds=[], odds_available=False)
         table = widget.query_one(DataTable)
         assert table.row_count == 1
-        assert "unavailable" in str(table.get_row_at(0)[1])
-        assert "odds unavailable" in _plain(widget, "#fwa-odds-title")
+        assert str(table.get_row_at(0)[1]) == "—"
+        assert _plain(widget, "#fwa-odds-title") == "ODDS BOARD"
 
         widget.update_data(
             collection_odds=_odds_rows(5),
@@ -552,7 +553,9 @@ async def test_odds_board_unavailable_and_stale_states():
             odds_as_of_block=25621114,
             odds_stale=True,
         )
-        assert "STALE" in _plain(widget, "#fwa-odds-title")
+        assert "STALE" not in _plain(widget, "#fwa-odds-title")
+        assert "block 25,621,114" in _plain(widget, "#fwa-odds-title")
+        assert table.row_count == 5
 
 
 async def test_odds_board_tolerates_malformed_rows():
@@ -584,7 +587,7 @@ async def test_sparkline_no_args_and_all_none():
         widget.update_data(
             **{k: None for k in FWA_WIDGET_SIGNATURES["FWASparkline"]}
         )
-        assert "unavailable" in _plain(widget, "#fwa-spark-price")
+        assert "price feed —" in _plain(widget, "#fwa-spark-price")
 
 
 async def test_sparkline_short_series_waiting():
@@ -654,7 +657,7 @@ async def test_sparkline_unavailable_state():
             fwa_price_change_24h=None,
             spark_available=False,
         )
-        assert "price feed unavailable" in _plain(widget, "#fwa-spark-price")
+        assert "price feed —" in _plain(widget, "#fwa-spark-price")
         assert "no market data" in _plain(widget, "#fwa-spark-meta")
 
 
@@ -829,7 +832,7 @@ def test_golden_fwa_hero_metrics_fmt_eth():
 
 
 @pytest.mark.parametrize("series", [None, [], {}], ids=["none", "empty", "non-list"])
-async def test_sparkline_failed_series_is_yellow_and_empty_still_waits(series):
+async def test_sparkline_failed_series_is_neutral_and_empty_still_waits(series):
     widget = FWASparkline()
     async with _Harness(widget).run_test(size=(100, 12)) as pilot:
         widget.update_data(fwa_price_history=series, spark_available=True)
@@ -840,7 +843,7 @@ async def test_sparkline_failed_series_is_yellow_and_empty_still_waits(series):
         if isinstance(series, list):
             assert "waiting for data" in text and "unavailable" not in text
         else:
-            assert "unavailable" in text and "waiting for data" not in text
-            y = next(y for y, row in enumerate(rows) if "unavailable" in row)
-            style = pilot.app.screen.get_style_at(rows[y].index("unavailable"), y)
-            assert style.color.get_truecolor() == (255, 255, 0)
+            assert "—" in text and "waiting for data" not in text
+            y = next(y for y, row in enumerate(rows) if "—" in row)
+            style = pilot.app.screen.get_style_at(rows[y].index("—"), y)
+            assert style.color.get_truecolor() == (174, 174, 6)

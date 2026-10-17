@@ -81,7 +81,7 @@ CLUSTERS_TITLE = "FAN-OUT PATTERNS"
 
 #: The explicit states, tested verbatim and deliberately different: one is a
 #: real, meaningful negative and the other is a failure.
-CLUSTERS_UNAVAILABLE = "clusters unavailable"
+CLUSTERS_UNAVAILABLE = "—"
 CLUSTERS_EMPTY = "no fan-out patterns found"
 
 #: Rows rendered.
@@ -314,7 +314,7 @@ class CuratorClusters(Vertical):
 
         rows = self._payload["rows"]
         if rows is None:
-            self._set_note(f"[$warning]⚠ {CLUSTERS_UNAVAILABLE}[/]")
+            self._set_note(f"[dim]{CLUSTERS_UNAVAILABLE}[/]")
             table.add_row(*cells({}, columns, default=DASH))
             return
 

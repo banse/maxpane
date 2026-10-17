@@ -26,10 +26,10 @@ paths:
 | 8 | `talismans` | Ethereum | core-conservation NFT collection |
 | 9 | `surfboard` | Ethereum / IMD | SURFBOARD HUB: four-row rack, seven existing views and a read-only command terminal; shares `_surf_manager` |
 
-`surf` is position 1, the `--game` default, and the dashboard prefetched at launch; that is
-meant to stay. Hidden from the selection pane, code and tests intact: `bakery`, `ocm`, `dota`
+`surf` is position 1 and the `--game` default. The splash starts no dashboard
+reads; acquisition begins when a dashboard becomes visible. Hidden from the selection pane, code and tests intact: `bakery`, `ocm`, `dota`
 (backend is NXDOMAIN; 77 client tests still pass), `frenpet_full`, `frenpet_wallet`,
-`frenpet_perf`. Ten themes are registered. Dashboard 9 aliases `_surf_manager` for prefetch and shutdown; it adds no manager attribute. `ALL_GAMES` includes `surfboard`, while the four `MANAGER_ATTRS` lists stay unchanged.
+`frenpet_perf`. Ten themes are registered. Dashboard 9 aliases `_surf_manager` for compatibility lookup and shutdown; it adds no manager attribute. `ALL_GAMES` includes `surfboard`, while the four `MANAGER_ATTRS` lists stay unchanged.
 
 **Hiding, adding or reordering a dashboard touches six surfaces and they must agree:**
 

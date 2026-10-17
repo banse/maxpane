@@ -220,7 +220,7 @@ def _alpha_body(alpha) -> str:
 
 async def test_hero_box_renders_unavailable_for_a_failed_read() -> None:
     text = await _text(_Hero, alpha=None, beta=None)
-    assert "unavailable" in text, text
+    assert "—" in text, text
     assert "Loading" not in text, text
 
 
@@ -238,7 +238,7 @@ async def test_hero_box_malformed_poll_after_a_good_one_is_not_shown_as_live() -
     text = await _text(
         _Hero, polls=[{"alpha": 1234, "beta": 4321}, {"alpha": 1234, "beta": "lots"}]
     )
-    assert "unavailable" in text, text
+    assert "—" in text, text
     assert "4,321" not in text, text
     assert "1,234" in text, text
 
@@ -312,7 +312,7 @@ async def test_render_box_with_a_text_body_still_degrades_on_a_raise() -> None:
             self.render_box("#t-text-box", "GAMMA", build)
 
     text = await _text(_Boom)
-    assert "unavailable" in text, text
+    assert "—" in text, text
     assert "GAMMA" in text, text
 
 
@@ -356,13 +356,13 @@ async def test_render_signal_says_unavailable_for_a_signal_it_could_not_read(
 ) -> None:
     text = await _text(_Signals, alpha=alpha)
     assert "Alpha Rate" in text, text
-    assert "unavailable" in text, text
+    assert "—" in text, text
 
 
 async def test_render_signal_lands_on_the_fallback_row_for_a_malformed_dict() -> None:
     """``{"label": object()}`` raises inside the format; the panel must not."""
     text = await _text(_Signals, alpha={"label": object()}, beta=_SIG)
-    assert "unavailable" in text, text
+    assert "—" in text, text
     assert "Alpha Rate" in text, text
     # The sibling row still rendered: one malformed signal is one row.
     assert "42%" in text, text
@@ -501,7 +501,7 @@ async def test_the_seed_row_lands_on_the_first_row_not_the_first_item() -> None:
 async def test_a_label_less_row_that_could_not_be_read_still_says_so() -> None:
     """MEDI-38 does not lapse because the row has no label column."""
     rows = await _lines(_MixedSignals, alpha=_SIG, beta=None)
-    assert "unavailable" in rows[4], rows[:6]
+    assert "—" in rows[4], rows[:6]
     assert "Beta Rate" not in rows[4], rows[:6]
 
 
@@ -548,7 +548,7 @@ async def test_render_series_says_unavailable_for_a_series_it_could_not_read(
     negative's clothes. Mutation: drop the ``isinstance(points, (list,
     tuple))`` guard in ``render_series`` -> every case reddens."""
     rows = await _lines(_Sparks, points=points)
-    assert rows[2] == "   unavailable", rows[:5]
+    assert rows[2] == "   —", rows[:5]
     assert not "\n".join(rows[3:]).strip(), rows[:5]
 
 
@@ -677,11 +677,11 @@ class _LabelledSparks(_WideSparks):
 @pytest.mark.parametrize(
     "cls, points, expected",
     [
-        (_WideSparks, None, "   unavailable"),
+        (_WideSparks, None, "   —"),
         # Bare, EMPTY_TEXT is written as it is spelled (no row indent);
         # UNAVAILABLE_LINE carries its own two-space column.
         (_WideSparks, [], " waiting for data..."),
-        (_LabelledSparks, None, f"   {'Supply':<12}  unavailable"),
+        (_LabelledSparks, None, f"   {'Supply':<12}  —"),
         (_LabelledSparks, [], f"   {'Supply':<12}  waiting for data..."),
     ],
     ids=["bare-none", "bare-empty", "labelled-none", "labelled-empty"],
@@ -725,7 +725,7 @@ async def test_an_entry_that_does_not_unpack_says_unavailable_bare(entry) -> Non
     rows = await _lines(
         _EntrySparks, series=[entry, ("Staked", [], "green", "")]
     )
-    assert rows[2] == "   unavailable", rows[:5]
+    assert rows[2] == "   —", rows[:5]
     assert rows[3] == f"   {'Staked':<8}  waiting for data...", rows[:5]
 
 
@@ -939,7 +939,7 @@ async def test_a_snapshot_feed_paints_unavailable_for_a_none_poll() -> None:
     """
     text = await _text(_Snapshot, polls=[{"events": [_ev(1)]},
                                          {"events": None}])
-    assert "unavailable" in text, text
+    assert "—" in text, text
     assert "event 1" not in text, text
     assert "No activity yet" not in text, text
 
@@ -967,7 +967,7 @@ async def test_a_snapshot_feed_with_no_showable_row_says_unavailable_not_empty()
     text = await _text(_Snapshot, polls=[{"events": [_ev(1)]},
                                          {"events": [_ev(2, bad=True),
                                                      _ev(3, bad=True)]}])
-    assert "unavailable" in text, text
+    assert "—" in text, text
     assert "No activity yet" not in text, text
     assert "event 1" not in text, text
 
@@ -1575,7 +1575,7 @@ def test_panels_defines_the_shared_strings_exactly_once() -> None:
     is the one defect a test suite cannot report. It is back, widened to
     :data:`UNAVAILABLE_LINE`, and every string it pins is pinned *and*
     derived, so a re-typed copy and a drifted derivation both redden."""
-    assert UNAVAILABLE == "[yellow]unavailable[/]"
+    assert UNAVAILABLE == "[dim]—[/]"
     assert LOADING == "[dim]Loading...[/]"
     # Derived from LOADING, not re-typed beside it: the signals seed is the
     # same words, two columns in (fix round 1, M1).
@@ -1583,7 +1583,7 @@ def test_panels_defines_the_shared_strings_exactly_once() -> None:
     assert LOADING_ROW == LOADING.replace("[dim]", "[dim]  ", 1)
     # Same reasoning, Branch 7 fix round 1 (review C1): the snapshot feed's
     # "could not look" line is UNAVAILABLE in a feed row's column.
-    assert UNAVAILABLE_LINE == "  [yellow]unavailable[/]"
+    assert UNAVAILABLE_LINE == "  [dim]—[/]"
     assert UNAVAILABLE_LINE == f"  {UNAVAILABLE}"
     assert panels.__all__ == [
         "UNAVAILABLE",

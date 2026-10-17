@@ -133,6 +133,8 @@ class RefreshGuard:
     #: displayed anywhere; it is the observable a test can assert on and a
     #: cheap health signal when debugging a degraded endpoint.
     _refresh_skipped: int = 0
+    _refresh_generation: int = 0
+    _refresh_worker: Worker | None = None
 
     # ------------------------------------------------------------------
     # Scheduling entry points (inherited by every screen)
@@ -175,18 +177,30 @@ class RefreshGuard:
         # window would otherwise pass the guard and cancel this one.
         self._refresh_in_flight = True
         try:
-            return self.run_worker(
-                self._guarded_refresh(),
+            self._refresh_worker = self.run_worker(
+                self._guarded_refresh(self._refresh_generation),
                 exclusive=True,
                 name=self.REFRESH_WORKER_NAME,
             )
+            return self._refresh_worker
         except Exception:
             # run_worker only fails if the screen is not mounted; leaving the
             # flag raised would wedge the screen permanently.
             self._refresh_in_flight = False
             raise
 
-    async def _guarded_refresh(self) -> None:
+    def cancel_refresh(self) -> None:
+        """Invalidate the old view before another worker can take its place."""
+        self._refresh_generation += 1
+        if self._refresh_worker is not None:
+            self._refresh_worker.cancel()
+            retired = getattr(self, '_retired_refreshes', [])
+            retired.append(self._refresh_worker)
+            self._retired_refreshes = retired
+            self._refresh_worker = None
+        self._refresh_in_flight = False
+
+    async def _guarded_refresh(self, generation=None) -> None:
         """Join the startup prefetch, run one refresh, then lower the flag."""
         try:
             if self.JOIN_STARTUP_PREFETCH:
@@ -195,7 +209,8 @@ class RefreshGuard:
         finally:
             # finally, not else: a cancelled or failed refresh must not wedge
             # the screen on placeholders for the rest of the session.
-            self._refresh_in_flight = False
+            if generation is None or generation == self._refresh_generation:
+                self._refresh_in_flight = False
 
     async def _await_startup_prefetch(self) -> None:
         """Wait for the app-node startup prefetch, if it is still running.

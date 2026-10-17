@@ -40,11 +40,8 @@ SWARM_TOKENS_FULL_LAYOUT_ROWS = 34
 
 
 class DemoStatusBar(StatusBar):
-    """Short native hints; live clocks belong to the data's source headings."""
+    """Use the shared compact footer for live and demo token dashboards."""
     is_mock = True
-    def _ordinary_status(self, *_args):
-        return self._key_hints or ('q quit · r refresh · esc back · tab · f filter · / find · c chain · o sort · enter open'
-                                  + ('' if self.is_mock else ' · 30s'))
 
 
 class SwarmTokensScreen(SurfDashboardScreen):

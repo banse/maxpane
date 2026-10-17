@@ -19,7 +19,7 @@ from maxpane_dashboard.widgets.panels import LOADING_ROW, UNAVAILABLE_LINE, Pane
 
 _HEADER = f"  {'Boosts':<14} {'EV':>10}    {'Attacks':<14} {'Gap':>8}"
 _ROW_IDS = ("ev-row-0", "ev-row-1", "ev-row-2")
-_STALE_TITLE = "BEST PLAYS  [yellow]⚠ STALE CATALOG (live fetch failed)[/]"
+_STALE_TITLE = "BEST PLAYS"
 
 
 def _truncate(name: str, width: int = 15) -> str:

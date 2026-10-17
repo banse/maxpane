@@ -99,18 +99,16 @@ def _make_app(game: str) -> MaxPaneApp:
 
 
 @pytest.mark.parametrize("game", ALL_GAMES)
-def test_failing_prefetch_does_not_kill_app(game: str) -> None:
-    """Every --game choice survives a manager that raises at launch."""
+def test_splash_does_not_fetch_hidden_dashboard(game: str) -> None:
+    """A visible dashboard, not the splash, owns the first request."""
 
     async def _run() -> None:
         app = _make_app(game)
         async with app.run_test() as pilot:
             await pilot.pause()
-            # The prefetch actually ran and actually failed ...
             manager = app._prefetch_manager(game)
             assert isinstance(manager, BoomManager)
-            assert manager.calls >= 1, "prefetch never ran for %s" % game
-            # ... and the app is still alive with a screen on stack.
+            assert manager.calls == 0, "hidden dashboard fetched for %s" % game
             assert app._exception is None, f"{game}: {app._exception!r}"
             assert app.screen is not None
             assert app.is_running
@@ -150,7 +148,7 @@ def test_failing_prefetch_still_reaches_the_dashboard() -> None:
             assert app.screen.name == game_id
             # The screen's own refresh also failed and was swallowed, so the
             # dashboard is up with an error status rather than gone.
-            assert app._prefetch_manager(game_id).calls >= 2
+            assert app._prefetch_manager(game_id).calls >= 1
         assert app.return_code != 1
 
     asyncio.run(_run())
@@ -221,17 +219,10 @@ def test_a_bare_app_prefetches_the_dashboard_the_menu_opens_on() -> None:
     async def _run() -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
-            assert app._prefetch_manager(menu_first).calls >= 1, (
-                f"{menu_first} opens the menu but was never prefetched"
-            )
+            assert app._prefetch_manager(menu_first).calls == 0
             for _key, other, *_ in GAMES[1:]:
-                if app._prefetch_manager(other) is app._prefetch_manager(menu_first):
-                    # The rack is a second entrance to the same collector.
-                    # Its shared cache is warm without a second prefetch.
-                    assert app._prefetch_manager(other).calls == 1
-                    continue
                 assert app._prefetch_manager(other).calls == 0, (
-                    f"{other} was prefetched instead of the menu's first entry"
+                    f"{other} fetched while the splash was visible"
                 )
             assert app._exception is None
         assert app.return_code != 1

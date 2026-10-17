@@ -3,7 +3,7 @@
 ``SparklinePanel.render_series`` used to write ``EMPTY_TEXT`` -- the
 real-empty sentence -- for a series whose points were ``None``, because
 ``coerce_points(None)`` is ``[]``: a failed read wearing a real negative's
-clothes. The base now writes yellow ``unavailable`` for ``None`` (beside
+clothes. The base now writes a neutral ``—`` for ``None`` (beside
 the label where ``EMPTY_KEEPS_LABEL`` is set), and keeps each panel's own
 empty wording for ``[]``.
 
@@ -40,10 +40,9 @@ from tests.widgets.surf_compositing import composite_lines
 
 _SIZE = (120, 30)
 
-#: What ``[yellow]`` composites to under ``minimal.tcss`` -- the triplet
-#: ``tests/widgets/test_bakery_widgets.py`` pins CookieChart's own
-#: not-a-dict ``unavailable`` line against.
-_YELLOW = (255, 255, 0)
+#: What the shared dim placeholder composites to under ``minimal.tcss``.
+#: The same colour is pinned for CookieChart in test_bakery_widgets.py.
+_NEUTRAL_DIM = (153, 153, 153)
 
 _WAITING = "waiting for data..."
 
@@ -160,9 +159,9 @@ async def test_a_failed_read_says_unavailable_and_an_empty_one_the_panels_own_wo
     line_count = len(cls.LINE_IDS)
     if state == "none":
         if cells is None:
-            expected = ["unavailable"] * line_count
+            expected = ["—"] * line_count
         else:
-            expected = [f"{cell}  unavailable" for cell in cells]
+            expected = [f"{cell}  —" for cell in cells]
     else:
         if cells is None:
             expected = [empty] * line_count if empty else []
@@ -185,11 +184,11 @@ class _Harness(App):
 
 
 @pytest.mark.parametrize("cls, payload, cells, empty", _SUBSCRIBERS)
-async def test_the_unavailable_word_is_yellow(cls, payload, cells, empty) -> None:
-    """``unavailable`` is the shared ``UNAVAILABLE`` markup, so it lands in
-    yellow on every line, one segment per line. Mutation: the labelled
-    unavailable line spelled without ``UNAVAILABLE``'s ``[yellow]`` -> the
-    three labelled cases redden."""
+async def test_the_unavailable_placeholder_is_neutral(cls, payload, cells, empty) -> None:
+    """The shared neutral marker paints once per row with the same dim colour.
+
+    Removing its dim style or dropping one failed series reddens this check.
+    """
     widget = cls()
     async with _Harness(widget).run_test(size=_SIZE) as pilot:
         widget.update_data(**payload(None))
@@ -201,6 +200,6 @@ async def test_the_unavailable_word_is_yellow(cls, payload, cells, empty) -> Non
             else None
             for strip in pilot.app.screen._compositor.render_strips()
             for seg in strip
-            if "unavailable" in seg.text
+            if "—" in seg.text
         ]
-    assert colours == [_YELLOW] * len(cls.LINE_IDS), (cls.__name__, colours)
+    assert colours == [_NEUTRAL_DIM] * len(cls.LINE_IDS), (cls.__name__, colours)

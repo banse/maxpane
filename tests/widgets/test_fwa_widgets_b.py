@@ -377,10 +377,12 @@ async def test_activity_feed_unavailable_renders_explicit_line():
         log = widget.query_one("#fwa-activity-log", RichLog)
         text = _log_text(log)
         assert UNAVAILABLE_LINE in text
-        assert "log endpoint 429" in text
+        assert "log endpoint 429" not in text
+        assert widget._payload["reason"] == "log endpoint 429"
         assert len(log.lines) >= 1
         title = _static_text(widget.query_one("#fwa-feed-title", Static))
-        assert "unavailable" in title
+        assert "unavailable" not in title
+        assert title == "ACTIVITY"
 
 
 @pytest.mark.asyncio
@@ -484,8 +486,8 @@ async def test_chase_board_unavailable_renders_explicit_state():
         widget.update_data(chase_positions=None, chase_available=False)
         table = widget.query_one("#fwa-chase-dt", DataTable)
         assert table.row_count == 1
-        assert "unavailable" in " ".join(str(c) for c in table.get_row_at(0))
-        assert "unavailable" in _static_text(
+        assert "—" in " ".join(str(c) for c in table.get_row_at(0))
+        assert "—" in _static_text(
             widget.query_one("#fwa-chase-note", Static)
         )
 
@@ -556,9 +558,7 @@ async def test_settlement_table_unavailable_renders_explicit_state():
             for i in range(table.row_count)
         )
         assert UNAVAILABLE_TEXT in joined
-        assert "unavailable" in _static_text(
-            widget.query_one("#fwa-settle-title", Static)
-        )
+        assert _static_text(widget.query_one("#fwa-settle-title", Static)) == "SETTLEMENT & CROWN"
         assert UNAVAILABLE_TEXT in _static_text(
             widget.query_one("#fwa-settle-note", Static)
         )

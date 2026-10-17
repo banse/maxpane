@@ -147,11 +147,16 @@ class SurfboardScreen(SurfDashboardScreen):
                 self.start_refresh()
 
     async def _fetch_data(self) -> dict:
-        if self._loading_projection:
-            return await super()._fetch_data()
         if self._cache_only:
             self._cache_only = False
             return self._data_manager.get_hub_snapshot()
+        return await super()._fetch_data()
+
+    def _snapshot_data(self):
+        getter = getattr(self._data_manager, 'get_hub_snapshot', None)
+        return getter() if callable(getter) else super()._snapshot_data()
+
+    async def _fetch_live_data(self):
         return await self._data_manager.fetch_hub_snapshot()
 
     def _loading_view(self):

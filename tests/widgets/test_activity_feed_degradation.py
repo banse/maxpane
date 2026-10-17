@@ -185,7 +185,7 @@ async def test_none_says_unavailable_not_empty() -> None:
     rendered, app, _ = await _render(None, None, None)
 
     assert app._exception is None
-    assert rendered.count("unavailable") == 1, rendered
+    assert rendered.count("—") == 1, rendered
     assert "No activity yet" not in rendered
 
 
@@ -195,7 +195,7 @@ async def test_a_failed_poll_keeps_a_populated_feed() -> None:
 
     assert app._exception is None
     assert "joined the bakery" in rendered
-    assert "unavailable" not in rendered
+    assert "—" not in rendered and "unavailable" not in rendered
 
 
 async def test_repeated_empty_polls_do_not_stack_placeholders() -> None:

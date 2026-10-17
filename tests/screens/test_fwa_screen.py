@@ -7,7 +7,7 @@ screen is pushed via ``App.run_test()``, and we assert:
 * **every** ``FWA_DATA_KEYS`` group reaches the widget that owns it -- checked
   mechanically against ``FWA_WIDGET_SIGNATURES`` rather than by eye, so a key
   added upstream cannot quietly go unrendered,
-* a manager exception leaves the screen standing and only marks the StatusBar,
+* a manager exception leaves the screen standing with a compact footer,
 * an all-``None`` payload renders explicit unavailable states (PRD §9),
 * the PULL EV coverage badge is **on screen** -- asserted against the
   compositor, not the widget's content string. A hero box with too little
@@ -504,19 +504,21 @@ async def test_screen_dispatches_every_data_key():
         unconsumed = set(FWA_DATA_KEYS) - dispatched - META_KEYS
         assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
 
-        # ...and the meta keys really are on screen.
+        # Title metrics remain visible; footer diagnostics stay internal.
         text = _screen_text(app)
         assert "3,867 positions" in text          # active_positions
         assert "483.201 ETH in core" in text      # core_balance_eth
         assert "fee 0.1247 ETH" in text           # acquisition_fee_eth
         assert "rev 720.69 ETH" in text           # cumulative_revenue_eth
         assert "take 8.80%" in text               # take_rate_pct
-        assert "30s poll" in text                 # poll_interval
-        assert "updated 2s ago" in text           # last_updated_seconds_ago
+        footer = text.splitlines()[-1]
+        assert "q quit · m menu · tab switch" in footer
+        assert "poll" not in footer
+        assert "updated" not in footer
 
 
 async def test_screen_survives_manager_exception():
-    """The screen stands; only the StatusBar is marked."""
+    """The screen stands and keeps source errors out of its footer."""
     manager = _FakeManager(raises=True)
     screen = FWAScreen(manager, poll_interval=30, name="fwa")
     app = _Harness(screen)
@@ -525,10 +527,10 @@ async def test_screen_survives_manager_exception():
         await screen._do_refresh()   # must not raise
         await pilot.pause()
 
-        status = screen.query_one(StatusBar).query_one("#status-left")
-        rendered = _plain(status)
-        assert "updated 999s ago" in rendered
-        assert "3 errors" in rendered  # manager's _error_count is surfaced
+        footer = _screen_text(app).splitlines()[-1]
+        assert "q quit · m menu · tab switch" in footer
+        assert "updated" not in footer
+        assert "errors" not in footer
 
         # The title bar was not half-overwritten with a broken frame.
         assert "Gacha Terminal" in _plain(screen.query_one("#title-bar"))
@@ -539,7 +541,7 @@ async def test_screen_survives_manager_exception():
 
 
 async def test_screen_survives_all_none_payload():
-    """PRD §9: an all-``None`` payload renders explicit unavailable states."""
+    """An all-``None`` payload keeps missing values visible as neutral dashes."""
     manager = _FakeManager(payload=_all_none_payload())
     screen = FWAScreen(manager, poll_interval=30, name="fwa")
     app = _Harness(screen)
@@ -554,9 +556,20 @@ async def test_screen_survives_all_none_payload():
         # Widgets state that they have nothing, rather than going blank.
         assert "insufficient data" in text     # PULL EV
         assert "no collections" in text        # odds board
-        assert "No draws" in text or "unavailable" in text  # feed
-        # A dead payload never claims a healthy poll.
-        assert "0s poll" in text or "poll" in text
+        assert "unavailable" not in text
+        await pilot.press("c")  # the feed is hidden in the initial odds view
+        await pilot.pause()
+        region = screen.query_one(FWAActivityFeed).region
+        strips = app.screen._compositor.render_strips()
+        feed = "\n".join(strip.crop(region.x, region.right).text
+                         for strip in strips[region.y:region.bottom])
+        assert "—" in feed
+        assert "No draws" not in feed  # missing is distinct from a successful empty read
+        assert "unavailable" not in feed
+        # Fetch timing is no longer advertised in the footer.
+        footer = text.splitlines()[-1]
+        assert "q quit · m menu · tab switch" in footer
+        assert "poll" not in footer
 
 
 async def test_all_none_payload_still_shows_ev_coverage_badge():
@@ -662,8 +675,9 @@ async def test_degraded_sources_and_invariant_break_reach_the_title_bar():
         text = _screen_text(app)
         assert "degraded: logs, market" in text
         assert "invariant mismatch" in text
-        # The odds board says stale rather than pretending to be live.
-        assert "STALE" in text
+        # Retained odds keep their observation block under the neutral heading.
+        assert "STALE" not in text
+        assert f"block {_BLOCK:,}" in text
 
 
 # -- the emissions stop, from fixtures only -----------------------------

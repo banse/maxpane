@@ -31,7 +31,7 @@ class Provider:
 
     def get_snapshot(self):
         self.projections += 1
-        return {'value': 'finished 43'}
+        return {'value': 'finished 43' if self.reads else 'cached 42'}
 
 
 class LoadingScreen(SurfDashboardScreen):
@@ -119,7 +119,7 @@ async def test_background_completion_paints_passive_snapshot_without_refetch():
         assert 'finished 43' in painted(screen)
         assert 'loading' not in painted(screen)
         assert provider.reads == 1
-        assert provider.projections == 1
+        assert provider.projections == 2  # Entry cache plus completed background read.
 
 
 def test_every_surf_view_uses_shared_loading_lifecycle():
@@ -205,7 +205,8 @@ async def test_loading_is_visible_before_long_token_search():
         app.screen._tick_loading()
         await pilot.pause()
         heading = next(row for row in painted(app.screen).splitlines() if 'ALL TOKENS' in row)
-        assert 'loading' in heading
+        assert 'loading' not in heading
+        assert 'loading' in painted(app.screen).splitlines()[-1]
 
 
 async def test_loading_is_visible_in_compact_swarm_title():
@@ -233,7 +234,8 @@ async def test_loading_is_visible_in_compact_swarm_title():
         await manager.entered.wait()
         screen._tick_loading()
         await pilot.pause()
-        assert 'loading' in painted(screen).splitlines()[0]
+        assert 'loading' not in painted(screen).splitlines()[0]
+        assert 'loading' in painted(screen).splitlines()[-1]
         manager.release.set()
         await app.workers.wait_for_complete()
 
@@ -273,7 +275,7 @@ async def test_background_completion_during_refresh_is_not_lost():
         screen._tick_loading()
         await pilot.pause()
         assert 'finished 43' in painted(screen)
-        assert provider.reads == 1 and provider.projections == 1
+        assert provider.reads == 1 and provider.projections == 2
 
 
 async def test_cancelled_refresh_clears_spinner_and_can_reopen():

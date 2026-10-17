@@ -62,7 +62,7 @@ SEGMENTS_TITLE = "SEGMENTS"
 
 #: The explicit states, tested verbatim: an unreadable analysis and an
 #: analysis that has produced no bands are different facts.
-SEGMENTS_UNAVAILABLE = "segments unavailable"
+SEGMENTS_UNAVAILABLE = "—"
 SEGMENTS_EMPTY = "no segments yet"
 
 #: Rows rendered.  Eight of the twelve derived bands: the analysis body
@@ -263,8 +263,8 @@ class CuratorSegments(Vertical):
         rows = self._payload["rows"]
         if rows is None:
             self._set_note(
-                f"[$warning]⚠ {SEGMENTS_UNAVAILABLE}[/]"
-                f"{self._as_of(f'⚠ {SEGMENTS_UNAVAILABLE}')}"
+                f"[dim]{SEGMENTS_UNAVAILABLE}[/]"
+                f"{self._as_of(SEGMENTS_UNAVAILABLE)}"
             )
             table.add_row(*cells({}, columns, default=DASH))
             return
@@ -282,8 +282,8 @@ class CuratorSegments(Vertical):
             # finding: rendered as the empty state it would be a confident
             # "no segments yet" drawn from bytes nobody could read (M2).
             self._set_note(
-                f"[$warning]⚠ {SEGMENTS_UNAVAILABLE}[/]"
-                f"{self._as_of(f'⚠ {SEGMENTS_UNAVAILABLE}')}"
+                f"[dim]{SEGMENTS_UNAVAILABLE}[/]"
+                f"{self._as_of(SEGMENTS_UNAVAILABLE)}"
             )
             table.add_row(*cells({}, columns, default=DASH))
             return

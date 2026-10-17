@@ -56,15 +56,17 @@ lifecycle handlers, or a hand-rolled dispatch block.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging
 from typing import Callable
 
 from textual.binding import Binding
+from textual import events, on
 from textual.screen import Screen
 from textual.widget import Widget
 
-from maxpane_dashboard.screens.refresh_guard import RefreshGuard
+from maxpane_dashboard.screens.refresh_guard import RefreshGuard, _join
 from maxpane_dashboard.widgets.status_bar import StatusBar
 
 logger = logging.getLogger(__name__)
@@ -162,6 +164,15 @@ class DashboardScreen(RefreshGuard, Screen):
         self._data_manager = manager
         self._poll_interval = poll_interval
         self._refresh_timer = None
+        self._loading_timer = None
+        self._background_loading = False
+        self._loading_projection = False
+        self._projection_due = False
+        self._entry_refresh = False
+        self._view_snapshots = {}
+        self._scope_active = False
+        self._reads_ready = False
+        self._entry_snapshot = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -169,10 +180,21 @@ class DashboardScreen(RefreshGuard, Screen):
 
     def on_screen_resume(self) -> None:
         """Fill the screen, start the poll interval, prime the status bar."""
+        previous = getattr(self.app, '_dashboard_owner', None)
+        if previous is not None and previous is not self and previous._scope_active:
+            # Textual can resume the parent before the popped child unmounts.
+            previous._stop_view()
+        self.app._dashboard_owner = self
+        self._activate_view()
         self._do_initial_refresh()
+        if self._refresh_timer is not None:
+            self._refresh_timer.stop()
         self._refresh_timer = self.set_interval(
             self._poll_interval, self._schedule_refresh
         )
+        if self._loading_timer is None:
+            self._loading_timer = self.set_interval(0.2, self._tick_loading)
+        self.call_after_refresh(self._tick_loading)
         try:
             bar = self.query_one(StatusBar)
             bar.set_theme_name(self.app.theme)
@@ -184,10 +206,119 @@ class DashboardScreen(RefreshGuard, Screen):
             pass
 
     def on_screen_suspend(self) -> None:
-        """Stop polling when switching away."""
+        """End ownership of reads while retaining the displayed/cache values."""
+        self._stop_view()
+
+    @on(events.Unmount)
+    def _unmount_dashboard(self) -> None:
+        self._stop_view()
+
+    def _stop_view(self) -> None:
+        if self._scope_active:
+            retired = getattr(self.app, '_retired_dashboards', [])
+            if self not in retired:
+                retired.append(self)
+            self.app._retired_dashboards = retired
         if self._refresh_timer:
             self._refresh_timer.stop()
             self._refresh_timer = None
+        if self._loading_timer:
+            self._loading_timer.stop()
+            self._loading_timer = None
+        self.cancel_refresh()
+        setter = getattr(self._data_manager, 'set_active_view', None)
+        if setter is not None and self._scope_active:
+            setter(None)
+        self._scope_active = False
+        self._reads_ready = False
+        self._background_loading = self._loading_projection = self._projection_due = False
+        self._set_loading(False)
+
+    def _loading_view(self):
+        return getattr(self, '_mode', None) or self.GAME_NAME
+
+    def _activate_view(self):
+        self._reads_ready = False
+        setter = getattr(self._data_manager, 'set_active_view', None)
+        if setter is not None:
+            setter(self._loading_view())
+        self._scope_active = True
+        self._entry_refresh = True
+
+    def restart_view(self):
+        """Native body switches have the same boundary as screen navigation."""
+        self.cancel_refresh()
+        self._background_loading = self._loading_projection = self._projection_due = False
+        self._activate_view()
+        if self._refresh_timer is not None:
+            self._refresh_timer.reset()
+        self.start_refresh()
+        self._tick_loading()
+
+    @property
+    def loading_suffix(self):
+        """Compatibility for title composers; loading lives in the footer."""
+        return ''
+
+    def _set_loading(self, busy):
+        for bar in self.query(StatusBar):
+            bar.set_loading(busy)
+
+    def _reads_pending(self):
+        loading = getattr(self._data_manager, 'is_loading', None)
+        return bool(loading(self._loading_view())) if callable(loading) else False
+
+    def _tick_loading(self):
+        if not self.is_current:
+            return
+        background = self._reads_pending()
+        if self._background_loading and not background:
+            self._projection_due = True
+        if self._projection_due and not self._refresh_in_flight:
+            self._projection_due = False
+            self._loading_projection = True
+            self.start_refresh()
+        self._background_loading = background
+        self._set_loading(self._refresh_in_flight or background)
+
+    def _snapshot_data(self):
+        getter = getattr(self._data_manager, 'get_snapshot', None)
+        if callable(getter):
+            return getter()
+        return self._view_snapshots.get(self._loading_view())
+
+    async def _guarded_refresh(self, generation=None):
+        try:
+            if self._entry_refresh:
+                self._entry_refresh = False
+                self._entry_snapshot = self._snapshot_data()
+                if self._entry_snapshot is not None:
+                    self._loading_projection = True
+                    await self._do_refresh()
+                self._loading_projection = False
+            # Ownership crosses Screen instances as well as native body swaps.
+            retired = list(getattr(self.app, '_retired_dashboards', []))
+            for screen in dict.fromkeys([*retired, self]):
+                workers = tuple(getattr(screen, '_retired_refreshes', []))
+                for worker in workers:
+                    await _join(worker)
+                screen._retired_refreshes = [w for w in getattr(screen, '_retired_refreshes', [])
+                                            if w not in workers]
+                drain = getattr(screen._data_manager, 'drain_reads', None)
+                if callable(drain):
+                    await drain()
+            if generation is not None and generation != self._refresh_generation:
+                raise asyncio.CancelledError('retired dashboard handoff')
+            pending = getattr(self.app, '_retired_dashboards', [])
+            self.app._retired_dashboards = [screen for screen in pending if screen not in retired]
+            self._reads_ready = True
+            await super()._guarded_refresh(generation)
+        finally:
+            if generation is None or generation == self._refresh_generation:
+                self._refresh_in_flight = False
+                if self.is_current:
+                    self._background_loading |= self._reads_pending()
+                    self.call_after_refresh(self._tick_loading)
 
     def _prime_status_bar(self, bar: StatusBar) -> None:
         """Hook: the one extra status-bar line a screen primes on resume.
@@ -210,6 +341,19 @@ class DashboardScreen(RefreshGuard, Screen):
 
     async def _fetch_data(self) -> dict:
         """Fetch the payload; snapshot screens may supply a cheaper projection."""
+        if self._loading_projection:
+            self._loading_projection = False
+            data = self._entry_snapshot if self._entry_snapshot is not None else self._snapshot_data()
+            self._entry_snapshot = None
+            return data or {}
+        generation, view = self._refresh_generation, self._loading_view()
+        data = await self._fetch_live_data()
+        if generation != self._refresh_generation or view != self._loading_view():
+            raise asyncio.CancelledError('view changed during refresh')
+        self._view_snapshots[view] = copy.deepcopy(data)
+        return data
+
+    async def _fetch_live_data(self):
         return await self._data_manager.fetch_and_compute()
 
     async def _do_refresh(self) -> None:

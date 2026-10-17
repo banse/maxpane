@@ -41,6 +41,9 @@ class PortfolioManager:
         self._wallet, self._generation = None, 0
         self._tasks, self._active = set(), {}
         self._closed, self._error_count = False, 0
+        self._active_view, self._retired = 'portfolio', set()
+        self._view_epoch = 0
+        self._market_snapshot = dict(tokens=None, activity=[], sources={})
         self._reset()
         self.set_wallet(wallet)
 
@@ -80,15 +83,51 @@ class PortfolioManager:
         if self._tasks:
             await asyncio.gather(*tuple(self._tasks), return_exceptions=True)
 
+    def set_active_view(self, view):
+        """Retire wallet work without discarding observations or closing clients."""
+        if view == self._active_view:
+            return
+        self._active_view = view
+        self._view_epoch += 1
+        for task in self._tasks:
+            if not task.done():
+                task.cancel()
+                self._retired.add(task)
+        self._active.clear()
+        if view is not None:
+            self._balance_attempts.clear()
+            self._claim_attempt = None
+        setter = getattr(self.market, 'set_active_view', None)
+        if setter is not None:
+            setter('portfolio' if view is not None else None)
+
+    async def drain_reads(self):
+        tasks = tuple(self._retired)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self._retired.difference_update(tasks)
+        drain = getattr(self.market, 'drain_reads', None)
+        if drain is not None:
+            await drain()
+
+    def is_loading(self, view=None):
+        if self._closed or self._active_view is None:
+            return False
+        loading = getattr(self.market, 'is_loading', None)
+        return (any(not task.done() and not task.cancelling() for task in self._tasks)
+                or bool(loading() if loading else False))
+
     def _current(self, wallet, generation):
-        return not self._closed and wallet == self.wallet and generation == self._generation
+        return (not self._closed and self._active_view is not None
+                and wallet == self.wallet and generation == self._generation)
 
     async def _read_balances(self, wallet, generation, rows):
+        epoch = self._view_epoch
         try:
             result = await self.balances.read_balances(wallet, rows)
         except Exception:
             result = None
-        if not self._current(wallet, generation):
+        if epoch != self._view_epoch or not self._current(wallet, generation):
             return
         for row in rows:
             key = row['id']
@@ -102,11 +141,12 @@ class PortfolioManager:
             self._error_count += 1
 
     async def _read_claims(self, wallet, generation):
+        epoch = self._view_epoch
         try:
             result = await self.claims.fetch_claims(wallet)
         except Exception:
             result = None
-        if not self._current(wallet, generation):
+        if epoch != self._view_epoch or not self._current(wallet, generation):
             return
         if isinstance(result, dict):
             # Agent association and claims degrade independently.
@@ -182,10 +222,13 @@ class PortfolioManager:
         return result
 
     async def fetch_and_compute(self):
+        await self.drain_reads()
+        if self._closed or self._active_view is None:
+            return self.get_snapshot()
         now, wallet, generation = self._clock(), self.wallet, self._generation
+        epoch = self._view_epoch
         if wallet is None:
-            return dict(tokens=[], activity=[], as_of=now, is_mock=False, wallet=None,
-                        agents=[], wallet_generation=generation, sources={})
+            return self.get_snapshot()
         priorities = [key for key, row in self._balances.items() if row.get('held_quantity', 0) > 0]
         for row in (self._claim_payload or {}).get('allocations') or []:
             contract = address(row.get('token_address'))
@@ -195,8 +238,22 @@ class PortfolioManager:
             market = await self.market.fetch_portfolio(priority_ids=priorities)
         except Exception:
             market = dict(tokens=None, activity=[], sources={'catalogue': _source('unavailable')})
-        if not self._current(wallet, generation):
+        if epoch != self._view_epoch or not self._current(wallet, generation):
             raise asyncio.CancelledError('obsolete portfolio market snapshot')
+        self._market_snapshot = deepcopy(market)
+        return self._snapshot(market, now, wallet, generation, offer=True)
+
+    def get_snapshot(self):
+        """Project completed market and wallet facts without scheduling reads."""
+        now, wallet, generation = self._clock(), self.wallet, self._generation
+        if wallet is None:
+            return dict(tokens=[], activity=[], as_of=now, is_mock=False, wallet=None,
+                        agents=[], wallet_generation=generation, sources={})
+        getter = getattr(self.market, 'get_portfolio_snapshot', None)
+        market = getter() if getter is not None else self._market_snapshot
+        return self._snapshot(market, now, wallet, generation, offer=False)
+
+    def _snapshot(self, market, now, wallet, generation, *, offer):
         sources = deepcopy(market.get('sources') or {})
         catalogue = sources.get('catalogue') or _source()
         claims = self._claim_snapshot(now)
@@ -238,7 +295,7 @@ class PortfolioManager:
             due = [row for row in rows if row['id'] not in self._balance_attempts
                    or now-self._balance_attempts[row['id']] >= self.BALANCE_TTL]
             due.sort(key=lambda row: (self._balance_attempts.get(row['id'], -1), row['id']))
-            if due and not ('balances' in self._active and not self._active['balances'].done()):
+            if offer and due and not ('balances' in self._active and not self._active['balances'].done()):
                 batch = due[:self.BALANCE_BATCH]
                 for row in batch:
                     self._balance_attempts[row['id']] = now
@@ -256,7 +313,7 @@ class PortfolioManager:
         sources.update(claims['sources'])
         sources['basis'] = _source('unavailable', reason='No verified remaining-position cost basis')
         interval = self.CLAIM_TTL if claim_source.get('complete') else self.PARTIAL_RETRY
-        if self._claim_attempt is None or now-self._claim_attempt >= interval:
+        if offer and (self._claim_attempt is None or now-self._claim_attempt >= interval):
             self._claim_attempt = now
             self._start('claims', self._read_claims(wallet, generation))
         return deepcopy(dict(tokens=rows, activity=market.get('activity') or [], as_of=now,
@@ -267,8 +324,8 @@ class PortfolioManager:
         if self._closed:
             return
         self._closed = True
-        for task in self._tasks:
-            task.cancel()
+        self.set_active_view(None)
+        await self.drain_reads()
         await self.wait_pending()
         if self._owns_balances:
             await self.balances.close()

@@ -18,6 +18,15 @@ Every rule here is a bug that shipped, was found, and was fixed repo-wide. The h
 `CLAUDE.md` "Conventions"; this file carries the reasoning and the tests that enforce them.
 Layout and sizing rules live in `.claude/skills/terminal-layout/SKILL.md`, not here.
 
+## Source display override — 2026-10-17
+
+The owner requests neutral first-load and reload presentation across dashboards.
+Keep retained values, and render never-observed values as dashes. Fixed application
+source notices such as stale/unavailable are no longer visible labels. This
+overrides older display wording below; source states, failures, coverage and
+observation timestamps remain truthful internally. Never filter third-party prose
+or hide actual domain states. The shared footer animates only during active reads.
+
 ## Escape every third-party string before it reaches markup or a `DataTable`
 
 Use `widgets/markup_safety.safe_markup`. Where the raise lands depends on the widget (probed on
@@ -118,9 +127,14 @@ Do not copy the helpers. Its docstring lists the older copies not yet on the mod
 
 ## Screens inherit `screens/dashboard_screen.DashboardScreen`
 
-Which is a `RefreshGuard`: skip-not-queue refresh, joined to the startup prefetch. Do not
-hand-roll `run_worker(..., exclusive=True)`. Workers are cancelled or invalidated on leave; no
-network await inside a message handler.
+Which is a `RefreshGuard`: skip-not-queue refresh, owned by the visible screen.
+Startup does not prefetch hidden dashboards. Do not hand-roll
+`run_worker(..., exclusive=True)`. Workers and manager reads are cancelled on
+leave and drained before replacement; no network await inside a message handler.
+Retained values paint immediately on entry, followed by a fresh read and a
+30-second poll. The shared `StatusBar` centers its animated loading indicator
+while reads run; printed refresh, dashboard-key, age/error and poll hints are
+omitted. Their keyboard actions and internal source clocks remain intact.
 
 `DashboardScreen` also owns the lifecycle and the dispatch, so a screen writes **no** `__init__`,
 `on_screen_resume`, `on_screen_suspend` or `_do_refresh` (Branch 5 of the refactor programme: 151

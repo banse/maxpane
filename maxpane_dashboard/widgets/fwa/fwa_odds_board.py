@@ -239,11 +239,11 @@ class FWAOddsBoard(Vertical):
             # only place left that is always visible -- the table below it is
             # a row of dashes and says nothing on its own.
             self._set_title_text(
-                "ODDS BOARD · [yellow]odds unavailable — position sweep failed[/]"
+                "ODDS BOARD"
             )
             table.add_row(
                 _DASH,
-                "unavailable",
+                _EMDASH,
                 _DASH,
                 _DASH,
                 _DASH,
@@ -363,10 +363,8 @@ class FWAOddsBoard(Vertical):
         # `[dim]` is deliberately absent: the enclosing Static is already
         # `color: $text-muted` and compounding them gives 3.71:1 under `fwa`
         # and 3.64 under bakery, below WCAG 1.4.3, for no visual gain (WP-19).
-        stale_part = "[yellow]STALE — last good sweep[/]" if stale else ""
-
         while True:
-            parts = ["ODDS BOARD"] + optional + ([stale_part] if stale_part else [])
+            parts = ["ODDS BOARD"] + optional
             text = " · ".join(p for p in parts if p)
             if not width or _visible_len(text) <= width or not optional:
                 return text

@@ -127,16 +127,20 @@ class TalismansManager:
         self._last_fetch_ts = now_ts
 
         # -- 1) Block number + collection flags in parallel --------------
-        block_task = asyncio.create_task(self.client.fetch_block_number())
-        flags_task = asyncio.create_task(self.client.fetch_collection_flags())
+        current_block, flags = await asyncio.gather(
+            self.client.fetch_block_number(), self.client.fetch_collection_flags(),
+            return_exceptions=True,
+        )
         try:
-            current_block = await block_task
+            if isinstance(current_block, BaseException):
+                raise current_block
         except Exception as exc:
             logger.debug("block number fetch failed: %s", exc)
             current_block = 0
         flags_ok = True
         try:
-            flags = await flags_task
+            if isinstance(flags, BaseException):
+                raise flags
         except Exception as exc:
             flags_ok = False
             self._error_count += 1

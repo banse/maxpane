@@ -65,8 +65,9 @@ async def test_throughput_popup_uses_snapshot_and_space_closes():
         await pilot.press('space')
         await pilot.pause()
         assert pilot.app.screen is screen
-        assert 'x more' in _screen_text(pilot.app)
-        assert 'x less' not in _screen_text(pilot.app)
+        footer = _screen_text(pilot.app).splitlines()[-1]
+        assert 'q quit · m menu · tab switch' in footer
+        assert 'x more' not in footer and 'x less' not in footer
 
 
 @pytest.mark.parametrize('value', [None, {}, {'states': None, 'cancel_reasons': None}])

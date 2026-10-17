@@ -73,12 +73,12 @@ async def test_l_is_idempotent_and_toggles_back() -> None:
         assert pilot.app.screen.query_one("#middle-row").display is True
 
 
-async def test_the_status_hint_names_the_new_view() -> None:
+async def test_the_launchpad_status_uses_shared_compact_navigation() -> None:
     async with _surf_app().run_test() as pilot:
         await pilot.pause()
-        strips = pilot.app.screen._compositor.render_strips()
-        text = "\n".join(seg.text for s in strips for seg in s)
-        assert "x more" in text
+        footer = pilot.app.screen._compositor.render_strips()[-1].text
+        assert "q quit · m menu · tab switch" in footer
+        assert "x more" not in footer
 
 
 async def test_l_also_hides_the_separator_and_bottom_row() -> None:

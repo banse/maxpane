@@ -103,7 +103,7 @@ PHASES = (PHASE_GRACE, PHASE_JUDGED, PHASE_SETTLED)
 #: Rendered when ``phase`` is ``None`` or unrecognised.  ``None`` is what a
 #: failed ``isSettled()`` read produces, and it is **not** grace: choosing
 #: grace silently would render a countdown for a game that may be over.
-PHASE_UNAVAILABLE = "phase unavailable"
+PHASE_UNAVAILABLE = "—"
 
 #: The complete-list instruction under both hero variants. The shorter forms
 #: retain the command and outcome on terminals that cannot hold the full copy.

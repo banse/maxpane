@@ -165,11 +165,14 @@ class TTTManager:
         # -- 1) Factory + FeeSplitter state and block number in parallel --
         # These have no inter-dependency; run them concurrently so we don't
         # serialize three independent RPCs through _INTER_CALL_DELAY.
-        factory_task = asyncio.create_task(self.client.fetch_factory_state())
-        block_task = asyncio.create_task(self.client.fetch_block_number())
+        factory, current_block = await asyncio.gather(
+            self.client.fetch_factory_state(), self.client.fetch_block_number(),
+            return_exceptions=True,
+        )
         factory_ok = True
         try:
-            factory = await factory_task
+            if isinstance(factory, BaseException):
+                raise factory
             self._last_factory = dict(factory)
         except Exception as exc:
             factory_ok = False
@@ -187,7 +190,8 @@ class TTTManager:
                 "acc_eth_per_share": 0,
             }
         try:
-            current_block = await block_task
+            if isinstance(current_block, BaseException):
+                raise current_block
         except Exception as exc:
             logger.debug("block number fetch failed: %s", exc)
             current_block = 0
@@ -205,16 +209,20 @@ class TTTManager:
         # DexScreener and CoinGecko are independent HTTP origins; run them
         # concurrently to cut total wall time. There is no floor fetch: its
         # source is gone (see the module docstring).
-        market_task = asyncio.create_task(self._refresh_market_data())
-        eth_usd_task = asyncio.create_task(self.price_client.get_eth_usd())
+        market, eth_usd = await asyncio.gather(
+            self._refresh_market_data(), self.price_client.get_eth_usd(),
+            return_exceptions=True,
+        )
 
         try:
-            await market_task
+            if isinstance(market, BaseException):
+                raise market
         except Exception as exc:
             logger.debug("market data fetch failed: %s", exc)
 
         try:
-            eth_usd = await eth_usd_task
+            if isinstance(eth_usd, BaseException):
+                raise eth_usd
         except Exception as exc:
             logger.debug("ETH price fetch failed: %s", exc)
             eth_usd = 0.0

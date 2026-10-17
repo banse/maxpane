@@ -343,8 +343,8 @@ async def test_failed_refresh_reports_999_and_the_managers_error_count():
 
         assert manager._error_count >= 3
         text = _status_left(screen)
-        assert "updated 999s ago" in text, text
-        assert f"{manager._error_count} errors" in text, text
+        assert "updated" not in text and "errors" not in text
+        assert screen.query_one(StatusBar)._last_update == (999, manager._error_count, 30)
 
 
 @pytest.mark.asyncio
@@ -364,8 +364,9 @@ async def test_failed_refresh_tolerates_a_manager_without_error_count():
         await pilot.pause()
 
         text = _status_left(screen)
-        assert "updated 999s ago" in text, text
+        assert "updated" not in text, text
         assert "errors" not in text, text
+        assert screen.query_one(StatusBar)._last_update == (999, 0, 30)
 
 
 # ---------------------------------------------------------------------------
@@ -403,8 +404,8 @@ async def test_the_status_bar_row_defaults_poll_interval_to_the_screens():
         await pilot.pause()
 
         text = _status_left(screen)
-        assert "77s poll" in text, text
-        assert "updated 4s ago" in text, text
+        assert "poll" not in text and "updated" not in text, text
+        assert screen.query_one(StatusBar)._last_update == (4, 0, 77)
 
 
 @pytest.mark.asyncio
@@ -416,7 +417,8 @@ async def test_the_status_bar_row_prefers_the_payloads_poll_interval():
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        assert "60s poll" in _status_left(screen)
+        assert "poll" not in _status_left(screen)
+        assert screen.query_one(StatusBar)._last_update == (0, 0, 60)
 
 
 @pytest.mark.asyncio

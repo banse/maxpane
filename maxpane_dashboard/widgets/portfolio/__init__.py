@@ -37,19 +37,21 @@ class PortfolioHero(TokensHero):
                        f"{fmt_int(data.get('agents_online'))} online · wallet-wide"))
         if data.get('agents_state') not in (None, 'ok'):
             prefix = '~' if data.get('agents_total') is not None else ''
+            state = data['agents_state']
+            status = '' if state in ('stale', 'unavailable') else f'{state} · '
             bodies[-1] = (prefix + bodies[-1][0],
-                          f"{data['agents_state']} · as of {hhmm(data.get('agents_as_of'))}")
+                          f"{status}as of {hhmm(data.get('agents_as_of'))}")
         pnl = data.get('pnl_usd')
         sign = '+' if pnl is not None and pnl > 0 else '-' if pnl is not None and pnl < 0 else ''
         bodies.append((sign + _usd(abs(pnl)) if pnl is not None else '--',
                        _change(data.get('pnl_percent')) + ' · unrealized' if pnl is not None
-                       else 'valuation / cost unavailable'))
+                       else '—'))
         for (widget_id, label), (main, sub) in zip(self.BOXES, bodies):
             color = _change_color(pnl) if widget_id == 'pf-pnl' else 'white'
             if data.get('wallet_required'):
                 main, sub, color = '--', 'Set a wallet', 'white'
             elif metrics is None:
-                main, sub, color = '--', 'unavailable', 'white'
+                main, sub, color = '--', '—', 'white'
             self.render_box('#' + widget_id, label,
                             lambda main=main, sub=sub, color=color: Text(main, style='bold ' + color)
                             + Text('\n' + sub, style='dim white'))

@@ -143,7 +143,7 @@ class TokensTable(TableLeaderboard):
             for index, (key, row) in enumerate(self._tokens.items()):
                 table.add_row(*self.build_row(index, row), key=key)
             if not self._tokens:
-                text = "Unavailable" if tokens is None else "No matching tokens"
+                text = "—" if tokens is None else "No matching tokens"
                 # The message has its own first row and never pretends to be a token.
                 table.add_row(Text("--", style="dim white"), Text(text, style="dim white"),
                               *[Text("") for _ in range(len(self.COLUMNS) - 2)], key="_empty")

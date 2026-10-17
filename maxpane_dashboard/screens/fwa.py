@@ -369,7 +369,7 @@ class FWAScreen(DashboardScreen):
 
     async def _do_refresh(self) -> None:
         try:
-            data = await self._data_manager.fetch_and_compute()
+            data = await self._fetch_data()
         except Exception as exc:
             logger.debug("FWA refresh failed: %s", exc)
             try:

@@ -9,10 +9,9 @@ of failure: when the log pool is down there is nothing to show. That case is a
 first-class rendered state, not an accident (PRD §9):
 
 * **Available** -- lines render live, no staleness header.
-* **Unavailable, with last-good content** -- an explicit
-  ``logs unavailable — activity paused`` line, the persisted lines below it, and
-  an ``as of HH:MM`` header so nothing stale is ever presented as live.
-* **Unavailable, with nothing persisted** -- the paused line plus the reason.
+* **Unavailable, with last-good content** -- a neutral dash, the persisted
+  lines below it, and an ``as of HH:MM`` header.
+* **Unavailable, with nothing persisted** -- a neutral dash and empty feed.
 
 The feed is therefore never blank, never a traceback, and never silently stale.
 
@@ -52,7 +51,7 @@ _DASH = "--"
 _MAX_ROWS = 25
 
 #: The explicit degraded line. Tested verbatim.
-UNAVAILABLE_LINE = "logs unavailable — activity paused"
+UNAVAILABLE_LINE = "—"
 
 #: Colour per settlement outcome. Always paired with the words below.
 _OUTCOME_COLORS = {
@@ -460,7 +459,6 @@ class FWAActivityFeed(Vertical):
             return
 
         available = bool(self._payload.get("available"))
-        reason = str(self._payload.get("reason") or "").strip()
         as_of_arg = self._payload.get("as_of")
 
         width = self._log_width(log)
@@ -492,18 +490,11 @@ class FWAActivityFeed(Vertical):
         if lines and as_of is not None:
             self._set_title(f"· as of {_hhmm(as_of)}", hint)
         else:
-            self._set_title("· unavailable")
+            self._set_title("")
 
-        # This is a RichLog, so markup resolves through the *ANSI* theme, not
-        # the CSS name table and not the Textual theme -- `[$error]` raises
-        # MarkupError here, and `[red]` lands on #f4005f, which measures
-        # 2.76-4.07 across the ten themes and so fails WCAG AA everywhere.
-        # ANSI yellow is #fd971f: 5.30-7.81 across the same ten, and it matches
-        # what FWAChaseBoard and FWAOddsBoard already use for "unavailable".
-        # The warning glyph and the word carry the state; colour is redundant.
-        log.write(f"[yellow]⚠ {UNAVAILABLE_LINE}[/]")
-        if reason:
-            log.write(f"[dim]  {reason}[/]")
+        # Internal read diagnostics stay in the payload; draw prose below is
+        # rendered intact. The shared footer owns active-read presentation.
+        log.write(f"[white]{UNAVAILABLE_LINE}[/]")
 
         if lines:
             log.write(f"[dim]  last good content, as of {_hhmm(as_of)}:[/]")

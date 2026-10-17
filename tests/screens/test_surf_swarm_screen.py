@@ -246,11 +246,12 @@ async def test_the_agent_card_row_keeps_seat_values_and_has_no_third_row():
             assert needle in text, needle
 
 
-async def test_the_key_hint_names_the_swarm_and_the_agent():
+async def test_swarm_and_agent_hints_are_retained_but_not_painted():
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         await pilot.pause()
-        text = _screen_text(pilot.app)
-        assert "s swm" in text and "a agt" in text
+        footer = _screen_text(pilot.app).splitlines()[-1]
+        assert "q quit · m menu · tab switch" in footer
+        assert "s swm" not in footer and "a agt" not in footer
     assert SurfScreen.KEY_HINTS == "[dim]x more · 4 pl4 · s swm · a agt · b brd[/]"
 
 
@@ -337,7 +338,9 @@ async def test_x_is_not_priority_so_a_focused_widgets_own_x_binding_wins():
         await pilot.pause()
         assert probe.pressed == 1, "the focused widget never saw its own x"
         assert pilot.app.screen is screen
-        assert "x more" in _screen_text(pilot.app)
+        footer = _screen_text(pilot.app).splitlines()[-1]
+        assert "q quit · m menu · tab switch" in footer
+        assert "x more" not in footer
 
 
 async def test_retired_roster_selection_is_gone():

@@ -124,6 +124,7 @@ from maxpane_dashboard.data.npm_registry_client import NpmRegistryClient, RUNTIM
 from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
 from maxpane_dashboard.data.surf_work import coerce_snapshot as coerce_work_snapshot
 from maxpane_dashboard.data.surf_work_reader import WorkReader
+from maxpane_dashboard.data.surf_card_reader import SurfCardReader
 from maxpane_dashboard.data.surf_launch_contribution import LaunchContributionReader
 from maxpane_dashboard.data.surf_cache import SLOT_SURF_WORK, SLOT_SURF_ORACLES
 from maxpane_dashboard.data.surf_oracles import coerce_snapshot as coerce_oracles_snapshot
@@ -1112,6 +1113,10 @@ class SurfManager:
         self._last_full_payload = None
         self._last_full_read_ts = None
         self._hub_active = False
+        self._active_view = 'legacy'
+        self._retired_reads = set()
+        self._force_view = False
+        self._card_reader = SurfCardReader(self)
         self._hub_pool4_price_read = None
         self._quote_failed = False
         self._market_price_identity = None
@@ -1300,6 +1305,8 @@ class SurfManager:
         """
         if self._closing:
             return
+        self.set_active_view(None)
+        await self.drain_reads()
         self._closing = True
         nft_manager = getattr(self, '_nft_manager', None)
         if nft_manager is not None:
@@ -2343,7 +2350,7 @@ class SurfManager:
         cycle offers again and the guard here is what keeps a slow read from
         stacking up behind a fast poll.
         """
-        if TIER_LAUNCHPAD not in tiers:
+        if TIER_LAUNCHPAD not in tiers or not self._view_allows('dashboard', 'launchpad'):
             return None
         running = self._launchpad_task
         if running is not None and not running.done():
@@ -3235,7 +3242,7 @@ class SurfManager:
         so every cycle offers again and this guard is what keeps a slow sweep
         from stacking behind a 30 s poll.
         """
-        if TIER_POOL4 not in tiers:
+        if TIER_POOL4 not in tiers or not self._view_allows('pool4', 'pool4_user'):
             return None
         running = self._pool4_task
         if running is not None and not running.done():
@@ -5302,7 +5309,7 @@ class SurfManager:
         failed), so every cycle offers again and this guard is what keeps a
         multi-minute walk from stacking behind a 30 s poll.
         """
-        if TIER_POOL4_STAKERS not in tiers:
+        if TIER_POOL4_STAKERS not in tiers or not self._view_allows('pool4', 'pool4_user'):
             return None
         running = self._pool4_stakers_task
         if running is not None and not running.done():
@@ -5680,8 +5687,6 @@ class SurfManager:
         if catalogue is not None:
             self._swarm_tokens_catalogue = copy.deepcopy(catalogue)
         now = self._clock()
-        if not self._closing and self.cache.is_due(TIER_SWARM_LAUNCHES, now):
-            self._spawn_swarm_launches({TIER_SWARM_LAUNCHES}, now)
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         return {
             'rows': self._swarm_launch_keys()['swarm_launch_rows'],
@@ -5697,7 +5702,7 @@ class SurfManager:
                 [point['row']['status'], point['row'].get('updatedAt')]}
 
     def _spawn_swarm_launches(self, tiers, now):
-        if TIER_SWARM_LAUNCHES not in tiers:
+        if TIER_SWARM_LAUNCHES not in tiers or not self._view_allows('dashboard', 'swarm'):
             return None
         if self._swarm_launches_task is not None and not self._swarm_launches_task.done():
             return self._swarm_launches_task
@@ -6110,7 +6115,7 @@ class SurfManager:
         time, so a due tier that finds the previous read still running is
         offered again next cycle rather than stacking a second one behind it.
         """
-        if TIER_SWARM not in tiers:
+        if TIER_SWARM not in tiers or not self._view_allows('swarm'):
             return None
         running = self._swarm_task
         if running is not None and not running.done():
@@ -6328,7 +6333,7 @@ class SurfManager:
         flight, the next due live read starts concurrently anyway -- so the
         one-sided gate bought no real serialisation, only starvation.
         """
-        if TIER_SWARM_SCORES not in tiers:
+        if TIER_SWARM_SCORES not in tiers or not self._view_allows('swarm'):
             return None
         running = self._swarm_scores_task
         if running is not None and not running.done():
@@ -6419,7 +6424,7 @@ class SurfManager:
 
     def _spawn_swarm_board(self, tiers: set[str], now: float) -> Any:
         """Refresh regardless of the visible body; never block first paint."""
-        if self._closing or TIER_SWARM_BOARD not in tiers:
+        if self._closing or TIER_SWARM_BOARD not in tiers or not self._view_allows('surfboard', 'board', 'agent'):
             return None
         running = self._swarm_board_task
         if running is not None and not running.done():
@@ -6459,13 +6464,14 @@ class SurfManager:
             return {"ok": False}
         records_task = self._offer_hub_source("records", now)
         succeeded = 0
-        for method, slot, normalize, coerce in (
+        readers = (
             ("fetch_contributors", SLOT_SWARM_CONTRIBUTORS, sw.normalize_contributors, sw.coerce_contributors_slot),
             ("fetch_workers", SLOT_SWARM_WORKERS, sw.normalize_workers, sw.coerce_workers_slot),
-        ):
-            raw = await self._guard(
-                lambda method=method: getattr(self.swarm_client, method)(), f"swarm {method}",
-            )
+        )
+        values = await asyncio.gather(*(self._guard(
+            lambda method=method: getattr(self.swarm_client, method)(), f"swarm {method}")
+            for method, *_ in readers))
+        for (method, slot, normalize, coerce), raw in zip(readers, values):
             self._swarm_board_pending.discard(method.removeprefix('fetch_'))
             payload = normalize(raw)
             observed_at = float(self._clock())
@@ -6655,7 +6661,7 @@ class SurfManager:
         restored slot names another seat), and waiting out the TTL would hold
         ``Loading…`` for two minutes.
         """
-        if token is None:
+        if token is None or not self._view_allows('agent'):
             return None
         running = self._swarm_seat_task
         if running is not None and not running.done():
@@ -7393,6 +7399,9 @@ class SurfManager:
         """Observe relevant pending work without offering a read or changing state."""
         if self._closing:
             return False
+        if view == 'surfboard' and any(not task.done() and not task.cancelling()
+                                      for task in self._card_reader.tasks.values()):
+            return True
         nft = getattr(self, '_nft_manager', None)
         if view in (None, 'surfboard', 'surf-nft') and nft is not None and nft.is_loading(view):
             return True
@@ -7426,10 +7435,60 @@ class SurfManager:
         """Passive cache projection for a completed background read repaint."""
         return self.get_hub_snapshot()
 
+    def set_active_view(self, view: str | None) -> None:
+        """Cancel the previous scope, retaining observations and shared clients."""
+        if view == self._active_view:
+            return
+        self._active_view = view
+        names = ('_full_task', '_launchpad_task', '_pool4_task', '_pool4_stakers_task',
+                 '_swarm_task', '_swarm_launches_task', '_swarm_scores_task',
+                 '_swarm_board_task', '_swarm_seat_task', '_runtime_task', '_hub_lookup_task')
+        tasks = [getattr(self, name, None) for name in names]
+        tasks += list(self._hub_source_tasks.values()) + list(self._card_reader.tasks.values())
+        tasks += [self._work_reader.task, self._oracles_reader.task,
+                  self._launch_contribution_reader.task]
+        for task in tasks:
+            if task is not None and not task.done():
+                task.cancel()
+                self._retired_reads.add(task)
+        for name in names:
+            setattr(self, name, None)
+        self._hub_source_tasks.clear()
+        self._card_reader.tasks.clear()
+        self._full_started = None
+        self._force_view = view is not None
+        self._hub_active = view == 'surfboard'
+        self._work_active = view == 'work'
+        self._oracles_active = view == 'oracles'
+        self._swarm_active = view == 'swarm'
+        self.set_agent_active(view == 'agent')
+        self._oracles_reader.set_details_active(view == 'oracles')
+        for attr in ('_nft_manager', '_swarm_tokens_manager'):
+            manager = getattr(self, attr, None)
+            setter = getattr(manager, 'set_active_view', None)
+            if setter is not None:
+                setter('surfboard' if view == 'surfboard' else None)
+        from maxpane_dashboard.data.surf_cache import TIERS
+        for tier in TIERS if view is not None else ():
+            self.cache.mark_due(tier)
+
+    def _view_allows(self, *views):
+        return self._active_view == 'legacy' or self._active_view in views
+
+    async def drain_reads(self) -> None:
+        """A resumed scope cannot overlap a prior scope's cancellation cleanup."""
+        if self._retired_reads:
+            await asyncio.gather(*self._retired_reads, return_exceptions=True)
+            self._retired_reads.clear()
+        for attr in ('_nft_manager', '_swarm_tokens_manager'):
+            drain = getattr(getattr(self, attr, None), 'drain_reads', None)
+            if drain is not None:
+                await drain()
+
     def set_hub_active(self, active: bool) -> None:
         """Visibility changes eligibility; manager tasks retain their owner."""
         self._hub_active = bool(active)
-        if not self._hub_active and not self._work_active:
+        if not self._work_active:
             self._work_reader.cancel()
         if not self._hub_active and not self._oracles_active:
             self._oracles_reader.cancel()
@@ -7453,7 +7512,7 @@ class SurfManager:
     def set_work_active(self, active: bool) -> None:
         """Visibility only; network work is offered by the scheduled refresh."""
         self._work_active = bool(active)
-        if not self._work_active and not self._hub_active:
+        if not self._work_active:
             self._work_reader.cancel()
 
     def set_swarm_active(self, active: bool) -> None:
@@ -7521,7 +7580,7 @@ class SurfManager:
         entry = self.cache.get_last_good(hub.SOURCE_SLOTS[name])
         prior = hub.coerce_source(getattr(entry, "payload", None), name, now=now)
         interval = {"overview": 30 if self._hub_active else 60, "records": 120, "hourly": 60, "supply": 600}[name]
-        if prior is not None:
+        if prior is not None and not self._force_view:
             backoff = 30 if name == "overview" else interval
             elapsed = now - prior["attempt_ts"] if prior["attempt_ts"] is not None else float("inf")
             if elapsed < (interval if prior["state"] == "ok" else backoff):
@@ -7557,12 +7616,13 @@ class SurfManager:
             self.cache.store_last_good(hub.SOURCE_SLOTS[name], envelope, ts=now)
 
     def _offer_hub_sources(self, now: float) -> None:
-        for name in ("overview", "records"):
+        names = ('overview',) if self._view_allows('surfboard', 'swarm', 'dashboard') else ()
+        if self._view_allows('surfboard', 'board', 'agent'):
+            names += ('records',)
+        for name in names:
             self._offer_hub_source(name, now)
         if self._hub_active or self._swarm_active:
             self._offer_hub_source("hourly", now)
-        if self._hub_active:
-            self._offer_hub_source("supply", now)
 
     def _hub_card_sources(self, data: dict) -> dict:
         """Read clocks and latest failure state for each legacy card family."""
@@ -7735,8 +7795,16 @@ class SurfManager:
             for seat in agent_seats:
                 if (seat['live'] or {}).get('live_state') == 'offline':
                     seat['live'] = None  # an incomplete roster cannot prove absent capacity
-        data["surf_work"] = self._work_reader.project()
+        data["surf_work"] = (self._card_reader.work_snapshot(sources['overview'])
+                             if self._hub_active else self._work_reader.project())
         data["surf_oracles"] = self._oracles_reader.project()
+        if self._hub_active:
+            data.update(self._card_reader.pool_snapshot())
+            if self._card_reader.pool_ts is not None or self._card_reader.pool_failed:
+                pool_ts = (self._card_reader.pool_ts if self._card_reader.pool_ts is not None
+                           else family_sources['pool4']['read_ts'])
+                family_sources['pool4'] = news_hero.source(pool_ts,
+                    now=now, ttl=TIER_TTL_SECONDS[TIER_POOL4], failed=self._card_reader.pool_failed)
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
                                                  agent_seats=agent_seats, workers=workers,
                                                  worker_source=board_sources["workers"],
@@ -7772,12 +7840,12 @@ class SurfManager:
         sources = self._hub_source_tasks
         tokens = getattr(self, '_swarm_tokens_manager', None)
         reads = {
-            'announce': (self._full_task,),
+            'announce': (self._card_reader.tasks.get('feed'), self._full_task),
             'swarm': (sources.get('overview'), sources.get('hourly')),
-            'pool4': (self._full_task, self._pool4_task),
+            'pool4': (self._card_reader.tasks.get('pool4'), self._full_task, self._pool4_task),
             'board': (self._swarm_board_task,),
             'agent': (self._swarm_board_task, sources.get('records')),
-            'work': (self._work_reader.task,),
+            'work': (self._card_reader.tasks.get('work'), sources.get('overview')) if self._hub_active else (self._work_reader.task,),
             'oracles': (() if self._oracles_reader._reading_detail else (self._oracles_reader.task,)),
             'swarm-tokens': tuple(tokens._tasks.get(name) for name in ('catalogue', 'markets', 'volume')) if tokens else (),
         }
@@ -7881,16 +7949,26 @@ class SurfManager:
 
     async def fetch_hub_snapshot(self) -> dict[str, Any]:
         """Offer eligible work and return cached data without waiting on I/O."""
-        if not self._closing:
+        await self.drain_reads()
+        if not self._closing and self._view_allows('surfboard'):
             now = float(self._clock())
-            self._offer_full(now)
-            self.swarm_tokens_manager().offer_hub_volume()
-            self._offer_hub_sources(now)
-            self._spawn_swarm_board(set(self.cache.tiers_due(now)), now)
+            tokens = self.swarm_tokens_manager()
             if self._hub_active:
-                self.nft_manager().offer_hub()
-                self._work_reader.offer()
-                self._oracles_reader.offer(include_detail=self._oracles_active)
+                setter = getattr(tokens, 'set_active_view', None)
+                if setter is not None:
+                    setter('surfboard')
+            tokens.offer_hub_volume()
+            self._offer_hub_sources(now)
+            self._spawn_swarm_board({TIER_SWARM_BOARD}, now)
+            if self._hub_active:
+                nft = self.nft_manager()
+                setter = getattr(nft, 'set_active_view', None)
+                if setter is not None:
+                    setter('surfboard')
+                nft.offer_hub()
+                self._card_reader.offer(force=self._force_view)
+                self._oracles_reader.offer(include_detail=False)
+            self._force_view = False
         return self._project_hub()
 
     def _offer_full(self, now: float) -> Any:
@@ -7919,7 +7997,14 @@ class SurfManager:
 
     async def fetch_and_compute(self) -> dict[str, Any]:
         """Share full collection across screens; cancelling a waiter preserves it."""
-        if not self._closing and (self._oracles_active or self._work_active):
+        await self.drain_reads()
+        if self._active_view is None:
+            return self._project_hub()
+        if self._active_view not in ('legacy', 'dashboard', 'work', 'oracles', 'surfboard'):
+            return await self._fetch_visible_detail()
+        if self._active_view == 'surfboard':
+            return await self.fetch_hub_snapshot()
+        if self._active_view == 'legacy' and not self._closing and (self._oracles_active or self._work_active):
             now = float(self._clock())
             self._spawn_swarm_launches(set(self.cache.tiers_due(now)), now)
         if self._oracles_active:
@@ -7942,6 +8027,56 @@ class SurfManager:
             self._spawn_runtime_latest(self.cache.get_last_good(SLOT_SWARM_SEAT),
                                        selected['token_id'] if selected else None, self._clock())
         return data
+
+    async def _fetch_visible_detail(self):
+        """Offer only the native body's collectors, returning retained data now."""
+        if self._closing:
+            return self._project_hub()
+        now = float(self._clock())
+        if self._full_task is None or self._full_task.done():
+            if self._force_view or self._full_started is None or now - self._full_started >= self.poll_interval:
+                self._full_started = now
+                self._full_task = asyncio.create_task(self._collect_visible_detail(self._active_view, now))
+        self._force_view = False
+        return self._project_hub()
+
+    async def _collect_visible_detail(self, view, now):
+        tiers = set(self.cache.tiers_due(now))
+        try:
+            if view == 'swarm':
+                self._offer_hub_source('overview', now)
+                self._offer_hub_source('hourly', now)
+                self._spawn_swarm(tiers, now)
+                self._spawn_swarm_scores(tiers, now)
+                self._spawn_swarm_launches(tiers, now)
+            elif view in ('board', 'agent'):
+                self._spawn_swarm_board(tiers, now)
+                if view == 'board':
+                    tokens = self.swarm_tokens_manager()
+                    tokens.set_active_view('board')
+                    await tokens.drain_reads()
+                    self.offer_launch_contribution()
+                else:
+                    token = sw.parse_seat_token(self._seat_saved)
+                    await self._offer_swarm_seat(tiers, token,
+                        self.cache.get_last_good(SLOT_SWARM_SEAT), now)
+                    self._spawn_runtime_latest(self.cache.get_last_good(SLOT_SWARM_SEAT), token, now)
+                    await self._card_reader._market()
+            elif view == 'launchpad':
+                self._spawn_launchpad(tiers, now)
+                await self._card_reader._market()
+            elif view in ('pool4', 'pool4_user'):
+                await asyncio.gather(self._pool_channel({TIER_MEDIUM}, now, None),
+                                     self._card_reader._market())
+                channel = getattr(self.cache.get_last_good(SLOT_CHANNEL), 'payload', None) or {}
+                self._spawn_pool4(tiers, now, channel.get('items'))
+                self._spawn_pool4_stakers(tiers, now)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug('SURF %s retained cached detail: %s', view, exc)
+        finally:
+            self.save_cache()
 
     def _hub_cached_identities(self) -> dict[int, dict]:
         entry = self.cache.get_last_good(SLOT_SWARM_SEAT)

@@ -111,6 +111,6 @@ class SignalsPanel(SignalsPanelBase):
         return self.write_guarded(
             selector, build,
             fmt_signal_trailing(
-                label, "unavailable", indicator="", color="yellow", value_color="yellow"
+                label, "—", indicator="", color="dim", value_color="dim"
             ),
         )

@@ -493,9 +493,9 @@ def test_rich_rejects_theme_variables_but_accepts_what_the_feed_sends():
     with pytest.raises(MarkupError):
         Text.from_markup("[$warning]x[/]")
 
-    rendered = Text.from_markup(f"[yellow]⚠ {UNAVAILABLE_LINE}[/]")
+    rendered = Text.from_markup(f"[white]{UNAVAILABLE_LINE}[/]")
     assert UNAVAILABLE_LINE in rendered.plain
-    assert "⚠" in rendered.plain
+    assert "⚠" not in rendered.plain
 
 
 @pytest.mark.parametrize("theme_name", sorted(THEMES))
@@ -551,14 +551,14 @@ async def test_degraded_paths_render_without_raising_under_every_theme(theme_nam
                 if segment.style
                 and segment.style.color
                 and segment.style.bgcolor
-                and "⚠" in segment.text
+                and needle in segment.text
             ]
             plain = "\n".join(
                 "".join(s.text for s in strip)
                 for strip in app.screen._compositor.render_strips()
             )
             assert needle[:18] in plain, f"{widget_cls.__name__}/{theme_name}"
-            assert painted, f"{widget_cls.__name__}/{theme_name}: no ⚠ painted"
+            assert painted, f"{widget_cls.__name__}/{theme_name}: no neutral placeholder painted"
             for text, fg, bg in painted:
                 ratio = contrast(fg, bg)
                 assert ratio >= AA, (

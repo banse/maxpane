@@ -1045,19 +1045,16 @@ async def test_a_raising_manager_touches_only_the_status_bar():
         after = _screen_text(app)
 
     assert "THE LIST · hour 4 · GRACE" in after, "the previous frame was lost"
-    # This screen trades `updated Ns ago` for its own key hints (`set_key_hints`),
-    # so the cycle age lives on the *poll* segment and the data's own freshness
-    # is the title bar's `as of HH:MM` -- which is the one that freezes under an
-    # outage while the cycle age keeps counting.
-    assert "updated" not in after
-    assert "y[/] you" in after or "y you" in after
+    footer = after.splitlines()[-1]
+    assert "q quit · m menu · tab switch" in footer
+    assert "updated" not in footer
+    assert "poll" not in footer
+    assert "y you" not in footer
     assert "as of" in after
 
 
-async def test_the_managers_error_count_reaches_the_status_bar():
-    """``error_count`` is not a ``CURATOR_KEYS`` key -- the contract has no
-    health counters -- so it is read off the manager itself, the way every
-    other screen reads it on the failure path."""
+async def test_the_managers_error_count_stays_out_of_the_status_bar():
+    """Source diagnostics do not replace navigation with footer warnings."""
     screen = _screen(_grace_payload())
     screen._data_manager._error_count = 4
     app = _ThemedHarness(screen)
@@ -1065,7 +1062,10 @@ async def test_the_managers_error_count_reaches_the_status_bar():
         await pilot.pause()
         await screen._do_refresh()
         await pilot.pause()
-        assert "4 errors" in _screen_text(app)
+        footer = _screen_text(app).splitlines()[-1]
+        assert "q quit · m menu · tab switch" in footer
+        assert "errors" not in footer
+        assert screen._data_manager._error_count == 4
 
 
 async def test_a_widget_that_raises_does_not_cost_the_other_six():
@@ -2368,7 +2368,7 @@ async def test_the_headline_value_in_the_rail_is_bold_and_coloured():
         assert tail is None or not tail.bold
 
 
-async def test_the_curator_status_line_names_its_reachable_view_keys():
+async def test_the_curator_status_line_uses_shared_compact_navigation():
     screen = _screen(_grace_payload())
     app = _ThemedHarness(screen)
     async with app.run_test(size=(CURATOR_FULL_LAYOUT_COLUMNS, _TALL)) as pilot:
@@ -2377,12 +2377,10 @@ async def test_the_curator_status_line_names_its_reachable_view_keys():
         await pilot.pause()
         text = _screen_text(app)
 
-    assert "c view" in text and "h history" in text
-    assert "y you" in text and "l lists" in text
-    assert "f linked" not in text
-    assert "updated" not in text        # traded for the hints
-    assert "quit" in text and "refresh" in text and "menu" in text
-    assert "poll" in text
+    footer = text.splitlines()[-1]
+    assert "q quit · m menu · tab switch" in footer
+    for removed in ("c view", "h history", "y you", "l lists", "f linked", "updated", "refresh", "poll"):
+        assert removed not in footer
 
 
 # ---------------------------------------------------------------------------
@@ -2930,8 +2928,10 @@ async def test_the_status_line_hides_linked_but_the_action_remains_reachable():
         screen.action_toggle_analysis()
         await pilot.pause()
     assert screen._mode == "analysis"
-    assert "f linked" not in text and "l lists" in text
-    assert "y you" in text
+    footer = text.splitlines()[-1]
+    assert "q quit · m menu · tab switch" in footer
+    assert "f linked" not in footer and "l lists" not in footer
+    assert "y you" not in footer
 
 
 async def test_an_unanalyzed_payload_renders_three_unavailable_panels():
@@ -4624,7 +4624,7 @@ async def test_footer_reports_ens_hydration_until_the_complete_list_is_ready(
                 app, screen.query_one(StatusBar), screen
             )
             assert (
-                footer.index("30s poll")
+                footer.index("tab switch")
                 < footer.index("fetching ENS …")
                 < footer.index("maxpane")
             )
@@ -4639,7 +4639,8 @@ async def test_footer_reports_ens_hydration_until_the_complete_list_is_ready(
                 break
 
         assert "fetching ENS …" not in footer
-        assert "30s poll" in footer and "c view" in footer
+        assert "q quit · m menu · tab switch" in footer
+        assert "poll" not in footer and "c view" not in footer
 
 
 async def test_raw_ens_hydration_repaints_all_lists_and_runs_once(tmp_path):
@@ -4731,7 +4732,7 @@ async def test_an_older_background_task_cannot_clear_a_newer_status():
         await pilot.pause()
         footer = _region_text(app, screen.query_one(StatusBar), screen)
         assert "loading raw list …" not in footer
-        assert "30s poll" in footer
+        assert "q quit · m menu · tab switch" in footer
 
 
 async def test_stale_complete_list_ens_result_cannot_replace_newer_rows(tmp_path):
@@ -4975,7 +4976,7 @@ async def test_settled_list_title_and_cleaned_freshness_follow_the_toggle():
     assert "THE CLEANED LIST" in cleaned and "as of 13:58" in cleaned
 
 
-async def test_the_fourth_hint_preserves_the_worst_case_error_count():
+async def test_dashboard_hints_and_error_count_are_omitted_from_the_footer():
     screen = _screen(_settled_payload())
     screen._data_manager._error_count = 4
     app = _ThemedHarness(screen)
@@ -4984,8 +4985,10 @@ async def test_the_fourth_hint_preserves_the_worst_case_error_count():
         await screen._do_refresh()
         await pilot.pause()
         text = _screen_text(app)
+    footer = text.splitlines()[-1]
+    assert "q quit · m menu · tab switch" in footer
     for hint in ("c view", "h history", "y you", "l lists", "4 errors"):
-        assert hint in text, hint
+        assert hint not in footer, hint
     assert "f linked" not in text
     assert "[dim]e[/]" not in CuratorScreen.KEY_HINTS
 
@@ -5430,7 +5433,7 @@ async def test_full_list_export_reports_export_then_reload_and_clears_status(
     ]
     assert "exporting raw JSON list …" not in footer
     assert "loading raw list …" not in footer
-    assert "30s poll" in footer
+    assert "q quit · m menu · tab switch" in footer
 
 
 @pytest.mark.parametrize("cleaned", (False, True))

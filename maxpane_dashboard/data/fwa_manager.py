@@ -527,6 +527,7 @@ class FWAManager:
         self._floor_task: asyncio.Task | None = None
         # Detached background label sweep: collection name() and verified ENS.
         self._name_task: asyncio.Task | None = None
+        self._active_view, self._view_epoch, self._retired = 'fwa', 0, set()
         #: Live ``surchargeBps`` from the last ConfigSet for key 13, or None
         #: until the log pool has produced one.  ``surchargeBps`` has no getter,
         #: so this event is the only live source; None means "not read", and
@@ -917,14 +918,8 @@ class FWAManager:
 
     async def close(self) -> None:
         """Persist everything and close all three HTTP clients."""
-        task = self._floor_task
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
-        self._floor_task = None
+        self.set_active_view(None)
+        await self.drain_reads()
 
         self.save_cache()
         self._save_log_state()
@@ -943,6 +938,31 @@ class FWAManager:
     # Public API
     # ------------------------------------------------------------------
 
+    def set_active_view(self, view):
+        """Retire detached sweeps while retaining completed cache entries."""
+        if view == getattr(self, '_active_view', 'fwa'):
+            return
+        self._active_view = view
+        self._view_epoch = getattr(self, '_view_epoch', 0) + 1
+        self._retired = getattr(self, '_retired', set())
+        for name in ('_floor_task', '_name_task'):
+            task = getattr(self, name, None)
+            if task is not None and not task.done():
+                task.cancel()
+                self._retired.add(task)
+            setattr(self, name, None)
+
+    async def drain_reads(self):
+        tasks = tuple(getattr(self, '_retired', ()))
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self._retired.difference_update(tasks)
+
+    def is_loading(self, view=None):
+        return getattr(self, '_active_view', 'fwa') is not None and any(
+            task is not None and not task.done() and not task.cancelling()
+            for task in (self._floor_task, self._name_task))
+
     async def fetch_and_compute(self) -> dict[str, Any]:
         """Run one refresh cycle and return the flat dashboard dict.
 
@@ -951,6 +971,9 @@ class FWAManager:
         flag down and ``degraded_sources`` naming what died, because a widget can
         render an explicit unavailable state but cannot render a traceback.
         """
+        await self.drain_reads()
+        if getattr(self, '_active_view', 'fwa') is None:
+            raise asyncio.CancelledError('inactive FWA dashboard')
         try:
             return await self._cycle()
         except Exception as exc:  # noqa: BLE001 — the outermost guard
@@ -1518,6 +1541,8 @@ class FWAManager:
 
     def _start_floor_sweep(self) -> None:
         """Kick off the background CoinGecko sweep if one is not already running."""
+        if getattr(self, '_active_view', 'fwa') is None:
+            return
         if self._floor_task is not None and not self._floor_task.done():
             return
         addresses = self._collection_addresses
@@ -1530,12 +1555,15 @@ class FWAManager:
 
     async def _sweep_floors(self, addresses: tuple[str, ...]) -> None:
         """Background floor sweep; persists each quote into the cache.  Never raises."""
+        epoch = getattr(self, '_view_epoch', 0)
         try:
             quotes, _available = await self.market.fetch_nft_floors(addresses)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("FWA floor sweep failed: %s", exc)
+            return
+        if epoch != getattr(self, '_view_epoch', 0):
             return
         for address, quote in (quotes or {}).items():
             _safe_call(
@@ -1586,6 +1614,8 @@ class FWAManager:
         it has, and improve on a later tick.  Blocking the payload on a name
         lookup would trade a correct number now for a prettier one later.
         """
+        if getattr(self, '_active_view', 'fwa') is None:
+            return
         if self._name_task is not None and not self._name_task.done():
             return
         unknown_collections = tuple(
@@ -1616,6 +1646,7 @@ class FWAManager:
         self, collections: tuple[str, ...], wallets: tuple[str, ...]
     ) -> None:
         """Background label resolution.  Never raises, never blocks a render."""
+        epoch = getattr(self, '_view_epoch', 0)
         if collections:
             try:
                 names = await self.client.fetch_collection_names(collections)
@@ -1624,12 +1655,14 @@ class FWAManager:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("FWA collection-name sweep failed: %s", exc)
             else:
+                if epoch != getattr(self, '_view_epoch', 0):
+                    return
                 if names:
                     _safe_call(self.cache.set_collection_names, names)
                     logger.info(
                         "resolved %d/%d collection names", len(names), len(collections)
                     )
-        if wallets:
+        if wallets and epoch == getattr(self, '_view_epoch', 0):
             try:
                 resolved = await self.client.fetch_ens_names(wallets)
             except asyncio.CancelledError:
@@ -1637,6 +1670,8 @@ class FWAManager:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("FWA ENS sweep failed: %s", exc)
             else:
+                if epoch != getattr(self, '_view_epoch', 0):
+                    return
                 stamp = float(self._clock())
                 if resolved:
                     _safe_call(self.cache.set_ens_names, resolved, ts=stamp)

@@ -1,38 +1,18 @@
-"""Bottom status bar with key bindings and connection info."""
+"""Shared compact footer with a centred indicator for active reads."""
 
 from __future__ import annotations
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.widgets import Static
 
 from maxpane_dashboard import __version__
-
-
-def _staleness_color(seconds: float) -> str:
-    """Return a theme colour variable based on data freshness.
-
-    Theme variables, not CSS colour names.  Textual resolves content markup
-    through the CSS name table, where ``green`` is ``#008000`` -- whose
-    contrast peaks at 4.09:1 against pure black, so it fails WCAG AA on
-    *every* background and no theme can rescue it.  This bar is shared by all
-    nine dashboards, and ``updated Ns ago`` measured 2.53-3.68 across all ten
-    themes: the worst text in the app.  ``$success``/``$warning``/``$error``
-    are required ``Theme`` fields, so they resolve per theme everywhere.
-
-    This is a ``Static``/Content surface, which does resolve ``$`` variables.
-    ``RichLog`` and ``DataTable`` cells parse *Rich* markup and would raise
-    ``MarkupError`` on the same string -- three dialects, not two.
-    """
-    if seconds < 30:
-        return "$success"
-    elif seconds < 60:
-        return "$warning"
-    return "$error"
+from maxpane_dashboard.widgets.markup_safety import flatten
 
 
 class StatusBar(Horizontal):
-    """Footer status bar showing key bindings and connection state."""
+    """Keep loading centred independently of the two footer labels."""
 
     DEFAULT_CSS = """
     StatusBar {
@@ -40,18 +20,29 @@ class StatusBar(Horizontal):
         width: 100%;
         height: 1;
         background: $surface;
+        color: $text-muted;
         padding: 0 1;
     }
+    StatusBar > Static {
+        height: 1;
+        min-width: 0;
+        text-wrap: nowrap;
+        text-overflow: ellipsis;
+    }
     StatusBar > .status-left {
-        width: auto;
+        width: 1fr;
         content-align: left middle;
     }
     StatusBar > .status-message {
-        width: 1fr;
+        width: auto;
+        max-width: 100%;
         content-align: center middle;
     }
+    StatusBar > .status-message.has-message {
+        color: $warning;
+    }
     StatusBar > .status-right {
-        width: auto;
+        width: 1fr;
         content-align: right middle;
     }
     """
@@ -60,135 +51,101 @@ class StatusBar(Horizontal):
         super().__init__(**kwargs)
         self._theme_name = "minimal"
         self._game_name = ""
-        self._active_view: str = ""
-        #: Extra per-screen key hints, e.g. ``"c panels · y wallet"``.  Opt-in:
-        #: empty means the nine other dashboards render exactly what they
-        #: always have.  A screen that sets it also gives up the ``updated Ns
-        #: ago`` segment, because the line has room for one or the other -- and
-        #: the screens that want hints (curator) carry their data freshness in
-        #: their own title bar as ``as of HH:MM``.
-        self._key_hints: str = ""
-        #: Optional one-line operation state. Screens opt in explicitly; an
-        #: empty value leaves every existing footer byte-for-byte unchanged.
-        self._message: str = ""
+        self._active_view = ""
+        self._key_hints = ""
+        self._message = ""
         self._last_update: tuple[float, int, int] | None = None
+        self._busy = False
+        self._loading_frame = 0
+        self._loading_timer = None
 
     def compose(self) -> ComposeResult:
-        yield Static(
-            "[dim]q[/] quit [dim]\u00b7[/] [dim]r[/] refresh [dim]\u00b7[/] "
-            "[dim]m[/] menu [dim]\u00b7[/] [dim]tab[/] switch [dim]\u00b7[/] "
-            "connecting...",
-            classes="status-left",
-            id="status-left",
-        )
-        yield Static("", classes="status-message", id="status-message")
-        yield Static(
-            f"[dim]maxpane v{__version__} \u00b7 {self._theme_name}[/]",
-            classes="status-right",
-            id="status-right",
-        )
+        yield Static(self._ordinary_status(0, 0, 0), classes="status-left", id="status-left")
+        yield Static(Text(""), classes="status-message", id="status-message")
+        yield Static(Text(""), classes="status-right", id="status-right")
+
+    def on_mount(self) -> None:
+        self.call_after_refresh(self._prime_footer)
+
+    def _prime_footer(self) -> None:
+        self._update_right()
+        self.set_loading(self._busy)
+
+    def on_unmount(self) -> None:
+        self._busy = False
+        self._stop_loading_timer()
 
     def set_game_name(self, name: str) -> None:
-        """Update the displayed game name."""
         self._game_name = name
         self._update_right()
 
     def set_theme_name(self, name: str) -> None:
-        """Update the displayed theme name."""
         self._theme_name = name
         self._update_right()
 
     def set_active_view(self, view: str) -> None:
-        """Update an optional 'active view' marker shown in the right label.
-
-        Screens that toggle between sub-views (e.g. TTT's Fees/Claims) call this
-        so the bar surfaces the current state. Screens without a sub-view leave
-        this empty and nothing is rendered.
-        """
         self._active_view = view or ""
         self._update_right()
 
     def set_key_hints(self, hints: str) -> None:
-        """Name this screen's own keys in the left label (see ``_key_hints``)."""
+        """Retain compatibility; dashboard keys are no longer footer content."""
         self._key_hints = hints or ""
 
     @property
     def message(self) -> str:
-        """The centred operation message currently on display (``""`` when none)."""
-        return getattr(self, "_message", "")
+        return self._message
 
     def set_message(self, message: str) -> None:
-        """Show an operation between the normal left and right footer text."""
-        self._message = message or ""
-        text = f"[$warning]{self._message}[/]" if self._message else ""
-        self.query_one("#status-message", Static).update(text)
+        """Preserve operation feedback while active reads take visual priority."""
+        self._message = flatten(message)
+        self._update_message()
+
+    def set_loading(self, busy: bool) -> None:
+        """Animate only while a screen reports an active request."""
+        self._busy = bool(busy)
+        if not self._busy:
+            self._stop_loading_timer()
+        elif self.is_mounted and self._loading_timer is None:
+            self._loading_frame = 0
+            self._loading_timer = self.set_interval(0.2, self._tick_loading)
+        self._update_message()
+
+    def _stop_loading_timer(self) -> None:
+        if self._loading_timer is not None:
+            self._loading_timer.stop()
+            self._loading_timer = None
+
+    def _tick_loading(self) -> None:
+        if self._busy and self.is_mounted:
+            self._loading_frame = (self._loading_frame + 1) % 4
+            self._update_message()
+
+    def _update_message(self) -> None:
+        if not self.is_mounted:
+            return
+        text = f"{'◐◓◑◒'[self._loading_frame]} loading" if self._busy else self._message
+        widget = self.query_one("#status-message", Static)
+        widget.set_class(bool(self._message) and not self._busy, "has-message")
+        widget.update(Text(text))
 
     def _update_left(self) -> None:
-        """Render the latest ordinary status without touching the message."""
-        if self._last_update is None:
-            text = (
-                "[dim]q[/] quit [dim]\u00b7[/] [dim]r[/] refresh "
-                "[dim]\u00b7[/] [dim]m[/] menu [dim]\u00b7[/] "
-                "[dim]tab[/] switch [dim]\u00b7[/] connecting..."
-            )
-        else:
-            text = self._ordinary_status(*self._last_update)
-        self.query_one("#status-left", Static).update(text)
+        self.query_one("#status-left", Static).update(self._ordinary_status(0, 0, 0))
 
-    def _ordinary_status(
-        self,
-        last_updated_seconds_ago: float,
-        error_count: int,
-        poll_interval: int,
-    ) -> str:
-        """Compose the normal left footer without changing widget state."""
-        color = _staleness_color(last_updated_seconds_ago)
-        seconds_int = int(last_updated_seconds_ago)
-
-        error_str = ""
-        if error_count > 0:
-            error_str = f" [dim]\u00b7[/] [red]{error_count} errors[/]"
-
-        keys = (
-            f"[dim]q[/] quit [dim]\u00b7[/] [dim]r[/] refresh [dim]\u00b7[/] "
-            f"[dim]m[/] menu"
-        )
-        if self._key_hints:
-            keys += f" [dim]\u00b7[/] {self._key_hints}"
-            freshness = f"{poll_interval}s poll"
-        else:
-            keys += " [dim]\u00b7[/] [dim]tab[/] switch"
-            freshness = (
-                f"{poll_interval}s poll [dim]\u00b7[/] "
-                f"[{color}]updated {seconds_int}s ago[/]"
-            )
-
-        return f"{keys} [dim]\u00b7[/] {freshness}{error_str}"
+    def _ordinary_status(self, last_updated_seconds_ago, error_count, poll_interval) -> Text:
+        """Age and source errors belong to data diagnostics, not the footer."""
+        return Text("q quit · m menu · tab switch")
 
     def _update_right(self) -> None:
-        """Refresh the right-side label."""
-        try:
-            game_part = f" \u00b7 {self._game_name}" if self._game_name else ""
-            view_part = (
-                f" \u00b7 view: {self._active_view}" if self._active_view else ""
-            )
-            self.query_one("#status-right", Static).update(
-                f"[dim]maxpane v{__version__} \u00b7 "
-                f"{self._theme_name}{game_part}{view_part}[/]"
-            )
-        except Exception:
-            pass
+        if not self.is_mounted:
+            return
+        parts = [f"maxpane v{__version__}", self._theme_name]
+        if self._game_name:
+            parts.append(self._game_name)
+        if self._active_view:
+            parts.append(f"view: {self._active_view}")
+        self.query_one("#status-right", Static).update(Text(flatten(" · ".join(parts))))
 
-    def update_data(
-        self,
-        last_updated_seconds_ago: float,
-        error_count: int,
-        poll_interval: int,
-    ) -> None:
-        """Update the status bar with freshness and error info."""
-        self._last_update = (
-            last_updated_seconds_ago,
-            error_count,
-            poll_interval,
-        )
+    def update_data(self, last_updated_seconds_ago: float, error_count: int, poll_interval: int) -> None:
+        """Accept the existing screen contract without painting source status."""
+        self._last_update = (last_updated_seconds_ago, error_count, poll_interval)
         self._update_left()

@@ -1,9 +1,4 @@
-"""HIGH-1 companion: the stale-catalog fallback must be visible on screen.
-
-Ranking from the hardcoded table is an acceptable degradation when the live
-``agent.json`` catalog cannot be used -- ranking from it *without saying so* is
-not, because the fallback's costs and durations are season-old and the user has
-no way to tell them from live ones.
+"""Retained catalogue rankings keep a neutral heading under the display override.
 
 Assertions read composited screen text, so a marker asserted here is real text
 a user would see rather than a string that never reaches a pixel.  Zero network.
@@ -61,8 +56,8 @@ async def test_live_catalog_renders_no_warning() -> None:
 
 async def test_fallback_catalog_is_labelled_on_screen() -> None:
     text = await _render(CATALOG_SOURCE_FALLBACK)
-    assert "STALE CATALOG" in text.upper()
-    # the rankings still render -- a labelled estimate beats a blank panel
+    assert "BEST PLAYS" in text and "STALE" not in text.upper()
+    # The retained rankings still render under the neutral heading.
     assert "Ad Campaign" in text
 
 
@@ -72,7 +67,9 @@ async def test_marker_clears_when_live_data_returns() -> None:
     async with app.run_test(size=(120, 12)):
         widget.update_data(_BOOSTS, _ATTACKS, CATALOG_SOURCE_FALLBACK)
         await app.workers.wait_for_complete()
-        assert "STALE CATALOG" in _screen_text(app).upper()
+        assert "BEST PLAYS" in _screen_text(app)
+        assert "STALE" not in _screen_text(app).upper()
+        assert "Ad Campaign" in _screen_text(app)
 
         widget.update_data(_BOOSTS, _ATTACKS, CATALOG_SOURCE_LIVE)
         await app.workers.wait_for_complete()

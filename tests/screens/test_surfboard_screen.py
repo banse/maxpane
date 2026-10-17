@@ -112,7 +112,8 @@ async def test_hub_terminal_polling_is_thirty_seconds(configured_interval):
     async with app.run_test(size=(149,45)) as pilot:
         await pilot.pause()
         assert app.hub._poll_interval==30
-        assert '30s poll' in painted(app)
+        assert '30s poll' not in painted(app)
+        assert 'q quit · m menu · tab switch' in painted(app).splitlines()[-1]
 
 
 async def test_terminal_age_timer_uses_injected_elapsed_time_and_stops_when_hidden(monkeypatch):
@@ -415,28 +416,40 @@ async def test_work_card_mouse_route_returns_to_same_boardroom():
         assert app.screen is hub
 
 
-async def test_work_card_round_trip_preserves_pending_reader(work_manager):
+async def test_work_card_loads_only_when_open_and_cancels_on_return(work_manager):
     manager, _ = work_manager
     entered = asyncio.Event()
+    cancelled = asyncio.Event()
 
     async def jobs(*, limit):
         entered.set()
-        await asyncio.Event().wait()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
 
     manager.swarm_client.fetch_jobs.side_effect = jobs
     app, _ = hub_app()
     app._surf_manager = manager
     async with app.run_test(size=(149, 45)) as pilot:
-        await asyncio.wait_for(entered.wait(), 1)
-        pending = manager._work_reader.task
+        await pilot.pause()
+        manager.swarm_client.fetch_jobs.assert_not_awaited()
         await pilot.click('#surfboard-card-work')
+        await asyncio.wait_for(entered.wait(), 2)
         await pilot.pause()
         assert app.screen._mode == MODE_WORK
-        assert manager._work_reader.task is pending and not pending.cancelling()
+        pending = manager._work_reader.task
+        assert pending is not None and not pending.cancelling()
         await pilot.press('escape')
+        await asyncio.wait_for(cancelled.wait(), 2)
         await pilot.pause()
         assert manager._hub_active and not manager._work_active
-        assert manager._work_reader.task is pending and not pending.cancelling()
+        assert pending.cancelled()
+        entered.clear()
+        await pilot.click('#surfboard-card-work')
+        await asyncio.wait_for(entered.wait(), 2)
+        assert manager._work_reader.task is not pending
+        await pilot.press('escape')
         await pilot.press('m')
         await pilot.pause()
         assert isinstance(app.screen, GameSelectScreen)
@@ -485,11 +498,11 @@ async def test_loading_repaints_completed_cache_without_offering_more_reads():
         await pilot.pause()
         assert '◌ loading' not in painted(app)
         assert not hub._loading
-        manager.get_hub_snapshot.assert_called_once()
+        assert manager.get_hub_snapshot.call_count == 2  # entry cache + completed read
         assert manager.fetch_hub_snapshot.await_count == offered
         hub._tick_terminal_age()
         await pilot.pause()
-        manager.get_hub_snapshot.assert_called_once()
+        assert manager.get_hub_snapshot.call_count == 2
         hub.action_refresh()
         await pilot.pause()
         assert manager.fetch_hub_snapshot.await_count == offered + 1

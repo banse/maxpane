@@ -381,7 +381,7 @@ class FWAHeroMetrics(Horizontal):
             box.update(
                 f"[dim]PRICE[/]\n\n"
                 f"[dim]{_EMDASH}[/]\n"
-                f"[dim]quote unavailable[/]\n"
+                f"[dim] [/]\n"
                 f"[dim] [/]"
             )
             return
@@ -437,7 +437,7 @@ class FWAHeroMetrics(Horizontal):
             box.update(
                 f"[dim]CROWN[/]\n\n"
                 f"[dim]{_EMDASH}[/]\n"
-                f"[dim]crown unavailable[/]\n"
+                f"[dim] [/]\n"
                 f"[dim] [/]"
             )
             return

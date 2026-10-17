@@ -2616,17 +2616,11 @@ async def test_screen_survives_manager_exception():
         await screen._do_refresh()   # must not raise
         await pilot.pause()
 
-        status = screen.query_one(StatusBar).query_one("#status-left")
-        rendered = _plain(status)
-        # Not "updated 999s ago" any more: surf opted into the status bar's
-        # key-hints label (2026-08-23, ``SurfScreen.KEY_HINTS``) so ``l
-        # launchpad`` could be named there, and ``StatusBar._ordinary_status``
-        # trades the freshness segment for the hints segment when a screen
-        # sets one -- the same tradeoff curator already made for its own
-        # hints. Source errors now stay internal in every Surf view.
-        assert "x more" in rendered
-        assert "updated" not in rendered
-        assert "errors" not in rendered   # source failures stay internal
+        footer = _screen_text(app).splitlines()[-1]
+        assert "q quit · m menu · tab switch" in footer
+        assert "x more" not in footer
+        assert "updated" not in footer
+        assert "errors" not in footer
 
         # The title bar was not half-overwritten with a broken frame -- and
         # it still names the dashboard the menu names. This is the *only*
@@ -5842,8 +5836,12 @@ _ADOPTED_SOURCE_TX = "0x" + "3f" * 32
 
 
 def _status_bar_whole(app):
-    bar=app.screen.query_one(StatusBar)
-    line=_screen_text(app).split('\n')[bar.region.y]
-    right=bar.query_one('#status-right')
-    return (' poll' in line and right.region.right <= bar.region.right
-            and str(right.render()).strip() == _region_text(app,right).strip())
+    bar = app.screen.query_one(StatusBar)
+    line = _screen_text(app).splitlines()[bar.region.y]
+    if "q quit · m menu · tab switch" not in line:
+        return False
+    return all(
+        bar.region.contains_region(part.region)
+        and str(part.render()).strip() == _region_text(app, part).strip()
+        for part in bar.children
+    )

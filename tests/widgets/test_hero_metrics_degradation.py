@@ -118,8 +118,8 @@ async def test_all_none_renders_unavailable_not_loading() -> None:
     rendered, app = await _render(**args)
 
     assert app._exception is None, f"died in the pump: {app._exception!r}"
-    assert "unavailable" in rendered, (
-        "an all-null payload must state that the values are unavailable; "
+    assert "—" in rendered, (
+        "an all-null payload must display neutral placeholders; "
         f"got: {rendered!r}"
     )
     assert "Loading..." not in rendered, (
@@ -166,8 +166,8 @@ async def test_nan_never_prints_as_nan() -> None:
     rendered, app = await _render(**args)
 
     assert app._exception is None
-    assert "nan" not in rendered.lower().replace("unavailable", "")
-    assert "unavailable" in rendered
+    assert "nan" not in rendered.lower()
+    assert "—" in rendered
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ async def test_happy_path_still_shows_live_numbers() -> None:
     assert "12.50 ETH" in rendered
     assert "$41,000" in rendered
     assert "Crumb Cartel" in rendered
-    assert "unavailable" not in rendered
+    assert "—" not in rendered and "unavailable" not in rendered
 
 
 async def test_ended_season_is_not_an_unavailable_state() -> None:

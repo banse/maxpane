@@ -330,83 +330,23 @@ async def test_the_three_bodies_are_never_showing_at_once() -> None:
             assert screen.query_one(SurfNewsHero).display is (expected == "#middle-row")
 
 
-async def test_the_status_hint_names_both_views() -> None:
-    """The phrase reaches a pixel, and reaches it as ONE ``Segment``.
-
-    Two assertions, and the second one is the whole point. ``_screen_text``
-    joins a strip's segments with ``""``, which is the right instrument for
-    every other composited assertion in this file and is **blind to exactly
-    the defect this test exists to catch**: a per-letter ``[dim]`` tag splits
-    the hint into ``l`` / `` launchpad · `` / ``p`` / `` pool4`` and the
-    row-joined text is byte-identical either way.
-
-    Proven, not assumed. Mutating ``KEY_HINTS`` to
-    ``"[dim]l[/] launchpad · [dim]p[/] pool4"`` left the row-join version of
-    this test green; it is the segment check below that reddens.
-
-    Why the segment boundary is the subject at all: the app-level acceptance
-    grep in ``tests/test_surf_registration.py`` and the launchpad hint test
-    above both join **every segment with a newline**, which is the join
-    CLAUDE.md warns against for ordinary layout assertions precisely because
-    it splits a styled row into several apparent lines. Here that is the
-    measurement rather than the mistake -- the claim being made is "this
-    phrase is one styled run", and a split is what makes those greps fail
-    while the status bar looks perfectly correct on screen.
-    """
-    phrase = "x more · 4 pl4"
+async def test_protocol_footer_uses_common_navigation() -> None:
     async with _pool4_app().run_test() as pilot:
         await pilot.pause()
-        strips = pilot.app.screen._compositor.render_strips()
-        text = _screen_text(pilot.app)
-        segments = [seg.text for strip in strips for seg in strip]
-
-    assert phrase in text, (
-        "the hint did not reach a pixel -- check the StatusBar had room for "
-        "it at this width"
-    )
-    assert any(phrase in segment for segment in segments), (
-        "the hint reaches the screen but is split across Segments: "
-        "KEY_HINTS must be ONE markup run, not per-letter tags, or the "
-        "app-level acceptance greps for the contiguous phrase fail while "
-        "the bar itself looks right"
-    )
+        footer = _screen_text(pilot.app).splitlines()[-1]
+        assert "q quit · m menu · tab switch" in footer
+        assert "x more" not in footer and "4 pl4" not in footer
 
 
-async def test_the_pool4_key_hint_fits_the_status_bar_at_the_full_layout() -> None:
-    """Measured against the bar's own budget, never counted.
+@pytest.mark.parametrize("width", [80, SURF_FULL_LAYOUT_COLUMNS])
+async def test_protocol_footer_fits_at_full_and_narrow_layouts(width) -> None:
+    from tests.screens.test_surf_screen import _status_bar_whole
 
-    This hint is nine columns longer than the one that shipped, and the
-    StatusBar's left label is the segment that loses characters when the bar
-    runs out. Asserted at ``SURF_FULL_LAYOUT_COLUMNS`` -- the width the whole
-    dashboard is documented to need -- and, one column at a time, over the
-    band below it, so the test says *where* it stops fitting rather than only
-    that it fits somewhere.
-
-    Both halves of the phrase are checked. ``x more`` alone survives
-    several columns further than the whole hint does, so a test that only
-    looked for the new half would call the row healthy while the old half
-    had been cut off the other end.
-    """
-    async with _pool4_app().run_test(
-        size=(SURF_FULL_LAYOUT_COLUMNS, 46)
-    ) as pilot:
+    async with _pool4_app().run_test(size=(width, 46)) as pilot:
         await pilot.pause()
-        text = _screen_text(pilot.app)
-    assert "x more · 4 pl4" in text
-
-    # The band below it: find where the whole phrase stops reaching a pixel,
-    # and assert that width is under the documented layout rather than over.
-    lost_at = None
-    for width in range(SURF_FULL_LAYOUT_COLUMNS, 79, -1):
-        async with _pool4_app().run_test(size=(width, 46)) as pilot:
-            await pilot.pause()
-            if "x more · 4 pl4" not in _screen_text(pilot.app):
-                lost_at = width
-                break
-    assert lost_at is None or lost_at < SURF_FULL_LAYOUT_COLUMNS, (
-        f"the key hint is already cut at {lost_at} columns, which is at or "
-        f"above the documented {SURF_FULL_LAYOUT_COLUMNS} -- shorten the hint"
-    )
+        assert _status_bar_whole(pilot.app)
+        footer = _screen_text(pilot.app).splitlines()[-1]
+        assert "x more · 4 pl4" not in footer
 
 
 # -- the body's shape and its dispatch ------------------------------------

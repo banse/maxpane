@@ -321,6 +321,10 @@ class InspectionResult:
     complete: bool
 
 
+class _ProofReady(BaseException):
+    """Exit the interpreter before any optional collection-detail reads."""
+
+
 class _ReadNeeded(BaseException):
     """Control transfer, deliberately not an interpreter's source failure."""
 
@@ -392,7 +396,7 @@ class SurfNftInspector:
         started = progress.get("started_at")
         return type(started) in (int, float) and math.isfinite(started) and type(progress.get("completed_operations")) is int
 
-    def _evaluate(self, candidate, progress):
+    def _evaluate(self, candidate, progress, *, proof_only=False):
         from .surf_nft_rules.catalog import pinned_source, pinned_abi, source_getter_abi
         from .surf_nft_rules.children import discover_children, enrich_special_reads
         from .surf_nft_rules.references import SEASONS, discover_proven_children
@@ -417,7 +421,7 @@ class SurfNftInspector:
         def proof_checkpoint(proof):
             if proof.get("chainId") != chain or proof.get("address") != address:
                 return  # A nested constructor child has its own proof boundary.
-            if needs_child_proof:
+            if needs_child_proof and not proof_only:
                 self._child_proof(candidate, proof, reader)
                 if proof.get("factoryCreationVerified") is not True:
                     return
@@ -426,10 +430,16 @@ class SurfNftInspector:
             progress["provisional"] = provisional
             progress["block_number"] = proof.get("readBlock")
             progress["block_timestamp"] = proof.get("readTimestamp")
+            if proof_only:
+                if needs_child_proof:
+                    provisional['deploymentConfirmed'] = False
+                raise _ProofReady
 
         reader.proof_checkpoint = proof_checkpoint
         evidence = reader.inspect_contract(chain, address, artifact.get("txHash"),
                                            artifact.get("blockNumber"), candidate.get("abi"))
+        if proof_only:
+            return evidence, []  # Negative/unknown detection also stops before detail discovery.
         if needs_child_proof:
             self._child_proof(candidate, evidence, reader)
         # Generic getter evidence can replace the earlier proof-only checkpoint.
@@ -517,7 +527,7 @@ class SurfNftInspector:
         except (RuntimeError, ValueError, TypeError, KeyError) as error:
             evidence.setdefault("warnings", []).append(str(error)[:180])
 
-    async def advance(self, candidate, progress=None, *, budget):
+    async def advance(self, candidate, progress=None, *, budget, proof_only=False):
         from .surf_nft_client import BudgetExhausted, SourceUnavailable
 
         candidate = copy.deepcopy(candidate)
@@ -559,7 +569,9 @@ class SurfNftInspector:
             progress = copy.deepcopy(progress)
         while True:
             try:
-                evidence, children = self._evaluate(candidate, progress)
+                evidence, children = self._evaluate(candidate, progress, proof_only=proof_only)
+            except _ProofReady:
+                return InspectionResult(progress, progress.get('provisional'), [], False)
             except _ReadNeeded as request:
                 try:
                     if request.kind == "rpc":

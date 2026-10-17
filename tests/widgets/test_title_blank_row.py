@@ -389,5 +389,5 @@ async def test_ttt_title_case_draws_a_real_burn_series():
     rows = await composite_lines(
         TTTSparkline, _SIZE, css_path=CSS_PATH, region_only=True, **payload)
     burn_line = next(row for row in rows if "BURNS" in row)
-    assert "unavailable" not in burn_line
+    assert "—" not in burn_line and "unavailable" not in burn_line
     assert any(ch in burn_line for ch in SPARK_CHARS)

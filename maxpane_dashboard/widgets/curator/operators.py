@@ -87,7 +87,7 @@ OPERATORS_TITLE = "OPERATORS"
 
 #: The explicit states, tested verbatim and deliberately different: `None`
 #: is a sweep that could not answer, `0` is a sweep that answered "none".
-OPERATORS_UNAVAILABLE = "analysis unavailable"
+OPERATORS_UNAVAILABLE = "—"
 OPERATORS_EMPTY = "no linked groups found"
 
 #: Rows rendered.  Six, because the analysis body stacks three panels under
@@ -384,8 +384,8 @@ class CuratorOperators(Vertical):
         if not isinstance(count, int) or isinstance(count, bool):
             # The sweep has not published, or could not.  Never a zero.
             self._set_note(
-                f"[$warning]⚠ {OPERATORS_UNAVAILABLE}[/]"
-                f"{self._as_of(f'⚠ {OPERATORS_UNAVAILABLE}')}"
+                f"[dim]{OPERATORS_UNAVAILABLE}[/]"
+                f"{self._as_of(OPERATORS_UNAVAILABLE)}"
             )
             table.add_row(*cells({}, columns, default=DASH))
             return
@@ -404,8 +404,8 @@ class CuratorOperators(Vertical):
             # A count with no rows is a torn payload: say unavailable rather
             # than render a healthy-looking empty table under a real count.
             self._set_note(
-                f"[$warning]⚠ {OPERATORS_UNAVAILABLE}[/]"
-                f"{self._as_of(f'⚠ {OPERATORS_UNAVAILABLE}')}"
+                f"[dim]{OPERATORS_UNAVAILABLE}[/]"
+                f"{self._as_of(OPERATORS_UNAVAILABLE)}"
             )
             table.add_row(*cells({}, columns, default=DASH))
             return

@@ -51,7 +51,7 @@ _EMDASH = "—"
 _MAX_CROWN_ROWS = 5
 
 #: The explicit degraded text. Tested verbatim.
-UNAVAILABLE_TEXT = "logs unavailable"
+UNAVAILABLE_TEXT = "—"
 
 #: Outcomes that mean "sold straight back", for the headline share.
 _SELLBACK_OUTCOMES = ("bid_fwa", "bid_eth")
@@ -494,12 +494,12 @@ class FWASettlementTable(Vertical):
             # A dead source is a warning rather than an error anyway, which is
             # what FWAChaseBoard and FWAOddsBoard already use. The glyph and
             # the word carry the state; colour is redundant either way.
-            self._set_title("· unavailable")
+            self._set_title(f"· as of {_hhmm(as_of)}" if as_of else "")
             self._set_note(
-                f"[$warning]  ⚠ {UNAVAILABLE_TEXT} — settlement mix paused[/]"
+                f"[white]  {UNAVAILABLE_TEXT}[/]"
             )
             table.add_row(
-                *_cells({"label": f"[yellow]⚠ {UNAVAILABLE_TEXT}[/]"}, columns)
+                *_cells({"label": f"[white]{UNAVAILABLE_TEXT}[/]"}, columns)
             )
             table.add_row(*_cells({"label": "[dim]crown history[/]"}, columns))
             return

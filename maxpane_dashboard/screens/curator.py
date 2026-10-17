@@ -2310,7 +2310,7 @@ class CuratorScreen(DashboardScreen):
 
     async def _do_refresh(self) -> None:
         try:
-            data = await self._data_manager.fetch_and_compute()
+            data = await self._fetch_data()
         except Exception as exc:
             # NOT the documented outage path -- see the module docstring.
             logger.debug("Curator refresh failed: %s", exc)

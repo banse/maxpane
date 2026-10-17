@@ -293,7 +293,7 @@ async def test_a_failed_read_renders_unavailable_not_loading(cls, good, shown, b
         widget.update_data(**_none_payload(widget))
         await pilot.pause()
         text = _screen_text(pilot.app)
-    assert "unavailable" in text, text
+    assert "—" in text, text
     assert "Loading" not in text, text
 
 
@@ -305,7 +305,7 @@ async def test_a_good_poll_shows_its_value(cls, good, shown, bad):
         await pilot.pause()
         text = _screen_text(pilot.app)
     assert shown in text, text
-    assert "unavailable" not in text, text
+    assert "—" not in text and "unavailable" not in text, text
 
 
 @pytest.mark.parametrize("cls,good,shown,bad", _WIDGETS)
@@ -318,7 +318,7 @@ async def test_a_malformed_poll_after_a_good_one_is_not_shown_as_live(cls, good,
         widget.update_data(**bad)  # must not raise: the guard is the widget's
         await pilot.pause()
         text = _screen_text(pilot.app)
-    assert "unavailable" in text, text
+    assert "—" in text, text
     # The row or box the malformed value belongs to no longer shows the good
     # poll's number: a stale value presented as live is the MEDI-38 defect.
     assert shown not in text, text
@@ -370,7 +370,7 @@ async def test_a_deliberate_none_renders_a_dash_not_unavailable(
         text = _screen_text(pilot.app)
     assert absent in text, text
     assert "Loading" not in text, text
-    assert "unavailable" not in text, text
+    assert "—" not in text and "unavailable" not in text, text
 
 
 @pytest.mark.parametrize("cls,good,shown,bad,absent", _HERO_ROWS)
@@ -381,7 +381,7 @@ async def test_a_good_hero_poll_shows_its_value(cls, good, shown, bad, absent):
         await pilot.pause()
         text = _screen_text(pilot.app)
     assert shown in text, text
-    assert "unavailable" not in text, text
+    assert "—" not in text and "unavailable" not in text, text
 
 
 @pytest.mark.parametrize("cls,good,shown,bad,absent", _HERO_ROWS)
@@ -397,5 +397,5 @@ async def test_a_malformed_hero_poll_after_a_good_one_is_not_shown_as_live(
         widget.update_data(**bad)  # must not raise: the guard is the widget's
         await pilot.pause()
         text = _screen_text(pilot.app)
-    assert "unavailable" in text, text
+    assert "—" in text, text
     assert shown not in text, text

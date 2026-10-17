@@ -84,9 +84,33 @@ class SwarmTokensManager:
         self._detail_pools = {'history': {}, 'trades': {}, 'volume': {}}
         self._portfolio_active = False
         self._portfolio_priority_ids = set()
+        self._active_view = 'legacy'
+        self._retired = set()
+
+    def set_active_view(self, view):
+        if view == self._active_view:
+            return
+        self._active_view = view
+        for task in self._tasks.values():
+            if not task.done():
+                task.cancel()
+                self._retired.add(task)
+        self._tasks.clear()
+        self._task_token_ids.clear()
+        self._portfolio_active = view == 'portfolio'
+        if view is not None:
+            self._cat_attempt = None
+            for attempts in self._attempts.values():
+                attempts.clear()
+
+    async def drain_reads(self):
+        if self._retired:
+            await asyncio.gather(*self._retired, return_exceptions=True)
+            self._retired.clear()
 
     def _start(self, name, coroutine, *, token_ids=()):
-        if self._closed or name in self._tasks and not self._tasks[name].done():
+        if (self._closed or self._active_view is None or self._retired
+                or name in self._tasks and not self._tasks[name].done()):
             coroutine.close()
             return
         self._tasks[name] = asyncio.create_task(coroutine)
@@ -496,16 +520,23 @@ class SwarmTokensManager:
 
     async def fetch_and_compute(self):
         """Existing live-launch market view, sharing Portfolio's refresh work."""
+        await self.drain_reads()
         return self._snapshot()
 
     def get_snapshot(self):
         """Read completed cache data without offering catalogue or enrichment work."""
         return self._snapshot(offer=False)
 
+    def get_portfolio_snapshot(self):
+        """Retained wallet universe without scheduling catalogue or market reads."""
+        return self._snapshot(portfolio=True, offer=False)
+
     async def fetch_selected_token(self, token_id, *, launch_uuid=None):
         """Offer existing cache work for exactly one identity; no overview mode change."""
         token = self.get_selected_token(token_id, launch_uuid=launch_uuid)
-        self.offer_catalogue()
+        await self.drain_reads()
+        if not str(self._active_view).startswith('token:'):
+            self.offer_catalogue()
         if token is not None:
             self._offer_enrichment([token], self._clock())
         return token
@@ -532,6 +563,7 @@ class SwarmTokensManager:
         wallet reader must still confirm balances and actual token decimals.
         No network is awaited here; catalogue and enrichment use shared tasks.
         """
+        await self.drain_reads()
         self._portfolio_active = True
         self._portfolio_priority_ids = set(priority_ids)
         return self._snapshot(portfolio=True)
@@ -578,6 +610,7 @@ class SwarmTokensManager:
         if self._closed:
             return
         self._closed = True
+        await self.drain_reads()
         for task in self._tasks.values():
             task.cancel()
         await self.wait_pending()

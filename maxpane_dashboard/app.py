@@ -164,16 +164,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
             self.register_theme(t)
         self.theme = self._initial_theme
 
-        # Start fetching data in background while splash is showing
-        manager = self._prefetch_manager(self._initial_game)
-        if manager is not None:
-            self.run_worker(
-                self._prefetch(manager, self._initial_game),
-                exclusive=True,
-                name="prefetch",
-                exit_on_error=False,
-            )
-
+        # The visible dashboard owns acquisition; splash/menu start no readers.
         # Show splash screen → game select → dashboard
         self.push_screen(SplashScreen(), callback=self._on_splash_dismissed)
 

@@ -259,17 +259,17 @@ async def test_battle_feed_footer_says_unavailable_for_an_unmeasured_rate() -> N
         # repainted even though there is nothing to append.
         widget.update_data([], None)
         footer = _plain(widget, "#battle-footer")
-        assert "Battles/hr: unavailable" in footer
+        assert "Battles/hr: —" in footer
         assert "--  Avg" not in footer
 
         widget.update_data(_ATTACKS, 12.4)
         footer = _plain(widget, "#battle-footer")
         assert "Battles/hr: ~12" in footer
-        assert "unavailable" not in footer
+        assert "—" not in footer and "unavailable" not in footer
 
         # A later outage is visible at once, not hidden behind the last rate.
         widget.update_data(_ATTACKS, None)
-        assert "Battles/hr: unavailable" in _plain(widget, "#battle-footer")
+        assert "Battles/hr: —" in _plain(widget, "#battle-footer")
 
 
 @pytest.mark.asyncio
@@ -279,10 +279,10 @@ async def test_game_signals_battle_rate_says_unavailable_without_an_indicator() 
     async with app.run_test():
         widget.update_data(battle_rate=None, win_rate=50.0)
         line = _plain(widget, "#fpo-sig-battle-rate")
-        assert "Battle Rate" in line and "unavailable" in line
+        assert "Battle Rate" in line and "—" in line
         assert "/hr" not in line and "●" not in line
 
         widget.update_data(battle_rate=42.0, win_rate=50.0)
         line = _plain(widget, "#fpo-sig-battle-rate")
         assert "~42/hr" in line and "normal" in line
-        assert "unavailable" not in line
+        assert "—" not in line and "unavailable" not in line

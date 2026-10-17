@@ -87,7 +87,7 @@ tests/               analytics/ data/ screens/ widgets/ address_sweep/ fixtures/
 **Data flow:** `client` (fetch, keyless) → `cache` (tiered TTL, persisted to `~/.maxpane/`) →
 `manager` (`fetch_and_compute()` → flat dict) → `screen` (dispatch) → `widgets` (render only:
 `str`/`int`/`float`/`bool`/`dict`/`list[dict]`; may import pure `analytics/` helpers, never
-`data/`). Dashboards (`--game`): `surf` (default, prefetched), `curator`, `fwa`, `base`,
+`data/`). Dashboards (`--game`): `surf` (default), `curator`, `fwa`, `base`,
 `frenpet`, `cattown`, `ttt`, `talismans`, `surfboard` (dashboard 9, shares SurfManager); hidden but intact: `bakery`, `ocm`, `dota`,
 `frenpet_full/_wallet/_perf`. Adding, hiding or reordering one touches six surfaces
 (`rules/dashboard-registry.md`).
@@ -164,6 +164,9 @@ and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports 
 - **A dead source degrades to an explicit unavailable state** behind an `as of HH:MM` marker —
   never a crash, a blank panel, a stale number presented as live, or a *false* degradation.
   A real negative needs a representable value distinct from "could not look".
+  Owner display override (2026-10-17): retain source states and observation times internally;
+  paint missing values as dashes and use the shared loading footer during reads instead of
+  generated stale/unavailable notices. Do not filter third-party prose or domain states.
 - **Escape every third-party string** before markup or a `DataTable`: `markup_safety.safe_markup`.
   Token symbols are attacker-controlled. A `Static` gets a pre-built `rich.text.Text`, never a
   markup string.

@@ -95,7 +95,7 @@ from maxpane_dashboard.widgets.curator._table import (
 LEADERBOARD_TITLE = "TOP OF THE LIST"
 
 #: The two explicit states, tested verbatim and deliberately different.
-LEADERBOARD_UNAVAILABLE = "leaderboard unavailable"
+LEADERBOARD_UNAVAILABLE = "—"
 LEADERBOARD_EMPTY = "no contributors yet"
 
 #: Rows rendered.  The board is "top 10 by points" (PRD §4); a longer list
@@ -458,7 +458,7 @@ class CuratorLeaderboard(Vertical):
 
         rows = self._payload["rows"]
         if rows is None:
-            self._set_note(f"[$warning]⚠ {LEADERBOARD_UNAVAILABLE}[/]")
+            self._set_note(f"[dim]{LEADERBOARD_UNAVAILABLE}[/]")
             table.add_row(*cells({}, columns, default=DASH))
             return
 

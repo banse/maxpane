@@ -19,10 +19,18 @@ older display prescriptions below: source states, TTLs, errors and last-good
 values remain internal; missing values use neutral dashes. Operational statuses
 (such as blocked, revoked, offline, rejected) and partial coverage remain visible.
 Neutral source timestamps stay. Never filter third-party prose for these words.
-`SurfDashboardScreen` animates existing title chrome only while the guarded
-refresh or view-relevant manager task is running, including reopen. Completed
-background reads repaint through passive `get_snapshot()` without starting a
-retry. The UI timer stops on suspend/unmount. No layout pin changes are intended.
+`DashboardScreen` drives the shared, centered footer animation only while the
+guarded refresh or view-relevant manager task is running, including reopen.
+Titles no longer carry a loading suffix. Completed background reads repaint
+through passive `get_snapshot()` without starting a retry. The UI timer and
+owned reads stop on suspend/unmount. No layout pin changes are intended.
+
+BOARDROOM uses bounded card-only sources; it never offers the full Surf cycle,
+Work detail tree or NFT mint/source inspection. NFT deployment proof remains
+required before counting a collection. Native bodies activate only their own
+collectors. Entering a board paints retained data immediately, offers a fresh
+read and starts its 30-second poll. Leaving cancels and drains its reads without
+clearing the cache. See `docs/dashboard_data_lifecycle_spec.md`.
 
 
 Key history and withdrawn statements are in `docs/decisions.md`; this file states only what is

@@ -4,7 +4,7 @@ Branch 6 of the refactor programme. Five shapes were hand-copied into every
 dashboard package in this repo, and a fix applied to one copy reached none of
 the others:
 
-* ``_UNAVAILABLE = "[yellow]unavailable[/]"`` -- nine copies across
+* ``_UNAVAILABLE = "[dim]—[/]"`` -- nine copies across
   ``widgets/`` and the since-deleted ``templates/``; ``UNAVAILABLE`` below is
   the one.
 * ``Loading...`` -- typed in 68 files; ``LOADING`` below is the one.
@@ -96,7 +96,7 @@ logger = logging.getLogger(__name__)
 #: Shown in place of a value the backend could not supply this poll. Distinct
 #: from a value the analytics *did* compute as empty (``--``): a failed read
 #: is ``None``, never ``0``, and never a blank cell.
-UNAVAILABLE = "[yellow]unavailable[/]"
+UNAVAILABLE = "[dim]—[/]"
 
 #: The seed a panel composes with, before its first poll lands.
 LOADING = "[dim]Loading...[/]"
@@ -434,7 +434,7 @@ class SignalsPanelBase(PanelBase):
 
         def build() -> str:
             source = sig if isinstance(sig, dict) and sig else {
-                "label": label, "value_str": "unavailable", "color": "yellow",
+                "label": label, "value_str": "—", "color": "dim",
             }
             return fmt_signal(
                 source, label_width=self.LABEL_WIDTH, dim_label=self.DIM_LABEL,
@@ -442,8 +442,8 @@ class SignalsPanelBase(PanelBase):
             )
 
         fallback = (
-            f"  [yellow]●[/] {label} {UNAVAILABLE}" if labelled
-            else f"  [yellow]●[/] {UNAVAILABLE}"
+            f"  [dim]●[/] {label} {UNAVAILABLE}" if labelled
+            else f"  [dim]●[/] {UNAVAILABLE}"
         )
         return self.write_guarded(selector, build, fallback)
 

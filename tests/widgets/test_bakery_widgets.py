@@ -46,6 +46,7 @@ STYLESHEET = REPO / "maxpane_dashboard" / "themes" / "minimal.tcss"
 YELLOW = (255, 255, 0)
 GREEN = (0, 128, 0)
 RED = (255, 0, 0)
+NEUTRAL_DIM = (153, 153, 153)
 #: A ``RichLog`` row's ``Text`` styles go through the app's ANSI theme
 #: instead, so the same two names land on different triplets there.
 FEED_GREEN = (152, 224, 36)
@@ -241,10 +242,10 @@ async def test_a_failed_hours_read_keeps_the_season_under_unavailable():
         widget.update_data(**{**_HERO, "hours_remaining": None})
         await pilot.pause()
         lines = _strips(widget.app)
-        assert "unavailable" in _line_with(lines, "12.50 ETH")
+        assert "—" in _line_with(lines, "12.50 ETH")
         assert "SEASON 4" in _line_with(lines, "$41,000")
         assert not [line for line in lines if "%" in line]
-        assert _colour_of(widget.app, "unavailable") == YELLOW
+        assert _colour_of(widget.app, "—") == NEUTRAL_DIM
 
 
 @pytest.mark.asyncio
@@ -258,7 +259,7 @@ async def test_a_failed_prize_read_is_unavailable_over_the_usd_line():
         await pilot.pause()
         lines = _strips(widget.app)
         row = _line_with(lines, "2d 23h 30m")
-        assert row.index("unavailable") < row.index("2d 23h 30m")
+        assert row.index("—") < row.index("2d 23h 30m")
         assert "$41,000" in lines[lines.index(row) + 1]
 
 
@@ -367,7 +368,7 @@ async def test_a_failed_bakeries_read_paints_unavailable_not_no_data():
     rows = await _composited(
         Leaderboard, bakeries=None, production_rates={}, prize_pool_usd=0.0
     )
-    assert rows[3].split() == ["--", "unavailable", "--", "--", "--"], rows[3]
+    assert rows[3].split() == ["--", "—", "--", "--", "--"], rows[3]
     assert not rows[4].strip(), rows[4]
     assert not any("No data" in row for row in rows), rows
 
@@ -456,9 +457,9 @@ async def test_cookie_chart_says_unavailable_when_the_histories_are_not_a_dict()
         await pilot.pause()
         assert widget.app._exception is None
         lines = _strips(widget.app)
-        assert lines[2].strip() == "unavailable", lines[:5]
+        assert lines[2].strip() == "—", lines[:5]
         assert not lines[3].strip() and not lines[4].strip()
-        assert _colour_of(widget.app, "unavailable") == YELLOW
+        assert _colour_of(widget.app, "—") == NEUTRAL_DIM
 
 
 @pytest.mark.asyncio
@@ -550,12 +551,12 @@ async def test_a_signal_the_manager_could_not_compute_says_unavailable():
         await pilot.pause()
         lines = _strips(widget.app)
         ev = _line_with(lines, "Late-Join EV")
-        assert ev[24:36] == " unavailable", repr(ev)
+        assert ev[24:36] == "           —", repr(ev)
         assert ev[36:] == "  ●", repr(ev)
         assert "stable" in _line_with(lines, "Gap Trend")
-        assert "unavailable" in _line_with(lines, "Leader Dominance")
+        assert "—" in _line_with(lines, "Leader Dominance")
         assert not [line for line in lines if "Loading" in line]
-        assert _colour_of(widget.app, "unavailable") == YELLOW
+        assert _colour_of(widget.app, "—") == NEUTRAL_DIM
 
 
 @pytest.mark.asyncio
@@ -578,7 +579,7 @@ async def test_a_missing_recommendation_is_unavailable_not_blank():
     string, so ``None`` is a read that failed.
     """
     rows = await _composited(SignalsPanel, **{**_SIGNALS, "recommendation": None})
-    assert "→ Recommendation: unavailable" in _line_with(rows, "Recommendation")
+    assert "→ Recommendation: —" in _line_with(rows, "Recommendation")
 
 
 # -- ActivityFeed -------------------------------------------------------------
@@ -712,9 +713,9 @@ async def test_rankings_the_manager_could_not_produce_say_unavailable_thrice():
         widget.update_data(None, None)
         await pilot.pause()
         lines = _strips(widget.app)
-        assert [line.strip() for line in lines[4:7]] == ["unavailable"] * 3, lines
+        assert [line.strip() for line in lines[4:7]] == ["—"] * 3, lines
         assert not [line for line in lines if "Loading" in line]
-        assert _colour_of(widget.app, "unavailable") == YELLOW
+        assert _colour_of(widget.app, "—") == NEUTRAL_DIM
 
 
 @pytest.mark.asyncio
@@ -728,8 +729,9 @@ async def test_the_stale_catalog_marker_is_yellow_on_the_title_row():
         widget.update_data(_BOOSTS, _ATTACKS, "fallback")
         await pilot.pause()
         lines = _strips(widget.app)
-        assert lines[0].strip().startswith("BEST PLAYS  ⚠ STALE CATALOG"), lines[0]
-        assert _colour_of(widget.app, "STALE") == YELLOW
+        assert lines[0].strip() == "BEST PLAYS", lines[0]
+        assert "Ad Campaign" in "\n".join(lines)
+        assert "STALE" not in "\n".join(lines)
         assert not lines[1].strip()
 
 

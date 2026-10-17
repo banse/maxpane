@@ -54,7 +54,7 @@ class PortfolioScreen(SwarmTokensScreen):
 
     def __init__(self, manager, poll_interval=None, name='portfolio', *, standalone=False, **kwargs):
         if poll_interval is None:
-            poll_interval = 30 if getattr(manager, 'is_mock', False) else 5
+            poll_interval = 30
         super().__init__(manager, poll_interval, name=name, standalone=standalone, **kwargs)
         self.GAME_NAME = 'PORTFOLIO · MOCK DATA' if self._is_mock else 'PORTFOLIO'
         self.assets, self.sort = 'all', 'value'
@@ -80,7 +80,8 @@ class PortfolioScreen(SwarmTokensScreen):
 
     async def _fetch_data(self):
         generation = self._wallet_generation
-        raw = await self._data_manager.fetch_and_compute()
+        from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
+        raw = await DashboardScreen._fetch_data(self)
         if generation != self._wallet_generation or raw.get('wallet') != self._data_manager.wallet:
             if generation != self._wallet_generation:
                 self.call_after_refresh(self.action_refresh)

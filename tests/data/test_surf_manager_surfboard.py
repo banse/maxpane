@@ -43,6 +43,9 @@ def manager(tmp_path):
     m._nft_manager = SimpleNamespace(offer_hub=lambda: None, catalogue_summary=lambda: {},
                                    is_loading=lambda *_: False, close=AsyncMock())
     m._cycle=AsyncMock(return_value=m._blank_payload())
+    m._card_reader._pool = AsyncMock()
+    m._card_reader._market = AsyncMock()
+    m._card_reader._feed = AsyncMock()
     return m,clock
 
 
@@ -89,73 +92,56 @@ async def test_nft_lazy_manager_borrows_shared_swarm_once(manager, monkeypatch):
         await m.close()
 
 
-async def test_hub_work_card_shares_completed_snapshot_with_dashboard(manager):
+async def test_hub_work_summary_does_not_hydrate_the_detail_board(manager):
     m, clock = manager
     raw = json.loads(Path('tests/fixtures/surf/work/captured.json').read_text())
     clock.now = raw['read_ts']
-    entered, release = asyncio.Event(), asyncio.Event()
-    async def jobs(*, limit):
-        entered.set()
-        await release.wait()
-        return raw['jobs']
-    m.swarm_client.fetch_jobs = AsyncMock(side_effect=jobs)
+    m.swarm_client.fetch_jobs = AsyncMock(return_value=raw['jobs'])
     m.swarm_client.fetch_workflows = AsyncMock(return_value=raw['workflows'])
     m.swarm_client.fetch_job = AsyncMock(side_effect=lambda identity: next(
-        (d for d in raw['details'] if d['id']==identity), None))
-    m.set_hub_active(True)
+        (d for d in raw['details'] if d['id'] == identity), None))
+    m.set_active_view('surfboard')
     try:
         first = await m.fetch_hub_snapshot()
-        row = next(c for c in first['surfboard_cards'] if c['key']=='work')
-        assert row['status']=='loading' and row['primary']=='—'
-        await asyncio.wait_for(entered.wait(), 1)
-        task = m._work_reader.task
-        await m.fetch_hub_snapshot()
-        assert m._work_reader.task is task
-        release.set()
-        await task
-        second = await m.fetch_hub_snapshot()
-        row = next(c for c in second['surfboard_cards'] if c['key']=='work')
-        assert row['primary']=='2'
-        assert row['work_summary']==second['surf_work']['summary']
-        assert row['meter_state']==second['surf_work']['state']=='ok'
-        m.set_work_active(True)
-        m.set_hub_active(False)
-        dashboard = await m.fetch_and_compute()
-        assert dashboard['surf_work']==second['surf_work']
-        assert m._work_reader.task is task
+        assert next(c for c in first['surfboard_cards'] if c['key'] == 'work')['status'] == 'loading'
+        await asyncio.gather(*m._hub_source_tasks.values())
+        await m._card_reader.wait_pending()
+        card = next(c for c in m.get_hub_snapshot()['surfboard_cards'] if c['key'] == 'work')
+        assert card['primary'] == '4'  # Global counter, not the two sampled active jobs.
+        assert card['work_summary']['build'] is None
+        assert m._work_reader.task is None
+        m.swarm_client.fetch_jobs.assert_not_awaited()
+        m.set_active_view('work')
+        await m.fetch_and_compute()
+        await m._work_reader.task
+        assert m.get_snapshot()['surf_work']['summary']['jobs'] == 2
         m.swarm_client.fetch_jobs.assert_awaited_once_with(limit=100)
-        m.swarm_client.fetch_workflows.assert_awaited_once_with(limit=100)
     finally:
         await m.close()
 
 
-@pytest.mark.parametrize('first', ['hub', 'work'])
-async def test_work_reader_cancels_only_after_both_consumers_leave(manager, first):
+async def test_work_reader_stops_when_returning_to_boardroom(manager):
     m, _ = manager
     entered = asyncio.Event()
     async def jobs(*, limit):
         entered.set()
         await asyncio.Event().wait()
     m.swarm_client.fetch_jobs = AsyncMock(side_effect=jobs)
-    other = 'work' if first=='hub' else 'hub'
-    getattr(m, f'set_{first}_active')(True)
+    m.set_active_view('work')
     try:
-        await (m.fetch_hub_snapshot() if first=='hub' else m.fetch_and_compute())
+        await m.fetch_and_compute()
         await asyncio.wait_for(entered.wait(), 1)
         task = m._work_reader.task
-        getattr(m, f'set_{other}_active')(True)
-        getattr(m, f'set_{first}_active')(False)
-        assert not task.cancelling()
-        getattr(m, f'set_{other}_active')(False)
-        await asyncio.gather(task, return_exceptions=True)
+        m.set_active_view('surfboard')
+        await m.fetch_hub_snapshot()
         assert task.cancelled()
+        assert m._work_reader.task is task
     finally:
         await m.close()
 
 
-@pytest.mark.parametrize('first', ['hub', 'work'])
-@pytest.mark.parametrize('destination', ['hub', 'work'])
-async def test_work_reentry_restarts_cancelled_refresh_and_replaces_cached_data(manager, first, destination):
+async def test_work_reentry_restarts_cancelled_refresh_and_replaces_cached_data(manager):
+    first = destination = 'work'
     m, clock = manager
     raw = json.loads(Path('tests/fixtures/surf/work/captured.json').read_text())
     clock.now = raw['read_ts']
@@ -337,7 +323,7 @@ async def test_shared_full_fetch_cancellation_isolated_and_interval_coalesced(ma
     assert m._cycle.await_count==1
     await m.close()
 
-async def test_hub_sources_progress_while_full_startup_blocked(manager):
+async def test_hub_sources_progress_without_starting_full_collection(manager):
     m,clock=manager; gate=asyncio.Event()
     async def blocked():await gate.wait();return m._blank_payload()
     m._cycle.side_effect=blocked;m.set_hub_active(True)
@@ -347,7 +333,7 @@ async def test_hub_sources_progress_while_full_startup_blocked(manager):
     second=await m.fetch_hub_snapshot()
     assert second['surfboard_overview']['agents_online']==864
     assert second['swarm_seat_outcome']['accepted']==3253
-    assert m._cycle.await_count==1
+    assert m._cycle.await_count==0
     assert m.swarm_client.fetch_overview.await_count==1
     await m.close()
 
@@ -542,9 +528,10 @@ async def test_lookup_busy_reply_and_close_cancel_only_owned_task(manager):
     command=asyncio.create_task(m.execute_hub_command('find surf.eth'))
     await entered.wait()
     assert 'already running' in (await m.execute_hub_command('find second.eth'))['lines'][0]
+    task = m._hub_lookup_task
     await m.close()
     with pytest.raises(asyncio.CancelledError):await command
-    assert m._hub_lookup_task.cancelled()
+    assert task.cancelled()
 
 async def test_status_reports_each_service_up_down_or_unavailable(manager):
     m,_=manager

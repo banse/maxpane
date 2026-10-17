@@ -832,13 +832,15 @@ async def test_an_unknown_phase_renders_a_named_fallback_not_a_blank_box():
     must say so rather than silently choosing GRACE, which would render a
     countdown for a game that may already be dead."""
     text = await _rendered(CuratorHero, phase=None, current_hour=30)
-    assert "phase unavailable" in text.lower()
+    assert "—" in text
+    assert "phase unavailable" not in text.lower()
     assert "GRACE" not in text and "SETTLED AT HOUR" not in text
 
 
 async def test_a_fourth_phase_spelling_is_unknown_rather_than_grace():
     text = await _rendered(CuratorHero, phase="frozen", current_hour=30)
-    assert "phase unavailable" in text.lower()
+    assert "—" in text
+    assert "phase unavailable" not in text.lower()
 
 
 async def test_the_judged_clock_reads_its_denominator_from_the_payload():
@@ -1636,7 +1638,7 @@ async def test_an_unknown_threshold_dashes_the_bar_rather_than_inventing_one():
     for field in ("volume_series", "contributors_series")
     for label, series in (("none", None), ("empty", []), ("non-list", {}))
 ])
-async def test_failed_trend_series_is_yellow_and_empty_still_waits(field, series):
+async def test_failed_trend_series_is_neutral_and_empty_still_waits(field, series):
     widget = CuratorSparklines()
     payload = dict(volume_series=_volume_series(), contributors_series=_contributors_series(),
                    hourly_threshold_eth=5.0)
@@ -1651,9 +1653,9 @@ async def test_failed_trend_series_is_yellow_and_empty_still_waits(field, series
         if isinstance(series, list):
             assert WAITING in rows[y] and "unavailable" not in rows[y]
         else:
-            assert "unavailable" in rows[y] and WAITING not in rows[y]
-            style = pilot.app.screen.get_style_at(rows[y].index("unavailable"), y)
-            assert style.color.get_truecolor() == (255, 255, 0)
+            assert "—" in rows[y] and WAITING not in rows[y]
+            style = pilot.app.screen.get_style_at(rows[y].index("—"), y)
+            assert style.color.get_truecolor() == (153, 153, 153)
         other = "WALLETS" if field == "volume_series" else "VOL/h"
         healthy = next(row for row in rows if other in row)
         assert "unavailable" not in healthy and WAITING not in healthy
@@ -3450,74 +3452,55 @@ def test_no_theme_token_reaches_the_rich_parsed_activity_feed():
                 assert token not in node.value, (token, node.value)
 
 
-# -- the status bar's opt-in key hints (curator asks; the others must not) ----
+# -- shared compact footer -------------------------------------------------
 
 
-def test_the_status_bar_without_hints_is_byte_identical_to_before():
-    """Nine other dashboards share this widget: the hints are opt-in, and a
-    screen that never calls `set_key_hints` must render exactly what it always
-    did -- `tab switch` and `updated Ns ago` included."""
+async def test_the_status_bar_uses_compact_common_keys():
     from maxpane_dashboard.widgets.status_bar import StatusBar
 
     bar = StatusBar()
-    rendered = {}
-    bar.query_one = lambda *a, **k: type(
-        "Sink", (), {"update": lambda _self, text: rendered.__setitem__("text", text)}
-    )()
-    bar.update_data(last_updated_seconds_ago=3, error_count=0, poll_interval=30)
+    app = _Harness(bar)
+    async with app.run_test(size=(149, 12)) as pilot:
+        bar.update_data(last_updated_seconds_ago=3, error_count=0, poll_interval=30)
+        await pilot.pause()
+        footer = _screen_text(app).splitlines()[-1]
+        assert "q quit · m menu · tab switch" in footer
+        assert "updated" not in footer
+        assert "poll" not in footer
+        assert "r refresh" not in footer
 
-    assert "tab[/] switch" in rendered["text"]
-    assert "updated 3s ago" in rendered["text"]
 
-
-def test_hints_replace_tab_switch_and_the_cycle_age_but_never_the_errors():
-    """An error count must never be the thing that falls off the end of the
-    line, which is why the hints buy their room from `tab switch` too."""
+async def test_hints_and_source_errors_do_not_change_the_common_footer():
     from maxpane_dashboard.widgets.status_bar import StatusBar
 
     bar = StatusBar()
-    rendered = {}
-    bar.query_one = lambda *a, **k: type(
-        "Sink", (), {"update": lambda _self, text: rendered.__setitem__("text", text)}
-    )()
-    bar.set_key_hints("[dim]c[/] panels [dim]·[/] [dim]y[/] wallet")
-    bar.update_data(last_updated_seconds_ago=3, error_count=4, poll_interval=30)
-
-    text = rendered["text"]
-    assert "c[/] panels" in text and "y[/] wallet" in text
-    assert "tab[/] switch" not in text
-    assert "updated" not in text
-    assert "4 errors" in text
-    assert "30s poll" in text
+    app = _Harness(bar)
+    async with app.run_test(size=(149, 12)) as pilot:
+        bar.set_key_hints("[dim]c[/] panels [dim]·[/] [dim]y[/] wallet")
+        bar.update_data(last_updated_seconds_ago=3, error_count=4, poll_interval=30)
+        await pilot.pause()
+        footer = _screen_text(app).splitlines()[-1]
+        assert "q quit · m menu · tab switch" in footer
+        for hidden in ("c panels", "y wallet", "updated", "errors", "poll"):
+            assert hidden not in footer
 
 
-def test_a_transient_status_message_uses_the_gap_between_footer_sides():
+async def test_a_transient_status_message_uses_the_gap_between_footer_sides():
     from maxpane_dashboard.widgets.status_bar import StatusBar
 
     bar = StatusBar()
-    rendered = {}
-
-    class Sink:
-        def __init__(self, selector: str) -> None:
-            self.selector = selector
-
-        def update(self, text: str) -> None:
-            rendered[self.selector] = text
-
-    bar.query_one = lambda selector, *a, **k: Sink(selector)
-    bar.set_key_hints("[dim]c[/] view")
-    bar.update_data(last_updated_seconds_ago=3, error_count=0, poll_interval=30)
-    ordinary = rendered["#status-left"]
-
-    bar.set_message("fetching ENS …")
-
-    assert rendered["#status-left"] == ordinary
-    assert rendered["#status-message"] == "[$warning]fetching ENS …[/]"
-
-    bar.set_message("")
-
-    assert rendered["#status-left"] == ordinary
-    assert rendered["#status-message"] == ""
+    app = _Harness(bar)
+    async with app.run_test(size=(149, 12)) as pilot:
+        bar.set_message("fetching ENS …")
+        await pilot.pause()
+        footer = _screen_text(app).splitlines()[-1]
+        assert footer.index("tab switch") < footer.index("fetching ENS …") < footer.index("maxpane")
+        assert abs(footer.index("fetching ENS …") + (len("fetching ENS …") - 1) / 2 - 74) <= 0.5
+        bar.set_message("")
+        await pilot.pause()
+        footer = _screen_text(app).splitlines()[-1]
+        assert "fetching ENS …" not in footer
+        assert "q quit · m menu · tab switch" in footer
 
 
 # ===========================================================================

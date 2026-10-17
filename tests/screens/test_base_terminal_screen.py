@@ -1,9 +1,7 @@
 """Headless Textual tests for the Base Terminal screen.
 
-Covers LOW-17: on a failed refresh the screen used to hardcode
-``error_count=0`` into the StatusBar even though ``BaseManager`` had just
-incremented ``_error_count``, so the status bar claimed "no errors" during
-an active outage.  Every sibling screen passes the manager's real count.
+A failed refresh keeps the screen standing and the footer compact.
+Error accounting remains in the manager, without source-health footer labels.
 
 No network: the fake manager either returns a small data dict or raises.
 """
@@ -12,7 +10,6 @@ from __future__ import annotations
 
 import pytest
 from textual.app import App
-from textual.widgets import Static
 
 from maxpane_dashboard.screens.base_terminal import BaseTerminalScreen
 from maxpane_dashboard.widgets.status_bar import StatusBar
@@ -55,9 +52,8 @@ class _Harness(App):
 
 
 def _status_text(screen: BaseTerminalScreen) -> str:
-    widget = screen.query_one(StatusBar).query_one("#status-left", Static)
-    visual = widget.visual
-    return getattr(visual, "plain", str(visual))
+    bar = screen.query_one(StatusBar)
+    return screen._compositor.render_strips()[bar.region.y].text
 
 
 @pytest.mark.asyncio
@@ -74,8 +70,8 @@ async def test_screen_mounts_and_refreshes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_failed_refresh_reports_the_managers_error_count() -> None:
-    """LOW-17: the error indicator must survive the failure that caused it."""
+async def test_failed_refresh_retains_internal_errors_without_footer_warnings() -> None:
+    """The source failure is counted without replacing navigation or cached panels."""
     manager = _FakeManager(fail=True, error_count=2)
     screen = BaseTerminalScreen(manager, poll_interval=30, name="base")
     app = _Harness(screen)
@@ -84,12 +80,11 @@ async def test_failed_refresh_reports_the_managers_error_count() -> None:
         await screen._do_refresh()  # must not raise
         await pilot.pause()
 
-        # The screen also refreshes on resume, so only the relationship
-        # between the two matters: whatever the manager counted is what the
-        # status bar shows.  Before the fix this was always "0 errors".
         assert manager._error_count >= 3
         text = _status_text(screen)
-        assert f"{manager._error_count} errors" in text, text
+        assert "q quit · m menu · tab switch" in text
+        assert "errors" not in text
+        assert "updated" not in text
 
 
 @pytest.mark.asyncio

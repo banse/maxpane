@@ -119,7 +119,7 @@ TARGET_TITLE = "WHERE IT GETS YOU"
 #: is a different fact: nothing sent, nothing readable, nothing above you.
 NO_LADDER = "no sends from this wallet yet"
 NOT_ON_THE_LIST = "not on the list yet"
-LADDER_UNAVAILABLE = "ladder unavailable"
+LADDER_UNAVAILABLE = "—"
 TOP_OF_THE_LIST = "nobody above you"
 #: No wallet configured -- the panel names the two ways to fix it, the same
 #: pair the signals rail's YOU row names.
@@ -453,7 +453,7 @@ class CuratorWalletLadder(Vertical):
         rows = self._payload["rows"]
         if rows is None:
             # None is "the logs pool did not read", never "you never sent".
-            self._set_note(f"[$warning]⚠ {LADDER_UNAVAILABLE}[/]")
+            self._set_note(f"[dim]{LADDER_UNAVAILABLE}[/]")
             table.add_row(*cells({}, columns, default=DASH))
             return
 

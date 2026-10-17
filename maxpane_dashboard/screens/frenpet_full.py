@@ -299,7 +299,7 @@ class FrenPetFullScreen(DashboardScreen):
     async def _do_refresh(self) -> None:
         """Fetch data and update all widgets across all 3 views."""
         try:
-            data = await self._data_manager.fetch_and_compute()
+            data = await self._fetch_data()
         except Exception as exc:
             logger.error("FrenPet refresh failed: %s", exc)
             # Update status bar to reflect the error

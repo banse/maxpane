@@ -138,3 +138,96 @@ mutation was inversely restored and the rejection test passed again.
   call `read_job_detail`. Actual HTTP attempts remain counted, but logical
   detail start/end events need to follow the new API on the next tooling touch.
   Do not infer a logical-read latency comparison from the present measurements.
+
+## Visible dashboard lifecycle (2026-10-17)
+
+Implements [the lifecycle specification](dashboard_data_lifecycle_spec.md) and
+[plan](dashboard_data_lifecycle_plan.md), starting at `09a84ddc` on the same
+branch. Agency Software Architect, Backend Architect and Frontend Developer
+packages were integrated by the controller.
+
+- BOARDROOM uses the narrow card reader and bounded NFT deployment proofs;
+  it does not start full destination-board collectors or mint/source reads.
+  Splash/menu no longer start a full Surf prefetch.
+- Dashboard entry paints cache before awaiting the cancellation barrier,
+  offers a fresh read immediately and polls every 30 seconds while visible.
+  Leaving cancels and drains screen workers and detached manager reads;
+  completed cache values, cursors and clients survive navigation.
+- The shared footer centers its animated loading signal independently of side
+  labels. Refresh/navigation/poll/age hints are omitted; keys still work.
+  Generated stale/unavailable notices become neutral missing-value markers.
+  Internal observations and failures remain intact; domain prose is preserved.
+
+### Measurements and live evidence
+
+An offline comparison with identical injected clients recorded **33 → 15
+client operations** for cold hub entry (about 55% fewer). These are client
+method calls, not wire HTTP requests and not a measured latency improvement.
+The trace is `/tmp/maxpane-layer-trace.json`.
+
+Bounded public keyless live runs used fresh empty HOME/cache directories and
+149×45 production renders. BOARDROOM, NFT entry/reentry, token overview/detail,
+NEWS, SWARM, TTT, FWA and Curator were inspected. The final navigation trace
+recorded 174 HTTP starts and 23 cancellations; returning from token detail
+asserted that the overview regained active ownership. These totals describe
+the whole navigation scenario, not BOARDROOM alone. Public source failures
+remained visible in logs; e.g. FWA refused derived values after a partial slot
+sweep failed its existing invariants. No speed or complete-source claim is
+inferred from the live run. Artifacts: `/tmp/maxpane-layered-live/`.
+
+Event-gated tests establish the stronger ownership guarantees, including
+cross-screen cancellation finalizers, borrowed token manager handoff, native
+BOARD timers, rapid reentry, passive projection and preserved cache clocks.
+Rollback mutations of cancellation, scope whitelists, reentry offers and
+footer placement were caught. The final review's four Important findings
+(late child unmount, cross-screen drain barrier, retained POOL4 source state,
+generated FWA failure notices) were fixed in one wave. Scoped re-review marked
+all four **ADDRESSED**, passed the original repros plus six additional cases,
+and independently caught/restored the owner-deactivation mutation.
+
+### Verification and baseline limits
+
+No full suite was run. The initial whole touched/composing screen batch had
+2,323 passes and 21 failures. Three changed-contract assertions were corrected
+and passed; 18 failures predate this task. Nine are the documented Portfolio
+hero/layout failures; nine Surf fixture/layout failures were reproduced on an
+untouched `09a84ddc` archive with isolated HOME and no network:
+
+- POOL4: `test_the_bindings_are_refresh_and_the_two_view_toggles`,
+  `test_the_three_bodies_are_never_showing_at_once`.
+- POOL4 market: `test_the_clip_detector_sees_a_clip_inside_a_doubly_padded_leaf`,
+  `test_exactly_one_hero_shows_in_every_mode[launchpad]`,
+  `test_exactly_one_hero_survives_every_transition_between_bodies`.
+- SWARM: `test_busy_agent_cards_keep_independent_records_at_the_pin`,
+  `test_the_agent_card_row_keeps_seat_values_and_has_no_third_row`,
+  `test_swarm_layout_parks_exported_widgets_and_puts_launches_below_workflows`.
+- NEWS: `test_every_list_row_in_the_fixture_matches_the_frozen_row_shape`.
+
+The post-fix 26-file batch had 1,654 passes and two failures: one remaining
+FWA old-marker assertion (corrected; the full FWA screen file passed all 22
+tests), plus
+`test_launch_tab_click_schedules_progress_preserves_rows_and_opens_seat`.
+That BOARD test's expectation of loading text inside a metric card also fails
+unchanged on `09a84ddc`; it remains a baseline follow-up, not a production fix.
+The additional eight shared-marker consumer test files passed all 224 tests.
+The earlier backend whole-file run passed 349 tests. Results overlap and must
+not be added into a unique suite total.
+
+Registration mounts: 79 passed, one known baseline failure
+(`test_a_full_outage_renders_explicit_states_not_zeros` expects a title warning
+already suppressed before this change). Baseline evidence is in
+`/tmp/maxpane-layered-live/baseline-tests.log` and
+`/tmp/maxpane-nft-review-20261017/portfolio-baseline.log`; current whole-file
+logs are in `/tmp/maxpane-layered-live/`.
+
+Final fast guards: **126 passed**. Documentation pins: **12 passed**.
+`git diff --check` is clean. Known baseline failures above remain open; this is
+not a claim that the repository's full suite is green.
+
+### Filed Minor findings
+
+- `.claude/rules/surf.md`, old Keys and bodies paragraph: obsolete startup
+  prefetch, footer hints/poll and width wording conflicts with the new explicit
+  owner override at the top. Align on the next touch.
+- `screens/refresh_guard.py`, module/PREFETCH_WORKER_NAME comments: describe
+  the retained startup joining helper as compatibility behavior on next touch.

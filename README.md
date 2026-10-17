@@ -23,10 +23,16 @@ kind, no wallet, no signing, no transactions.
 
 ### SURFBOARD HUB — dashboard 9
 
+BOARDROOM loads only the data needed by its cards. Opening a detail board shows
+its retained cache immediately and refreshes that board every 30 seconds.
+Leaving cancels its reads; reopening keeps the cache and refreshes immediately.
+A centered animated `◐ loading` in the shared footer indicates active reads.
+Refresh and navigation shortcuts still work without their old footer hints.
+
 Choose **9** on the start screen for the four-row, six-column equipment rack. It is designed
 for **149×45**. The central terminal spans the bottom three rows; all seven existing SURFBOARD
 views open through their original screen, with Escape returning to the rack. Entry 1 remains
-the default. `--game surfboard` preloads the shared data; the selection menu still appears.
+the default. `--game surfboard` selects the initial dashboard; the selection menu still appears.
 
 Use arrows and Enter to open a card, `/` to type, and Escape to leave the input or return to
 the menu. Outside the input, Tab continues cycling dashboards. Type `?` for commands:
@@ -52,8 +58,8 @@ establish a particular wallet's eligibility. Minted and live supply remain separ
 
 Acceptance and rank in HUB, AGENT and BOARD share one validated `/seats/records` snapshot.
 Its upstream cache can lag by ten minutes. Device effort and worker presence keep separate
-source clocks. Focus a card to see its meter definition and source time; missing data is
-labelled unavailable. The terminal is a recent-event window, not a complete job history.
+source clocks. Focus a card to see its meter definition and source time; missing data
+uses a neutral dash. The terminal is a recent-event window, not a complete job history.
 The terminal refreshes every 30 seconds; new events continue below command replies.
 Its aligned columns show time, event, agent,
 state and description; the footer shows IMD market cap (or labelled FDV), progress toward

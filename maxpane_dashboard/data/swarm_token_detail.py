@@ -51,6 +51,8 @@ class SwarmTokenDetailManager:
         self._task = None
         self._attempt = None
         self._closed = False
+        self._active_view, self._retired = 'token', set()
+        self._view_epoch = 0
         self._semaphore = asyncio.Semaphore(self.CONCURRENCY)
 
     def _artifact(self, kind, name, contract=None, *, site=None):
@@ -67,13 +69,18 @@ class SwarmTokenDetailManager:
         self._sources[name] = dict(state=state, read_ts=self._clock(), partial=state == 'partial')
 
     async def _read(self, method, identity=None):
+        epoch = self._view_epoch
+        result = None
         try:
             async with self._semaphore:
                 async with asyncio.timeout(self.REQUEST_TIMEOUT):
                     operation = getattr(self.client, method)
-                    return await operation(identity) if identity is not None else await operation()
+                    result = await operation(identity) if identity is not None else await operation()
         except Exception:
-            return None
+            pass
+        if epoch != self._view_epoch or self._active_view is None or self._closed:
+            raise asyncio.CancelledError('retired token detail read')
+        return result
 
     def _decode_launch(self, raw):
         if (not isinstance(raw, dict) or raw.get('id') != self._launch_id
@@ -213,7 +220,7 @@ class SwarmTokenDetailManager:
 
     def is_loading(self, view: str | None = None) -> bool:
         """Combine this reader with only its selected token's borrowed reads."""
-        if self._closed:
+        if self._closed or self._active_view is None:
             return False
         if self._task is not None and not self._task.done() and not self._task.cancelling():
             return True
@@ -229,14 +236,18 @@ class SwarmTokenDetailManager:
             _stale_token(self._token)
 
     async def fetch_and_compute(self):
+        await self.drain_reads()
         now = self._clock()
-        if not self._closed:
+        epoch = self._view_epoch
+        if not self._closed and self._active_view is not None:
             refresh = getattr(self.overview, 'fetch_selected_token', None)
             if refresh and not self.is_mock:
                 try:
                     token = await refresh(self._identity[0], launch_uuid=self._launch_id)
                 except Exception:
                     token = None
+                if epoch != self._view_epoch or self._active_view is None or self._closed:
+                    raise asyncio.CancelledError('retired token market read')
                 self._accept_token(token)
             if (self._enabled and (self._task is None or self._task.done())
                     and (self._attempt is None or now - self._attempt >= self.TTL)):
@@ -262,8 +273,32 @@ class SwarmTokenDetailManager:
         if self._task:
             await asyncio.gather(self._task, return_exceptions=True)
 
+    def set_active_view(self, view):
+        """Suspend this launch and its borrowed market reads, retaining results."""
+        if view == self._active_view:
+            return
+        self._active_view = view
+        self._view_epoch += 1
+        if self._task is not None and not self._task.done():
+            self._task.cancel()
+            self._retired.add(self._task)
+        if view is not None:
+            self._attempt = None
+        setter = getattr(self.overview, 'set_active_view', None)
+        if setter is not None:
+            setter('token:' + self._identity[0] if view is not None else None)
+
+    async def drain_reads(self):
+        tasks = tuple(self._retired)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+            self._retired.difference_update(tasks)
+        drain = getattr(self.overview, 'drain_reads', None)
+        if drain is not None:
+            await drain()
+
     async def close(self):
         self._closed = True
-        if self._task and not self._task.done():
-            self._task.cancel()
+        self.set_active_view(None)
+        await self.drain_reads()
         await self.wait_pending()

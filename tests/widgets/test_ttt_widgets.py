@@ -88,7 +88,7 @@ async def test_no_fresh_launch_hides_the_row_entirely():
         decay_window_signal=_signal("2 decaying"),
         concentration_signal=_signal("1.4x vs today"),
     )
-    assert not any("unavailable" in line for line in lines), lines
+    assert not any("—" in line or "unavailable" in line for line in lines), lines
     # title, blank, then the three rows with the separator in place.
     body = [line for line in lines if line.strip()]
     assert body[0].strip().startswith("SIGNALS"), body

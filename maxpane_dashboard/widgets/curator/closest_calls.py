@@ -110,7 +110,7 @@ from maxpane_dashboard.widgets.markup_safety import safe_markup
 CLOSEST_CALLS_TITLE = "CLOSEST CALLS"
 
 #: The explicit states, tested verbatim.
-CLOSEST_CALLS_UNAVAILABLE = "closest calls unavailable"
+CLOSEST_CALLS_UNAVAILABLE = "—"
 NO_JUDGED_HOURS = "no judged hours yet"
 
 #: Rows rendered.  The board is a "closest" list, not a history.
@@ -341,7 +341,7 @@ class CuratorClosestCalls(Vertical):
 
         rows = self._payload["rows"]
         if rows is None:
-            self._set_note(f"[$warning]⚠ {CLOSEST_CALLS_UNAVAILABLE}[/]")
+            self._set_note(f"[dim]{CLOSEST_CALLS_UNAVAILABLE}[/]")
             table.add_row(*cells({}, columns, default=DASH))
             return
 

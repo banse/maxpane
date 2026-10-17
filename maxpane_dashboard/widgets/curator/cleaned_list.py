@@ -86,7 +86,7 @@ CLEAN_LIST_TITLE = "CLEANED LIST"
 
 #: The explicit states, tested verbatim: a sweep that could not answer and a
 #: sweep that answered "nobody survives" are different facts.
-CLEAN_LIST_UNAVAILABLE = "clean list unavailable"
+CLEAN_LIST_UNAVAILABLE = "—"
 CLEAN_LIST_EMPTY = "every wallet is in a linked group"
 
 #: The reader's own line when no clean rank came back.  The brief's exact
@@ -437,8 +437,8 @@ class CuratorCleanList(Vertical):
         rows = self._payload["rows"]
         if rows is None:
             self._set_note(
-                f"[$warning]⚠ {CLEAN_LIST_UNAVAILABLE}[/]"
-                f"{self._as_of(f'⚠ {CLEAN_LIST_UNAVAILABLE}')}"
+                f"[dim]{CLEAN_LIST_UNAVAILABLE}[/]"
+                f"{self._as_of(CLEAN_LIST_UNAVAILABLE)}"
             )
             table.add_row(*cells({}, columns, default=DASH))
             return
@@ -456,8 +456,8 @@ class CuratorCleanList(Vertical):
             # finding: rendered as the empty state it would be a confident
             # "nobody survives" drawn from bytes nobody could read (M2).
             self._set_note(
-                f"[$warning]⚠ {CLEAN_LIST_UNAVAILABLE}[/]"
-                f"{self._as_of(f'⚠ {CLEAN_LIST_UNAVAILABLE}')}"
+                f"[dim]{CLEAN_LIST_UNAVAILABLE}[/]"
+                f"{self._as_of(CLEAN_LIST_UNAVAILABLE)}"
             )
             table.add_row(*cells({}, columns, default=DASH))
             return

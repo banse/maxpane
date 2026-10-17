@@ -55,7 +55,7 @@ async def _render(payload, size):
         return {
             "missing": missing, "overflow": overflow,
             "marked_cards": [card.id for card in cards if "‹" in _region_text(pilot.app, card)],
-            "status_whole": status.region.bottom <= size[1] and "esc back" in _region_text(pilot.app, status),
+            "status_whole": status.region.bottom <= size[1] and "q quit · m menu · tab switch" in _region_text(pilot.app, status),
             "taller": "‹ taller" in _region_text(pilot.app, screen.query_one("#title-bar")),
             "widths": [c.region.width for c in cards],
             "panel_widths": [p.region.width for p in panels],

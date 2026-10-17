@@ -35,11 +35,11 @@ RAW_LIST_TITLE = "THE RAW LIST"
 CLEANED_LIST_TITLE = "THE CLEANED LIST"
 FILTERED_LIST_TITLE = "THE FILTERED LIST"
 
-RAW_LIST_UNAVAILABLE = "raw list unavailable"
+RAW_LIST_UNAVAILABLE = "—"
 RAW_LIST_EMPTY = "no contributors"
-CLEANED_LIST_UNAVAILABLE = "analysis unavailable"
+CLEANED_LIST_UNAVAILABLE = "—"
 CLEANED_LIST_EMPTY = "no wallets survive"
-FILTERED_LIST_UNAVAILABLE = "filtered list unavailable"
+FILTERED_LIST_UNAVAILABLE = "—"
 FILTERED_LIST_EMPTY = "no wallets match"
 
 MAX_ROWS = 1_000
@@ -746,7 +746,7 @@ class _ListTable(Vertical):
         rows = self._rows()
         if rows is None:
             self._set_heading(
-                f"[$warning]⚠ {safe_markup(self._unavailable_note())}[/]"
+                f"[dim]{safe_markup(self._unavailable_note())}[/]"
             )
             self._renumber_and_publish(table)
             table.add_row(*cells({}, columns, default=DASH))
@@ -762,7 +762,7 @@ class _ListTable(Vertical):
         )
         if raw is None or (raw and not usable):
             self._set_heading(
-                f"[$warning]⚠ {safe_markup(self._unavailable_note())}[/]"
+                f"[dim]{safe_markup(self._unavailable_note())}[/]"
             )
             self._renumber_and_publish(table)
             table.add_row(*cells({}, columns, default=DASH))

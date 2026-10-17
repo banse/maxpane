@@ -60,8 +60,8 @@ class BTSignals(SignalsPanelBase):
         # signal row in the tree, not the live rows' bold white (review M3).
         self.write_guarded(
             selector, build,
-            fmt_signal_trailing(label, "unavailable", indicator="",
-                                color="yellow", value_color="yellow"),
+            fmt_signal_trailing(label, "—", indicator="",
+                                color="dim", value_color="dim"),
         )
 
     def update_data(

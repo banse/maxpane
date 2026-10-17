@@ -3815,7 +3815,7 @@ class SurfScreen(SurfDashboardScreen):
             self._launch_contribution_timer = None
 
     def _tick_launch_contribution(self):
-        if not (self.is_current and self._mode == MODE_BOARD):
+        if not (self.is_current and self._mode == MODE_BOARD and self._reads_ready):
             return
         offer = getattr(self._data_manager, "offer_launch_contribution", None)
         getter = getattr(self._data_manager, "get_launch_contribution_snapshot", None)
@@ -3991,8 +3991,7 @@ class SurfScreen(SurfDashboardScreen):
         self._prime_status_bar(self.query_one(StatusBar))
         # ScreenResume owns the first fetch; body switches need their own.
         if refresh and self.is_current:
-            self.start_refresh()
-            self._tick_loading()
+            self.restart_view()
         # The row marker is about whichever body is now showing (only the
         # dashboard body's right rail can scroll), so it has to be re-read --
         # deferred, exactly like ``on_resize``, because the newly-shown body

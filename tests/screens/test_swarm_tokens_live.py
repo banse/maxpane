@@ -49,7 +49,8 @@ async def test_live_screen_has_coverage_and_explorer_details_without_mock_label(
         await pilot.pause()
         text = painted(app)
         assert 'MOCK' not in text
-        assert 'quotes 5/24' in text and 'as of' in text and '30s' in text
+        assert 'quotes 5/24' in text and 'as of' in text
+        assert '30s poll' not in text
         assert 'ACTIVITY' in text and 'trades unavailable' not in text
         app.screen.query_one(DataTable).focus()
         await pilot.press('enter')
