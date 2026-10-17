@@ -7,19 +7,22 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import httpx
 
 from maxpane_dashboard.data.surf_cache import SurfCache, SLOT_SURF_WORK, TIER_SURF_WORK
 from maxpane_dashboard.data.surf_work_reader import WorkReader
+from maxpane_dashboard.data.surf_swarm_client import JobDetailRead, SwarmClient
 
 
 @pytest.fixture
 def setup(tmp_path):
     raw = json.loads(Path('tests/fixtures/surf/work/captured.json').read_text())
-    clock = SimpleNamespace(now=raw['read_ts'])
+    clock = SimpleNamespace(now=raw['read_ts'], mono=1000.0)
     cache = SurfCache(path=str(tmp_path / 'cache.json'), clock=lambda: clock.now)
 
     class Client:
         calls = []
+        _monotonic = staticmethod(lambda: clock.mono)
         async def fetch_jobs(self, *, limit, before=None):
             self.calls.append(('jobs', before or limit))
             return raw.get('next_jobs') if before else raw['jobs']
@@ -32,6 +35,10 @@ def setup(tmp_path):
         async def fetch_job(self, identity):
             self.calls.append(('detail', identity))
             return next((d for d in raw['details'] if d['id'] == identity), None)
+        async def read_job_detail(self, identity, *, fresh_after=None):
+            payload = await self.fetch_job(identity)
+            return JobDetailRead(copy.deepcopy(payload), clock.now if payload else None,
+                                 clock.mono, None, False)
 
     client = Client()
     reader = WorkReader(client, cache, clock=lambda: clock.now)
@@ -566,3 +573,180 @@ async def test_revalidated_prior_job_does_not_hide_other_active_jobs_on_cursor_p
     assert data['jobs_loaded'] == 102 and data['details_loaded'] == 3
     assert not data['partial']
     assert cache.get_last_good(SLOT_SURF_WORK).payload['active_scan_complete']
+
+
+@pytest.fixture
+async def shared_setup(project_setup):
+    """Real shared memo and discovery; only the HTTP transport is replaced."""
+    _, _, cache, clock, raw = project_setup
+    calls = []
+    gates = {}
+
+    async def handler(request):
+        clock.mono += 1
+        path = request.url.path
+        calls.append((path, clock.mono))
+        if path == '/jobs':
+            if request.url.params.get('before') and gates.get('prime_before_page'):
+                # Another consumer refreshes during the later discovery HTTP read.
+                await client.read_job_detail(gates.pop('prime_before_page'), fresh_after=clock.mono)
+                clock.mono += 1
+                calls.append(('page_completed', clock.mono))
+            payload = raw['next_jobs'] if request.url.params.get('before') else raw['jobs']
+            return httpx.Response(200, json={'jobs': payload})
+        if path == '/workflows':
+            return httpx.Response(200, json={'workflows': raw['workflows']})
+        if path == '/swarm':
+            if 'discovery' in gates: gates['discovery'].set()
+            return httpx.Response(200, json={'counts': {'jobStates': {'executing': raw.get('executing_count', 1)}}})
+        if path.startswith('/jobs/'):
+            identity = path.rsplit('/', 1)[1]
+            payload = copy.deepcopy(next((j for j in raw['details'] if j['id'] == identity), None))
+            if gates.get('identity') == identity:
+                gates['identity'] = None
+                gates['entered'].set()
+                await gates['release'].wait()
+            return httpx.Response(200, json=payload)
+        if path.startswith('/workflows/'):
+            identity = path.rsplit('/', 1)[1]
+            return httpx.Response(200, json=raw.get('workflow_details', {}).get(identity))
+        pytest.fail(f'unexpected request: {request.url}')
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        async with SwarmClient(http_client=http, base_url='https://swarm.invalid',
+                               inter_call_delay=0, clock=lambda: clock.now,
+                               monotonic=lambda: clock.mono) as client:
+            yield WorkReader(client, cache, clock=lambda: clock.now), client, cache, clock, raw, calls, gates
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('scenario', ['terminal_cache', 'changed_project', 'old_flight', 'later_page',
+                                      'prior_active', 'prior_active_later_page'])
+async def test_work_discovery_revalidates_active_detail_before_atomic_publish(shared_setup, scenario):
+    reader, client, cache, clock, raw, calls, gates = shared_setup
+    active, historical = raw['details']
+    identity = active['id']
+    original = copy.deepcopy(active)
+    if scenario == 'terminal_cache':
+        active['state'] = 'completed'
+    if scenario in ('prior_active', 'prior_active_later_page'):
+        await reader.offer()
+        clock.now += 60
+        raw['jobs'] = []
+        active['state'] = 'completed'
+        raw['executing_count'] = 0
+    elif scenario == 'old_flight':
+        await client.read_job_detail(identity)
+        clock.mono += 31  # Expire active TTL, preserving matching discovery hints.
+        gates.update(identity=identity, entered=asyncio.Event(), release=asyncio.Event(),
+                     discovery=asyncio.Event())
+        old_flight = asyncio.create_task(client.read_job_detail(identity))
+        await gates['entered'].wait()
+    else:
+        await client.read_job_detail(identity)
+    active.update(original)
+    if scenario == 'prior_active': active['state'] = 'completed'
+    # Changing project versions need not change the job's updatedAt/state.
+    missing = '00000000-0000-0000-0000-000000000999'
+    active['project']['versions'].append(dict(jobId=missing, state='completed'))
+    if scenario in ('later_page', 'prior_active_later_page'):
+        if scenario == 'later_page': gates['prime_before_page'] = identity
+        else: raw['executing_count'] = 2  # Keep scanning beyond the previously active ID.
+        raw['jobs'] = [dict(original, id=f'00000000-0000-0000-0000-{n:012d}', state='completed')
+                       for n in range(100)]
+        raw['jobs'][-1]['createdAt'] = '2026-10-12T00:00:00.000Z'
+        raw['next_jobs'] = [copy.deepcopy(original)]
+    clock.mono += 1
+    before = copy.deepcopy(cache.get_last_good(SLOT_SURF_WORK))
+    task = reader.offer()
+    if scenario == 'old_flight':
+        await gates['discovery'].wait()
+        assert cache.get_last_good(SLOT_SURF_WORK) == before
+        gates['release'].set()
+        await old_flight
+    await task
+    data = reader.project()
+    if scenario == 'prior_active':
+        assert data['summary']['jobs'] == 0
+        assert data['projects'] == []
+    else:
+        assert data['summary']['jobs'] == 1
+        assert missing in data['projects'][0]['job_ids']
+        assert data['partial']  # The new version is explicitly missing.
+    discovery = max(stamp for path, stamp in calls if path in ('/jobs', '/workflows', '/swarm', 'page_completed'))
+    assert max(stamp for path, stamp in calls if path == '/jobs/' + identity) > discovery
+    assert sum(path == '/jobs/' + identity for path, _ in calls) == (
+        3 if scenario in ('old_flight', 'later_page', 'prior_active_later_page') else 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('case', ['complete', 'foreign_member', 'missing_version', 'cancel'])
+async def test_full_context_and_cancellation_survive_shared_details(shared_setup, case):
+    reader, client, cache, clock, raw, calls, gates = shared_setup
+    active, historical = raw['details']
+    prototype = active['nodes'][0]
+    active['nodes'] = [dict(copy.deepcopy(prototype), key=f'step-{n}',
+                            state='working' if n == 0 else 'accepted',
+                            dependsOn=[] if n == 0 else [f'step-{n - 1}']) for n in range(40)]
+    if case == 'foreign_member': historical['project']['id'] = active['id']
+    missing = '00000000-0000-0000-0000-000000000999'
+    if case == 'missing_version':
+        active['project']['versions'].append(dict(jobId=missing, state='completed'))
+    original_read = await client.read_job_detail(historical['id'])
+    historical_updated = datetime.fromisoformat(historical['updatedAt']).timestamp()
+    await reader.offer()
+    data = reader.project()
+    current = next(j for j in data['jobs'] if j['id'] == active['id'])
+    assert len(current['nodes']) == 40
+    assert current['nodes'][-1]['depends_on'] == ['step-38']
+    assert data['summary']['jobs'] == 1
+    old_row = next(j for j in data['jobs'] if j['id'] == historical['id'])
+    if case == 'foreign_member':
+        assert old_row['nodes'] is None and data['partial']
+    else:
+        assert old_row['updated_ts'] == historical_updated
+        assert old_row['id'] not in cache.get_last_good(SLOT_SURF_WORK).payload['current_job_ids']
+        assert data['partial'] == (case == 'missing_version')
+    before = copy.deepcopy(cache.get_last_good(SLOT_SURF_WORK))
+    clock.now += 60
+    if case == 'cancel':
+        final = dict(copy.deepcopy(historical), id=missing, project=None, state='completed')
+        raw['details'].append(final)
+        active['project']['versions'].append(dict(jobId=missing, state='completed'))
+        gates.update(identity=missing, entered=asyncio.Event(), release=asyncio.Event())
+        task = reader.offer()
+        await gates['entered'].wait()  # Final required context detail, before atomic publish.
+        assert cache.get_last_good(SLOT_SURF_WORK) == before
+        reader.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        assert task.cancelled()
+        assert cache.get_last_good(SLOT_SURF_WORK) == before
+        assert cache.last_failure_ts(TIER_SURF_WORK) is None
+    else:
+        await reader.offer()
+        assert reader.project()['summary']['jobs'] == 1
+        assert reader.project()['read_ts'] == clock.now
+    retained = await client.read_job_detail(historical['id'])
+    assert retained.from_cache and retained.observed_at == original_read.observed_at
+    assert retained.observed_at < clock.now
+    assert sum(path == '/jobs/' + historical['id'] for path, _ in calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_later_discovery_revalidation_cap_cannot_authorize_stale_context(shared_setup, monkeypatch):
+    from maxpane_dashboard.data import surf_work as work
+    reader, _, _, clock, raw, _, _ = shared_setup
+    await reader.offer()
+    active = raw['details'][0]
+    raw['jobs'] = [dict(active, id=f'00000000-0000-0000-0000-{n:012d}', state='completed')
+                   for n in range(100)]
+    raw['jobs'][-1]['createdAt'] = '2026-10-12T00:00:00.000Z'
+    raw['next_jobs'] = [copy.deepcopy(active)]
+    raw['executing_count'] = 2
+    monkeypatch.setattr(work, 'CONTEXT_DETAIL_LIMIT', 1)
+    clock.now += 60
+    await reader.offer()
+    data = reader.project()
+    assert data['projects'] == []
+    assert next(j for j in data['jobs'] if j['id'] == active['id'])['nodes'] is None
+    assert data['partial'] and data['summary']['build'] is None

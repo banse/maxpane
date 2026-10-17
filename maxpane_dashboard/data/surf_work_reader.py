@@ -45,6 +45,7 @@ class WorkReader:
     async def _fetch(self, method, *args, **kwargs):
         try:
             raw = await getattr(self.client, method)(*args, **kwargs)
+            if method == 'read_job_detail': raw = raw.payload
         except Exception:
             return None
         if isinstance(raw, dict) and raw.get('error') == 'busy':
@@ -66,20 +67,25 @@ class WorkReader:
         counts = overview.get('counts') if isinstance(overview, dict) else None
         states = counts.get('jobStates') if isinstance(counts, dict) else None
         hint = work.integer(states.get('executing')) if isinstance(states, dict) else None
-        details, expected = {}, set()
+        discovery_mono = self.client._monotonic()
+        details, detail_bounds, expected = {}, {}, set()
         required_reads = 0
 
-        async def read_job(identity, *, required=True):
+        async def read_job(identity, *, required=True, fresh_after=None):
             nonlocal required_reads, partial
             expected.add(identity)
-            if identity in details: return details[identity]
+            if identity in details and (fresh_after is None or
+                    detail_bounds.get(identity) is not None and detail_bounds[identity] >= fresh_after):
+                return details[identity]
             if required and required_reads >= work.CONTEXT_DETAIL_LIMIT:
                 partial = True
+                if identity in details: details[identity] = None
                 return None
             if required: required_reads += 1
-            raw = await self._fetch('fetch_job', identity)
+            raw = await self._fetch('read_job_detail', identity, fresh_after=fresh_after)
             row = work._job(raw, self.clock(), detail=True)
             details[identity] = raw if row is not None and row['id'] == identity else None
+            detail_bounds[identity] = fresh_after
             if details[identity] is None: partial = True
             return details[identity]
 
@@ -91,7 +97,7 @@ class WorkReader:
         stored_ids = {j['id'] for j in rows}
         page, seen, before = list(jobs), set(stored_ids), None
         for identity in dict.fromkeys([j['id'] for j in rows if j['state'] == 'executing'] + prior_ids):
-            raw = await read_job(identity)
+            raw = await read_job(identity, fresh_after=discovery_mono)
             if raw is None:
                 discovery_ok = False
             elif raw['state'] == 'executing':
@@ -111,6 +117,7 @@ class WorkReader:
             before = cursor
             page = await self._fetch('fetch_jobs', limit=work.SCAN_PAGE_LIMIT, before=before)
             if not isinstance(page, list): discovery_ok = False; break
+            page_mono = self.client._monotonic()
             decoded, _ = work._page(page, work._job, self.clock(), work.SCAN_PAGE_LIMIT)
             if len(decoded) != len(page) or any(j['id'] in seen for j in decoded):
                 discovery_ok = False; break
@@ -123,7 +130,7 @@ class WorkReader:
                         discovery_ok = False; continue
                     raw = next(j for j in page if j['id'] == row['id'])
                     jobs.append(raw); stored_ids.add(row['id'])
-                detail = await read_job(row['id'])
+                detail = await read_job(row['id'], fresh_after=page_mono)
                 if detail is None: discovery_ok = False
                 elif detail['state'] != 'executing': observed.discard(row['id'])
         complete = discovery_ok and hint is not None and len(observed) == hint
