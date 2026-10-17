@@ -547,6 +547,13 @@ class SwarmClient(OwnedHttpClient):
                 self._remember_detail(job, read, epoch)
             return read, epoch, scope
 
+    def known_job_revision(self, job_id: str) -> str | None:
+        """Last validated server revision in this scope; never fetch or register."""
+        if (self._detail_closed or not _is_path_segment(job_id)
+                or self._current_detail_scope() != self._detail_scope):
+            return None
+        return self._detail_hints.get(job_id, {}).get('updatedAt')
+
     async def read_job_detail(self, job_id: str, *, fresh_after: float | None = None) -> JobDetailRead:
         """Share bounded detail reads; freshness constrains the real HTTP start."""
         if (not _is_path_segment(job_id) or self._detail_closed or

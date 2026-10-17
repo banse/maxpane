@@ -6870,17 +6870,22 @@ class SurfManager:
         return agent_work.record_rows(sw.seat_work_rows(seat), capture['work'],
                                       failed=capture['work_failed'], now=now)
 
-    @staticmethod
-    def _record_version_changes(rows: list[dict], versions: dict) -> tuple[dict, set[str]]:
+    def _record_version_changes(self, rows: list[dict], versions: dict) -> tuple[dict, set[str]]:
         current = {}
         for row in rows:
-            current.setdefault(row['job_id'], set()).add((row['submission_hash'], row.get('job_state')))
+            job = row['job_id']
+            revision = self.swarm_client.known_job_revision(job)
+            if revision is None and versions.get(job):
+                revision = next(iter(versions[job]))[2]
+            current.setdefault(job, set()).add((row['submission_hash'], row.get('job_state'), revision))
         current = {job: frozenset(items) for job, items in current.items()}
         changed = {job for job, version in current.items() if job in versions and versions[job] != version}
         return current, changed
 
     @staticmethod
-    def _confirm_record_version(versions: dict, job: str, version: frozenset) -> None:
+    def _confirm_record_version(versions: dict, job: str, version: frozenset, *, revision=None) -> None:
+        if revision is not None:
+            version = frozenset((key, state, revision) for key, state, _ in version)
         versions.pop(job, None)
         versions[job] = version
         while len(versions) > 400:
@@ -6965,8 +6970,9 @@ class SurfManager:
                     continue
             points[job] = point
             if point['state'] is not None:
-                self._confirm_record_version(self._swarm_job_detail_versions, job, versions[job])
-        points = sw.prune_job_details(points, now_ts=now,
+                self._confirm_record_version(self._swarm_job_detail_versions, job, versions[job],
+                                             revision=read.revision)
+        points = sw.prune_job_details(points, now_ts=max(now, float(self._clock())),
                                       cap=SWARM_JOB_DETAIL_CACHE_CAP, max_age_s=SWARM_JOB_DETAIL_MAX_AGE_S)
         if prior is None or prior.payload != points:
             stamps = [p['read_ts'] for p in points.values() if p['state'] is not None]

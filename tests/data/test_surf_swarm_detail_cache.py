@@ -84,6 +84,33 @@ async def test_shared_detail_is_one_request_and_independent_copies():
             cached.observed_at = 0
 
 
+async def test_known_job_revision_is_read_only_validated_and_scope_bound():
+    calls = []
+    def handler(request):
+        calls.append(request)
+        if request.url.path == '/jobs':
+            body = dict(CASES['terminal'], updatedAt='not-a-server-revision')
+            return httpx.Response(200, json={'jobs':[body]})
+        return response(request, 'terminal')
+    async with client_for(handler) as client:
+        assert client.known_job_revision(JOB) is None and calls == []
+        await client.read_job_detail(JOB)
+        assert client.known_job_revision(JOB) == '2026-10-17T10:00:00.000Z'
+        assert len(calls) == 1
+        await client.fetch_jobs()
+        assert client.known_job_revision(JOB) == '2026-10-17T10:00:00.000Z'
+        assert len(calls) == 2
+        before = dict(client._detail_hints[JOB])
+        client._hosts = ('https://two.test',)
+        assert client.known_job_revision(JOB) is None
+        assert client._detail_hints[JOB] == before and len(calls) == 2
+        client._hosts = ('https://one.test',)
+        client._detail_memo.pop(JOB)
+        client._forget_detail(JOB)
+        assert client.known_job_revision(JOB) is None and len(calls) == 2
+    assert client.known_job_revision(JOB) is None
+
+
 @pytest.mark.parametrize('kind,ttl', [('active', 30), ('terminal', 600), ('busy', 15)])
 async def test_ttl_and_negative_backoff_preserve_observed_at(kind, ttl):
     clock, calls = Clock(), []

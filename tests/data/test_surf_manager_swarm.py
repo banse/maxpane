@@ -211,6 +211,9 @@ class _FakeSwarm:
         observed = self._detail_clock() if isinstance(payload, dict) and payload != SEAT_BUSY else None
         return JobDetailRead(payload, observed, started, None, False)
 
+    def known_job_revision(self, job_id):
+        return None
+
     async def submissions(self, job_id):
         await asyncio.sleep(0)
         self.calls["submissions"] += 1

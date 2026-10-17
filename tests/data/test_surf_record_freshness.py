@@ -362,3 +362,105 @@ async def test_sites_scores_cache_hit_keeps_observation_and_completes_tier(tmp_p
             assert manager.cache.last_fetch_ts(TIER_SWARM_LAUNCHES) == NOW
         finally:
             await manager.close()
+
+
+@pytest.mark.parametrize('refresh', [False, True], ids=['cold', 'terminal-refresh'])
+async def test_popup_completion_observation_survives_current_cycle(tmp_path, refresh):
+    from maxpane_dashboard.data import surf_swarm as sw
+    clock = FakeClock(NOW)
+    fake = Answers(popup_seat())
+    job = fake.seat['work'][0]['jobId']
+    body = popup_body(job)
+    failed, calls = [False], []
+    def handler(request):
+        assert request.url.path == '/jobs/'+job
+        calls.append(request)
+        clock.advance(1)
+        return httpx.Response(200, json={'error':'unavailable'} if failed[0] else body)
+    async with memo(clock, handler) as client:
+        client.submissions = fake.submissions
+        manager = _manager(tmp_path, client, clock=clock)
+        try:
+            await manager._pool_swarm_answers(fake.seat, 420, clock())
+            if refresh:
+                manager.cache.store_last_good(SLOT_SWARM_JOB_DETAIL,
+                    {job:sw.job_detail_point(body, job, now_ts=clock())}, ts=clock())
+                clock.advance(600)
+                body['nodes'].append(dict(key='late_node', role='review', state='accepted', attempt=1))
+            started = clock()
+            await manager._pool_swarm_job_details(fake.seat, started)
+            point = manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload[job]
+            assert point['read_ts'] == started+1
+            assert len(point['nodes']) == (2 if refresh else 1)
+            before = copy.deepcopy(manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL))
+            failed[0] = True
+            clock.advance(600)
+            await manager._pool_swarm_job_details(fake.seat, clock())
+            assert manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL) == before
+            assert len(calls) == 2
+        finally:
+            await manager.close()
+
+
+@pytest.mark.parametrize('resource', ['answers', 'details'])
+@pytest.mark.parametrize('fail_first', [False, True], ids=['success', 'failed-then-retry'])
+async def test_known_revision_revalidates_record_with_caps_and_pending_retry(tmp_path, resource, fail_first):
+    clock = FakeClock(NOW)
+    fake = Answers(popup_seat(6))
+    base = json.loads(Path('tests/fixtures/surf/detail_cache/cases.json').read_text())['terminal']
+    jobs = [row['jobId'] for row in fake.seat['work']]
+    bodies = {job:dict(copy.deepcopy(base), **popup_body(job), updatedAt='2026-10-17T10:00:00.000Z') for job in jobs}
+    calls, failed = [], set()
+    def handler(request):
+        path = request.url.path
+        if path == '/jobs':
+            return httpx.Response(200, json={'jobs':list(bodies.values())})
+        job = path.split('/')[2]
+        assert job in bodies
+        route = 'answers' if path.endswith('/submissions') else 'details'
+        calls.append((route, job))
+        if (route, job) in failed:
+            failed.remove((route, job))
+            return httpx.Response(200, json={'error':'unavailable'})
+        return httpx.Response(200, json=fake.responses[job] if route == 'answers' else bodies[job])
+    async with memo(clock, handler) as client:
+        manager = _manager(tmp_path, client, clock=clock)
+        try:
+            # Other consumers have already observed these complete job versions.
+            for job in jobs:
+                await client.read_job_detail(job)
+            for _ in range(3):
+                await manager._pool_swarm_answers(fake.seat, 420, clock())
+                await manager._pool_swarm_job_details(fake.seat, clock())
+                clock.advance(1)
+            slot = SLOT_SWARM_ANSWERS if resource == 'answers' else SLOT_SWARM_JOB_DETAIL
+            prior = copy.deepcopy(manager.cache.get_last_good(slot).payload)
+            for job in jobs:
+                bodies[job]['updatedAt'] = '2026-10-17T10:00:01.000Z'
+                bodies[job]['nodes'].append(dict(key='late_node', role='review', state='accepted', attempt=1))
+                fake.responses[job]['submissions'][0]['summary'] = 'Revised publication.'
+            await client.fetch_jobs()
+            calls.clear()
+            if fail_first:
+                failed.add((resource, jobs[0]))
+            changed_at = clock()
+            for offset in (0, 1, 2, 120):
+                clock.t = changed_at+offset
+                before = len([r for r in calls if r[0] == resource])
+                if resource == 'answers':
+                    await manager._pool_swarm_answers(fake.seat, 420, clock())
+                else:
+                    await manager._pool_swarm_job_details(fake.seat, clock())
+                delta = len([r for r in calls if r[0] == resource])-before
+                assert delta <= (4 if resource == 'answers' else 2)
+                if fail_first and offset < 120:
+                    assert manager.cache.get_last_good(slot).payload[jobs[0]] == prior[jobs[0]]
+                    assert calls.count((resource, jobs[0])) == 1
+            points = manager.cache.get_last_good(slot).payload
+            if resource == 'answers':
+                assert [points[row['jobId']][row['submissionHash']]['answer'] for row in fake.seat['work']] == ['Revised publication.']*6
+            else:
+                assert [len(points[job]['nodes']) for job in jobs] == [2]*6
+            assert sum(route == resource for route, _ in calls) == 6+int(fail_first)
+        finally:
+            await manager.close()
