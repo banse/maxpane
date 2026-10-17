@@ -120,11 +120,12 @@ class SurfNftManager:
         return stamp is None or self._clock() - stamp >= ttl
 
     def _pending(self, candidates):
-        """Prioritize retained progress and reviewed identities without trusting them."""
+        """Prove reviewed candidates before enriching already observed collections."""
         due = [(key, value) for key, value in candidates.items() if self._due(key)]
         due.sort(key=lambda item: (item[0] != self._selected,
-                                  item[0] not in self.state.get('progress', {}),
                                   item[0] not in RULES,
+                                  item[0] in self.state.get('evidence', {}),
+                                  item[0] not in self.state.get('progress', {}),
                                   _stamp(self.state.get('evidence', {}).get(item[0], {}).get('checkedAt')) or 0))
         return due
 
@@ -222,15 +223,18 @@ class SurfNftManager:
             if priority is not None:
                 with budget.limit(http=6, rpc=64):
                     await self._inspect(priority, candidates[priority], budget)
-            # Keep six physical sends for coherent chain progress after backfill.
-            with budget.limit(http=max(0, budget.remaining_http - 6), rpc=0):
-                await self._discover(budget, page_limit=3, detail_limit=8, launch_limit=2)
-            candidates = self._candidates()
+            # Other collections must advance before slow job backfill can spend
+            # the deadline. Keep six credits for discovery; the first page above
+            # guarantees it also advances when chain reads take the whole window.
             due = [(key, value) for key, value in self._pending(candidates) if key != priority]
-            for identity, candidate in due:
-                if not budget.can_admit():
-                    break
-                await self._inspect(identity, candidate, budget)
+            if priority in self.state.get('progress', {}):
+                due.append((priority, candidates[priority]))
+            with budget.limit(http=max(0, budget.remaining_http - 6), rpc=192):
+                for identity, candidate in due:
+                    if not budget.can_admit():
+                        break
+                    await self._inspect(identity, candidate, budget)
+            await self._discover(budget, page_limit=3, detail_limit=8, launch_limit=2)
         except BudgetExhausted:
             pass
         except asyncio.CancelledError:

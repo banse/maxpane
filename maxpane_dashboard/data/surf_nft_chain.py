@@ -531,7 +531,16 @@ class SurfNftInspector:
         if chain not in CHAINS or not re.fullmatch(r"0x[0-9a-f]{40}", candidate["address"]):
             raise ValueError("NFT inspection requires a supported mainnet and exact address")
         key = f"{chain}:{candidate['address']}"
-        revision = hashlib.sha256(json.dumps(candidate, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        # Discovery clocks, related jobs and sites change independently of a
+        # pinned chain read. Only inputs used to inspect/prove this deployment
+        # may invalidate it; otherwise head refreshes restart it indefinitely.
+        inputs = {name: candidate.get(name) for name in (
+            "chainId", "address", "abi", "factoryAddress", "factoryProof", "constructorProof")}
+        inputs["artifact"] = {name: candidate["artifact"].get(name) for name in (
+            "name", "txHash", "blockNumber")}
+        inputs["launch"] = {name: candidate["launch"].get(name) for name in (
+            "chainId", "sourceRepoUrl", "sourceCommit", "attestation")}
+        revision = hashlib.sha256(json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         now = self.clock()
         valid_progress = self._valid_progress(progress)
         if (not valid_progress or progress.get("candidate_key") != key

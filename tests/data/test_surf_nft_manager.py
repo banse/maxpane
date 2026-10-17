@@ -204,10 +204,57 @@ async def test_cold_unselected_chain_work_precedes_slow_job_backfill(setup):
     try:
         await manager.fetch_and_compute()
         await manager.wait_pending()
-        assert calls[:3] == ['page', 'chain', 'details']
+        assert calls[0:2] == ['page', 'chain']
+        assert calls[-1] == 'details'
         assert identity in manager.state['progress']
     finally:
         await manager.close()
+
+
+async def test_selected_enrichment_and_slow_backfill_do_not_starve_other_collections(setup):
+    manager, now, entered, release, client, swarm, cache = setup
+    candidates = {f'1:0x{char * 40}': {'chainId': 1, 'address': '0x' + char * 40}
+                  for char in 'abc'}
+    manager._candidates = lambda: candidates
+    selected = next(iter(candidates))
+    manager.select(selected)
+    seen = set()
+
+    async def discovery(state, *, budget, detail_limit, **_kw):
+        if detail_limit:
+            now.value += 16  # Slow job details used to consume the whole deadline.
+        return SimpleNamespace(state={}, coverage={'complete': False})
+
+    async def inspect(candidate, progress, *, budget):
+        identity = f"1:{candidate['address']}"
+        seen.add(identity)
+        budget.consume(http=1, rpc=1)
+        return SimpleNamespace(progress={'started_at': now.value}, children=[],
+            complete=identity != selected,
+            evidence={'chainId': 1, 'address': candidate['address'],
+                      'checkedAt': now.value, 'detectionStatus': 'unsupported'})
+
+    manager.discovery.advance = discovery
+    manager.inspector.advance = inspect
+    manager._publish = lambda: None
+    try:
+        await manager.fetch_and_compute()
+        await manager.wait_pending()
+        assert seen == set(candidates)
+        assert manager.last_budget.http_attempts <= 24
+    finally:
+        await manager.close()
+
+
+def test_first_proofs_precede_known_collection_details(setup, monkeypatch):
+    manager, *_ = setup
+    selected, known, unseen, ordinary = [f'1:0x{char * 40}' for char in 'abcd']
+    candidates = dict.fromkeys((selected, known, unseen, ordinary), {})
+    monkeypatch.setattr('maxpane_dashboard.data.surf_nft_manager.RULES', {known: {}, unseen: {}})
+    manager.state['progress'][known] = {'started_at': 1000.}
+    manager.state['evidence'][known] = {'checkedAt': 1000., 'standard': 'ERC-721', 'proofOnly': True}
+    manager.select(selected)
+    assert [key for key, _ in manager._pending(candidates)] == [selected, unseen, known, ordinary]
 
 
 @pytest.mark.parametrize('failed_method,retain', [('eth_getCode', True),

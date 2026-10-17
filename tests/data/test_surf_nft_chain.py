@@ -238,6 +238,53 @@ async def test_expired_stage_discards_old_getters_and_starts_new_observation():
     assert second.progress['observed_at'] != first.progress['observed_at']
     assert client.sent.count(('eth_chainId', '[]')) == 2
 
+
+@pytest.mark.asyncio
+async def test_discovery_metadata_refresh_does_not_restart_pinned_reads():
+    from maxpane_dashboard.data.surf_nft_client import Budget
+    client = AsyncReads()
+    now = [1792200000.0]
+    reader = SurfNftInspector(client, clock=lambda: now[0])
+    candidate = {'chainId': 1, 'address': ADDRESS, 'artifact': {'txHash': TX},
+                 'launch': {'_observed_at': now[0], 'updatedAt': 'first'},
+                 'provenance': {'observed_at': now[0]}, 'jobIds': []}
+    progress = None
+    for cycle in range(30):
+        candidate['artifact']['role'] = str(cycle)
+        candidate['launch'].update(_observed_at=now[0], updatedAt=str(cycle))
+        candidate['provenance']['observed_at'] = now[0]
+        candidate['jobIds'] = [str(cycle)]
+        candidate['sites'] = [{'url': f'https://example.org/{cycle}'}]
+        result = await reader.advance(candidate, progress, budget=Budget(http_limit=2, rpc_limit=2))
+        progress = result.progress
+        now[0] += 1
+        if result.complete:
+            break
+    assert result.complete
+    assert result.evidence['deploymentConfirmed'] is True
+    assert client.sent.count(('eth_chainId', '[]')) == 1
+    assert len(client.sent) == len(set(client.sent))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('change', [
+    {'artifact': {'txHash': '0x' + 'ab' * 32}},
+    {'launch': {'sourceRepoUrl': 'https://github.com/example/nft', 'sourceCommit': 'a' * 40}},
+    {'launch': {'attestation': {'contracts': [{'name': 'NFT', 'path': 'src/NFT.sol'}]}}},
+    {'abi': [{'type': 'function', 'name': 'mintPrice'}]},
+    {'factoryAddress': '0x' + 'ab' * 20},
+    {'factoryProof': {'registryIndex': 2}},
+    {'constructorProof': {'transactionHash': TX}},
+])
+async def test_changed_inspection_inputs_restart_pinned_reads(change):
+    from maxpane_dashboard.data.surf_nft_client import Budget
+    client = AsyncReads()
+    reader = SurfNftInspector(client, clock=lambda: 1792200000.)
+    candidate = {'chainId': 1, 'address': ADDRESS, 'artifact': {'txHash': TX}}
+    first = await reader.advance(candidate, budget=Budget(http_limit=2, rpc_limit=2))
+    await reader.advance({**candidate, **change}, first.progress, budget=Budget(http_limit=2, rpc_limit=2))
+    assert client.sent.count(('eth_chainId', '[]')) == 2
+
 @pytest.mark.asyncio
 async def test_factory_cursor_survives_expiry_and_children_are_deferred(monkeypatch):
     from maxpane_dashboard.data.surf_nft_client import Budget
