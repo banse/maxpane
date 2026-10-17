@@ -146,7 +146,8 @@ async def test_owner_address_window_keeps_copy_and_explorer_inside_padding(width
         row = body_rows(pilot.app, "owner")[1]
         assert row.text.startswith(" ") and row.text.endswith(" ")
         assert "⧉" in row.text
-        if width >= 130:
+        # Eleven address cells, copy glyph + gap, and padding on both sides.
+        if row.cell_length >= 15:
             assert "0x" in row.text and "…" in row.text
         else:
             assert "wallet" in row.text
@@ -163,7 +164,7 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         cards = list(hero.children)
         assert [card.data.key for card in cards] == [
             "seat", "status", "accepted", "effort", "rank", "rewards",
-            "runtime", "owner", "models", "nodes", "collab", "earnings",
+            "runtime", "models", "owner", "nodes", "collab", "earnings",
         ]
         assert len(cards) == 12 and hero.region.height == 19
         assert {card.region.height for card in cards} == {9}
@@ -180,7 +181,7 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             "owner": ("WALLET", "example.eth ⧉", "paired"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "up to date"),
             "models": ("model A", "high", "model B", "medium", "2 models"),
-            "earnings": ("EARNINGS", "TOKENS", "7 worked on"),
+            "earnings": ("EARNINGS", "TOKENS", "4 new"),
             "collab": ("SEATS", "collaborators"),
             "nodes": ("other", "500", "launches", "340", "oracle", "120", "work by type"),
         }.items():
@@ -291,7 +292,7 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
         assert "no attempts" in painted(app, "accepted") and "0%" not in painted(app, "accepted")
         assert "not advertised" in painted(app, "models")
         assert "oracle" in painted(app, "nodes") and "collaborators" in painted(app, "collab")
-        assert "0 worked on" in painted(app, "earnings")
+        assert "0 new" in painted(app, "earnings")
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=None)
         await pilot.pause()
         assert all("loading" not in painted(app, key) and "unavailable" not in painted(app, key) for key in data)
@@ -736,7 +737,7 @@ async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
         await pilot.pause()
         app = pilot.app
         text = painted(app, "earnings")
-        assert "TOKENS" in text and "7 worked on" in text
+        assert "TOKENS" in text and "4 new" in text
         assert "╶┴╴╰─╴" in text  # tall 12
         green = Color.parse(app.get_css_variables()["accent"]).get_truecolor()
         assert border_color(app, "earnings") == border_color(app, "accepted")
@@ -752,12 +753,12 @@ async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
         text = painted(app, "earnings")
-        assert "-- worked on" in text
+        assert "-- new" in text
         assert "0 new" not in text
 
 
 @pytest.mark.parametrize("new,worked", [(4, 2), (4, 0), (4, None), (0, 0), (None, None), (None, 2)])
-async def test_earnings_keeps_recent_distinct_tokens_in_hover_only(new, worked):
+async def test_earnings_inner_footer_shows_new_tokens_from_last_24h(new, worked):
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
@@ -768,7 +769,10 @@ async def test_earnings_keeps_recent_distinct_tokens_in_hover_only(new, worked):
         footer = strips(app, "earnings")[-1].text
         assert not footer.strip("╰─╯ ")
         assert "CLAIMED" not in painted(app, "earnings")
-        assert "7 worked on" in painted(app, "earnings")
+        inner_footer = next(row.text for row in strips(app, "earnings") if "└" in row.text)
+        caption = inner_footer.split("└", 1)[1].split("┘", 1)[0].strip("─ ")
+        assert caption == f"{new if new is not None else '--'} new"
+        assert "worked on" not in painted(app, "earnings")
         tooltip = str(app.query_one("#hero-earnings").tooltip)
         assert "this agent's accepted work" in tooltip
         assert "owner's wallet:" not in tooltip
@@ -789,9 +793,11 @@ async def test_earnings_keeps_exact_hover_counts_and_blank_footer_across_resize(
         assert not footer.strip("╰─╯ ")
         tooltip = str(app.query_one("#hero-earnings").tooltip)
         assert "Last 24h: 4,096 earned" in tooltip and "4,096 worked on by this agent" in tooltip
+        assert "4,096 new" in painted(app, "earnings")
         await pilot.resize_terminal(211, 45)
         await pilot.pause()
         assert not strips(app, "earnings")[-1].text.strip("╰─╯ ")
+        assert "4,096 new" in painted(app, "earnings")
 
 
 def test_agent_card_states_match_declared_contract():
@@ -813,7 +819,7 @@ async def test_removed_outer_captions_stay_empty_across_source_states_and_recove
             await pilot.pause()
             for key in keys:
                 assert not strips(app, key)[-1].text.strip("╰─╯ "), (key, state)
-        assert "7 worked on" in painted(app, "earnings")
+        assert "4 new" in painted(app, "earnings")
         assert "#527 x84" in str(app.query_one("#hero-collab").tooltip)
 
 

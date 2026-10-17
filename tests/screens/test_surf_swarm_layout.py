@@ -1334,8 +1334,8 @@ async def test_agent_rack_rows_boundary(kind, height):
     assert result['taller'] == (height < SURF_AGENT_FULL_LAYOUT_ROWS)
     assert not result['overflow']
     cards = result['hero_cards']
-    assert [name for name, _ in cards] == ['seat', 'status', 'accepted', 'rewards', 'rank', 'effort',
-                                         'runtime', 'owner', 'models', 'earnings', 'collab', 'nodes']
+    assert [name for name, _ in cards] == ['seat', 'status', 'accepted', 'effort', 'rank', 'rewards',
+                                         'runtime', 'models', 'owner', 'nodes', 'collab', 'earnings']
     regions = [region for _, region in cards]
     assert {region[3] for region in regions} == {9}
     assert max(region[2] for region in regions) - min(region[2] for region in regions) <= 1
@@ -1362,8 +1362,6 @@ async def test_agent_rack_cards_width_boundary(kind, width):
 
 
 async def test_busy_agent_cards_keep_independent_records_at_the_pin():
-    from rich.color import Color
-
     payload = _v3_agent_payload()
     payload.update(swarm_seat_state='busy', swarm_seat_read='busy')
     payload = _project_agent_payload(payload)
@@ -1379,15 +1377,13 @@ async def test_busy_agent_cards_keep_independent_records_at_the_pin():
         painted = _region_text(pilot.app, accepted)
         # Busy detail cannot gate the independent canonical accepted count.
         assert accepted.data.digits == '3,253'
-        assert 'of 3,392' in painted and '95.9' in painted
+        assert '95.9%' in painted
+        assert '3,253 / 3,392' in str(accepted.tooltip)
         assert 'busy' not in painted
         for key in ('rewards', 'owner', 'runtime', 'models', 'earnings', 'collab', 'nodes'):
             card = hero.query_one('#hero-' + key)
-            assert 'busy' in _region_text(pilot.app, card), key
-            strips = screen._compositor.render_strips()
-            row = strips[card.region.bottom - 1].crop(card.region.x, card.region.right)
-            style = next(segment.style for segment in row if 'busy' in segment.text)
-            assert style.color.get_truecolor(pilot.app.ansi_theme) == Color.parse('yellow').get_truecolor(pilot.app.ansi_theme), key
+            assert card.data.state == 'busy', key
+            assert 'busy' not in _region_text(pilot.app, card), key
         runtime = hero.query_one('#hero-runtime')
         assert 'latest --' in str(runtime.tooltip)
 

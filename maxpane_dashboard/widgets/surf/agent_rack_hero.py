@@ -60,8 +60,8 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         ("rank", "RANK", "POSITION", ""),
         ("rewards", "REWARDS", "IMD", "paid --"),
         ("runtime", "RUNTIME", "SOFTWARE", "since --"),
-        ("owner", "OWNER", "WALLET", ""),
         ("models", "MODELS", "ADVERTISED", ""),
+        ("owner", "OWNER", "WALLET", ""),
         ("nodes", "NODES", "ACCEPTED", ""),
         ("collab", "COLLAB", "SEATS", ""),
         ("earnings", "EARNINGS", "TOKENS", ""),
@@ -150,7 +150,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["accent"] = False
         elif key == "earnings":
             fields["digits"] = _count(count(section.get("earned")))
-            fields["subtitle"] = _count(count(section.get("worked_on"))) + " worked on"
+            fields["subtitle"] = _count(count(section.get("earned_24h"))) + " new"
             fields["accent"] = False
         elif key == "collab":
             fields["digits"] = _digits(section.get("count"))

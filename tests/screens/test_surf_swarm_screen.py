@@ -238,7 +238,7 @@ async def test_the_agent_card_row_keeps_seat_values_and_has_no_third_row():
         screen = await _open(pilot, "a")
         hero = screen.query_one(SurfSwarmAgentRackHero)
         cards = list(hero.children)[6:]
-        assert [card.data.title for card in cards] == ["RUNTIME", "OWNER", "MODELS", "NODES", "COLLAB", "EARNINGS"]
+        assert [card.data.title for card in cards] == ["RUNTIME", "MODELS", "OWNER", "NODES", "COLLAB", "EARNINGS"]
         assert not screen.query("SurfSwarmNodeCards")
         assert len({card.region.y for card in hero.children}) == 2
         text = _region_text(pilot.app, hero)
