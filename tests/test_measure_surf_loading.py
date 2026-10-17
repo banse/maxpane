@@ -288,6 +288,12 @@ async def test_late_adapter_factories_instrument_before_first_send(tmp_path, mon
     from tests.data.test_surf_manager_swarm import _manager, _FakeSwarm
     from maxpane_dashboard.data import swarm_tokens_client, swarm_tokens_market
     from maxpane_dashboard.data import portfolio_balance_client, portfolio_claims_client
+    # Bind adapter import aliases before patching their definition modules.
+    # This reproduces the composing-run state even when run in isolation.
+    from maxpane_dashboard.data import swarm_tokens_manager
+    async def refuse_network(*args, **kwargs):
+        raise AssertionError('late-adapter test attempted a real HTTP transport')
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', refuse_network)
     attempts = 0
     async def respond(request):
         nonlocal attempts
@@ -295,6 +301,7 @@ async def test_late_adapter_factories_instrument_before_first_send(tmp_path, mon
         return httpx.Response(429, json={})
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
         for module, name in ((swarm_tokens_client, 'SwarmTokensClient'),
+                             (swarm_tokens_manager, 'SwarmTokensClient'),
                              (swarm_tokens_market, 'SwarmTokensMarketClient'),
                              (portfolio_balance_client, 'PortfolioBalanceClient'),
                              (portfolio_claims_client, 'PortfolioClaimsClient')):
@@ -306,6 +313,9 @@ async def test_late_adapter_factories_instrument_before_first_send(tmp_path, mon
         async def work():
             adapter = getattr(manager, factory)()
             client = adapter.client if factory == 'swarm_tokens_manager' else adapter.claims
+            assert client._client is http, 'adapter did not receive the fixture HTTP client'
+            assert isinstance(client._client._transport_for_url(httpx.URL('https://fixture.invalid/late-adapter')),
+                              httpx.MockTransport)
             await client._client.get('https://fixture.invalid/late-adapter')
             await client._client.get('https://fixture.invalid/late-adapter')
         result = await trace.run(work(), manager.close)
