@@ -94,7 +94,7 @@ def _fleet_preview(summary, width, style, value_style):
         available = max(0, width - 2 - cell_len(prefix))
         fitted, lost = fit_prose(value, available, style=value_style if value != '—' else style)
         fitted.align('right', available)
-        line = Text(clip(prefix, max(0, width-2)), style=style + Style(color="#b1b1b1")).append_text(fitted)
+        line = Text(clip(prefix, max(0, width-2)), style=style).append_text(fitted)
         lines.append((padded_inner_row(line, width), lost or cell_len(prefix) + 3 > width))
     return lines
 
@@ -494,6 +494,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             clipped |= _fleet_footer(self.data, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
             style = (readout_style if numeric_readout or self.key == 'pool4' else label_style) + Style(bold=bold)
+            if self.empty_seat:
+                style += Style(color=GREEN)
             line, lost = (preview[index] if preview is not None else
                           (Text(raw, style=style), False) if native_digits else fit_prose(raw, max(0, inside-2-marker_width), style=style))
             if marker_width:

@@ -158,7 +158,7 @@ async def test_accounting_faults_are_visible_red_and_never_healthy(counters, dri
         for x in range(amount_start, amount_end):
             assert app.screen.get_style_at(card.region.x + x, card.region.y + index).color == Color.parse(app.get_css_variables()["foreground"])
         for text in ("drift", "bps"):
-            assert app.screen.get_style_at(card.region.x + row.index(text), card.region.y + index).color.get_truecolor() == app.ansi_theme.ansi_colors[2]
+            assert app.screen.get_style_at(card.region.x + row.index(text), card.region.y + index).color == card.rich_style.color
 
 
 @pytest.mark.parametrize("counters", ["window-limited", "unchecked", None])
@@ -187,7 +187,7 @@ async def test_stale_fault_retains_alarm_and_a_fresh_recovery_clears_it(local_cl
         red = app.ansi_theme.ansi_colors[1]
         assert any(segment.style.color.get_truecolor() == red
                    for strip in strips(app, "checks") for segment in strip if "┌" in segment.text)
-        assert any(segment.style.color.get_truecolor() == app.ansi_theme.ansi_colors[2]
+        assert any(segment.style.color == app.query_one('#hero-checks').rich_style.color
                    for strip in strips(app, "checks") for segment in strip if "MISMATCH" in segment.text)
         app.query_one(SurfProtocolHero).update_data(surf_protocol_hero=payload())
         await pilot.pause()

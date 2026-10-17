@@ -94,7 +94,7 @@ async def test_inner_metrics_match_boardroom_colors_with_neutral_captions(width,
                     assert row.text[right - 1 - len(value):right - 1] == value
                     positions = range(right - 1 - len(value), right - 1)
                     label_style = app.screen.get_style_at(card.region.x + left + 2, card.region.y + top + index + 1)
-                    assert label_style.color.get_truecolor() == green and not label_style.bold
+                    assert label_style.color == card.rich_style.color and not label_style.bold
                 else:
                     value_color = card.rich_style.color.get_truecolor()
                     positions = [x for x in range(left + 1, right) if not row.text[x].isspace()]

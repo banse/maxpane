@@ -614,3 +614,29 @@ unrelated follow-ups: two old POOL4 binding/body assertions, two old launchpad
 hero assertions, two site fixtures missing `named_ts`, and an old swarm widget
 ordering assertion. Update those tests when their respective files are next
 touched for those behaviors. They were not weakened to make this task green.
+
+## White inner-box labels — 2026-10-17
+
+All mounted cards using the shared inner palette now use their normal text
+white for labels, matching ONCHAIN prose. The FLEET-only timestamp-gray override
+is removed. Active green readouts, warning colors, measured values, captions,
+padding and the green empty-seat input arrow retain their previous appearance.
+Missing placeholders using label ink follow the white labels.
+
+Fresh public keyless BOARDROOM and BOARD renders at 149×45 were shown before
+review (`/tmp/maxpane-white-labels/`). Existing color regressions failed before
+implementation and 32 focused cases passed afterwards. Three palette/FLEET
+rollback mutations were caught. The single review found that the empty-seat
+arrow also inherited the white label ink; an explicit green style corrected it.
+Both existing seat render cases failed with the new color assertion before the
+fix and passed after. Scoped re-review marked the finding ADDRESSED and
+independently killed/restored that rollback. No open review findings remain.
+
+Final fast guards: 126 passed; documentation pins: 12 passed. The 27 affected
+widget/composing files produced 1,084 passes and 16 failures. One remaining
+PROTOCOL assertion expected the former green diagnostic text; corrected to
+normal card text while preserving red-frame and recovery checks, its whole
+24-test file passes. The other 15 failures match the already documented
+Portfolio/Surf baseline failures in `surf_data_loading_followups.md` (nine
+Portfolio, two POOL4 market, two POOL4 protocol, one AGENT row, one NEWS fixture).
+Logs: `/tmp/maxpane-white-labels/tests.log`. No full suite or pin changes.

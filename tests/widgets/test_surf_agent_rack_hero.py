@@ -92,7 +92,7 @@ async def test_custom_models_owner_and_runtime_keep_padded_labels_and_values(wid
     async with Harness(data).run_test(size=(width, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        label = app.ansi_theme.ansi_colors[2]
+        label = app.query_one('#hero-runtime').rich_style.color.get_truecolor()
         value = Color.parse(app.get_css_variables()["foreground"]).get_truecolor()
         for key in ("owner", "runtime", "models", "nodes"):
             rows = body_rows(app, key)

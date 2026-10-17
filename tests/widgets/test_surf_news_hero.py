@@ -138,14 +138,14 @@ async def test_body_palette_and_padding_follow_final_frame_without_recoloring_ca
                     if row[x].isspace():
                         continue
                     style = app.screen.get_style_at(card.region.x + x, card.region.y + top + offset)
-                    expected = green
+                    expected = card.rich_style.color.get_truecolor()
                     if key in ("announcement", "reply"):
                         expected = card.rich_style.color.get_truecolor()
                     elif key == "market":
                         expected = green if state == "ok" else card.rich_style.color.get_truecolor()
                     elif key in ("signals", "boards"):
                         number = card.data.stats[offset - 1][1]
-                        expected = value if x >= right - 1 - len(number) else green
+                        expected = value if x >= right - 1 - len(number) else card.rich_style.color.get_truecolor()
                     elif key == "activity" and x < left + 4:
                         expected = value
                     assert style.color.get_truecolor() == expected and not style.dim, (key, row, x, style)

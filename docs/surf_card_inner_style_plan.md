@@ -3,6 +3,24 @@
 Status: implemented across the owner-approved scope. Verification and measured
 boundaries are recorded in `docs/surfboard_followups.md` and the screen pin comments.
 
+## Owner update — white labels, 2026-10-17
+
+The latest request replaces green inner-body labels with the normal card text
+color already used by ONCHAIN prose. Apply this to every mounted card using the
+shared inner palette, including BOARDROOM FLEET; remove its temporary timestamp-
+gray override. Missing placeholders that use label ink follow the white labels.
+Keep numeric values, active green digits, warning digits, borders, captions,
+boldness, padding and data behavior unchanged.
+
+This remains Tier 2 because the helper serves several dashboards, but requires
+only a few production lines. The controller owns the two production files and
+existing color assertions; no parallel implementation or additional planner is
+needed. Update existing color regressions first, then change the shared label
+style while explicitly retaining active digit green. Show a fresh public live
+149×45 render, run affected/composing checks and one final scoped-diff review.
+No layout pins or measurements change. Record results in the existing follow-ups.
+This update takes precedence over the historical green-label specification below.
+
 ## Approved result
 
 Apply one inner-body color policy to every visible Surf card and boardroom card:

@@ -103,7 +103,7 @@ async def test_hero_six_cards_source_values_padding_and_palette():
                 style = app.screen.get_style_at(card.region.x + row.index('420'), y)
                 assert style.color == Color.parse(app.get_css_variables()['foreground'])
                 label = app.screen.get_style_at(card.region.x + row.index('paired'), y)
-                assert label.color.get_truecolor() == app.ansi_theme.ansi_colors[2]
+                assert label.color == card.rich_style.color
         assert 'market' in str(cards[0].tooltip).lower() or 'PRICE' in str(cards[0].tooltip)
 
 

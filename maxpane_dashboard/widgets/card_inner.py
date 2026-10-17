@@ -6,11 +6,11 @@ from rich.text import Text
 
 def inner_styles(palette, *, active=False, frame_color=None, ansi_theme=None, text_color="white"):
     """Return label, value and numeric-readout styles for the final frame."""
-    label = Style(color="green", bgcolor=palette["background"], dim=False)
+    label = Style(color=text_color, bgcolor=palette["background"], dim=False)
     value = Style(color=palette["foreground"], bgcolor=palette["background"], dim=False)
     if frame_color is not None and frame_color.get_truecolor(ansi_theme) == Color.parse("red").get_truecolor(ansi_theme):
         return label, value, value + Style(color="yellow")
-    digit = label if active else value
+    digit = value + Style(color="green") if active else value
     if not active and frame_color is None:
         digit = value + Style(color=text_color)
     return label, value, digit

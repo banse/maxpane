@@ -61,6 +61,8 @@ async def test_four_empty_agent_seats_have_inner_frames_and_borderless_inputs(si
             assert "seat number" in painted[top + 2].text
             assert "EMPTY" not in painted[-1].text and "▱" not in painted[-1].text
             assert painted[top + 3].text.strip("│ ") == "↑"
+            arrow = next(segment for segment in painted[top + 3] if "↑" in segment.text)
+            assert arrow.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
             assert abs(painted[top + 3].text.index("↑") - (card.region.width - 1) / 2) <= .5
             assert card.can_focus and card.data["seat_slot"] == slot
             assert card.data["token_id"] is None and card.data["destination"] is None

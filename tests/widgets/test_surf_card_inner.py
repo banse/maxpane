@@ -16,9 +16,9 @@ from maxpane_dashboard.widgets.surf.work import _WorkHeroCard
 @pytest.mark.parametrize("active", [False, True])
 def test_palette_separates_labels_values_and_active_digits(active):
     label, value, digit = inner_styles({"foreground": "#55bb44", "background": "#112233"}, active=active, text_color="#eeeeee")
-    assert label == Style(color="green", bgcolor="#112233", dim=False)
+    assert label == Style(color="#eeeeee", bgcolor="#112233", dim=False)
     assert value == Style(color="#55bb44", bgcolor="#112233", dim=False)
-    assert digit == (label if active else Style(color="#eeeeee", bgcolor="#112233", dim=False))
+    assert digit == Style(color="green" if active else "#eeeeee", bgcolor="#112233", dim=False)
 
 
 @pytest.mark.parametrize("inside", [0, 1, 2, 5, 12])

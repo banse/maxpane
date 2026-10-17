@@ -97,7 +97,7 @@ async def test_liquidity_keeps_amount_before_asset_with_separate_colors_and_padd
             assert row[left + 1] == row[right - 1] == " "
             assert amount + " " + asset in row
             for text, color in ((amount, Color.parse(app.get_css_variables()["foreground"]).get_truecolor()),
-                                (asset, app.ansi_theme.ansi_colors[2])):
+                                (asset, card.rich_style.color.get_truecolor())):
                 for x in range(row.index(text), row.index(text) + len(text)):
                     assert app.screen.get_style_at(card.region.x + x, card.region.y + index).color.get_truecolor() == color
 

@@ -39,8 +39,8 @@ table names them and this file repeats no numbers.
 
 ## Shared card inner bodies
 
-Every mounted Surf hero and boardroom card uses the same body palette: light ANSI
-green labels/prose and theme-foreground values. Numeric readouts use light green
+Every mounted Surf hero and boardroom card uses the same body palette: normal card
+text white for labels/prose (matching ONCHAIN) and theme-foreground values. Numeric readouts use light green
 when their final inset frame is green and orange when it is red. Orange
 frames retain foreground digits; neutral inactive frames use the card's
 normal white text color for digits. Headings, inset subtitles,
@@ -48,7 +48,8 @@ outer captions and state decisions are unchanged. BOARD values remain bold.
 Text rows reserve one blank cell inside each edge, including previews, compact
 readouts, owner links and models. Native tall digits retain their centered width.
 Rich links/copy actions survive padding; linked addresses use foreground. Unknown
-placeholders may use label ink. AGENT STATUS keeps its muted `0F` separator.
+placeholders may use label ink. FLEET has no separate gray label override.
+AGENT STATUS keeps its muted `0F` separator.
 Boardroom compact labels may use `rewards` and daemon `ver.` at narrow widths to
 preserve complete values and edge blanks; the normal labels return when they fit.
 The native PROTOCOL hero similarly uses `rewards`/`room` only when `rewarded`/

@@ -620,7 +620,7 @@ async def test_tokens_ranked_rows_direction_ink_volume_footer_and_activity(size)
                 right = strips[top].text.index('┐')
                 assert strip.crop(right-1, right).text == ' '
                 assert strip.crop(right-2, right-1).text == (icon or ' ')
-                for word, ink in zip(words, (pilot.app.ansi_theme.ansi_colors[2],
+                for word, ink in zip(words, (card.rich_style.color.get_truecolor(),
                         Color.parse(pilot.app.get_css_variables()['foreground']).get_truecolor())):
                     start = strip.text.index(word)
                     for segment in strip.crop(start, start + len(word)):
@@ -799,7 +799,7 @@ async def test_fleet_runtime_rows_values_green_frame_and_model_neutral(size):
                 for segment in strip.crop(value_start, value_start+len(value)):
                     assert segment.style.color.get_truecolor() == green and not segment.style.dim
                 label_start = strip.text.index(label)
-                assert next(iter(strip.crop(label_start, label_start+len(label)))).style.color.get_truecolor() == Color.parse('#b1b1b1').get_truecolor()
+                assert next(iter(strip.crop(label_start, label_start+len(label)))).style.color == card.rich_style.color
             assert len(set(value_ends)) == 1
             assert strips[top+4].crop(left+1, right).text.strip('─ ') == 'astra 6 xhigh'
             for strip in strips[top:top+5]:
@@ -872,7 +872,7 @@ async def test_fleet_unknown_zero_missing_effort_and_retained_data_on_resize():
                 assert strip.text.strip('│ ').split() == [label, value]
                 if value == '—':
                     segment = next(segment for segment in strip if '—' in segment.text)
-                    assert segment.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
+                    assert segment.style.color == card.rich_style.color
             assert strips[top+4].text.strip('│└┘─ ') == model
         data = fleet_card_data()
         card.set_data(dict(data, status='stale'))
