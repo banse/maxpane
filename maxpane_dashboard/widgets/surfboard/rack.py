@@ -94,7 +94,7 @@ def _fleet_preview(summary, width, style, value_style):
         available = max(0, width - 2 - cell_len(prefix))
         fitted, lost = fit_prose(value, available, style=value_style if value != '—' else style)
         fitted.align('right', available)
-        line = Text(clip(prefix, max(0, width-2)), style=style).append_text(fitted)
+        line = Text(clip(prefix, max(0, width-2)), style=style + Style(color="#b1b1b1")).append_text(fitted)
         lines.append((padded_inner_row(line, width), lost or cell_len(prefix) + 3 > width))
     return lines
 

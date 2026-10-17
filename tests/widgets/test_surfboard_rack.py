@@ -799,7 +799,7 @@ async def test_fleet_runtime_rows_values_green_frame_and_model_neutral(size):
                 for segment in strip.crop(value_start, value_start+len(value)):
                     assert segment.style.color.get_truecolor() == green and not segment.style.dim
                 label_start = strip.text.index(label)
-                assert next(iter(strip.crop(label_start, label_start+len(label)))).style.color.get_truecolor() == app.ansi_theme.ansi_colors[2]
+                assert next(iter(strip.crop(label_start, label_start+len(label)))).style.color.get_truecolor() == Color.parse('#b1b1b1').get_truecolor()
             assert len(set(value_ends)) == 1
             assert strips[top+4].crop(left+1, right).text.strip('─ ') == 'astra 6 xhigh'
             for strip in strips[top:top+5]:
