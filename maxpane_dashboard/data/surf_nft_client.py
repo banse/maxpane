@@ -18,6 +18,7 @@ import httpx
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient, jsonrpc_payload
 from maxpane_dashboard.data.surf_swarm_client import SWARM_API_HOSTS
+from maxpane_dashboard.data.surf_nft_readme import decode_readme, repository_reference
 
 
 class BudgetExhausted(RuntimeError):
@@ -188,7 +189,7 @@ class SurfNftClient(OwnedHttpClient):
         return all(self.cooldown.get(urlsplit(url).hostname, 0) <= self.monotonic()
                    for url in SWARM_API_HOSTS)
 
-    async def _request(self, method, url, *, budget, params=None, payload=None, text=False):
+    async def _request(self, method, url, *, budget, params=None, payload=None, text=False, missing_ok=False):
         host = urlsplit(url).hostname
         if self.cooldown.get(host, 0) > self.monotonic():
             raise SourceUnavailable('host cooldown')
@@ -215,6 +216,8 @@ class SurfNftClient(OwnedHttpClient):
                                                    timeout=min(15., budget.remaining_seconds),
                                                    follow_redirects=False) as response:
                         event['status'] = response.status_code
+                        if missing_ok and response.status_code == 404:
+                            return None
                         if response.status_code == 429:
                             retry = response.headers.get('Retry-After', '')
                             try:
@@ -386,3 +389,19 @@ class SurfNftClient(OwnedHttpClient):
 
     async def source_text(self, reference, *, budget):
         return await self._request('GET', _source_url(reference), budget=budget, text=True)
+
+    async def readme(self, repository_url, revision, *, budget):
+        repository_url, revision = repository_reference(dict(url=repository_url, commit=revision))
+        path = repository_url.removeprefix('https://github.com/')
+        body = await self._request('GET', f'https://api.github.com/repos/{path}/contents/README.md',
+                                   params={'ref': revision} if revision else None,
+                                   budget=budget, missing_ok=True)
+        if body is None:
+            payload = dict(repository_url=repository_url, revision=revision, readme_url=None,
+                           text=None, state='missing')
+        else:
+            try:
+                payload = decode_readme(body, repository_url, revision)
+            except ValueError as exc:
+                raise SourceUnavailable('invalid README response') from exc
+        return SourceRead(payload, self.clock())

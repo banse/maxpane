@@ -9,7 +9,7 @@ from textual.app import App
 from textual.widgets import DataTable
 
 from maxpane_dashboard.analytics.surf_nft import normalize_record, project_snapshot
-from maxpane_dashboard.widgets.surf_nft import NftHero, NftTable, NftDetail
+from maxpane_dashboard.widgets.surf_nft import NftHero, NftTable, NftDetail, NftSummary
 
 
 def snapshot():
@@ -38,7 +38,7 @@ def test_signatures_match_frozen_contract_and_widgets_do_not_import_data():
     from maxpane_dashboard.data.surf_nft_models import NFT_WIDGET_SIGNATURES
     from maxpane_dashboard.widgets.surf_nft import filter as filters
     from maxpane_dashboard.analytics.surf_nft import FILTER_DEFAULTS, FILTER_VALUES
-    for cls in (NftHero,NftTable,NftDetail):
+    for cls in (NftHero,NftTable,NftDetail,NftSummary):
         assert tuple(inspect.signature(cls.update_data).parameters)[1:]==NFT_WIDGET_SIGNATURES[cls.__name__]
     assert filters.FILTER_DEFAULTS==FILTER_DEFAULTS
     assert filters.FILTER_VALUES==FILTER_VALUES
@@ -80,21 +80,18 @@ async def test_table_keeps_same_name_contracts_and_identity_through_reorder():
             assert title in painted(pilot.app)
 
 
-async def test_detail_displays_independent_routes_supply_and_eligibility():
+async def test_detail_keeps_collection_basics_and_moves_routes_to_popup():
     widget=NftDetail()
     row=next(r for r in snapshot()['nft_rows'] if r['name']=='IMDenza')
     async with Probe(widget).run_test(size=(149,50)) as pilot:
         widget.update_data(nft_selected=row,nft_sources={},nft_coverage={})
         await pilot.pause()
         output=painted(pilot.app)
-        for word in ('IMDenza','0.069','IDMD','3333','Eligibility','not checked','MINT ROUTES'):
+        for word in ('IMDenza','3333','Contract','Supply'):
             assert word in output
         assert 'minted' in output and 'live' in output
-        widget.scroll_end(animate=False)
-        await pilot.pause()
-        output=painted(pilot.app)
-        assert 'SOURCE' in output and '26208001' in output
-        assert widget.max_scroll_y>0
+        assert 'MINT ROUTES' not in output and 'SOURCES' not in output
+        assert 'Eligibility' not in output
 
 
 async def test_literal_hostile_text_and_unknown_chain_have_safe_address_actions():
@@ -121,23 +118,6 @@ def test_source_url_rejects_non_public_or_executable_links(url):
     assert source_url(url) is None
 
 
-async def test_source_link_click_opens_the_exact_validated_source():
-    from tests.widgets.address_probe import LinkRecorder, link_targets
-    class LinkedProbe(LinkRecorder,Probe):
-        pass
-    widget=NftDetail()
-    row=deepcopy(snapshot()['nft_rows'][0])
-    url='https://github.com/identity-md-launches/nft/blob/'+'a'*40+'/src/NFT.sol'
-    row.update(evidence=[{'label':'Pinned source','url':url}],unknowns=[],rule_review={})
-    async with LinkedProbe(widget).run_test(size=(149,50)) as pilot:
-        widget.update_data(nft_selected=row,nft_sources={},nft_coverage={'complete':True})
-        widget.scroll_end(animate=False)
-        await pilot.pause()
-        x,y,*_=next(target for target in link_targets(pilot.app) if target[-1]==url)
-        await pilot.click(offset=(x,y))
-        assert pilot.app.opened==[url]
-
-
 async def test_farm_supply_distinguishes_burns_and_two_holder_definitions():
     row=next(r for r in snapshot()['nft_rows'] if r['name']=='FarmItems')
     widget=NftDetail()
@@ -147,3 +127,40 @@ async def test_farm_supply_distinguishes_burns_and_two_holder_definitions():
         output=painted(pilot.app)
         for value in ('minted 114','live 110','Burned  4','Custody holders  9','Beneficial holders  11'):
             assert value in output
+
+
+async def test_summary_is_literal_scrollable_and_keeps_unknown_chain_addresses_copyable():
+    from tests.widgets.address_probe import icon_targets, link_targets
+    from maxpane_dashboard.widgets.address import is_address
+    widget=NftSummary()
+    address='0x'+'a'*40
+    readme=dict(identity='project:one',repository_url='https://github.com/example/nft',
+                readme_url='https://github.com/example/nft/blob/main/README.md',revision='main',
+                text='[/x]README\x1b text '+address+'\n'+'Long public excerpt.\n'*100,
+                observed_at=123,state='ok')
+    async with Probe(widget).run_test(size=(90,25)) as pilot:
+        widget.update_data(nft_readme=readme)
+        await pilot.pause()
+        assert 'SUMMARY (github README.md)' in painted(pilot.app)
+        assert '[/x]README text' in painted(pilot.app)
+        assert any(value==address for _,_,value in icon_targets(pilot.app))
+        assert not any(is_address(value) for _,_,_,_,value,_ in link_targets(pilot.app))
+        assert widget.max_scroll_y>0
+        widget.update_data(nft_readme=None)
+        await pilot.pause()
+        assert '[/x]README' not in painted(pilot.app)
+        assert 'unavailable' not in painted(pilot.app) and 'stale' not in painted(pilot.app)
+
+
+async def test_summary_source_click_uses_the_exact_readme_url():
+    from tests.widgets.address_probe import LinkRecorder, link_targets
+    class LinkedProbe(LinkRecorder,Probe): pass
+    widget=NftSummary()
+    url='https://github.com/example/nft/blob/'+'a'*40+'/README.md'
+    async with LinkedProbe(widget).run_test(size=(90,25)) as pilot:
+        widget.update_data(nft_readme=dict(identity='one',repository_url='https://github.com/example/nft',
+            readme_url=url,text='Excerpt from this pinned README'))
+        await pilot.pause()
+        x,y,*_=next(target for target in link_targets(pilot.app) if target[-1]==url)
+        await pilot.click(offset=(x,y))
+        assert pilot.app.opened==[url]

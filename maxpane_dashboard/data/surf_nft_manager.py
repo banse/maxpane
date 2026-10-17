@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
 from copy import deepcopy
 from datetime import datetime, timezone
 import logging
@@ -14,6 +15,7 @@ from maxpane_dashboard.data.surf_nft_discovery import SurfNftDiscovery, discover
 from maxpane_dashboard.data.surf_nft_chain import SurfNftInspector
 from maxpane_dashboard.data.surf_nft_rules.catalog import project_catalog
 from maxpane_dashboard.data.surf_nft_rules.rules import RULES
+from maxpane_dashboard.data.surf_nft_readme import repository_reference
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +26,9 @@ class SurfNftManager:
     CHAIN_TTL = 120
     PROBE_TTL = 600
     FAILURE_BACKOFF = 120
+    README_TTL = 600
+    README_CACHE_SIZE = 32
+    README_DEADLINE = 6
 
     def __init__(self, *, swarm, client=None, cache=None, cache_path=None,
                  clock=time.time, monotonic=time.monotonic):
@@ -45,6 +50,18 @@ class SurfNftManager:
         self.last_budget = None
         self._active_view = 'legacy'
         self._retired = set()
+        self._readme_task = None
+        self._readme_generation = 0
+        self._readme_key = None
+        self._readme_base = None
+        self._readme_cache = OrderedDict()
+
+    def _retire_readme(self):
+        self._readme_generation += 1
+        if self._readme_task is not None and not self._readme_task.done():
+            self._readme_task.cancel()
+            self._retired.add(self._readme_task)
+        self._readme_task = None
 
     def set_active_view(self, view):
         if view == self._active_view:
@@ -55,25 +72,101 @@ class SurfNftManager:
             self._retired.add(self._task)
         self._task = None
         self._last_offer = None
+        self._retire_readme()
+        self._offer_readme()
 
     async def drain_reads(self):
         if self._retired:
-            await asyncio.gather(*self._retired, return_exceptions=True)
-            self._retired.clear()
+            retired = tuple(self._retired)
+            await asyncio.gather(*retired, return_exceptions=True)
+            self._retired.difference_update(retired)
 
     def select(self, identity):
-        """Only mark priority. Rows and asynchronous completions keep their own IDs."""
+        """Select cached identity and offer its own README read in the NFT view."""
         self._selected = identity if isinstance(identity, str) else None
+        self._offer_readme()
+
+    def get_readme(self):
+        """Small passive projection; polling this never starts a source read."""
+        if self._readme_base is None:
+            return None
+        result = dict(self._readme_base)
+        cached = self._readme_cache.get(self._readme_key)
+        if cached is not None:
+            result.update(cached['record'])
+        if self._readme_task is not None and not self._readme_task.done():
+            result['state'] = 'pending'
+        return result
+
+    def _offer_readme(self):
+        identity, key = self._selected, None
+        base = (dict(identity=identity, repository_url=None, readme_url=None, revision=None,
+                     text=None, observed_at=None, state='pending') if identity else None)
+        row = next((row for row in self.state.get('records') or [] if row['id'] == identity), None)
+        if row is not None:
+            repositories = row.get('repositories') or []
+            if not repositories:
+                base['state'] = 'missing'
+            else:
+                base['state'] = 'unavailable'
+                for repository in repositories:
+                    try:
+                        key = repository_reference(repository)
+                    except (ValueError, TypeError, KeyError):
+                        continue
+                    base.update(repository_url=key[0], revision=key[1], state='pending')
+                    break
+        previous_identity = (self._readme_base or {}).get('identity')
+        if identity != previous_identity or key != self._readme_key:
+            self._retire_readme()
+        self._readme_key, self._readme_base = key, base
+        if self._closed or self._active_view != 'NFT EXPLORER' or key is None:
+            return
+        if self._readme_task is not None and not self._readme_task.done():
+            return
+        cached = self._readme_cache.get(key)
+        if cached is not None:
+            self._readme_cache.move_to_end(key)
+            if self._clock() < cached['retry_at']:
+                return
+        self._readme_task = asyncio.create_task(self._read_selected(identity, key, self._readme_generation))
+
+    async def _read_selected(self, identity, key, generation):
+        # A fast selection change cancels and drains the old transport before
+        # admitting its replacement. Ordinary catalogue work has its own budget.
+        await self.drain_reads()
+        budget = Budget(http_limit=1, rpc_limit=0, deadline_seconds=self.README_DEADLINE,
+                        monotonic=self._monotonic)
+        try:
+            result = await self.client.readme(*key, budget=budget)
+            record = dict(result.payload, observed_at=result.observed_at)
+            ttl = self.README_TTL
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            previous = self._readme_cache.get(key, {}).get('record') or {}
+            record = dict(repository_url=key[0], revision=key[1], readme_url=None,
+                          text=None, observed_at=None)
+            record.update(previous, state='unavailable')
+            ttl = self.FAILURE_BACKOFF
+        if (self._closed or self._active_view != 'NFT EXPLORER' or self._selected != identity
+                or self._readme_key != key or self._readme_generation != generation):
+            return
+        self._readme_cache[key] = dict(record=record, retry_at=self._clock() + ttl)
+        self._readme_cache.move_to_end(key)
+        while len(self._readme_cache) > self.README_CACHE_SIZE:
+            self._readme_cache.popitem(last=False)
 
     def is_loading(self, view=None):
-        return bool(not self._closed and self._task is not None
-                    and not self._task.done() and not self._task.cancelling())
+        return bool(not self._closed and any(task is not None and not task.done() and not task.cancelling()
+                                            for task in (self._task, self._readme_task)))
 
     def offer_hub(self):
         self._offer(proof_only=True)
 
     def _offer(self, *, proof_only=False):
-        if self._closed or self._active_view is None or self._retired or self.is_loading():
+        if (self._closed or self._active_view is None or self._retired
+                or self._task is not None and not self._task.done()):
             return
         now = self._clock()
         interval = self.FAILURE_BACKOFF if self._failed else self.POLL_SECONDS
@@ -84,6 +177,7 @@ class SurfNftManager:
 
     async def fetch_and_compute(self):
         await self.drain_reads()
+        self._offer_readme()
         self._offer()
         return self.get_snapshot()
 
@@ -116,7 +210,7 @@ class SurfNftManager:
         sources = {'discovery': self._source('swarm', observation, coverage=coverage,
                     state='ok' if coverage.get('complete') else 'partial' if observation is not None else 'pending')}
         snapshot = dict(nft_rows=deployed, nft_build_rows=builds,
-                        nft_summary={'observed_at': observation}, nft_selected=None,
+                        nft_summary={'observed_at': observation}, nft_selected=None, nft_readme=self.get_readme(),
                         nft_sources=sources, nft_coverage=coverage, as_of=self._clock())
         return project_snapshot(snapshot, selected_id=self._selected)
 
@@ -230,6 +324,7 @@ class SurfNftManager:
                            and r['id'] not in self.state.get('evidence', {}))
         self.state['records'] = records
         self.state['discovery']['raw']['coverage'] = catalog['coverage']
+        self._offer_readme()
 
     async def _cycle(self, *, proof_only=False):
         budget = (Budget(http_limit=12, rpc_limit=96, deadline_seconds=8, monotonic=self._monotonic)
@@ -293,16 +388,18 @@ class SurfNftManager:
             self.cache.save(self.state, selected_id=self._selected)
 
     async def wait_pending(self):
-        if self._task is not None:
-            await asyncio.gather(self._task, return_exceptions=True)
+        while pending := [task for task in (self._task, self._readme_task)
+                          if task is not None and not task.done()]:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def close(self):
         if self._closed:
             return
         self._closed = True
-        await self.drain_reads()
+        self._retire_readme()
         if self._task is not None and not self._task.done():
             self._task.cancel()
+        await self.drain_reads()
         await self.wait_pending()
         self.cache.save(self.state, selected_id=self._selected)
         if self._owns_client:

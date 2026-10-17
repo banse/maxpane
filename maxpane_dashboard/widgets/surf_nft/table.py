@@ -1,14 +1,26 @@
 """Selectable collection identities; names never become record keys."""
+from rich.style import Style
 from rich.text import Text
 from textual.message import Message
 from textual.widgets import DataTable, Static
 
-from maxpane_dashboard.widgets.address import address_text, is_address
+from maxpane_dashboard.widgets.address import address_text, is_address, is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import TableLeaderboard
 from maxpane_dashboard.widgets.rowfit import clip, cell_len
-from maxpane_dashboard.widgets.surf._swarm_table import _SelectableTable
 from . import EXPLORER
+
+
+class _CollectionTable(DataTable):
+    async def _on_click(self,event):
+        event.prevent_default(); event.stop()
+        action=event.style.meta.get('@click','')
+        if is_copy_click(event) or is_explorer_click(event) or action.startswith('screen.open_nft_detail('):
+            await self.app.run_action(action)
+            return
+        row=event.style.meta.get('row')
+        if type(row) is int and 0<=row<self.row_count:
+            self.move_cursor(row=row)
 
 
 class NftTable(TableLeaderboard):
@@ -30,7 +42,7 @@ class NftTable(TableLeaderboard):
         self.rows={}; self.stage='launched'; self._as_of=None; self.clipped=False
 
     def compose_body(self):
-        yield _SelectableTable(id=self.TABLE_ID,cell_padding=1)
+        yield _CollectionTable(id=self.TABLE_ID,cell_padding=1)
 
     def selected_row(self):
         table=self.query_one(DataTable)
@@ -57,8 +69,13 @@ class NftTable(TableLeaderboard):
         values=[{1:'ETH',4663:'RH'}.get(row.get('chain_id'),'—'),
                 flatten(mint.get('state')) or 'unknown',flatten(benefit.get('status')) or 'unknown',
                 quantity(minted)+'/'+quantity(maximum)]
-        self.clipped |= any(cell_len(value)>width for value,(_,width) in zip(values,self.COLUMNS[1:]))
-        return (label,*(Text(clip(value,width)) for value,(_,width) in zip(values,self.COLUMNS[1:])))
+        widths=[width for _,width in self.COLUMNS[1:]]
+        widths[-1]-=2  # Reserve the record popup button inside the existing final column.
+        self.clipped |= any(cell_len(value)>width for value,width in zip(values,widths))
+        cells=[Text(clip(value,width)) for value,width in zip(values,widths)]
+        cells[-1].append(' '*(self.COLUMNS[-1][1]-cells[-1].cell_len-1))
+        cells[-1].append('»',style=Style(color='green',meta={'@click':f'screen.open_nft_detail({index})'}))
+        return (label,*cells)
 
     def update_data(self, *, nft_rows=None,nft_build_rows=None,as_of=None):
         current=self.selected_row(); selected=current['id'] if current else None

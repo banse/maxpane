@@ -32,6 +32,7 @@ NON_DASHBOARD_SCREEN_MODULES = (
     "swarm_detail",  # cached modals; test_surf_swarm_details covers copy and job links
     "submission_detail", # cached modal; dedicated test_submission_detail.py address coverage
     "oracle_answer", # cached modal; question/notes/value icons and links tested in test_oracle_answer.py
+    "nft_detail",    # cached modal; NFT sweep opens it and test_nft_detail covers actions
 )
 
 #: Screen subclasses that are shared machinery rather than a dashboard, so they

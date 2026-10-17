@@ -47,12 +47,15 @@ The **NFTS** card below ONCHAIN FEED opens the NFT Explorer; `n` opens it direct
 The previous **PROTOCOL** view remains available with `p` in the BOARDROOM and
 `e` inside SURF. These letters remain ordinary text when an input is focused.
 
-NFT Explorer combines a collection table with mint routes, IDMD conditions,
-utility, related tokens and explicit Swarm/source links. Use `f` for filters,
+NFT Explorer shows collection details and a **SUMMARY (github README.md)** excerpt
+from the selected collection's linked repository. Click a row's `»` or press Enter
+to open mint routes, IDMD conditions, utility, related tokens and Swarm/source
+links in the standard detail popup; Space, Escape or `X` closes it. Use `f` for filters,
 `/` to search, `b` to switch deployed collections / builds, `c` for chain and
-`o` for sort. Enter focuses details; Escape closes filters first, then returns
+`o` for sort. Escape closes filters first, then returns
 to the retained BOARDROOM. Filters and selection read the cached snapshot.
-Background discovery works independently of aidude and resumes within fixed
+README reads run only for the visible NFT selection and reuse a bounded cache
+when revisiting a repository. Background discovery works independently of aidude and resumes within fixed
 request limits. Partial coverage stays visible; collection-level rules do not
 establish a particular wallet's eligibility. Minted and live supply remain separate.
 

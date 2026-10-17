@@ -7,5 +7,6 @@ EXPLORER = for_chain_id
 from .hero import NftHero
 from .table import NftTable
 from .detail import NftDetail
+from .summary import NftSummary
 
-__all__ = ['NftHero','NftTable','NftDetail']
+__all__ = ['NftHero','NftTable','NftDetail','NftSummary']

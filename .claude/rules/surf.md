@@ -940,6 +940,15 @@ It opens the nested NFT Explorer on click/Enter or `n`; `p` retains the existing
 PROTOCOL mode and its native `e` binding. Printable keys never steal input focus.
 The card summarizes the global observed NFT catalog; screen filters affect the
 NFT heroes/list only. See `docs/surf_nft_PRD.md` for source/rule semantics.
+NFT Explorer keeps collection basics above `SUMMARY (github README.md)` in the
+right column. Row-end `»` or Enter opens the remaining mint/utility/source evidence
+in `NftDetailScreen`, using the shared RECORD popup frame; Space/Esc/X closes it.
+The modal is a cached snapshot and opens without offering reads. A selected-only
+public GitHub root README read feeds an independent bounded repository/ref cache;
+BOARDROOM never offers that read. README prose is an excerpt, not verified mint
+evidence; addresses remain copyable without guessing their chain. Visible NFT
+selection changes cancel/drain the previous README task; cached text is immediate
+and a quick completion repaints independently of slower catalogue acquisition.
 The キープ and ビルディング captions stay over the left and right AGENT columns.
 The six equal fractional columns use the full viewport width: no horizontal padding
 or idle scrollbar gutter. All are 24 characters at 149×45; the one-cell gaps remain.

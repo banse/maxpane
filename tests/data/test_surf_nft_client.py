@@ -213,3 +213,52 @@ async def test_real_client_archive_error_restarts_inspector_pinned_stage():
     assert third.progress['block_number']==512
     assert third.progress['responses']
     assert not any('"0x100"' in key for key in third.progress['responses'])
+
+
+@pytest.mark.parametrize('revision', ['a' * 40, None])
+async def test_readme_uses_only_validated_public_root_path_and_optional_ref(revision):
+    fixture = json.loads((Path(__file__).parents[1] / 'fixtures/surf/nft/readme/intro.json').read_text())
+    sent = []
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(200, json=fixture)
+    c, b = client(handler), budget(http_limit=1)
+    result = await c.readme('https://github.com/example/collection', revision, budget=b)
+    assert result.payload['state'] == 'ok' and result.observed_at == 100
+    assert len(sent) == b.http_attempts == 1
+    request = sent[0]
+    assert request.url.host == 'api.github.com'
+    assert request.url.path == '/repos/example/collection/contents/README.md'
+    assert dict(request.url.params) == ({'ref': revision} if revision else {})
+    assert not any(key.lower() in ('authorization', 'x-api-key') for key in request.headers)
+
+
+@pytest.mark.parametrize('status', [302, 403, 429, 500])
+async def test_readme_failure_never_follows_redirects_or_download_urls(status):
+    sent = []
+    c = client(lambda request: sent.append(request) or httpx.Response(
+        status, headers={'Location': 'http://127.0.0.1/private', 'Retry-After': '60'}))
+    with pytest.raises(SourceUnavailable):
+        await c.readme('https://github.com/example/collection', None, budget=budget())
+    assert len(sent) == 1
+
+
+async def test_readme_missing_is_distinct_from_unread_and_bad_metadata_does_not_send():
+    sent = []
+    c = client(lambda request: sent.append(request) or httpx.Response(404))
+    result = await c.readme('https://github.com/example/collection', None, budget=budget())
+    assert result.payload['state'] == 'missing' and result.payload['text'] is None
+    for repository, revision in [('https://evil.example/a/b', None),
+                                 ('https://github.com/example/collection', 'main')]:
+        with pytest.raises(ValueError):
+            await c.readme(repository, revision, budget=budget())
+    assert len(sent) == 1
+
+
+async def test_readme_uses_cycle_deadline():
+    async def handler(request):
+        await asyncio.Event().wait()
+    c = client(handler)
+    with pytest.raises(BudgetExhausted):
+        await c.readme('https://github.com/example/collection', None,
+                       budget=budget(deadline_seconds=.01))

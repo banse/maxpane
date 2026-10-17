@@ -7,7 +7,8 @@ from pathlib import Path
 
 def test_flat_contract_and_filter_defaults_are_exact():
     models=importlib.import_module('maxpane_dashboard.data.surf_nft_models')
-    assert models.NFT_KEYS==('nft_rows','nft_build_rows','nft_summary','nft_selected','nft_sources','nft_coverage','as_of')
+    assert models.NFT_KEYS==('nft_rows','nft_build_rows','nft_summary','nft_selected','nft_readme','nft_sources','nft_coverage','as_of')
+    assert models.NFT_WIDGET_SIGNATURES['NftSummary'] == ('nft_readme',)
     assert models.NFT_SUMMARY_FIELDS==('deployed','building','mint_open','idmd_free','conditional','chains','mint_known','idmd_known','partial','observed_at')
     assert models.NFT_FILTER_DEFAULTS=={'chain':'all','stage':'launched','mint':'all','idmd':'all','utility':'all','search':'','sort':'newest'}
 

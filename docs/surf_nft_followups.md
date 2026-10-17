@@ -3,6 +3,46 @@
 Implementation: 2026-10-17, approved combination of proposal 1's collection/detail
 layout, proposal 2's IDMD/mint filters and proposal 3's explicit sources.
 
+## Detail popup and README summary — 2026-10-17
+
+The right column now stacks collection basics and `SUMMARY (github README.md)`.
+Every catalogue row ends in `»`; that action and Enter open all former sections
+from MINT ROUTES onward in the shared RECORD popup frame. Closing with Space,
+Escape or X preserves the table cursor. Read-only source links and independent
+address-copy actions work in the popup and summary.
+
+README acquisition is selected-only, keyless and independent of the chain cycle.
+The 32-entry repository/ref cache survives dashboard revisits in this process;
+successful/missing reads have a 600-second TTL, failures back off 120 seconds,
+and one request has a six-second budget. Retained text survives failed refreshes.
+Only a canonical linked repository and optional valid commit may supply root
+README.md. The 1,600-character excerpt excludes code, badges and navigation-only
+links; it does not assert mint availability or wallet eligibility.
+
+A fresh public capture at 149×45 reached Sinopia plus its pinned README excerpt
+in 6.4 seconds from empty temporary caches (24 NFT-client requests). Both the main
+view and popup were shown before hardening. Capture files are under
+`/tmp/maxpane-nft-popup-live/`; this is a bounded cold-start observation, not a
+claim of full catalogue completion. The navigation-only line found in that live
+README was then removed from the excerpt parser with a fixture regression.
+
+The measured screen boundary remains 146×33. The `»` uses the existing final
+table column's budget. Collection basics are capped at half the right column,
+so long holder/project facts scroll without pushing the summary below it.
+Popup and summary use their own scroll regions.
+
+Verification: 238 affected/composing tests passed, plus 126 fast guards,
+12 documentation pins and both NFT address-sweep sizes. Width and height pin
+mutations in both directions, a hidden-summary overflow mutation, decoder and
+cancellation mutations all failed the intended regressions and were restored.
+Final review found one Important issue: an invalid first repository suppressed
+a later valid GitHub source. The fix selects the first valid entry in source
+order without downgrading an invalid pin; both regressions failed before the fix,
+the manager file passed all 30 tests afterward, and scoped review marked it
+ADDRESSED. The actual Sinopia navigation mixes anchor and relative-file links;
+that shape now has a failing-before/passing-after fixture regression, and all
+33 README/client cases passed after its correction. No new residual findings.
+
 ## Delivered behavior
 
 BOARDROOM's NFTS card replaces PROTOCOL in the existing rack. `n` or card

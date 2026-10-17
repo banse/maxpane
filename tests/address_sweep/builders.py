@@ -752,7 +752,12 @@ def _nft_payload():
     row['related_tokens']=[{'symbol':'Reward token','address':'0x'+'e5'*20,
                            'chainId':4663,'roles':['reward'],'status':'configured'}]
     row['evidence']=[{'label':'Review '+'0x'+'a1'*20,'url':'https://github.com/identity-md-launches/nft/blob/'+'a'*40+'/src/NFT.sol'}]
-    payload.update(nft_rows=[row],nft_build_rows=[])
+    payload.update(nft_rows=[row],nft_build_rows=[],nft_readme={
+        'identity':row['id'],'repository_url':'https://github.com/example/nft',
+        'readme_url':'https://github.com/example/nft/blob/HEAD/README.md',
+        'revision':None,'text':'Repository description mentions '+'0x'+'f6'*20,
+        'state':'ok','observed_at':payload['as_of'],
+    })
     return payload
 
 
@@ -767,9 +772,9 @@ def _nft_app():
 
 def _nft_scroll(position):
     async def scroll_detail(app,pilot):
-        from maxpane_dashboard.widgets.surf_nft import NftDetail
-        detail=app.screen.query_one(NftDetail)
-        detail.focus()
+        from textual.containers import VerticalScroll
+        await pilot.press('enter')
+        detail=app.screen.query_one('.record-detail-scroll',VerticalScroll)
         detail.scroll_to(y=position,animate=False)
         await pilot.pause()
     scroll_detail.__name__=f'nft_detail_{position}'
@@ -850,9 +855,10 @@ CASES: tuple[SweepCase, ...] = (
     SweepCase(
         name='surf_nft',screen_class=SurfNftScreen,build=_nft_app,payload=_nft_payload,
         pins=((SURF_NFT_FULL_LAYOUT_COLUMNS,SURF_NFT_FULL_LAYOUT_ROWS),),
-        views=tuple(_nft_scroll(offset) for offset in (0,12,24,36,48)),
-        seeded=('0x'+'a1'*20,'0x'+'b2'*20,'0x'+'c3'*20,'0x'+'d4'*20,'0x'+'e5'*20),
+        views=((),*(_nft_scroll(offset) for offset in (0,12,24,36,48))),
+        seeded=('0x'+'a1'*20,'0x'+'b2'*20,'0x'+'c3'*20,'0x'+'d4'*20,'0x'+'e5'*20,'0x'+'f6'*20),
         explorer=ETHEREUM,explorers=(ETHEREUM,ROBINHOOD),rows_pick_explorer=True,
+        unlinked=('0x'+'f6'*20,),
         explorer_for={'0x'+'a1'*20:ETHEREUM,'0x'+'b2'*20:ETHEREUM,
                       '0x'+'c3'*20:ETHEREUM,'0x'+'d4'*20:ETHEREUM,
                       '0x'+'e5'*20:ROBINHOOD},

@@ -392,3 +392,231 @@ async def test_parent_rediscovery_keeps_proven_child_and_enrichment_due(setup, r
         assert manager._due(identity)  # Rediscovery must not renew a ten-minute probe TTL.
     finally:
         await manager.close()
+
+
+def seed_readme_rows(manager):
+    from maxpane_dashboard.analytics.surf_nft import normalize_record
+    rows = [normalize_record(dict(id='1:0x' + char * 40, chainId=1,
+        contractAddress='0x' + char * 40, category='launched',
+        repositories=[{'url': f'https://github.com/example/{name}', 'commit': char * 40}]))
+        for char, name in [('a', 'one'), ('b', 'two')]]
+    manager.state['records'] = rows
+    return rows
+
+
+def readme_result(repo, revision, *, text='README excerpt', observed_at=1000.):
+    return SimpleNamespace(payload=dict(repository_url=repo, revision=revision,
+        readme_url=f'{repo}/blob/{revision or "HEAD"}/README.md', text=text, state='ok'),
+        observed_at=observed_at)
+
+
+@pytest.mark.parametrize('invalid', [
+    {'url': 'https://gitlab.com/example/one', 'commit': 'a' * 40},
+    {'url': 'https://github.com/example/one', 'commit': 'broken-pin'},
+])
+async def test_readme_skips_invalid_repository_entries_without_downgrading_pin(setup, invalid):
+    manager, _, _, _, client, *_ = setup
+    rows = seed_readme_rows(manager)
+    rows[0]['repositories'] = [invalid, rows[1]['repositories'][0],
+                              {'url': 'https://github.com/example/three'}]
+    client.readme = AsyncMock(side_effect=lambda repo, revision, **_: readme_result(repo, revision))
+    try:
+        manager.set_active_view('NFT EXPLORER')
+        manager.select(rows[0]['id'])
+        assert manager._readme_task is not None
+        await manager._readme_task
+        assert client.readme.await_args.args == ('https://github.com/example/two', 'b' * 40)
+        assert client.readme.await_count == 1
+        assert manager.get_readme()['state'] == 'ok'
+        assert manager.get_readme()['identity'] == rows[0]['id']
+    finally:
+        await manager.close()
+
+
+async def test_readme_is_selected_only_boardroom_silent_and_independent_of_catalogue(setup):
+    manager, now, entered, release, client, *_ = setup
+    rows = seed_readme_rows(manager)
+    read_entered, read_release = asyncio.Event(), asyncio.Event()
+    async def read(repo, revision, **kwargs):
+        read_entered.set()
+        await read_release.wait()
+        return readme_result(repo, revision)
+    client.readme = AsyncMock(side_effect=read)
+    try:
+        manager.set_active_view('BOARDROOM')
+        manager.select(rows[0]['id'])
+        assert manager.get_readme()['state'] == 'pending'
+        client.readme.assert_not_called()
+        manager.set_active_view('NFT EXPLORER')
+        await asyncio.wait_for(read_entered.wait(), 1)
+        assert manager.is_loading()
+        await manager.fetch_and_compute()
+        await asyncio.wait_for(entered.wait(), 1)
+        assert manager.discovery.advance.await_count == 1
+        for _ in range(10):
+            manager.get_readme()
+            manager.get_snapshot()
+        assert client.readme.await_count == 1
+        read_release.set()
+        await manager._readme_task
+        assert manager.get_readme()['text'] == 'README excerpt'
+        assert manager.get_snapshot()['nft_readme']['identity'] == rows[0]['id']
+        assert not manager._task.done()  # README appears before the chain/discovery cycle.
+    finally:
+        release.set()
+        await manager.close()
+
+
+async def test_readme_cache_reopen_failure_backoff_and_revision_isolation(setup):
+    manager, now, _, _, client, *_ = setup
+    rows = seed_readme_rows(manager)
+    client.readme = AsyncMock(side_effect=lambda repo, revision, **_: readme_result(repo, revision))
+    try:
+        manager.set_active_view('NFT EXPLORER')
+        manager.select(rows[0]['id'])
+        await manager.wait_pending()
+        original = manager.get_readme()
+        manager.set_active_view('BOARDROOM')
+        await manager.drain_reads()
+        manager.set_active_view('NFT EXPLORER')
+        assert manager.get_readme() == original and client.readme.await_count == 1
+        now.value += manager.README_TTL
+        client.readme.side_effect = OSError('failed read')
+        manager.select(rows[0]['id'])
+        assert manager.get_readme()['text'] == original['text']
+        await manager.wait_pending()
+        retained = manager.get_readme()
+        assert retained['text'] == original['text'] and retained['observed_at'] == 1000.
+        assert retained['state'] == 'unavailable'
+        manager.select(rows[0]['id'])
+        await manager.wait_pending()
+        assert client.readme.await_count == 2
+        rows[0]['repositories'][0]['commit'] = 'c' * 40
+        manager.select(rows[0]['id'])
+        assert manager.get_readme()['text'] is None
+        await manager.wait_pending()
+        assert client.readme.call_args.args[1] == 'c' * 40
+        assert manager.get_readme()['observed_at'] is None
+    finally:
+        await manager.close()
+
+
+async def test_readme_switch_cancels_drains_and_rejects_late_completion(setup):
+    manager, _, _, _, client, *_ = setup
+    rows = seed_readme_rows(manager)
+    entered, cancelled, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    seen = []
+    async def read(repo, revision, **_):
+        seen.append(repo)
+        if repo.endswith('/one'):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                await finish.wait()  # Simulate a provider cleaning up after cancellation.
+                return readme_result(repo, revision, text='Late old README')
+        return readme_result(repo, revision, text='Selected second README')
+    client.readme = AsyncMock(side_effect=read)
+    try:
+        manager.set_active_view('NFT EXPLORER')
+        manager.select(rows[0]['id'])
+        await asyncio.wait_for(entered.wait(), 1)
+        old = manager._readme_task
+        manager.select(rows[1]['id'])
+        await asyncio.wait_for(cancelled.wait(), 1)
+        assert manager.get_readme()['identity'] == rows[1]['id']
+        assert manager.get_readme()['text'] is None
+        assert len(seen) == 1  # New source waits until old transport has drained.
+        finish.set()
+        await manager.wait_pending()
+        assert old.done() and manager.get_readme()['text'] == 'Selected second README'
+        manager.select(rows[0]['id'])
+        assert manager.get_readme()['text'] is None  # Late cancelled data was not cached.
+    finally:
+        finish.set()
+        await manager.close()
+
+
+async def test_readme_leave_and_close_cancel_owned_task_without_retry(setup):
+    manager, _, _, _, client, *_ = setup
+    rows = seed_readme_rows(manager)
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+    async def read(*args, **kwargs):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+    client.readme = AsyncMock(side_effect=read)
+    manager.set_active_view('NFT EXPLORER')
+    manager.select(rows[0]['id'])
+    await asyncio.wait_for(entered.wait(), 1)
+    manager.set_active_view('BOARDROOM')
+    await manager.drain_reads()
+    assert cancelled.is_set() and not manager.is_loading()
+    assert client.readme.await_count == 1
+    entered.clear(); cancelled.clear()
+    manager.set_active_view('NFT EXPLORER')
+    await asyncio.wait_for(entered.wait(), 1)
+    await manager.close()
+    assert cancelled.is_set() and not manager.is_loading()
+
+
+async def test_readme_leave_requests_cancellation_before_drain(setup):
+    manager, _, _, _, client, *_ = setup
+    rows = seed_readme_rows(manager)
+    entered = asyncio.Event()
+    async def read(*args, **kwargs):
+        entered.set()
+        await asyncio.Event().wait()
+    client.readme = AsyncMock(side_effect=read)
+    manager.set_active_view('NFT EXPLORER')
+    manager.select(rows[0]['id'])
+    await asyncio.wait_for(entered.wait(), 1)
+    old = manager._readme_task
+    try:
+        manager.set_active_view('BOARDROOM')
+        assert old.cancelling() > 0
+        await manager.drain_reads()
+        assert old.done()
+    finally:
+        old.cancel()
+        await manager.close()
+
+
+async def test_readme_invalid_pin_never_falls_back_and_cache_is_bounded(setup):
+    manager, _, _, _, client, *_ = setup
+    rows = seed_readme_rows(manager)
+    rows[0]['repositories'][0]['commit'] = 'main'
+    client.readme = AsyncMock(side_effect=lambda repo, revision, **_: readme_result(repo, revision))
+    try:
+        manager.set_active_view('NFT EXPLORER')
+        manager.select(rows[0]['id'])
+        assert manager.get_readme()['state'] == 'unavailable'
+        client.readme.assert_not_called()
+        for index in range(manager.README_CACHE_SIZE + 2):
+            rows[0]['repositories'][0]['commit'] = f'{index:040x}'
+            manager.select(rows[0]['id'])
+            await manager.wait_pending()
+        assert len(manager._readme_cache) == manager.README_CACHE_SIZE
+    finally:
+        await manager.close()
+
+
+async def test_readme_publish_new_direct_launch_metadata_offers_selected_read(setup):
+    manager, _, _, _, client, *_ = setup
+    identity, candidate, _ = seed_reviewed_collection(manager)
+    assert manager.state['records'][0]['repositories'] == []
+    client.readme = AsyncMock(side_effect=lambda repo, revision, **_: readme_result(repo, revision))
+    try:
+        manager.set_active_view('NFT EXPLORER')
+        manager.select(identity)
+        assert manager.get_readme()['state'] == 'missing'
+        candidate['launch'].update(sourceRepoUrl='https://github.com/example/direct', sourceCommit='d' * 40)
+        manager._publish()
+        await manager.wait_pending()
+        assert client.readme.call_args.args == ('https://github.com/example/direct', 'd' * 40)
+        assert manager.get_readme()['state'] == 'ok'
+    finally:
+        await manager.close()

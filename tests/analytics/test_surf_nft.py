@@ -145,6 +145,18 @@ def test_selection_tracks_identity_and_filters_choose_first_or_clear(nft,snapsho
     assert result['nft_selected'] is None
 
 
+def test_readme_projection_is_bound_to_selected_identity_and_preserves_source_clock(nft, snapshot):
+    identity = snapshot['nft_rows'][0]['id']
+    snapshot['nft_readme'] = dict(identity=identity, repository_url='https://github.com/example/collection',
+        readme_url=None, revision='a' * 40, text='Source excerpt', observed_at=123., state='ok')
+    result = nft.project_snapshot(snapshot, selected_id=identity)
+    assert result['nft_readme'] == snapshot['nft_readme']
+    result['nft_readme']['text'] = 'modified'
+    assert snapshot['nft_readme']['text'] == 'Source excerpt'
+    assert nft.project_snapshot(snapshot, selected_id=snapshot['nft_rows'][1]['id'])['nft_readme'] is None
+    assert nft.project_snapshot(snapshot, filters={'search': 'nothing matches'})['nft_readme'] is None
+
+
 def test_normalized_records_round_trip_and_nested_numbers_are_not_substituted(nft,raw):
     farm=nft.normalize_record(next(row for row in raw['records'] if row['name']=='FarmItems'))
     assert nft.normalize_record(farm)==farm

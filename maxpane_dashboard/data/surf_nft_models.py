@@ -6,7 +6,7 @@ observed records, not an exhaustive index unless coverage independently says so.
 the same optional families as collections, but cannot carry a contract address.
 """
 
-NFT_KEYS = ('nft_rows', 'nft_build_rows', 'nft_summary', 'nft_selected',
+NFT_KEYS = ('nft_rows', 'nft_build_rows', 'nft_summary', 'nft_selected', 'nft_readme',
             'nft_sources', 'nft_coverage', 'as_of')
 NFT_ROW_FIELDS = (
     'id', 'category', 'chain_id', 'contract', 'project_id', 'name', 'symbol',
@@ -55,4 +55,5 @@ NFT_WIDGET_SIGNATURES = {
     'NftHero': ('nft_summary',),
     'NftTable': ('nft_rows', 'nft_build_rows', 'as_of'),
     'NftDetail': ('nft_selected', 'nft_sources', 'nft_coverage'),
+    'NftSummary': ('nft_readme',),
 }

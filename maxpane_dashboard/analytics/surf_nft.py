@@ -204,6 +204,10 @@ def project_snapshot(snapshot, *, filters=None, selected_id=None):
     selected=next((row for row in visible or [] if row['id']==selected_id),None)
     if selected is None and visible:
         selected=visible[0]
+    readme=snapshot.get('nft_readme')
+    if not isinstance(readme,dict) or selected is None or readme.get('identity')!=selected['id']:
+        readme=None
     return dict(nft_rows=rows,nft_build_rows=builds,nft_summary=summary,
-                nft_selected=deepcopy(selected),nft_sources=deepcopy(snapshot.get('nft_sources') or {}),
+                nft_selected=deepcopy(selected),nft_readme=deepcopy(readme),
+                nft_sources=deepcopy(snapshot.get('nft_sources') or {}),
                 nft_coverage=deepcopy(coverage),as_of=snapshot.get('as_of'))

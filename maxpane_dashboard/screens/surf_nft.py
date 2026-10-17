@@ -6,18 +6,19 @@ from textual.widgets import DataTable, Input, Select, Static
 
 from maxpane_dashboard.analytics.surf_nft import FILTER_DEFAULTS, project_snapshot
 from maxpane_dashboard.screens.dashboard_screen import keys
+from maxpane_dashboard.screens.nft_detail import NftDetailScreen
 from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen, SurfStatusBar
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.rowfit import cell_len
 from maxpane_dashboard.widgets.surfboard.terminal import fit_prose
-from maxpane_dashboard.widgets.surf_nft import NftHero, NftTable, NftDetail, EXPLORER
+from maxpane_dashboard.widgets.surf_nft import NftHero, NftTable, NftDetail, NftSummary, EXPLORER
 from maxpane_dashboard.widgets.surf_nft.filter import NftFilterEditor
 
 
 #: Measured 2026-10-17 after the owner-visible keyless 149×45 preview.
 #: Six nine-row rack heroes precede one controls line and the native panels.
-#: The list keeps a fixed width; the detail uses the remaining columns.
-#: Detail prose is variable-length and scrolls inside its own panel.
+#: The list keeps a fixed width; basics and README summary share the right column.
+#: Basic facts and README prose scroll independently inside their panels.
 #: At 149×45 the complete list and detail headers are visible together.
 #: All six hero frames remain on one row; each is nine rows high.
 #: The measurement used the production stylesheet and actual screen containers.
@@ -27,18 +28,22 @@ from maxpane_dashboard.widgets.surf_nft.filter import NftFilterEditor
 #: Its horizontal scroll extent is one column and the controls mark widen.
 #: At 146 columns all six right corners are visible and no outer scroll remains.
 #: At 147 and 149 columns the complete frames and both panels stay visible.
-#: The table's five installed columns fit without internal horizontal scrolling.
+#: The table's five installed columns fit without internal horizontal scrolling;
+#: its row-end popup action uses two cells from the existing final column.
 #: Name windows retain copy icons and the full identity stays in the detail.
 #: Source text may still wrap or scroll; the pin is not a promise about text length.
 #: Height samples began at 24 rows and extended through 45 rows.
 #: At 32 rows the body exceeds the viewport by one row and marks taller.
 #: At 33 rows the body, table floor and status bar fit without outer scrolling.
-#: At 34 rows the extra row goes to the independently scrolling details/list.
+#: At 34 rows the extra row goes to the independently scrolling summary/list.
 #: The fixed body floor is 32 rows; the bottom status bar remains outside it.
 #: Normal, unread and confirmed-empty payloads share these geometry boundaries.
-#: The detail can scroll while the outer viewport is whole: this is intentional
-#: because source evidence has no fixed line count and remains keyboard reachable.
-#: At the owner size the saved normal detail has 51 additional scroll rows.
+#: Basics are capped at half the column so extra holder/project facts cannot
+#: push the summary below the column. Its eight-row floor stays wholly visible.
+#: The ordinary fixture has nine-row basics and a nine-row summary at the pin.
+#: A longer basics fixture scrolls internally while the outer viewport stays whole.
+#: Extended mint/source evidence now uses the independently scrolling RECORD modal.
+#: The public Sinopia README and its modal were shown at 149×45 before this sweep.
 #: The compact card footer preserves observed counts at the unchanged hub pin.
 #: Neither the hub's 143×37 pin nor the application width changes here.
 #: Boundary tests exercise both sides of each measured onset and inspect frames,
@@ -54,7 +59,8 @@ class SurfNftScreen(SurfDashboardScreen):
     REFRESH_WORKER_NAME='surf-nft-refresh'
     PANELS=((NftHero,keys('nft_summary')),
             (NftTable,keys('nft_rows','nft_build_rows','as_of')),
-            (NftDetail,keys('nft_selected','nft_sources','nft_coverage')))
+            (NftDetail,keys('nft_selected','nft_sources','nft_coverage')),
+            (NftSummary,keys('nft_readme')))
     BINDINGS=[Binding('escape','back',show=False),Binding('f','filter',show=False),
               Binding('/','search',show=False),Binding('b','stage',show=False),
               Binding('c','chain',show=False),Binding('o','sort',show=False)]
@@ -68,7 +74,9 @@ class SurfNftScreen(SurfDashboardScreen):
     SurfNftScreen #nft-content {height: 1fr; min-height: 18;}
     SurfNftScreen #nft-market {height: 1fr;}
     SurfNftScreen NftTable {width: 77; height: 1fr; min-height: 18; margin-right: 1; border: none;}
-    SurfNftScreen NftDetail {width: 1fr; height: 1fr; min-height: 18; border: none;}
+    SurfNftScreen #nft-inspection {width: 1fr; height: 1fr; min-height: 18;}
+    SurfNftScreen NftDetail {height: auto; min-height: 7; max-height: 50%; margin-bottom: 1; border: none;}
+    SurfNftScreen NftSummary {height: 1fr; min-height: 8; border: none;}
     SurfNftScreen DataTable {height: 1fr; background: $background; scrollbar-size: 1 1;}
     SurfNftScreen .panel-title {height: 1; padding: 0 1; margin-bottom: 1;
         color: $text-muted; text-wrap: nowrap; text-overflow: ellipsis;}
@@ -80,6 +88,7 @@ class SurfNftScreen(SurfDashboardScreen):
         self._view_state=view_state if isinstance(view_state,dict) else {}
         self.filters=dict(self._view_state.get('filters') or FILTER_DEFAULTS); self.snapshot={}; self._raw={}
         self._selected_id=self._view_state.get('selected_id'); self._filter_open=False
+        self._readme=None
 
     def compose(self):
         with VerticalScroll(id='nft-viewport'):
@@ -89,7 +98,9 @@ class SurfNftScreen(SurfDashboardScreen):
                 with Vertical(id='nft-content'):
                     with Horizontal(id='nft-market'):
                         yield NftTable()
-                        yield NftDetail()
+                        with Vertical(id='nft-inspection'):
+                            yield NftDetail()
+                            yield NftSummary()
                     yield NftFilterEditor()
         yield SurfStatusBar()
 
@@ -116,9 +127,25 @@ class SurfNftScreen(SurfDashboardScreen):
         self.snapshot=data
         selected=data.get('nft_selected')
         self._data_manager.select(selected['id'] if selected else None)
+        data['nft_readme']=self._readme=self._selected_readme(allow_snapshot=True)
         if selected:
             self.call_after_refresh(self.query_one(NftTable).select_identity,selected['id'])
         self.call_after_refresh(self._chrome)
+
+    def _selected_readme(self,*,allow_snapshot=False):
+        getter=getattr(self._data_manager,'get_readme',None)
+        data=getter() if callable(getter) else (
+            self._data_manager.get_snapshot().get('nft_readme') if allow_snapshot else None)
+        selected=self.snapshot.get('nft_selected') or {}
+        return data if selected and isinstance(data,dict) and data.get('identity')==selected.get('id') else None
+
+    def _tick_loading(self):
+        super()._tick_loading()
+        if self.is_current and callable(getattr(self._data_manager,'get_readme',None)):
+            data=self._selected_readme()
+            if data!=self._readme:
+                self.snapshot['nft_readme']=self._readme=data
+                self.query_one(NftSummary).update_data(nft_readme=data)
 
     def _repaint_cached(self):
         self._raw=self._data_manager.get_snapshot()
@@ -161,13 +188,21 @@ class SurfNftScreen(SurfDashboardScreen):
             self._view_state['selected_id']=self._selected_id
             self._data_manager.select(self._selected_id)
             self.snapshot['nft_selected']=event.row
+            self.snapshot['nft_readme']=self._readme=self._selected_readme(allow_snapshot=True)
+            self.query_one(NftSummary).update_data(nft_readme=self._readme)
             self.query_one(NftDetail).update_data(nft_selected=event.row,
                 nft_sources=self.snapshot.get('nft_sources'),nft_coverage=self.snapshot.get('nft_coverage'))
 
     def on_nft_table_selected(self,event):
-        self.on_nft_table_highlighted(event)
+        event.stop()
         if event.row:
-            self.query_one(NftDetail).focus()
+            self.app.push_screen(NftDetailScreen(event.row,nft_sources=self.snapshot.get('nft_sources'),
+                                                 nft_coverage=self.snapshot.get('nft_coverage')))
+
+    def action_open_nft_detail(self,index):
+        rows=list(self.query_one(NftTable).rows.values())
+        if type(index) is int and 0<=index<len(rows):
+            self.on_nft_table_selected(NftTable.Selected(rows[index]))
 
     def _show_filter(self,show):
         self._filter_open=show
