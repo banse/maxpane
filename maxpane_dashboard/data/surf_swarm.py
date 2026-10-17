@@ -1799,7 +1799,7 @@ def job_detail_point(detail: object, job: str, *, now_ts: float) -> dict:
                   failure_reason=_failure_reason(n.get('failureReason')))
              for n in detail['nodes'][:16] if isinstance(n, Mapping)]
     return dict(state=state, blocked_reason=_submission_text(detail.get('blockedReason'),200), nodes=nodes,
-                read_ts=now_ts, terminal=state in _JOB_FINAL)
+                read_ts=now_ts, terminal=state in _JOB_FINAL and bool(nodes) and detail.get('complete') is not False)
 
 
 def coerce_job_detail_slot(payload: object) -> dict | None:
@@ -1810,7 +1810,7 @@ def coerce_job_detail_slot(payload: object) -> dict | None:
         if (parse_job_id(job) is None or not isinstance(p, Mapping) or set(p) != _JOB_FIELDS
                 or not _nonnegative_finite(p['read_ts']) or type(p['terminal']) is not bool
                 or not _valid_short_text(p['state'],40) or not _valid_short_text(p['blocked_reason'],200)
-                or p['terminal'] != (p['state'] in _JOB_FINAL)):
+                or p['terminal'] and p['state'] not in _JOB_FINAL):
             continue
         nodes = p['nodes']
         if p['state'] is None:
@@ -1841,7 +1841,8 @@ def job_details_due(rows: list[dict], points: dict, *, now_ts: float, cap=2, due
                 or row.get('answer_state') not in ('read', 'no_reply')):
             continue
         point = points.get(job)
-        if point is not None and (point['terminal'] or now_ts-point['read_ts'] < due_s):
+        interval = 600 if point is not None and point['terminal'] and point['nodes'] else due_s
+        if point is not None and now_ts-point['read_ts'] < interval:
             continue
         due.setdefault(job, (0,index) if point is None else (1,point['read_ts']))
     return sorted(due,key=due.get)[:cap]
@@ -1933,8 +1934,8 @@ def coerce_answers_slot(payload: object) -> dict | None:
             clean[key] = {field: point[field] for field in SWARM_ANSWER_CACHE_FIELDS}
             if state == 'unavailable':
                 clean[key]['terminal'] = False  # repair ambiguous legacy frozen failures
-            elif state == 'not_served':
-                clean[key]['terminal'] = True   # successful absence is a final answer
+            elif state in ('not_served', 'no_reply'):
+                clean[key]['terminal'] = False  # publication can arrive after job completion
         if clean:
             result[job] = clean
     return result
@@ -1974,8 +1975,8 @@ def answer_jobs_due(rows: list[dict], answers: dict, *, now_ts: float, due_s: fl
     """Unread rows first in displayed order; due retries by oldest attempt.
 
     Group by job so multiple selected submission hashes cost one request. Only
-    the first displayed window is eligible; terminal points never re-read while
-    retained. Transient unavailable points retry after the normal due interval.
+    the first displayed window is eligible. Positive terminal points revalidate
+    after 600s; missing or incomplete publication keeps the normal due interval.
     """
     groups: dict[str, list[dict]] = {}
     priorities = {}
@@ -1984,7 +1985,9 @@ def answer_jobs_due(rows: list[dict], answers: dict, *, now_ts: float, due_s: fl
         if parse_job_id(job) is None or _hex64(key) is None:
             continue
         point = answers.get(job, {}).get(key)
-        if point is not None and (point['terminal'] or now_ts - point['read_ts'] < due_s):
+        interval = (600 if point is not None and point['terminal'] and point['state'] == 'read'
+                    and row.get('job_state') in _JOB_FINAL else due_s)
+        if point is not None and now_ts - point['read_ts'] < interval:
             continue
         priority = (0, index, index) if point is None else (1, point['read_ts'], index)
         groups.setdefault(job, []).append(row)

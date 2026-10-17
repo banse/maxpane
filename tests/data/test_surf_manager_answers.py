@@ -60,7 +60,7 @@ async def test_progressive_answers_distinguish_queued_failed_absent_and_reply(tm
     finally: await manager.close()
 
 
-async def test_record_window_job_grouping_and_definitive_terminal_answers_never_reread(tmp_path):
+async def test_record_window_job_grouping_and_terminal_answers_have_finite_ttl(tmp_path):
     fake=Answers(work(42,'completed')); rows=fake.seat['work']
     # Two hashes in one job cost one request and both points must be populated.
     second=fake.responses[rows[1]['jobId']]['submissions'][0]
@@ -69,15 +69,17 @@ async def test_record_window_job_grouping_and_definitive_terminal_answers_never_
     fake.responses[rows[2]['jobId']]=dict(SUBMISSIONS_NOT_FOUND)
     manager=_manager(tmp_path,fake,clock=FakeClock(NOW));manager.set_seat(420)
     try:
-        for cycle in range(12): await manager._pool_swarm_seat(420,NOW+cycle*120)
+        for cycle in range(12): await manager._pool_swarm_seat(420,NOW+cycle*5)
         expected=list(dict.fromkeys(row['jobId'] for row in rows[:40]))
         assert fake.answer_calls==expected
-        result=data(manager,NOW+1320)['swarm_seat_work_rows']
+        result=data(manager,NOW+55)['swarm_seat_work_rows']
         assert result[0]['answer_state']==result[1]['answer_state']=='read'
         assert result[2]['answer_state']=='not_served'
         assert all(row['answer_state']=='not_read' for row in result[40:])
         assert manager_mod.SWARM_ANSWER_CACHE_CAP==400
         assert manager_mod.SWARM_ANSWER_MAX_AGE_S==48*3600
+        await manager._pool_swarm_seat(420,NOW+600)
+        assert 0 < len(fake.answer_calls)-len(expected) <= 4
     finally: await manager.close()
 
 
@@ -91,7 +93,7 @@ async def test_nonterminal_due_and_terminal_transition_preserve_retained_results
         assert len(fake.answer_calls)==2
         fake.seats[420]['work'][0]['jobState']='completed'
         await manager._pool_swarm_seat(420,NOW+240)
-        assert len(fake.answer_calls)==2
+        assert len(fake.answer_calls)==3
         entry=manager.cache.get_last_good(SLOT_SWARM_ANSWERS)
         assert next(iter(next(iter(entry.payload.values())).values()))['terminal'] is True
     finally: await manager.close()
@@ -205,7 +207,7 @@ async def test_fix_i3_running_failure_and_legacy_terminal_failure_remain_retryab
 
 
 @pytest.mark.parametrize('negative',['404','absent'])
-async def test_fix_i3_real_negative_freezes_even_while_job_running(tmp_path,negative):
+async def test_fix_i3_real_negative_retries_after_120s_even_while_job_running(tmp_path,negative):
     from maxpane_dashboard.data.surf_swarm_client import SUBMISSIONS_NOT_FOUND
     fake=Answers(work(1));job=fake.seat['work'][0]['jobId']
     fake.responses[job]=dict(SUBMISSIONS_NOT_FOUND) if negative=='404' else dict(jobId=job,submissions=[])
@@ -213,8 +215,10 @@ async def test_fix_i3_real_negative_freezes_even_while_job_running(tmp_path,nega
     try:
         await manager._pool_swarm_seat(420,NOW)
         assert data(manager)['swarm_seat_work_rows'][0]['answer_state']=='not_served'
-        await manager._pool_swarm_seat(420,NOW+120)
+        await manager._pool_swarm_seat(420,NOW+119)
         assert len(fake.answer_calls)==1
+        await manager._pool_swarm_seat(420,NOW+120)
+        assert len(fake.answer_calls)==2
     finally: await manager.close()
 
 
@@ -227,14 +231,18 @@ async def test_popup_job_details_cap_terminal_blocked_retry_and_failure(tmp_path
     async def fetch(job):
         calls.append(job)
         if job == jobs[3]: return None
-        return dict(id=job, state='blocked' if job == jobs[0] else 'completed', nodes=[], blockedReason='runtime_error')
+        return dict(id=job, state='blocked' if job == jobs[0] else 'completed',
+                    nodes=[dict(key='hunt_d', role='review', state='accepted', attempt=1)], blockedReason='runtime_error')
     fake.fetch_job = fetch
-    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    clock = FakeClock(NOW)
+    manager = _manager(tmp_path, fake, clock=clock); manager.set_seat(420)
     try:
         await manager._pool_swarm_seat(420, NOW)
         assert calls == jobs[:2]
+        clock.t = NOW+119
         await manager._pool_swarm_seat(420, NOW+119)
         assert calls == jobs
+        clock.t = NOW+120
         await manager._pool_swarm_seat(420, NOW+120)
         assert calls == jobs + jobs[:1]
         points = manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload
@@ -343,20 +351,25 @@ async def test_named_job_detail_limits_control_reads_pruning_and_retry(tmp_path,
         calls.append(job)
         return dict(id=job, state='blocked', nodes=[], blockedReason=None)
     fake.fetch_job = fetch
-    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    clock = FakeClock(NOW)
+    manager = _manager(tmp_path, fake, clock=clock); manager.set_seat(420)
     try:
         for cycle in range(3):
+            clock.t = NOW+cycle
             await manager._pool_swarm_seat(420, NOW+cycle)
             assert calls == jobs[:cycle+1]
         points = manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload
         assert set(points) == set(jobs[1:])
         fake.seats[420]['work'] = fake.seats[420]['work'][2:]
+        clock.t = NOW+6
         await manager._pool_swarm_seat(420, NOW+6)
         assert calls == jobs
+        clock.t = NOW+7
         await manager._pool_swarm_seat(420, NOW+7)
         assert calls == jobs+jobs[2:]
         assert data(manager, NOW+18)['swarm_seat_work_rows'][0]['job_read'] == 'not_read'
         fake.seats[420]['work'] = []
+        clock.t = NOW+18
         await manager._pool_swarm_seat(420, NOW+18)
         assert manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload == {}
     finally:
@@ -388,12 +401,14 @@ async def test_record_view_80_enriches_answers_and_job_details_past_forty_with_b
         calls.append(job)
         return dict(id=job, state='completed', nodes=[], blockedReason=None)
     fake.fetch_job = fetch
-    manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
+    clock = FakeClock(NOW)
+    manager = _manager(tmp_path, fake, clock=clock); manager.set_seat(420)
     manager.set_record_view(80, False)
     try:
         for cycle in range(40):
             before = len(fake.answer_calls), len(calls)
-            await manager._pool_swarm_seat(420, NOW+cycle*120)
+            clock.t = NOW+cycle
+            await manager._pool_swarm_seat(420, clock())
             assert len(fake.answer_calls)-before[0] <= 4
             assert len(calls)-before[1] <= 2
         expected = [r['jobId'] for r in fake.seat['work'][:80]]

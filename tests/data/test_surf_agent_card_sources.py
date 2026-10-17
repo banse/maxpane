@@ -8,6 +8,7 @@ import pytest
 
 from maxpane_dashboard.data import surf_agent_card_sources as sources
 from maxpane_dashboard.data.surf_cache import SurfCache
+from maxpane_dashboard.data.surf_swarm_client import JobDetailRead
 
 NOW = 1791990000.
 OWNER = '0x84f4b7424e1b0464f9c749725c1f34bed9aa8ada'
@@ -30,7 +31,14 @@ def reader(tmp_path):
     earnings.fetch.return_value = earned()
     swarm = AsyncMock()
     swarm.fetch_job.return_value = json.loads((Path('tests/fixtures/surf/agent_work') / (JOB+'.json')).read_text())
-    return sources.AgentCardSources(cache, earnings, swarm, clock=lambda: NOW), earnings, swarm
+    reader = sources.AgentCardSources(cache, earnings, swarm, clock=lambda: NOW)
+    swarm._monotonic = lambda: NOW
+    async def detail(job, *, fresh_after=None):
+        payload = await swarm.fetch_job(job)
+        return JobDetailRead(payload, reader.clock() if payload is not None else None,
+                             NOW, None, False)
+    swarm.read_job_detail.side_effect = detail
+    return reader, earnings, swarm
 
 
 async def test_success_clocks_distinct_assets_and_selected_seat_join(reader):

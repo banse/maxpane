@@ -13,6 +13,8 @@ class LaunchSwarm:
     def __init__(self):
         self.rows = fixture('launches_100')['launches']; self.calls = []
         self.fail = set()
+        self._detail_clock = FakeClock(NOW)
+        self._monotonic = self._detail_clock
     async def fetch_launches(self):
         self.calls.append('launches'); return None if 'launches' in self.fail else copy.deepcopy(self.rows)
     async def fetch_sites(self):
@@ -25,6 +27,12 @@ class LaunchSwarm:
     async def fetch_job(self, key):
         self.calls.append(('site_job',key))
         return next((fixture(name) for name in ('job_zto_site','job_adam_site') if fixture(name)['id'] == key), None)
+    async def read_job_detail(self, key, *, fresh_after=None):
+        from maxpane_dashboard.data.surf_swarm_client import JobDetailRead
+        started = self._monotonic()
+        payload = await self.fetch_job(key)
+        return JobDetailRead(payload, self._detail_clock() if payload is not None else None,
+                             started, None, False)
     async def close(self): pass
 class RPC(FakeSurfClient):
     async def fetch_launch_receipts(self, hashes):
@@ -44,7 +52,9 @@ class RPC(FakeSurfClient):
         return out
 
 def manager(tmp_path, swarm=None):
-    return SurfManager(clock=FakeClock(NOW), cache_path=str(tmp_path/'cache.json'), client=RPC(), pool4_client=FakePool4Client(), swarm_client=swarm or LaunchSwarm())
+    clock, swarm = FakeClock(NOW), swarm or LaunchSwarm()
+    swarm._detail_clock = swarm._monotonic = clock
+    return SurfManager(clock=clock, cache_path=str(tmp_path/'cache.json'), client=RPC(), pool4_client=FakePool4Client(), swarm_client=swarm)
 
 
 @pytest.mark.asyncio

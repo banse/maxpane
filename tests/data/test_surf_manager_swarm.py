@@ -159,6 +159,8 @@ class _FakeSwarm:
         self._fail_launches = fail_launches
         self._fail_sites = fail_sites
         self.busy_from: int | None = None
+        self._detail_clock = FakeClock(NOW)
+        self._monotonic = self._detail_clock
 
     @property
     def health_calls(self) -> int:
@@ -201,6 +203,13 @@ class _FakeSwarm:
             return dict(SEAT_BUSY)
         detail = self._details.get(job_id)
         return dict(detail) if isinstance(detail, dict) else None
+
+    async def read_job_detail(self, job_id, *, fresh_after=None):
+        from maxpane_dashboard.data.surf_swarm_client import JobDetailRead
+        started = self._monotonic()
+        payload = await self.fetch_job(job_id)
+        observed = self._detail_clock() if isinstance(payload, dict) and payload != SEAT_BUSY else None
+        return JobDetailRead(payload, observed, started, None, False)
 
     async def submissions(self, job_id):
         await asyncio.sleep(0)
@@ -281,6 +290,9 @@ def _manager(tmp_path, swarm, **kw) -> SurfManager:
     kw.setdefault("client", FakeSurfClient())
     kw.setdefault("pool4_client", FakePool4Client())
     kw.setdefault("clock", FakeClock(NOW))
+    if isinstance(swarm, _FakeSwarm):
+        swarm._detail_clock = kw['clock']
+        swarm._monotonic = kw['clock']
     return SurfManager(cache_path=tmp_path / "surf.json", swarm_client=swarm, **kw)
 
 

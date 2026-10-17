@@ -74,17 +74,17 @@ class AgentCardSources:
         async def read_job(job):
             self.work_attempts[job] = now
             try:
-                detail = await self.swarm.fetch_job(job)
+                read = await self.swarm.read_job_detail(job)
             except Exception:
-                detail = None
-            stamp = float(self.clock())
-            point = work.membership_point(detail, job, stamp)
+                read = None
+            stamp = read.observed_at if read is not None else None
+            point = work.membership_point(read.payload if read is not None else None, job, stamp)
             if point is None:
                 self.work_failed.add(job)
                 return
             points[job] = point
             self.work_failed.discard(job)
-            self.cache.store_last_good(SLOT_AGENT_WORK, work.coerce_points(points, stamp), ts=stamp)
+            self.cache.store_last_good(SLOT_AGENT_WORK, work.coerce_points(points, float(self.clock())), ts=stamp)
 
         # Finish typical seat histories on the first read without an unbounded burst.
         batch = due[:64]

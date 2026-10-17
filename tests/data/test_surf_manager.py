@@ -952,6 +952,7 @@ class DeadSwarmClient:
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.closed = False
+        self._monotonic = FakeClock()
 
     async def fetch_health(self):
         self.calls.append("fetch_health")
@@ -964,6 +965,10 @@ class DeadSwarmClient:
     async def fetch_job(self, job_id):
         self.calls.append("fetch_job")
         return None
+
+    async def read_job_detail(self, job_id, *, fresh_after=None):
+        from maxpane_dashboard.data.surf_swarm_client import JobDetailRead
+        return JobDetailRead(await self.fetch_job(job_id), None, self._monotonic(), None, False)
 
     async def fetch_launches(self):
         self.calls.append("fetch_launches")
@@ -997,6 +1002,8 @@ def _manager(
         **kwargs,
     )
     manager._clock_double = clock
+    if isinstance(manager.swarm_client, DeadSwarmClient):
+        manager.swarm_client._monotonic = clock
     return manager
 
 

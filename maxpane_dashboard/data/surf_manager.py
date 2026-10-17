@@ -900,9 +900,8 @@ SWARM_SITE_REFRESH_S = 300.0
 #: and storage evidence, not measured live four-job network latency.
 SWARM_ANSWER_PER_CYCLE = 4
 #: Ten displayed RECORD windows (40 points each), across selected seats. Point
-#: age follows jobs-seen's 48-hour precedent; age/cap pruning ends the promise
-#: that retained definitive terminal answers are never re-read. Transient
-#: unavailable points retry; successful negatives freeze even for running jobs.
+#: age follows jobs-seen's 48-hour precedent. Positive terminal answers refresh
+#: after ten minutes; unavailable, negative and incomplete publication after two.
 SWARM_ANSWER_CACHE_CAP = 400
 SWARM_ANSWER_MAX_AGE_S = 48 * 3600.0
 #: Nonterminal jobs may change; their reads follow the seat tier's 120 s clock.
@@ -1179,6 +1178,10 @@ class SurfManager:
         #: list is only paid for when one of them moved (spec §3).
         self._swarm_counters: dict[str, Any] | None = None
         self._swarm_jobs_read_ts: float = 0.0
+        self._swarm_answer_attempts: dict[tuple[str, str], tuple[float, frozenset]] = {}
+        self._swarm_job_detail_attempts: dict[str, tuple[float, frozenset]] = {}
+        self._swarm_answer_versions: dict[str, frozenset] = {}
+        self._swarm_job_detail_versions: dict[str, frozenset] = {}
         #: The seat the AGENT body shows before the reader picks one (swarm
         #: v2 plan A1 "Which seat"): the ``seat=`` argument -- the seat the
         #: caller read off ``~/.maxpane/config.toml`` -- and nothing else.
@@ -5669,6 +5672,7 @@ class SurfManager:
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
         previous_facts = copy.deepcopy(facts)
+        fact_observations = []
         # Migrate legacy cached policies once; live missing-kind entries keep their TTL.
         legacy_policies = (slot.get('policies_schema') != 1
                            and any(not policy.get('kind') for policy in slot.get('policies') or []))
@@ -5823,12 +5827,18 @@ class SurfManager:
             if site['id'] in facts['sites'] or earliest is None or created is None or created < earliest:
                 continue
             site_budget -= 1
-            job = await self._guard(lambda site=site: self.swarm_client.fetch_job(site['jobId']), 'swarm site job')
+            read = await self._guard(lambda site=site: self.swarm_client.read_job_detail(site['jobId']), 'swarm site job')
+            job = read.payload if read is not None else None
             if isinstance(job, dict) and job.get('id') == site['jobId']:
                 facts['sites'][site['id']] = ls.site_job_facts(job)
+                if read.observed_at is not None:
+                    fact_observations.append(read.observed_at)
         facts = sw.coerce_launch_facts_slot(facts)
         facts_entry = self.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS)
-        facts_ts = now if facts != previous_facts or facts_entry is None else facts_entry.ts
+        if facts_entry is not None and previous_facts.get('sites'):
+            fact_observations.append(facts_entry.ts)
+        facts_ts = (min([now, *fact_observations]) if facts != previous_facts or facts_entry is None
+                    else facts_entry.ts)
         scores = self._launch_slot(SLOT_SWARM_SCORES, {})
         inputs = ls.site_match_key(slot.get('sites') or [], facts['launches'],
                                    facts['sites'], scores.get('workflows'))
@@ -6129,7 +6139,8 @@ class SurfManager:
             self.cache.mark_failed(TIER_SWARM, now)
             return {"ok": False, "payload": None}
 
-        details = await self._swarm_details(_swarm_executing_ids(jobs), "swarm fetch_job")
+        observations = []
+        details = await self._swarm_details(_swarm_executing_ids(jobs), "swarm fetch_job", observations=observations)
         if details is None:
             # Fix round 1 finding 2 again: the gate is never armed for a
             # list that was not stored.
@@ -6138,12 +6149,13 @@ class SurfManager:
             return {"ok": False, "payload": None}
 
         payload = {"health": health, "jobs": jobs, "details": details}
-        self.cache.store_last_good(SLOT_SWARM, payload, ts=now)
+        self.cache.store_last_good(SLOT_SWARM, payload, ts=min([now, *observations]))
         self.cache.mark_fetched(TIER_SWARM, now)
         self._fold_swarm_seen(jobs, details, now)
         return {"ok": True, "payload": payload}
 
-    async def _swarm_details(self, job_ids: Any, label: str) -> list[dict[str, Any]] | None:
+    async def _swarm_details(self, job_ids: Any, label: str, *,
+                            observations: list[float] | None = None) -> list[dict[str, Any]] | None:
         """``GET /jobs/{id}`` for each id in order; ``None`` at the first busy answer.
 
         A ``None`` detail -- a 404, a dead host -- drops that one row, never
@@ -6157,11 +6169,14 @@ class SurfManager:
         client = self.swarm_client
         details: list[dict[str, Any]] = []
         for job_id in job_ids:
-            detail = await self._guard(lambda jid=job_id: client.fetch_job(jid), label)
+            read = await self._guard(lambda jid=job_id: client.read_job_detail(jid), label)
+            detail = read.payload if read is not None else None
             if detail == SEAT_BUSY:
                 return None
             if detail is not None:
                 details.append(detail)
+                if observations is not None and read.observed_at is not None:
+                    observations.append(read.observed_at)
         return details
 
     def _fold_swarm_seen(
@@ -6806,6 +6821,22 @@ class SurfManager:
         return agent_work.record_rows(sw.seat_work_rows(seat), capture['work'],
                                       failed=capture['work_failed'], now=now)
 
+    @staticmethod
+    def _record_version_changes(rows: list[dict], versions: dict) -> tuple[dict, set[str]]:
+        current = {}
+        for row in rows:
+            current.setdefault(row['job_id'], set()).add((row['submission_hash'], row.get('job_state')))
+        current = {job: frozenset(items) for job, items in current.items()}
+        changed = {job for job, version in current.items() if job in versions and versions[job] != version}
+        return current, changed
+
+    @staticmethod
+    def _confirm_record_version(versions: dict, job: str, version: frozenset) -> None:
+        versions.pop(job, None)
+        versions[job] = version
+        while len(versions) > 400:
+            versions.pop(next(iter(versions)))
+
     async def _pool_swarm_answers(self, seat: dict, token: int, now: float) -> None:
         """Bounded per-job reads after a successful seat; failures stay local."""
         prior = self.cache.get_last_good(SLOT_SWARM_ANSWERS)
@@ -6813,27 +6844,38 @@ class SurfManager:
                                   cap=SWARM_ANSWER_CACHE_CAP, max_age_s=SWARM_ANSWER_MAX_AGE_S)
         rows = record_window(self._record_rows(seat, now), self.record_cap, self.record_launches_only,
                              self.record_spec)
-        for row in rows:
-            point = answers.get(row["job_id"], {}).get(row["submission_hash"])
-            if (point is not None and point["state"] != "unavailable"
-                    and row["job_state"] in ("completed", "cancelled", "failed")):
-                point["terminal"] = True
-        for job, group in sw.answer_jobs_due(rows, answers, now_ts=now,
+        versions, changed = self._record_version_changes(rows, self._swarm_answer_versions)
+        self._swarm_answer_attempts = {key: attempt for key, attempt in self._swarm_answer_attempts.items()
+                                      if 0 <= now-attempt[0] < SWARM_ANSWER_DUE_S}
+        rows = [row for row in rows if (attempt := self._swarm_answer_attempts.get(
+                (row['job_id'], row['submission_hash']))) is None or attempt[1] != versions[row['job_id']]]
+        due_answers = {job: points for job, points in answers.items() if job not in changed}
+        for job, group in sw.answer_jobs_due(rows, due_answers, now_ts=now,
                                              due_s=SWARM_ANSWER_DUE_S, cap=SWARM_ANSWER_PER_CYCLE):
+            for row in group:
+                self._swarm_answer_attempts[(job, row['submission_hash'])] = (now, versions[job])
             payload = await self._guard(lambda job=job: self.swarm_client.submissions(job),
                                         "swarm submissions")
+            confirmed = True
             for row in group:
                 answer = sw.submission_answer(payload, job, row["submission_hash"], token)
+                confirmed &= answer['state'] != 'unavailable'
+                old = answers.get(job, {}).get(row['submission_hash'])
+                if answer['state'] == 'unavailable' and old is not None and old['state'] != 'unavailable':
+                    continue
                 point = dict(
                     answer, read_ts=now,
-                    terminal=answer["state"] == "not_served" or (
-                        answer["state"] != "unavailable"
+                    terminal=(answer["state"] == "read" and isinstance(payload, dict)
+                        and payload.get('complete') is not False
                         and row["job_state"] in ("completed", "cancelled", "failed")))
                 point = sw.bound_answer_point(point)
                 if point is None:
+                    confirmed = False
                     point = dict.fromkeys(sw.SWARM_ANSWER_CACHE_FIELDS)
                     point.update(state='unavailable', read_ts=now, terminal=False)
                 answers.setdefault(job, {})[row['submission_hash']] = point
+            if confirmed:
+                self._confirm_record_version(self._swarm_answer_versions, job, versions[job])
         answers = sw.prune_answers(answers, now_ts=now, cap=SWARM_ANSWER_CACHE_CAP,
                                   max_age_s=SWARM_ANSWER_MAX_AGE_S)
         if prior is None or prior.payload != answers:
@@ -6849,17 +6891,37 @@ class SurfManager:
             sw.enrich_work_rows(self._record_rows(seat, now), getattr(answers, 'payload', None)),
             getattr(oracle, 'payload', None), sw.SWARM_ORACLE_NODE_KEYS)
         rows = record_window(rows, self.record_cap, self.record_launches_only, self.record_spec)
-        for job in sw.job_details_due(rows, points, now_ts=now,
+        versions, changed = self._record_version_changes(rows, self._swarm_job_detail_versions)
+        self._swarm_job_detail_attempts = {job: attempt for job, attempt in self._swarm_job_detail_attempts.items()
+                                         if 0 <= now-attempt[0] < SWARM_JOB_DETAIL_DUE_S}
+        rows = [row for row in rows if (attempt := self._swarm_job_detail_attempts.get(row['job_id'])) is None
+                or attempt[1] != versions[row['job_id']]]
+        due_points = {job: point for job, point in points.items() if job not in changed}
+        for job in sw.job_details_due(rows, due_points, now_ts=now,
                                       cap=SWARM_JOB_DETAIL_PER_CYCLE, due_s=SWARM_JOB_DETAIL_DUE_S):
-            detail = await self._guard(lambda: self.swarm_client.fetch_job(job), 'swarm popup job')
+            fresh_after = self.swarm_client._monotonic() if job in points else None
+            read = await self._guard(lambda: self.swarm_client.read_job_detail(job, fresh_after=fresh_after),
+                                     'swarm popup job')
+            detail = read.payload if read is not None else None
             if detail == SEAT_BUSY:     # F-S3: stop asking; this job stays as it was
                 break
-            point = sw.job_detail_point(detail, job, now_ts=now)
+            self._swarm_job_detail_attempts[job] = (now, versions[job])
+            if read is None or read.observed_at is None:
+                if job in points:
+                    continue
+                point = sw.job_detail_point(None, job, now_ts=now)
+            else:
+                point = sw.job_detail_point(detail, job, now_ts=read.observed_at)
+                if point['state'] is None and job in points:
+                    continue
             points[job] = point
+            if point['state'] is not None:
+                self._confirm_record_version(self._swarm_job_detail_versions, job, versions[job])
         points = sw.prune_job_details(points, now_ts=now,
                                       cap=SWARM_JOB_DETAIL_CACHE_CAP, max_age_s=SWARM_JOB_DETAIL_MAX_AGE_S)
         if prior is None or prior.payload != points:
-            self.cache.store_last_good(SLOT_SWARM_JOB_DETAIL, points, ts=now)
+            stamps = [p['read_ts'] for p in points.values() if p['state'] is not None]
+            self.cache.store_last_good(SLOT_SWARM_JOB_DETAIL, points, ts=min(stamps, default=now))
 
     async def _pool_swarm_oracle(self, seat: dict, token: int, now: float) -> None:
         """Resolve due panels through the history index; publish only after all awaits."""
@@ -6982,7 +7044,8 @@ class SurfManager:
             self.cache.mark_failed(TIER_SWARM_SCORES, now)
             return {"ok": False, "payload": None}
 
-        details = await self._swarm_details(_swarm_sweep_ids(jobs), "swarm scores fetch_job")
+        observations = []
+        details = await self._swarm_details(_swarm_sweep_ids(jobs), "swarm scores fetch_job", observations=observations)
         if details is None:
             self.cache.mark_failed(TIER_SWARM_SCORES, now)
             return {"ok": False, "payload": None}
@@ -7012,7 +7075,7 @@ class SurfManager:
             "skills": skills,
             "workflows": workflows, "workflows_complete": complete, "workflows_ts": workflows_ts,
         }
-        self.cache.store_last_good(SLOT_SWARM_SCORES, payload, ts=now)
+        self.cache.store_last_good(SLOT_SWARM_SCORES, payload, ts=min([now, *observations]))
         self.cache.mark_fetched(TIER_SWARM_SCORES, now)
         self._fold_swarm_seen(jobs, details, now)
         return {"ok": True, "payload": payload}
