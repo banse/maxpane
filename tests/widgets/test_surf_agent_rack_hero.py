@@ -172,23 +172,23 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         assert cards[6].region.y - cards[0].region.bottom == 1
         for key, words in {
             "seat": ("AGENT", "working", "ERC-8004 #8127"),
-            "accepted": ("of 1,000", "96%", "▰"),
-            "effort": ("HOURS", "1.8M tokens", "75% premium"),
+            "accepted": ("WORK", "96%"),
+            "effort": ("HOURS", "1.8M tokens"),
             "rewards": ("IMD", "$120.82", "paid "),
             "rank": ("POSITION", "of 1,024", "↑ 2"),
             "status": ("WORKER", "reviewing", "BUSY", "▰"),
             "owner": ("WALLET", "example.eth ⧉", "paired"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "up to date"),
             "models": ("model A", "high", "model B", "medium", "2 models"),
-            "earnings": ("EARNINGS", "TOKENS", "7 worked on", "2 new worked on"),
-            "collab": ("SEATS", "collaborators", "TOP #527 x84"),
+            "earnings": ("EARNINGS", "TOKENS", "7 worked on"),
+            "collab": ("SEATS", "collaborators"),
             "nodes": ("other", "500", "launches", "340", "oracle", "120", "work by type"),
         }.items():
             text = painted(app, key)
             assert all(word in text for word in words), (key, text)
             footer = strips(app, key)[-1].text
             label = footer.strip("╰─╯ ")
-            if key in ("owner", "models", "nodes"):
+            if key in ("owner", "models", "nodes", "accepted", "effort", "earnings", "collab"):
                 assert not label, (key, footer)
                 continue
             left = footer.index(label)
@@ -196,6 +196,33 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         # 420 and 960, asserted as digit glyphs that actually reach the terminal.
         assert "  ╵╰─╴╰─╯" in painted(app, "seat")
         assert "╶─╯╰─╯╰─╯" in painted(app, "accepted")
+
+
+@pytest.mark.parametrize("width", [132, 149])
+async def test_acceptance_rate_moves_inside_and_updates_without_an_outer_meter(width):
+    data = payload()
+    async with Harness(data).run_test(size=(width, 45)) as pilot:
+        app = pilot.app
+        for accepted, attempts, percent, expected in (
+            (3271, 3413, 100 * 3271 / 3413, "95.84%"),
+            (1, 2, 50., "50%"), (0, 10, 0., "0%"),
+            (10, 10, 100., "100%"), (None, None, None, "--%"),
+            (11, 10, 110., "--%"), (0, 0, None, ""),
+        ):
+            data["accepted"].update(accepted=accepted, attempts=attempts, percent=percent)
+            app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+            await pilot.pause()
+            rows = strips(app, "accepted")
+            inner_footer = next(row.text for row in rows if "└" in row.text)
+            caption = inner_footer.split("└", 1)[1].split("┘", 1)[0].strip("─ ")
+            assert caption == expected
+            assert not rows[-1].text.strip("╰─╯ ")
+            assert not any(char in painted(app, "accepted") for char in "▰▱")
+            assert "of " not in painted(app, "accepted")
+            if attempts == 0:
+                assert "no attempts" in painted(app, "accepted")
+            if accepted == 3271:
+                assert "3,271 / 3,413" in str(app.query_one("#hero-accepted").tooltip)
 
 
 async def test_working_status_uses_current_action_and_clears_it_on_idle_or_unknown():
@@ -244,7 +271,7 @@ async def test_detail_failure_preserves_selected_id_and_independent_records(stat
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         assert "9876543210" in painted(pilot.app, "seat")
-        assert "of 1,000" in painted(pilot.app, "accepted")
+        assert "96%" in painted(pilot.app, "accepted")
         assert "example.eth" not in painted(pilot.app, "owner")
         assert "up to date" not in painted(pilot.app, "runtime")
         expected = "never paired" if state == "unknown_seat" else "--"
@@ -263,8 +290,8 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
         app = pilot.app
         assert "no attempts" in painted(app, "accepted") and "0%" not in painted(app, "accepted")
         assert "not advertised" in painted(app, "models")
-        assert "oracle" in painted(app, "nodes") and "NONE YET" in painted(app, "collab")
-        assert "0 new" in painted(app, "earnings")
+        assert "oracle" in painted(app, "nodes") and "collaborators" in painted(app, "collab")
+        assert "0 worked on" in painted(app, "earnings")
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=None)
         await pilot.pause()
         assert all("loading" not in painted(app, key) and "unavailable" not in painted(app, key) for key in data)
@@ -412,7 +439,7 @@ async def test_retained_facts_keep_independent_tooltip_clocks_without_source_bad
             assert state not in text, (key, text)
             tooltip = str(pilot.app.query_one(f'#hero-{key}').tooltip)
             assert hhmm(section['read_ts']) in tooltip and 'stale' not in tooltip
-        assert 'of 1,000' in painted(pilot.app, 'accepted')
+        assert '96%' in painted(pilot.app, 'accepted')
         assert 'example.eth ⧉' in painted(pilot.app, 'owner')
         assert 'up to date' not in painted(pilot.app, 'runtime')
 
@@ -503,19 +530,18 @@ async def test_seat_uses_worker_presence_and_erc8004_registration(live, word, co
 
 
 @pytest.mark.parametrize("width", [149, 211])
-async def test_accepted_and_status_tracks_fill_footer_and_show_formatted_digits(width):
+async def test_accepted_keeps_formatted_digits_and_only_status_has_a_footer_meter(width):
     data = payload()
     data["accepted"].update(accepted=3264, attempts=3405, percent=95.86)
     async with Harness(data).run_test(size=(width, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "of 3,405" in painted(app, "accepted")
+        assert "95.86%" in strips(app, "accepted")[6].text
         assert "," in strips(app, "accepted")[5].text
-        for key in ("accepted", "status"):
-            card = app.query_one(f"#hero-{key}")
-            footer = strips(app, key)[-1].text
-            label = "95.86%" if key == "accepted" else "BUSY"
-            assert footer.count("▰") + footer.count("▱") == card.region.width - 6 - len(label) - 1, footer
+        assert not strips(app, "accepted")[-1].text.strip("╰─╯ ")
+        card = app.query_one("#hero-status")
+        footer = strips(app, "status")[-1].text
+        assert footer.count("▰") + footer.count("▱") == card.region.width - 6 - len("BUSY") - 1, footer
         status = painted(app, "status")
         assert all(word not in status for word in ("working", "capacity", "devices"))
         # Three tall groups: two active slots, a muted 0F, three capacity slots.
@@ -603,32 +629,32 @@ async def test_status_separator_uses_midpoint_gray_in_tall_and_compact_readouts(
         assert all(segment.style.color.get_truecolor() == (98, 98, 98) for segment in separator)
 
 
-@pytest.mark.parametrize("percent,listed,label", [(75., True, "75% premium"), (0., True, "0% premium"),
-                                                  (None, True, "--% premium"), (101., True, "--% premium"),
-                                                  (75., False, "75% premium")])
-async def test_effort_shows_premium_share_with_known_model_coverage(percent, listed, label):
+@pytest.mark.parametrize("percent,listed", [(75., True), (0., True), (None, True), (101., True), (75., False)])
+async def test_effort_keeps_model_coverage_in_hover_without_outer_caption(percent, listed):
     data = payload()
     data["effort"].update(premium_percent=percent, listed=listed)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert label in strips(app, "effort")[-1].text
+        assert not strips(app, "effort")[-1].text.strip("╰─╯ ")
         assert "CONTRIBUTORS" not in painted(app, "effort")
         assert "Premium models: 3/4 known-model work attempts; model coverage 4/10 recorded attempts. Astra, Opus, Fable." in str(app.query_one("#hero-effort").tooltip)
         assert border_color(app, "effort") == border_color(app, "accepted")
 
 
 @pytest.mark.parametrize("state", ["pending", "unavailable"])
-async def test_premium_footer_survives_independent_contributor_failure(state):
+async def test_premium_hover_survives_independent_contributor_failure(state):
     data = payload()
     data["effort"].update(state=state, hours=None, output_tokens=None)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert "75% premium" in strips(pilot.app, "effort")[-1].text
+        assert not strips(pilot.app, "effort")[-1].text.strip("╰─╯ ")
+        assert "Premium models: 3/4" in str(pilot.app.query_one("#hero-effort").tooltip)
         data["effort"].update(premium_percent=None, premium_jobs=None, model_jobs=None, work_jobs=None)
         pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
-        assert "loading" not in strips(pilot.app, "effort")[-1].text and "unavailable" not in strips(pilot.app, "effort")[-1].text
+        assert not strips(pilot.app, "effort")[-1].text.strip("╰─╯ ")
+        assert "Premium models: --/--" in str(pilot.app.query_one("#hero-effort").tooltip)
 
 
 async def test_second_row_uses_neutral_frames_except_outdated_runtime():
@@ -710,7 +736,7 @@ async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
         await pilot.pause()
         app = pilot.app
         text = painted(app, "earnings")
-        assert "TOKENS" in text and "7 worked on" in text and "2 new worked on" in text
+        assert "TOKENS" in text and "7 worked on" in text
         assert "╶┴╴╰─╴" in text  # tall 12
         green = Color.parse(app.get_css_variables()["accent"]).get_truecolor()
         assert border_color(app, "earnings") == border_color(app, "accepted")
@@ -726,15 +752,12 @@ async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
         text = painted(app, "earnings")
-        assert "-- worked on" in text and "-- new" in text
+        assert "-- worked on" in text
         assert "0 new" not in text
 
 
-@pytest.mark.parametrize("new,worked,expected", [
-    (4, 2, "2 new worked on"), (4, 0, "4 new"), (4, None, "4 new"),
-    (0, 0, "0 new"), (None, None, "-- new"), (None, 2, "2 new worked on"),
-])
-async def test_earnings_footer_shows_recent_distinct_tokens_and_only_positive_work(new, worked, expected):
+@pytest.mark.parametrize("new,worked", [(4, 2), (4, 0), (4, None), (0, 0), (None, None), (None, 2)])
+async def test_earnings_keeps_recent_distinct_tokens_in_hover_only(new, worked):
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
@@ -743,7 +766,7 @@ async def test_earnings_footer_shows_recent_distinct_tokens_and_only_positive_wo
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
         footer = strips(app, "earnings")[-1].text
-        assert footer.strip("╰─╯ ") == expected
+        assert not footer.strip("╰─╯ ")
         assert "CLAIMED" not in painted(app, "earnings")
         assert "7 worked on" in painted(app, "earnings")
         tooltip = str(app.query_one("#hero-earnings").tooltip)
@@ -756,19 +779,19 @@ async def test_earnings_footer_shows_recent_distinct_tokens_and_only_positive_wo
             assert "unknown" in tooltip
 
 
-async def test_earnings_recent_footer_compacts_only_when_needed_and_keeps_exact_hover_counts():
+async def test_earnings_keeps_exact_hover_counts_and_blank_footer_across_resize():
     data = payload()
     data["earnings"].update(earned=4096, worked_on=4096, earned_24h=4096, worked_on_24h=4096)
     async with Harness(data).run_test(size=(132, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         footer = strips(app, "earnings")[-1].text
-        assert footer.strip("╰─╯ ") == "4.1k worked on"
+        assert not footer.strip("╰─╯ ")
         tooltip = str(app.query_one("#hero-earnings").tooltip)
         assert "Last 24h: 4,096 earned" in tooltip and "4,096 worked on by this agent" in tooltip
         await pilot.resize_terminal(211, 45)
         await pilot.pause()
-        assert "4,096 new worked on" in strips(app, "earnings")[-1].text
+        assert not strips(app, "earnings")[-1].text.strip("╰─╯ ")
 
 
 def test_agent_card_states_match_declared_contract():
@@ -777,24 +800,21 @@ def test_agent_card_states_match_declared_contract():
     assert _STATES == SURF_AGENT_HERO_STATES
 
 
-async def test_earnings_loading_failure_and_recovery_have_distinct_footers():
+async def test_removed_outer_captions_stay_empty_across_source_states_and_recovery():
     data = payload()
-    data["earnings"]["state"] = "pending"
     async with Harness(data).run_test(size=(132, 45)) as pilot:
         app = pilot.app
-        for state, expected, ansi in (("unavailable", "", None),
-                                      ("pending", "-- new", None), ("failed", "-- new", None),
-                                      ("pending", "-- new", None), ("ok", "2 new worked on", None)):
-            data["earnings"]["state"] = state
+        keys = ("accepted", "effort", "earnings", "collab")
+        for state in ("ok", "partial", "stale", "pending", "busy", "failed", "unavailable",
+                      "unknown_seat", "stale_unknown_seat", "empty", "ok"):
+            for key in keys:
+                data[key]["state"] = state
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
-            footer = strips(app, "earnings")[-1]
-            assert footer.text.strip("╰─╯ ") == expected
-            if ansi is not None:
-                spans = [span for span in footer if expected in span.text]
-                assert spans and all(span.style.color.get_truecolor() == app.ansi_theme.ansi_colors[ansi]
-                                     for span in spans)
-                assert "7 worked on" not in painted(app, "earnings")
+            for key in keys:
+                assert not strips(app, key)[-1].text.strip("╰─╯ "), (key, state)
+        assert "7 worked on" in painted(app, "earnings")
+        assert "#527 x84" in str(app.query_one("#hero-collab").tooltip)
 
 
 async def test_nodes_group_work_by_type_without_guessing_incomplete_launch_membership():

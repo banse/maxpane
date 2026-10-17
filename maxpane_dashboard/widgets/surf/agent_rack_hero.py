@@ -19,7 +19,7 @@ from maxpane_dashboard.widgets.fmt import hhmm, mmdd
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
 from maxpane_dashboard.widgets.surfboard.rack import meter_text
-from ._fmt import EXPLORER, fmt_compact, mmdd_hhmm, short_model
+from ._fmt import EXPLORER, mmdd_hhmm, short_model
 from .news_hero import HeroRecord, _count, _number
 from .pool4_hero import Pool4HeroCard, _amount, _face
 
@@ -50,27 +50,20 @@ def _status_word(source):
     return {"working": "BUSY", "idle": "IDLE", "offline": "OFF", "paused": "PAUSED"}.get(live, "UNKNOWN")
 
 
-def _earnings_footer(source, *, compact=False):
-    earned, worked = (count(source.get(key)) for key in ("earned_24h", "worked_on_24h"))
-    value = worked if worked else earned
-    label = fmt_compact(value).replace("K", "k") if compact and value is not None and value >= 1000 else _count(value)
-    return label + (" worked on" if compact else " new worked on") if worked else label + " new"
-
-
 def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     records = []
     for key, title, heading, footer in (
         ("seat", "SEAT", "AGENT", "ERC-8004 #--"),
         ("status", "STATUS", "WORKER", "UNKNOWN"),
-        ("accepted", "ACCEPTED", "WORK", "--%"),
+        ("accepted", "ACCEPTED", "WORK", ""),
         ("rewards", "REWARDS", "IMD", "paid --"),
         ("rank", "RANK", "POSITION", ""),
-        ("effort", "EFFORT", "HOURS", "--% premium"),
+        ("effort", "EFFORT", "HOURS", ""),
         ("runtime", "RUNTIME", "SOFTWARE", "since --"),
         ("owner", "OWNER", "WALLET", ""),
         ("models", "MODELS", "ADVERTISED", ""),
-        ("earnings", "EARNINGS", "TOKENS", "-- new"),
-        ("collab", "COLLAB", "SEATS", "TOP --"),
+        ("earnings", "EARNINGS", "TOKENS", ""),
+        ("collab", "COLLAB", "SEATS", ""),
         ("nodes", "NODES", "ACCEPTED", ""),
     ):
         raw = _source(payload, key)
@@ -79,9 +72,6 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         section = raw if state in _AVAILABLE else {}
         fields = dict(key=key, title=title, heading=heading, footer=footer, state=state,
                       read_ts=number(raw.get("read_ts")), accent=state == "ok")
-        if key == "effort":
-            percent = number(raw.get("premium_percent"))
-            fields["footer"] = f"{percent:.4g}% premium" if percent is not None and percent <= 100 else "--% premium"
         if key == "seat":
             token = count(raw.get("token_id"))
             fields["digits"] = str(token) if token is not None and number(token) is not None else "--"
@@ -101,13 +91,12 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         elif key == "accepted":
             accepted, attempts = (count(section.get(name)) for name in ("accepted", "attempts"))
             fields["digits"] = f"{accepted:,}" if accepted is not None else "--"
-            fields["subtitle"] = f"of {_count(attempts)}"
             percent = number(section.get("percent"))
             if attempts == 0 and accepted == 0:
-                fields.update(digits="", preview="no attempts", footer="NO ATTEMPTS", accent=False)
+                fields.update(digits="", preview="no attempts", accent=False)
             else:
                 valid = percent is not None and percent <= 100 and accepted is not None and attempts is not None and 0 <= accepted <= attempts and attempts > 0
-                fields["footer"] = f"{percent:.4g}%" if valid else "--%"
+                fields["subtitle"] = f"{percent:.4g}%" if valid else "--%"
                 fields["accent"] = False
         elif key == "effort":
             fields["digits"] = _face(number(section.get("hours")), 0)
@@ -162,17 +151,10 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         elif key == "earnings":
             fields["digits"] = _count(count(section.get("earned")))
             fields["subtitle"] = _count(count(section.get("worked_on"))) + " worked on"
-            fields["footer"] = _earnings_footer(section)
             fields["accent"] = False
         elif key == "collab":
             fields["digits"] = _digits(section.get("count"))
             fields["subtitle"] = "collaborators"
-            rows = _rows(section)
-            if rows:
-                top = rows[0]
-                fields["footer"] = f"TOP #{_count(count(top.get('token_id')))} x{_amount(count(top.get('shared_jobs')))}"
-            elif rows == []:
-                fields["footer"] = "NONE YET"
             fields["accent"] = False
         elif key == "nodes":
             fields["stats"] = tuple((name, _count(count(section.get(name)))) for name in ("oracle", "launches", "other"))
@@ -251,10 +233,8 @@ class AgentRackCard(Pool4HeroCard):
 
     def _footer(self):
         data = self.data
-        if data.key in ("owner", "models", "nodes"):
+        if data.key in ("owner", "models", "nodes", "accepted", "effort", "earnings", "collab"):
             self.border_subtitle = Text()
-        elif data.key == "effort" and data.footer != "--% premium":
-            self.border_subtitle = Text().append(data.footer, style="dim")
         elif data.state in ("unknown_seat", "stale_unknown_seat", "empty", "unavailable"):
             word = {"unknown_seat": "never paired", "stale_unknown_seat": "never paired", "empty": "EMPTY"}.get(data.state, "")
             # The selected identity remains meaningful if only its detail read failed.
@@ -273,16 +253,6 @@ class AgentRackCard(Pool4HeroCard):
             if cell_len(footer) > max(0, self.region.width - 6):
                 footer = "since " + hhmm(number(self.source.get("connected_ts")), unknown="--")
             self.border_subtitle = Text().append(footer, style="dim")
-        elif data.key == "earnings":
-            footer = data.footer
-            if cell_len(footer) > max(0, self.region.width - 6):
-                footer = _earnings_footer(self.source, compact=True)
-            self.border_subtitle = Text().append(footer, style="dim")
-        elif data.key == "accepted" and data.footer not in ("NO ATTEMPTS", "--%"):
-            label = data.footer + " "
-            track = meter_text(dict(key="accepted", numerator=number(self.source.get("accepted")), denominator=number(self.source.get("attempts"))),
-                               width=max(4, self.region.width - 6 - len(label) + 4))[4:]
-            self.border_subtitle = Text().append(label, style="dim").append_text(track)
         else:
             delta = _number(self.source.get("delta"), signed=True) if data.key == "rank" else None
             color = "green" if delta and delta > 0 else "red" if delta and delta < 0 else "dim"
@@ -410,7 +380,7 @@ class AgentRackCard(Pool4HeroCard):
                        f"\nLast 24h: {_count(recent)} earned; {_count(worked)} worked on by this agent."
                        "\nUses each token's earliest launch/earned timestamp. Counts require this agent's accepted work and a builder reward for its current owner.")
             if recent is None or worked is None:
-                tip.append("\n-- means unknown; an unknown worked-on count is omitted from the footer.")
+                tip.append("\n-- means unknown.")
             if is_address(source.get("owner")):
                 tip.append("\n").append_text(address_text(source["owner"], explorer=EXPLORER))
         elif record.key in ("models", "collab", "nodes") and rows is not None:

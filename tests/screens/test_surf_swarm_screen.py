@@ -238,12 +238,13 @@ async def test_the_agent_card_row_keeps_seat_values_and_has_no_third_row():
         screen = await _open(pilot, "a")
         hero = screen.query_one(SurfSwarmAgentRackHero)
         cards = list(hero.children)[6:]
-        assert [card.data.title for card in cards] == ["OWNER", "RUNTIME", "MODELS", "EARNINGS", "COLLAB", "NODES"]
+        assert [card.data.title for card in cards] == ["RUNTIME", "OWNER", "MODELS", "EARNINGS", "COLLAB", "NODES"]
         assert not screen.query("SurfSwarmNodeCards")
         assert len({card.region.y for card in hero.children}) == 2
         text = _region_text(pilot.app, hero)
-        for needle in ("⧉", "paired 09-20", "daemon", "devices", "TOKENS", "not advertised", "oracle", "launches", "other", "TOP #0 x139"):
+        for needle in ("⧉", "paired 09-20", "daemon", "devices", "TOKENS", "not advertised", "oracle", "launches", "other"):
             assert needle in text, needle
+        assert "#0 x139" in str(hero.query_one("#hero-collab").tooltip)
 
 
 async def test_swarm_and_agent_hints_are_retained_but_not_painted():
@@ -357,7 +358,7 @@ def _record_needles(seat: dict, outcome: dict) -> list[str]:
     """Distinct canonical outcome and detail strings belonging to one seat."""
     summary = sw.seat_summary_from_seat(seat)
     work = sw.seat_work_rows(seat)
-    needles = [f"of {outcome['attempts']:,}", summary["owner"][:6]]
+    needles = [f"{100 * outcome['accepted'] / outcome['attempts']:.4g}%", summary["owner"][:6]]
     needles += [row["job_id"][:8] for row in work[:3]]
     return needles
 
@@ -388,7 +389,7 @@ async def test_a_switch_pending_composite_shows_no_number_of_the_old_seat(tmp_pa
                 assert shown == [], shown
                 # A frozen pending snapshot has no active task to animate.
                 assert "AGENT #1836" in _screen_text(pilot.app) and "loading" not in hero
-                assert "of 1" in hero and "of 2" in hero
+                assert "100%" in hero and "of 2" in hero
                 assert "AGENT #420" not in _screen_text(pilot.app)
 
 
@@ -636,7 +637,7 @@ async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_u
         status = _region_text(pilot.app, hero.query_one("#hero-status"))
         owner = _region_text(pilot.app, hero.query_one("#hero-owner"))
         assert "AGENT #420" in _screen_text(pilot.app)
-        assert "of 3,392" in accepted and "of 2" in rank
+        assert "95.9%" in accepted and "of 2" in rank
         assert "╶─╮ ╶─╮╭─╴╶─╮" in accepted
         assert "WORKER" in status and "IDLE" in status and "unavailable" not in status
         assert "⧉" not in owner
