@@ -56,15 +56,15 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         ("seat", "SEAT", "AGENT", "ERC-8004 #--"),
         ("status", "STATUS", "WORKER", "UNKNOWN"),
         ("accepted", "ACCEPTED", "WORK", ""),
-        ("rewards", "REWARDS", "IMD", "paid --"),
-        ("rank", "RANK", "POSITION", ""),
         ("effort", "EFFORT", "HOURS", ""),
+        ("rank", "RANK", "POSITION", ""),
+        ("rewards", "REWARDS", "IMD", "paid --"),
         ("runtime", "RUNTIME", "SOFTWARE", "since --"),
         ("owner", "OWNER", "WALLET", ""),
         ("models", "MODELS", "ADVERTISED", ""),
-        ("earnings", "EARNINGS", "TOKENS", ""),
-        ("collab", "COLLAB", "SEATS", ""),
         ("nodes", "NODES", "ACCEPTED", ""),
+        ("collab", "COLLAB", "SEATS", ""),
+        ("earnings", "EARNINGS", "TOKENS", ""),
     ):
         raw = _source(payload, key)
         state = raw.get("state")
