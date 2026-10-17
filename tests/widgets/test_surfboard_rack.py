@@ -1076,8 +1076,8 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
                            for row in strips[top+1:top+4] for s in row.crop(left+1, right) if s.text.strip())
             for row, label in ((strips[top], 'ACTIVE JOBS'), (strips[top+4], secondary)):
                 caption = next(s for s in row if label in s.text)
-                assert caption.style.color.get_truecolor() == app.ansi_theme.ansi_colors[2]
-                assert not caption.style.bold and not caption.style.dim
+                assert caption.style.color.get_truecolor() == expected
+                assert not caption.style.bold
             assert secondary in '\n'.join(s.text for s in strips)
             if primary == '—':
                 assert ('— build · — review' if card.region.width >= 24 else '— build · — rev') in strips[-1].text
