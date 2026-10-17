@@ -1,0 +1,113 @@
+{
+  "note": "Two manual samples of SurfClient.fetch_market's four URLs; no app/cache writes.\n\nMeasures raw HTTP gather, excluding production pacing, retry and surrounding RPC/log work.\n",
+  "samples": [
+    {
+      "connection": "cold",
+      "utc": "2026-10-16T22:22:06.954184+00:00",
+      "total_ms": 328.27,
+      "calls": [
+        {
+          "name": "dex_imd",
+          "url": "https://api.dexscreener.com/latest/dex/tokens/0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+          "ms": 160.6,
+          "status": 200,
+          "bytes": 32274,
+          "top_level_keys": [
+            "schemaVersion",
+            "pairs"
+          ],
+          "eth_usd": null
+        },
+        {
+          "name": "gecko_imd",
+          "url": "https://api.geckoterminal.com/api/v2/networks/eth/tokens/0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7?include=top_pools",
+          "ms": 161.97,
+          "status": 200,
+          "bytes": 5291,
+          "top_level_keys": [
+            "data",
+            "included"
+          ],
+          "eth_usd": null
+        },
+        {
+          "name": "dex_fp",
+          "url": "https://api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105",
+          "ms": 324.2,
+          "status": 200,
+          "bytes": 7951,
+          "top_level_keys": [
+            "schemaVersion",
+            "pairs"
+          ],
+          "eth_usd": null
+        },
+        {
+          "name": "coingecko_eth",
+          "url": "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+          "ms": 178.73,
+          "status": 200,
+          "bytes": 28,
+          "top_level_keys": [
+            "ethereum"
+          ],
+          "eth_usd": 2421.54
+        }
+      ]
+    },
+    {
+      "connection": "warm",
+      "utc": "2026-10-16T22:22:13.484223+00:00",
+      "total_ms": 262.47,
+      "calls": [
+        {
+          "name": "dex_imd",
+          "url": "https://api.dexscreener.com/latest/dex/tokens/0xD34a99Bc0f67aE1bbd63C660e6d0b0dd03E263B7",
+          "ms": 262.01,
+          "status": 200,
+          "bytes": 32271,
+          "top_level_keys": [
+            "schemaVersion",
+            "pairs"
+          ],
+          "eth_usd": null
+        },
+        {
+          "name": "gecko_imd",
+          "url": "https://api.geckoterminal.com/api/v2/networks/eth/tokens/0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7?include=top_pools",
+          "ms": 150.75,
+          "status": 200,
+          "bytes": 5291,
+          "top_level_keys": [
+            "data",
+            "included"
+          ],
+          "eth_usd": null
+        },
+        {
+          "name": "dex_fp",
+          "url": "https://api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105",
+          "ms": 144.88,
+          "status": 200,
+          "bytes": 7951,
+          "top_level_keys": [
+            "schemaVersion",
+            "pairs"
+          ],
+          "eth_usd": null
+        },
+        {
+          "name": "coingecko_eth",
+          "url": "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd",
+          "ms": 152.98,
+          "status": 200,
+          "bytes": 27,
+          "top_level_keys": [
+            "ethereum"
+          ],
+          "eth_usd": 2422.2
+        }
+      ]
+    }
+  ]
+}
