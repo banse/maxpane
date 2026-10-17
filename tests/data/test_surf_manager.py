@@ -793,6 +793,7 @@ class FakeSurfClient:
             "fetch_channel_txs": _channel_txs(),
             "fetch_dev_activity": [_dev_tx()],
             "fetch_market": _market(),
+            "fetch_eth_usd": ETH_USD,
             # All four groups are **raw** log dicts — WP1.9 hands them over
             # verbatim and WP4.9 owns every decoder (wp1.md, *Decode
             # ownership*). ``seaport_sales`` is not the exception it was once
@@ -859,6 +860,8 @@ class FakeSurfClient:
     async def fetch_dev_activity(self):  return await self._answer("fetch_dev_activity")
     async def fetch_market(self, real_pool_id=None):
         return await self._answer("fetch_market")
+    async def fetch_eth_usd(self):
+        return await self._answer('fetch_eth_usd')
     async def fetch_recent_logs(self):   return await self._answer("fetch_recent_logs")
     async def fetch_nft_stats(self):     return await self._answer("fetch_nft_stats")
     async def fetch_pool_v4(self):       return await self._answer("fetch_pool_v4")
@@ -3039,7 +3042,7 @@ def _dead_client() -> FakeSurfClient:
     """Every source returns ``None``: total, honest outage."""
     return FakeSurfClient(
         fetch_nonces=None, fetch_chain_state=None, fetch_channel_txs=None,
-        fetch_dev_activity=None, fetch_market=None, fetch_recent_logs=None,
+        fetch_dev_activity=None, fetch_market=None, fetch_eth_usd=None, fetch_recent_logs=None,
         fetch_nft_stats=None, fetch_pool_v4=None, fetch_launchpad=None,
         fetch_decoy_pool_count=None,
     )
@@ -3290,6 +3293,7 @@ async def test_a_cold_cache_does_not_bypass_the_failure_backoff(tmp_path):
     medium = math.ceil(span / TIER_FAILURE_BACKOFF_SECONDS[TIER_MEDIUM])
     slow = math.ceil(span / TIER_FAILURE_BACKOFF_SECONDS[TIER_SLOW])
     assert client.calls.count("fetch_market") == medium
+    assert client.calls.count("fetch_eth_usd") == medium
     assert client.calls.count("fetch_recent_logs") == medium
     assert client.calls.count("fetch_channel_txs") == medium
     assert client.calls.count("fetch_nft_stats") == slow

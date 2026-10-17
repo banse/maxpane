@@ -177,7 +177,8 @@ TIER_FAILURE_BACKOFF_SECONDS: dict[str, float] = {
 
 SLOT_CHAIN = "chain"          # state RPC: nonces + the batched eth_call round
 SLOT_CHANNEL = "channel"      # Blockscout channel bodies
-SLOT_MARKET = "market"        # GeckoTerminal / DexScreener / CoinGecko
+SLOT_MARKET = "market"        # exact pool market: GeckoTerminal / DexScreener
+SLOT_ETH_USD = "eth_usd"      # independent CoinGecko reference quote
 SLOT_LOGS = "logs"            # logs RPC pool (mints, identity writes, v4, Seaport)
 SLOT_NFT = "nft"              # Blockscout token counters / holders
 SLOT_ACTIVITY = "activity"    # Blockscout dev tx pages
@@ -215,6 +216,7 @@ SLOTS: tuple[str, ...] = (
     SLOT_CHAIN,
     SLOT_CHANNEL,
     SLOT_MARKET,
+    SLOT_ETH_USD,
     SLOT_LOGS,
     SLOT_NFT,
     SLOT_ACTIVITY,
@@ -436,6 +438,19 @@ def _tx_hash(value: Any) -> str | None:
     if any(ch not in _TX_HASH_HEX for ch in value[2:]):
         return None
     return value.lower()
+
+
+def coerce_eth_usd_slot(payload: object) -> dict | None:
+    if (not isinstance(payload, dict) or set(payload) != {'eth_usd', 'source', 'provider_ts'}
+            or payload['source'] != 'CoinGecko' or payload['provider_ts'] is not None):
+        return None
+    value = payload['eth_usd']
+    try:
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            return None
+        return dict(eth_usd=float(value), source='CoinGecko', provider_ts=None)
+    except OverflowError:
+        return None
 
 
 class SurfCache:
@@ -1263,6 +1278,11 @@ class SurfCache:
                     continue
                 try:
                     entry = LastGood.from_dict(data, now=reference)
+                    if slot == SLOT_ETH_USD:
+                        clean = coerce_eth_usd_slot(entry.payload)
+                        if clean is None:
+                            raise ValueError('invalid ETH/USD quote')
+                        entry = LastGood(payload=clean, ts=entry.ts)
                     if slot == SLOT_SWARM_SEAT and isinstance(entry.payload, dict) and "seats" not in entry.payload:
                         legacy = entry.payload
                         token = legacy.get("token")
@@ -1458,6 +1478,7 @@ __all__ = [
     "SLOT_LAUNCHPAD",
     "SLOT_LOGS",
     "SLOT_MARKET",
+    "SLOT_ETH_USD",
     "SLOT_NFT",
     "SLOT_POOL4",
     "SLOT_POOL4_STAKERS",

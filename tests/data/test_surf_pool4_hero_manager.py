@@ -1,6 +1,6 @@
 """POOL4 hero source snapshots use the clocks of the values they accompany."""
 import pytest
-from maxpane_dashboard.data.surf_cache import SLOT_POOL4, SLOT_POOL4_STAKERS, SLOT_MARKET, TIER_POOL4
+from maxpane_dashboard.data.surf_cache import SLOT_POOL4, SLOT_POOL4_STAKERS, SLOT_ETH_USD, TIER_POOL4
 from maxpane_dashboard.data import surf_pool4_hero
 from tests.data.test_surf_manager_surfboard import manager
 
@@ -9,7 +9,7 @@ def seed(m, *, complete=True, network='MAINNET'):
     m.cache.store_last_good(SLOT_POOL4, dict(network='MAINNET', current_tick=0, share_price_wei=8*10**18,
         total_assets_wei=80*10**18, total_shares_raw=10*10**24, vault_decimals=24), ts=800)
     m.cache.store_last_good(SLOT_POOL4_STAKERS, dict(network=network, complete=complete, staker_count=3), ts=700)
-    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=2000), ts=990)
+    m.cache.store_last_good(SLOT_ETH_USD, dict(eth_usd=2000, source='CoinGecko', provider_ts=None), ts=990)
 
 
 async def test_pool4_hero_uses_existing_units_and_independent_clocks(manager):
@@ -52,7 +52,7 @@ async def test_unchanged_confirmed_read_and_failure_keep_honest_clock(manager):
 async def test_captured_sources_survive_detached_slot_replacement(manager):
     m,_=manager;seed(m)
     try:
-        sources=m._pool4_hero_sources(m.cache.get_last_good(SLOT_POOL4),m.cache.get_last_good(SLOT_POOL4_STAKERS),m.cache.get_last_good(SLOT_MARKET),1000)
+        sources=m._pool4_hero_sources(m.cache.get_last_good(SLOT_POOL4),m.cache.get_last_good(SLOT_POOL4_STAKERS),m.cache.get_last_good(SLOT_ETH_USD),1000)
         m.cache.store_last_good(SLOT_POOL4,dict(share_price_wei=99*10**18),ts=999)
         m.cache.mark_fetched(TIER_POOL4,999)
         projected=surf_pool4_hero.project(data={'pool4_share_price':8},sources=sources,now=1000)

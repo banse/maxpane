@@ -14,7 +14,7 @@ def _volume(data, launchpad, pad, market, now):
     quote = quote if quote is not None and quote > 0 else None
     # The captured envelope owns failure state, not a later global degraded list.
     points, state, _ = _launchpad_volume(
-        {'eth_usd': quote}, {'volume_2h': snapshot}, {'launchpad': pad, 'market': market}, now)
+        {'eth_usd': quote}, {'volume_2h': snapshot}, {'launchpad': pad, 'quote': market}, now)
     if pad['state'] == 'unavailable':
         points, state = None, 'unavailable'
     usd = number(sum(points)) if points is not None else None

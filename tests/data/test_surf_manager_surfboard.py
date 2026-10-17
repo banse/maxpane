@@ -5,10 +5,17 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 import pytest
 from maxpane_dashboard.data.surf_manager import SurfManager
+from maxpane_dashboard.data.surf_cache import SLOT_ETH_USD
+from maxpane_dashboard.data.surf_swarm_client import JobDetailRead
 from tests.data.test_surfboard import capture
 
 class Client:
     async def close(self):pass
+
+
+def seed_quote(manager, value, stamp):
+    manager.cache.store_last_good(SLOT_ETH_USD,
+        dict(eth_usd=value, source='CoinGecko', provider_ts=None), ts=stamp)
 
 @pytest.fixture
 def manager(tmp_path):
@@ -18,6 +25,13 @@ def manager(tmp_path):
     swarm.fetch_seat_records=AsyncMock(return_value=capture('records'))
     swarm.fetch_steps_hourly=AsyncMock(return_value=capture('hourly'))
     swarm.fetch_jobs=AsyncMock(return_value=None)
+    swarm.fetch_job=AsyncMock(return_value=None)
+    swarm._monotonic=lambda:clock.now
+    async def read_job(identity, *, fresh_after=None):
+        started=clock.now
+        payload=await swarm.fetch_job(identity)
+        return JobDetailRead(payload, clock.now if payload is not None else None, started, None, False)
+    swarm.read_job_detail=AsyncMock(side_effect=read_job)
     swarm.fetch_oracle_requests=AsyncMock(return_value=None)
     swarm.fetch_oracle_detail=AsyncMock(return_value=None)
     m=SurfManager(clock=lambda:clock.now,cache_path=str(tmp_path/'cache.json'),client=Client(),pool4_client=Client(),swarm_client=swarm,npm_client=Client(),seat=420)
@@ -321,6 +335,7 @@ async def test_news_hero_projects_full_cached_channel_and_independent_source_clo
     m.cache.store_last_good(SLOT_ACTIVITY, dict(rows=[]), ts=800)
     m.cache.store_last_good(SLOT_NFT, dict(nft_holders=12, nft_written=1, nft_transfers_24h=0), ts=800)
     m.cache.store_last_good(SLOT_MARKET, dict(imd_price_usd=9, eth_usd=2000), ts=990)
+    seed_quote(m, 2000, 990)
     m.cache.store_last_good(SLOT_LAUNCHPAD, dict(sqrt_price_x96=2**96), ts=300)
     try:
         for refresh in (False, True):
@@ -500,6 +515,7 @@ async def test_cards_use_legacy_source_failure_and_success_clocks(manager):
     m._last_full_payload=m._blank_payload()
     m._last_full_payload.update(pool4_price_usd=2.,pool4_vault_assets=20,pool4_total_supply=100,launchpad_coin_count=1,launchpad_new_24h=0)
     for slot in (SLOT_POOL4,SLOT_CHANNEL,SLOT_MARKET):m.cache.store_last_good(slot,{},ts=900)
+    seed_quote(m, 2, 990)
     lp={'coin_count':1,'launch_count':1,'new_24h':0,'cursor':{'last_block':1,'launches':{'a':{}}},'swaps_by_coin':{'a':1}}
     m.cache.store_last_good(SLOT_LAUNCHPAD,lp,ts=900)
     m.cache.mark_fetched(TIER_POOL4,910);m.cache.mark_fetched(TIER_LAUNCHPAD,910)
@@ -509,7 +525,7 @@ async def test_cards_use_legacy_source_failure_and_success_clocks(manager):
     assert cards['pool4']['status']=='stale'
     assert 'pool4 · read '+__import__('maxpane_dashboard.data.surfboard',fromlist=['hhmm']).hhmm(910) in cards['pool4']['detail']
     assert 'stale' not in cards['pool4']['detail']
-    assert 'market' in cards['pool4']['detail'] and 'read' in cards['pool4']['detail']
+    assert 'quote' in cards['pool4']['detail'] and 'read' in cards['pool4']['detail']
     await m.close()
 
 async def test_legacy_source_success_clears_failure_without_retimestamping_content(manager):
@@ -535,7 +551,7 @@ async def test_pool4_card_compares_confirmed_reads_and_ignores_repaints(manager)
     m, clock = manager
     pool = dict(network='MAINNET', current_tick=0, hook_addr='0x' + '1' * 40)
     m.cache.store_last_good(SLOT_POOL4, pool, ts=990)
-    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=8, imd_change_24h_pct=-90), ts=990)
+    seed_quote(m, 8, 990)
 
     def card():
         return next(row for row in m._project_hub()['surfboard_cards'] if row['key'] == 'pool4')
@@ -543,7 +559,7 @@ async def test_pool4_card_compares_confirmed_reads_and_ignores_repaints(manager)
     assert (card()['primary'], card()['status']) == ('8.00', 'idle')
     for price, state in ((9, 'active'), (7, 'falling'), (7, 'idle'), (8, 'active')):
         clock.now += 10
-        m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=price), ts=clock.now)
+        seed_quote(m, price, clock.now)
         assert card()['status'] == state
         assert card()['status'] == state  # Same source version is not a new price read.
 
@@ -561,16 +577,16 @@ async def test_pool4_card_compares_confirmed_reads_and_ignores_repaints(manager)
     assert card()['status'] == 'idle'
 
     # A retained/failed source and an invalid quote cannot replace the last good price.
-    m._failed_groups.add(SOURCE_MARKET)
+    m._quote_failed = True
     clock.now += 10
-    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=4), ts=clock.now)
+    seed_quote(m, 4, clock.now)
     assert card()['status'] == 'stale'
-    m._failed_groups.clear()
+    m._quote_failed = False
     clock.now += 10
-    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=None), ts=clock.now)
+    seed_quote(m, None, clock.now)
     assert card()['status'] == 'unavailable'
     clock.now += 10
-    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=6), ts=clock.now)
+    seed_quote(m, 6, clock.now)
     assert card()['status'] == 'falling'  # Compare with 8, not the failed 4.
     clock.now += 91
     assert card()['status'] == 'stale'
@@ -583,11 +599,11 @@ async def test_pool4_card_does_not_compare_different_pool_identities(manager, id
     m, clock = manager
     pool = dict(network='MAINNET', current_tick=0, hook_addr='0x' + '1' * 40)
     m.cache.store_last_good(SLOT_POOL4, pool, ts=990)
-    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=8), ts=990)
+    seed_quote(m, 8, 990)
     m._project_hub()
     clock.now += 10
     m.cache.store_last_good(SLOT_POOL4, dict(pool, **identity), ts=clock.now)
-    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=9), ts=clock.now)
+    seed_quote(m, 9, clock.now)
     row = next(row for row in m._project_hub()['surfboard_cards'] if row['key'] == 'pool4')
     assert row['status'] == 'idle'
     await m.close()

@@ -390,14 +390,14 @@ def _protocol_stats(burn, reward, fee) -> str:
 
 def _launchpad_volume(data, launchpad, families, now):
     snapshot = launch_volume.coerce_snapshot((launchpad or {}).get("volume_2h"), now=now)
-    market = families.get("market") or {}
-    quote, quote_ts = number(data.get("eth_usd")), timestamp(market.get("read_ts"))
+    quote_source = families.get("quote") or {}
+    quote, quote_ts = number(data.get("eth_usd")), timestamp(quote_source.get("read_ts"))
     state, points = "unavailable", None
     if snapshot is not None:
         state = snapshot["state"]
         if state == "ok":
             state = "unavailable"
-            if (quote is not None and quote > 0 and market.get("state") == "ok"
+            if (quote is not None and quote > 0 and quote_source.get("state") == "ok"
                     and quote_ts is not None and 0 <= now - quote_ts <= 90):
                 try:
                     converted = [number(value / 10**18 * quote) for value in snapshot["points_wei"]]
@@ -598,7 +598,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     families = family_sources or {}
     for row in result:
         names = {"announce": ("announce", "signals"), "swarm": ("hourly",),
-                 "pool4": ("pool4", "market"),
+                 "pool4": ("pool4", "quote"),
                  "protocol": ("pool4",)}.get(row["key"], ())
         states = []
         for name in names:
@@ -613,7 +613,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         # legacy degradation list, even before per-family metadata is ready.
         degraded = data.get("degraded") or []
         relevant = {"announce": ("channel",),
-                    "pool4": ("p4", "market"), "protocol": ("p4",)}.get(row["key"], ())
+                    "pool4": ("p4",), "protocol": ("p4",)}.get(row["key"], ())
         if any(group in degraded for group in relevant):
             states.append("stale")
         if "unavailable" in states:

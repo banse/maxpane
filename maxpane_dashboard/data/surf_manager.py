@@ -193,6 +193,8 @@ from maxpane_dashboard.data.surf_cache import (
     SLOT_LAUNCHPAD,
     SLOT_LOGS,
     SLOT_MARKET,
+    SLOT_ETH_USD,
+    coerce_eth_usd_slot,
     SLOT_NFT,
     SLOT_POOL4,
     SLOT_POOL4_STAKERS,
@@ -1111,6 +1113,8 @@ class SurfManager:
         self._last_full_read_ts = None
         self._hub_active = False
         self._hub_pool4_price_read = None
+        self._quote_failed = False
+        self._market_price_identity = None
         self._swarm_active = False
         self._hub_source_tasks = {}
         self._hub_lookup_lock = asyncio.Lock()
@@ -1463,38 +1467,83 @@ class SurfManager:
         )
         self._note(SOURCE_MARKET, snap is not None)
         if snap is not None:
-            self.cache.store_last_good(SLOT_MARKET, self._market_payload(snap), ts=now)
+            self.cache.store_last_good(SLOT_MARKET, self._market_payload(snap), ts=float(self._clock()))
         return snap
+
+    async def _pool_eth_usd(self, tiers: set[str], now: float) -> float | None:
+        if TIER_MEDIUM not in tiers:
+            return None
+        value = await self._guard(self.client.fetch_eth_usd, 'fetch_eth_usd')
+        payload = coerce_eth_usd_slot(dict(eth_usd=value, source='CoinGecko', provider_ts=None))
+        self._quote_failed = payload is None
+        if payload is not None:
+            self.cache.store_last_good(SLOT_ETH_USD, payload, ts=float(self._clock()))
+            return payload['eth_usd']
+        return None
 
     @staticmethod
     def _market_payload(snap: Any) -> dict[str, Any]:
-        """The whole PRD §5 market view, scaled once and cached as one dict.
+        """Pool values and provenance, preserving explicit missing FP values.
 
-        **All market values, not just the two prices.** The slot is what `_cycle`
-        falls back to on a skipped medium tier, so anything left out of it is a
-        key that renders `--` on two refreshes out of three — while `_degraded`
-        correctly says the market group is healthy, because a skip never reaches
-        `_note`. Storing only `imd_price_usd`/`fp_price_usd` (as this method used
-        to) blanked `imd_change_24h_pct`, `imd_vol_24h_usd`, `pool_liquidity_usd`
-        and `eth_usd`, took `parity_pct` with them, and dropped this cycle's
-        price and parity samples on the floor as well — `sample_series` treats a
-        `None` as "nothing to record", which is right for an outage and wrong for
-        a refresh that simply did not need to re-fetch.
-
-        `pool_imd` / `pool_weth` are deliberately absent: they are DexScreener's
-        whole-pool reserves and no `SURF_KEYS` entry reads them. The hero's LP
-        legs come off `ChainState.lp_imd_wei` / `lp_weth_wei` (WP0.4, WP1.4).
+        The independent ETH reference belongs to SLOT_ETH_USD. Whole-pool
+        reserves stay out of this presentation payload; LP legs come from
+        ChainState's verified position amounts.
         """
-        return {
+        values = {
             "imd_price_usd": _opt_float(_field(snap, "imd_price_usd")),
             "imd_change_24h_pct": _opt_float(_field(snap, "imd_change_24h_pct")),
             "imd_vol_24h_usd": _opt_float(_field(snap, "imd_vol_24h_usd")),
             "pool_liquidity_usd": _opt_float(_field(snap, "pool_liquidity_usd")),
             "fp_price_usd": _opt_float(_field(snap, "fp_price_usd")),
-            "eth_usd": _opt_float(_field(snap, "eth_usd")),
             "market_cap_usd": hub.number(_field(snap, "market_cap_usd")),
             "fdv_usd": hub.number(_field(snap, "fdv_usd")),
         }
+        values.update({name: _field(snap, name) for name in (
+            'market_source', 'chain_id', 'pool_id', 'base_token', 'quote_token',
+            'base_decimals', 'quote_decimals', 'target_side', 'provider_ts', 'block_number')})
+        return values
+
+    def _project_market_values(self, data, *, market_entry, quote_entry, launchpad_entry, pool4_entry, now):
+        """Reprice one frozen set of source entries without reads or history writes."""
+        market = getattr(market_entry, 'payload', None) or {}
+        quote = coerce_eth_usd_slot(getattr(quote_entry, 'payload', None)) or {}
+        launchpad = getattr(launchpad_entry, 'payload', None) or {}
+        pool = getattr(pool4_entry, 'payload', None) or {}
+        eth_usd = quote.get('eth_usd')
+        chain_price = None
+        sqrt_price = launchpad.get('sqrt_price_x96')
+        if type(sqrt_price) is int and 0 < sqrt_price < 2**160 and eth_usd is not None:
+            eth_per_imd = price_eth_per_imd(sqrt_price)
+            if eth_per_imd is not None:
+                chain_price = _opt_float(eth_per_imd * eth_usd)
+        dex_price = _opt_float(market.get('imd_price_usd'))
+        imd_price = chain_price if chain_price is not None else dex_price
+        fp_price = _opt_float(market.get('fp_price_usd'))
+        disagreement = ((dex_price-chain_price)/chain_price*100
+                        if dex_price is not None and chain_price is not None and chain_price != 0 else None)
+        data.update(eth_usd=eth_usd, imd_price_usd=imd_price, fp_price_usd=fp_price,
+                    parity_pct=parity_pct(imd_price, fp_price), price_source_disagreement_pct=disagreement,
+                    **{name: _opt_float(market.get(name)) for name in (
+                        'imd_change_24h_pct', 'imd_vol_24h_usd', 'pool_liquidity_usd')})
+        data.update(self._launchpad_keys(launchpad, launchpad_entry, eth_usd=eth_usd))
+        data.update(self._pool4_keys(pool, pool4_entry, now, eth_usd=eth_usd))
+        price_source = self._pool4_hero_source(market_entry, now=now, tier=None, group=SOURCE_MARKET)
+        if chain_price is not None:
+            contributing = [self._quote_source(quote_entry, now), self._pool4_hero_source(
+                launchpad_entry, now=now, tier=TIER_LAUNCHPAD, group=SOURCE_LAUNCHPAD)]
+            if data['imd_change_24h_pct'] is not None:
+                contributing.append(price_source)
+            price_source = pool4_hero._joined(contributing)
+        data['surf_news_hero'] = dict(data.get('surf_news_hero') or {}, market=dict(
+            price_source, price_usd=imd_price, change_24h_pct=data['imd_change_24h_pct']))
+        self._market_price_identity = tuple(market.get(name) for name in (
+            'market_source', 'chain_id', 'pool_id', 'base_token', 'quote_token', 'target_side'))
+        return chain_price
+
+    def _quote_source(self, entry, now):
+        valid = coerce_eth_usd_slot(getattr(entry, 'payload', None))
+        return news_hero.source(getattr(entry, 'ts', None) if valid is not None else None,
+                                now=now, ttl=TIER_TTL_SECONDS[TIER_MEDIUM], failed=self._quote_failed)
 
     async def _pool_logs(self, tiers: set[str], now: float) -> Any:
         if TIER_MEDIUM not in tiers:
@@ -7516,6 +7565,7 @@ class SurfManager:
                      "stale" if failed or now - read_ts > ttl else "ok")
             out[name] = {"state": state, "read_ts": read_ts}
         stamp = self._last_full_read_ts
+        out['quote'] = self._quote_source(self.cache.get_last_good(SLOT_ETH_USD), now)
         out["signals"] = {"read_ts": stamp, "state": "unavailable" if stamp is None else
                           "stale" if degraded or now - stamp > self.poll_interval else "ok"}
         return out
@@ -7523,13 +7573,13 @@ class SurfManager:
     def _hub_pool4_price_direction(self, data: dict, sources: dict) -> str | None:
         """Compare confirmed USD-price reads, never cached screen repaints."""
         price = hub.number(data.get("pool4_price_usd"))
-        reads = [sources[name] for name in ("pool4", "market")]
+        reads = [sources[name] for name in ("pool4", "quote")]
         now = float(self._clock())
         stamps = tuple(hub.timestamp(source.get("read_ts")) for source in reads)
         if (price is None or any(source.get("state") != "ok" for source in reads)
                 or any(stamp is None or stamp > now for stamp in stamps)):
             return None
-        identity = (data.get("pool4_network"), data.get("pool4_hook_addr"))
+        identity = (data.get("pool4_network"), data.get("pool4_hook_addr"), self._market_price_identity)
         prior = self._hub_pool4_price_read
         direction = None
         if prior is not None and prior[0] == identity:
@@ -7552,10 +7602,10 @@ class SurfManager:
             failed = failed or self.cache.last_failure_ts(tier) is not None
         return news_hero.source(stamp, now=now, ttl=TIER_TTL_SECONDS[tier or TIER_MEDIUM], failed=failed)
 
-    def _pool4_hero_sources(self, pool_entry, stakers_entry, market_entry, now):
+    def _pool4_hero_sources(self, pool_entry, stakers_entry, quote_entry, now):
         sources = {
             "pool4": self._pool4_hero_source(pool_entry, now=now, tier=TIER_POOL4, group=SOURCE_POOL4),
-            "market": self._pool4_hero_source(market_entry, now=now, tier=None, group=SOURCE_MARKET),
+            "market": self._quote_source(quote_entry, now),
             "stakers": self._pool4_hero_source(stakers_entry, now=now, tier=TIER_POOL4_STAKERS),
         }
         pool = getattr(pool_entry, "payload", None) or {}
@@ -7592,23 +7642,21 @@ class SurfManager:
             # Keep the card's USD conversion and post age on the same captured
             # source versions as the source clocks shown beside those values.
             market_entry = self.cache.get_last_good(SLOT_MARKET)
-            market = getattr(market_entry, "payload", None) or {}
-            data["eth_usd"] = market.get("eth_usd")
+            quote_entry = self.cache.get_last_good(SLOT_ETH_USD)
+            launch_entry = self.cache.get_last_good(SLOT_LAUNCHPAD)
+            pool_entry = self.cache.get_last_good(SLOT_POOL4)
+            self._project_market_values(data, market_entry=market_entry, quote_entry=quote_entry,
+                launchpad_entry=launch_entry, pool4_entry=pool_entry, now=now)
             channel = getattr(self.cache.get_last_good(SLOT_CHANNEL), "payload", None) or {}
             items = channel.get("items")
             data["feed_last_post_age_s"] = self._last_post_age(items, now) if isinstance(items, list) else None
             data["degraded"] = self._degraded()
-            pool_entry = self.cache.get_last_good(SLOT_POOL4)
-            pool = getattr(pool_entry, "payload", None) or {}
-            data.update(self._pool4_keys(pool, pool_entry, now, eth_usd=data.get("eth_usd")))
             stakers_entry = self.cache.get_last_good(SLOT_POOL4_STAKERS)
             data.update(self._pool4_stakers_keys(getattr(stakers_entry, "payload", None) or {}, stakers_entry))
-            pool4_hero_sources = self._pool4_hero_sources(pool_entry, stakers_entry, market_entry, now)
+            pool4_hero_sources = self._pool4_hero_sources(pool_entry, stakers_entry, quote_entry, now)
             data["surf_pool4_hero"] = pool4_hero.project(data=data, sources=pool4_hero_sources, now=now)
             data["surf_protocol_hero"] = protocol_hero.project(data=data, sources=pool4_hero_sources, now=now)
-            launch_entry = self.cache.get_last_good(SLOT_LAUNCHPAD)
             launch = getattr(launch_entry, "payload", None) or {}
-            data.update(self._launchpad_keys(launch, launch_entry, eth_usd=data.get('eth_usd')))
             data['surf_launchpad_hero'] = launchpad_hero.project(
                 data=data, launchpad=launch, sources={
                     'launchpad': self._pool4_hero_source(launch_entry, now=now, tier=TIER_LAUNCHPAD, group=SOURCE_LAUNCHPAD),
@@ -7795,12 +7843,16 @@ class SurfManager:
             sources[name] = news_hero.source(
                 getattr(entry, "ts", None), now=now, ttl=ttl,
                 failed=name in failed or (tier is not None and self.cache.last_failure_ts(tier) is not None))
-        return news_hero.project(
+        result = news_hero.project(
             data=data, channel=payloads[SOURCE_CHANNEL], activity=payloads[SOURCE_ACTIVITY],
             market=payloads[SOURCE_MARKET], launchpad=payloads[SOURCE_LAUNCHPAD],
             boards=payloads[SOURCE_NFT], sources=sources, now=now,
             signal_read_ts=self._last_full_read_ts, poll_interval=self.poll_interval,
             wallet_count=len(DEV_WALLETS))
+        projected = (data.get('surf_news_hero') or {}).get('market')
+        if projected is not None:
+            result['market'].update(projected)
+        return result
 
     async def fetch_hub_snapshot(self) -> dict[str, Any]:
         """Offer eligible work and return cached data without waiting on I/O."""
@@ -8111,8 +8163,9 @@ class SurfManager:
         agent_capture = self._agent_hero_capture(seat_entry, now=float(self._clock()))
         self._spawn_swarm_board(tiers, now)
 
-        market, logs, channel, nft, activity = await asyncio.gather(
+        market, quote, logs, channel, nft, activity = await asyncio.gather(
             self._pool_market(tiers, now, real_pool_id),
+            self._pool_eth_usd(tiers, now),
             self._pool_logs(tiers, now),
             self._pool_channel(tiers, now, announce_nonce),
             self._pool_nft(tiers, now),
@@ -8124,7 +8177,7 @@ class SurfManager:
         # A due tier that produced nothing takes the failure backoff instead of
         # being retried on every refresh.
         if TIER_MEDIUM in tiers:
-            if market is not None or logs is not None:
+            if market is not None or quote is not None or logs is not None:
                 self.cache.mark_fetched(TIER_MEDIUM, now)
             else:
                 self.cache.mark_failed(TIER_MEDIUM, now)
@@ -8214,52 +8267,23 @@ class SurfManager:
         # degradation rule forbids. `fresh_market` stays separate because the
         # sparklines may not be fed the fallback; see the sampling call below.
         fresh_market = self._market_payload(market) if market is not None else None
-        pool4_hero_sources["market"] = self._pool4_hero_source(
-            self.cache.get_last_good(SLOT_MARKET), now=float(self._clock()),
-            tier=None, group=SOURCE_MARKET)
+        market_entry = self.cache.get_last_good(SLOT_MARKET)
+        quote_entry = self.cache.get_last_good(SLOT_ETH_USD)
+        projection_now = float(self._clock())
+        pool4_hero_sources["market"] = self._quote_source(quote_entry, projection_now)
         market_payload = (
             fresh_market
             if fresh_market is not None
             else dict(
-                getattr(self.cache.get_last_good(SLOT_MARKET), "payload", None) or {}
+                getattr(market_entry, "payload", None) or {}
             )
         )
-        dex_imd_price = market_payload.get("imd_price_usd")
-        fp_price = market_payload.get("fp_price_usd")
-
-        # Fix round 10a: the authoritative price is the on-chain extsload
-        # read, not DexScreener's -- a third-party aggregator's number is a
-        # cross-check now, never the number of record. `sqrt_price_x96`
-        # comes off the same `launchpad_slot` snapshot `real_pool_id` above
-        # already unpacked, so this costs no extra request either.
-        chain_price_usd = None
-        sqrt_price_x96 = launchpad_slot.get("sqrt_price_x96")
-        eth_usd = market_payload.get("eth_usd")
-        if sqrt_price_x96 is not None and eth_usd is not None:
-            eth_per_imd = price_eth_per_imd(sqrt_price_x96)
-            if eth_per_imd is not None:
-                chain_price_usd = eth_per_imd * eth_usd
-        # Falls back to the (now correctly v4-matched) DexScreener price only
-        # while the chain read is unavailable -- a cold cache before the
-        # launchpad sweep's first landing, typically one or two poll cycles,
-        # never the full 600 s TTL. Blanking the market panel's headline
-        # price on every fresh launch for a source that is merely "not yet
-        # due" is a worse outcome than a graceful, honestly-labelled
-        # cross-check taking over for a cycle or two.
-        imd_price = chain_price_usd if chain_price_usd is not None else dex_imd_price
-        # "A missing source is not agreement" -- `None` unless BOTH read.
-        # Signed, not absolute: a disagreement is information about
-        # direction as well as magnitude, and this repo does not average,
-        # clamp or hide it.
-        price_source_disagreement_pct = None
-        if (
-            dex_imd_price is not None
-            and chain_price_usd is not None
-            and chain_price_usd != 0
-        ):
-            price_source_disagreement_pct = (
-                (dex_imd_price - chain_price_usd) / chain_price_usd * 100.0
-            )
+        market_values = {}
+        self._project_market_values(market_values, market_entry=market_entry,
+            quote_entry=quote_entry, launchpad_entry=launchpad_entry, pool4_entry=pool4_entry,
+            now=projection_now)
+        eth_usd, imd_price, fp_price = (market_values[key] for key in ('eth_usd', 'imd_price_usd', 'fp_price_usd'))
+        price_source_disagreement_pct = market_values['price_source_disagreement_pct']
 
         data: dict[str, Any] = {
             "as_of": self.cache.newest_as_of(),
@@ -8279,7 +8303,7 @@ class SurfManager:
             # question. It is filled from `NftStats.written` below.
             "imd_supply": imd_supply,
             "imd_burned_cum": self.cache.observed_burn_total(),
-            "eth_usd": market_payload.get("eth_usd"),
+            "eth_usd": eth_usd,
             "imd_price_usd": imd_price,
             "imd_change_24h_pct": market_payload.get("imd_change_24h_pct"),
             "imd_vol_24h_usd": market_payload.get("imd_vol_24h_usd"),
@@ -8322,21 +8346,20 @@ class SurfManager:
 
         }
 
-        data.update(self._launchpad_keys(launchpad_slot, launchpad_entry, eth_usd=eth_usd))
+        data.update(market_values)
         launchpad_hero_sources['market'] = pool4_hero_sources['market']
         data['surf_launchpad_hero'] = launchpad_hero.project(
-            data=data, launchpad=launchpad_slot, sources=launchpad_hero_sources, now=float(self._clock()))
+            data=data, launchpad=launchpad_slot, sources=launchpad_hero_sources, now=projection_now)
 
         # ---- pool4 (detached sweep, its own slower "as of") ----------------
         # One contiguous block off the slot captured above, never this cycle's
         # own not-yet-landed sweep. ``_pool4_keys`` is the only place the pool4
         # path divides by 1e18, and the only place it divides by 10**decimals.
-        data.update(self._pool4_keys(pool4_slot, pool4_entry, now, eth_usd=eth_usd))
         # The staker leaderboard's own four, off its own slot and behind its
         # own, slower marker. PRD 7.2.
         data.update(self._pool4_stakers_keys(stakers_slot, stakers_entry))
-        data["surf_pool4_hero"] = pool4_hero.project(data=data, sources=pool4_hero_sources, now=now)
-        data["surf_protocol_hero"] = protocol_hero.project(data=data, sources=pool4_hero_sources, now=now)
+        data["surf_pool4_hero"] = pool4_hero.project(data=data, sources=pool4_hero_sources, now=projection_now)
+        data["surf_protocol_hero"] = protocol_hero.project(data=data, sources=pool4_hero_sources, now=projection_now)
 
         # ---- swarm source slots and their independent clocks ----------------
         # The jobs-seen map, read once for both folds below. It is read
@@ -8378,11 +8401,9 @@ class SurfManager:
             selected_seat["token_id"] if selected_seat is not None else None,
             hero_sources=board_hero_sources,
         ))
-        quote_source = pool4_hero_sources['market']
-        if chain_price_usd is not None:
-            quote_source = pool4_hero._joined([quote_source, launchpad_hero_sources['launchpad']])
+        price_source = {key: market_values['surf_news_hero']['market'][key] for key in ('state', 'read_ts')}
         data['surf_agent_hero'] = self._agent_hero(data, agent_capture, board_hero_sources,
-                                                 quote_source, now=float(self._clock()))
+                                                 price_source, now=projection_now)
         await self._offer_swarm_seat(
             tiers,
             selected_seat["token_id"] if selected_seat is not None else None,

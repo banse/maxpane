@@ -1,7 +1,7 @@
 """Native launchpad values and rack cards share captured observations."""
 from unittest.mock import AsyncMock
 
-from maxpane_dashboard.data.surf_cache import SLOT_LAUNCHPAD, SLOT_MARKET, TIER_LAUNCHPAD
+from maxpane_dashboard.data.surf_cache import SLOT_LAUNCHPAD, SLOT_ETH_USD, TIER_LAUNCHPAD
 from tests.data.test_surf_manager_surfboard import manager
 
 
@@ -14,7 +14,7 @@ def seed(m):
                 volume_2h=dict(state='ok', points_wei=[10**18] * 8,
                                read_ts=9990, head_ts=9990, until=9900, known=210, total=210))
     m.cache.store_last_good(SLOT_LAUNCHPAD, slot, ts=9990)
-    m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=2000), ts=9995)
+    m.cache.store_last_good(SLOT_ETH_USD, dict(eth_usd=2000, source='CoinGecko', provider_ts=None), ts=9995)
     return slot
 
 
@@ -51,7 +51,7 @@ async def test_launchpad_failure_and_market_expiry_keep_independent_states(manag
         expired = m._project_hub()['surf_launchpad_hero']
         assert expired['fees']['state'] == 'ok' and expired['coins']['state'] == 'ok'
         assert expired['volume']['state'] == 'unavailable' and expired['volume']['usd'] is None
-        m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=2000), ts=10100)
+        m.cache.store_last_good(SLOT_ETH_USD, dict(eth_usd=2000, source='CoinGecko', provider_ts=None), ts=10100)
         m.cache.mark_failed(TIER_LAUNCHPAD, 10100)
         stale = m._project_hub()['surf_launchpad_hero']
         assert stale['fees'] == dict(state='stale', read_ts=9990, eth=.0842)
@@ -73,6 +73,7 @@ async def test_cycle_and_retained_hub_keep_pre_spawn_launchpad_values_and_clock(
 
     monkeypatch.setattr(m, '_spawn_launchpad', replace_launchpad)
     monkeypatch.setattr(m, '_pool_market', AsyncMock(return_value=None))
+    monkeypatch.setattr(m, '_pool_eth_usd', AsyncMock(return_value=None))
     try:
         result = await m._cycle()
         hero = result['surf_launchpad_hero']
@@ -100,13 +101,13 @@ async def test_sources_completed_after_cycle_start_use_capture_clock(tmp_path, m
         m.cache.mark_fetched(TIER_LAUNCHPAD, clock())
         return await original(now)
 
-    async def finish_market(*args):
+    async def finish_quote(*args):
         clock.advance(5)
-        m.cache.store_last_good(SLOT_MARKET, dict(eth_usd=3000), ts=clock())
+        m.cache.store_last_good(SLOT_ETH_USD, dict(eth_usd=3000, source='CoinGecko', provider_ts=None), ts=clock())
         return None
 
     monkeypatch.setattr(m, '_pool_chain', finish_launchpad_during_chain)
-    monkeypatch.setattr(m, '_pool_market', finish_market)
+    monkeypatch.setattr(m, '_pool_eth_usd', finish_quote)
     monkeypatch.setattr(m, '_spawn_launchpad', lambda *args: None)
     try:
         hero = (await m._cycle())['surf_launchpad_hero']

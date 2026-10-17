@@ -732,9 +732,18 @@ def launchpad_volume_snapshot(**changes):
 def launchpad_volume_projection(snapshot=None, *, now=18020, price=2000, market=None, launch_state='ok'):
     points, state, detail = hub._launchpad_volume(
         dict(eth_usd=price), dict(volume_2h=snapshot), {
-            'market': market if market is not None else dict(state='ok', read_ts=now),
+            'quote': market if market is not None else dict(state='ok', read_ts=now),
             'launchpad': dict(state=launch_state, read_ts=now)}, now)
     return dict(points=points, meter_state=state, detail=detail)
+
+
+def test_launchpad_volume_uses_quote_clock_independently_of_pool_market():
+    points, state, detail = hub._launchpad_volume(
+        dict(eth_usd=2000), dict(volume_2h=launchpad_volume_snapshot()),
+        dict(quote=dict(state='ok', read_ts=18010), market=dict(state='stale', read_ts=100),
+             launchpad=dict(state='ok', read_ts=18000)), 18020)
+    assert points == [i * 2000 for i in range(8)] and state == 'ok'
+    assert 'quote read '+hub.hhmm(18010) in detail
 
 
 def test_launchpad_volume_projects_eight_usd_buckets_and_retains_source_window():

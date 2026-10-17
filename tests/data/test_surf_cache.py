@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import os
+from pathlib import Path
 
 import pytest
 
@@ -60,6 +61,29 @@ class FakeClock:
 
 def _cache(tmp_path, clock=None) -> SurfCache:
     return SurfCache(path=str(tmp_path / "surf_cache.json"), clock=clock or FakeClock())
+
+
+def test_quote_slot_roundtrips_independently_of_market(tmp_path):
+    clock = FakeClock()
+    cache = _cache(tmp_path, clock)
+    cache.store_last_good('eth_usd', dict(eth_usd=2000., source='CoinGecko', provider_ts=None), ts=clock())
+    cache.save()
+    loaded = _cache(tmp_path, clock)
+    loaded.load()
+    assert loaded.get_last_good('eth_usd') == cache.get_last_good('eth_usd')
+    assert loaded.get_last_good('market') is None
+
+
+@pytest.mark.parametrize('value', [True, 0, -1, float('inf'), float('nan'), '2000', None])
+def test_quote_slot_rejects_invalid_persisted_values(tmp_path, value):
+    cache = _cache(tmp_path)
+    cache.store_last_good('market', dict(imd_price_usd=1.), ts=cache._clock())
+    cache.save()
+    payload = json.loads(Path(cache.path).read_text())
+    payload['last_good']['eth_usd'] = dict(ts=cache._clock(), payload=dict(eth_usd=value, source='CoinGecko', provider_ts=None))
+    Path(cache.path).write_text(json.dumps(payload))
+    cache.load()
+    assert cache.get_last_good('eth_usd') is None
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +258,7 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     # (SLOT_SWARM_ORACLE_INDEX) are also independent last-good slots.
     # Selected-job detail (SLOT_SWARM_JOB_DETAIL) is a separate popup slot.
     # The selected seat's IMD rewards (SLOT_SWARM_SEAT_REWARDS, F-S5, 2026-10-02).
-    assert len(SLOTS) == 34  # includes AGENT sources and launch contribution snapshots
+    assert len(SLOTS) == 35  # includes independent ETH/USD, AGENT and launch contribution slots
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):

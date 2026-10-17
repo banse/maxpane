@@ -2008,7 +2008,10 @@ async def test_a_busy_detail_host_stops_the_live_loop_and_keeps_the_prior_read(t
         swarm.busy_from = None
         assert (await manager._pool_swarm({TIER_SWARM}, later + 1))["ok"]
         assert swarm.calls["jobs"] == before["jobs"] + 2, "the unstored list is read again"
-        assert manager.cache.get_last_good(SLOT_SWARM).ts == later + 1
+        # The detail envelope's injected observation clock stayed at `now`;
+        # successful later scheduling cannot rejuvenate that older source fact.
+        assert manager.cache.get_last_good(SLOT_SWARM).ts == now
+        assert manager.cache.last_fetch_ts(TIER_SWARM) == later + 1
     finally:
         await manager.close()
 
@@ -2273,7 +2276,10 @@ async def test_workflow_history_merges_newest_page_and_keeps_persisted_rows(tmp_
         await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now + 3600)
         after = manager.cache.get_last_good(SLOT_SWARM_SCORES)
         assert after.payload["workflows"] == entry.payload["workflows"]
-        assert after.ts == now + 3600
+        # Detail envelopes retain the fixed injected HTTP observation, while
+        # this successful cycle and workflow history have independent clocks.
+        assert after.ts == now
+        assert manager.cache.last_fetch_ts(TIER_SWARM_SCORES) == now + 3600
         assert after.payload["workflows_ts"] == now + 1800
         keys = manager._swarm_scores_keys(after.payload, after, None, now + 3600)
         from maxpane_dashboard.data.surf_cache import LastGood
