@@ -1,0 +1,1241 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-17",
+  "scope": "Code-bound capability descriptions, not yield promises or activation guarantees. Native ETH is not ERC-20.",
+  "deployed": [
+    {
+      "name": "IMDenza",
+      "chainId": 1,
+      "contract": "0xd7fb8c680f9291c0f164c00dc4ae03624a6c76ce",
+      "codeHash": "0x134c0203e1b92a88d549c33372b075e8041e32753915fda91c1f3500df9927bc",
+      "summary": "Animated onchain art with funded holder distributions; no staking required.",
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "Identity.md",
+          "roles": [
+            "payment",
+            "eligibility",
+            "reward"
+          ],
+          "conditions": "",
+          "addressRead": "IMD_TOKEN_A"
+        },
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment",
+            "eligibility",
+            "reward"
+          ],
+          "conditions": "Alternate address allowed by source; usable only if ERC-20 code actually exists on Ethereum. The same address on another chain is a different asset.",
+          "addressRead": "IMD_TOKEN_B"
+        },
+        {
+          "symbol": "WETH",
+          "name": "Wrapped Ether",
+          "roles": [
+            "royalty",
+            "reward"
+          ],
+          "conditions": "",
+          "addressRead": "WETH"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Animated generative artwork",
+          "description": "Unique flow-field artwork combines mint entropy with a swarm-history snapshot.",
+          "status": "deployed",
+          "conditions": ""
+        },
+        {
+          "kind": "rewards",
+          "title": "Hold NFTs for funded distributions",
+          "description": "90% of public mint proceeds and creator royalties received by the distributor are allocated to NFT holders. ETH, IMD and WETH may be distributed; claims require actual receipts.",
+          "status": "deployed",
+          "conditions": "No fixed return. Unpaid rights and transfer accounting follow the distributor; royalties depend on actual paid receipts."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+        },
+        {
+          "label": "Pinned distribution accounting",
+          "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenzaDistributor.sol"
+        }
+      ]
+    },
+    {
+      "name": "Sinopia",
+      "chainId": 4663,
+      "contract": "0x0da78a50b3039f8ca719d01754988b23d7e70fe2",
+      "codeHash": "0x0b3596bc63e8ef0091f3e4b5e5e0dff2e2bc6d746cdbb0c8527536cfd8c20b72",
+      "summary": "Auction-funded, swarm-created art; IMD pays for the commission.",
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment",
+            "commission"
+          ],
+          "conditions": "",
+          "addressRead": "imd"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Commission one swarm artwork",
+          "description": "Winning IMD bids commission a swarm art job. Minting follows delivery and reveal checks; failed or late rounds have refund paths.",
+          "status": "deployed",
+          "conditions": "The bidder funds a commission, not a guaranteed yield or immediate NFT."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "imd",
+          "type": "address"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1942-sinopia/blob/2d7436e57e6e90f8e5288ed6976e4d2d9a38fd26/src/Sinopia.sol"
+        }
+      ]
+    },
+    {
+      "name": "VETERANS",
+      "chainId": 4663,
+      "contract": "0x582ea0b5c023f354e0b95bfcb5c12a2062e8e033",
+      "codeHash": "0xad91624fc5e3e6584c0f7bd5699fa28d2249dd5831c394ef9f79ca767c76fb4b",
+      "summary": "Stake VETERANS NFTs for funded IMD and royalty rewards, weighted by time in this system.",
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment",
+            "reward"
+          ],
+          "conditions": "",
+          "addressRead": "imd"
+        },
+        {
+          "symbol": "WETH",
+          "name": "WETH",
+          "roles": [
+            "royalty"
+          ],
+          "conditions": "Wrapped royalty receipts can be unwrapped into the ETH claim pool.",
+          "addressRead": "weth"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "staking",
+          "title": "Stake VETERANS NFTs",
+          "description": "NFT custody staking has no fixed lock. Rewards use staked NFT count and time since this wallet first minted or staked in VETERANS; it is not wallet age.",
+          "status": "deployed",
+          "conditions": "Requires the configured staking contract. No guaranteed APY; rewards depend on actual funded balances."
+        },
+        {
+          "kind": "rewards",
+          "title": "Mint-fee and royalty pools",
+          "description": "Mint payments route 65% to staking, 20% to the claim pool, 10% to treasury and 5% to burn. Received 6.9% royalties split 6.0% to the pool and 0.9% to treasury.",
+          "status": "deployed",
+          "conditions": "Age weights refresh on staking actions/claims or permissionless refresh; accrued amounts depend on current weights and actual receipts."
+        }
+      ],
+      "readSpecs": [],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1756-workflow-contract-stage-context/blob/d3de6035fe432600d7f669ba8104e1ba4bbb37be/src/VeteransNFT.sol"
+        },
+        {
+          "label": "NFT staking implementation",
+          "url": "https://github.com/identity-md-launches/launch-1756-workflow-contract-stage-context/blob/d3de6035fe432600d7f669ba8104e1ba4bbb37be/src/VeteransStaking.sol"
+        },
+        {
+          "label": "Claim-pool implementation",
+          "url": "https://github.com/identity-md-launches/launch-1756-workflow-contract-stage-context/blob/d3de6035fe432600d7f669ba8104e1ba4bbb37be/src/VeteransClaimPool.sol"
+        }
+      ]
+    },
+    {
+      "name": "FarmItems",
+      "chainId": 4663,
+      "contract": "0xdda6387bf0244fc82eb3dbda168acc4d9eed56a3",
+      "codeHash": "0xd4a23d86800de9b106d7929bedab057f0c02d244ea60bb6bec00bb259a7a4961",
+      "summary": "Soulbound mining-farm equipment with game-token spending and funded mining rewards.",
+      "tokens": [
+        {
+          "symbol": null,
+          "name": "BLACKOUT game token",
+          "roles": [
+            "game",
+            "payment",
+            "reward"
+          ],
+          "conditions": "The game token is resolved through the deployed registry; name and symbol require ERC-20 metadata verification.",
+          "addressRead": "GameRegistry.token"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "game",
+          "title": "Equip and improve a BLACKOUT farm",
+          "description": "Soulbound equipment has rarity, durability and overclock levels. Players equip their own items, repair them, merge matching items and expand inventory. Transfers outside permitted farm custody are blocked.",
+          "status": "deployed",
+          "conditions": ""
+        },
+        {
+          "kind": "rewards",
+          "title": "Game mining, not passive NFT staking",
+          "description": "Equipment contributes to farm output under the game engine. Game actions spend the registry token and reward claims depend on the reward pool, epochs, durability and game rules.",
+          "status": "deployed",
+          "conditions": "Owning an item alone does not guarantee a payout. The deployed module graph and current game state determine eligibility."
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "registry",
+          "type": "address"
+        },
+        {
+          "name": "token",
+          "type": "address",
+          "namespace": "GameRegistry",
+          "addressFrom": "registry"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/FarmItems.sol"
+        },
+        {
+          "label": "Immutable game registry",
+          "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/GameRegistry.sol"
+        }
+      ]
+    },
+    {
+      "name": "Keel Notes",
+      "chainId": 1,
+      "contract": "0xd9822f2878edb457ec6d04ff3b2c8311136ea9ff",
+      "codeHash": "0xcdc7729f98228897e1c3d96ae28c618a447f0143875bd57a7f712823d08f7908",
+      "summary": "Transferable notes accrue funded IMD; redeeming burns the note. Gold has five times the reward weight.",
+      "tokens": [
+        {
+          "symbol": "KEEL",
+          "name": "KEEL",
+          "roles": [
+            "eligibility",
+            "project"
+          ],
+          "conditions": "A signed mint pass specifies the required KEEL balance; token holding alone is insufficient.",
+          "addressRead": "keelToken"
+        },
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "reward"
+          ],
+          "conditions": "",
+          "addressRead": "IMD"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "redemption",
+          "title": "Redeem and burn a funded note",
+          "description": "Funded IMD follows the note. Its current owner may redeem accrued IMD by permanently burning the NFT. Standard weight is 1; Gold weight is 5.",
+          "status": "deployed",
+          "conditions": "Only actual IMD funding is distributed; no fixed income or principal backing is promised."
+        },
+        {
+          "kind": "access",
+          "title": "Creator-only Gold upgrade",
+          "description": "A note owner who created an eligible KEEL-launched token may engrave that token and upgrade to Gold, subject to a 111-note Gold cap and one use per backing token.",
+          "status": "deployed",
+          "conditions": "The KEEL factory and vault must confirm launch and project creator. The engraved token is not automatically a staking or reward asset."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1716-keel-notes-erc-721-banknote/blob/406ca66d4b43aa3f2b61ede7189e6e83e3725814/src/KeelNotes.sol"
+        }
+      ]
+    },
+    {
+      "name": "VisualIdentity.md Edition 2",
+      "chainId": 1,
+      "contract": "0xecb21b6c3bf69e09a2e34db1f0b25c34586ff1c9",
+      "codeHash": "0xe0f39bba54057b93d0c9fd46d1d54f42e1d6fc103673ef622e0c87dc6ea17c71",
+      "summary": "Agent-portrait contest: VIMD entry burns and a vote-funded winner prize.",
+      "tokens": [
+        {
+          "symbol": "VIMD",
+          "name": "VisualIdentity.md",
+          "roles": [
+            "payment",
+            "burn",
+            "prize"
+          ],
+          "conditions": "",
+          "addressRead": "VIMD"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Agent portrait competition",
+          "description": "Entries bind an IDMD seat to its submitted portrait. Entry burns 25,000 VIMD; a vote costs 50,000 VIMD, half burned and half placed in the winner pot.",
+          "status": "deployed",
+          "conditions": ""
+        },
+        {
+          "kind": "rewards",
+          "title": "Contest prize, not holder yield",
+          "description": "After voting closes the winning entry can claim the VIMD pot. Merely holding any entry NFT does not provide staking rewards.",
+          "status": "deployed",
+          "conditions": "Seat ownership/delegation, deadlines and winner checks apply."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "VIMD",
+          "type": "address"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1671-visualidentity-md-edition-2/blob/9cd9d43f071b2add993ca072d4f956a0d7334013/src/VisualIdentityEdition2.sol"
+        }
+      ]
+    },
+    {
+      "name": "Visual Identity Genesis",
+      "chainId": 1,
+      "contract": "0xe603facf4677ba4b06ad6ac01f025b74b7a96c11",
+      "codeHash": "0x2a8d3db6f26a010b8e8c565f946008b53bab95e67ab222bcf9ed354872b8462f",
+      "summary": "Genesis art selected by an IDMD-seat vote; VIMD also supports burn-to-mint.",
+      "tokens": [
+        {
+          "symbol": "VIMD",
+          "name": "VisualIdentity.md",
+          "roles": [
+            "payment",
+            "burn"
+          ],
+          "conditions": "",
+          "addressRead": "VIMD"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Community-selected genesis artwork",
+          "description": "IDMD seats vote once on the finalist artwork and may receive a vote-mint. A separate public route burns VIMD to mint.",
+          "status": "deployed",
+          "conditions": "Voting rights come from the IDMD seat; owning the resulting artwork does not itself grant another vote."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1645-workflow-contract-stage-context/blob/7c060a691aba13496cb29487b6fac0dffeef6556/src/BrandGenesisNFT.sol"
+        }
+      ]
+    },
+    {
+      "name": "Goblin Gold",
+      "chainId": 1,
+      "contract": "0xc5d5f314da6d4a433f9bf897a2cc24a537576cb1",
+      "codeHash": "0x270daf73d98f9a0aab6b102e725ad745edb2412306782d222e1cf495c6951f85",
+      "summary": "Refundable Goblin artwork with deposited ETH revenue; gacha integration remains a separate planned deployment.",
+      "tokens": [],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Onchain Goblin artwork",
+          "description": "The collection provides deterministic onchain artwork and a reveal after sellout.",
+          "status": "deployed",
+          "conditions": ""
+        },
+        {
+          "kind": "redemption",
+          "title": "Burn for the mint-price refund",
+          "description": "While refundsOpen is true, the owner can burn a Goblin for 0.001 ETH. Refunds close permanently after release.",
+          "status": "deployed",
+          "conditions": "Check the current refund gate; the source implements review periods and a delayed reopening before release."
+        },
+        {
+          "kind": "rewards",
+          "title": "Receive deposited ETH revenue",
+          "description": "Deposits before release are pooled for surviving NFTs; after release, ETH revenue accrues per live NFT. Claims require release and actual deposits.",
+          "status": "deployed",
+          "conditions": "Transfers carry unpaid revenue. No staking or promised fixed yield."
+        },
+        {
+          "kind": "game",
+          "title": "Separate gacha and free-spin integration",
+          "description": "The source advertises two free spins per Goblin, but BagGacha and related reserve/POL modules were explicitly excluded from this NFT deployment.",
+          "status": "planned",
+          "conditions": "A constant or NFT mint does not prove the separate game is deployed or usable.",
+          "evidence": [
+            {
+              "label": "Deployment scope explicitly excludes game contracts",
+              "url": "https://api.imd.fun/jobs/4912ed15-3dfd-4bb5-a057-a66646bc7335"
+            }
+          ]
+        }
+      ],
+      "readSpecs": [],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint/blob/dbd66796c56c6df8ab9b5d58686b86ef1111ae5d/src/GoblinNFT.sol"
+        }
+      ]
+    },
+    {
+      "name": "Swarmlers Agents",
+      "chainId": 1,
+      "contract": "0xf376b5deff43d949f515b1fd11865b73e92d5bad",
+      "codeHash": "0x140191b5dd06cf5989e644c591686bab57cff4f4b75cead73d4bc5de85c60968",
+      "summary": "Hold an agent NFT for funded IMD accrual; activity pairing updates its identity metadata.",
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment",
+            "reward"
+          ],
+          "conditions": "",
+          "addressRead": "imd"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "rewards",
+          "title": "Holding-time rewards, no NFT custody stake",
+          "description": "90% of proceeds fund the NFT reward ledger and 10% is credited to the creator. Each NFT has a lifetime reward cap of 1 IMD; unpaid accrued rewards follow it on transfer.",
+          "status": "deployed",
+          "conditions": "Rewards advance only while funded. The configured duration is not a guaranteed repayment date or APY."
+        },
+        {
+          "kind": "identity",
+          "title": "Pair with an active IDMD agent",
+          "description": "An owner can pair the NFT with an eligible IDMD identity; reporter-attested activity affects live metadata and the free-claim path.",
+          "status": "deployed",
+          "conditions": "Requires current ownership and verified recent activity; pairing is not ERC-20 staking."
+        }
+      ],
+      "readSpecs": [],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1565-workflow-contract-stage-context/blob/7170ab40427c84277eb47bf00bff5fd1eb43a143/src/Swarmlers.sol"
+        }
+      ]
+    },
+    {
+      "name": "Courier Companions",
+      "chainId": 4663,
+      "contract": "0x2c328e6d3ae72e5b06e10884d83b01f1b0342f85",
+      "codeHash": "0x245d6d99cbbecaa8df8e0c0e80840a3bd8648592357111fd587faa2b5bbd99c3",
+      "summary": "MOON-paid companion NFTs recycle half of primary sales into a separate game reward pool.",
+      "tokens": [
+        {
+          "symbol": "MOON",
+          "name": "MOON",
+          "roles": [
+            "payment",
+            "game",
+            "reward"
+          ],
+          "conditions": "Reward-pool funding does not establish rewards owed to companion holders.",
+          "addressRead": "token"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "game",
+          "title": "Companion item shop",
+          "description": "Configured ERC-1155 companions can be bought using MOON. Half of primary-sale MOON is sent to the burn address and half funds MoonRewards.",
+          "status": "deployed",
+          "conditions": "The owner must configure enabled items; the current catalog may contain none. Purchase limits and reward dependency checks apply."
+        },
+        {
+          "kind": "rewards",
+          "title": "Game rewards are separate from NFT ownership",
+          "description": "MoonRewards receives recycled sale proceeds. The NFT shop does not implement passive companion-holder staking or guarantee that buying an item earns MOON.",
+          "status": "deployed",
+          "conditions": "Any game claim requires the separate reward contract rules and eligibility."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "token",
+          "type": "address"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1556-workflow-contract-stage-context/blob/cf108517b37cb90f40c256d731df4aa2c65b88ca/src/MoonShop.sol"
+        }
+      ]
+    },
+    {
+      "name": "Swarm Cats",
+      "chainId": 1,
+      "contract": "0xb738bbf1d93aa204ef7575610a7f0195ad4a70c6",
+      "codeHash": "0x8572d1deb068ad17278743185a8c7c603b34644e5477f04250e74a0ff37d423d",
+      "summary": "Collectible Swarm Cats artwork; mint payments and platform fees use native ETH.",
+      "tokens": [],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Swarm Cats collectible",
+          "description": "An ERC-721 clone with IPFS metadata, provenance and reveal controls, optional metadata freezing and creator royalties.",
+          "status": "deployed",
+          "conditions": "The creator controls metadata until frozen. No ERC-20 payment is required by the reviewed mint contract."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1527-loomcollection-loomfactory/blob/b87c2f6836c814e57de644b42381787a6773e181/src/LoomCollection.sol"
+        }
+      ]
+    },
+    {
+      "name": "BMC Illuminati Pass",
+      "chainId": 1,
+      "contract": "0xedd2be808e73bc443bc12aa07586193c193e8d51",
+      "codeHash": "0xe6ea784c3626bca2a767cd5abfce02b9472c93eb9477e9c4a1bcf160cca0ea4b",
+      "summary": "Burn BMC to mint a Genesis or mystery collectible; no NFT staking in this pass contract.",
+      "tokens": [
+        {
+          "symbol": "BMC",
+          "name": "BMC",
+          "roles": [
+            "payment",
+            "burn"
+          ],
+          "conditions": "",
+          "addressRead": "BMC"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Burn-to-mint collectible pass",
+          "description": "The first 40 mints burn 1,000,000 BMC each; later mystery mints burn 350,000 BMC. Reveals determine the remaining Genesis/Standard allocation.",
+          "status": "deployed",
+          "conditions": "This deployment has its own opening/reveal gates. The collection does not itself implement staking, dividends or a game."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "BMC",
+          "type": "address"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati/blob/ab734601833e7ef15a83647dcf4c33f3013820ba/src/BMCIlluminatiPass.sol"
+        }
+      ]
+    },
+    {
+      "name": "BMC Illuminati Pass",
+      "chainId": 1,
+      "contract": "0x8402ce12b472c69633443f58c55ebbe15c8c68a0",
+      "codeHash": "0x14a7f5a7bdbb441005b3a89682f6982e807e7791820d4ce0088d5e79bbbcfdf1",
+      "summary": "Burn BMC to mint a Genesis or mystery collectible; no NFT staking in this pass contract.",
+      "tokens": [
+        {
+          "symbol": "BMC",
+          "name": "BMC",
+          "roles": [
+            "payment",
+            "burn"
+          ],
+          "conditions": "",
+          "addressRead": "BMC"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Burn-to-mint collectible pass",
+          "description": "The first 40 mints burn 1,000,000 BMC each; later mystery mints burn 350,000 BMC. Reveals determine the remaining Genesis/Standard allocation.",
+          "status": "deployed",
+          "conditions": "This deployment has its own opening/reveal gates. The collection does not itself implement staking, dividends or a game."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "BMC",
+          "type": "address"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc/blob/162176282ceda890cbea5371ca86346bfe008dff/src/BMCIlluminatiPass.sol"
+        }
+      ]
+    },
+    {
+      "name": "BMC Illuminati Pass",
+      "chainId": 1,
+      "contract": "0x933046e550325c91d3bbeb3e7f895ff3da87e712",
+      "codeHash": "0xd4d96a36996139277941447b2c0cdc7a6a07fa74c32c32ec4a77e1f11f7834ee",
+      "summary": "Burn BMC to mint a Genesis or mystery collectible; no NFT staking in this pass contract.",
+      "tokens": [
+        {
+          "symbol": "BMC",
+          "name": "BMC",
+          "roles": [
+            "payment",
+            "burn"
+          ],
+          "conditions": "",
+          "addressRead": "BMC"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Burn-to-mint collectible pass",
+          "description": "The first 40 mints burn 1,000,000 BMC each; later mystery mints burn 350,000 BMC. Reveals determine the remaining Genesis/Standard allocation.",
+          "status": "deployed",
+          "conditions": "This deployment has its own opening/reveal gates. The collection does not itself implement staking, dividends or a game."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "BMC",
+          "type": "address"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1394-project-bmc-illuminati-pass/blob/cbd6ff84f59ee62fb9e17f8b6b07f68e82ecfb60/src/BMCIlluminatiPass.sol"
+        }
+      ]
+    },
+    {
+      "name": "Hive Wars Conqueror",
+      "chainId": 1,
+      "contract": "0x800504f0d471fa3647c2414167e55ca06df16ab6",
+      "codeHash": "0x186d053da07fe71e470cc5d632ffef7ed61582b73bdf713707b78bac3c3c1c9f",
+      "summary": "A season victory badge earned through NECTAR territory-game participation.",
+      "tokens": [
+        {
+          "symbol": "NECTAR",
+          "name": "NECTAR",
+          "roles": [
+            "staking",
+            "game",
+            "eligibility"
+          ],
+          "conditions": "",
+          "addressRead": "HiveWars.nectarToken"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "game",
+          "title": "Hive Wars territory conquest",
+          "description": "Players commit NECTAR to one of four colonies across 61 territories. Stake matures next epoch; retreat has a 24-hour cooldown.",
+          "status": "deployed",
+          "conditions": "Game participation is ERC-20 escrow, not staking this badge. There is no promised interest on the escrow."
+        },
+        {
+          "kind": "access",
+          "title": "Season-winner achievement badge",
+          "description": "Free badge eligibility requires the winning colony, at least 1,000 active NECTAR for at least seven qualifying epochs and a finalized 30-epoch season.",
+          "status": "deployed",
+          "conditions": "The badge records achievement; it does not add a token yield or extra game power in the reviewed badge contract."
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "hiveWars",
+          "type": "address"
+        },
+        {
+          "name": "nectarToken",
+          "type": "address",
+          "namespace": "HiveWars",
+          "addressFrom": "hiveWars"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1422-workflow-contract-stage-context/blob/7b6b0732dae14e6324661c2ef4f5640340a3854c/src/ConquerorBadge.sol"
+        },
+        {
+          "label": "Territory-game implementation",
+          "url": "https://github.com/identity-md-launches/launch-1422-workflow-contract-stage-context/blob/7b6b0732dae14e6324661c2ef4f5640340a3854c/src/HiveWars.sol"
+        }
+      ]
+    },
+    {
+      "name": "Pulse Drone",
+      "chainId": 1,
+      "contract": "0x7a3bc2d6578f1528ca963a78824e5ba19257d2fe",
+      "codeHash": "0xa343fea42fb3e97dcfc343c71de4c3a76a71de2edd2c9df8fd1948bde6a8fb17",
+      "summary": "A soulbound heartbeat pet; depositing PULSE changes rank but pays no rewards.",
+      "tokens": [
+        {
+          "symbol": "PULSE",
+          "name": "PULSE",
+          "roles": [
+            "staking",
+            "game"
+          ],
+          "conditions": "",
+          "addressRead": "pulseToken"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "game",
+          "title": "Keep a Drone alive",
+          "description": "Free mint creates one permanent Drone per wallet. Heartbeats have a 20-hour cooldown; more than 48 hours between beats resets the streak.",
+          "status": "deployed",
+          "conditions": ""
+        },
+        {
+          "kind": "staking",
+          "title": "Deposit ERC-20 PULSE for rank",
+          "description": "PULSE deposits change the Drone rank and can be withdrawn; staking pays no rewards and does not replace heartbeats.",
+          "status": "deployed",
+          "conditions": "The NFT itself is soulbound, not a transferable yield asset."
+        }
+      ],
+      "readSpecs": [],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context/blob/3807cba5031b0b3a7efeb9d821270cf5847d8c3e/src/PulseDrone.sol"
+        }
+      ]
+    },
+    {
+      "name": "OG Pass",
+      "chainId": 1,
+      "contract": "0xca9dc9064ffc695d979ea7da9a35130376bb3217",
+      "codeHash": "0x0901651cd27b1cf9ed973827dff02506558c4febbeacc2358c735947f09a51e6",
+      "summary": "Soulbound membership backed by an OG-token bonding-curve exit or a funded founder buyback.",
+      "tokens": [
+        {
+          "symbol": "OG",
+          "name": "OG",
+          "roles": [
+            "payment",
+            "redemption",
+            "reserve"
+          ],
+          "conditions": "",
+          "addressRead": "OG"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "access",
+          "title": "Soulbound OG membership",
+          "description": "One-wallet membership passes cannot be transferred; holders can burn them through the appropriate exit path.",
+          "status": "deployed",
+          "conditions": ""
+        },
+        {
+          "kind": "redemption",
+          "title": "Burn a pass to withdraw OG",
+          "description": "Public passes sell to the curve for 92.5% of the current curve price. Founder passes have a fixed 100,000 OG buyback from the founder reserve.",
+          "status": "deployed",
+          "conditions": "Buyback requires sufficient reserve and the correct pass type. This is redemption, not staking interest or guaranteed appreciation."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "OG",
+          "type": "address"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1343-ogpass-soulbound-erc-721-membership/blob/4527ed978e9f295e70dfc044f180f1aa23e96852/src/OGPass.sol"
+        }
+      ]
+    },
+    {
+      "name": "Pepeolithic",
+      "chainId": 1,
+      "contract": "0x765956a7307222346b08fff681820a5d77e92028",
+      "codeHash": "0x2900fbdeb09f4340cebac6a00ba95b4c6e924b1d8f90d97f3b56abc5323728d7",
+      "summary": "Cave-series collectible art with token-burning auctions and snapshot claims.",
+      "tokens": [
+        {
+          "symbol": null,
+          "name": "Configured payment token",
+          "roles": [
+            "payment",
+            "burn"
+          ],
+          "conditions": "Resolved from coin(); use verified ERC-20 metadata for the actual token name and symbol.",
+          "addressRead": "coin"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "737-piece cave artwork",
+          "description": "Sequential cave/round sales and snapshot claims distribute the artwork. Paid mints transfer the configured coin directly to the dead address.",
+          "status": "deployed",
+          "conditions": "Ownership supplies collectible art; no staking or game rewards are implemented in this collection."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        }
+      ],
+      "readSpecs": [],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1076-pepeolithic-one-erc-721-contract/blob/504076cf80f1f8cc51c838c08e5ff7adfe9af37b/src/Pepeolithic.sol"
+        }
+      ]
+    },
+    {
+      "name": "imd/place seasons",
+      "chainId": 4663,
+      "contract": "0xd29e47e4c4c337cd4226dd523a73af398585d1dc",
+      "codeHash": "0x3d6a338984119a6c9fb77acd9900c8af989bc3e3a09646889380d4e232fe868b",
+      "summary": "Own a frozen collaborative canvas; artist payouts go to final pixel owners, not NFT holders.",
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment",
+            "auction",
+            "artist-reward"
+          ],
+          "conditions": "",
+          "addressRead": "Canvas.imd"
+        },
+        {
+          "name": "imd/place project token",
+          "symbol": null,
+          "addressRead": "PlaceHook.token",
+          "roles": [
+            "game",
+            "project"
+          ],
+          "conditions": "Buying the project token through the configured hook credits paint drops; holding the season NFT does not itself issue paint.",
+          "evidence": [
+            {
+              "label": "Pinned paint-credit hook",
+              "url": "https://github.com/identity-md-launches/launch-1033-imd-place-symbol-i-p-if-the-launch-refus/blob/4ba07cc1aa427c5cf5ca67f6a0494adf57222ec4/src/PlaceHook.sol"
+            }
+          ]
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Weekly collaborative canvas collectible",
+          "description": "Ending a canvas season freezes its pixels into one ERC-721 and opens an English auction. The NFT represents the completed image.",
+          "status": "deployed",
+          "conditions": "Season-end and auction-finalize transactions require callers; passage of time alone does not mint."
+        },
+        {
+          "kind": "rewards",
+          "title": "Pixel-artist payouts",
+          "description": "Winning bids and the season pot are divided across final occupied pixels, claimable by their frozen pixel owners. Buying the season NFT does not purchase those artist claims.",
+          "status": "deployed",
+          "conditions": "An unbid occupied canvas goes to its top painter and rolls the pot forward; a blank canvas can remain in escrow."
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": ""
+        },
+        {
+          "kind": "game",
+          "title": "Trade-funded collaborative painting",
+          "description": "Project-token buys through the hook credit paint drops. Painting uses those drops to own pixels during the active season; pixel owners, rather than season-NFT buyers, receive artist distributions.",
+          "status": "deployed",
+          "conditions": "The linked PlaceHook and Canvas must be initialized and the current season open.",
+          "evidence": [
+            {
+              "label": "Pinned paint-credit hook",
+              "url": "https://github.com/identity-md-launches/launch-1033-imd-place-symbol-i-p-if-the-launch-refus/blob/4ba07cc1aa427c5cf5ca67f6a0494adf57222ec4/src/PlaceHook.sol"
+            }
+          ]
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "canvas",
+          "type": "address"
+        },
+        {
+          "name": "imd",
+          "type": "address",
+          "namespace": "Canvas",
+          "addressFrom": "canvas"
+        },
+        {
+          "address": "0x512b15372f42f687d366fc0c3342267dc73120cc",
+          "name": "token",
+          "namespace": "PlaceHook",
+          "type": "address"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-1033-imd-place-symbol-i-p-if-the-launch-refus/blob/4ba07cc1aa427c5cf5ca67f6a0494adf57222ec4/src/Seasons.sol"
+        }
+      ]
+    },
+    {
+      "name": "Swarm Local 2000 Union Card",
+      "chainId": 1,
+      "contract": "0xd3630711f6d5e25b41d6bdbdb630fffefa170c5d",
+      "codeHash": "0x5a59d352e85942b85b54d840a802da26af733a913331efef1e97e7ecb6a7ada4",
+      "summary": "Soulbound STRIKE membership shows live rank; STRIKE token staking and voting are separate mechanisms.",
+      "tokens": [
+        {
+          "symbol": "STRIKE",
+          "name": "Swarm Local 2000",
+          "roles": [
+            "eligibility",
+            "staking",
+            "governance"
+          ],
+          "conditions": "",
+          "addressRead": "strike"
+        },
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "reward"
+          ],
+          "conditions": "Rewards belong to qualifying STRIKE token stakes, not simply to this NFT.",
+          "addressRead": "Strike.imd"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "identity",
+          "title": "Live union membership card",
+          "description": "The free soulbound card requires positive liquid or staked STRIKE. Metadata shows current token stake and rank; IDMD holders get gold presentation only.",
+          "status": "deployed",
+          "conditions": ""
+        },
+        {
+          "kind": "staking",
+          "title": "Separate ERC-20 STRIKE staking",
+          "description": "STRIKE tokens, not UnionCard NFTs, can be locked for 7/30/90/180 days with different weights. Funded IMD reward tranches vest over seven days and claims require lock maturity.",
+          "status": "deployed",
+          "conditions": "Early exit burns 20% of principal and forfeits rewards; voting can extend the exit lock. The card does not create a reward boost."
+        },
+        {
+          "kind": "governance",
+          "title": "Token-stake bargaining votes",
+          "description": "Weekly bargaining uses pre-existing STRIKE stake to direct treasury actions. Merely owning the card is not voting power.",
+          "status": "deployed",
+          "conditions": "Subject to token staking and proposal-cycle rules; no guaranteed yield."
+        }
+      ],
+      "readSpecs": [
+        {
+          "name": "strike",
+          "type": "address"
+        },
+        {
+          "name": "imd",
+          "type": "address",
+          "namespace": "Strike",
+          "addressFrom": "strike"
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned collection implementation",
+          "url": "https://github.com/identity-md-launches/launch-763-swarm-local-2000/blob/3b3b156c9a2ae86a955f7ec132de60c72e27b3e5/src/UnionCard.sol"
+        },
+        {
+          "label": "Token staking and bargaining source",
+          "url": "https://github.com/identity-md-launches/launch-763-swarm-local-2000/blob/3b3b156c9a2ae86a955f7ec132de60c72e27b3e5/src/Strike.sol"
+        }
+      ]
+    }
+  ],
+  "builds": [
+    {
+      "jobId": "0792975e-220d-4fe2-a11c-d611efec47bd",
+      "name": "MineWorld Crafters",
+      "chainId": 4663,
+      "objectiveSha256": "d9ab08a4a4e38ce8f2d69fe39ed8254c9d6413f28872160dc929c523bbb1a378",
+      "summary": "Implemented NFT characters and MINE-paid levels; mainnet deployment and game activation remain unverified.",
+      "tokens": [
+        {
+          "symbol": "MINE",
+          "name": "MINE",
+          "roles": [
+            "game",
+            "payment",
+            "reward"
+          ],
+          "conditions": "Project token in reviewed source; no verified mainnet deployment address is bound to this pending collection.",
+          "address": null
+        }
+      ],
+      "utility": [
+        {
+          "kind": "game",
+          "title": "Persistent Crafter NFT levels",
+          "description": "CrafterLevels implements MINE-paid level upgrades attached to the NFT. Ownership transfers preserve the token level.",
+          "status": "implemented",
+          "conditions": "Game-server mining bonuses are documented, but the server calculation and a production NFT deployment have not been verified.",
+          "evidence": [
+            {
+              "label": "Pinned level contract",
+              "url": "https://github.com/AdamNakamoto/MineWorld/blob/ba2a8edc688e94a48b810f83ccc3ea9d66c9e0f9/contracts/src/CrafterLevels.sol"
+            }
+          ]
+        },
+        {
+          "kind": "rewards",
+          "title": "Server-authorized game earnings",
+          "description": "The separate MiningSites implementation pays capped MINE earnings from signed vouchers. NFT rarity and levels are described as server-applied mining boosts.",
+          "status": "implemented",
+          "conditions": "This is not passive NFT staking or a guaranteed payout. Server signing, site eligibility, vault caps and activation all matter.",
+          "evidence": [
+            {
+              "label": "Pinned mining implementation",
+              "url": "https://github.com/AdamNakamoto/MineWorld/blob/ba2a8edc688e94a48b810f83ccc3ea9d66c9e0f9/contracts/src/MiningSites.sol"
+            }
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned implementation",
+          "url": "https://github.com/AdamNakamoto/MineWorld/blob/ba2a8edc688e94a48b810f83ccc3ea9d66c9e0f9/contracts/src/MineWorldCrafters.sol"
+        },
+        {
+          "label": "Full reviewed public job",
+          "url": "https://api.imd.fun/jobs/0792975e-220d-4fe2-a11c-d611efec47bd"
+        }
+      ],
+      "deliveryCommit": "c3688b3d9101cde2531c8b669d354524c02aeea0"
+    },
+    {
+      "jobId": "dee6f3a6-d148-4289-99e9-10995635c9df",
+      "name": "Proof House",
+      "chainId": 1,
+      "objectiveSha256": "271179c7608b1a784e4cc44a30613394765bb15c9f2947c65e003b05a21778e3",
+      "summary": "Curated onchain artwork and encrypted viewing-key delivery; real mainnet pieces are not yet verified.",
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment"
+          ],
+          "conditions": "Optional payment for generic ArtHouse collections; ARTIFACTS edition sales use ETH. The historical brief names a Sepolia token, which is deliberately not treated as a mainnet asset.",
+          "address": null
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Encrypted ARTIFACTS and SVG collections",
+          "description": "Implemented factories support curator-managed artwork sales, per-piece NFTs and encrypted viewing-key handoff. ARTIFACTS metadata shows a public seal while the owner receives wrapped viewing material.",
+          "status": "implemented",
+          "conditions": "A deployed template is not an issued collection. Curator setup, uploads, prices, sale activation and key delivery remain necessary."
+        },
+        {
+          "kind": "access",
+          "title": "Brokered art marketplace",
+          "description": "Approved brokers and artists receive configured sale splits through the house ledger; artist royalties do not imply dividends to NFT holders.",
+          "status": "implemented",
+          "conditions": "ETH and optional IMD payment capabilities depend on each collection and configured token. No NFT staking mechanism was found in the reviewed art contracts."
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned implementation",
+          "url": "https://github.com/identity-md-launches/launch-1631-build-contracts-proof-house/blob/5b0d36486994b24de88438d6def7d120c27efd58/src/ArtHouse.sol"
+        },
+        {
+          "label": "Full reviewed public job",
+          "url": "https://api.imd.fun/jobs/dee6f3a6-d148-4289-99e9-10995635c9df"
+        }
+      ],
+      "deliveryCommit": "5b0d36486994b24de88438d6def7d120c27efd58"
+    },
+    {
+      "jobId": "2d77649d-e6d2-454f-96ca-060dc9923771",
+      "name": "Sworn",
+      "chainId": 1,
+      "objectiveSha256": "fe038e56a826144ad4c04281e6b35ff70764720d1b91470f352f84d0ba5229fe",
+      "summary": "Wallet-fact identity cards with live traits and IMD-funded oracle attestations; mainnet release pending.",
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment",
+            "oracle",
+            "sponsorship"
+          ],
+          "conditions": "Mainnet IMD dependency specified by the pinned implementation; this does not establish a deployed Sworn contract.",
+          "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+        }
+      ],
+      "utility": [
+        {
+          "kind": "identity",
+          "title": "Verifiable wallet-trait card",
+          "description": "The reviewed ERC-721 registry provides one card per minting wallet, live direct-read traits and oracle-attested traits. The card records facts about its original claimant.",
+          "status": "implemented",
+          "conditions": "A transferable card does not transfer the underlying wallet credentials."
+        },
+        {
+          "kind": "access",
+          "title": "Paid and sponsored trait verification",
+          "description": "Minting costs 0.1 IMD in the implementation; oracle upgrades pay Intake. Eligible Curator members can request limited pool-sponsored checks, including an IDMD-holder route.",
+          "status": "implemented",
+          "conditions": "Requires funded pool, membership, per-wallet/token limits and valid oracle results. No NFT staking or passive token yield is implemented."
+        }
+      ],
+      "evidence": [
+        {
+          "label": "Pinned implementation",
+          "url": "https://github.com/identity-md-launches/launch-1953-launch-sworn-registry-symbol/blob/94369920d76bf7bfc0bb8aa1b3138b40246f3ae0/src/Registry.sol"
+        },
+        {
+          "label": "Full reviewed public job",
+          "url": "https://api.imd.fun/jobs/2d77649d-e6d2-454f-96ca-060dc9923771"
+        }
+      ],
+      "sourceReference": "94369920d76bf7bfc0bb8aa1b3138b40246f3ae0"
+    }
+  ]
+}

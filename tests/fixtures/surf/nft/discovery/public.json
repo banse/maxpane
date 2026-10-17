@@ -1,0 +1,16 @@
+{
+  "note": "Sanitized synthetic envelopes model the inspected public scanner API; no live state or credentials.",
+  "launches": {"launches": [
+    {"id":"10000000-0000-4000-8000-000000000001","launchNumber":3,"chainId":1,"status":"deployed","artifacts":[{"name":"OrdinaryToken","address":"0x1111111111111111111111111111111111111111","txHash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blockNumber":100}]},
+    {"id":"10000000-0000-4000-8000-000000000002","launchNumber":2,"chainId":4663,"status":"deployed","artifacts":[{"name":"OrdinaryToken","address":"0x1111111111111111111111111111111111111111"}]},
+    {"id":"10000000-0000-4000-8000-000000000003","launchNumber":1,"chainId":8453,"status":"deployed","artifacts":[{"name":"NFT","address":"0x2222222222222222222222222222222222222222"}]}
+  ]},
+  "launch": {"id":"10000000-0000-4000-8000-000000000001","launchNumber":3,"chainId":1,"status":"deployed","sourceRepoUrl":"https://github.com/example/collection","sourceCommit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","artifacts":[{"name":"OrdinaryToken","address":"0x1111111111111111111111111111111111111111","txHash":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","blockNumber":100}],"jobs":[{"id":"20000000-0000-4000-8000-000000000001"}]},
+  "jobs": {"jobs":[{"id":"20000000-0000-4000-8000-000000000001","createdAt":"2026-10-16T12:00:00.000Z","updatedAt":"2026-10-16T13:00:00.000Z","objective":"NFT collection Ethereum mainnet","state":"completed"}]},
+  "job": {"id":"20000000-0000-4000-8000-000000000001","createdAt":"2026-10-16T12:00:00.000Z","updatedAt":"2026-10-16T13:00:00.000Z","objective":"NFT collection Ethereum mainnet","state":"completed","chainId":1,"project":{"id":"30000000-0000-4000-8000-000000000001","versions":[{"jobId":"20000000-0000-4000-8000-000000000002","baseCommit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}]},"delivery":{"commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"nodes":[{"id":"contract","state":"accepted"}]},
+  "continuation": {"id":"20000000-0000-4000-8000-000000000002","createdAt":"2026-10-16T14:00:00.000Z","objective":"Polish website","state":"completed","site":{"id":"site-1","url":"https://example.com/nft","status":"published"}},
+  "workflows": {"workflows":[{"id":"40000000-0000-4000-8000-000000000001","createdAt":"2026-10-16T12:00:00.000Z","objective":"NFT","contractsJobId":"20000000-0000-4000-8000-000000000001","frontendJobId":"20000000-0000-4000-8000-000000000002"}]},
+  "publications": {"items":[{"id":"project:30000000-0000-4000-8000-000000000001","title":"NFT collection","versions":[{"jobId":"20000000-0000-4000-8000-000000000001","repoUrl":"https://github.com/example/collection","commit":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}],"contracts":[{"id":"10000000-0000-4000-8000-000000000001"}],"sites":[{"id":"site-1","jobId":"20000000-0000-4000-8000-000000000002","url":"https://example.com/nft","status":"published"}]}],"count":1,"totalPages":1},
+  "sites": {"sites":[{"id":"site-1","jobId":"20000000-0000-4000-8000-000000000002","url":"https://example.com/nft","status":"published"}]},
+  "rpc_results": ["0x1","0x64"]
+}

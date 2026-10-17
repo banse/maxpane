@@ -1587,7 +1587,9 @@ SURF_LAUNCHPAD_HERO_FIELDS = {
 }
 SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "detail",
                         "destination", "meter_kind", "numerator", "denominator", "points", "token_ranking",
-                        "meter_state", "share_price", "seat_slot", "token_id", "fleet_summary", "work_summary")
+                        "meter_state", "share_price", "seat_slot", "token_id", "fleet_summary", "work_summary", "nft_summary")
+# nft_summary: global NFT catalog counts and original observation/coverage;
+# None on other cards. Filtered NFT screens do not change this inventory.
 # work_summary: the existing surf_work summary counts on WORK IN PROGRESS;
 # None on other cards. Build and review are independent counts, never a ratio.
 # fleet_summary: current workers on FLEET only; distinct online-seat runtime shares,

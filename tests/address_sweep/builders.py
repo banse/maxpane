@@ -54,6 +54,9 @@ from maxpane_dashboard.screens.surfboard import (
     SurfboardScreen, SURFBOARD_FULL_LAYOUT_COLUMNS, SURFBOARD_FULL_LAYOUT_ROWS,
 )
 from maxpane_dashboard.screens.ttt import TTTScreen
+from maxpane_dashboard.screens.surf_nft import (
+    SurfNftScreen, SURF_NFT_FULL_LAYOUT_COLUMNS, SURF_NFT_FULL_LAYOUT_ROWS,
+)
 from maxpane_dashboard.data.swarm_tokens_demo import demo_snapshot
 from maxpane_dashboard.screens.swarm_tokens import (
     SwarmTokensScreen, SWARM_TOKENS_FULL_LAYOUT_COLUMNS, SWARM_TOKENS_FULL_LAYOUT_ROWS,
@@ -735,6 +738,44 @@ def _swarm_tokens_app() -> App:
     return _CopyHarness(SwarmTokensScreen(_PayloadManager(payload, client=client)))
 
 
+def _nft_payload():
+    from tests.widgets.test_surf_nft import snapshot
+    payload=snapshot()
+    row=copy.deepcopy(payload['nft_rows'][0])
+    row.update(name='NFT Collection',contract='0x'+'a1'*20,id='1:0x'+'a1'*20,
+               chain_id=1,utility_summary='Rules bind exact deployed code',
+               utility=[],jobs=[],sites=[],repositories=[],evidence=[],unknowns=[])
+    row['mint']={'state':'open','publicPrice':'0.069','currency':'IMD',
+                 'conditions':'Requires '+'0x'+'d4'*20}
+    row['idmd_benefit']={'status':'conditional','conditions':'Current holder only'}
+    row['chain_reads']={'factory':'0x'+'b2'*20,'implementation':'0x'+'c3'*20}
+    row['related_tokens']=[{'symbol':'Reward token','address':'0x'+'e5'*20,
+                           'chainId':4663,'roles':['reward'],'status':'configured'}]
+    row['evidence']=[{'label':'Review '+'0x'+'a1'*20,'url':'https://github.com/identity-md-launches/nft/blob/'+'a'*40+'/src/NFT.sol'}]
+    payload.update(nft_rows=[row],nft_build_rows=[])
+    return payload
+
+
+def _nft_app():
+    class NftManager(_PayloadManager):
+        def get_snapshot(self):
+            return dict(self._payload)
+        def select(self,identity):
+            pass
+    return _CopyHarness(SurfNftScreen(NftManager(_nft_payload())))
+
+
+def _nft_scroll(position):
+    async def scroll_detail(app,pilot):
+        from maxpane_dashboard.widgets.surf_nft import NftDetail
+        detail=app.screen.query_one(NftDetail)
+        detail.focus()
+        detail.scroll_to(y=position,animate=False)
+        await pilot.pause()
+    scroll_detail.__name__=f'nft_detail_{position}'
+    return scroll_detail
+
+
 def _open_token_detail(index):
     async def open_detail(app, pilot):
         await pilot.press(*(['down'] * index + ['enter']))
@@ -806,6 +847,16 @@ def _swarm_tokens_payload():
 
 
 CASES: tuple[SweepCase, ...] = (
+    SweepCase(
+        name='surf_nft',screen_class=SurfNftScreen,build=_nft_app,payload=_nft_payload,
+        pins=((SURF_NFT_FULL_LAYOUT_COLUMNS,SURF_NFT_FULL_LAYOUT_ROWS),),
+        views=tuple(_nft_scroll(offset) for offset in (0,12,24,36,48)),
+        seeded=('0x'+'a1'*20,'0x'+'b2'*20,'0x'+'c3'*20,'0x'+'d4'*20,'0x'+'e5'*20),
+        explorer=ETHEREUM,explorers=(ETHEREUM,ROBINHOOD),rows_pick_explorer=True,
+        explorer_for={'0x'+'a1'*20:ETHEREUM,'0x'+'b2'*20:ETHEREUM,
+                      '0x'+'c3'*20:ETHEREUM,'0x'+'d4'*20:ETHEREUM,
+                      '0x'+'e5'*20:ROBINHOOD},
+    ),
     SweepCase(
         name="swarm_token_detail", screen_class=SwarmTokenScreen,
         build=_swarm_token_detail_app, payload=_swarm_token_detail_payload,

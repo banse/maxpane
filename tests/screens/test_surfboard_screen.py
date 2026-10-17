@@ -16,8 +16,8 @@ from tests.test_app_startup import MANAGER_ATTRS
 from tests.data.test_surf_manager_surfboard import manager as work_manager
 
 MODES = (MODE_DASHBOARD, MODE_SWARM, MODE_AGENT, MODE_BOARD,
-         MODE_ORACLES, MODE_POOL4_USER, MODE_POOL4, MODE_WORK)
-CARD_KEYS = ("announce", "swarm", "agent", "board", "oracles", "pool4", "protocol", "work")
+         MODE_ORACLES, MODE_POOL4_USER, MODE_WORK)
+CARD_KEYS = ("announce", "swarm", "agent", "board", "oracles", "pool4", "work")
 
 
 class HubManager:

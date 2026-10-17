@@ -1301,6 +1301,12 @@ class SurfManager:
         if self._closing:
             return
         self._closing = True
+        nft_manager = getattr(self, '_nft_manager', None)
+        if nft_manager is not None:
+            try:
+                await nft_manager.close()
+            except Exception as exc:
+                logger.debug('closing the NFT adapter failed: %s', exc)
         await self._oracles_reader.close()
         await self._work_reader.close()
         await self._launch_contribution_reader.close()
@@ -5650,6 +5656,13 @@ class SurfManager:
             self._swarm_tokens_manager = SwarmTokensManager(self, clock=self._clock)
         return self._swarm_tokens_manager
 
+    def nft_manager(self):
+        """Retain one NFT catalog, borrowing the existing full-job memo."""
+        from maxpane_dashboard.data.surf_nft_manager import SurfNftManager
+        if getattr(self, '_nft_manager', None) is None:
+            self._nft_manager = SurfNftManager(swarm=self.swarm_client, clock=self._clock)
+        return self._nft_manager
+
     def portfolio_manager(self, wallet=None):
         """Retain the explicit session wallet and borrow the single market provider."""
         from maxpane_dashboard.data.portfolio_manager import PortfolioManager
@@ -7380,6 +7393,9 @@ class SurfManager:
         """Observe relevant pending work without offering a read or changing state."""
         if self._closing:
             return False
+        nft = getattr(self, '_nft_manager', None)
+        if view in (None, 'surfboard', 'surf-nft') and nft is not None and nft.is_loading(view):
+            return True
         sources = self._hub_source_tasks
         tokens = getattr(self, '_swarm_tokens_manager', None)
         token_tasks = getattr(tokens, '_tasks', {})
@@ -7728,6 +7744,8 @@ class SurfManager:
                                                  announce_read_ts=getattr(channel_entry, "ts", None),
                                                  announce_items=channel.get("items"),
                                                  family_sources=family_sources,
+                                                 nft_catalogue=(self._nft_manager.catalogue_summary()
+                                                     if getattr(self, '_nft_manager', None) is not None else None),
                                                  activity=getattr(self.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY), "payload", None),
                                                  tokens_catalogue=(self._swarm_tokens_manager.catalogue_summary(
                                                      {'rows': data.get('swarm_launch_rows'),
@@ -7757,7 +7775,6 @@ class SurfManager:
             'announce': (self._full_task,),
             'swarm': (sources.get('overview'), sources.get('hourly')),
             'pool4': (self._full_task, self._pool4_task),
-            'protocol': (self._full_task, self._pool4_task, sources.get('supply')),
             'board': (self._swarm_board_task,),
             'agent': (self._swarm_board_task, sources.get('records')),
             'work': (self._work_reader.task,),
@@ -7769,9 +7786,11 @@ class SurfManager:
             known = card.get('primary') not in (None, '', '—', 'unavailable')
             if key == 'announce':
                 known = card.get('secondary') not in (None, '', '—', 'unavailable')
-            elif key == 'protocol':
-                known = any(hub.number(data.get(field)) is not None for field in
-                            ('pool4_total_burned', 'pool4_total_rewarded', 'pool4_total_fee_token'))
+            elif key == 'surf-nft':
+                known = (card.get('nft_summary') or {}).get('deployed') is not None
+                nft = getattr(self, '_nft_manager', None)
+                if not known and nft is not None and nft.is_loading('surfboard'):
+                    card['status'] = 'loading'
             elif key == 'board':
                 fleet = card.get('fleet_summary') or {}
                 known = fleet.get('state') in ('ok', 'stale') and fleet.get('online') is not None
@@ -7869,6 +7888,7 @@ class SurfManager:
             self._offer_hub_sources(now)
             self._spawn_swarm_board(set(self.cache.tiers_due(now)), now)
             if self._hub_active:
+                self.nft_manager().offer_hub()
                 self._work_reader.offer()
                 self._oracles_reader.offer(include_detail=self._oracles_active)
         return self._project_hub()

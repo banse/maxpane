@@ -229,20 +229,20 @@ async def test_dynamic_detail_is_removed_and_terminal_fills_center_after_focus_a
             assert terminal.query_one('#surfboard-terminal-footer').region.bottom < terminal.region.bottom
 
 
-async def test_protocol_fleet_and_four_agent_seats_have_expected_positions():
+async def test_nft_fleet_and_four_agent_seats_have_expected_positions():
     app = HubHarness(hub_payload())
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         rack = app.hub.query_one(SurfboardRack)
         agent = rack.query_one('#surfboard-card-agent')
-        protocol = rack.query_one('#surfboard-card-protocol')
+        nft = rack.query_one('#surfboard-card-surf-nft')
         fleet = rack.query_one('#surfboard-card-board')
         tokens = rack.query_one('#surfboard-card-swarm-tokens')
         work = rack.query_one('#surfboard-card-work')
         bay = rack.query_one('#surfboard-card-agent-2')
         oracles = rack.query_one('#surfboard-card-oracles')
         pool4 = rack.query_one('#surfboard-card-pool4')
-        assert tokens.region.y == protocol.region.y
+        assert tokens.region.y == nft.region.y
         assert oracles.region.y == pool4.region.y == work.region.y == fleet.region.y
         assert oracles.region.right < pool4.region.x
         assert pool4.region.right < fleet.region.x
@@ -250,7 +250,7 @@ async def test_protocol_fleet_and_four_agent_seats_have_expected_positions():
         assert work.region.y == rack.query_one('#surfboard-card-swarm').region.y
         assert rack.query_one('#surfboard-card-swarm').region.right < work.region.x
         assert work.region.right < oracles.region.x
-        assert agent.region.x == protocol.region.x
+        assert agent.region.x == nft.region.x
         assert bay.region.x == tokens.region.x and bay.region.y == agent.region.y
         assert bay.can_focus and bay.data['destination'] is None
         assert not rack.query('#surfboard-card-earnings')
@@ -371,14 +371,14 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert len(r["cards"]) == 12
     assert len({region.y for region in r["cards"].values()}) == 4
     assert len({r["cards"][key].y for key in ("announce", "swarm", "work", "oracles", "pool4", "board")}) == 1
-    assert r["terminal"].y == r["cards"]["protocol"].y == r["cards"]["swarm-tokens"].y
+    assert r["terminal"].y == r["cards"]["surf-nft"].y == r["cards"]["swarm-tokens"].y
     assert r["terminal"].bottom == r["rack"].bottom
     assert r["cards"]["agent-3"].bottom == r["cards"]["agent-4"].bottom <= r["terminal"].bottom
-    assert r["cards"]["protocol"].right < r["terminal"].x < r["terminal"].right < r["cards"]["swarm-tokens"].x
+    assert r["cards"]["surf-nft"].right < r["terminal"].x < r["terminal"].right < r["cards"]["swarm-tokens"].x
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
         "announce", "swarm", "work", "oracles", "pool4", "board",
-        "protocol", "swarm-tokens", "agent", "agent-2", "agent-3", "agent-4"]
-    for title in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "ORACLES", "POOL4", "PROTOCOL",
+        "surf-nft", "swarm-tokens", "agent", "agent-2", "agent-3", "agent-4"]
+    for title in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "ORACLES", "POOL4", "NFTS",
                   "TOKENS", "WIP", "EMPTY SEAT", "type in"):
         assert title in r["text"], (title, r["text"])
 
@@ -449,14 +449,9 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                     assert "╶─┐" in text
                 assert (card['secondary'] if kind != 'unavailable' else '—') in text
                 continue
-            if card["key"] == "protocol":
-                text = r["card_text"]["protocol"]
-                assert " STATS " in text, r
-                assert all(label in text for label in ("burned", "fees")), r
-                assert 'rewarded' in text or 'rewards' in text, r
-                assert "★" not in text and ":" not in text, r
-                bottom = next(line for line in text.splitlines() if "└" in line)
-                assert not bottom[bottom.index("└")+1:bottom.index("┘")].strip("─ "), r
+            if card["key"] == "surf-nft":
+                text = r["card_text"]["surf-nft"]
+                assert "COLLECTIONS" in text and ("build" in text or "bld" in text) and "open" in text, r
                 continue
             if card["key"] == "pool4":
                 text = r["card_text"]["pool4"]
@@ -543,7 +538,7 @@ async def test_translated_side_labels_are_muted_green_in_three_line_gap_above_ag
             await pilot.pause()
             rack = app.hub.query_one(SurfboardRack)
             strips = app.hub._compositor.render_strips()
-            for word, above, below in [('キープ', 'protocol', 'agent'),
+            for word, above, below in [('キープ', 'surf-nft', 'agent'),
                                        ('ビルディング', 'swarm-tokens', 'agent-2')]:
                 card = rack.query_one(f'#surfboard-card-{above}')
                 agent = rack.query_one(f'#surfboard-card-{below}')
@@ -560,38 +555,30 @@ async def test_translated_side_labels_are_muted_green_in_three_line_gap_above_ag
                 assert not caption.style.bold
                 assert sum(word in strip.text for strip in strips) == 1
             terminal = rack.query_one(SurfboardTerminal)
-            assert terminal.region.y == rack.query_one('#surfboard-card-protocol').region.y
+            assert terminal.region.y == rack.query_one('#surfboard-card-surf-nft').region.y
             assert terminal.region.bottom == rack.content_region.bottom
 
 
 @pytest.mark.parametrize('kind', ['normal', 'stress'])
-async def test_protocol_full_supply_footer_fits_at_owner_size(kind):
-    rendered = await _render(hub_payload(kind), (149, 45))
-    expected = '0.47% burned' if kind == 'normal' else '17.40% burned'
-    assert expected in rendered['card_text']['protocol']
-    assert 'protocol' not in rendered['clipped']
+async def test_nft_coverage_footer_fits_at_owner_size(kind):
+    rendered=await _render(hub_payload(kind),(149,45))
+    assert 'partial catalogue' in rendered['card_text']['surf-nft']
+    assert 'surf-nft' not in rendered['clipped']
 
 
-@pytest.mark.parametrize('size', [(146, 37), (149, 45), (180, 45)])
-@pytest.mark.parametrize('kind', ['normal', 'stress'])
-async def test_protocol_inset_matches_tokens_padding_without_losing_stats(size, kind):
-    rendered = await _render(hub_payload(kind), size)
-    headers = [next(line for line in rendered['card_text'][key].splitlines() if '┌' in line)
-               for key in ('protocol', 'swarm-tokens')]
-    assert headers[0].index('┌') == headers[1].index('┌')
-    assert len(headers[0]) - headers[0].index('┐') == len(headers[1]) - headers[1].index('┐')
-    assert 'protocol' not in rendered['clipped']
-    text = rendered['card_text']['protocol']
-    expected = ['1M', '100k', '10k'] if kind == 'stress' else ['33k', '6k', '4k']
-    unit_columns = []
-    for label, value in zip(('burned', 'rewarded', 'fees'), expected):
-        row = next(line for line in text.splitlines()
-                   if label in line or label == 'rewarded' and 'rewards' in line)
-        assert value in row and 'IMD' in row and '…' not in row
-        assert row[headers[0].index('┌') + 1:].startswith(' ' + (label if label in row else 'rewards'))
-        assert row[headers[0].index('┐') - 1] == ' '
-        unit_columns.append(row.index('IMD'))
-    assert len(set(unit_columns)) == 1
+
+@pytest.mark.parametrize('size', [(146,37),(149,45),(180,45)])
+@pytest.mark.parametrize('kind', ['normal','stress'])
+async def test_nft_inset_matches_tokens_padding_without_losing_counts(size,kind):
+    rendered=await _render(hub_payload(kind),size)
+    headers=[next(line for line in rendered['card_text'][key].splitlines() if '┌' in line)
+             for key in ('surf-nft','swarm-tokens')]
+    assert headers[0].index('┌')==headers[1].index('┌')
+    assert len(headers[0])-headers[0].index('┐')==len(headers[1])-headers[1].index('┐')
+    assert 'surf-nft' not in rendered['clipped']
+    assert any(label in rendered['card_text']['surf-nft'] for label in ('build','bld'))
+    assert 'open' in rendered['card_text']['surf-nft']
+
 
 
 @pytest.mark.parametrize('stylesheet', [True, False])
@@ -626,7 +613,7 @@ async def test_boardroom_uses_full_width_equal_columns_and_keeps_grid_aligned_on
             assert terminal.region.width == sum(expected[1:5]) + 3
             assert rack.region.right == rack.query_one('#surfboard-card-board').region.right
             strips = app.hub._compositor.render_strips()
-            for key, label_id, word in [('protocol', 'keep', 'キープ'),
+            for key, label_id, word in [('surf-nft', 'keep', 'キープ'),
                                         ('swarm-tokens', 'building', 'ビルディング')]:
                 card = rack.query_one(f'#surfboard-card-{key}')
                 label = rack.query_one(f'#surfboard-{label_id}')

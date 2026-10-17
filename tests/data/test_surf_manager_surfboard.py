@@ -40,8 +40,53 @@ def manager(tmp_path):
     from maxpane_dashboard.data.swarm_tokens_manager import SwarmTokensManager
     from tests.data.test_swarm_tokens_live import Pages, Market
     m._swarm_tokens_manager = SwarmTokensManager(m, client=Pages(), market=Market(), clock=lambda: clock.now)
+    m._nft_manager = SimpleNamespace(offer_hub=lambda: None, catalogue_summary=lambda: {},
+                                   is_loading=lambda *_: False, close=AsyncMock())
     m._cycle=AsyncMock(return_value=m._blank_payload())
     return m,clock
+
+
+async def test_nft_hub_active_offer_passive_projection_and_close_order(manager):
+    from unittest.mock import Mock
+    m, _ = manager
+    order = []
+    nft = m._nft_manager
+    nft.offer_hub = Mock()
+    nft.catalogue_summary = lambda: dict(deployed=20, building=3, mint_open=15,
+                                          partial=True, observed_at=900)
+    nft.close = AsyncMock(side_effect=lambda: order.append('nft'))
+    m.swarm_client.close = AsyncMock(side_effect=lambda: order.append('swarm'))
+    try:
+        m.get_hub_snapshot()
+        nft.offer_hub.assert_not_called()
+        m.set_hub_active(True)
+        await m.fetch_hub_snapshot()
+        nft.offer_hub.assert_called_once()
+        card = next(c for c in m.get_hub_snapshot()['surfboard_cards'] if c['key'] == 'surf-nft')
+        assert card['nft_summary']['deployed'] == 20
+        assert card['destination'] == 'surf-nft'
+        assert all(c['key'] != 'protocol' for c in m.get_hub_snapshot()['surfboard_cards'])
+    finally:
+        await m.close()
+    assert order == ['nft', 'swarm']
+
+
+async def test_nft_lazy_manager_borrows_shared_swarm_once(manager, monkeypatch):
+    m, clock = manager
+    existing = m._nft_manager
+    del m._nft_manager
+    captured = []
+    def build(**kwargs):
+        captured.append(kwargs)
+        return existing
+    monkeypatch.setattr('maxpane_dashboard.data.surf_nft_manager.SurfNftManager', build)
+    try:
+        assert m.nft_manager() is m.nft_manager() is existing
+        assert len(captured) == 1
+        assert captured[0]['swarm'] is m.swarm_client
+        assert captured[0]['clock']() == clock.now
+    finally:
+        await m.close()
 
 
 async def test_hub_work_card_shares_completed_snapshot_with_dashboard(manager):
@@ -928,12 +973,12 @@ async def test_hub_snapshot_offers_bounded_volume_reads_without_awaiting_them(ma
 
 @pytest.mark.parametrize('source,expected', [
     ('overview', {'swarm'}), ('hourly', {'swarm'}),
-    ('records', {'agent'}), ('supply', {'protocol'}),
+    ('records', {'agent'}), ('supply', set()),
     ('work', {'work'}), ('oracles', {'oracles'}),
-    ('workers', {'board', 'agent'}), ('pool4', {'pool4', 'protocol'}),
+    ('workers', {'board', 'agent'}), ('pool4', {'pool4'}),
     ('catalogue', {'swarm-tokens'}), ('markets', {'swarm-tokens'}),
     ('volume', {'swarm-tokens'}), ('history', set()),
-    ('full', {'announce', 'pool4', 'protocol'}),
+    ('full', {'announce', 'pool4'}),
 ])
 @pytest.mark.parametrize('outcome', ['success', 'failure', 'cancel'])
 async def test_hub_loading_tracks_only_relevant_unfinished_reads(manager, source, expected, outcome):

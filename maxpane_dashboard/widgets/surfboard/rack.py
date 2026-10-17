@@ -33,7 +33,7 @@ SLOTS = (
     ("announce", "ONCHAIN FEED", 0, 0), ("swarm", "BUILT BY SWARM", 0, 1),
     ("work", "WIP", 0, 2), ("oracles", "ORACLES", 0, 3),
     ("pool4", "POOL4", 0, 4), ("board", "FLEET", 0, 5),
-    ("protocol", "PROTOCOL", 1, 0), ("swarm-tokens", "TOKENS", 1, 5),
+    ("surf-nft", "NFTS", 1, 0), ("swarm-tokens", "TOKENS", 1, 5),
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
 )
@@ -136,6 +136,11 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
+    if key == "surf-nft":
+        summary = card.get("nft_summary") or {}
+        known = summary.get("deployed") is not None
+        label = "partial catalogue" if known and summary.get("partial") else "observed collections" if known else "—"
+        return fit_prose(label, 24 if width is None else width, style=MUTED)[0]
     if key == "protocol":
         return _protocol_footer(card, 24 if width is None else width)[0]
     if key == "oracles":
@@ -284,6 +289,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.seat_slot is not None:
             self.data["seat_slot"] = self.seat_slot
             self.data.setdefault("token_id", None)
+        if self.key == "surf-nft":
+            self.data["destination"] = "surf-nft"
+            self.data.setdefault("detail", "NFTS · observed collections · Enter to open")
         if self.key == "swarm-tokens":
             self.data["destination"] = "swarm-tokens"
             self.data.setdefault("detail", "TOKENS · production-chain markets · Enter to open")
@@ -364,6 +372,13 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if status == "active":
                 color = AMBER
             secondary = (secondary or "offline") if status == "offline" else secondary.removesuffix(" slots")
+        if self.key == "surf-nft":
+            summary = self.data.get("nft_summary") or {}
+            building, opened = summary.get("building"), summary.get("mint_open")
+            shown = lambda value: str(int(value)) if _number(value) and value == int(value) else "—"
+            secondary = f"{shown(building)} build · {shown(opened)} open"
+            if cell_len(secondary) > inside:
+                secondary = f"{shown(building)}bld · {shown(opened)}open"
         if self.key == "announce":
             secondary = secondary.removesuffix(" replies").removesuffix(" reply")
         elif self.key == "protocol":
@@ -374,7 +389,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         border_inset = (Style.parse(MUTED) + Style(bgcolor=palette["background"])
                         if color == AMBER else inset)
-        if self.key in ("protocol", "board", "pool4"):
+        if self.key in ("protocol", "surf-nft", "board", "pool4"):
             border_inset = Style.parse(MUTED) + Style(bgcolor=palette["background"])
         elif self.key == "work":
             jobs = primary.replace(",", "")
@@ -395,10 +410,10 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         native_digits = False
         numeric_readout = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "launchpad", "oracles", "pool4", "work") or self.seat_slot is not None:
+        if self.key in ("swarm", "launchpad", "oracles", "pool4", "work", "surf-nft") or self.seat_slot is not None:
             label = " SEAT " if self.seat_slot is not None else {"swarm": " AGENTS ",
                      "launchpad": " COINS ", "oracles": " ASSESSING ",
-                     "pool4": " IMD PRICE ", "work": " ACTIVE JOBS "}[self.key]
+                     "pool4": " IMD PRICE ", "work": " ACTIVE JOBS ", "surf-nft": " COLLECTIONS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
             if self.key == "pool4":
@@ -583,7 +598,7 @@ class SurfboardRack(Grid):
         self.call_after_refresh(self.call_after_refresh, self._position_taglines)
 
     def _position_taglines(self):
-        for key, label_id in (("protocol", "keep"), ("swarm-tokens", "building")):
+        for key, label_id in (("surf-nft", "keep"), ("swarm-tokens", "building")):
             card = self.query_one(f"#surfboard-card-{key}", SurfboardCard)
             label = self.query_one(f"#surfboard-{label_id}", Static)
             # Match dim activity timestamps using the dashboard foreground.

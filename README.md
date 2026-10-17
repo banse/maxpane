@@ -19,7 +19,7 @@ kind, no wallet, no signing, no transactions.
 | **Cat Town** | Base | Fishing competition, KIBBLE economy, catches |
 | **Ten Thousand Tokens** | Ethereum | NFT burn-to-launch on UniV4, fee engines, holder claims |
 | **Talismans** | Ethereum | Core-conservation NFT collection, materials, essence × tier |
-| **SURFBOARD HUB** | Ethereum / IMD | Dashboard 9: seven SURFBOARD launchers, live IMD terminal, live SWARM TOKENS markets, Portfolio preview, future Earnings and two empty bays |
+| **SURFBOARD HUB** | Ethereum / IMD | Dashboard 9: native SURF views, IMD terminal, SWARM TOKENS markets and the NFT Explorer |
 
 ### SURFBOARD HUB — dashboard 9
 
@@ -36,6 +36,19 @@ view. TOKENS opens live markets; its LAST 24h inset ranks recent launches by USD
 with price arrows comparing successive loads. The outer footer shows the newest launch.
 Partial market coverage is labelled. Portfolio opens the offline mock preview below;
 the four lower AGENT cards keep their independently saved seats.
+
+The **NFTS** card below ONCHAIN FEED opens the NFT Explorer; `n` opens it directly.
+The previous **PROTOCOL** view remains available with `p` in the BOARDROOM and
+`e` inside SURF. These letters remain ordinary text when an input is focused.
+
+NFT Explorer combines a collection table with mint routes, IDMD conditions,
+utility, related tokens and explicit Swarm/source links. Use `f` for filters,
+`/` to search, `b` to switch deployed collections / builds, `c` for chain and
+`o` for sort. Enter focuses details; Escape closes filters first, then returns
+to the retained BOARDROOM. Filters and selection read the cached snapshot.
+Background discovery works independently of aidude and resumes within fixed
+request limits. Partial coverage stays visible; collection-level rules do not
+establish a particular wallet's eligibility. Minted and live supply remain separate.
 
 Acceptance and rank in HUB, AGENT and BOARD share one validated `/seats/records` snapshot.
 Its upstream cache can lag by ten minutes. Device effort and worker presence keep separate

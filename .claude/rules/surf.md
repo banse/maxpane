@@ -926,7 +926,11 @@ popup remains available to Portfolio.
 The title is centered `IMD BOARDROOM`, using the dim dashboard foreground like activity timestamps. ONCHAIN FEED uses white active inset
 borders and border text; its body follows the shared palette. SWARM BUILDS retains its activity colors.
 The top row is ONCHAIN FEED, BUILT BY SWARM, WIP, ORACLES, POOL4, FLEET.
-PROTOCOL sits below ONCHAIN FEED, opposite TOKENS below FLEET beside the terminal.
+NFTS sits below ONCHAIN FEED, opposite TOKENS below FLEET beside the terminal.
+It opens the nested NFT Explorer on click/Enter or `n`; `p` retains the existing
+PROTOCOL mode and its native `e` binding. Printable keys never steal input focus.
+The card summarizes the global observed NFT catalog; screen filters affect the
+NFT heroes/list only. See `docs/surf_nft_PRD.md` for source/rule semantics.
 The キープ and ビルディング captions stay over the left and right AGENT columns.
 The six equal fractional columns use the full viewport width: no horizontal padding
 or idle scrollbar gutter. All are 24 characters at 149×45; the one-cell gaps remain.
@@ -980,7 +984,7 @@ seven-day weeks and days; remaining hours are discarded. The existing meter fiel
 carry `meter_kind=duration`, milliseconds in `numerator` and no denominator. Unknown
 time is `worked —`; known zero is `worked 0y 0w 0d`. FLEET has no activity label or bar.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
-footer is centered `Identity.md`. Three-line gaps below PROTOCOL and TOKENS separate them
+footer is centered `Identity.md`. Three-line gaps below NFTS and TOKENS separate them
 from the AGENT seats; regular-weight キープ / ビルディング use the same dim dashboard
 foreground as the title and are centered on the middle line.
 Other card gaps remain one line; all card sizes stay equal.
@@ -1005,10 +1009,9 @@ on load. Cached own-work `submittedAt` can seed or advance an idle anchor when
 polling missed the work; a newer observed stop wins. Heartbeat, acceptance and
 feedback timestamps cannot reset it. Without either source, cold idle has a dash,
 not a full orange bar. The last green segment remains until the full 24h expires.
-PROTOCOL uses label / amount / IMD columns, neutral inset borders/title, and a centered
-outer `x% burned` footer. Its inset uses the same horizontal padding as the other cards.
-Stats retain one blank at both edges and aligned columns; spare trailing space and then the
-amount/unit gap give way when needed to keep complete values at narrow widths.
+NFTS uses COLLECTIONS tall digits, building/open counts and an explicit partial
+catalog qualifier. Counts describe observed, verified deployments; unread values
+remain neutral dashes. Its inset retains the rack's shared padding and geometry.
 POOL4 keeps neutral inset borders/title/USD and white price digits. Consecutive valid
 USD price reads drive the same green ↑ / red ↓ indicators as TOKENS, with no indicator
 on first or unchanged reads. The indicator sits beside the price on its middle row;

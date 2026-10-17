@@ -1,0 +1,68 @@
+{
+  "sourceCommit": null,
+  "sourceLicense": null,
+  "capturedAt": "2026-10-17",
+  "notes": "User-requested local adaptation. Original checkout has no Git HEAD or scanner license declaration. Transport replaced by bounded async observation replay; live token decimals required.",
+  "files": [
+    {
+      "path": "tools/surf/_nft_rules.py",
+      "sha256": "bfa8c2ca64f4de9314d3d7c678578ad694a97f6328b206249ea334352f14da67",
+      "adaptedTo": "data/surf_nft_rules/rules.py"
+    },
+    {
+      "path": "tools/surf/_nft_utility.py",
+      "sha256": "be2eb7202fa164717040c51bfb14e650e55423bda66f1ee2f5900fc50f852a52",
+      "adaptedTo": "data/surf_nft_rules/utility.py"
+    },
+    {
+      "path": "tools/surf/_nft_hints.py",
+      "sha256": "0d1a4582fb5ed9332fd6a12aafe70c33351cac5d5953e3a498f2c63a80628271",
+      "adaptedTo": "data/surf_nft_rules/hints.py"
+    },
+    {
+      "path": "tools/surf/_nft_children.py",
+      "sha256": "9c36cc27de6b7326b6e291af36da0d8ac43fc2e82784b2c28abbecc70705799c",
+      "adaptedTo": "data/surf_nft_rules/children.py"
+    },
+    {
+      "path": "tools/surf/_nft_references.py",
+      "sha256": "2cc4052dcdf821aa745d5b39d9014f94c2c10268ecc1a236f5b8d5e7bcb6f029",
+      "adaptedTo": "data/surf_nft_rules/references.py"
+    },
+    {
+      "path": "tools/surf/_nft_tokens.py",
+      "sha256": "799dc4ee365e30cb52cab53cda6fd38ac969fd1b36742313cb26a319e61b9195",
+      "adaptedTo": "data/surf_nft_rules/tokens.py"
+    },
+    {
+      "path": "tools/surf/nft-reviewed.json",
+      "sha256": "06654e91108a0eaeffae52cbedb16ade10d08befac66d1b4c9c4f73f5d811067",
+      "adaptedTo": "data/surf_nft_rules/nft-reviewed.json"
+    },
+    {
+      "path": "tools/surf/nft-utilities.json",
+      "sha256": "3701115fba081ce58a4bcdec2127bdd84cb4b548fa4c5de4bda33b868dd9e18d",
+      "adaptedTo": "data/surf_nft_rules/nft-utilities.json"
+    },
+    {
+      "path": "tools/surf/_nft_chain.py",
+      "sha256": "e3dd9ea9ecbdb6e0d867557b173d5677cba54f08417ea8f690db5caf038615a4",
+      "adaptedTo": "data/surf_nft_chain.py"
+    },
+    {
+      "path": "tools/surf/_nft_catalog.py",
+      "sha256": "50a8817e39f262c426fd3e26afb4375f6f82d035473bc7f5c17e5c743feebdbc",
+      "adaptedTo": "data/surf_nft_rules/catalog.py"
+    },
+    {
+      "path": "tools/surf/_nft_links.py",
+      "sha256": "dbadbde45592da7f7cd07ab4aab00c4c45c18f673a6366e6ca4dcfdb0cba8097",
+      "adaptedTo": "data/surf_nft_rules/links.py"
+    }
+  ],
+  "knownSourceLimitations": [
+    "StarterClaim, HiveWars and GameRegistry reviewed entries contain no runtime hashes. Current dependency code and getters are retained, but mint gates depending on reviewed callee semantics stay unknown until a reviewed hash exists.",
+    "Upstream token-price conversion assumed 18 decimals. Adaptation requires observed same-block decimals from exact reviewed payment-token relationships; missing decimals produce unknown price.",
+    "Saved fixtures are dated 2026-10-16 and do not establish current counts."
+  ]
+}

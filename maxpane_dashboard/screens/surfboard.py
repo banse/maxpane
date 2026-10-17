@@ -15,7 +15,7 @@ from maxpane_dashboard.data.surf_models import SURFBOARD_WIDGET_SIGNATURES
 from maxpane_dashboard.launch_notifications import SurfLaunchesUpdated
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
 from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen, SurfStatusBar
-from maxpane_dashboard.screens.surf import MODE_AGENT, MODE_WORK, MODE_ORACLES
+from maxpane_dashboard.screens.surf import MODE_AGENT, MODE_WORK, MODE_ORACLES, MODE_POOL4
 from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
@@ -25,7 +25,7 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: At 149×45 every card is 24 columns wide, separated by one-cell gutters;
 #: widths at other terminal sizes differ by at most one rounding cell.
 #: The previous first-column/ORACLES transfer is removed. FLEET remains top-right,
-#: TOKENS sits below it, and PROTOCOL remains below ONCHAIN FEED.
+#: TOKENS sits below it; NFTS replaced PROTOCOL below ONCHAIN FEED on 2026-10-17.
 #: The viewport keeps vertical padding but no horizontal padding or idle gutter.
 #: Owner exception to the stable-gutter rule: the vertical scrollbar consumes
 #: one column only while needed. Width onset therefore depends on viewport height.
@@ -37,13 +37,13 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: At width 143, height 36 scrolls on both axes and 37 clears both bars.
 #: Four seven-row card floors, three gutters and two extra side-gap rows need
 #: a 33-row rack; vertical padding and title/status rows retain the 37-row pin.
-#: Gaps below PROTOCOL and TOKENS are three lines, with regular muted captions
+#: Gaps below NFTS and TOKENS are three lines, with regular muted captions
 #: centered in the middle line above AGENT seats. Other card gaps are one line.
 #: All cards remain equally tall, measuring nine rows at the owner size.
 #: The terminal fills the four center columns down to the rack bottom,
 #: measuring 95 columns at the pin and 99 at 149×45.
-#: PROTOCOL and TOKENS retain equal inset padding and leading blanks; stats
-#: retain the full stress values and IMD units, and token arrows stay right-aligned.
+#: NFTS and TOKENS retain equal inset padding. NFTS shows native collection digits,
+#: build/open counts and partial-catalogue coverage; token arrows stay right-aligned.
 #: WORK IN PROGRESS keeps job digits and workflow subtitle. Its outer footer
 #: shows SWARM's 24H history; build/review counts stay under BUILT BY SWARM.
 #: FLEET keeps three RUNTIMES rows and the model/effort footer. A nine-cell base
@@ -69,6 +69,8 @@ class SurfboardScreen(SurfDashboardScreen):
     )
     BINDINGS = [
         Binding("w", "work", "Work in progress", show=False),
+        Binding("n", "nfts", "NFTs", show=False),
+        Binding("p", "protocol", "Protocol", show=False),
         Binding("ctrl+o", "oracles", "Oracles", show=False),
         Binding("slash", "command_input", "Command", show=False),
         Binding("left", "card('left')", show=False),
@@ -98,6 +100,7 @@ class SurfboardScreen(SurfDashboardScreen):
         self._age_timer = None
         self._loading = False
         self._cache_only = False
+        self._nft_view_state = {}
 
     def compose(self) -> ComposeResult:
         yield Static(Text("IMD BOARDROOM", style=f"dim {self.app.get_css_variables()['foreground']}"), id="surfboard-title")
@@ -155,7 +158,7 @@ class SurfboardScreen(SurfDashboardScreen):
         return "surfboard"
 
     def _prime_status_bar(self, bar: StatusBar) -> None:
-        bar.set_key_hints("arrows cards · enter open · w work · / command · esc menu")
+        bar.set_key_hints("arrows · enter · n NFTs · p protocol · w work · / cmd · esc")
 
     def _update_title(self, data: dict) -> None:
         self.post_message(SurfLaunchesUpdated(self, data))
@@ -184,6 +187,9 @@ class SurfboardScreen(SurfDashboardScreen):
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
         if event.seat_slot is not None:
             self.app.open_surf_mode(MODE_AGENT, token_id=event.token_id, seat_slot=event.seat_slot)
+            return
+        if event.key == "surf-nft":
+            self.action_nfts()
             return
         if event.key == "swarm-tokens":
             from maxpane_dashboard.screens.swarm_tokens import SwarmTokensScreen
@@ -219,6 +225,16 @@ class SurfboardScreen(SurfDashboardScreen):
 
     def action_work(self) -> None:
         self.app.open_surf_mode(MODE_WORK)
+
+    def action_nfts(self) -> None:
+        if not isinstance(self.focused, Input):
+            from maxpane_dashboard.screens.surf_nft import SurfNftScreen
+            self.app.push_screen(SurfNftScreen(self._data_manager.nft_manager(),
+                                             view_state=self._nft_view_state))
+
+    def action_protocol(self) -> None:
+        if not isinstance(self.focused, Input):
+            self.app.open_surf_mode(MODE_POOL4)
 
     def action_oracles(self) -> None:
         self.app.open_surf_mode(MODE_ORACLES)

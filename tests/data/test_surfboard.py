@@ -106,8 +106,8 @@ def test_rack_meters_use_real_denominators_uncapped_population_and_split():
     assert cards['oracles']['points'] is None
     assert cards['pool4']['share_price'] is None
     assert cards['pool4']['numerator'] is cards['pool4']['denominator'] is None
-    assert (cards['protocol']['numerator'],cards['protocol']['denominator'])==(2,10)
-    assert cards['protocol']['status']=='experimental'
+    assert 'protocol' not in cards
+    assert cards['surf-nft']['primary'] == '—'
     assert not {c['key'] for c in cards.values() if c['status']=='planned'}
     assert 'portfolio' not in cards and cards['work']['status']=='unavailable'
     assert 'earnings' not in cards
@@ -240,23 +240,21 @@ def test_fleet_ignores_canonical_rank_and_selected_seat():
         assert fleet_card(fleet_workers(), data=data) == before
 
 
-@pytest.mark.parametrize('burn,reward,primary,secondary', [
-    (33279.30, 5872.82, '★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 1 IMD', 'unavailable'),
-    (0, 0, '★ burned 0 IMD\n★ rewarded 0 IMD\n★ fees 1 IMD', 'unavailable'),
-    (12.8, 3.2, '★ burned 13 IMD\n★ rewarded 3 IMD\n★ fees 1 IMD', 'unavailable'),
-    (None, None, '★ burned — IMD\n★ rewarded — IMD\n★ fees 1 IMD', 'unavailable'),
-    (True, float('nan'), '★ burned — IMD\n★ rewarded — IMD\n★ fees 1 IMD', 'unavailable'),
+@pytest.mark.parametrize('summary,primary,secondary,status', [
+    ({}, '—', '—', 'unavailable'),
+    (dict(deployed=0, building=0, mint_open=0), '0', '0 building', 'active'),
+    (dict(deployed=20, building=3, mint_open=15, partial=True), '20', '3 building', 'active'),
+    (dict(deployed=True, building=-1, mint_open=None), '—', '—', 'unavailable'),
 ])
-def test_protocol_card_rounds_readouts_but_keeps_exact_flow(burn, reward, primary, secondary):
-    row=next(c for c in hub.cards(dict(pool4_total_burned=burn,
-        pool4_total_rewarded=reward,pool4_total_fee_token=1),{},now=100) if c['key']=='protocol')
-    assert (row['primary'],row['secondary'])==(primary,secondary)
-    assert row['status']=='experimental'
-    if type(burn) in (int,float):
-        assert row['numerator']==burn
-        assert row['denominator']==burn+reward+1
-        assert (f'{burn:,}' if type(burn) is int else f'{burn:,.2f}')+' burned' in row['detail']
-        assert (f'{reward:,}' if type(reward) is int else f'{reward:,.2f}')+' rewarded' in row['detail']
+def test_nft_card_keeps_unknown_zero_and_partial_counts_separate(summary, primary, secondary, status):
+    rows = hub.cards({}, {}, now=100, nft_catalogue=summary)
+    row = next(c for c in rows if c['key'] == 'surf-nft')
+    assert (row['primary'], row['secondary'], row['status']) == (primary, secondary, status)
+    assert row['destination'] == 'surf-nft'
+    assert row['nft_summary'] == summary
+    assert all(c['key'] != 'protocol' for c in rows)
+    if summary.get('partial'):
+        assert 'partial catalog' in row['detail']
 
 
 @pytest.mark.parametrize('state,working,capacity,slots,status', [
@@ -592,20 +590,12 @@ def test_pool4_price_digits_follow_consecutive_reads_not_24h_change(direction, s
     assert '24h' in row['detail']
 
 
-@pytest.mark.parametrize('state,age,ready,expected', [
-    ('fired',0,False,'active'), ('fired',86399,True,'active'),
-    ('fired',86400,True,'ready'), ('fired',None,True,'ready'),
-    ('fired',-1,False,'experimental'), ('watch',None,True,'ready'),
-    ('ok',None,True,'ready'), ('ok',None,False,'experimental'),
-    ('dead',None,None,'experimental'), ('ok',None,1,'experimental'),
-])
-def test_protocol_color_uses_recent_burn_signal_then_current_readiness(state, age, ready, expected):
-    row = next(c for c in hub.cards(dict(pool4_total_burned=33279.30,
-        sig_burn_state=state, sig_burn_age_s=age, burn_ready=ready,
-        sig_burnready_state='fired'), {}, now=100000) if c['key']=='protocol')
-    assert (row['primary'], row['secondary'], row['status']) == (
-        '★ burned 33k IMD\n★ rewarded — IMD\n★ fees — IMD', 'unavailable', expected)
-    assert row['destination'] == 'pool4'
+def test_nft_card_clock_and_count_do_not_depend_on_protocol_values():
+    summary = dict(deployed=20, building=3, mint_open=15, partial=True, observed_at=50)
+    def card(data, now):
+        return next(c for c in hub.cards(data, {}, now=now, nft_catalogue=summary) if c['key']=='surf-nft')
+    assert card({}, 100) == card(dict(pool4_total_burned=999, burn_ready=True), 200)
+    assert 'read '+hub.hhmm(50) in card({}, 100)['detail']
 
 
 def test_pool4_missing_price_never_shows_zero_or_green():

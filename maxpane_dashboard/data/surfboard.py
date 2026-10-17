@@ -442,7 +442,7 @@ def fleet_summary(workers, source):
     return facts
 
 
-def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, activity: dict | None = None, agent_seats: list[dict] | None = None, pool4_price_direction: str | None = None, workers: dict | None = None, worker_source: dict | None = None) -> list[dict]:
+def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, nft_catalogue: dict | None = None, activity: dict | None = None, agent_seats: list[dict] | None = None, pool4_price_direction: str | None = None, workers: dict | None = None, worker_source: dict | None = None) -> list[dict]:
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES, FIRED_TTL_S, _tx_hash
     result = []
     def card(key,title,primary,secondary,detail,destination,n=None,d=None,points=None,source=None):
@@ -456,8 +456,6 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         row=dict.fromkeys(SURFBOARD_CARD_FIELDS)
         if state == "active" and primary in ("unavailable", "—") and secondary in ("unavailable", "—", "signals unavailable"):
             state = "unavailable"
-        if key == "protocol":
-            state = "experimental"
         row.update(key=key,title=title,status=state,primary=primary,secondary=secondary,detail=detail,destination=destination,
                    meter_kind="sparkline" if points is not None else "ratio",numerator=n if fraction is not None or number(n) is not None and number(d) is not None and n == d == 0 else None,
                    denominator=d if fraction is not None or number(n) is not None and number(d) is not None and n == d == 0 else None,points=points)
@@ -578,28 +576,22 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     result[-1]["share_price"] = share_price
     result[-1]["status"] = ("unavailable" if price is None else
                             {"up": "active", "down": "falling"}.get(pool4_price_direction, "idle"))
-    burn=data.get("pool4_total_burned");reward=data.get("pool4_total_rewarded");fee=data.get("pool4_total_fee_token")
-    denominator=sum((burn,reward,fee)) if all(number(x) is not None for x in (burn,reward,fee)) else None
-    supply_source = sources.get("supply") or {}
-    supply = normalize_supply(supply_source.get("payload"))
-    fraction = (number(burn / supply["total_supply"])
-                if supply and number(burn) is not None and data.get("pool4_network") != "SEPOLIA" else None)
-    percent = ("<0.01%" if 0 < fraction < .0001 else f"{fraction:.2%}") if fraction is not None else None
-    supply_state = supply_source.get("state", "unavailable")
-    supply_text = percent + " of supply" if percent is not None else "unavailable"
-    card("protocol","PROTOCOL",_protocol_stats(burn, reward, fee), supply_text,
-         f"BURN · global supply · as of {hhmm(supply_source.get('read_ts'))}"
-         f" · {_value(burn,' burned')} · {_value(reward,' rewarded')} · measured flow · EXPERIMENTAL"
-         +f" · {data.get('pool4_network') or 'unknown network'} · as of {data.get('pool4_as_of_hhmm') or '—'}","pool4",burn,denominator)
-    burn_age = number(data.get("sig_burn_age_s"))
-    recent_burn = data.get("sig_burn_state") == "fired" and burn_age is not None and burn_age < FIRED_TTL_S
-    result[-1]["status"] = ("active" if recent_burn else "ready" if data.get("burn_ready") is True else "experimental")
-    result[-1]["detail"] += f" · burn signal {data.get('sig_burn_state') if data.get('sig_burn_state') in ('ok', 'watch', 'fired') else '—'} · ready {data.get('burn_ready')} · signal snapshot {hhmm(data.get('as_of'))}"
+    nft = dict(nft_catalogue or {})
+    deployed, building, mint_open = (count(nft.get(key)) for key in ('deployed', 'building', 'mint_open'))
+    primary = f"{deployed:,}" if deployed is not None else "—"
+    secondary = f"{building:,} building" if building is not None else "—"
+    coverage_label = "partial catalog" if nft.get('partial') is True else "observed catalog"
+    card("surf-nft", "NFTS", primary, secondary,
+         f"NFTS · {coverage_label} · {primary} collections · {secondary}"
+         f" · {mint_open if mint_open is not None else '—'} mint open"
+         f" · read {hhmm(nft.get('observed_at'))}", "surf-nft")
+    result[-1].update(nft_summary=nft, meter_kind='nft',
+                      meter_state='partial' if nft.get('partial') else 'ok' if deployed is not None else 'unavailable',
+                      status='active' if deployed is not None else 'unavailable')
     families = family_sources or {}
     for row in result:
         names = {"announce": ("announce", "signals"), "swarm": ("hourly",),
-                 "pool4": ("pool4", "quote"),
-                 "protocol": ("pool4",)}.get(row["key"], ())
+                 "pool4": ("pool4", "quote")}.get(row["key"], ())
         states = []
         for name in names:
             source = sources.get(name) if name == "hourly" else families.get(name)
@@ -613,7 +605,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         # legacy degradation list, even before per-family metadata is ready.
         degraded = data.get("degraded") or []
         relevant = {"announce": ("channel",),
-                    "pool4": ("p4",), "protocol": ("p4",)}.get(row["key"], ())
+                    "pool4": ("p4",)}.get(row["key"], ())
         if any(group in degraded for group in relevant):
             states.append("stale")
         if "unavailable" in states:

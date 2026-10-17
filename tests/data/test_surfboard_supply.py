@@ -40,38 +40,6 @@ async def test_supply_invalid_getter_is_unknown(index, value):
         assert await SwarmBaseClient(http_client=http).fetch_imd_global_supply() is None
 
 
-def protocol(supply=None, *, burn=33279.30, state='ok', network='MAINNET'):
-    source = hub.source_envelope({'total_supply': supply}, 1000) if supply is not None else hub.source_envelope(None, 1000)
-    if state == 'stale': source = hub.source_envelope(None, 1600, prior=source)
-    data = dict(pool4_total_burned=burn, pool4_total_supply=100000, pool4_network=network,
-                sig_burn_state='fired', sig_burn_age_s=0)
-    return next(c for c in hub.cards(data, {'supply': source}, now=1600) if c['key']=='protocol')
-
-
-@pytest.mark.parametrize('supply,expected', [(7095964.257748015, '0.47% of supply'),
-    (10000, '332.79% of supply'),
-    (1000000, '3.33% of supply'), (1000000000, '<0.01% of supply'),
-    (None, 'unavailable'), (0, 'unavailable'), (-1, 'unavailable'),
-    (True, 'unavailable'), (float('inf'), 'unavailable'), ('1000000', 'unavailable')])
-def test_protocol_percentage_uses_global_supply_only(supply, expected):
-    # Invalid values are deliberately passed straight to the projection boundary.
-    sources = {'supply': {'payload': {'total_supply': supply}, 'state': 'ok', 'read_ts': 1000}}
-    row = next(c for c in hub.cards(dict(pool4_total_burned=33279.30,
-        pool4_total_supply=100000, pool4_network='MAINNET'), sources, now=1000) if c['key']=='protocol')
-    assert row['secondary'] == expected
-    assert row['primary'].splitlines()[0] == '★ burned 33k IMD'
-
-
-def test_protocol_supply_stale_unknown_and_testnet_do_not_look_current():
-    stale = protocol(7095964.257748015, state='stale')
-    assert stale['secondary'] == '~0.47% of supply'
-    assert 'global supply stale' in stale['detail'] and hub.hhmm(1000) in stale['detail']
-    assert stale['status'] == 'active'  # supply failure does not erase the burn signal
-    assert protocol(7095964.257748015, network='SEPOLIA')['secondary'] == 'unavailable'
-    assert protocol(7095964.257748015, burn=None)['secondary'] == 'unavailable'
-    assert protocol(7095964.257748015, burn=0)['secondary'] == '0.00% of supply'
-
-
 @pytest.mark.parametrize('value', [None, 0, -1, True, '1', float('inf')])
 def test_supply_cache_rejects_invalid_denominator(value):
     envelope = hub.source_envelope({'total_supply': 1}, 1000)
@@ -96,8 +64,9 @@ async def test_supply_visible_cadence_failure_clock_and_cache(manager):
         first = m._hub_sources()['supply']
         assert first['state']=='ok' and first['read_ts']==1000
         assert hub.coerce_source(first, 'supply', now=1001) == first
-        row = next(c for c in m._project_hub(refresh_legacy=False)['surfboard_cards'] if c['key']=='protocol')
-        assert row['secondary']=='0.47% of supply'
+        snapshot = m._project_hub(refresh_legacy=False)
+        assert snapshot['pool4_total_burned'] == 33279.3
+        assert not any(c['key'] == 'protocol' for c in snapshot['surfboard_cards'])
         clock.now=1599
         await m.fetch_hub_snapshot(); await asyncio.gather(*m._hub_source_tasks.values())
         assert reader.await_count==1

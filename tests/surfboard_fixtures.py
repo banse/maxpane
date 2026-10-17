@@ -13,7 +13,7 @@ def hub_payload(kind="normal"):
         ("board", "FLEET", "board", "52.5%", "astra 6 xhigh", None, None),
         ("oracles", "ORACLES", "oracles", "7", "in progress", 2, 100),
         ("pool4", "POOL4", "pool4_user", "7.90", "USD", None, None),
-        ("protocol", "PROTOCOL", "pool4", "★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 4k IMD", "0.47% of supply", 60, 100),
+        ("surf-nft", "NFTS", "surf-nft", "20", "3 building", None, None),
         ("swarm-tokens", "TOKENS", "swarm-tokens", "116", "4 new", None, None),
     )
     cards = []
@@ -23,6 +23,8 @@ def hub_payload(kind="normal"):
                           token_id=420 if key == "agent" else None,
                           status="experimental" if key == "protocol" else "assessing" if key == "oracles" else "idle" if key == "agent" else "working" if key == "board" else "active",
                           primary=primary, secondary=secondary, token_ranking=None, fleet_summary=None,
+                          nft_summary=(dict(deployed=20, building=3, mint_open=15, partial=True, observed_at=STAMP)
+                                       if key == 'surf-nft' else None),
                           detail=f"{title} · exact {numerator}/{denominator} · read 22:00 · source cache ≤10m",
                           meter_kind="sparkline" if key == "swarm" else "oracles" if key == "oracles" else "activity" if key in ("agent", "board") else "ratio" if key != "swarm-tokens" else None,
                           meter_state={"agent": "idle", "board": "busy", "oracles": "ok"}.get(key),
@@ -86,8 +88,9 @@ def hub_payload(kind="normal"):
             primary="100", secondary="in progress", numerator=100, denominator=100)
         next(card for card in cards if card["key"] == "pool4").update(
             primary="999,999.99", secondary="USD")
-        next(card for card in cards if card["key"] == "protocol").update(
-            primary="★ burned 1M IMD\n★ rewarded 100k IMD\n★ fees 10k IMD", secondary="17.40% of supply")
+        next(card for card in cards if card["key"] == "surf-nft").update(
+            primary="1,000", secondary="100 building",
+            nft_summary=dict(deployed=1000, building=100, mint_open=999, partial=True, observed_at=STAMP))
         next(card for card in cards if card["key"] == "swarm-tokens").update(
             primary="1,234,567", secondary="99,999 new")
         next(card for card in cards if card["key"] == "work").update(
@@ -106,6 +109,7 @@ def hub_payload(kind="normal"):
                         numerator=None, denominator=None, points=None)
             card['token_ranking'] = None
             card['fleet_summary'] = None
+            card['nft_summary'] = None
         next(card for card in cards if card["key"] == "work").update(
             status="unavailable", primary="—", secondary="unavailable", meter_state="unavailable",
             work_summary=dict.fromkeys(("jobs", "workflows", "seats", "build", "review", "blocked")))

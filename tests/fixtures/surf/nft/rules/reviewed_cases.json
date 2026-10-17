@@ -1,0 +1,2068 @@
+{
+  "capturedFrom": "aidude saved snapshot 2026-10-16; not live",
+  "cases": [
+    {
+      "adapter": "imdenza",
+      "identity": "1:0xd7fb8c680f9291c0f164c00dc4ae03624a6c76ce",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xd7fb8c680f9291c0f164c00dc4ae03624a6c76ce",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x134c0203e1b92a88d549c33372b075e8041e32753915fda91c1f3500df9927bc",
+        "reads": {
+          "name": "IMDenza",
+          "symbol": "IMDENZA",
+          "MAX_SUPPLY": 3333,
+          "totalMinted": 5,
+          "HOLDER_SHARE_BPS": 9000,
+          "BPS": 10000,
+          "TREASURY": "0xc3f0dec012784f6d7178104c31a4611c6897756c",
+          "MINT_PRICE_MILLI": 69,
+          "IMD_TOKEN_A": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+          "IMD_TOKEN_B": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+          "IMD_HOLDING_WHOLE": 25,
+          "ART_BLOCKS": "0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270",
+          "FIDENZA_PROJECT": 78,
+          "ART_BLOCKS_PROJECT_SIZE": 1000000,
+          "TRANSFER_SECURITY_LEVEL": 3,
+          "WETH": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+          "MIN_IMD_DECIMALS": 3,
+          "MAX_IMD_DECIMALS": 36,
+          "configurator": "0x3d6a89c8751a45dd577a4c1f3b34e71c58236193",
+          "identityMdCollection": "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d",
+          "transferPolicyApplied": true
+        },
+        "stats": {
+          "totalSupply": null,
+          "maxSupply": 3333,
+          "holders": 5,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xd7fb8c680f9291c0f164c00dc4ae03624a6c76ce"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0xbbd8b35ce455f1ef18d7bcde5b5b5c817c04baa14d1680acc3a09813f97e35b5",
+          "blockNumber": 26207183,
+          "timestamp": "2026-10-16T19:26:23Z",
+          "reportedBlockNumber": 26207183,
+          "headerBlockNumber": 26207183
+        },
+        "tokenMetadata": {
+          "1:0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7": {
+            "chainId": 1,
+            "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Identity.md",
+            "symbol": "IMD",
+            "decimals": 18,
+            "totalSupply": "4166397375635000000000000",
+            "formattedSupply": "4166397.375635",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          },
+          "1:0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127": {
+            "chainId": 1,
+            "address": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+            "status": "no-code",
+            "codePresent": false,
+            "name": null,
+            "symbol": null,
+            "decimals": null,
+            "totalSupply": null,
+            "formattedSupply": null,
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": [
+              "No contract code at this address on the stated chain."
+            ]
+          },
+          "1:0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2": {
+            "chainId": 1,
+            "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Wrapped Ether",
+            "symbol": "WETH",
+            "decimals": 18,
+            "totalSupply": "2200301336380055353581762",
+            "formattedSupply": "2200301.336380055353581762",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0xd7fb8c680f9291c0f164c00dc4ae03624a6c76ce",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "39a66ffb-504c-4e61-a345-3a8d585ecbf8",
+            "title": "Launch IMDenza: an animated generative NFT collection of 3333 pieces on Ethereum mainnet, inspired by Tyler Hobbs\u2019 Fidenza (flow-field algor",
+            "url": "https://explorer.imd.fun/jobs/39a66ffb-504c-4e61-a345-3a8d585ecbf8",
+            "status": "completed"
+          },
+          {
+            "id": "9dd20d22-bdb4-4bfe-829a-1090c2269d64",
+            "title": "Build the official website for IMDenza, the animated generative NFT collection on Ethereum mainnet. Contracts (already deployed): - IMDenza ",
+            "url": "https://explorer.imd.fun/jobs/9dd20d22-bdb4-4bfe-829a-1090c2269d64",
+            "status": "completed"
+          }
+        ],
+        "name": "IMDenza"
+      }
+    },
+    {
+      "adapter": "goblin",
+      "identity": "1:0xc5d5f314da6d4a433f9bf897a2cc24a537576cb1",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xc5d5f314da6d4a433f9bf897a2cc24a537576cb1",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x270daf73d98f9a0aab6b102e725ad745edb2412306782d222e1cf495c6951f85",
+        "reads": {
+          "name": "Goblin Gold",
+          "symbol": "GOBLIN",
+          "MAX_SUPPLY": 10000,
+          "FREE_SPINS_PER_TOKEN": 2,
+          "MAX_PER_WALLET": 20,
+          "PRICE": 1000000000000000,
+          "REFUND_REOPEN_DELAY": 7776000,
+          "TARGET_REVIEW_PERIOD": 604800,
+          "deferredRevenue": 0,
+          "liveSupply": 11,
+          "nextTokenId": 13,
+          "owner": "0xa7e99bb7155d7477e0c838e201b16e62b9c0b5ac",
+          "polOwed": 0,
+          "polTarget": "0x0000000000000000000000000000000000000000",
+          "refundsOpen": true,
+          "released": false,
+          "reserveOwed": 0,
+          "reserveTarget": "0x0000000000000000000000000000000000000000",
+          "retainedRevenue": 0,
+          "revealBlock": 0,
+          "revealed": false,
+          "revenuePerToken": 0,
+          "seed": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "soldOut": false,
+          "soldOutAt": 0,
+          "targetsSet": false,
+          "targetsSetAt": 0,
+          "totalRevenueClaimed": 0,
+          "totalRevenueDeposited": 0,
+          "vrfOwed": 0,
+          "vrfTarget": "0x0000000000000000000000000000000000000000"
+        },
+        "stats": {
+          "totalSupply": null,
+          "maxSupply": 10000,
+          "holders": 2,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xc5d5f314da6d4a433f9bf897a2cc24a537576cb1"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x202bb14ab5d7023af461edea6f467d790ffc7a8d677c29c42fa482ae9a95442a",
+          "blockNumber": 26185634,
+          "timestamp": "2026-10-13T19:22:47Z",
+          "reportedBlockNumber": 26185634,
+          "headerBlockNumber": 26185634
+        },
+        "tokenMetadata": {}
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0xc5d5f314da6d4a433f9bf897a2cc24a537576cb1",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "3ab65b2e-296b-4733-a33f-e753fccab19c",
+            "title": "Goblin Gold mint site for the deployed GoblinNFT 0xC5d5F314da6d4a433F9BF897a2cC24A537576cB1 on Ethereum mainnet (deployed at block 26185634)",
+            "url": "https://explorer.imd.fun/jobs/3ab65b2e-296b-4733-a33f-e753fccab19c",
+            "status": "blocked"
+          },
+          {
+            "id": "4912ed15-3dfd-4bb5-a057-a66646bc7335",
+            "title": "Goblin Gold NFT mint on Ethereum mainnet. NO SOURCE CHANGES: deploy commit fdb50e17659ad331d4f74921677bc110f3e4fec0 exactly as it is; findin",
+            "url": "https://explorer.imd.fun/jobs/4912ed15-3dfd-4bb5-a057-a66646bc7335",
+            "status": "completed"
+          },
+          {
+            "id": "e09482ee-3aa4-4312-949c-eb8acb519bd0",
+            "title": "No WalletConnect. Drop the WalletConnect/Reown integration entirely and use injected wallets only (EIP-1193 window.ethereum with EIP-6963 mu",
+            "url": "https://explorer.imd.fun/jobs/e09482ee-3aa4-4312-949c-eb8acb519bd0",
+            "status": "completed"
+          }
+        ],
+        "name": "Goblin Gold"
+      }
+    },
+    {
+      "adapter": "vimd2",
+      "identity": "1:0xecb21b6c3bf69e09a2e34db1f0b25c34586ff1c9",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xecb21b6c3bf69e09a2e34db1f0b25c34586ff1c9",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0xe0f39bba54057b93d0c9fd46d1d54f42e1d6fc103673ef622e0c87dc6ea17c71",
+        "reads": {
+          "name": "VisualIdentity.md Edition 2",
+          "symbol": "VIMD2",
+          "BURN_ADDRESS": "0x000000000000000000000000000000000000dead",
+          "ENTRY_PRICE": 25000000000000000000000,
+          "VOTE_PRICE": 50000000000000000000000,
+          "VOTE_POT_SHARE": 25000000000000000000000,
+          "ENTRY_END": 1792288847,
+          "VOTE_END": 1792548047,
+          "entryCount": 1,
+          "pot": 0,
+          "totalVotes": 0,
+          "prizeClaimed": false,
+          "VIMD": "0x931fd96a22bca8e1008d18ed827d5c042932be17"
+        },
+        "stats": {
+          "totalSupply": null,
+          "maxSupply": null,
+          "holders": 1,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xecb21b6c3bf69e09a2e34db1f0b25c34586ff1c9"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0xd841831c2bc1af9ad950b5f3c3effdc4401ec011cbe4d194039ba2125a2f0c2e",
+          "blockNumber": 26187614,
+          "timestamp": "2026-10-14T02:00:47Z",
+          "reportedBlockNumber": 26187614,
+          "headerBlockNumber": 26187614
+        },
+        "tokenMetadata": {
+          "1:0x931fd96a22bca8e1008d18ed827d5c042932be17": {
+            "chainId": 1,
+            "address": "0x931fd96a22bca8e1008d18ed827d5c042932be17",
+            "status": "checked",
+            "codePresent": true,
+            "name": "VisualIdentity.md",
+            "symbol": "VIMD",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0xecb21b6c3bf69e09a2e34db1f0b25c34586ff1c9",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "a7227c55-15c6-473d-8584-898317adf043",
+            "title": "VisualIdentity.md Edition 2 is an open call where the owner of each identity.md agent seat enters a brand package for IMD together with a po",
+            "url": "https://explorer.imd.fun/jobs/a7227c55-15c6-473d-8584-898317adf043",
+            "status": "completed"
+          }
+        ],
+        "name": "VisualIdentity.md Edition 2"
+      }
+    },
+    {
+      "adapter": "pepeolithic",
+      "identity": "1:0x765956a7307222346b08fff681820a5d77e92028",
+      "evidence": {
+        "chainId": 1,
+        "address": "0x765956a7307222346b08fff681820a5d77e92028",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x2900fbdeb09f4340cebac6a00ba95b4c6e924b1d8f90d97f3b56abc5323728d7",
+        "reads": {
+          "name": "Pepeolithic",
+          "symbol": "PEPEO",
+          "totalSupply": 294,
+          "MAX_SUPPLY": 737,
+          "adam": "0x047f606fd5b2baa5f5c6c4ab8958e45cb6b054b7",
+          "admin": "0x433c8a73bec1273561e4e2201649de12f20b7d58",
+          "caveLength": 86400,
+          "coin": "0xd782bdea4ef02a0bd391eb9089470c8080f0a68e",
+          "coinDecimals": 18,
+          "contractURI": "https://pepeolithic-base-naij.sites.imd.fun/collection.json",
+          "dead": "0x000000000000000000000000000000000000dead",
+          "firstPrice": 1000000000000000000000000,
+          "floorPrice": 10000000000000000000000,
+          "nextFree": 137,
+          "roundLength": 3600,
+          "seatRoot": "0xbe96ac9140fa07013148f2dd158576ae6cbe2b4a0ce4be64782b37acc9ad0e1b",
+          "startTime": 1791810000,
+          "unclaimedReleased": false
+        },
+        "stats": {
+          "totalSupply": 294,
+          "maxSupply": 737,
+          "holders": 285,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0x765956a7307222346b08fff681820a5d77e92028"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x11d741aa2f9439d5b441efb8aa20005662e6b4e565d8d3397fc8391d5cb8abb3",
+          "blockNumber": 26149637,
+          "timestamp": "2026-10-08T19:01:47Z",
+          "reportedBlockNumber": 26149637,
+          "headerBlockNumber": 26149637
+        },
+        "tokenMetadata": {
+          "1:0xd782bdea4ef02a0bd391eb9089470c8080f0a68e": {
+            "chainId": 1,
+            "address": "0xd782bdea4ef02a0bd391eb9089470c8080f0a68e",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Zero To One",
+            "symbol": "ZTO",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0x765956a7307222346b08fff681820a5d77e92028",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "68f0feab-995f-4040-bf4f-bb429382962a",
+            "title": "Pepeolithic: one ERC-721 contract that sells and gives away 737 pieces of a cave wall painted live by the IMD swarm, paid in ZTO that is sen",
+            "url": "https://explorer.imd.fun/jobs/68f0feab-995f-4040-bf4f-bb429382962a",
+            "status": "completed"
+          }
+        ],
+        "name": "Pepeolithic"
+      }
+    },
+    {
+      "adapter": "veterans",
+      "identity": "4663:0x582ea0b5c023f354e0b95bfcb5c12a2062e8e033",
+      "evidence": {
+        "chainId": 4663,
+        "address": "0x582ea0b5c023f354e0b95bfcb5c12a2062e8e033",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0xad91624fc5e3e6584c0f7bd5699fa28d2249dd5831c394ef9f79ca767c76fb4b",
+        "reads": {
+          "name": "VETERANS",
+          "symbol": "VETERANS",
+          "totalSupply": 10,
+          "MAX_SUPPLY": 3333,
+          "totalMinted": 10,
+          "mintPrice": 69000000000000000,
+          "BITS_PER_EPOCH": 1,
+          "BPS": 10000,
+          "BURN_ADDRESS": "0x000000000000000000000000000000000000dead",
+          "BURN_SHARE_BPS": 500,
+          "DEFAULT_TRANSFER_VALIDATOR": "0x721c008fdff27bf06e7e123956e2fe03b63342e3",
+          "EPOCH_COUNT": 10,
+          "EPOCH_SIZE": 333,
+          "MINT_PRICE": 69000000000000000,
+          "POOL_SHARE_BPS": 2000,
+          "ROYALTY_BPS": 690,
+          "STAKING_SHARE_BPS": 6500,
+          "START_BITS": 20,
+          "TREASURY_SHARE_BPS": 1000,
+          "TREASURY_WALLET": "0xeab8865f6af3a866fef97a9a776c58abcb711ab5",
+          "autoApproveTransfersFromValidator": false,
+          "claimPool": "0x3ad9bbdac6058c14c44b530881ed38c32af8e5d1",
+          "currentEpoch": 0,
+          "difficulty": 20,
+          "getTransferValidator": "0x721c008fdff27bf06e7e123956e2fe03b63342e3",
+          "imd": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+          "isConfigured": true,
+          "metadataFrozen": false,
+          "mintsRemainingInEpoch": 323,
+          "owner": "0x0000000000000000000000000000000000000000",
+          "remainingSupply": 3323,
+          "renderer": "0x52aaebf6aabe67b182eca14e3df52601b92765b7",
+          "staking": "0x5d675d359f72902e0066146846730531f594b23b",
+          "target": 110427941548649020598956093796432407239217743554726184882600387580788735,
+          "weth": "0x0bd7d308f8e1639fab988df18a8011f41eacad73"
+        },
+        "stats": {
+          "totalSupply": 10,
+          "maxSupply": 3333,
+          "holders": null
+        },
+        "readBlock": 90424499,
+        "readTimestamp": "2026-10-16T22:10:42Z",
+        "deployment": {
+          "transactionHash": "0x0b6c9c505ce5ff61b6d6c152b792b8135811c3d215755a2604cd86a3d49c1383",
+          "blockNumber": 88572812,
+          "timestamp": "2026-10-14T18:13:44Z",
+          "reportedBlockNumber": 88572812,
+          "headerBlockNumber": 88572812
+        },
+        "tokenMetadata": {
+          "4663:0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127": {
+            "chainId": 4663,
+            "address": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Identity.md",
+            "symbol": "IMD",
+            "decimals": 18,
+            "totalSupply": "59613973835000000000000",
+            "formattedSupply": "59613.973835",
+            "readBlock": 90424499,
+            "readTimestamp": "2026-10-16T22:10:42Z",
+            "warnings": []
+          },
+          "4663:0x0bd7d308f8e1639fab988df18a8011f41eacad73": {
+            "chainId": 4663,
+            "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+            "status": "checked",
+            "codePresent": true,
+            "name": "WETH",
+            "symbol": "WETH",
+            "decimals": 18,
+            "totalSupply": "39168360757570919370647",
+            "formattedSupply": "39168.360757570919370647",
+            "readBlock": 90424499,
+            "readTimestamp": "2026-10-16T22:10:42Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 4663,
+        "contractAddress": "0x582ea0b5c023f354e0b95bfcb5c12a2062e8e033",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "2c1bef7b-7388-4310-8019-abce319d2e01",
+            "title": "Fix wallet and RPC bugs on the VETERANS frontend. Repo: https://github.com/identity-md-launches/launch-1767-workflow-frontend-stage-context ",
+            "url": "https://explorer.imd.fun/jobs/2c1bef7b-7388-4310-8019-abce319d2e01",
+            "status": "completed"
+          },
+          {
+            "id": "b20e9bb1-702c-444a-91df-74e6649560c4",
+            "title": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch",
+            "url": "https://explorer.imd.fun/jobs/b20e9bb1-702c-444a-91df-74e6649560c4",
+            "status": "completed"
+          },
+          {
+            "id": "e3aa6355-83ab-4c73-b6c8-956a41aacfce",
+            "title": "WORKFLOW FRONTEND STAGE CONTEXT: contracts are already deployed. This assignment produces the frontend source, committed static export and v",
+            "url": "https://explorer.imd.fun/jobs/e3aa6355-83ab-4c73-b6c8-956a41aacfce",
+            "status": "completed"
+          }
+        ],
+        "name": "VETERANS"
+      }
+    },
+    {
+      "adapter": "sinopia",
+      "identity": "4663:0x0da78a50b3039f8ca719d01754988b23d7e70fe2",
+      "evidence": {
+        "chainId": 4663,
+        "address": "0x0da78a50b3039f8ca719d01754988b23d7e70fe2",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x0b3596bc63e8ef0091f3e4b5e5e0dff2e2bc6d746cdbb0c8527536cfd8c20b72",
+        "reads": {
+          "name": "Sinopia",
+          "symbol": "SINOPIA",
+          "ACTION": "0x6a6f622e6f70656e406a6f622d31000000000000000000000000000000000000",
+          "JOB_PRICE": 500000000000000000,
+          "RESERVE": 550000000000000000,
+          "MIN_RAISE_BPS": 500,
+          "DURATION": 10800,
+          "EXTENSION": 300,
+          "SETTLE_GRACE": 86400,
+          "DELIVERY_TIMEOUT": 259200,
+          "REVEAL_TIMEOUT": 604800,
+          "BURN": "0x000000000000000000000000000000000000dead",
+          "IMAGE_BASE": "https://api.imd.fun/artifacts/",
+          "latestRoundId": 1,
+          "escrowed": 0,
+          "imd": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127"
+        },
+        "stats": {
+          "totalSupply": null,
+          "maxSupply": null,
+          "holders": null
+        },
+        "readBlock": 90424499,
+        "readTimestamp": "2026-10-16T22:10:42Z",
+        "deployment": {
+          "transactionHash": "0x7cd47ddce3a005e4fc632cf8107c46f2d46a74c014e20bc364e21ac6c71a246e",
+          "blockNumber": 89892607,
+          "timestamp": "2026-10-16T07:14:23Z",
+          "reportedBlockNumber": 89892607,
+          "headerBlockNumber": 89892607
+        },
+        "tokenMetadata": {
+          "4663:0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127": {
+            "chainId": 4663,
+            "address": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Identity.md",
+            "symbol": "IMD",
+            "decimals": 18,
+            "totalSupply": "59613973835000000000000",
+            "formattedSupply": "59613.973835",
+            "readBlock": 90424499,
+            "readTimestamp": "2026-10-16T22:10:42Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "auction / delivery",
+      "record": {
+        "chainId": 4663,
+        "contractAddress": "0x0da78a50b3039f8ca719d01754988b23d7e70fe2",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "b539989d-3302-4e7c-be6e-3449554fec16",
+            "title": "Sinopia: an onchain auction on Robinhood Chain (4663) where each winning bid commissions the IMD swarm, through Intake v2, to paint the winn",
+            "url": "https://explorer.imd.fun/jobs/b539989d-3302-4e7c-be6e-3449554fec16",
+            "status": "completed"
+          }
+        ],
+        "name": "Sinopia"
+      }
+    },
+    {
+      "adapter": "keel",
+      "identity": "1:0xd9822f2878edb457ec6d04ff3b2c8311136ea9ff",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xd9822f2878edb457ec6d04ff3b2c8311136ea9ff",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0xcdc7729f98228897e1c3d96ae28c618a447f0143875bd57a7f712823d08f7908",
+        "reads": {
+          "name": "Keel Notes",
+          "symbol": "KNOTE",
+          "totalSupply": 6,
+          "MAX_SUPPLY": 1111,
+          "totalMinted": 6,
+          "IMD": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+          "KEEL_FACTORY": "0x39dfa7d3ce9364db50433fe9cc2f308c6a219f5f",
+          "KEEL_VAULT": "0xe2fb1c0e5ea5342cd8607efa8e7c44f06b47013c",
+          "MAX_GOLD": 111,
+          "PRECISION": 1000000000000000000000000000000000000,
+          "SYMBOL_GAS_LIMIT": 50000,
+          "MINT_PASS_TYPEHASH": "0x3b13bfdc55a9b2b860f4b312267387ef7e254f94a82a8b5e1f155c09b2b193af",
+          "keelToken": "0x69f0b2a3f690acd73cf9fe631a6aa9f203a6529f",
+          "passSigner": "0x9d2c3d1808488fc863207746d6ac8ce5be78217b",
+          "mintOpen": true,
+          "totalBurned": 0,
+          "goldCount": 2,
+          "totalWeight": 14,
+          "accPerWeight": 0,
+          "liabilities": 0
+        },
+        "stats": {
+          "totalSupply": 6,
+          "maxSupply": 1111,
+          "holders": 6,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xd9822f2878edb457ec6d04ff3b2c8311136ea9ff"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x4849fa6061d1e98c26d8ae90aae2a22996c6b5ff476cd779a4c01e78258daaa8",
+          "blockNumber": 26189921,
+          "timestamp": "2026-10-14T09:43:59Z",
+          "reportedBlockNumber": 26189921,
+          "headerBlockNumber": 26189921
+        },
+        "tokenMetadata": {
+          "1:0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7": {
+            "chainId": 1,
+            "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Identity.md",
+            "symbol": "IMD",
+            "decimals": 18,
+            "totalSupply": "4166397375635000000000000",
+            "formattedSupply": "4166397.375635",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          },
+          "1:0x69f0b2a3f690acd73cf9fe631a6aa9f203a6529f": {
+            "chainId": 1,
+            "address": "0x69f0b2a3f690acd73cf9fe631a6aa9f203a6529f",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Keel",
+            "symbol": "KEEL",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0xd9822f2878edb457ec6d04ff3b2c8311136ea9ff",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "9d75a813-d486-45db-8185-43a905230f9e",
+            "title": "Keel Notes: ERC-721 banknote NFTs for the Keel launchpad. NFT only: do NOT create any ERC-20, pool or liquidity. Contracts (Solidity 0.8.26,",
+            "url": "https://explorer.imd.fun/jobs/9d75a813-d486-45db-8185-43a905230f9e",
+            "status": "completed"
+          }
+        ],
+        "name": "Keel Notes"
+      }
+    },
+    {
+      "adapter": "genesis",
+      "identity": "1:0xe603facf4677ba4b06ad6ac01f025b74b7a96c11",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xe603facf4677ba4b06ad6ac01f025b74b7a96c11",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x2a8d3db6f26a010b8e8c565f946008b53bab95e67ab222bcf9ed354872b8462f",
+        "reads": {
+          "name": "Visual Identity Genesis",
+          "symbol": "VIMDG",
+          "totalSupply": 1,
+          "totalMinted": 1,
+          "ART_A": "0xdb9d147d629633daf8ff42b0cb47a6207349fea9",
+          "ART_B": "0x693667971a5d9a4bc60f5f08792d4609035c998b",
+          "ART_C": "0x63ebde72aeff3b67affe16f0a514a6ccce489b4d",
+          "BURN_AMOUNT": 50000000000000000000000,
+          "DEAD": "0x000000000000000000000000000000000000dead",
+          "EDITION": 1,
+          "FINALIST_COUNT": 3,
+          "MAX_BURN_MINTS": 2000,
+          "MAX_SEAT_ID": 1999,
+          "MAX_VOTE_MINTS": 2000,
+          "SEATS": "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d",
+          "VIMD": "0x931fd96a22bca8e1008d18ed827d5c042932be17",
+          "VOTE_DURATION": 604800,
+          "VOTE_END": 1792531559,
+          "leader": 0,
+          "totalBurnMints": 0,
+          "totalBurned": 0,
+          "totalVoteMints": 1,
+          "totalVotes": 1,
+          "votingOpen": true
+        },
+        "stats": {
+          "totalSupply": 1,
+          "maxSupply": null,
+          "holders": 1,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xe603facf4677ba4b06ad6ac01f025b74b7a96c11"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x08d93710dc3bb299af7bec9d39bdf1b887c3d391e3f1daa48e306433ec2dcf22",
+          "blockNumber": 26186249,
+          "timestamp": "2026-10-13T21:25:59Z",
+          "reportedBlockNumber": 26186249,
+          "headerBlockNumber": 26186249
+        },
+        "tokenMetadata": {
+          "1:0x931fd96a22bca8e1008d18ed827d5c042932be17": {
+            "chainId": 1,
+            "address": "0x931fd96a22bca8e1008d18ed827d5c042932be17",
+            "status": "checked",
+            "codePresent": true,
+            "name": "VisualIdentity.md",
+            "symbol": "VIMD",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0xe603facf4677ba4b06ad6ac01f025b74b7a96c11",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "1036bec0-f793-41fe-8f17-31091cec56f0",
+            "title": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch",
+            "url": "https://explorer.imd.fun/jobs/1036bec0-f793-41fe-8f17-31091cec56f0",
+            "status": "completed"
+          },
+          {
+            "id": "a5314d6e-8de9-49c0-8bac-f0b22508dd87",
+            "title": "WORKFLOW FRONTEND STAGE CONTEXT: contracts are already deployed. This assignment produces the frontend source, committed static export and v",
+            "url": "https://explorer.imd.fun/jobs/a5314d6e-8de9-49c0-8bac-f0b22508dd87",
+            "status": "completed"
+          }
+        ],
+        "name": "Visual Identity Genesis"
+      }
+    },
+    {
+      "adapter": "swarmlers",
+      "identity": "1:0xf376b5deff43d949f515b1fd11865b73e92d5bad",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xf376b5deff43d949f515b1fd11865b73e92d5bad",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x140191b5dd06cf5989e644c591686bab57cff4f4b75cead73d4bc5de85c60968",
+        "reads": {
+          "name": "Swarmlers Agents",
+          "symbol": "SWARMLER-NFT",
+          "MAX_SUPPLY": 2500,
+          "totalMinted": 29,
+          "CREATOR_SUPPLY": 25,
+          "LIFETIME_CAP": 1000000000000000000,
+          "MINT_PRICE": 250000000000000000,
+          "accountedBalance": 1000000000000000000,
+          "activity": "0x29c9a94e717f1d0670f4cd6116d74c36bdb53fc5",
+          "creator": "0xd2b259c56b252f7be70ead6d28cd3cc65aee8c03",
+          "creatorCredit": 100000000000000000,
+          "firstActiveId": 1,
+          "imd": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+          "lastRewardTime": 1791906191,
+          "owner": "0x3d6a89c8751a45dd577a4c1f3b34e71c58236193",
+          "pendingOwner": "0x0000000000000000000000000000000000000000",
+          "publicMintOpen": true,
+          "remainingRewardCapacity": 2499100000000000000000,
+          "rewardDuration": 1728000,
+          "rewardIndex": 562499999999316,
+          "rewardRate": 578703703703,
+          "rewardReserve": 885270833333351244,
+          "totalAllocated": 14729166666648756,
+          "totalClaimed": 0,
+          "totalCreatorPaid": 0,
+          "totalProceeds": 1000000000000000000
+        },
+        "stats": {
+          "totalSupply": null,
+          "maxSupply": 2500,
+          "holders": 5,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xf376b5deff43d949f515b1fd11865b73e92d5bad"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x7a1d2a2634372ad3412e4095b9652eb098ca285ff839f2a8cefc751f16a3dfac",
+          "blockNumber": 26184105,
+          "timestamp": "2026-10-13T14:15:47Z",
+          "reportedBlockNumber": 26184105,
+          "headerBlockNumber": 26184105
+        },
+        "tokenMetadata": {
+          "1:0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7": {
+            "chainId": 1,
+            "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Identity.md",
+            "symbol": "IMD",
+            "decimals": 18,
+            "totalSupply": "4166397375635000000000000",
+            "formattedSupply": "4166397.375635",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0xf376b5deff43d949f515b1fd11865b73e92d5bad",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "5c08d8ef-8bc6-44e9-af48-155b3b5b7a4c",
+            "title": "make the site more interactive like this https://crawlscan.fun/ and also give it a darkmode option. make the website overall more themed abo",
+            "url": "https://explorer.imd.fun/jobs/5c08d8ef-8bc6-44e9-af48-155b3b5b7a4c",
+            "status": "completed"
+          },
+          {
+            "id": "63d64980-7a98-468c-86fc-b382f7a251e3",
+            "title": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch",
+            "url": "https://explorer.imd.fun/jobs/63d64980-7a98-468c-86fc-b382f7a251e3",
+            "status": "completed"
+          },
+          {
+            "id": "f33a89b2-141c-46c9-a87e-8f8686f85bfc",
+            "title": "WORKFLOW FRONTEND STAGE CONTEXT: contracts are already deployed. This assignment produces the frontend source, committed static export and v",
+            "url": "https://explorer.imd.fun/jobs/f33a89b2-141c-46c9-a87e-8f8686f85bfc",
+            "status": "completed"
+          }
+        ],
+        "name": "Swarmlers Agents"
+      }
+    },
+    {
+      "adapter": "pulse",
+      "identity": "1:0x7a3bc2d6578f1528ca963a78824e5ba19257d2fe",
+      "evidence": {
+        "chainId": 1,
+        "address": "0x7a3bc2d6578f1528ca963a78824e5ba19257d2fe",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0xa343fea42fb3e97dcfc343c71de4c3a76a71de2edd2c9df8fd1948bde6a8fb17",
+        "reads": {
+          "name": "Pulse Drone",
+          "symbol": "DRONE",
+          "MAX_SUPPLY": 4096,
+          "totalMinted": 19,
+          "ALIVE_WINDOW": 172800,
+          "BEAT_COOLDOWN": 72000,
+          "MAX_BATCH_SIZE": 256,
+          "pulseToken": "0x6abb57b52a2d12c1af47cd5819154034cf35bc3e",
+          "totalStaked": 238568588469184890656064
+        },
+        "stats": {
+          "totalSupply": null,
+          "maxSupply": 4096,
+          "holders": 19,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0x7a3bc2d6578f1528ca963a78824e5ba19257d2fe"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0xca70e1dfb1a5c6bab79b9bd0bf115ec54c760e5f93cde6dbf0f579f2541c76cc",
+          "blockNumber": 26176575,
+          "timestamp": "2026-10-12T13:04:47Z",
+          "reportedBlockNumber": 26176575,
+          "headerBlockNumber": 26176575
+        },
+        "tokenMetadata": {
+          "1:0x6abb57b52a2d12c1af47cd5819154034cf35bc3e": {
+            "chainId": 1,
+            "address": "0x6abb57b52a2d12c1af47cd5819154034cf35bc3e",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Pulse",
+            "symbol": "PULSE",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0x7a3bc2d6578f1528ca963a78824e5ba19257d2fe",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "a6439653-2448-4693-9db3-1f70ae360bf4",
+            "title": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch",
+            "url": "https://explorer.imd.fun/jobs/a6439653-2448-4693-9db3-1f70ae360bf4",
+            "status": "completed"
+          },
+          {
+            "id": "d182b815-a847-417b-b607-3cc37789ffcd",
+            "title": "WORKFLOW FRONTEND STAGE CONTEXT: contracts are already deployed. This assignment produces the frontend source, committed static export and v",
+            "url": "https://explorer.imd.fun/jobs/d182b815-a847-417b-b607-3cc37789ffcd",
+            "status": "completed"
+          }
+        ],
+        "name": "Pulse Drone"
+      }
+    },
+    {
+      "adapter": "ogpass",
+      "identity": "1:0xca9dc9064ffc695d979ea7da9a35130376bb3217",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xca9dc9064ffc695d979ea7da9a35130376bb3217",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x0901651cd27b1cf9ed973827dff02506558c4febbeacc2358c735947f09a51e6",
+        "reads": {
+          "name": "OG Pass",
+          "symbol": "OGPASS",
+          "totalSupply": 4,
+          "MAX_SUPPLY": 1000,
+          "BASE_PRICE": 1000000000000000000000000,
+          "BPS": 10000,
+          "BURN_ADDRESS": "0x000000000000000000000000000000000000dead",
+          "CLAIM_WINDOW": 2592000,
+          "FOUNDER_BUYBACK": 100000000000000000000000,
+          "PRICE_STEP": 10000000000000000000000,
+          "SELL_BPS": 9250,
+          "buysPaused": false,
+          "claimDeadline": 1794344615,
+          "currentBuyPrice": 1020000000000000000000000,
+          "currentSellPrice": 934250000000000000000000,
+          "curveReserve": 2010000000000000000000000,
+          "founderClaimed": 2,
+          "founderCount": 49,
+          "founderOutstanding": 2,
+          "founderReserve": 4900000000000000000000000,
+          "founderRoot": "0xb9c8ed1655d96a99d756f50819afd0c008b1097497edba9ee4fdb1b7ce2dc6c8",
+          "owner": "0x5b95a971b4583a5f011e9da082acdd679b870d06",
+          "pendingOwner": "0x0000000000000000000000000000000000000000",
+          "publicSupply": 2,
+          "reservedFounderSlots": 47,
+          "OG": "0xce7eb1ad9e2e1c784ea05f7ea4a0fe625923d10a"
+        },
+        "stats": {
+          "totalSupply": 4,
+          "maxSupply": 1000,
+          "holders": 4,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xca9dc9064ffc695d979ea7da9a35130376bb3217"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x407f3e1005ea0480a9c9cc776eae00de3363df78361cd5128815043f8d0d970a",
+          "blockNumber": 26171777,
+          "timestamp": "2026-10-11T21:03:35Z",
+          "reportedBlockNumber": 26171777,
+          "headerBlockNumber": 26171777
+        },
+        "tokenMetadata": {
+          "1:0xce7eb1ad9e2e1c784ea05f7ea4a0fe625923d10a": {
+            "chainId": 1,
+            "address": "0xce7eb1ad9e2e1c784ea05f7ea4a0fe625923d10a",
+            "status": "checked",
+            "codePresent": true,
+            "name": "OG",
+            "symbol": "OG",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0xca9dc9064ffc695d979ea7da9a35130376bb3217",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "31ecbf55-e6bf-4d60-a69f-287794feea84",
+            "title": "Replace the entire site with a single minimal redirect page. Remove all wallet connect, buy, sell, claim and contract code. index.html only:",
+            "url": "https://explorer.imd.fun/jobs/31ecbf55-e6bf-4d60-a69f-287794feea84",
+            "status": "completed"
+          },
+          {
+            "id": "56ecdd23-dac2-4611-89a8-f0d036de44d1",
+            "title": "Build the ogclub.online website for the deployed OGPass contract on Ethereum mainnet. Static site (Vite + viem), no analytics or trackers, n",
+            "url": "https://explorer.imd.fun/jobs/56ecdd23-dac2-4611-89a8-f0d036de44d1",
+            "status": "completed"
+          },
+          {
+            "id": "7377af7e-bc2d-441d-bbaf-5d18937a30c7",
+            "title": "OGPass: a soulbound ERC-721 membership NFT on Ethereum mainnet. NOT an ERC-20; no fungible token, no pool. NFT name \"OG Pass\", symbol \"OGPAS",
+            "url": "https://explorer.imd.fun/jobs/7377af7e-bc2d-441d-bbaf-5d18937a30c7",
+            "status": "completed"
+          },
+          {
+            "id": "ac2d0346-fc13-4cbc-9240-3aea5e8dd231",
+            "title": "OGPass (src/OGPass.sol), deployed on Ethereum mainnet at 0xca9dc9064ffc695d979ea7da9a35130376bb3217 (commit 4527ed9). A soulbound ERC-721 cl",
+            "url": "https://explorer.imd.fun/jobs/ac2d0346-fc13-4cbc-9240-3aea5e8dd231",
+            "status": "completed"
+          }
+        ],
+        "name": "OG Pass"
+      }
+    },
+    {
+      "adapter": "bmc",
+      "identity": "1:0x933046e550325c91d3bbeb3e7f895ff3da87e712",
+      "evidence": {
+        "chainId": 1,
+        "address": "0x933046e550325c91d3bbeb3e7f895ff3da87e712",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0xd4d96a36996139277941447b2c0cdc7a6a07fa74c32c32ec4a77e1f11f7834ee",
+        "reads": {
+          "name": "BMC Illuminati Pass",
+          "symbol": "BMCPASS",
+          "totalSupply": 0,
+          "MAX_SUPPLY": 500,
+          "totalMinted": 0,
+          "GENESIS_PHASE_SUPPLY": 40,
+          "MYSTERY_SUPPLY": 460,
+          "TOTAL_GENESIS": 77,
+          "MYSTERY_GENESIS": 37,
+          "TOTAL_STANDARD": 423,
+          "BMC_DECIMALS": 18,
+          "GENESIS_PRICE": 1000000000000000000000000,
+          "MYSTERY_PRICE": 350000000000000000000000,
+          "MAX_TOTAL_BURN": 201000000000000000000000000,
+          "GENESIS_IMAGES_CID": "bafybeihfihwwpev4gkqjuqawgtptsv3ynzsokclo6odsolvoa65aqaac2u",
+          "SALE_IDLE_TIMEOUT": 2592000,
+          "SEED_REQUEST_TIMEOUT": 129600,
+          "KEY_HASH": "0x3fd2fec10d06ee8f65e7f2e95f5c56511359ece3f33960ad8a866ae24a8ff10b",
+          "CALLBACK_GAS_LIMIT": 500000,
+          "REQUEST_CONFIRMATIONS": 3,
+          "NATIVE_PAYMENT": true,
+          "SUBSCRIPTION_ID": 27852459484169864437638942739291618120641810244677084392617474192083559562985,
+          "totalBurned": 0,
+          "revealedCount": 0,
+          "mysteryGenesisRevealed": 0,
+          "lastMintAt": 0,
+          "seedRequestCount": 0,
+          "seedSet": false,
+          "seed": 0,
+          "seedRequestId": 0,
+          "saleClosed": false,
+          "lastSeedRequestAt": 0,
+          "genesisImagesCID": "bafybeihfihwwpev4gkqjuqawgtptsv3ynzsokclo6odsolvoa65aqaac2u",
+          "seedRequestAvailableAt": 0,
+          "remainingSupply": 500,
+          "genesisPhaseActive": true,
+          "remainingMysteryMints": 460,
+          "pendingReveals": 0,
+          "remainingMysteryGenesis": 37,
+          "remainingMysteryStandard": 423,
+          "currentPrice": 1000000000000000000000000,
+          "BMC": "0x38224239f2bdae357d47cb864bc533d7f72df961"
+        },
+        "stats": {
+          "totalSupply": 0,
+          "maxSupply": 500,
+          "holders": null
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x0014b1797d296b12a73f8cf93010dd4f6ebbc9a9935730e53cf317f4c03eab94",
+          "blockNumber": 26180749,
+          "timestamp": "2026-10-13T03:01:35Z",
+          "reportedBlockNumber": 26180749,
+          "headerBlockNumber": 26180749
+        },
+        "tokenMetadata": {
+          "1:0x38224239f2bdae357d47cb864bc533d7f72df961": {
+            "chainId": 1,
+            "address": "0x38224239f2bdae357d47cb864bc533d7f72df961",
+            "status": "checked",
+            "codePresent": true,
+            "name": "BMC Illuminati",
+            "symbol": "BMC",
+            "decimals": 18,
+            "totalSupply": "984094757004634928457536955",
+            "formattedSupply": "984094757.004634928457536955",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0x933046e550325c91d3bbeb3e7f895ff3da87e712",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "52867582-cb22-463c-bc8b-6d84ef387956",
+            "title": "PROJECT: BMC ILLUMINATI PASS #1356 \u2014 IMPLEMENT FINAL CHAINLINK VRF SECURITY FIX Repository: https://github.com/0xSt3w/launch-1356-project-bm",
+            "url": "https://explorer.imd.fun/jobs/52867582-cb22-463c-bc8b-6d84ef387956",
+            "status": "completed"
+          }
+        ],
+        "name": "BMC Illuminati Pass"
+      }
+    },
+    {
+      "adapter": "bmc",
+      "identity": "1:0x8402ce12b472c69633443f58c55ebbe15c8c68a0",
+      "evidence": {
+        "chainId": 1,
+        "address": "0x8402ce12b472c69633443f58c55ebbe15c8c68a0",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x14a7f5a7bdbb441005b3a89682f6982e807e7791820d4ce0088d5e79bbbcfdf1",
+        "reads": {
+          "name": "BMC Illuminati Pass",
+          "symbol": "BMCPASS",
+          "totalSupply": 0,
+          "MAX_SUPPLY": 500,
+          "totalMinted": 0,
+          "BMC_DECIMALS": 18,
+          "CALLBACK_GAS_RESERVE": 30000,
+          "CALLBACK_REVEAL_BATCH": 4,
+          "GAS_PER_REVEAL": 110000,
+          "GENESIS_PHASE_SUPPLY": 40,
+          "GENESIS_PRICE": 1000000000000000000000000,
+          "MAX_CALLBACK_GAS_LIMIT": 2500000,
+          "MAX_REQUEST_CONFIRMATIONS": 200,
+          "MAX_TOTAL_BURN": 201000000000000000000000000,
+          "MIN_CALLBACK_GAS_LIMIT": 150000,
+          "MIN_REQUEST_CONFIRMATIONS": 3,
+          "MYSTERY_GENESIS": 37,
+          "MYSTERY_PRICE": 350000000000000000000000,
+          "MYSTERY_SUPPLY": 460,
+          "RETRY_DELAY": 86400,
+          "TOTAL_GENESIS": 77,
+          "TOTAL_STANDARD": 423,
+          "VRF_COORDINATOR": "0xd7f86b4b8cae7d942340ff628f82735b7a20893a",
+          "currentPrice": 1000000000000000000000000,
+          "genesisCIDLocked": true,
+          "genesisImagesCID": "bafybeihfihwwpev4gkqjuqawgtptsv3ynzsokclo6odsolvoa65aqaac2u",
+          "genesisPhaseActive": true,
+          "mysteryGenesisRevealed": 0,
+          "owner": "0x83027ad9d0d5374335086c539dadd1db983441b0",
+          "pendingOwner": "0x0000000000000000000000000000000000000000",
+          "pendingReveals": 0,
+          "remainingMysteryGenesis": 37,
+          "remainingMysteryMints": 460,
+          "remainingMysteryStandard": 423,
+          "remainingSupply": 500,
+          "revealedCount": 0,
+          "totalBurned": 0,
+          "BMC": "0x38224239f2bdae357d47cb864bc533d7f72df961"
+        },
+        "stats": {
+          "totalSupply": 0,
+          "maxSupply": 500,
+          "holders": null
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x0adb4d01ac65b8183ac191921b41fe93ebe6800b48dced4b5a8943c8309ac2ae",
+          "blockNumber": 26180751,
+          "timestamp": "2026-10-13T03:01:59Z",
+          "reportedBlockNumber": 26180751,
+          "headerBlockNumber": 26180751
+        },
+        "tokenMetadata": {
+          "1:0x38224239f2bdae357d47cb864bc533d7f72df961": {
+            "chainId": 1,
+            "address": "0x38224239f2bdae357d47cb864bc533d7f72df961",
+            "status": "checked",
+            "codePresent": true,
+            "name": "BMC Illuminati",
+            "symbol": "BMC",
+            "decimals": 18,
+            "totalSupply": "984094757004634928457536955",
+            "formattedSupply": "984094757.004634928457536955",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0x8402ce12b472c69633443f58c55ebbe15c8c68a0",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "4dc09c22-dc84-441c-982c-ed4ec4d340ac",
+            "title": "SECURITY AUDIT \u2014 BMC ILLUMINATI PASS V3 Repository: https://github.com/0xSt3w/launch-1356-project-bmc-illuminati-pass Branch: security/vrf-r",
+            "url": "https://explorer.imd.fun/jobs/4dc09c22-dc84-441c-982c-ed4ec4d340ac",
+            "status": "completed"
+          }
+        ],
+        "name": "BMC Illuminati Pass"
+      }
+    },
+    {
+      "adapter": "bmc",
+      "identity": "1:0xedd2be808e73bc443bc12aa07586193c193e8d51",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xedd2be808e73bc443bc12aa07586193c193e8d51",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0xe6ea784c3626bca2a767cd5abfce02b9472c93eb9477e9c4a1bcf160cca0ea4b",
+        "reads": {
+          "name": "BMC Illuminati Pass",
+          "symbol": "BMCPASS",
+          "totalSupply": 0,
+          "MAX_SUPPLY": 500,
+          "totalMinted": 0,
+          "GENESIS_PHASE_SUPPLY": 40,
+          "MYSTERY_SUPPLY": 460,
+          "TOTAL_GENESIS": 77,
+          "MYSTERY_GENESIS": 37,
+          "TOTAL_STANDARD": 423,
+          "BMC_DECIMALS": 18,
+          "GENESIS_PRICE": 1000000000000000000000000,
+          "MYSTERY_PRICE": 350000000000000000000000,
+          "MAX_TOTAL_BURN": 201000000000000000000000000,
+          "genesisImagesCID": "bafybeihfihwwpev4gkqjuqawgtptsv3ynzsokclo6odsolvoa65aqaac2u",
+          "BLOCK_HISTORY": "0x0000f90827f1c53a10cb7a02335b175320002935",
+          "REVEAL_WINDOW": 8191,
+          "totalBurned": 0,
+          "revealedCount": 0,
+          "mysteryGenesisRevealed": 0,
+          "mintingOpen": false,
+          "nextRevealId": 0,
+          "remainingSupply": 500,
+          "genesisPhaseActive": true,
+          "remainingMysteryMints": 460,
+          "pendingReveals": 0,
+          "remainingMysteryGenesis": 37,
+          "remainingMysteryStandard": 423,
+          "currentPrice": 1000000000000000000000000,
+          "BMC": "0x38224239f2bdae357d47cb864bc533d7f72df961"
+        },
+        "stats": {
+          "totalSupply": 0,
+          "maxSupply": 500,
+          "holders": null
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0xd4420d36a0ac16aacc09b02de98b83d76882ab8b533af3eee1416b772619f5b1",
+          "blockNumber": 26180757,
+          "timestamp": "2026-10-13T03:03:11Z",
+          "reportedBlockNumber": 26180757,
+          "headerBlockNumber": 26180757
+        },
+        "tokenMetadata": {
+          "1:0x38224239f2bdae357d47cb864bc533d7f72df961": {
+            "chainId": 1,
+            "address": "0x38224239f2bdae357d47cb864bc533d7f72df961",
+            "status": "checked",
+            "codePresent": true,
+            "name": "BMC Illuminati",
+            "symbol": "BMC",
+            "decimals": 18,
+            "totalSupply": "984094757004634928457536955",
+            "formattedSupply": "984094757.004634928457536955",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "not-started",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0xedd2be808e73bc443bc12aa07586193c193e8d51",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "c365fa20-6fba-42d5-b73f-6d4050abce8f",
+            "title": "# BMC ILLUMINATI \u2014 INTEGRATE NFT MINTING INTO EXISTING WEBSITE I want you to upgrade my EXISTING BMC Illuminati website with a complete Ethe",
+            "url": "https://explorer.imd.fun/jobs/c365fa20-6fba-42d5-b73f-6d4050abce8f",
+            "status": "completed"
+          },
+          {
+            "id": "e05a7321-f1be-4eb3-8341-7e0db1ed7233",
+            "title": "# MISSION PRIORITAIRE \u2014 BMC ILLUMINATI WEB3 PLATFORM Tu es un d\u00e9veloppeur Web3 senior, ing\u00e9nieur s\u00e9curit\u00e9 blockchain et sp\u00e9cialiste Ethereum",
+            "url": "https://explorer.imd.fun/jobs/e05a7321-f1be-4eb3-8341-7e0db1ed7233",
+            "status": "completed"
+          }
+        ],
+        "name": "BMC Illuminati Pass"
+      }
+    },
+    {
+      "adapter": "template",
+      "identity": "1:0xc2517f76766b955260bf94c50da1b3366c9ae57b",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xc2517f76766b955260bf94c50da1b3366c9ae57b",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x822b9f2dafe958b0483b34267b797c02b27980596160589bcf2eb0f903748c08",
+        "reads": {
+          "name": "ARTIFACTS #000",
+          "symbol": "ARTIFACTS",
+          "ROYALTY_BPS": 750,
+          "factory": "0x0000000000000000000000000000000000000000",
+          "pieceId": 0,
+          "ciphertext": "0x0000000000000000000000000000000000000000",
+          "commitment": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "keyHolder": "0x0000000000000000000000000000000000000000",
+          "previousOwner": "0x0000000000000000000000000000000000000000",
+          "transferCount": 0
+        },
+        "stats": {
+          "totalSupply": null,
+          "maxSupply": null,
+          "holders": null
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x079472cb919e8783f21dae2debc7c9c642bb0024997777de1cac7f10aef64f6e",
+          "blockNumber": 26186454,
+          "timestamp": "2026-10-13T22:06:59Z",
+          "reportedBlockNumber": 26186454,
+          "headerBlockNumber": 26186454
+        },
+        "tokenMetadata": {}
+      },
+      "expectedState": "unknown",
+      "record": {
+        "chainId": null,
+        "contractAddress": null,
+        "category": null,
+        "jobs": null,
+        "name": null
+      }
+    },
+    {
+      "adapter": "template",
+      "identity": "1:0x84286f3c9276807a36730701d417f2bbdb85732a",
+      "evidence": {
+        "chainId": 1,
+        "address": "0x84286f3c9276807a36730701d417f2bbdb85732a",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0xbe5707b8501372e3af80f32ebaf00deb53e4ad99b8c8821797bc73014185b95c",
+        "reads": {
+          "name": "",
+          "symbol": "",
+          "totalSupply": 0,
+          "maxSupply": 0,
+          "mintPrice": 0,
+          "paused": false,
+          "PLATFORM": "0x02b4bd9cc103fd502b2f3f601e29e6ae2039ac85",
+          "PLATFORM_FEE": 500000000000000,
+          "RESERVE": "0x02b4bd9cc103fd502b2f3f601e29e6ae2039ac85",
+          "baseURI": "",
+          "creator": "0x0000000000000000000000000000000000000000",
+          "maxPerWallet": 0,
+          "metadataFrozen": false,
+          "owner": "0x0000000000000000000000000000000000000000",
+          "pendingOwner": "0x0000000000000000000000000000000000000000",
+          "provenanceHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "provenanceSet": false,
+          "reserveMinted": 0,
+          "revealSeed": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "revealSeedSet": false,
+          "royaltyBps": 0,
+          "unrevealedURI": ""
+        },
+        "stats": {
+          "totalSupply": 0,
+          "maxSupply": 0,
+          "holders": null
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0xc9138594608a9ff5d72a6be4155ac857f8f9d76b594db2b2a3b54b469dfd3e44",
+          "blockNumber": 26182025,
+          "timestamp": "2026-10-13T07:18:35Z",
+          "reportedBlockNumber": 26182025,
+          "headerBlockNumber": 26182025
+        },
+        "tokenMetadata": {}
+      },
+      "expectedState": "unknown",
+      "record": {
+        "chainId": null,
+        "contractAddress": null,
+        "category": null,
+        "jobs": null,
+        "name": null
+      }
+    },
+    {
+      "adapter": "loom",
+      "identity": "1:0xb738bbf1d93aa204ef7575610a7f0195ad4a70c6",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xb738bbf1d93aa204ef7575610a7f0195ad4a70c6",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x8572d1deb068ad17278743185a8c7c603b34644e5477f04250e74a0ff37d423d",
+        "reads": {
+          "name": "Swarm Cats",
+          "symbol": "SCAT",
+          "totalSupply": 5,
+          "maxSupply": 10000,
+          "mintPrice": 0,
+          "paused": false,
+          "PLATFORM": "0x02b4bd9cc103fd502b2f3f601e29e6ae2039ac85",
+          "PLATFORM_FEE": 500000000000000,
+          "RESERVE": "0x02b4bd9cc103fd502b2f3f601e29e6ae2039ac85",
+          "baseURI": "ipfs://bafybeicxayonmssrh3btjwkqg6txdpz5nztstlp5vo4tkmtol7sih664gm/",
+          "creator": "0x02b4bd9cc103fd502b2f3f601e29e6ae2039ac85",
+          "maxPerWallet": 5,
+          "metadataFrozen": false,
+          "owner": "0x02b4bd9cc103fd502b2f3f601e29e6ae2039ac85",
+          "pendingOwner": "0x0000000000000000000000000000000000000000",
+          "provenanceHash": "0x3b3f28b61d3ed67f8440a963bc78e3222bbba2462c3e0283c39b395adc54bdd0",
+          "provenanceSet": true,
+          "reserveMinted": 0,
+          "revealSeed": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "revealSeedSet": false,
+          "royaltyBps": 500,
+          "unrevealedURI": ""
+        },
+        "stats": {
+          "totalSupply": 5,
+          "maxSupply": 10000,
+          "holders": 1,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xb738bbf1d93aa204ef7575610a7f0195ad4a70c6"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x8ec60eee49abc01ff10313ce6ff4d7b5f1c5d20b8693fd644bab3e01b77c0344",
+          "blockNumber": 26182174,
+          "timestamp": "2026-10-13T07:48:23Z",
+          "reportedBlockNumber": 26182174,
+          "headerBlockNumber": 26182174
+        },
+        "tokenMetadata": {}
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0xb738bbf1d93aa204ef7575610a7f0195ad4a70c6",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "4e745792-9a49-4104-927d-57223f80e251",
+            "title": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch",
+            "url": "https://explorer.imd.fun/jobs/4e745792-9a49-4104-927d-57223f80e251",
+            "status": "completed"
+          },
+          {
+            "id": "82a9eb03-034f-434c-96b2-1eb115fcca79",
+            "title": "WORKFLOW FRONTEND STAGE CONTEXT: contracts are already deployed. This assignment produces the frontend source, committed static export and v",
+            "url": "https://explorer.imd.fun/jobs/82a9eb03-034f-434c-96b2-1eb115fcca79",
+            "status": "completed"
+          }
+        ],
+        "name": "Swarm Cats"
+      }
+    },
+    {
+      "adapter": "farm",
+      "identity": "4663:0xdda6387bf0244fc82eb3dbda168acc4d9eed56a3",
+      "evidence": {
+        "chainId": 4663,
+        "address": "0xdda6387bf0244fc82eb3dbda168acc4d9eed56a3",
+        "standard": "ERC-1155",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0xd4a23d86800de9b106d7929bedab057f0c02d244ea60bb6bec00bb259a7a4961",
+        "reads": {
+          "nextId": 115,
+          "engine": "0x9d8cd4a606f8c14f8bd93e612fa0f2b9efc6d83a",
+          "packSale": "0xf28d8d409e471f7ceff7a029dcc56328e167c3d5",
+          "starterClaim": "0xcda5653467843137aadb2729151e5e8042a49b13",
+          "farmCore": "0x40499cca542b3cd2db0287fa0b6da87002f042e8",
+          "season": "0x384f20703cee82da2ee55a2b98a095d21b1e959b",
+          "registry": "0x1b41fc9723df25eec7e91d947072dccc2483285f"
+        },
+        "stats": {
+          "totalSupply": 110,
+          "maxSupply": null,
+          "holders": 9,
+          "totalMinted": 114
+        },
+        "readBlock": 90424499,
+        "readTimestamp": "2026-10-16T22:10:42Z",
+        "deployment": {
+          "transactionHash": "0x1cface4af63416b81af7e069c215b3aa44aafd7e841167ef9e887f7949ffbc1f",
+          "blockNumber": 88288289,
+          "timestamp": "2026-10-14T10:16:54Z",
+          "reportedBlockNumber": 88288289,
+          "headerBlockNumber": 88288289
+        },
+        "dependencyReads": {
+          "StarterClaim": {
+            "chainId": 4663,
+            "address": "0xcda5653467843137aadb2729151e5e8042a49b13",
+            "readBlock": 90424499,
+            "reads": {
+              "launchTime": 1791967009,
+              "freeClaimEnds": 1794559009,
+              "freeClaimed": 1,
+              "root": "0xb7d282d1c46f6062963bf2d134d058aa4de3af4cb7b092c5a0fd12ed74dc0f2c",
+              "freeRoot": "0xdc0842e9fd0017b08be09e787e877c53cfb446ca52aabdb9770e5c33b49d1325",
+              "snapshotBlock": 26182375
+            },
+            "errors": {}
+          },
+          "GameRegistry": {
+            "address": "0x1b41fc9723df25eec7e91d947072dccc2483285f",
+            "chainId": 4663,
+            "readBlock": 90424499,
+            "readTimestamp": "2026-10-16T22:10:42Z",
+            "reads": {
+              "token": "0x38b05971c79e738f64452be83c78ec3d66535b7a"
+            },
+            "errors": {}
+          }
+        },
+        "specialStats": {
+          "complete": true,
+          "liveItems": 110,
+          "beneficialHolders": 11,
+          "custodyHolders": 9,
+          "readBlock": 90424499,
+          "totalMinted": 114,
+          "burnedItems": 4
+        },
+        "tokenMetadata": {
+          "4663:0x38b05971c79e738f64452be83c78ec3d66535b7a": {
+            "chainId": 4663,
+            "address": "0x38b05971c79e738f64452be83c78ec3d66535b7a",
+            "status": "checked",
+            "codePresent": true,
+            "name": "BLACKOUT",
+            "symbol": "BLACKOUT",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 90424499,
+            "readTimestamp": "2026-10-16T22:10:42Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "unknown",
+      "record": {
+        "chainId": 4663,
+        "contractAddress": "0xdda6387bf0244fc82eb3dbda168acc4d9eed56a3",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "04dcfabf-fb44-4886-a470-80e15f46efd5",
+            "title": "Update the BLACKOUT demo site from job 5097a8f8 (same repo and site). Goal: much simpler and friendlier for new players. Keep the pixel styl",
+            "url": "https://explorer.imd.fun/jobs/04dcfabf-fb44-4886-a470-80e15f46efd5",
+            "status": "completed"
+          },
+          {
+            "id": "2f84393e-9879-41ba-bcf0-1da1ae29686d",
+            "title": "Project: https://playblackout.xyz UX update for the live BLACKOUT site (repo identity-md-launches/launch-1263-build-pre-launch-website-black",
+            "url": "https://explorer.imd.fun/jobs/2f84393e-9879-41ba-bcf0-1da1ae29686d",
+            "status": "completed"
+          },
+          {
+            "id": "3e803ec6-bef3-43dd-8b69-ff95d798ed83",
+            "title": "Project: https://playblackout.xyz Final polish of the live BLACKOUT site (repo identity-md-launches/launch-1263-build-pre-launch-website-bla",
+            "url": "https://explorer.imd.fun/jobs/3e803ec6-bef3-43dd-8b69-ff95d798ed83",
+            "status": "completed"
+          },
+          {
+            "id": "424cf08d-e9a0-453f-8a4a-ce3c92b21ee8",
+            "title": "Project: https://playblackout.xyz Gameplay UX update for the live BLACKOUT site (repo identity-md-launches/launch-1263-build-pre-launch-webs",
+            "url": "https://explorer.imd.fun/jobs/424cf08d-e9a0-453f-8a4a-ce3c92b21ee8",
+            "status": "completed"
+          },
+          {
+            "id": "5097a8f8-f3a8-47b3-9f24-7133d4e88279",
+            "title": "Update the BLACKOUT pre-launch site (previous site jobs e30bc484 and c2fd0306; keep the pixel style, palette, DEMO mode with no wallet, Chai",
+            "url": "https://explorer.imd.fun/jobs/5097a8f8-f3a8-47b3-9f24-7133d4e88279",
+            "status": "completed"
+          },
+          {
+            "id": "64605c27-0dd2-466e-be98-0ecb895a4622",
+            "title": "Update the BLACKOUT site (same label as before: blackout-mine-the-city-pray-the.sites.imd.fun; keep the label so playblackout.xyz keeps work",
+            "url": "https://explorer.imd.fun/jobs/64605c27-0dd2-466e-be98-0ecb895a4622",
+            "status": "completed"
+          },
+          {
+            "id": "8b85abbc-2c51-4905-be40-8aaaa10ffde2",
+            "title": "Project: https://playblackout.xyz Redesign the BLACKOUT website (repo identity-md-launches/launch-1263-build-pre-launch-website-blackout, cu",
+            "url": "https://explorer.imd.fun/jobs/8b85abbc-2c51-4905-be40-8aaaa10ffde2",
+            "status": "completed"
+          },
+          {
+            "id": "9759766f-2985-4598-a301-d5bab4089b56",
+            "title": "Fix the BLACKOUT pre-launch site from job 5097a8f8 (same repo and site, keep everything else unchanged). Publish with label \"blackout\" if av",
+            "url": "https://explorer.imd.fun/jobs/9759766f-2985-4598-a301-d5bab4089b56",
+            "status": "completed"
+          },
+          {
+            "id": "97804103-4043-4c4c-882b-68f2bfa657b4",
+            "title": "BLACKOUT site: art, landing and polish upgrade. Update the existing site in place and keep the same label blackout-mine-the-city-pray-the (p",
+            "url": "https://explorer.imd.fun/jobs/97804103-4043-4c4c-882b-68f2bfa657b4",
+            "status": "completed"
+          },
+          {
+            "id": "afe4bf4f-7218-482e-8e08-969fd3121a08",
+            "title": "v10: fix RPC errors and make BLACKOUT juicy and as player-friendly as possible. Keep the same site label blackout-mine-the-city-pray-the.sit",
+            "url": "https://explorer.imd.fun/jobs/afe4bf4f-7218-482e-8e08-969fd3121a08",
+            "status": "completed"
+          },
+          {
+            "id": "b342a6e4-34f7-41df-bf9e-324f982ae443",
+            "title": "v9: simplify the Packs screen and fix the four v8 design-critic findings. Keep the same site label blackout-mine-the-city-pray-the.sites.imd",
+            "url": "https://explorer.imd.fun/jobs/b342a6e4-34f7-41df-bf9e-324f982ae443",
+            "status": "completed"
+          },
+          {
+            "id": "c2fd0306-6370-4204-a3e8-1d88b666ac2d",
+            "title": "Update the BLACKOUT demo site (previous site job e30bc484, keep its pixel style, palette, DEMO mode, no wallet, ChainAdapter architecture). ",
+            "url": "https://explorer.imd.fun/jobs/c2fd0306-6370-4204-a3e8-1d88b666ac2d",
+            "status": "blocked"
+          },
+          {
+            "id": "da5e3246-1720-46e1-b126-50cba8fdf7af",
+            "title": "Turn the BLACKOUT site into the live game app. KEEP the same site label (blackout-mine-the-city-pray-the.sites.imd.fun) so playblackout.xyz ",
+            "url": "https://explorer.imd.fun/jobs/da5e3246-1720-46e1-b126-50cba8fdf7af",
+            "status": "completed"
+          },
+          {
+            "id": "e30bc484-4748-4fad-9751-a0babb61a8b1",
+            "title": "Build the pre-launch website for BLACKOUT (X: https://x.com/IMDBlackout), an upcoming pixel-art idle mining-farm game on Robinhood Chain whe",
+            "url": "https://explorer.imd.fun/jobs/e30bc484-4748-4fad-9751-a0babb61a8b1",
+            "status": "completed"
+          },
+          {
+            "id": "ecdced72-cf6c-4732-b8f0-2c8b366d39ee",
+            "title": "BLACKOUT L3 (job A) on Robinhood Chain (4663). NO SOURCE CHANGES: every contract is pinned (ModuleCode -> GameRegistry -> the deployed L1 De",
+            "url": "https://explorer.imd.fun/jobs/ecdced72-cf6c-4732-b8f0-2c8b366d39ee",
+            "status": "completed"
+          }
+        ],
+        "name": "FarmItems"
+      }
+    },
+    {
+      "adapter": "courier",
+      "identity": "4663:0x2c328e6d3ae72e5b06e10884d83b01f1b0342f85",
+      "evidence": {
+        "chainId": 4663,
+        "address": "0x2c328e6d3ae72e5b06e10884d83b01f1b0342f85",
+        "standard": "ERC-1155",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x245d6d99cbbecaa8df8e0c0e80840a3bd8648592357111fd587faa2b5bbd99c3",
+        "reads": {
+          "name": "Courier Companions",
+          "symbol": "COURIER",
+          "BURN_ADDRESS": "0x000000000000000000000000000000000000dead",
+          "ROYALTY_BPS": 500,
+          "creator": "0x72215670c2266bc224949a12c514a77d7fd5d566",
+          "owner": "0x72215670c2266bc224949a12c514a77d7fd5d566",
+          "rewards": "0x55c6548125c5fe33d59950d814fcd91222e87cd6",
+          "totalBurned": 0,
+          "totalRecycled": 0,
+          "token": "0x7deec126e0bc35b1246129f30b6d6f17a6ec9392"
+        },
+        "stats": {
+          "totalSupply": 0,
+          "maxSupply": null,
+          "holders": null,
+          "totalMinted": 0
+        },
+        "readBlock": 90424499,
+        "readTimestamp": "2026-10-16T22:10:42Z",
+        "deployment": {
+          "transactionHash": "0x6135e14fcbe8381cfe9e25e1800cc505f378b2efaebf3a521e62441b3945b843",
+          "blockNumber": 87504238,
+          "timestamp": "2026-10-13T12:15:56Z",
+          "reportedBlockNumber": 87504238,
+          "headerBlockNumber": 87504238
+        },
+        "eventScan": {
+          "complete": true,
+          "events": [],
+          "items": [],
+          "fromBlock": 87504238,
+          "toBlock": 90424499,
+          "event": "ItemConfigured(uint256,uint256,uint256,uint256,bool,string)"
+        },
+        "tokenMetadata": {
+          "4663:0x7deec126e0bc35b1246129f30b6d6f17a6ec9392": {
+            "chainId": 4663,
+            "address": "0x7deec126e0bc35b1246129f30b6d6f17a6ec9392",
+            "status": "checked",
+            "codePresent": true,
+            "name": "MOON",
+            "symbol": "MOON",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 90424499,
+            "readTimestamp": "2026-10-16T22:10:42Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "unconfigured",
+      "record": {
+        "chainId": 4663,
+        "contractAddress": "0x2c328e6d3ae72e5b06e10884d83b01f1b0342f85",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "2fba05ac-714b-473a-863e-c9ba333959e6",
+            "title": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch",
+            "url": "https://explorer.imd.fun/jobs/2fba05ac-714b-473a-863e-c9ba333959e6",
+            "status": "completed"
+          },
+          {
+            "id": "c5dff61a-dde5-4341-96bf-f5a4c3d0b6f9",
+            "title": "WORKFLOW FRONTEND STAGE CONTEXT: contracts are already deployed. This assignment produces the frontend source, committed static export and v",
+            "url": "https://explorer.imd.fun/jobs/c5dff61a-dde5-4341-96bf-f5a4c3d0b6f9",
+            "status": "completed"
+          }
+        ],
+        "name": "Courier Companions"
+      }
+    },
+    {
+      "adapter": "hive",
+      "identity": "1:0x800504f0d471fa3647c2414167e55ca06df16ab6",
+      "evidence": {
+        "chainId": 1,
+        "address": "0x800504f0d471fa3647c2414167e55ca06df16ab6",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x186d053da07fe71e470cc5d632ffef7ed61582b73bdf713707b78bac3c3c1c9f",
+        "reads": {
+          "name": "Hive Wars Conqueror",
+          "symbol": "COMB",
+          "totalSupply": 0,
+          "hiveWars": "0xa7b90c8ec172fdbb03f885ab9d21a4e26d8db590"
+        },
+        "stats": {
+          "totalSupply": 0,
+          "maxSupply": null,
+          "holders": null
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0xa674033de4e9d955ba082527c25de7c8b7f16da5a8a7557bd319f860d2e8fb20",
+          "blockNumber": 26177027,
+          "timestamp": "2026-10-12T14:35:59Z",
+          "reportedBlockNumber": 26177027,
+          "headerBlockNumber": 26177027
+        },
+        "dependencyReads": {
+          "HiveWars": {
+            "chainId": 1,
+            "address": "0xa7b90c8ec172fdbb03f885ab9d21a4e26d8db590",
+            "readBlock": 26208001,
+            "reads": {
+              "startTime": 1791815759,
+              "currentEpoch": 5,
+              "currentSeason": 1,
+              "lastSettledEpoch": 0,
+              "totalStaked": 0,
+              "nectarToken": "0x462bc29829dce787e3c8b32f5c032a49234f0e2b"
+            },
+            "errors": {}
+          }
+        },
+        "tokenMetadata": {
+          "1:0x462bc29829dce787e3c8b32f5c032a49234f0e2b": {
+            "chainId": 1,
+            "address": "0x462bc29829dce787e3c8b32f5c032a49234f0e2b",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Nectar",
+            "symbol": "NECTAR",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "unknown",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0x800504f0d471fa3647c2414167e55ca06df16ab6",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "48c1e62e-e86f-44aa-a0c7-bc7a4705b2e8",
+            "title": "WORKFLOW FRONTEND STAGE CONTEXT: contracts are already deployed. This assignment produces the frontend source, committed static export and v",
+            "url": "https://explorer.imd.fun/jobs/48c1e62e-e86f-44aa-a0c7-bc7a4705b2e8",
+            "status": "completed"
+          },
+          {
+            "id": "f9268952-a257-453e-a58b-445dc5239c4a",
+            "title": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch",
+            "url": "https://explorer.imd.fun/jobs/f9268952-a257-453e-a58b-445dc5239c4a",
+            "status": "completed"
+          }
+        ],
+        "name": "Hive Wars Conqueror"
+      }
+    },
+    {
+      "adapter": "union",
+      "identity": "1:0xd3630711f6d5e25b41d6bdbdb630fffefa170c5d",
+      "evidence": {
+        "chainId": 1,
+        "address": "0xd3630711f6d5e25b41d6bdbdb630fffefa170c5d",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x5a59d352e85942b85b54d840a802da26af733a913331efef1e97e7ecb6a7ada4",
+        "reads": {
+          "name": "Swarm Local 2000 Union Card",
+          "symbol": "STRIKE-CARD",
+          "IDENTITY_MD": "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d",
+          "strike": "0xd1f91ee80ca01ecedd7bc8172b3441ec8c508286"
+        },
+        "stats": {
+          "totalSupply": null,
+          "maxSupply": null,
+          "holders": 1,
+          "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xd3630711f6d5e25b41d6bdbdb630fffefa170c5d"
+        },
+        "readBlock": 26208001,
+        "readTimestamp": "2026-10-16T22:10:35Z",
+        "deployment": {
+          "transactionHash": "0x6cd3450853dc4eec28a8dc67ca7dd273f76fb1414935e39f559dfaa3a568822d",
+          "blockNumber": 26130545,
+          "timestamp": "2026-10-06T03:07:47Z",
+          "reportedBlockNumber": 26130545,
+          "headerBlockNumber": 26130545
+        },
+        "dependencyReads": {
+          "UnionCard": {
+            "chainId": 1,
+            "address": "0xd3630711f6d5e25b41d6bdbdb630fffefa170c5d",
+            "readBlock": 26208001,
+            "reads": {
+              "strike": "0xd1f91ee80ca01ecedd7bc8172b3441ec8c508286",
+              "IDENTITY_MD": "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d"
+            },
+            "errors": {}
+          },
+          "Strike": {
+            "address": "0xd1f91ee80ca01ecedd7bc8172b3441ec8c508286",
+            "chainId": 1,
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "reads": {
+              "imd": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7"
+            },
+            "errors": {}
+          }
+        },
+        "tokenMetadata": {
+          "1:0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7": {
+            "chainId": 1,
+            "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Identity.md",
+            "symbol": "IMD",
+            "decimals": 18,
+            "totalSupply": "4166397375635000000000000",
+            "formattedSupply": "4166397.375635",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          },
+          "1:0xd1f91ee80ca01ecedd7bc8172b3441ec8c508286": {
+            "chainId": 1,
+            "address": "0xd1f91ee80ca01ecedd7bc8172b3441ec8c508286",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Swarm Local 2000",
+            "symbol": "STRIKE",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "open",
+      "record": {
+        "chainId": 1,
+        "contractAddress": "0xd3630711f6d5e25b41d6bdbdb630fffefa170c5d",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "f4e26b46-534c-4ddd-9da9-ba805528b050",
+            "title": "A custom token: Swarm Local 2000 (STRIKE). Token name: Swarm Local 2000 Token symbol: STRIKE Token supply: 1,000,000,000 with 18 decimals, a",
+            "url": "https://explorer.imd.fun/jobs/f4e26b46-534c-4ddd-9da9-ba805528b050",
+            "status": "completed"
+          }
+        ],
+        "name": "Swarm Local 2000 Union Card"
+      }
+    },
+    {
+      "adapter": "seasons",
+      "identity": "4663:0xd29e47e4c4c337cd4226dd523a73af398585d1dc",
+      "evidence": {
+        "chainId": 4663,
+        "address": "0xd29e47e4c4c337cd4226dd523a73af398585d1dc",
+        "standard": "ERC-721",
+        "detectionStatus": "confirmed",
+        "codePresent": true,
+        "codeHash": "0x3d6a338984119a6c9fb77acd9900c8af989bc3e3a09646889380d4e232fe868b",
+        "reads": {
+          "name": "imd/place seasons",
+          "symbol": "i/p seasons",
+          "totalPaid": 0,
+          "totalEscrow": 0,
+          "canvas": "0xda4339c3b9a4e2d6e1cd7706b8419ccc7d112086"
+        },
+        "stats": {
+          "totalSupply": 0,
+          "maxSupply": null,
+          "holders": null,
+          "totalSupplyMethod": "Canvas.currentSeason() - 1; one NFT minted per endSeason and no burn path in reviewed source."
+        },
+        "readBlock": 90424499,
+        "readTimestamp": "2026-10-16T22:10:42Z",
+        "deployment": {
+          "transactionHash": "0x6eff58ac7d7ca5f44831da053821934cf867bcde6afd2e389400a298099b4570",
+          "blockNumber": 83218081,
+          "timestamp": "2026-10-08T09:44:30Z",
+          "reportedBlockNumber": 83218081,
+          "headerBlockNumber": 83218081
+        },
+        "dependencyReads": {
+          "Canvas": {
+            "chainId": 4663,
+            "address": "0xda4339c3b9a4e2d6e1cd7706b8419ccc7d112086",
+            "readBlock": 90424499,
+            "reads": {
+              "currentSeason": 1,
+              "seasonStart": 1791452670,
+              "DURATION": 604800,
+              "imd": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127"
+            },
+            "errors": {},
+            "codePresent": true,
+            "codeReviewed": true,
+            "codeHash": "0xc7fd5784f1b71b44285fb4c809b8d41eb8aa60e8494d0658071d6c7a37b1ce32"
+          },
+          "PlaceHook": {
+            "address": "0x512b15372f42f687d366fc0c3342267dc73120cc",
+            "chainId": 4663,
+            "readBlock": 90424499,
+            "readTimestamp": "2026-10-16T22:10:42Z",
+            "reads": {
+              "token": "0x9aa7bef88c90d237b19afe77c8883ff119b606e7"
+            },
+            "errors": {}
+          }
+        },
+        "tokenMetadata": {
+          "4663:0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127": {
+            "chainId": 4663,
+            "address": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Identity.md",
+            "symbol": "IMD",
+            "decimals": 18,
+            "totalSupply": "59613973835000000000000",
+            "formattedSupply": "59613.973835",
+            "readBlock": 90424499,
+            "readTimestamp": "2026-10-16T22:10:42Z",
+            "warnings": []
+          },
+          "4663:0x9aa7bef88c90d237b19afe77c8883ff119b606e7": {
+            "chainId": 4663,
+            "address": "0x9aa7bef88c90d237b19afe77c8883ff119b606e7",
+            "status": "checked",
+            "codePresent": true,
+            "name": "imd/place",
+            "symbol": "i/p",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 90424499,
+            "readTimestamp": "2026-10-16T22:10:42Z",
+            "warnings": []
+          }
+        }
+      },
+      "expectedState": "awaiting-season-end",
+      "record": {
+        "chainId": 4663,
+        "contractAddress": "0xd29e47e4c4c337cd4226dd523a73af398585d1dc",
+        "category": "launched",
+        "jobs": [
+          {
+            "id": "14f8bbf3-040c-4da2-8f44-61c55b70ee1d",
+            "title": "Build and host the imd/place website (x.com/imdplace) against the live launch #1033 on Robinhood Chain (4663). Read every address and ABI fr",
+            "url": "https://explorer.imd.fun/jobs/14f8bbf3-040c-4da2-8f44-61c55b70ee1d",
+            "status": "completed"
+          },
+          {
+            "id": "29d399e2-2640-44cb-b036-ec23544bc3b3",
+            "title": "imd/place (x.com/imdplace): a pixel war on a Uniswap v4 hook, where your pixels earn: buying the token gives paint, painting pixels on a sha",
+            "url": "https://explorer.imd.fun/jobs/29d399e2-2640-44cb-b036-ec23544bc3b3",
+            "status": "completed"
+          },
+          {
+            "id": "834c0e87-f40c-4a5d-9935-03d865b034ec",
+            "title": "imd/place (x.com/imdplace): a pixel war on a Uniswap v4 hook, where your pixels earn: buying the token gives paint, painting pixels on a sha",
+            "url": "https://explorer.imd.fun/jobs/834c0e87-f40c-4a5d-9935-03d865b034ec",
+            "status": "blocked"
+          },
+          {
+            "id": "bace0acb-d19b-40e6-b06b-71525fbc8358",
+            "title": "Build and host the imd/place website (x.com/imdplace) against the live launch #1033 on Robinhood Chain (4663). Read every address and ABI fr",
+            "url": "https://explorer.imd.fun/jobs/bace0acb-d19b-40e6-b06b-71525fbc8358",
+            "status": "blocked"
+          }
+        ],
+        "name": "imd/place seasons"
+      }
+    }
+  ]
+}

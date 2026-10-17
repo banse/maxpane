@@ -1,0 +1,413 @@
+{
+  "schemaVersion": 1,
+  "note": "Reviewed source semantics bound to chain/address/runtime code hash. No live status snapshots are used by adapters. Source review is not a full security audit.",
+  "rules": [
+    {
+      "chainId": 1,
+      "contract": "0xd7fb8c680f9291c0f164c00dc4ae03624a6c76ce",
+      "collection": "IMDenza",
+      "launchNumber": 2000,
+      "codeHash": "0x134c0203e1b92a88d549c33372b075e8041e32753915fda91c1f3500df9927bc",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative",
+      "sourceCommit": "b8287659fccb4a32616e069861d8bf817ecb7c61",
+      "launchUrl": "https://api.imd.fun/launches/9094ae4d-f225-49bf-b3e4-3f5103f055dc",
+      "adapter": "imdenza",
+      "maxSupply": 3333,
+      "reviewedAt": "2026-10-16",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+    },
+    {
+      "chainId": 1,
+      "contract": "0xc5d5f314da6d4a433f9bf897a2cc24a537576cb1",
+      "collection": "Goblin Gold",
+      "launchNumber": 1616,
+      "codeHash": "0x270daf73d98f9a0aab6b102e725ad745edb2412306782d222e1cf495c6951f85",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint",
+      "sourceCommit": "dbd66796c56c6df8ab9b5d58686b86ef1111ae5d",
+      "launchUrl": "https://api.imd.fun/launches/4547ec39-840d-4527-a80b-be9b989dddd4",
+      "adapter": "goblin",
+      "maxSupply": 10000,
+      "reviewedAt": "2026-10-16",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint/blob/dbd66796c56c6df8ab9b5d58686b86ef1111ae5d/src/GoblinNFT.sol"
+    },
+    {
+      "chainId": 1,
+      "contract": "0xecb21b6c3bf69e09a2e34db1f0b25c34586ff1c9",
+      "collection": "VisualIdentity.md Edition 2",
+      "launchNumber": 1671,
+      "codeHash": "0xe0f39bba54057b93d0c9fd46d1d54f42e1d6fc103673ef622e0c87dc6ea17c71",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1671-visualidentity-md-edition-2",
+      "sourceCommit": "9cd9d43f071b2add993ca072d4f956a0d7334013",
+      "launchUrl": "https://api.imd.fun/launches/5cbfe549-6fb7-4351-a15f-581ee1582c68",
+      "adapter": "vimd2",
+      "maxSupply": 2000,
+      "reviewedAt": "2026-10-16",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1671-visualidentity-md-edition-2/blob/9cd9d43f071b2add993ca072d4f956a0d7334013/src/VisualIdentityEdition2.sol"
+    },
+    {
+      "chainId": 1,
+      "contract": "0x765956a7307222346b08fff681820a5d77e92028",
+      "collection": "Pepeolithic",
+      "launchNumber": 1076,
+      "codeHash": "0x2900fbdeb09f4340cebac6a00ba95b4c6e924b1d8f90d97f3b56abc5323728d7",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1076-pepeolithic-one-erc-721-contract",
+      "sourceCommit": "504076cf80f1f8cc51c838c08e5ff7adfe9af37b",
+      "launchUrl": "https://api.imd.fun/launches/89031109-7514-465b-af06-260267a58de2",
+      "adapter": "pepeolithic",
+      "maxSupply": 737,
+      "reviewedAt": "2026-10-16",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1076-pepeolithic-one-erc-721-contract/blob/504076cf80f1f8cc51c838c08e5ff7adfe9af37b/src/Pepeolithic.sol"
+    },
+    {
+      "chainId": 4663,
+      "contract": "0x582ea0b5c023f354e0b95bfcb5c12a2062e8e033",
+      "collection": "VETERANS",
+      "launchNumber": 1756,
+      "codeHash": "0xad91624fc5e3e6584c0f7bd5699fa28d2249dd5831c394ef9f79ca767c76fb4b",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1756-workflow-contract-stage-context",
+      "sourceCommit": "d3de6035fe432600d7f669ba8104e1ba4bbb37be",
+      "launchUrl": "https://api.imd.fun/launches/18d391e8-b53a-4f70-b9f3-3419fd6b8a48",
+      "adapter": "veterans",
+      "maxSupply": 3333,
+      "reviewedAt": "2026-10-16",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1756-workflow-contract-stage-context/blob/d3de6035fe432600d7f669ba8104e1ba4bbb37be/src/VeteransNFT.sol"
+    },
+    {
+      "chainId": 4663,
+      "contract": "0x0da78a50b3039f8ca719d01754988b23d7e70fe2",
+      "collection": "Sinopia",
+      "launchNumber": 1942,
+      "codeHash": "0x0b3596bc63e8ef0091f3e4b5e5e0dff2e2bc6d746cdbb0c8527536cfd8c20b72",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1942-sinopia",
+      "sourceCommit": "2d7436e57e6e90f8e5288ed6976e4d2d9a38fd26",
+      "launchUrl": "https://api.imd.fun/launches/60c0c715-ab5f-443c-9041-500301f8335d",
+      "adapter": "sinopia",
+      "maxSupply": null,
+      "reviewedAt": "2026-10-16",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1942-sinopia/blob/2d7436e57e6e90f8e5288ed6976e4d2d9a38fd26/src/Sinopia.sol"
+    },
+    {
+      "chainId": 1,
+      "contract": "0xd9822f2878edb457ec6d04ff3b2c8311136ea9ff",
+      "collection": "Keel Notes",
+      "launchNumber": 1716,
+      "codeHash": "0xcdc7729f98228897e1c3d96ae28c618a447f0143875bd57a7f712823d08f7908",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1716-keel-notes-erc-721-banknote",
+      "sourceCommit": "406ca66d4b43aa3f2b61ede7189e6e83e3725814",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1716-keel-notes-erc-721-banknote/blob/406ca66d4b43aa3f2b61ede7189e6e83e3725814/src/KeelNotes.sol",
+      "launchUrl": "https://api.imd.fun/launches/5141d99f-dd20-46d7-bd61-106b9b3b1c42",
+      "adapter": "keel",
+      "maxSupply": 1111,
+      "reviewedAt": "2026-10-16"
+    },
+    {
+      "chainId": 1,
+      "contract": "0xe603facf4677ba4b06ad6ac01f025b74b7a96c11",
+      "collection": "Visual Identity Genesis",
+      "launchNumber": 1645,
+      "codeHash": "0x2a8d3db6f26a010b8e8c565f946008b53bab95e67ab222bcf9ed354872b8462f",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1645-workflow-contract-stage-context",
+      "sourceCommit": "7c060a691aba13496cb29487b6fac0dffeef6556",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1645-workflow-contract-stage-context/blob/7c060a691aba13496cb29487b6fac0dffeef6556/src/BrandGenesisNFT.sol",
+      "launchUrl": "https://api.imd.fun/launches/c1e47f7d-ddb1-43d6-9f94-df75cedf728f",
+      "adapter": "genesis",
+      "maxSupply": 4000,
+      "reviewedAt": "2026-10-16"
+    },
+    {
+      "chainId": 1,
+      "contract": "0xf376b5deff43d949f515b1fd11865b73e92d5bad",
+      "collection": "Swarmlers Agents",
+      "launchNumber": 1565,
+      "codeHash": "0x140191b5dd06cf5989e644c591686bab57cff4f4b75cead73d4bc5de85c60968",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1565-workflow-contract-stage-context",
+      "sourceCommit": "7170ab40427c84277eb47bf00bff5fd1eb43a143",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1565-workflow-contract-stage-context/blob/7170ab40427c84277eb47bf00bff5fd1eb43a143/src/Swarmlers.sol",
+      "launchUrl": "https://api.imd.fun/launches/e8286ac5-17d2-438c-bfb3-4c67615a583b",
+      "adapter": "swarmlers",
+      "maxSupply": 2500,
+      "reviewedAt": "2026-10-16"
+    },
+    {
+      "chainId": 1,
+      "contract": "0x7a3bc2d6578f1528ca963a78824e5ba19257d2fe",
+      "collection": "Pulse Drone",
+      "launchNumber": 1416,
+      "codeHash": "0xa343fea42fb3e97dcfc343c71de4c3a76a71de2edd2c9df8fd1948bde6a8fb17",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context",
+      "sourceCommit": "3807cba5031b0b3a7efeb9d821270cf5847d8c3e",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context/blob/3807cba5031b0b3a7efeb9d821270cf5847d8c3e/src/PulseDrone.sol",
+      "launchUrl": "https://api.imd.fun/launches/6fbf7ae1-34c4-42ec-8f56-fe2c78ea5c2f",
+      "adapter": "pulse",
+      "maxSupply": 4096,
+      "reviewedAt": "2026-10-16"
+    },
+    {
+      "chainId": 1,
+      "contract": "0xca9dc9064ffc695d979ea7da9a35130376bb3217",
+      "collection": "OG Pass",
+      "launchNumber": 1343,
+      "codeHash": "0x0901651cd27b1cf9ed973827dff02506558c4febbeacc2358c735947f09a51e6",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1343-ogpass-soulbound-erc-721-membership",
+      "sourceCommit": "4527ed978e9f295e70dfc044f180f1aa23e96852",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1343-ogpass-soulbound-erc-721-membership/blob/4527ed978e9f295e70dfc044f180f1aa23e96852/src/OGPass.sol",
+      "launchUrl": "https://api.imd.fun/launches/80a9c9df-13c2-47df-8232-7fc788ed1a12",
+      "adapter": "ogpass",
+      "maxSupply": 1000,
+      "reviewedAt": "2026-10-16"
+    },
+    {
+      "chainId": 1,
+      "contract": "0x933046e550325c91d3bbeb3e7f895ff3da87e712",
+      "collection": "BMC Illuminati Pass",
+      "launchNumber": 1394,
+      "codeHash": "0xd4d96a36996139277941447b2c0cdc7a6a07fa74c32c32ec4a77e1f11f7834ee",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1394-project-bmc-illuminati-pass",
+      "sourceCommit": "cbd6ff84f59ee62fb9e17f8b6b07f68e82ecfb60",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1394-project-bmc-illuminati-pass/blob/cbd6ff84f59ee62fb9e17f8b6b07f68e82ecfb60/src/BMCIlluminatiPass.sol",
+      "launchUrl": "https://api.imd.fun/launches/2321c94e-4bd4-46a6-af4c-5a509adc196e",
+      "adapter": "bmc",
+      "maxSupply": 500,
+      "reviewedAt": "2026-10-16"
+    },
+    {
+      "chainId": 1,
+      "contract": "0x8402ce12b472c69633443f58c55ebbe15c8c68a0",
+      "collection": "BMC Illuminati Pass",
+      "launchNumber": 1425,
+      "codeHash": "0x14a7f5a7bdbb441005b3a89682f6982e807e7791820d4ce0088d5e79bbbcfdf1",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc",
+      "sourceCommit": "162176282ceda890cbea5371ca86346bfe008dff",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc/blob/162176282ceda890cbea5371ca86346bfe008dff/src/BMCIlluminatiPass.sol",
+      "launchUrl": "https://api.imd.fun/launches/54767f27-321e-469e-8958-53d468eeca18",
+      "adapter": "bmc",
+      "maxSupply": 500,
+      "reviewedAt": "2026-10-16"
+    },
+    {
+      "chainId": 1,
+      "contract": "0xedd2be808e73bc443bc12aa07586193c193e8d51",
+      "collection": "BMC Illuminati Pass",
+      "launchNumber": 1481,
+      "codeHash": "0xe6ea784c3626bca2a767cd5abfce02b9472c93eb9477e9c4a1bcf160cca0ea4b",
+      "sourceRepoUrl": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati",
+      "sourceCommit": "ab734601833e7ef15a83647dcf4c33f3013820ba",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati/blob/ab734601833e7ef15a83647dcf4c33f3013820ba/src/BMCIlluminatiPass.sol",
+      "launchUrl": "https://api.imd.fun/launches/3fb5e217-d816-44b5-a7ad-73fe8c4f2cb2",
+      "adapter": "bmc",
+      "maxSupply": 500,
+      "reviewedAt": "2026-10-16"
+    },
+    {
+      "chainId": 1,
+      "contract": "0xc2517f76766b955260bf94c50da1b3366c9ae57b",
+      "collection": "ARTIFACTS implementation",
+      "launchNumber": 1631,
+      "codeHash": "0x822b9f2dafe958b0483b34267b797c02b27980596160589bcf2eb0f903748c08",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1631-build-contracts-proof-house/blob/5b0d36486994b24de88438d6def7d120c27efd58/src/ArtifactsPiece.sol",
+      "reviewedAt": "2026-10-16",
+      "maxSupply": 256,
+      "adapter": "template",
+      "excludedReason": "Locked ArtifactsPiece implementation, not a mintable collection. Default name ARTIFACTS #000 is a template artifact.",
+      "dependencies": {
+        "ArtifactsFactory": {
+          "address": "0x5051f8b21c55182ad4cf5fbf8236f5f29d74727f",
+          "chainId": 1
+        },
+        "ArtifactsSale": {
+          "address": "0x80ff349d4cd0db77dade6e1197d1d60efbea7291",
+          "chainId": 1
+        },
+        "ArtifactsAuction": {
+          "address": "0x1fffb44159b5b563dc241412f48ae92f57e6570d",
+          "chainId": 1
+        }
+      },
+      "factory": "0x5051f8b21c55182ad4cf5fbf8236f5f29d74727f"
+    },
+    {
+      "chainId": 1,
+      "contract": "0x84286f3c9276807a36730701d417f2bbdb85732a",
+      "collection": "LoomCollection implementation",
+      "launchNumber": 1527,
+      "codeHash": "0xbe5707b8501372e3af80f32ebaf00deb53e4ad99b8c8821797bc73014185b95c",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1527-loomcollection-loomfactory/blob/b87c2f6836c814e57de644b42381787a6773e181/src/LoomCollection.sol",
+      "reviewedAt": "2026-10-16",
+      "maxSupply": null,
+      "adapter": "template",
+      "excludedReason": "Constructor disables initializers. Empty name/zero maxSupply/zero owner belong to locked EIP1167 implementation.",
+      "factory": "0x830c2349a83f2f53b9e7450d842d3272cd73e01a"
+    },
+    {
+      "chainId": 1,
+      "contract": "0xb738bbf1d93aa204ef7575610a7f0195ad4a70c6",
+      "collection": "Swarm Cats",
+      "launchNumber": 1527,
+      "codeHash": "0x8572d1deb068ad17278743185a8c7c603b34644e5477f04250e74a0ff37d423d",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1527-loomcollection-loomfactory/blob/b87c2f6836c814e57de644b42381787a6773e181/src/LoomCollection.sol",
+      "reviewedAt": "2026-10-16",
+      "maxSupply": 10000,
+      "adapter": "loom",
+      "factory": "0x830c2349a83f2f53b9e7450d842d3272cd73e01a",
+      "implementation": "0x84286f3c9276807a36730701d417f2bbdb85732a",
+      "implementationCodeHash": "0xbe5707b8501372e3af80f32ebaf00deb53e4ad99b8c8821797bc73014185b95c"
+    },
+    {
+      "chainId": 4663,
+      "contract": "0xdda6387bf0244fc82eb3dbda168acc4d9eed56a3",
+      "collection": "BLACKOUT FarmItems",
+      "launchNumber": 1722,
+      "codeHash": "0xd4a23d86800de9b106d7929bedab057f0c02d244ea60bb6bec00bb259a7a4961",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/FarmItems.sol",
+      "reviewedAt": "2026-10-16",
+      "maxSupply": null,
+      "adapter": "farm",
+      "dependencies": {
+        "FarmItems": {
+          "address": "0xdda6387bf0244fc82eb3dbda168acc4d9eed56a3",
+          "chainId": 4663
+        },
+        "StarterClaim": {
+          "address": "0xcda5653467843137aadb2729151e5e8042a49b13",
+          "chainId": 4663
+        },
+        "GameRegistry": {
+          "address": "0x1b41fc9723df25eec7e91d947072dccc2483285f",
+          "chainId": 4663
+        }
+      }
+    },
+    {
+      "chainId": 4663,
+      "contract": "0x2c328e6d3ae72e5b06e10884d83b01f1b0342f85",
+      "collection": "Courier Companions",
+      "launchNumber": 1556,
+      "codeHash": "0x245d6d99cbbecaa8df8e0c0e80840a3bd8648592357111fd587faa2b5bbd99c3",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1556-workflow-contract-stage-context/blob/cf108517b37cb90f40c256d731df4aa2c65b88ca/src/MoonShop.sol",
+      "reviewedAt": "2026-10-16",
+      "maxSupply": null,
+      "adapter": "courier"
+    },
+    {
+      "chainId": 1,
+      "contract": "0x800504f0d471fa3647c2414167e55ca06df16ab6",
+      "collection": "Hive Wars Conqueror",
+      "launchNumber": 1422,
+      "codeHash": "0x186d053da07fe71e470cc5d632ffef7ed61582b73bdf713707b78bac3c3c1c9f",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1422-workflow-contract-stage-context/blob/7b6b0732dae14e6324661c2ef4f5640340a3854c/src/ConquerorBadge.sol",
+      "reviewedAt": "2026-10-16",
+      "maxSupply": null,
+      "adapter": "hive",
+      "dependencies": {
+        "HiveWars": {
+          "address": "0xa7b90c8ec172fdbb03f885ab9d21a4e26d8db590",
+          "chainId": 1
+        }
+      }
+    },
+    {
+      "chainId": 1,
+      "contract": "0xd3630711f6d5e25b41d6bdbdb630fffefa170c5d",
+      "collection": "Swarm Local 2000 Union Card",
+      "launchNumber": 763,
+      "codeHash": "0x5a59d352e85942b85b54d840a802da26af733a913331efef1e97e7ecb6a7ada4",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-763-swarm-local-2000/blob/3b3b156c9a2ae86a955f7ec132de60c72e27b3e5/src/UnionCard.sol",
+      "reviewedAt": "2026-10-16",
+      "maxSupply": null,
+      "adapter": "union",
+      "dependencies": {
+        "UnionCard": {
+          "address": "0xd3630711f6d5e25b41d6bdbdb630fffefa170c5d",
+          "chainId": 1
+        }
+      }
+    },
+    {
+      "chainId": 4663,
+      "contract": "0xd29e47e4c4c337cd4226dd523a73af398585d1dc",
+      "collection": "imd/place seasons",
+      "launchNumber": 1033,
+      "codeHash": "0x3d6a338984119a6c9fb77acd9900c8af989bc3e3a09646889380d4e232fe868b",
+      "adapter": "seasons",
+      "maxSupply": null,
+      "reviewedAt": "2026-10-16",
+      "sourceUrl": "https://github.com/identity-md-launches/launch-1033-imd-place-symbol-i-p-if-the-launch-refus/blob/4ba07cc1aa427c5cf5ca67f6a0494adf57222ec4/src/Seasons.sol",
+      "dependencies": {
+        "Canvas": {
+          "chainId": 4663,
+          "address": "0xda4339c3b9a4e2d6e1cd7706b8419ccc7d112086"
+        }
+      }
+    }
+  ],
+  "reviewedBuilds": [
+    {
+      "jobId": "0792975e-220d-4fe2-a11c-d611efec47bd",
+      "objectiveSha256": "d9ab08a4a4e38ce8f2d69fe39ed8254c9d6413f28872160dc929c523bbb1a378",
+      "chainId": 4663,
+      "name": "MineWorld Crafters",
+      "description": "3,333 ERC721-C game characters for MineWorldCraft. Existing implementation received an independent swarm audit; mainnet deployment has not been verified.",
+      "stage": "Implemented and audited; deployment unverified",
+      "reviewedAt": "2026-10-16",
+      "acceptedNodePattern": "^audit_(?:economics|flow|judge|math|permissions)$",
+      "evidence": [
+        {
+          "label": "Pinned NFT implementation",
+          "url": "https://github.com/AdamNakamoto/MineWorld/blob/ba2a8edc688e94a48b810f83ccc3ea9d66c9e0f9/contracts/src/MineWorldCrafters.sol",
+          "detail": "Reviewed actual ERC721 implementation and mint entrypoint at the audit revision."
+        },
+        {
+          "label": "Pinned completed swarm audit",
+          "url": "https://github.com/Identity-md/research/blob/c3688b3d9101cde2531c8b669d354524c02aeea0/jobs/0792975e-220d-4fe2-a11c-d611efec47bd/files/AUDIT.md",
+          "detail": "Identifies audited implementation commit ba2a8edc688e94a48b810f83ccc3ea9d66c9e0f9; reports two medium, three low, and three informational findings. An accepted report does not establish launch readiness."
+        }
+      ]
+    }
+  ],
+  "supersededBuilds": [
+    {
+      "jobId": "2aa0f8fa-379e-459b-a814-480f8c428c4f",
+      "objectiveSha256": "2f24074e16389b92d9ec2e4855ca85070ea15c664f592fd5fff179cf2fe96f39",
+      "reason": "Earlier BMC collection build continued through an explicitly verified GitHub fork and has successful mainnet deployments; display the deployed collection versions instead of an upcoming duplicate.",
+      "reviewedAt": "2026-10-16",
+      "evidence": [
+        {
+          "url": "https://api.github.com/repos/0xSt3w/launch-1356-project-bmc-illuminati-pass",
+          "detail": "Public GitHub API reports fork=true; parent and source identity-md-launches/launch-1356-project-bmc-illuminati-pass, the original build delivery repository."
+        },
+        {
+          "url": "https://api.imd.fun/jobs/52867582-cb22-463c-bc8b-6d84ef387956",
+          "detail": "Completed deployment job explicitly uses that fork; launch 1394 is runtime-code-hash bound in the collection rules."
+        },
+        {
+          "url": "https://api.imd.fun/jobs/4dc09c22-dc84-441c-982c-ed4ec4d340ac",
+          "detail": "Completed launch 1425 explicitly uses the same fork repository."
+        }
+      ]
+    },
+    {
+      "jobId": "5ce56cbc-1158-455f-9c37-453120687a3a",
+      "objectiveSha256": "1c7c7397cab001e07d199756fbca11f1d51606507cbd98e73ee21e5f39648372",
+      "reason": "Earlier BLACKOUT NFT build continued through verified commit ancestry and exact project base commits into the deployed FarmItems collection; display the deployed collection instead of an upcoming duplicate.",
+      "reviewedAt": "2026-10-16",
+      "evidence": [
+        {
+          "url": "https://api.github.com/repos/identity-md-launches/launch-1269-reports-v1-job-b9e37680-814c-4f17-b4bc-6/compare/4d7cd188b932722e40d0453f65005f05bbc2f932...e0c09d42dc70835526c50ce70cfbfdaf89a607d0",
+          "detail": "GitHub comparison confirms bootstrap base e0c09d42 is 14 commits ahead, zero behind, the earlier build delivery 4d7cd188 in its actual launch-1269 repository."
+        },
+        {
+          "url": "https://api.imd.fun/jobs/f61fb433-b839-4d75-804e-ca81b918fb2c",
+          "detail": "Public project versions bind initial bootstrap base e0c09d42dc70835526c50ce70cfbfdaf89a607d0 to subsequent job 9a861e71-9c36-4ad9-97da-285561e8236e."
+        },
+        {
+          "url": "https://api.imd.fun/jobs/9a861e71-9c36-4ad9-97da-285561e8236e",
+          "detail": "Continuation delivered launch-1544-blackout-swarmdesk-bootstrap-robinhood commit 86e71d47b12094dc6a37c6a05cd4f84f2f970b78."
+        },
+        {
+          "url": "https://api.imd.fun/jobs/ecdced72-cf6c-4732-b8f0-2c8b366d39ee",
+          "detail": "Live launch-1722 deployment has exact project baseCommit 86e71d47b12094dc6a37c6a05cd4f84f2f970b78 and deployed FarmItems 0xdda6387bf0244fc82eb3dbda168acc4d9eed56a3, independently bound by its runtime hash."
+        }
+      ]
+    }
+  ]
+}

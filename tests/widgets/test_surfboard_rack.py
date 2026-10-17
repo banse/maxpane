@@ -26,7 +26,7 @@ async def test_card_text_rows_keep_one_blank_cell_inside_both_edges():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         samples = {
             'announce': dict(primary='A long post ' * 20, status='active'),
-            'protocol': dict(primary='burned 33k IMD\nrewarded 6k IMD\nfees 4k IMD'),
+            'surf-nft': dict(primary='20', nft_summary={'deployed':20,'building':3,'mint_open':15}),
             'board': fleet_card_data(),
             'swarm-tokens': token_card_data(),
         }
@@ -288,13 +288,13 @@ async def test_card_activity_colors_update_from_current_counts():
             ('agent','idle','IDMD #420','0 of 3 slots',3),
             ('agent','offline','IDMD #420','0 of 3 slots',1),
             ('swarm-tokens','idle','118','0 new',3),
-            ('protocol','active','33,279','IMD',3),
-            ('protocol','ready','33,279','IMD',3),
-            ('protocol','experimental','33,279','IMD',3),
-            ('protocol','stale','33,279','IMD',3),
-            ('protocol','unavailable','33,279','IMD',3),
-            ('protocol','experimental','unavailable','IMD',3),
-            ('protocol','experimental','33,279','IMD',3),
+            ('surf-nft','active','33,279','IMD',3),
+            ('surf-nft','ready','33,279','IMD',3),
+            ('surf-nft','experimental','33,279','IMD',3),
+            ('surf-nft','stale','33,279','IMD',3),
+            ('surf-nft','unavailable','33,279','IMD',3),
+            ('surf-nft','experimental','unavailable','IMD',3),
+            ('surf-nft','experimental','33,279','IMD',3),
         ]:
             card=pilot.app.query_one(f'#surfboard-card-{key}',SurfboardCard)
             card.set_data(dict(token_id=420 if key == "agent" else None, status=status,primary=primary,secondary=secondary))
@@ -336,47 +336,18 @@ async def test_pool4_digit_face(size,key,primary,secondary,label,expected,green,
 
 
 @pytest.mark.parametrize('size', [(180,45), (149,45), (143,36)])
-async def test_protocol_stats_align_labels_and_values_with_inner_padding(size):
-    from maxpane_dashboard.data.surfboard import cards
-
-    # This bare rack has no scrolling viewport; its rightmost card needs the rack floor.
+async def test_nft_card_preserves_collection_digits_and_build_mint_counts(size):
     async with RackApp().run_test(size=size) as pilot:
-        card = pilot.app.query_one('#surfboard-card-protocol', SurfboardCard)
-        for values, expected in [
-            ((33279, 5873, 3786), ['33k', '6k', '4k']),
-            ((1234567, 0, 12.8), ['1M', '0', '13']),
-            ((999999, 999999, 999999999), ['1M', '1M', '1B']),
-            ((None, 5873, float('nan')), ['—', '6k', '—']),
-            ((None, None, None), ['—', '—', '—']),
-        ]:
-            data = dict(zip(('pool4_total_burned', 'pool4_total_rewarded', 'pool4_total_fee_token'), values))
-            row = next(row for row in cards(data, {}, now=100) if row['key'] == 'protocol')
-            card.set_data(dict(row, secondary='0.47% of supply'))
-            await pilot.pause()
-            strips = [strip.crop(card.region.x, card.region.right) for strip in
-                      pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
-            top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
-            left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
-            assert strips[top].text[left+1:right].strip('─ ') == 'STATS'
-            unit_columns, label_columns = set(), set()
-            for strip, name, value in zip(strips[top+1:top+4], ('burned', 'rewarded', 'fees'), expected):
-                line = strip.text[left+1:right]
-                assert line.strip().removeprefix(name).strip().replace(' ', '') == value + 'IMD'
-                assert line.startswith(' ' + name) and line.endswith(' ')
-                assert not line[line.index('IMD')+3:].strip()
-                unit_columns.add(line.index('IMD'))
-                label_columns.add(line.index(name))
-                assert '★' not in line and ':' not in line
-                for word in (name, value, 'IMD'):
-                    start = strip.text.index(word)
-                    ink = (Color.parse(pilot.app.get_css_variables()['foreground']).get_truecolor()
-                           if word != name and value != '—' else pilot.app.ansi_theme.ansi_colors[2])
-                    assert all(segment.style.color.get_truecolor() == ink
-                               for segment in strip.crop(start, start + len(word)))
-            assert len(unit_columns) == len(label_columns) == 1
-            assert strips[top+4].text[left+1:right].strip('─ ') == ''
-            assert '0.47% burned' in strips[-1].text and 'BURN' not in strips[-1].text
-            assert '‹' not in str(card.border_title)
+        card=pilot.app.query_one('#surfboard-card-surf-nft',SurfboardCard)
+        card.set_data(dict(primary='20',status='active',nft_summary={
+            'deployed':20,'building':3,'mint_open':15,'partial':True}))
+        await pilot.pause()
+        text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
+        assert 'COLLECTIONS' in text and '3 build · 15 open' in text
+        assert 'partial catalogue' in text
+        assert '╭─╮' in text
+        assert card.data['destination']=='surf-nft'
+
 
 
 async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
@@ -396,7 +367,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
         for label in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "ORACLES", "POOL4",
-                      "PROTOCOL", "WIP", "TOKENS", "EMPTY SEAT"):
+                      "NFTS", "WIP", "TOKENS", "EMPTY SEAT"):
             assert label in text
 
 
@@ -406,7 +377,7 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.update_data()
         rack.focus_card("announce")
         rack.move_focus("down")
-        assert rack.focused_card == "protocol"
+        assert rack.focused_card == "surf-nft"
         rack.move_focus("right")
         assert rack.focused_card == "swarm-tokens"
         rack.move_focus("up")
@@ -944,24 +915,19 @@ async def test_fleet_long_unicode_model_and_daemon_fit_and_tooltip_remains_liter
         assert not card.tooltip.spans
 
 
-async def test_protocol_supply_footer_is_fitted_and_marks_clipping():
-    async with RackApp().run_test(size=(149, 45)) as pilot:
-        card = pilot.app.query_one('#surfboard-card-protocol', SurfboardCard)
-        card.set_data(dict(primary='★ burned 33k IMD\n★ rewarded 6k IMD\n★ fees 4k IMD',
-                           secondary='0.47% of supply', numerator=60, denominator=100))
-        for width in [149, 200]:
-            await pilot.resize_terminal(width, 45)
-            await pilot.pause()
-            strips = card_strips(pilot.app, card)
-            assert 'BURN' not in strips[-1].text and '▰' not in strips[-1].text
-            assert '0.47% burned' in strips[-1].text
-            assert abs(strips[-1].text.index('0.47% burned') - (card.region.width - len('0.47% burned')) / 2) <= .5
-            assert 'of supply' not in strips[-1].text
-            assert '‹' not in strips[0].text
-        card.set_data(dict(secondary='unavailable'))
+async def test_nft_card_unknown_counts_remain_neutral_and_partial_is_visible():
+    async with RackApp().run_test(size=(149,45)) as pilot:
+        card=pilot.app.query_one('#surfboard-card-surf-nft',SurfboardCard)
+        card.set_data(dict(primary='—',nft_summary={}))
         await pilot.pause()
-        assert '—' in card_strips(pilot.app, card)[-1].text
-        assert 'unavailable burned' not in card_strips(pilot.app, card)[-1].text
+        text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
+        assert '— build · — open' in text and '0 build' not in text
+        card.set_data(dict(primary='0',nft_summary={
+            'deployed':0,'building':0,'mint_open':0,'partial':True}))
+        await pilot.pause()
+        text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
+        assert '0 build · 0 open' in text and 'partial catalogue' in text
+
 
 
 async def test_empty_and_assigned_seat_footers_stay_centered():

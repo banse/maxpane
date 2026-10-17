@@ -1,0 +1,2105 @@
+{
+  "fixtureNote": "Trimmed saved catalog captured 2026-10-16; one explicitly synthetic unknown-rule row. Not live data.",
+  "observed_at": 1792185736,
+  "coverage": {
+    "complete": false
+  },
+  "records": [
+    {
+      "id": "1:0xd7fb8c680f9291c0f164c00dc4ae03624a6c76ce",
+      "name": "IMDenza",
+      "symbol": "IMDENZA",
+      "description": "IMDenza: 3333 fully on-chain animated generative flow-field NFTs (ERC721C, Limit Break creator-token-standards v4.0.1) on Ethereum mainnet, name IMDenza, symbol IMDENZA. Deployment order and arguments follow the accepted source. SwarmHistory (no arguments) is the permissionless, append-only commitment of IMD swarm job history: anyone reco\u2026",
+      "category": "launched",
+      "chainId": 1,
+      "chainName": "Ethereum",
+      "contractAddress": "0xd7fb8c680f9291c0f164c00dc4ae03624a6c76ce",
+      "standard": "ERC-721",
+      "deployment": {
+        "transactionHash": "0xbbd8b35ce455f1ef18d7bcde5b5b5c817c04baa14d1680acc3a09813f97e35b5",
+        "blockNumber": 26207183,
+        "timestamp": "2026-10-16T19:26:23Z",
+        "reportedBlockNumber": 26207183,
+        "headerBlockNumber": 26207183,
+        "txHash": "0xbbd8b35ce455f1ef18d7bcde5b5b5c817c04baa14d1680acc3a09813f97e35b5",
+        "verifiedAt": "2026-10-16T22:10:47.836695Z",
+        "receiptSuccess": true,
+        "codePresent": true
+      },
+      "jobs": [
+        {
+          "id": "39a66ffb-504c-4e61-a345-3a8d585ecbf8",
+          "title": "Launch IMDenza: an animated generative NFT collection of 3333 pieces on Ethereum mainnet, inspired by Tyler Hobbs\u2019 Fidenza (flow-field algor",
+          "url": "https://explorer.imd.fun/jobs/39a66ffb-504c-4e61-a345-3a8d585ecbf8",
+          "status": "completed"
+        },
+        {
+          "id": "9dd20d22-bdb4-4bfe-829a-1090c2269d64",
+          "title": "Build the official website for IMDenza, the animated generative NFT collection on Ethereum mainnet. Contracts (already deployed): - IMDenza ",
+          "url": "https://explorer.imd.fun/jobs/9dd20d22-bdb4-4bfe-829a-1090c2269d64",
+          "status": "completed"
+        }
+      ],
+      "sites": [
+        {
+          "id": "d614084d-b9b7-4281-a36f-b9fa46c3fddf",
+          "jobId": "9dd20d22-bdb4-4bfe-829a-1090c2269d64",
+          "kind": "launch",
+          "tokenId": null,
+          "agentId": null,
+          "url": "https://imdenza-the-swarm-set-in-motion.sites.imd.fun/",
+          "status": "named",
+          "holdReason": null,
+          "takenDownAt": null,
+          "takenDownReason": null,
+          "label": "imdenza-the-swarm-set-in-motion",
+          "cid": "bafybeibllxnznzhw3sgzhctxnilevtnwnveghpe3c3o3fvgqbjehhjb6qu",
+          "bytes": 2659352,
+          "ensName": "imdenza-the-swarm-set-in-motion.site.identitymd.eth",
+          "txHash": "0xdb28b05085b4c1d820c524cfaac013657575f0e531ca78db01f72f700a1e26ba",
+          "blockNumber": 26207555,
+          "attempts": 0,
+          "failure": null,
+          "pinnedAt": "2026-10-16T20:39:17.331Z",
+          "namedAt": "2026-10-16T20:41:00.691Z",
+          "supersededBy": null,
+          "supersededAt": null,
+          "createdAt": "2026-10-16T20:38:43.450Z",
+          "updatedAt": "2026-10-16T20:41:00.691Z",
+          "originalUrl": "https://imdenza-the-swarm-set-in-motion.site.identitymd.eth.limo",
+          "ipfsUrl": "https://ipfs.io/ipfs/bafybeibllxnznzhw3sgzhctxnilevtnwnveghpe3c3o3fvgqbjehhjb6qu/"
+        }
+      ],
+      "repositories": [
+        {
+          "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative",
+          "commit": "b8287659fccb4a32616e069861d8bf817ecb7c61"
+        },
+        {
+          "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative",
+          "commit": "1a64c9152495c85e1e1f698bca62bfa54fca77d5"
+        }
+      ],
+      "launchIds": [
+        "9094ae4d-f225-49bf-b3e4-3f5103f055dc"
+      ],
+      "launchNumber": 2000,
+      "idmdBenefit": {
+        "status": "yes",
+        "conditions": "Current canonical IDMD owner; unused IDMD token and unused wallet claim flag; no delegation.",
+        "exclusive": true,
+        "evidence": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+          }
+        ]
+      },
+      "mint": {
+        "state": "open",
+        "start": null,
+        "end": null,
+        "publicPrice": "0.069",
+        "currency": "IMD",
+        "limits": "One NFT per call; free IDMD route once per wallet AND per IDMD token. Public mint has no wallet cap.",
+        "conditions": "Approve a supported same-chain IMD token for public mint. Separate free routes require >25 IMD or a Fidenza NFT; their once-per-wallet flags can stack. Network gas is additional; wallet eligibility was not simulated.",
+        "reportedTerms": [
+          "IMDenza(configurator, renderer, swarm) is the ERC721C collection: supply hard-capped at 3333; free on-chain-checked claims of one per wallet for Identity MD NFT holders, for wallets holding more than 25 IMD (0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7 or 0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127, checked for code on use), and for holders of an Art Blocks Fidenza (0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270, project 78); public mint at 0.069 IMD paid by transferFrom with 90% of received proceeds sent to the holder distributor and 10% to the treasury 0xc3F0dEC012784f6d7178104C31A4611c6897756c; token hash from the mint transaction context, composition seed keccak256(tokenHash, swarmEntropy, toke"
+        ],
+        "gasIncluded": false,
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "routes": [
+          {
+            "name": "Public mint",
+            "state": "open",
+            "conditions": "Approve a supported same-chain IMD token for public mint. Separate free routes require >25 IMD or a Fidenza NFT; their once-per-wallet flags can stack.",
+            "price": "0.069",
+            "currency": "IMD",
+            "start": null,
+            "end": null
+          },
+          {
+            "name": "IDMD claim",
+            "state": "open",
+            "conditions": "Current canonical IDMD owner; unused IDMD token and unused wallet claim flag; no delegation.",
+            "price": "0",
+            "currency": "IMD",
+            "start": null,
+            "end": null
+          }
+        ]
+      },
+      "stats": {
+        "totalSupply": null,
+        "maxSupply": 3333,
+        "holders": 5,
+        "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xd7fb8c680f9291c0f164c00dc4ae03624a6c76ce",
+        "totalMinted": 5
+      },
+      "chainReads": {
+        "name": "IMDenza",
+        "symbol": "IMDENZA",
+        "MAX_SUPPLY": 3333,
+        "totalMinted": 5,
+        "HOLDER_SHARE_BPS": 9000,
+        "BPS": 10000,
+        "TREASURY": "0xc3f0dec012784f6d7178104c31a4611c6897756c",
+        "MINT_PRICE_MILLI": 69,
+        "IMD_TOKEN_A": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "IMD_TOKEN_B": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+        "IMD_HOLDING_WHOLE": 25,
+        "ART_BLOCKS": "0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270",
+        "FIDENZA_PROJECT": 78,
+        "ART_BLOCKS_PROJECT_SIZE": 1000000,
+        "TRANSFER_SECURITY_LEVEL": 3,
+        "WETH": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+        "MIN_IMD_DECIMALS": 3,
+        "MAX_IMD_DECIMALS": 36,
+        "configurator": "0x3d6a89c8751a45dd577a4c1f3b34e71c58236193",
+        "identityMdCollection": "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d",
+        "transferPolicyApplied": true
+      },
+      "readBlock": 26208001,
+      "activity": {
+        "stage": "Deployed; mint availability requires separate checks",
+        "lastMeaningfulAt": "2026-10-16T19:26:40.302Z"
+      },
+      "evidence": [
+        {
+          "label": "IMD deployment record",
+          "url": "https://api.imd.fun/launches/9094ae4d-f225-49bf-b3e4-3f5103f055dc",
+          "detail": "Successful receipt and NFT bytecode independently checked; deployment address attributed by IMD."
+        },
+        {
+          "label": "Pinned collection source",
+          "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol",
+          "detail": "Source published at the launch commit."
+        }
+      ],
+      "unknowns": [
+        "factory receipt confirms transaction success; address linkage relies on the launch artifact",
+        "holder count is an unpinned explorer estimate"
+      ],
+      "codeHash": "0x134c0203e1b92a88d549c33372b075e8041e32753915fda91c1f3500df9927bc",
+      "ruleReview": {
+        "status": "matched",
+        "codeHash": "0x134c0203e1b92a88d549c33372b075e8041e32753915fda91c1f3500df9927bc",
+        "sources": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+          }
+        ],
+        "reviewedAt": "2026-10-16",
+        "checkedAt": "2026-10-16T22:46:21.477257Z",
+        "scope": "Source rules plus current getter reads; not wallet-specific simulation or a security audit."
+      },
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "Identity.md",
+          "roles": [
+            "payment",
+            "eligibility",
+            "reward"
+          ],
+          "conditions": "",
+          "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+          "chainId": 1,
+          "status": "configured",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+            },
+            {
+              "label": "Pinned distribution accounting",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenzaDistributor.sol"
+            }
+          ],
+          "onchain": {
+            "chainId": 1,
+            "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Identity.md",
+            "symbol": "IMD",
+            "decimals": 18,
+            "totalSupply": "4166397375635000000000000",
+            "formattedSupply": "4166397.375635",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        },
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment",
+            "eligibility",
+            "reward"
+          ],
+          "conditions": "Alternate address allowed by source; usable only if ERC-20 code actually exists on Ethereum. The same address on another chain is a different asset.",
+          "address": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+          "chainId": 1,
+          "status": "configured",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+            },
+            {
+              "label": "Pinned distribution accounting",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenzaDistributor.sol"
+            }
+          ],
+          "onchain": {
+            "chainId": 1,
+            "address": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+            "status": "no-code",
+            "codePresent": false,
+            "name": null,
+            "symbol": null,
+            "decimals": null,
+            "totalSupply": null,
+            "formattedSupply": null,
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": [
+              "No contract code at this address on the stated chain."
+            ]
+          }
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Animated generative artwork",
+          "description": "Unique flow-field artwork combines mint entropy with a swarm-history snapshot.",
+          "status": "deployed",
+          "conditions": "",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+            },
+            {
+              "label": "Pinned distribution accounting",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenzaDistributor.sol"
+            }
+          ]
+        },
+        {
+          "kind": "rewards",
+          "title": "Hold NFTs for funded distributions",
+          "description": "90% of public mint proceeds and creator royalties received by the distributor are allocated to NFT holders. ETH, IMD and WETH may be distributed; claims require actual receipts.",
+          "status": "deployed",
+          "conditions": "No fixed return. Unpaid rights and transfer accounting follow the distributor; royalties depend on actual paid receipts.",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+            },
+            {
+              "label": "Pinned distribution accounting",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenzaDistributor.sol"
+            }
+          ]
+        }
+      ],
+      "utilitySummary": "Animated onchain art with funded holder distributions; no staking required.",
+      "utilityReview": {
+        "status": "matched-code",
+        "reviewedAt": "2026-10-17",
+        "evidence": [
+          {
+            "label": "Pinned collection implementation",
+            "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+          },
+          {
+            "label": "Pinned distribution accounting",
+            "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenzaDistributor.sol"
+          }
+        ],
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "scope": "Reviewed capabilities; activation, wallet eligibility and future returns are not guaranteed."
+      }
+    },
+    {
+      "id": "4663:0xdda6387bf0244fc82eb3dbda168acc4d9eed56a3",
+      "name": "FarmItems",
+      "symbol": null,
+      "description": "BLACKOUT L3, job A, Robinhood Chain (4663): one launch of the eight pinned v3.18 contracts in this exact order (byte-identical to v3.17). Zero-based indices: Params 0, GameRegistry 1, RewardPool 2, FarmRewards 3, FarmCore 4, FarmItems 5, PackSale 6, StarterClaim 7. Use the unchanged repository compiler settings: solc 0.8.26, optimizer 200\u2026",
+      "category": "launched",
+      "chainId": 4663,
+      "chainName": "Robinhood",
+      "contractAddress": "0xdda6387bf0244fc82eb3dbda168acc4d9eed56a3",
+      "standard": "ERC-1155",
+      "deployment": {
+        "transactionHash": "0x1cface4af63416b81af7e069c215b3aa44aafd7e841167ef9e887f7949ffbc1f",
+        "blockNumber": 88288289,
+        "timestamp": "2026-10-14T10:16:54Z",
+        "reportedBlockNumber": 88288289,
+        "headerBlockNumber": 88288289,
+        "txHash": "0x1cface4af63416b81af7e069c215b3aa44aafd7e841167ef9e887f7949ffbc1f",
+        "verifiedAt": "2026-10-16T22:10:48.419711Z",
+        "receiptSuccess": true,
+        "codePresent": true
+      },
+      "jobs": [
+        {
+          "id": "04dcfabf-fb44-4886-a470-80e15f46efd5",
+          "title": "Update the BLACKOUT demo site from job 5097a8f8 (same repo and site). Goal: much simpler and friendlier for new players. Keep the pixel styl",
+          "url": "https://explorer.imd.fun/jobs/04dcfabf-fb44-4886-a470-80e15f46efd5",
+          "status": "completed"
+        },
+        {
+          "id": "2f84393e-9879-41ba-bcf0-1da1ae29686d",
+          "title": "Project: https://playblackout.xyz UX update for the live BLACKOUT site (repo identity-md-launches/launch-1263-build-pre-launch-website-black",
+          "url": "https://explorer.imd.fun/jobs/2f84393e-9879-41ba-bcf0-1da1ae29686d",
+          "status": "completed"
+        }
+      ],
+      "sites": [
+        {
+          "id": "9300d713-92d9-4d5d-bd1e-70b189e7a5c0",
+          "jobId": "2f84393e-9879-41ba-bcf0-1da1ae29686d",
+          "kind": "launch",
+          "tokenId": null,
+          "agentId": null,
+          "url": "https://blackout-mine-the-city-pray-the.sites.imd.fun/",
+          "status": "named",
+          "holdReason": null,
+          "takenDownAt": null,
+          "takenDownReason": null,
+          "label": "blackout-mine-the-city-pray-the",
+          "cid": "bafybeia4acppfzy6t6m7tkxufmxn2ndsqtbhgahoekzby6m4iaslmtp55u",
+          "bytes": 3875747,
+          "ensName": "blackout-mine-the-city-pray-the.site.identitymd.eth",
+          "txHash": "0x51084295d8d01d5b26602cd0678d4c32ef1d59f1bb43c2bba3c2cf7dd9b20e92",
+          "blockNumber": 26198794,
+          "attempts": 0,
+          "failure": null,
+          "pinnedAt": "2026-10-15T15:24:17.654Z",
+          "namedAt": "2026-10-15T15:24:37.506Z",
+          "supersededBy": null,
+          "supersededAt": null,
+          "createdAt": "2026-10-15T15:23:52.130Z",
+          "updatedAt": "2026-10-15T15:24:37.506Z",
+          "originalUrl": "https://blackout-mine-the-city-pray-the.site.identitymd.eth.limo",
+          "ipfsUrl": "https://ipfs.io/ipfs/bafybeia4acppfzy6t6m7tkxufmxn2ndsqtbhgahoekzby6m4iaslmtp55u/"
+        }
+      ],
+      "repositories": [
+        {
+          "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood",
+          "commit": "e05b59a952535a6cd85c37a2819be8bb8410cd00"
+        },
+        {
+          "url": "https://github.com/identity-md-launches/launch-1263-build-pre-launch-website-blackout",
+          "commit": "3ac553d030d5cf865edfbda2b6bade2fdd0dab03"
+        }
+      ],
+      "launchIds": [
+        "3960c8f9-0214-43ab-be25-652dc722bcf4"
+      ],
+      "launchNumber": 1722,
+      "idmdBenefit": {
+        "status": "conditional",
+        "conditions": "Snapshot Merkle proof required; current IDMD ownership alone does not qualify. Three items after claim/entropy/resolve, with no mint fee.",
+        "exclusive": false,
+        "evidence": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/FarmItems.sol"
+          }
+        ]
+      },
+      "mint": {
+        "state": "open",
+        "start": "2026-10-16T08:36:49Z",
+        "end": "2026-10-30T08:36:49Z",
+        "publicPrice": "0 (snapshot starter)",
+        "currency": null,
+        "limits": "Three soulbound starter items per eligible snapshot ID. No global collection cap. Paid packs and game rewards are separate routes.",
+        "conditions": "Frozen IDMD ownership snapshot proof binds token ID and wallet. Claim, entropy capture and resolve are separate transactions; resolve also needs inventory capacity. Network gas is additional; wallet eligibility was not simulated.",
+        "reportedTerms": [
+          "Zero-based indices: Params 0, GameRegistry 1, RewardPool 2, FarmRewards 3, FarmCore 4, FarmItems 5, PackSale 6, StarterClaim 7."
+        ],
+        "gasIncluded": false,
+        "asOf": "2026-10-16T22:10:42Z",
+        "readBlock": 90424499,
+        "routes": [
+          {
+            "name": "IDMD snapshot starter",
+            "state": "open",
+            "conditions": "Snapshot Merkle proof required; current IDMD ownership alone does not qualify. Three items after claim/entropy/resolve, with no mint fee.",
+            "price": "0",
+            "currency": null,
+            "start": "2026-10-16T08:36:49Z",
+            "end": "2026-10-30T08:36:49Z"
+          },
+          {
+            "name": "500-wallet allowlist pack",
+            "state": "open",
+            "conditions": "Separate wallet/index Merkle proof; one per wallet and index; then resolve three items.",
+            "price": "0",
+            "currency": null,
+            "start": null,
+            "end": "2026-11-13T08:36:49Z"
+          }
+        ]
+      },
+      "stats": {
+        "totalSupply": 110,
+        "maxSupply": null,
+        "holders": 9,
+        "totalMinted": 114,
+        "snapshotBlock": 26182375,
+        "freePacksClaimed": 1,
+        "liveItems": 110,
+        "burnedItems": 4,
+        "beneficialHolders": 11,
+        "custodyHolders": 9
+      },
+      "chainReads": {
+        "nextId": 115,
+        "engine": "0x9d8cd4a606f8c14f8bd93e612fa0f2b9efc6d83a",
+        "packSale": "0xf28d8d409e471f7ceff7a029dcc56328e167c3d5",
+        "starterClaim": "0xcda5653467843137aadb2729151e5e8042a49b13",
+        "farmCore": "0x40499cca542b3cd2db0287fa0b6da87002f042e8",
+        "season": "0x384f20703cee82da2ee55a2b98a095d21b1e959b",
+        "registry": "0x1b41fc9723df25eec7e91d947072dccc2483285f"
+      },
+      "readBlock": 90424499,
+      "activity": {
+        "stage": "Deployed; mint availability requires separate checks",
+        "lastMeaningfulAt": "2026-10-14T10:16:55.227Z"
+      },
+      "evidence": [
+        {
+          "label": "IMD deployment record",
+          "url": "https://api.imd.fun/launches/3960c8f9-0214-43ab-be25-652dc722bcf4",
+          "detail": "Successful receipt and NFT bytecode independently checked; deployment address attributed by IMD."
+        },
+        {
+          "label": "Pinned collection source",
+          "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/FarmItems.sol",
+          "detail": "Source published at the launch commit."
+        }
+      ],
+      "unknowns": [
+        "factory receipt confirms transaction success; address linkage relies on the launch artifact",
+        "Robinhood public explorer API is unavailable (HTTP 403 observed); source and holder counts may be unknown"
+      ],
+      "codeHash": "0xd4a23d86800de9b106d7929bedab057f0c02d244ea60bb6bec00bb259a7a4961",
+      "ruleReview": {
+        "status": "matched",
+        "codeHash": "0xd4a23d86800de9b106d7929bedab057f0c02d244ea60bb6bec00bb259a7a4961",
+        "sources": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/FarmItems.sol"
+          }
+        ],
+        "reviewedAt": "2026-10-16",
+        "checkedAt": "2026-10-16T22:46:21.723673Z",
+        "scope": "Source rules plus current getter reads; not wallet-specific simulation or a security audit."
+      },
+      "tokens": [
+        {
+          "symbol": null,
+          "name": "BLACKOUT game token",
+          "roles": [
+            "game",
+            "payment",
+            "reward"
+          ],
+          "conditions": "The game token is resolved through the deployed registry; name and symbol require ERC-20 metadata verification.",
+          "address": "0x38b05971c79e738f64452be83c78ec3d66535b7a",
+          "chainId": 4663,
+          "status": "configured",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/FarmItems.sol"
+            },
+            {
+              "label": "Immutable game registry",
+              "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/GameRegistry.sol"
+            }
+          ],
+          "onchain": {
+            "chainId": 4663,
+            "address": "0x38b05971c79e738f64452be83c78ec3d66535b7a",
+            "status": "checked",
+            "codePresent": true,
+            "name": "BLACKOUT",
+            "symbol": "BLACKOUT",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 90424499,
+            "readTimestamp": "2026-10-16T22:10:42Z",
+            "warnings": []
+          }
+        }
+      ],
+      "utility": [
+        {
+          "kind": "game",
+          "title": "Equip and improve a BLACKOUT farm",
+          "description": "Soulbound equipment has rarity, durability and overclock levels. Players equip their own items, repair them, merge matching items and expand inventory. Transfers outside permitted farm custody are blocked.",
+          "status": "deployed",
+          "conditions": "",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/FarmItems.sol"
+            },
+            {
+              "label": "Immutable game registry",
+              "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/GameRegistry.sol"
+            }
+          ]
+        },
+        {
+          "kind": "rewards",
+          "title": "Game mining, not passive NFT staking",
+          "description": "Equipment contributes to farm output under the game engine. Game actions spend the registry token and reward claims depend on the reward pool, epochs, durability and game rules.",
+          "status": "deployed",
+          "conditions": "Owning an item alone does not guarantee a payout. The deployed module graph and current game state determine eligibility.",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/FarmItems.sol"
+            },
+            {
+              "label": "Immutable game registry",
+              "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/GameRegistry.sol"
+            }
+          ]
+        }
+      ],
+      "utilitySummary": "Soulbound mining-farm equipment with game-token spending and funded mining rewards.",
+      "utilityReview": {
+        "status": "matched-code",
+        "reviewedAt": "2026-10-17",
+        "evidence": [
+          {
+            "label": "Pinned collection implementation",
+            "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/FarmItems.sol"
+          },
+          {
+            "label": "Immutable game registry",
+            "url": "https://github.com/identity-md-launches/launch-1722-blackout-l3-job-robinhood/blob/e05b59a952535a6cd85c37a2819be8bb8410cd00/src/GameRegistry.sol"
+          }
+        ],
+        "asOf": "2026-10-16T22:10:42Z",
+        "readBlock": 90424499,
+        "scope": "Reviewed capabilities; activation, wallet eligibility and future returns are not guaranteed."
+      }
+    },
+    {
+      "id": "1:0xc5d5f314da6d4a433f9bf897a2cc24a537576cb1",
+      "name": "Goblin Gold",
+      "symbol": "GOBLIN",
+      "description": "Ethereum mainnet: one application deployment, GoblinNFT at index 0, built from this repository tree at its published commit. SOURCE NOTE FOR ADMISSION: the brief pinned commit fdb50e17659ad331d4f74921677bc110f3e4fec0, but the tree is that commit plus one verifier-accepted revision of src/GoblinNFT.sol (commit aa25ddd23c48f413724511aa28005\u2026",
+      "category": "launched",
+      "chainId": 1,
+      "chainName": "Ethereum",
+      "contractAddress": "0xc5d5f314da6d4a433f9bf897a2cc24a537576cb1",
+      "standard": "ERC-721",
+      "deployment": {
+        "transactionHash": "0x202bb14ab5d7023af461edea6f467d790ffc7a8d677c29c42fa482ae9a95442a",
+        "blockNumber": 26185634,
+        "timestamp": "2026-10-13T19:22:47Z",
+        "reportedBlockNumber": 26185634,
+        "headerBlockNumber": 26185634,
+        "txHash": "0x202bb14ab5d7023af461edea6f467d790ffc7a8d677c29c42fa482ae9a95442a",
+        "verifiedAt": "2026-10-16T22:10:52.281515Z",
+        "receiptSuccess": true,
+        "codePresent": true
+      },
+      "jobs": [
+        {
+          "id": "3ab65b2e-296b-4733-a33f-e753fccab19c",
+          "title": "Goblin Gold mint site for the deployed GoblinNFT 0xC5d5F314da6d4a433F9BF897a2cC24A537576cB1 on Ethereum mainnet (deployed at block 26185634)",
+          "url": "https://explorer.imd.fun/jobs/3ab65b2e-296b-4733-a33f-e753fccab19c",
+          "status": "blocked"
+        },
+        {
+          "id": "4912ed15-3dfd-4bb5-a057-a66646bc7335",
+          "title": "Goblin Gold NFT mint on Ethereum mainnet. NO SOURCE CHANGES: deploy commit fdb50e17659ad331d4f74921677bc110f3e4fec0 exactly as it is; findin",
+          "url": "https://explorer.imd.fun/jobs/4912ed15-3dfd-4bb5-a057-a66646bc7335",
+          "status": "completed"
+        }
+      ],
+      "sites": [
+        {
+          "id": "5fbbd7a9-60ce-4939-9f98-a6019b3dcff0",
+          "jobId": "e09482ee-3aa4-4312-949c-eb8acb519bd0",
+          "kind": "launch",
+          "tokenId": null,
+          "agentId": null,
+          "url": "https://goblin-gold-mint-a-goblin.sites.imd.fun/",
+          "status": "named",
+          "holdReason": null,
+          "takenDownAt": null,
+          "takenDownReason": null,
+          "label": "goblin-gold-mint-a-goblin",
+          "cid": "bafybeibxg6mqabqvnihzr23nc6b5tjmhgbo7by462h445oclhgq7todaqq",
+          "bytes": 564298,
+          "ensName": "goblin-gold-mint-a-goblin.site.identitymd.eth",
+          "txHash": "0xef4b571b01a3548aadf89099988545009f4c9e8eac70342345d270a9478add86",
+          "blockNumber": 26185900,
+          "attempts": 0,
+          "failure": null,
+          "pinnedAt": "2026-10-13T20:14:45.190Z",
+          "namedAt": "2026-10-13T20:16:15.706Z",
+          "supersededBy": null,
+          "supersededAt": null,
+          "createdAt": "2026-10-13T20:14:38.953Z",
+          "updatedAt": "2026-10-13T20:16:15.706Z",
+          "originalUrl": "https://goblin-gold-mint-a-goblin.site.identitymd.eth.limo",
+          "ipfsUrl": "https://ipfs.io/ipfs/bafybeibxg6mqabqvnihzr23nc6b5tjmhgbo7by462h445oclhgq7todaqq/"
+        }
+      ],
+      "repositories": [
+        {
+          "url": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint",
+          "commit": "dbd66796c56c6df8ab9b5d58686b86ef1111ae5d"
+        },
+        {
+          "url": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint",
+          "commit": "eef66318b0e890e88260d7e679cde17180db42ce"
+        }
+      ],
+      "launchIds": [
+        "4547ec39-840d-4527-a80b-be9b989dddd4"
+      ],
+      "launchNumber": 1616,
+      "idmdBenefit": {
+        "status": "no",
+        "conditions": "No IDMD-holder free mint route in the reviewed source.",
+        "exclusive": true,
+        "evidence": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint/blob/dbd66796c56c6df8ab9b5d58686b86ef1111ae5d/src/GoblinNFT.sol"
+          }
+        ]
+      },
+      "mint": {
+        "state": "open",
+        "start": null,
+        "end": null,
+        "publicPrice": "0.001",
+        "currency": "ETH",
+        "limits": "20 lifetime mints per wallet; sellout is permanent even if tokens burn later.",
+        "conditions": "Exact ETH payment. Free game spins are not free NFTs. Refund availability is a separate contract rule. Network gas is additional; wallet eligibility was not simulated.",
+        "reportedTerms": [
+          "SOURCE NOTE FOR ADMISSION: the brief pinned commit fdb50e17659ad331d4f74921677bc110f3e4fec0, but the tree is that commit plus one verifier-accepted revision of src/GoblinNFT.sol (commit aa25ddd23c48f413724511aa28005b34f6247301, the fix for review finding ddc7c88f: refundable tokens could claim a full revenue share before release)."
+        ],
+        "gasIncluded": false,
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "routes": [
+          {
+            "name": "Mint",
+            "state": "open",
+            "conditions": "Exact ETH payment. Free game spins are not free NFTs. Refund availability is a separate contract rule.",
+            "price": "0.001",
+            "currency": "ETH",
+            "start": null,
+            "end": null
+          }
+        ]
+      },
+      "stats": {
+        "totalSupply": 11,
+        "maxSupply": 10000,
+        "holders": 2,
+        "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xc5d5f314da6d4a433f9bf897a2cc24a537576cb1",
+        "totalMinted": 12,
+        "refundsOpen": true
+      },
+      "chainReads": {
+        "name": "Goblin Gold",
+        "symbol": "GOBLIN",
+        "MAX_SUPPLY": 10000,
+        "FREE_SPINS_PER_TOKEN": 2,
+        "MAX_PER_WALLET": 20,
+        "PRICE": 1000000000000000,
+        "REFUND_REOPEN_DELAY": 7776000,
+        "TARGET_REVIEW_PERIOD": 604800,
+        "deferredRevenue": 0,
+        "liveSupply": 11,
+        "nextTokenId": 13,
+        "owner": "0xa7e99bb7155d7477e0c838e201b16e62b9c0b5ac",
+        "polOwed": 0,
+        "polTarget": "0x0000000000000000000000000000000000000000",
+        "refundsOpen": true,
+        "released": false,
+        "reserveOwed": 0,
+        "reserveTarget": "0x0000000000000000000000000000000000000000",
+        "retainedRevenue": 0,
+        "revealBlock": 0,
+        "revealed": false,
+        "revenuePerToken": 0,
+        "seed": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "soldOut": false,
+        "soldOutAt": 0,
+        "targetsSet": false,
+        "targetsSetAt": 0,
+        "totalRevenueClaimed": 0,
+        "totalRevenueDeposited": 0,
+        "vrfOwed": 0,
+        "vrfTarget": "0x0000000000000000000000000000000000000000"
+      },
+      "readBlock": 26208001,
+      "activity": {
+        "stage": "Deployed; mint availability requires separate checks",
+        "lastMeaningfulAt": "2026-10-13T19:23:04.061Z"
+      },
+      "evidence": [
+        {
+          "label": "IMD deployment record",
+          "url": "https://api.imd.fun/launches/4547ec39-840d-4527-a80b-be9b989dddd4",
+          "detail": "Successful receipt and NFT bytecode independently checked; deployment address attributed by IMD."
+        },
+        {
+          "label": "Pinned collection source",
+          "url": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint/blob/dbd66796c56c6df8ab9b5d58686b86ef1111ae5d/src/GoblinNFT.sol",
+          "detail": "Source published at the launch commit."
+        }
+      ],
+      "unknowns": [
+        "factory receipt confirms transaction success; address linkage relies on the launch artifact",
+        "holder count is an unpinned explorer estimate"
+      ],
+      "codeHash": "0x270daf73d98f9a0aab6b102e725ad745edb2412306782d222e1cf495c6951f85",
+      "ruleReview": {
+        "status": "matched",
+        "codeHash": "0x270daf73d98f9a0aab6b102e725ad745edb2412306782d222e1cf495c6951f85",
+        "sources": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint/blob/dbd66796c56c6df8ab9b5d58686b86ef1111ae5d/src/GoblinNFT.sol"
+          }
+        ],
+        "reviewedAt": "2026-10-16",
+        "checkedAt": "2026-10-16T22:46:22.005605Z",
+        "scope": "Source rules plus current getter reads; not wallet-specific simulation or a security audit."
+      },
+      "tokens": [],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Onchain Goblin artwork",
+          "description": "The collection provides deterministic onchain artwork and a reveal after sellout.",
+          "status": "deployed",
+          "conditions": "",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint/blob/dbd66796c56c6df8ab9b5d58686b86ef1111ae5d/src/GoblinNFT.sol"
+            }
+          ]
+        },
+        {
+          "kind": "redemption",
+          "title": "Burn for the mint-price refund",
+          "description": "While refundsOpen is true, the owner can burn a Goblin for 0.001 ETH. Refunds close permanently after release.",
+          "status": "deployed",
+          "conditions": "Check the current refund gate; the source implements review periods and a delayed reopening before release.",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint/blob/dbd66796c56c6df8ab9b5d58686b86ef1111ae5d/src/GoblinNFT.sol"
+            }
+          ]
+        }
+      ],
+      "utilitySummary": "Refundable Goblin artwork with deposited ETH revenue; gacha integration remains a separate planned deployment.",
+      "utilityReview": {
+        "status": "matched-code",
+        "reviewedAt": "2026-10-17",
+        "evidence": [
+          {
+            "label": "Pinned collection implementation",
+            "url": "https://github.com/identity-md-launches/launch-1616-goblin-gold-nft-mint/blob/dbd66796c56c6df8ab9b5d58686b86ef1111ae5d/src/GoblinNFT.sol"
+          }
+        ],
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "scope": "Reviewed capabilities; activation, wallet eligibility and future returns are not guaranteed."
+      }
+    },
+    {
+      "id": "1:0xedd2be808e73bc443bc12aa07586193c193e8d51",
+      "name": "BMC Illuminati Pass",
+      "symbol": "BMCPASS",
+      "description": "BMCIlluminatiPass is the accepted block-derived Mystery design, not the deterministic development branch. Constructor (initialOwner, bmcToken): the explicit owner and the existing Ethereum Mainnet BMC ERC-20 address; the BMC address is not an NFT deployment address, and the constructor makes no external calls. StandardArt is an internal, \u2026",
+      "category": "launched",
+      "chainId": 1,
+      "chainName": "Ethereum",
+      "contractAddress": "0xedd2be808e73bc443bc12aa07586193c193e8d51",
+      "standard": "ERC-721",
+      "deployment": {
+        "transactionHash": "0xd4420d36a0ac16aacc09b02de98b83d76882ab8b533af3eee1416b772619f5b1",
+        "blockNumber": 26180757,
+        "timestamp": "2026-10-13T03:03:11Z",
+        "reportedBlockNumber": 26180757,
+        "headerBlockNumber": 26180757,
+        "txHash": "0xd4420d36a0ac16aacc09b02de98b83d76882ab8b533af3eee1416b772619f5b1",
+        "verifiedAt": "2026-10-16T22:10:54.474977Z",
+        "receiptSuccess": true,
+        "codePresent": true
+      },
+      "jobs": [
+        {
+          "id": "c365fa20-6fba-42d5-b73f-6d4050abce8f",
+          "title": "# BMC ILLUMINATI \u2014 INTEGRATE NFT MINTING INTO EXISTING WEBSITE I want you to upgrade my EXISTING BMC Illuminati website with a complete Ethe",
+          "url": "https://explorer.imd.fun/jobs/c365fa20-6fba-42d5-b73f-6d4050abce8f",
+          "status": "completed"
+        },
+        {
+          "id": "e05a7321-f1be-4eb3-8341-7e0db1ed7233",
+          "title": "# MISSION PRIORITAIRE \u2014 BMC ILLUMINATI WEB3 PLATFORM Tu es un d\u00e9veloppeur Web3 senior, ing\u00e9nieur s\u00e9curit\u00e9 blockchain et sp\u00e9cialiste Ethereum",
+          "url": "https://explorer.imd.fun/jobs/e05a7321-f1be-4eb3-8341-7e0db1ed7233",
+          "status": "completed"
+        }
+      ],
+      "sites": [],
+      "repositories": [
+        {
+          "url": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati",
+          "commit": "ab734601833e7ef15a83647dcf4c33f3013820ba"
+        },
+        {
+          "url": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati",
+          "commit": "9963eea05a4682e423a8f0381ccab4e8b43a832a"
+        }
+      ],
+      "launchIds": [
+        "3fb5e217-d816-44b5-a7ad-73fe8c4f2cb2"
+      ],
+      "launchNumber": 1481,
+      "idmdBenefit": {
+        "status": "no",
+        "conditions": "No IDMD-holder free mint route in the reviewed source.",
+        "exclusive": true,
+        "evidence": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati/blob/ab734601833e7ef15a83647dcf4c33f3013820ba/src/BMCIlluminatiPass.sol"
+          }
+        ]
+      },
+      "mint": {
+        "state": "not-started",
+        "start": null,
+        "end": null,
+        "publicPrice": "1000000",
+        "currency": "BMC",
+        "limits": "First 40 Genesis mints; 460 Mystery mints; no wallet cap.",
+        "conditions": "Burn 1,000,000 BMC per Genesis NFT or 350,000 BMC per Mystery NFT; balance and allowance required. Network gas is additional; wallet eligibility was not simulated.",
+        "reportedTerms": [
+          "The collection has 500 NFTs: sequential Genesis IDs 1-40 cost 1,000,000 BMC each, followed by 460 Mystery mints costing 350,000 BMC each with 37 Genesis and 423 Standard outcomes drawn without replacement."
+        ],
+        "gasIncluded": false,
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "routes": [
+          {
+            "name": "Mint",
+            "state": "not-started",
+            "conditions": "Burn 1,000,000 BMC per Genesis NFT or 350,000 BMC per Mystery NFT; balance and allowance required.",
+            "price": "1000000",
+            "currency": "BMC",
+            "start": null,
+            "end": null
+          }
+        ]
+      },
+      "stats": {
+        "totalSupply": 0,
+        "maxSupply": 500,
+        "holders": null,
+        "totalMinted": 0,
+        "revealedCount": 0,
+        "pendingReveals": 0
+      },
+      "chainReads": {
+        "name": "BMC Illuminati Pass",
+        "symbol": "BMCPASS",
+        "totalSupply": 0,
+        "MAX_SUPPLY": 500,
+        "totalMinted": 0,
+        "GENESIS_PHASE_SUPPLY": 40,
+        "MYSTERY_SUPPLY": 460,
+        "TOTAL_GENESIS": 77,
+        "MYSTERY_GENESIS": 37,
+        "TOTAL_STANDARD": 423,
+        "BMC_DECIMALS": 18,
+        "GENESIS_PRICE": 1000000000000000000000000,
+        "MYSTERY_PRICE": 350000000000000000000000,
+        "MAX_TOTAL_BURN": 201000000000000000000000000,
+        "genesisImagesCID": "bafybeihfihwwpev4gkqjuqawgtptsv3ynzsokclo6odsolvoa65aqaac2u",
+        "BLOCK_HISTORY": "0x0000f90827f1c53a10cb7a02335b175320002935",
+        "REVEAL_WINDOW": 8191,
+        "totalBurned": 0,
+        "revealedCount": 0,
+        "mysteryGenesisRevealed": 0,
+        "mintingOpen": false,
+        "nextRevealId": 0,
+        "remainingSupply": 500,
+        "genesisPhaseActive": true,
+        "remainingMysteryMints": 460,
+        "pendingReveals": 0,
+        "remainingMysteryGenesis": 37,
+        "remainingMysteryStandard": 423,
+        "currentPrice": 1000000000000000000000000,
+        "BMC": "0x38224239f2bdae357d47cb864bc533d7f72df961"
+      },
+      "readBlock": 26208001,
+      "activity": {
+        "stage": "Deployed; mint availability requires separate checks",
+        "lastMeaningfulAt": "2026-10-13T03:03:29.658Z"
+      },
+      "evidence": [
+        {
+          "label": "IMD deployment record",
+          "url": "https://api.imd.fun/launches/3fb5e217-d816-44b5-a7ad-73fe8c4f2cb2",
+          "detail": "Successful receipt and NFT bytecode independently checked; deployment address attributed by IMD."
+        },
+        {
+          "label": "Pinned collection source",
+          "url": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati/blob/ab734601833e7ef15a83647dcf4c33f3013820ba/src/BMCIlluminatiPass.sol",
+          "detail": "Source published at the launch commit."
+        }
+      ],
+      "unknowns": [
+        "factory receipt confirms transaction success; address linkage relies on the launch artifact",
+        "holder count unavailable: HTTP Error 404: Not Found"
+      ],
+      "codeHash": "0xe6ea784c3626bca2a767cd5abfce02b9472c93eb9477e9c4a1bcf160cca0ea4b",
+      "ruleReview": {
+        "status": "matched",
+        "codeHash": "0xe6ea784c3626bca2a767cd5abfce02b9472c93eb9477e9c4a1bcf160cca0ea4b",
+        "sources": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati/blob/ab734601833e7ef15a83647dcf4c33f3013820ba/src/BMCIlluminatiPass.sol"
+          }
+        ],
+        "reviewedAt": "2026-10-16",
+        "checkedAt": "2026-10-16T22:46:22.305584Z",
+        "scope": "Source rules plus current getter reads; not wallet-specific simulation or a security audit."
+      },
+      "tokens": [
+        {
+          "symbol": "BMC",
+          "name": "BMC",
+          "roles": [
+            "payment",
+            "burn"
+          ],
+          "conditions": "",
+          "address": "0x38224239f2bdae357d47cb864bc533d7f72df961",
+          "chainId": 1,
+          "status": "configured",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati/blob/ab734601833e7ef15a83647dcf4c33f3013820ba/src/BMCIlluminatiPass.sol"
+            }
+          ],
+          "onchain": {
+            "chainId": 1,
+            "address": "0x38224239f2bdae357d47cb864bc533d7f72df961",
+            "status": "checked",
+            "codePresent": true,
+            "name": "BMC Illuminati",
+            "symbol": "BMC",
+            "decimals": 18,
+            "totalSupply": "984094757004634928457536955",
+            "formattedSupply": "984094757.004634928457536955",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Burn-to-mint collectible pass",
+          "description": "The first 40 mints burn 1,000,000 BMC each; later mystery mints burn 350,000 BMC. Reveals determine the remaining Genesis/Standard allocation.",
+          "status": "deployed",
+          "conditions": "This deployment has its own opening/reveal gates. The collection does not itself implement staking, dividends or a game.",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati/blob/ab734601833e7ef15a83647dcf4c33f3013820ba/src/BMCIlluminatiPass.sol"
+            }
+          ]
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": "",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati/blob/ab734601833e7ef15a83647dcf4c33f3013820ba/src/BMCIlluminatiPass.sol"
+            }
+          ]
+        }
+      ],
+      "utilitySummary": "Burn BMC to mint a Genesis or mystery collectible; no NFT staking in this pass contract.",
+      "utilityReview": {
+        "status": "matched-code",
+        "reviewedAt": "2026-10-17",
+        "evidence": [
+          {
+            "label": "Pinned collection implementation",
+            "url": "https://github.com/identity-md-launches/launch-1481-bmc-illuminati/blob/ab734601833e7ef15a83647dcf4c33f3013820ba/src/BMCIlluminatiPass.sol"
+          }
+        ],
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "scope": "Reviewed capabilities; activation, wallet eligibility and future returns are not guaranteed."
+      }
+    },
+    {
+      "id": "1:0x8402ce12b472c69633443f58c55ebbe15c8c68a0",
+      "name": "BMC Illuminati Pass",
+      "symbol": "BMCPASS",
+      "description": "Scope: the accepted application is src/BMCIlluminatiPass.sol (constructor 174-188), with eight nonpayable static constructor arguments. $owner receives ownership. StandardArt is internal and needs no deployment. Candidate V3 is preserved only in test/audit/fixtures/BMCIlluminatiPassCandidateV3.sol; it is not the application listed here. T\u2026",
+      "category": "launched",
+      "chainId": 1,
+      "chainName": "Ethereum",
+      "contractAddress": "0x8402ce12b472c69633443f58c55ebbe15c8c68a0",
+      "standard": "ERC-721",
+      "deployment": {
+        "transactionHash": "0x0adb4d01ac65b8183ac191921b41fe93ebe6800b48dced4b5a8943c8309ac2ae",
+        "blockNumber": 26180751,
+        "timestamp": "2026-10-13T03:01:59Z",
+        "reportedBlockNumber": 26180751,
+        "headerBlockNumber": 26180751,
+        "txHash": "0x0adb4d01ac65b8183ac191921b41fe93ebe6800b48dced4b5a8943c8309ac2ae",
+        "verifiedAt": "2026-10-16T22:10:57.148724Z",
+        "receiptSuccess": true,
+        "codePresent": true
+      },
+      "jobs": [
+        {
+          "id": "4dc09c22-dc84-441c-982c-ed4ec4d340ac",
+          "title": "SECURITY AUDIT \u2014 BMC ILLUMINATI PASS V3 Repository: https://github.com/0xSt3w/launch-1356-project-bmc-illuminati-pass Branch: security/vrf-r",
+          "url": "https://explorer.imd.fun/jobs/4dc09c22-dc84-441c-982c-ed4ec4d340ac",
+          "status": "completed"
+        }
+      ],
+      "sites": [],
+      "repositories": [
+        {
+          "url": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc",
+          "commit": "162176282ceda890cbea5371ca86346bfe008dff"
+        }
+      ],
+      "launchIds": [
+        "54767f27-321e-469e-8958-53d468eeca18"
+      ],
+      "launchNumber": 1425,
+      "idmdBenefit": {
+        "status": "no",
+        "conditions": "No IDMD-holder free mint route in the reviewed source.",
+        "exclusive": true,
+        "evidence": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc/blob/162176282ceda890cbea5371ca86346bfe008dff/src/BMCIlluminatiPass.sol"
+          }
+        ]
+      },
+      "mint": {
+        "state": "open",
+        "start": null,
+        "end": null,
+        "publicPrice": "1000000",
+        "currency": "BMC",
+        "limits": "First 40 Genesis mints; 460 Mystery mints; no wallet cap.",
+        "conditions": "Burn 1,000,000 BMC per Genesis NFT or 350,000 BMC per Mystery NFT; balance and allowance required. Mystery mint additionally requires the external VRF request to succeed; this dependency has not been simulated. Older deployment; a newer contract does not disable this one. Network gas is additional; wallet eligibility was not simulated.",
+        "reportedTerms": [
+          "HIGH H-1 (252-275,302-310): mint 40 Genesis and one mystery NFT, close, request the sole seed, then drop delivery or fail its callback; another request and finalization remain impossible while BMC stays burned."
+        ],
+        "gasIncluded": false,
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "routes": [
+          {
+            "name": "Mint",
+            "state": "open",
+            "conditions": "Burn 1,000,000 BMC per Genesis NFT or 350,000 BMC per Mystery NFT; balance and allowance required. Mystery mint additionally requires the external VRF request to succeed; this dependency has not been simulated. Older deployment; a newer contract does not disable this one.",
+            "price": "1000000",
+            "currency": "BMC",
+            "start": null,
+            "end": null
+          }
+        ]
+      },
+      "stats": {
+        "totalSupply": 0,
+        "maxSupply": 500,
+        "holders": null,
+        "totalMinted": 0,
+        "revealedCount": 0,
+        "pendingReveals": 0
+      },
+      "chainReads": {
+        "name": "BMC Illuminati Pass",
+        "symbol": "BMCPASS",
+        "totalSupply": 0,
+        "MAX_SUPPLY": 500,
+        "totalMinted": 0,
+        "BMC_DECIMALS": 18,
+        "CALLBACK_GAS_RESERVE": 30000,
+        "CALLBACK_REVEAL_BATCH": 4,
+        "GAS_PER_REVEAL": 110000,
+        "GENESIS_PHASE_SUPPLY": 40,
+        "GENESIS_PRICE": 1000000000000000000000000,
+        "MAX_CALLBACK_GAS_LIMIT": 2500000,
+        "MAX_REQUEST_CONFIRMATIONS": 200,
+        "MAX_TOTAL_BURN": 201000000000000000000000000,
+        "MIN_CALLBACK_GAS_LIMIT": 150000,
+        "MIN_REQUEST_CONFIRMATIONS": 3,
+        "MYSTERY_GENESIS": 37,
+        "MYSTERY_PRICE": 350000000000000000000000,
+        "MYSTERY_SUPPLY": 460,
+        "RETRY_DELAY": 86400,
+        "TOTAL_GENESIS": 77,
+        "TOTAL_STANDARD": 423,
+        "VRF_COORDINATOR": "0xd7f86b4b8cae7d942340ff628f82735b7a20893a",
+        "currentPrice": 1000000000000000000000000,
+        "genesisCIDLocked": true,
+        "genesisImagesCID": "bafybeihfihwwpev4gkqjuqawgtptsv3ynzsokclo6odsolvoa65aqaac2u",
+        "genesisPhaseActive": true,
+        "mysteryGenesisRevealed": 0,
+        "owner": "0x83027ad9d0d5374335086c539dadd1db983441b0",
+        "pendingOwner": "0x0000000000000000000000000000000000000000",
+        "pendingReveals": 0,
+        "remainingMysteryGenesis": 37,
+        "remainingMysteryMints": 460,
+        "remainingMysteryStandard": 423,
+        "remainingSupply": 500,
+        "revealedCount": 0,
+        "totalBurned": 0,
+        "BMC": "0x38224239f2bdae357d47cb864bc533d7f72df961"
+      },
+      "readBlock": 26208001,
+      "activity": {
+        "stage": "Deployed; mint availability requires separate checks",
+        "lastMeaningfulAt": "2026-10-13T03:02:15.636Z"
+      },
+      "evidence": [
+        {
+          "label": "IMD deployment record",
+          "url": "https://api.imd.fun/launches/54767f27-321e-469e-8958-53d468eeca18",
+          "detail": "Successful receipt and NFT bytecode independently checked; deployment address attributed by IMD."
+        },
+        {
+          "label": "Pinned collection source",
+          "url": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc/blob/162176282ceda890cbea5371ca86346bfe008dff/src/BMCIlluminatiPass.sol",
+          "detail": "Source published at the launch commit."
+        }
+      ],
+      "unknowns": [
+        "factory receipt confirms transaction success; address linkage relies on the launch artifact",
+        "holder count unavailable: HTTP Error 404: Not Found"
+      ],
+      "codeHash": "0x14a7f5a7bdbb441005b3a89682f6982e807e7791820d4ce0088d5e79bbbcfdf1",
+      "ruleReview": {
+        "status": "matched",
+        "codeHash": "0x14a7f5a7bdbb441005b3a89682f6982e807e7791820d4ce0088d5e79bbbcfdf1",
+        "sources": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc/blob/162176282ceda890cbea5371ca86346bfe008dff/src/BMCIlluminatiPass.sol"
+          }
+        ],
+        "reviewedAt": "2026-10-16",
+        "checkedAt": "2026-10-16T22:46:22.353909Z",
+        "scope": "Source rules plus current getter reads; not wallet-specific simulation or a security audit."
+      },
+      "tokens": [
+        {
+          "symbol": "BMC",
+          "name": "BMC",
+          "roles": [
+            "payment",
+            "burn"
+          ],
+          "conditions": "",
+          "address": "0x38224239f2bdae357d47cb864bc533d7f72df961",
+          "chainId": 1,
+          "status": "configured",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc/blob/162176282ceda890cbea5371ca86346bfe008dff/src/BMCIlluminatiPass.sol"
+            }
+          ],
+          "onchain": {
+            "chainId": 1,
+            "address": "0x38224239f2bdae357d47cb864bc533d7f72df961",
+            "status": "checked",
+            "codePresent": true,
+            "name": "BMC Illuminati",
+            "symbol": "BMC",
+            "decimals": 18,
+            "totalSupply": "984094757004634928457536955",
+            "formattedSupply": "984094757.004634928457536955",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Burn-to-mint collectible pass",
+          "description": "The first 40 mints burn 1,000,000 BMC each; later mystery mints burn 350,000 BMC. Reveals determine the remaining Genesis/Standard allocation.",
+          "status": "deployed",
+          "conditions": "This deployment has its own opening/reveal gates. The collection does not itself implement staking, dividends or a game.",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc/blob/162176282ceda890cbea5371ca86346bfe008dff/src/BMCIlluminatiPass.sol"
+            }
+          ]
+        },
+        {
+          "kind": "staking",
+          "title": "No NFT staking found in reviewed contract",
+          "description": "The reviewed collection has no NFT custody-staking mechanism. Any funded distributions, redemption or separate ecosystem mechanisms are described individually.",
+          "status": "not-found",
+          "conditions": "",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc/blob/162176282ceda890cbea5371ca86346bfe008dff/src/BMCIlluminatiPass.sol"
+            }
+          ]
+        }
+      ],
+      "utilitySummary": "Burn BMC to mint a Genesis or mystery collectible; no NFT staking in this pass contract.",
+      "utilityReview": {
+        "status": "matched-code",
+        "reviewedAt": "2026-10-17",
+        "evidence": [
+          {
+            "label": "Pinned collection implementation",
+            "url": "https://github.com/identity-md-launches/launch-1425-security-audit-bmc/blob/162176282ceda890cbea5371ca86346bfe008dff/src/BMCIlluminatiPass.sol"
+          }
+        ],
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "scope": "Reviewed capabilities; activation, wallet eligibility and future returns are not guaranteed."
+      }
+    },
+    {
+      "id": "1:0x7a3bc2d6578f1528ca963a78824e5ba19257d2fe",
+      "name": "Pulse Drone",
+      "symbol": "DRONE",
+      "description": "LaunchToken is Pulse (PULSE), a plain fixed-supply ERC-20 with 18 decimals and no constructor arguments. PulseDrone permanently binds PULSE through its sole address constructor argument, $token. It provides free soulbound Drone minting, heartbeats, fully onchain art and instant staking withdrawals; staking determines rank and pays no rewa\u2026",
+      "category": "launched",
+      "chainId": 1,
+      "chainName": "Ethereum",
+      "contractAddress": "0x7a3bc2d6578f1528ca963a78824e5ba19257d2fe",
+      "standard": "ERC-721",
+      "deployment": {
+        "transactionHash": "0xca70e1dfb1a5c6bab79b9bd0bf115ec54c760e5f93cde6dbf0f579f2541c76cc",
+        "blockNumber": 26176575,
+        "timestamp": "2026-10-12T13:04:47Z",
+        "reportedBlockNumber": 26176575,
+        "headerBlockNumber": 26176575,
+        "txHash": "0xca70e1dfb1a5c6bab79b9bd0bf115ec54c760e5f93cde6dbf0f579f2541c76cc",
+        "verifiedAt": "2026-10-16T22:10:55.556075Z",
+        "receiptSuccess": true,
+        "codePresent": true
+      },
+      "jobs": [
+        {
+          "id": "a6439653-2448-4693-9db3-1f70ae360bf4",
+          "title": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch",
+          "url": "https://explorer.imd.fun/jobs/a6439653-2448-4693-9db3-1f70ae360bf4",
+          "status": "completed"
+        },
+        {
+          "id": "d182b815-a847-417b-b607-3cc37789ffcd",
+          "title": "WORKFLOW FRONTEND STAGE CONTEXT: contracts are already deployed. This assignment produces the frontend source, committed static export and v",
+          "url": "https://explorer.imd.fun/jobs/d182b815-a847-417b-b607-3cc37789ffcd",
+          "status": "completed"
+        }
+      ],
+      "sites": [
+        {
+          "id": "118ed911-9c0a-4038-a2c0-8ff6cd944365",
+          "jobId": "d182b815-a847-417b-b607-3cc37789ffcd",
+          "kind": "launch",
+          "tokenId": null,
+          "agentId": null,
+          "url": "https://pulse.sites.imd.fun/",
+          "status": "named",
+          "holdReason": null,
+          "takenDownAt": null,
+          "takenDownReason": null,
+          "label": "pulse",
+          "cid": "bafybeigkv2n7lmufscnmvz3lselnvuajb7yk2lh6mfavktvukfprtqhb6y",
+          "bytes": 772004,
+          "ensName": "pulse.site.identitymd.eth",
+          "txHash": "0x1bcd66cf2805ca2eb0c608390321af798f48776caefa5a0cef22b6b8a366dbb5",
+          "blockNumber": 26177136,
+          "attempts": 0,
+          "failure": null,
+          "pinnedAt": "2026-10-12T14:56:58.657Z",
+          "namedAt": "2026-10-12T14:57:49.846Z",
+          "supersededBy": null,
+          "supersededAt": null,
+          "createdAt": "2026-10-12T14:56:49.062Z",
+          "updatedAt": "2026-10-12T14:57:49.846Z",
+          "originalUrl": "https://pulse.site.identitymd.eth.limo",
+          "ipfsUrl": "https://ipfs.io/ipfs/bafybeigkv2n7lmufscnmvz3lselnvuajb7yk2lh6mfavktvukfprtqhb6y/"
+        }
+      ],
+      "repositories": [
+        {
+          "url": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context",
+          "commit": "3807cba5031b0b3a7efeb9d821270cf5847d8c3e"
+        }
+      ],
+      "launchIds": [
+        "6fbf7ae1-34c4-42ec-8f56-fe2c78ea5c2f"
+      ],
+      "launchNumber": 1416,
+      "idmdBenefit": {
+        "status": "yes",
+        "conditions": "Free for everyone, including IDMD holders; one per wallet.",
+        "exclusive": false,
+        "evidence": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context/blob/3807cba5031b0b3a7efeb9d821270cf5847d8c3e/src/PulseDrone.sol"
+          }
+        ]
+      },
+      "mint": {
+        "state": "open",
+        "start": null,
+        "end": null,
+        "publicPrice": "0",
+        "currency": null,
+        "limits": "One soulbound, nontransferable Drone per wallet.",
+        "conditions": "No PULSE balance or staking required for the mint; later gameplay has separate requirements. Network gas is additional; wallet eligibility was not simulated.",
+        "reportedTerms": [
+          "LaunchToken is Pulse (PULSE), a plain fixed-supply ERC-20 with 18 decimals and no constructor arguments."
+        ],
+        "gasIncluded": false,
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "routes": [
+          {
+            "name": "Mint",
+            "state": "open",
+            "conditions": "No PULSE balance or staking required for the mint; later gameplay has separate requirements.",
+            "price": "0",
+            "currency": null,
+            "start": null,
+            "end": null
+          }
+        ]
+      },
+      "stats": {
+        "totalSupply": null,
+        "maxSupply": 4096,
+        "holders": 19,
+        "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0x7a3bc2d6578f1528ca963a78824e5ba19257d2fe",
+        "totalMinted": 19
+      },
+      "chainReads": {
+        "name": "Pulse Drone",
+        "symbol": "DRONE",
+        "MAX_SUPPLY": 4096,
+        "totalMinted": 19,
+        "ALIVE_WINDOW": 172800,
+        "BEAT_COOLDOWN": 72000,
+        "MAX_BATCH_SIZE": 256,
+        "pulseToken": "0x6abb57b52a2d12c1af47cd5819154034cf35bc3e",
+        "totalStaked": 238568588469184890656064
+      },
+      "readBlock": 26208001,
+      "activity": {
+        "stage": "Deployed; mint availability requires separate checks",
+        "lastMeaningfulAt": "2026-10-12T13:05:04.464Z"
+      },
+      "evidence": [
+        {
+          "label": "IMD deployment record",
+          "url": "https://api.imd.fun/launches/6fbf7ae1-34c4-42ec-8f56-fe2c78ea5c2f",
+          "detail": "Successful receipt and NFT bytecode independently checked; deployment address attributed by IMD."
+        },
+        {
+          "label": "Pinned collection source",
+          "url": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context/blob/3807cba5031b0b3a7efeb9d821270cf5847d8c3e/src/PulseDrone.sol",
+          "detail": "Source published at the launch commit."
+        }
+      ],
+      "unknowns": [
+        "factory receipt confirms transaction success; address linkage relies on the launch artifact",
+        "holder count is an unpinned explorer estimate"
+      ],
+      "codeHash": "0xa343fea42fb3e97dcfc343c71de4c3a76a71de2edd2c9df8fd1948bde6a8fb17",
+      "ruleReview": {
+        "status": "matched",
+        "codeHash": "0xa343fea42fb3e97dcfc343c71de4c3a76a71de2edd2c9df8fd1948bde6a8fb17",
+        "sources": [
+          {
+            "label": "Reviewed source",
+            "url": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context/blob/3807cba5031b0b3a7efeb9d821270cf5847d8c3e/src/PulseDrone.sol"
+          }
+        ],
+        "reviewedAt": "2026-10-16",
+        "checkedAt": "2026-10-16T22:46:22.540038Z",
+        "scope": "Source rules plus current getter reads; not wallet-specific simulation or a security audit."
+      },
+      "tokens": [
+        {
+          "symbol": "PULSE",
+          "name": "PULSE",
+          "roles": [
+            "staking",
+            "game"
+          ],
+          "conditions": "",
+          "address": "0x6abb57b52a2d12c1af47cd5819154034cf35bc3e",
+          "chainId": 1,
+          "status": "configured",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context/blob/3807cba5031b0b3a7efeb9d821270cf5847d8c3e/src/PulseDrone.sol"
+            }
+          ],
+          "onchain": {
+            "chainId": 1,
+            "address": "0x6abb57b52a2d12c1af47cd5819154034cf35bc3e",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Pulse",
+            "symbol": "PULSE",
+            "decimals": 18,
+            "totalSupply": "1000000000000000000000000000",
+            "formattedSupply": "1000000000",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      ],
+      "utility": [
+        {
+          "kind": "game",
+          "title": "Keep a Drone alive",
+          "description": "Free mint creates one permanent Drone per wallet. Heartbeats have a 20-hour cooldown; more than 48 hours between beats resets the streak.",
+          "status": "deployed",
+          "conditions": "",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context/blob/3807cba5031b0b3a7efeb9d821270cf5847d8c3e/src/PulseDrone.sol"
+            }
+          ]
+        },
+        {
+          "kind": "staking",
+          "title": "Deposit ERC-20 PULSE for rank",
+          "description": "PULSE deposits change the Drone rank and can be withdrawn; staking pays no rewards and does not replace heartbeats.",
+          "status": "deployed",
+          "conditions": "The NFT itself is soulbound, not a transferable yield asset.",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context/blob/3807cba5031b0b3a7efeb9d821270cf5847d8c3e/src/PulseDrone.sol"
+            }
+          ]
+        }
+      ],
+      "utilitySummary": "A soulbound heartbeat pet; depositing PULSE changes rank but pays no rewards.",
+      "utilityReview": {
+        "status": "matched-code",
+        "reviewedAt": "2026-10-17",
+        "evidence": [
+          {
+            "label": "Pinned collection implementation",
+            "url": "https://github.com/identity-md-launches/launch-1416-workflow-contract-stage-context/blob/3807cba5031b0b3a7efeb9d821270cf5847d8c3e/src/PulseDrone.sol"
+          }
+        ],
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "scope": "Reviewed capabilities; activation, wallet eligibility and future returns are not guaranteed."
+      }
+    },
+    {
+      "id": "build:1:dee6f3a6-d148-4289-99e9-10995635c9df",
+      "name": "Proof House",
+      "symbol": null,
+      "description": "Build the contracts for Proof House, a curator-run house for fully on-chain art that people and AI agents buy, with AI agents as brokers, and its first collection ARTIFACTS: 256 encrypted generative pieces, 255 editions and THE SOURCE. Deploy the contracts on Sepolia. Token facts. No fungible token is created and there is no pool; IMD is \u2026",
+      "category": "in_the_making",
+      "chainId": 1,
+      "chainName": "Ethereum",
+      "contractAddress": null,
+      "standard": "Not deployed",
+      "deployment": {},
+      "jobs": [
+        {
+          "id": "dee6f3a6-d148-4289-99e9-10995635c9df",
+          "title": "Build the contracts for Proof House, a curator-run house for fully on-chain art that people and AI agents buy, with AI agents as brokers, an",
+          "url": "https://explorer.imd.fun/jobs/dee6f3a6-d148-4289-99e9-10995635c9df",
+          "status": "completed"
+        }
+      ],
+      "sites": [],
+      "repositories": [],
+      "idmdBenefit": {
+        "status": "unknown",
+        "conditions": "No verified IDMD-holder mint entitlement found.",
+        "evidence": []
+      },
+      "mint": {
+        "state": "Unverified",
+        "start": null,
+        "end": null,
+        "publicPrice": null,
+        "currency": null,
+        "limits": null,
+        "conditions": "Reported terms; check linked contract before minting.",
+        "reportedTerms": [
+          "The only tokens are ERC-721 NFTs, minted only when a piece is bought."
+        ]
+      },
+      "stats": {},
+      "activity": {
+        "stage": "Recent accepted implementation",
+        "lastMeaningfulAt": "2026-10-13T22:03:58.079Z",
+        "evidence": "Accepted implementation node in public job history"
+      },
+      "evidence": [
+        {
+          "label": "Active build record",
+          "url": "https://api.imd.fun/jobs/dee6f3a6-d148-4289-99e9-10995635c9df",
+          "detail": "Meaningful progress within 7 days"
+        }
+      ],
+      "unknowns": [
+        "No verified NFT deployment found. Planned mint terms may change."
+      ],
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment"
+          ],
+          "conditions": "Optional payment for generic ArtHouse collections; ARTIFACTS edition sales use ETH. The historical brief names a Sepolia token, which is deliberately not treated as a mainnet asset. Mainnet token address has not been verified.",
+          "address": null,
+          "chainId": 1,
+          "status": "unverified-address",
+          "evidence": [
+            {
+              "label": "Pinned implementation",
+              "url": "https://github.com/identity-md-launches/launch-1631-build-contracts-proof-house/blob/5b0d36486994b24de88438d6def7d120c27efd58/src/ArtHouse.sol"
+            },
+            {
+              "label": "Full reviewed public job",
+              "url": "https://api.imd.fun/jobs/dee6f3a6-d148-4289-99e9-10995635c9df"
+            }
+          ],
+          "onchain": {
+            "chainId": 1,
+            "address": null,
+            "status": "unverified-address",
+            "codePresent": null,
+            "name": null,
+            "symbol": null,
+            "decimals": null,
+            "totalSupply": null,
+            "formattedSupply": null,
+            "readBlock": null,
+            "readTimestamp": null,
+            "warnings": [
+              "No reviewed token address on an allowed mainnet."
+            ]
+          }
+        }
+      ],
+      "utility": [
+        {
+          "kind": "art",
+          "title": "Encrypted ARTIFACTS and SVG collections",
+          "description": "Implemented factories support curator-managed artwork sales, per-piece NFTs and encrypted viewing-key handoff. ARTIFACTS metadata shows a public seal while the owner receives wrapped viewing material.",
+          "status": "implemented",
+          "conditions": "A deployed template is not an issued collection. Curator setup, uploads, prices, sale activation and key delivery remain necessary.",
+          "evidence": [
+            {
+              "label": "Pinned implementation",
+              "url": "https://github.com/identity-md-launches/launch-1631-build-contracts-proof-house/blob/5b0d36486994b24de88438d6def7d120c27efd58/src/ArtHouse.sol"
+            },
+            {
+              "label": "Full reviewed public job",
+              "url": "https://api.imd.fun/jobs/dee6f3a6-d148-4289-99e9-10995635c9df"
+            }
+          ]
+        },
+        {
+          "kind": "access",
+          "title": "Brokered art marketplace",
+          "description": "Approved brokers and artists receive configured sale splits through the house ledger; artist royalties do not imply dividends to NFT holders.",
+          "status": "implemented",
+          "conditions": "ETH and optional IMD payment capabilities depend on each collection and configured token. No NFT staking mechanism was found in the reviewed art contracts.",
+          "evidence": [
+            {
+              "label": "Pinned implementation",
+              "url": "https://github.com/identity-md-launches/launch-1631-build-contracts-proof-house/blob/5b0d36486994b24de88438d6def7d120c27efd58/src/ArtHouse.sol"
+            },
+            {
+              "label": "Full reviewed public job",
+              "url": "https://api.imd.fun/jobs/dee6f3a6-d148-4289-99e9-10995635c9df"
+            }
+          ]
+        }
+      ],
+      "utilitySummary": "Curated onchain artwork and encrypted viewing-key delivery; real mainnet pieces are not yet verified.",
+      "utilityReview": {
+        "status": "reviewed-build",
+        "reviewedAt": "2026-10-17",
+        "evidence": [
+          {
+            "label": "Pinned implementation",
+            "url": "https://github.com/identity-md-launches/launch-1631-build-contracts-proof-house/blob/5b0d36486994b24de88438d6def7d120c27efd58/src/ArtHouse.sol"
+          },
+          {
+            "label": "Full reviewed public job",
+            "url": "https://api.imd.fun/jobs/dee6f3a6-d148-4289-99e9-10995635c9df"
+          }
+        ],
+        "asOf": null,
+        "readBlock": null,
+        "scope": "Reviewed capabilities; activation, wallet eligibility and future returns are not guaranteed."
+      }
+    },
+    {
+      "id": "build:1:27391f0e-0419-4d15-a5d5-bb182f137bd9",
+      "name": "Sworn (SWORN)",
+      "symbol": null,
+      "description": "Two steps, one worker each; a worker sees only this objective and its own step text; the other step's text is deliberately not here, never ask for it. DECIDE, DO NOT ASK: a needs_input blocks the whole job and costs the payer; when a rule below conflicts with a required check, make the smallest change that satisfies the check, keep everyt\u2026",
+      "category": "in_the_making",
+      "chainId": 1,
+      "chainName": "Ethereum",
+      "contractAddress": null,
+      "standard": "Not deployed",
+      "deployment": {},
+      "jobs": [
+        {
+          "id": "27391f0e-0419-4d15-a5d5-bb182f137bd9",
+          "title": "Build, test and adversarially review the chaintraits registry from the brief in this repository (README.md and the four documents it lists).",
+          "url": "https://explorer.imd.fun/jobs/27391f0e-0419-4d15-a5d5-bb182f137bd9",
+          "status": "completed"
+        },
+        {
+          "id": "2d77649d-e6d2-454f-96ca-060dc9923771",
+          "title": "Two steps, one worker each; a worker sees only this objective and its own step text; the other step's text is deliberately not here, never a",
+          "url": "https://explorer.imd.fun/jobs/2d77649d-e6d2-454f-96ca-060dc9923771",
+          "status": "completed"
+        }
+      ],
+      "sites": [],
+      "repositories": [],
+      "idmdBenefit": {
+        "status": "unknown",
+        "conditions": "No verified IDMD-holder mint entitlement found.",
+        "evidence": []
+      },
+      "mint": {
+        "state": "Unverified",
+        "start": null,
+        "end": null,
+        "publicPrice": null,
+        "currency": null,
+        "limits": null,
+        "conditions": "Reported terms; check linked contract before minting.",
+        "reportedTerms": [
+          "(e) `compose(Spec memory s, address claimant, address consumer, bool catalogNonce, address)`: fifth parameter unnamed and unused, calls `question(s, claimant, catalogNonce)`."
+        ]
+      },
+      "stats": {},
+      "activity": {
+        "stage": "Recent accepted implementation",
+        "lastMeaningfulAt": "2026-10-16T17:46:45.744Z",
+        "evidence": "Accepted implementation node in public job history"
+      },
+      "evidence": [
+        {
+          "label": "Active build record",
+          "url": "https://api.imd.fun/jobs/2d77649d-e6d2-454f-96ca-060dc9923771",
+          "detail": "Meaningful progress within 7 days"
+        }
+      ],
+      "unknowns": [
+        "No verified NFT deployment found. Planned mint terms may change."
+      ],
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment",
+            "oracle",
+            "sponsorship"
+          ],
+          "conditions": "Mainnet IMD dependency specified by the pinned implementation; this does not establish a deployed Sworn contract.",
+          "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+          "chainId": 1,
+          "status": "planned",
+          "evidence": [
+            {
+              "label": "Pinned implementation",
+              "url": "https://github.com/identity-md-launches/launch-1953-launch-sworn-registry-symbol/blob/94369920d76bf7bfc0bb8aa1b3138b40246f3ae0/src/Registry.sol"
+            },
+            {
+              "label": "Full reviewed public job",
+              "url": "https://api.imd.fun/jobs/2d77649d-e6d2-454f-96ca-060dc9923771"
+            }
+          ],
+          "onchain": {
+            "chainId": 1,
+            "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Identity.md",
+            "symbol": "IMD",
+            "decimals": 18,
+            "totalSupply": "4166397375635000000000000",
+            "formattedSupply": "4166397.375635",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        }
+      ],
+      "utility": [
+        {
+          "kind": "identity",
+          "title": "Verifiable wallet-trait card",
+          "description": "The reviewed ERC-721 registry provides one card per minting wallet, live direct-read traits and oracle-attested traits. The card records facts about its original claimant.",
+          "status": "implemented",
+          "conditions": "A transferable card does not transfer the underlying wallet credentials.",
+          "evidence": [
+            {
+              "label": "Pinned implementation",
+              "url": "https://github.com/identity-md-launches/launch-1953-launch-sworn-registry-symbol/blob/94369920d76bf7bfc0bb8aa1b3138b40246f3ae0/src/Registry.sol"
+            },
+            {
+              "label": "Full reviewed public job",
+              "url": "https://api.imd.fun/jobs/2d77649d-e6d2-454f-96ca-060dc9923771"
+            }
+          ]
+        },
+        {
+          "kind": "access",
+          "title": "Paid and sponsored trait verification",
+          "description": "Minting costs 0.1 IMD in the implementation; oracle upgrades pay Intake. Eligible Curator members can request limited pool-sponsored checks, including an IDMD-holder route.",
+          "status": "implemented",
+          "conditions": "Requires funded pool, membership, per-wallet/token limits and valid oracle results. No NFT staking or passive token yield is implemented.",
+          "evidence": [
+            {
+              "label": "Pinned implementation",
+              "url": "https://github.com/identity-md-launches/launch-1953-launch-sworn-registry-symbol/blob/94369920d76bf7bfc0bb8aa1b3138b40246f3ae0/src/Registry.sol"
+            },
+            {
+              "label": "Full reviewed public job",
+              "url": "https://api.imd.fun/jobs/2d77649d-e6d2-454f-96ca-060dc9923771"
+            }
+          ]
+        }
+      ],
+      "utilitySummary": "Wallet-fact identity cards with live traits and IMD-funded oracle attestations; mainnet release pending.",
+      "utilityReview": {
+        "status": "reviewed-build",
+        "reviewedAt": "2026-10-17",
+        "evidence": [
+          {
+            "label": "Pinned implementation",
+            "url": "https://github.com/identity-md-launches/launch-1953-launch-sworn-registry-symbol/blob/94369920d76bf7bfc0bb8aa1b3138b40246f3ae0/src/Registry.sol"
+          },
+          {
+            "label": "Full reviewed public job",
+            "url": "https://api.imd.fun/jobs/2d77649d-e6d2-454f-96ca-060dc9923771"
+          }
+        ],
+        "asOf": null,
+        "readBlock": null,
+        "scope": "Reviewed capabilities; activation, wallet eligibility and future returns are not guaranteed."
+      }
+    },
+    {
+      "id": "1:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "name": "Unreviewed Example",
+      "symbol": "IMDENZA",
+      "description": "IMDenza: 3333 fully on-chain animated generative flow-field NFTs (ERC721C, Limit Break creator-token-standards v4.0.1) on Ethereum mainnet, name IMDenza, symbol IMDENZA. Deployment order and arguments follow the accepted source. SwarmHistory (no arguments) is the permissionless, append-only commitment of IMD swarm job history: anyone reco\u2026",
+      "category": "launched",
+      "chainId": 1,
+      "chainName": "Ethereum",
+      "contractAddress": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "standard": "ERC-721",
+      "deployment": {
+        "transactionHash": "0xbbd8b35ce455f1ef18d7bcde5b5b5c817c04baa14d1680acc3a09813f97e35b5",
+        "blockNumber": 26207183,
+        "timestamp": "2026-10-16T19:26:23Z",
+        "reportedBlockNumber": 26207183,
+        "headerBlockNumber": 26207183,
+        "txHash": "0xbbd8b35ce455f1ef18d7bcde5b5b5c817c04baa14d1680acc3a09813f97e35b5",
+        "verifiedAt": "2026-10-16T22:10:47.836695Z",
+        "receiptSuccess": true,
+        "codePresent": true
+      },
+      "jobs": [
+        {
+          "id": "39a66ffb-504c-4e61-a345-3a8d585ecbf8",
+          "title": "Launch IMDenza: an animated generative NFT collection of 3333 pieces on Ethereum mainnet, inspired by Tyler Hobbs\u2019 Fidenza (flow-field algor",
+          "url": "https://explorer.imd.fun/jobs/39a66ffb-504c-4e61-a345-3a8d585ecbf8",
+          "status": "completed"
+        },
+        {
+          "id": "9dd20d22-bdb4-4bfe-829a-1090c2269d64",
+          "title": "Build the official website for IMDenza, the animated generative NFT collection on Ethereum mainnet. Contracts (already deployed): - IMDenza ",
+          "url": "https://explorer.imd.fun/jobs/9dd20d22-bdb4-4bfe-829a-1090c2269d64",
+          "status": "completed"
+        }
+      ],
+      "sites": [
+        {
+          "id": "d614084d-b9b7-4281-a36f-b9fa46c3fddf",
+          "jobId": "9dd20d22-bdb4-4bfe-829a-1090c2269d64",
+          "kind": "launch",
+          "tokenId": null,
+          "agentId": null,
+          "url": "https://imdenza-the-swarm-set-in-motion.sites.imd.fun/",
+          "status": "named",
+          "holdReason": null,
+          "takenDownAt": null,
+          "takenDownReason": null,
+          "label": "imdenza-the-swarm-set-in-motion",
+          "cid": "bafybeibllxnznzhw3sgzhctxnilevtnwnveghpe3c3o3fvgqbjehhjb6qu",
+          "bytes": 2659352,
+          "ensName": "imdenza-the-swarm-set-in-motion.site.identitymd.eth",
+          "txHash": "0xdb28b05085b4c1d820c524cfaac013657575f0e531ca78db01f72f700a1e26ba",
+          "blockNumber": 26207555,
+          "attempts": 0,
+          "failure": null,
+          "pinnedAt": "2026-10-16T20:39:17.331Z",
+          "namedAt": "2026-10-16T20:41:00.691Z",
+          "supersededBy": null,
+          "supersededAt": null,
+          "createdAt": "2026-10-16T20:38:43.450Z",
+          "updatedAt": "2026-10-16T20:41:00.691Z",
+          "originalUrl": "https://imdenza-the-swarm-set-in-motion.site.identitymd.eth.limo",
+          "ipfsUrl": "https://ipfs.io/ipfs/bafybeibllxnznzhw3sgzhctxnilevtnwnveghpe3c3o3fvgqbjehhjb6qu/"
+        }
+      ],
+      "repositories": [
+        {
+          "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative",
+          "commit": "b8287659fccb4a32616e069861d8bf817ecb7c61"
+        },
+        {
+          "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative",
+          "commit": "1a64c9152495c85e1e1f698bca62bfa54fca77d5"
+        }
+      ],
+      "launchIds": [
+        "9094ae4d-f225-49bf-b3e4-3f5103f055dc"
+      ],
+      "launchNumber": 2000,
+      "idmdBenefit": {
+        "status": "unknown",
+        "conditions": null,
+        "evidence": []
+      },
+      "mint": {
+        "state": "unknown",
+        "routes": [],
+        "publicPrice": null
+      },
+      "stats": {
+        "totalSupply": null,
+        "maxSupply": 3333,
+        "holders": 5,
+        "holdersSource": "https://eth.blockscout.com/api/v2/tokens/0xd7fb8c680f9291c0f164c00dc4ae03624a6c76ce",
+        "totalMinted": 5
+      },
+      "chainReads": {
+        "name": "IMDenza",
+        "symbol": "IMDENZA",
+        "MAX_SUPPLY": 3333,
+        "totalMinted": 5,
+        "HOLDER_SHARE_BPS": 9000,
+        "BPS": 10000,
+        "TREASURY": "0xc3f0dec012784f6d7178104c31a4611c6897756c",
+        "MINT_PRICE_MILLI": 69,
+        "IMD_TOKEN_A": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "IMD_TOKEN_B": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+        "IMD_HOLDING_WHOLE": 25,
+        "ART_BLOCKS": "0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270",
+        "FIDENZA_PROJECT": 78,
+        "ART_BLOCKS_PROJECT_SIZE": 1000000,
+        "TRANSFER_SECURITY_LEVEL": 3,
+        "WETH": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+        "MIN_IMD_DECIMALS": 3,
+        "MAX_IMD_DECIMALS": 36,
+        "configurator": "0x3d6a89c8751a45dd577a4c1f3b34e71c58236193",
+        "identityMdCollection": "0x0000ec93127baa929e58e97dd0095a2bfb38ec1d",
+        "transferPolicyApplied": true
+      },
+      "readBlock": 26208001,
+      "activity": {
+        "stage": "Deployed; mint availability requires separate checks",
+        "lastMeaningfulAt": "2026-10-16T19:26:40.302Z"
+      },
+      "evidence": [
+        {
+          "label": "IMD deployment record",
+          "url": "https://api.imd.fun/launches/9094ae4d-f225-49bf-b3e4-3f5103f055dc",
+          "detail": "Successful receipt and NFT bytecode independently checked; deployment address attributed by IMD."
+        },
+        {
+          "label": "Pinned collection source",
+          "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol",
+          "detail": "Source published at the launch commit."
+        }
+      ],
+      "unknowns": [
+        "factory receipt confirms transaction success; address linkage relies on the launch artifact",
+        "holder count is an unpinned explorer estimate"
+      ],
+      "codeHash": "0x134c0203e1b92a88d549c33372b075e8041e32753915fda91c1f3500df9927bc",
+      "ruleReview": {
+        "status": "unreviewed"
+      },
+      "tokens": [
+        {
+          "symbol": "IMD",
+          "name": "Identity.md",
+          "roles": [
+            "payment",
+            "eligibility",
+            "reward"
+          ],
+          "conditions": "",
+          "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+          "chainId": 1,
+          "status": "configured",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+            },
+            {
+              "label": "Pinned distribution accounting",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenzaDistributor.sol"
+            }
+          ],
+          "onchain": {
+            "chainId": 1,
+            "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+            "status": "checked",
+            "codePresent": true,
+            "name": "Identity.md",
+            "symbol": "IMD",
+            "decimals": 18,
+            "totalSupply": "4166397375635000000000000",
+            "formattedSupply": "4166397.375635",
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": []
+          }
+        },
+        {
+          "symbol": "IMD",
+          "name": "IMD",
+          "roles": [
+            "payment",
+            "eligibility",
+            "reward"
+          ],
+          "conditions": "Alternate address allowed by source; usable only if ERC-20 code actually exists on Ethereum. The same address on another chain is a different asset.",
+          "address": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+          "chainId": 1,
+          "status": "configured",
+          "evidence": [
+            {
+              "label": "Pinned collection implementation",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+            },
+            {
+              "label": "Pinned distribution accounting",
+              "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenzaDistributor.sol"
+            }
+          ],
+          "onchain": {
+            "chainId": 1,
+            "address": "0x5f7bb59365ce557c26dbcaa4ee9d39a4b95b7127",
+            "status": "no-code",
+            "codePresent": false,
+            "name": null,
+            "symbol": null,
+            "decimals": null,
+            "totalSupply": null,
+            "formattedSupply": null,
+            "readBlock": 26208001,
+            "readTimestamp": "2026-10-16T22:10:35Z",
+            "warnings": [
+              "No contract code at this address on the stated chain."
+            ]
+          }
+        }
+      ],
+      "utility": [],
+      "utilitySummary": "Animated onchain art with funded holder distributions; no staking required.",
+      "utilityReview": {
+        "status": "matched-code",
+        "reviewedAt": "2026-10-17",
+        "evidence": [
+          {
+            "label": "Pinned collection implementation",
+            "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenza.sol"
+          },
+          {
+            "label": "Pinned distribution accounting",
+            "url": "https://github.com/identity-md-launches/launch-2000-launch-imdenza-animated-generative/blob/b8287659fccb4a32616e069861d8bf817ecb7c61/src/IMDenzaDistributor.sol"
+          }
+        ],
+        "asOf": "2026-10-16T22:10:35Z",
+        "readBlock": 26208001,
+        "scope": "Reviewed capabilities; activation, wallet eligibility and future returns are not guaranteed."
+      }
+    }
+  ]
+}
