@@ -94,7 +94,7 @@ async def test_custom_models_owner_and_runtime_keep_padded_labels_and_values(wid
         app = pilot.app
         label = app.query_one('#hero-runtime').rich_style.color.get_truecolor()
         value = Color.parse(app.get_css_variables()["foreground"]).get_truecolor()
-        for key in ("owner", "runtime", "models", "nodes"):
+        for key in ("owner", "runtime", "models"):
             rows = body_rows(app, key)
             assert all(row.text.startswith(" ") and row.text.endswith(" ") for row in rows), (key, painted(app, key))
         model_row = body_rows(app, "models")[1]
@@ -183,7 +183,7 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             "models": ("model A", "high", "model B", "medium", "2 models"),
             "earnings": ("EARNINGS", "TOKENS", "4 new"),
             "collab": ("SEATS", "collaborators"),
-            "nodes": ("other", "500", "launches", "340", "oracle", "120", "work by type"),
+            "nodes": ("SHIPPED", "LAUNCHES", "oracle 120"),
         }.items():
             text = painted(app, key)
             assert all(word in text for word in words), (key, text)
@@ -345,8 +345,8 @@ async def test_more_rows_have_visible_count_and_literal_full_tooltips():
         app = pilot.app
         assert "+3 more" in painted(app, "models") and "+2 more" not in painted(app, "nodes")
         assert "model-4[/x]" in str(app.query_one("#hero-models").tooltip)
-        assert "unknown[/x]" in str(app.query_one("#hero-nodes").tooltip)
-        assert "510 attempts" in str(app.query_one("#hero-nodes").tooltip)
+        assert "unknown[/x]" not in str(app.query_one("#hero-nodes").tooltip)
+        assert "510 attempts" not in str(app.query_one("#hero-nodes").tooltip)
         assert "#1 x52" in str(app.query_one("#hero-collab").tooltip)
 
 
@@ -497,7 +497,7 @@ async def test_owner_models_and_nodes_outer_footers_stay_blank_in_every_source_s
                 if state in ("unknown_seat", "stale_unknown_seat"):
                     assert "never paired" in painted(pilot.app, key)
             if state in ("ok", "partial", "stale"):
-                for key, word in (("owner", "paired"), ("models", "2 models"), ("nodes", "work by type")):
+                for key, word in (("owner", "paired"), ("models", "2 models"), ("nodes", "oracle 120")):
                     assert word in painted(pilot.app, key)
 
 
@@ -823,25 +823,33 @@ async def test_removed_outer_captions_stay_empty_across_source_states_and_recove
         assert "#527 x84" in str(app.query_one("#hero-collab").tooltip)
 
 
-async def test_nodes_group_work_by_type_without_guessing_incomplete_launch_membership():
+async def test_shipped_uses_launch_digits_and_production_oracle_footer_without_guessing():
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        for values, expected in (
+        for values, digits, footer in (
             (dict(oracle=120, launches=340, other=500, known_jobs=840, total_jobs=840),
-             (("oracle", "120"), ("launches", "340"), ("other", "500"))),
+             ("╶─╮╷ ╷╭─╮", " ─┤╰─┤│ │", "╶─╯  ╵╰─╯"), "oracle 120"),
             (dict(state="partial", oracle=120, launches=None, other=None, known_jobs=17, total_jobs=840),
-             (("oracle", "120"), ("launches", "--"), ("other", "--"))),
+             ("--",), "oracle 120"),
+            (dict(state="partial", oracle=None, launches=12, known_jobs=840, total_jobs=840),
+             ("╶╮ ╶─╮", " │ ┌─┘", "╶┴╴╰─╴"), "oracle --"),
             (dict(state="ok", oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0),
-             (("oracle", "0"), ("launches", "0"), ("other", "0"))),
+             ("╭─╮", "│ │", "╰─╯"), "oracle 0"),
         ):
             data["nodes"].update(values)
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
-            for row, (label, number) in zip(strips(app, "nodes")[3:6], expected):
-                assert label in row.text and row.text.split("│")[2].strip().endswith(number), row.text
-            assert "work by type" in painted(app, "nodes")
+            text = painted(app, "nodes")
+            assert "SHIPPED" in text and "LAUNCHES" in text
+            assert "NODES" not in text and "work by type" not in text and "other" not in text
+            for glyph in digits:
+                assert any(glyph in row.text for row in body_rows(app, "nodes")), text
+            assert footer in strips(app, "nodes")[6].text
+            assert not strips(app, "nodes")[-1].text.strip("╰─╯ ")
             assert border_color(app, "nodes") == border_color(app, "accepted")
             tooltip = str(app.query_one("#hero-nodes").tooltip)
-            assert f"launch membership known for {values['known_jobs']} of {values['total_jobs']} accepted non-oracle jobs" in tooltip
+            assert "Distinct accepted jobs on production networks; testnets excluded." in tooltip
+            assert f"launch evidence known for {values['known_jobs']} of {values['total_jobs']} accepted non-oracle jobs" in tooltip
+            assert "attempts" not in tooltip

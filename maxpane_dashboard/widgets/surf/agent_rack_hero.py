@@ -62,7 +62,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         ("runtime", "RUNTIME", "SOFTWARE", "since --"),
         ("models", "MODELS", "ADVERTISED", ""),
         ("owner", "OWNER", "WALLET", ""),
-        ("nodes", "NODES", "ACCEPTED", ""),
+        ("nodes", "SHIPPED", "LAUNCHES", ""),
         ("collab", "COLLAB", "SEATS", ""),
         ("earnings", "EARNINGS", "TOKENS", ""),
     ):
@@ -157,8 +157,8 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["subtitle"] = "collaborators"
             fields["accent"] = False
         elif key == "nodes":
-            fields["stats"] = tuple((name, _count(count(section.get(name)))) for name in ("oracle", "launches", "other"))
-            fields["subtitle"] = "work by type"
+            fields["digits"] = _digits(section.get("launches"))
+            fields["subtitle"] = "oracle " + _count(count(section.get("oracle")))
             fields["accent"] = False
         else:
             rows = _rows(section)
@@ -344,7 +344,9 @@ class AgentRackCard(Pool4HeroCard):
         tip = Text(f"{record.title}{coverage} · as of {hhmm(record.read_ts, unknown='--:--')} local")
         rows = _rows(source)
         if record.key == "nodes":
-            tip.append(f"\nlaunch membership known for {_count(count(source.get('known_jobs')))} of {_count(count(source.get('total_jobs')))} accepted non-oracle jobs")
+            tip.append("\nDistinct accepted jobs on production networks; testnets excluded.")
+            tip.append(f"\nLaunch jobs: {_count(count(source.get('launches')))}; oracle jobs: {_count(count(source.get('oracle')))}")
+            tip.append(f"\nlaunch evidence known for {_count(count(source.get('known_jobs')))} of {_count(count(source.get('total_jobs')))} accepted non-oracle jobs")
             tip.append(f"\nlaunch reads · as of {hhmm(number(source.get('launch_read_ts')), unknown='--:--')} local")
         if record.key == "owner" and record.state in _AVAILABLE and is_address(source.get("address")):
             tip.append("\n").append_text(address_text(source["address"], explorer=EXPLORER))
@@ -383,16 +385,12 @@ class AgentRackCard(Pool4HeroCard):
                 tip.append("\n-- means unknown.")
             if is_address(source.get("owner")):
                 tip.append("\n").append_text(address_text(source["owner"], explorer=EXPLORER))
-        elif record.key in ("models", "collab", "nodes") and rows is not None:
+        elif record.key in ("models", "collab") and rows is not None:
             for row in rows:
                 if record.key == "models":
                     line = flatten(row.get("model")) + " · " + flatten(row.get("effort"))
-                elif record.key == "collab":
-                    line = f"#{_count(count(row.get('token_id')))} x{_count(count(row.get('shared_jobs')))}"
                 else:
-                    accepted, attempts = count(row.get("accepted")), count(row.get("attempts"))
-                    rate = f"{100 * accepted / attempts:.4g}%" if accepted is not None and attempts and accepted <= attempts else "--"
-                    line = f"{flatten(row.get('node_key'))} · {_count(accepted)} accepted / {_count(attempts)} attempts · {rate}"
+                    line = f"#{_count(count(row.get('token_id')))} x{_count(count(row.get('shared_jobs')))}"
                 tip.append("\n" + line)
         return tip
 

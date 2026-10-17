@@ -160,6 +160,100 @@ def seed_index(manager, *, complete=True, newest='2026-09-23T21:00:00Z'):
     return index
 
 
+async def test_shipped_reads_bulk_chains_outside_record_window_only_while_agent_active(tmp_path):
+    fake = Oracle(2)
+    for row in fake.seat['work']:
+        row['status'] = 'accepted'
+    for request, chain in zip(fake.requests, (1, 11155111)):
+        request['chainId'] = chain
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW))
+    manager.record_launches_only = True
+    try:
+        await manager._pool_swarm_oracle(fake.seat, 420, NOW)
+        assert fake.oracle_calls == []
+        manager._agent_active = True
+        await manager._pool_swarm_oracle(fake.seat, 420, NOW)
+        index = manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload
+        assert index['chains'] == {r['jobId']: r['chainId'] for r in fake.requests}
+        assert fake.oracle_calls == [('list', 500, None)]
+        await manager._pool_swarm_oracle(fake.seat, 420, NOW + 30)
+        assert fake.oracle_calls == [('list', 500, None)]
+        # A new selected history gets its own first read, even inside the backoff.
+        added = dict(fake.requests[0], jobId='00000000-0000-4000-8000-000000000123',
+                     id='10000000-0000-4000-8000-000000000123', chainId=8453)
+        fake.requests.append(added)
+        fake.seat['work'].append(dict(fake.seat['work'][0], jobId=added['jobId']))
+        await manager._pool_swarm_oracle(fake.seat, 421, NOW + 45)
+        assert manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload['chains'][added['jobId']] == 8453
+        assert fake.oracle_calls == [('list', 500, None)] * 2
+        manager._agent_active = False
+        fake.seat['work'].append(dict(fake.seat['work'][0], jobId='00000000-0000-4000-8000-000000000124'))
+        await manager._pool_swarm_oracle(fake.seat, 420, NOW + 60)
+        assert fake.oracle_calls == [('list', 500, None)] * 2
+    finally:
+        await manager.close()
+
+
+async def test_shipped_backfills_legacy_index_without_losing_request_identity(tmp_path, monkeypatch):
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_PAGE_LIMIT', 1)
+    fake = Oracle()
+    fake.seat['work'][0]['status'] = 'accepted'
+    match = dict(fake.requests[0], chainId=1)
+    newer = dict(match, id='10000000-0000-4000-8000-000000000001',
+                 jobId='30000000-0000-4000-8000-000000000001', createdAt='2026-09-23T21:00:00Z')
+    pages = iter([[newer], [match], []])
+    async def fetch(**kwargs):
+        fake.oracle_calls.append(('list', kwargs['limit'], kwargs.get('before')))
+        return next(pages)
+    fake.fetch_oracle_requests = fetch
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW))
+    manager.record_launches_only = True
+    manager._agent_active = True
+    prior = dict(jobs={r['jobId']: r['id'] for r in (newer, match)},
+                 newest=newer['createdAt'], oldest=match['createdAt'], complete=True)
+    manager.cache.store_last_good(SLOT_SWARM_ORACLE_INDEX, prior, ts=NOW)
+    try:
+        await manager._pool_swarm_oracle(fake.seat, 420, NOW)
+        index = manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload
+        assert index['jobs'] == prior['jobs']
+        assert index['chains'][match['jobId']] == 1
+        assert index['complete'] is True
+        assert [call[2] for call in fake.oracle_calls] == [None, newer['createdAt'], match['createdAt']]
+    finally:
+        await manager.close()
+
+
+async def test_shipped_backfill_uses_its_bounded_budget_and_resumes(tmp_path, monkeypatch):
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_PAGE_LIMIT', 1)
+    monkeypatch.setattr(mod, 'SWARM_ORACLE_CHAIN_PAGE_CAP', 2)
+    fake = Oracle()
+    fake.seat['work'][0]['status'] = 'accepted'
+    match = dict(fake.requests[0], chainId=1)
+    first = dict(match, id='10000000-0000-4000-8000-000000000001',
+                 jobId='30000000-0000-4000-8000-000000000001', createdAt='2026-09-23T21:00:00Z')
+    second = dict(first, id='10000000-0000-4000-8000-000000000002',
+                  jobId='30000000-0000-4000-8000-000000000002', createdAt='2026-09-23T20:00:00Z')
+    pages = iter([[first], [second], [first], [match]])
+    async def fetch(**kwargs):
+        fake.oracle_calls.append(('list', kwargs['limit'], kwargs.get('before')))
+        return next(pages)
+    fake.fetch_oracle_requests = fetch
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW))
+    manager.record_launches_only = True
+    manager._agent_active = True
+    try:
+        await manager._pool_swarm_oracle(fake.seat, 420, NOW)
+        index = manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload
+        assert match['jobId'] not in index['chains']
+        assert len(fake.oracle_calls) == 2
+        await manager._pool_swarm_oracle(fake.seat, 420, NOW + 30)
+        index = manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload
+        assert index['chains'][match['jobId']] == 1
+        assert [call[2] for call in fake.oracle_calls] == [None, first['createdAt'], None, second['createdAt']]
+    finally:
+        await manager.close()
+
+
 async def test_complete_index_proves_only_submissions_within_coverage(tmp_path):
     fake = Oracle(); manager = _manager(tmp_path, fake, clock=FakeClock(NOW)); manager.set_seat(420)
     seed_index(manager)

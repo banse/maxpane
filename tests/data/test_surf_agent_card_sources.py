@@ -247,3 +247,159 @@ async def test_manager_selected_read_persistence_and_switch_never_borrow_other_o
     finally:
         await manager.close()
     earnings.close.assert_awaited_once()
+
+
+WORKFLOW = '64edd9c0-a8f0-4720-ab70-7ca6b38d97fa'
+FRONTEND = '22624be0-d2da-400e-91c4-51dac0a9a7f5'
+
+
+def workflow_evidence():
+    fixture = Path('tests/fixtures/surf/agent_work')
+    contract = json.loads((fixture / (JOB + '.json')).read_text())
+    frontend = json.loads((fixture / (FRONTEND + '.json')).read_text())
+    contract['workflow'] = frontend['workflow'] = dict(id=WORKFLOW, status='completed')
+    workflow = dict(id=WORKFLOW, status='completed', contracts=dict(id=JOB),
+                    frontend=dict(id=FRONTEND), launch={key: contract['launch'][key] for key in ('id', 'status')})
+    return contract, frontend, workflow
+
+
+@pytest.mark.parametrize('chain,expected', [(1, 1), (8453, 1), (11155111, 0)])
+async def test_frontend_contribution_follows_exact_workflow_without_changing_record_membership(reader, chain, expected):
+    r, _, swarm = reader
+    contract, frontend, workflow = workflow_evidence()
+    contract['launch']['chainId'] = chain
+    swarm.fetch_job.side_effect = lambda job: {JOB: contract, FRONTEND: frontend}[job]
+    swarm.fetch_workflow.return_value = workflow
+    raw = dict(seat(), work=[dict(jobId=FRONTEND, nodeKey='build', status='accepted'),
+                            dict(jobId=FRONTEND, nodeKey='review', status='accepted')])
+    await r.read(raw, NOW)
+    captured = r.capture(NOW)
+    assert captured['work'][FRONTEND] == dict(read_ts=NOW, launched=False, shipped=True, chain_id=chain)
+    assert sources.project(captured, raw, now=NOW)[0]['_agent_nodes']['launches'] == expected
+    assert sources.work.record_rows([dict(job_id=FRONTEND, node_key='build')], captured['work'], now=NOW)[0]['launch_state'] == 'not_launched'
+    swarm.fetch_workflow.assert_awaited_once_with(WORKFLOW)
+    assert [call.args[0] for call in swarm.fetch_job.await_args_list] == [FRONTEND, JOB]
+    await r.read(raw, NOW + 1)
+    assert swarm.fetch_workflow.await_count == 1
+
+
+@pytest.mark.parametrize('failure', ['workflow', 'contracts', 'wrong_workflow', 'wrong_frontend', 'wrong_contract_workflow', 'wrong_launch'])
+async def test_incomplete_frontend_links_never_claim_zero_and_preserve_previous_facts(reader, failure):
+    r, _, swarm = reader
+    contract, frontend, workflow = workflow_evidence()
+    swarm.fetch_job.side_effect = lambda job: {JOB: contract, FRONTEND: frontend}[job]
+    swarm.fetch_workflow.return_value = workflow
+    raw = dict(seat(), work=[dict(jobId=FRONTEND, nodeKey='build', status='accepted')])
+    # No prior successful read: failed evidence must remain unknown.
+    if failure == 'workflow': swarm.fetch_workflow.return_value = None
+    if failure == 'contracts': swarm.fetch_job.side_effect = lambda job: frontend if job == FRONTEND else None
+    if failure == 'wrong_workflow': workflow['id'] = JOB
+    if failure == 'wrong_frontend': workflow['frontend']['id'] = JOB
+    if failure == 'wrong_contract_workflow': contract['workflow'] = dict(id=FRONTEND)
+    if failure == 'wrong_launch': workflow['launch']['id'] = FRONTEND
+    await r.read(raw, NOW)
+    assert sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']['launches'] is None
+    assert FRONTEND in r.work_failed
+    # A later failed refresh retains an older, independently verified positive.
+    r.cache.store_last_good(sources.SLOT_AGENT_WORK,
+                            {FRONTEND: dict(read_ts=NOW-601, launched=False, shipped=True, chain_id=1)}, ts=NOW-601)
+    await r.read(raw, NOW)
+    captured = r.capture(NOW)
+    assert captured['work'][FRONTEND]['read_ts'] == NOW-601
+    assert sources.project(captured, raw, now=NOW)[0]['_agent_nodes']['launches'] == 1
+
+
+async def test_workflow_without_a_launched_contract_is_a_verified_negative(reader):
+    r, _, swarm = reader
+    contract, frontend, workflow = workflow_evidence()
+    contract['launch'].update(id=None, status=None)
+    workflow['launch'] = None
+    swarm.fetch_job.side_effect = lambda job: {JOB: contract, FRONTEND: frontend}[job]
+    swarm.fetch_workflow.return_value = workflow
+    raw = dict(seat(), work=[dict(jobId=FRONTEND, nodeKey='build', status='accepted')])
+    await r.read(raw, NOW)
+    assert sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']['launches'] == 0
+
+
+async def test_legacy_membership_is_refreshed_immediately(reader):
+    r, _, swarm = reader
+    r.cache.store_last_good(sources.SLOT_AGENT_WORK, {JOB: dict(read_ts=NOW, launched=True)}, ts=NOW)
+    assert sources.project(r.capture(NOW), seat(), now=NOW)[0]['_agent_nodes']['launches'] is None
+    await r.read(seat(), NOW)
+    assert sources.project(r.capture(NOW), seat(), now=NOW)[0]['_agent_nodes']['launches'] == 1
+    swarm.fetch_job.assert_awaited_once_with(JOB)
+
+
+def test_unknown_oracle_network_marks_membership_partial_independently_of_launch_coverage():
+    raw = dict(seat(), work=seat()['work'] + [dict(jobId=FRONTEND, nodeKey='oracle_assess', status='accepted')])
+    capture = dict(work={JOB: dict(read_ts=NOW, launched=True, shipped=True, chain_id=1)})
+    data, meta = sources.project(capture, raw, now=NOW)
+    assert data['_agent_nodes']['launches'] == 1 and data['_agent_nodes']['oracle'] is None
+    assert meta['agent_work']['state'] == 'partial'
+    capture['oracle_chains'] = {FRONTEND: 1}
+    data, meta = sources.project(capture, raw, now=NOW)
+    assert data['_agent_nodes']['oracle'] == 1 and meta['agent_work']['state'] == 'ok'
+
+
+async def test_cancellation_in_workflow_read_does_not_write_partial_membership(reader):
+    r, _, swarm = reader
+    _, frontend, _ = workflow_evidence()
+    swarm.fetch_job.return_value = frontend
+    entered, release = asyncio.Event(), asyncio.Event()
+    async def hold(identity):
+        entered.set()
+        await release.wait()
+    swarm.fetch_workflow.side_effect = hold
+    raw = dict(seat(), work=[dict(jobId=FRONTEND, nodeKey='build', status='accepted')])
+    task = asyncio.create_task(r.read(raw, NOW))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert r.capture(NOW)['work'] == {}
+
+
+async def test_first_membership_batch_prioritizes_accepted_jobs_before_record_only_attempts(reader):
+    r, _, swarm = reader
+    jobs = [f'{index:08x}-034f-47b3-b204-318734811863' for index in range(69)]
+    raw = dict(seat(), work=[dict(jobId=job, nodeKey='build', status='failed' if index < 10 else 'accepted')
+                            for index, job in enumerate(jobs)])
+    fixture = swarm.fetch_job.return_value
+    swarm.fetch_job.side_effect = lambda job: dict(fixture, id=job)
+    await r.read(raw, NOW)
+    got = sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']
+    assert got['known_jobs'] == got['total_jobs'] == got['launches'] == 59
+    reads = [call.args[0] for call in swarm.fetch_job.await_args_list]
+    assert len(reads) == 64 and reads[:59] == jobs[10:]
+    assert set(reads[59:]) <= set(jobs[:10])
+
+
+async def test_frontend_membership_clock_never_refreshes_older_contract_evidence(reader):
+    r, _, swarm = reader
+    contract, frontend, workflow = workflow_evidence()
+    swarm.fetch_workflow.return_value = workflow
+    async def detail(job):
+        payload, stamp = (frontend, NOW) if job == FRONTEND else (contract, NOW-100)
+        return JobDetailRead(payload, stamp, NOW, None, False)
+    swarm.read_job_detail.side_effect = detail
+    raw = dict(seat(), work=[dict(jobId=FRONTEND, nodeKey='build', status='accepted')])
+    await r.read(raw, NOW)
+    captured = r.capture(NOW)
+    assert captured['work'][FRONTEND]['read_ts'] == NOW-100
+    assert sources.project(captured, raw, now=NOW)[1]['agent_work']['read_ts'] == NOW-100
+
+
+def test_capture_uses_validated_frozen_oracle_chains_without_borrowing_seat_registration_chain(reader):
+    r, _, _ = reader
+    raw = dict(seat(), chainId=1,
+               work=[dict(jobId=FRONTEND, nodeKey='oracle_assess', status='accepted')])
+    index = dict(jobs={FRONTEND: WORKFLOW}, newest='2026-10-14T10:00:00Z',
+                 oldest='2026-10-14T10:00:00Z', complete=True, chains={FRONTEND: 11155111})
+    r.cache.store_last_good(sources.SLOT_SWARM_ORACLE_INDEX, index, ts=NOW)
+    frozen = r.capture(NOW)
+    assert sources.project(frozen, raw, now=NOW)[0]['_agent_nodes']['oracle'] == 0
+    index['chains'][FRONTEND] = 1
+    assert frozen['oracle_chains'][FRONTEND] == 11155111
+    index['chains'][FRONTEND] = True
+    r.cache.store_last_good(sources.SLOT_SWARM_ORACLE_INDEX, index, ts=NOW)
+    assert sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']['oracle'] is None

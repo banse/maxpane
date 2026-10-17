@@ -180,6 +180,41 @@ def test_hostile_index_is_rejected_whole(change):
     assert sw.coerce_oracle_index(dict(index, **change)) is None
 
 
+def test_oracle_index_preserves_chain_evidence_and_legacy_identity_proofs():
+    detail, row = captured()
+    request = {key: detail[key] for key in ('id', 'jobId', 'createdAt', 'chainId')}
+    legacy = dict(jobs={row['job_id']: detail['id']}, newest=detail['createdAt'],
+                  oldest=detail['createdAt'], complete=True)
+    assert sw.coerce_oracle_index(legacy) == legacy
+    index = sw.coerce_oracle_index(legacy)
+    sw.add_oracle_index_page(index, sw.oracle_index_page([request]))
+    assert index['chains'] == {row['job_id']: detail['chainId']}
+    assert sw.coerce_oracle_index(index) == index
+    assert sw.match_requests(index, [row])[0] == {row['job_id']: detail['id']}
+    sw.add_oracle_index_page(index, [dict(request, chainId=11155111)])
+    assert index['chains'][row['job_id']] is None
+    assert sw.match_requests(index, [row])[0] == {row['job_id']: detail['id']}
+
+
+@pytest.mark.parametrize('chain', [True, 0, -1, '1', [], None])
+def test_invalid_oracle_page_chain_never_becomes_production_evidence(chain):
+    detail, _ = captured()
+    request = {key: detail[key] for key in ('id', 'jobId', 'createdAt')}
+    index = sw.empty_oracle_index()
+    sw.add_oracle_index_page(index, sw.oracle_index_page([dict(request, chainId=chain)]))
+    assert request['jobId'] not in index['chains']
+    assert index['jobs'][request['jobId']] == request['id']
+
+
+@pytest.mark.parametrize('chains', [{'bad': 1}, {'unknown': None}, {'job': True}, []])
+def test_hostile_oracle_chain_cache_is_rejected(chains):
+    detail, row = captured()
+    chains = {row['job_id']: True} if chains == {'job': True} else chains
+    index = dict(jobs={row['job_id']: detail['id']}, newest=detail['createdAt'],
+                 oldest=detail['createdAt'], complete=True, chains=chains)
+    assert sw.coerce_oracle_index(index) is None
+
+
 def test_complete_captured_list_index_finds_242_jobs_and_only_one_absence():
     pages = [json.loads((ROOT / f'list_{i}.json').read_bytes())['requests'] for i in (1, 2, 3)]
     index = sw.empty_oracle_index()

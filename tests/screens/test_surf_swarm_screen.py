@@ -238,11 +238,11 @@ async def test_the_agent_card_row_keeps_seat_values_and_has_no_third_row():
         screen = await _open(pilot, "a")
         hero = screen.query_one(SurfSwarmAgentRackHero)
         cards = list(hero.children)[6:]
-        assert [card.data.title for card in cards] == ["RUNTIME", "MODELS", "OWNER", "NODES", "COLLAB", "EARNINGS"]
+        assert [card.data.title for card in cards] == ["RUNTIME", "MODELS", "OWNER", "SHIPPED", "COLLAB", "EARNINGS"]
         assert not screen.query("SurfSwarmNodeCards")
         assert len({card.region.y for card in hero.children}) == 2
         text = _region_text(pilot.app, hero)
-        for needle in ("⧉", "paired 09-20", "daemon", "devices", "TOKENS", "not advertised", "oracle", "launches", "other"):
+        for needle in ("⧉", "paired 09-20", "daemon", "devices", "TOKENS", "not advertised", "oracle", "LAUNCHES", "SHIPPED"):
             assert needle in text, needle
         assert "#0 x139" in str(hero.query_one("#hero-collab").tooltip)
 
@@ -349,7 +349,7 @@ async def test_retired_roster_selection_is_gone():
         screen = await _open(pilot, "a")
         assert all(table.cursor_type == "none" for table in screen.query_one(f"#{AGENT_BODY_ID}").query(DataTable))
         text = _region_text(pilot.app,screen.query_one(SurfSwarmAgentRackHero))
-        assert "NODES" in text and "ROSTER" not in text
+        assert "SHIPPED" in text and "NODES" not in text and "ROSTER" not in text
         # EARNINGS replaces the retired FEEDBACK card; no feedback list remains.
         assert "EARNINGS" in text and "FEEDBACK" not in text and "BY NODE" not in text
 

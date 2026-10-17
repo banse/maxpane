@@ -935,6 +935,8 @@ SWARM_ORACLE_PAGE_LIMIT = 500
 #: Shared forward/backfill budget: 2,000 requests (~16 days at 125/day).
 #: A forward gap beyond this cap discards the index for a fresh rebuild.
 SWARM_ORACLE_PAGE_CAP = 4
+# First selected-agent chain backfill: 18 public pages measured at 6.8 seconds.
+SWARM_ORACLE_CHAIN_PAGE_CAP = 20
 #: Details averaged ~50 KB in the 2026-09-23 capture; four bound each cycle.
 SWARM_ORACLE_PER_CYCLE = 4
 #: Assessing panels follow the selected-seat tier's two-minute clock.
@@ -1094,6 +1096,7 @@ class SurfManager:
         )
         self.npm_client = npm_client if npm_client is not None else NpmRegistryClient()
         self._agent_active = False
+        self._oracle_chain_attempt = None
         self._runtime_task = None
         self.cache = cache if cache is not None else SurfCache(
             path=self._cache_path, clock=clock
@@ -7005,15 +7008,27 @@ class SurfManager:
         rows = record_window(self._record_rows(seat, now), self.record_cap, self.record_launches_only,
                              self.record_spec)
         due = sw.oracle_rows_due(rows, oracle, now_ts=now, due_s=SWARM_ORACLE_DUE_S)
-        if not due:
-            return
         index_prior = self.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX)
         index = sw.coerce_oracle_index(getattr(index_prior, "payload", None)) or sw.empty_oracle_index()
+        oracle_jobs = set(agent_work.oracle_candidates(seat)) if self._agent_active else set()
+        missing_chains = oracle_jobs - index.get('chains', {}).keys()
+        previous_jobs, previous_attempt = self._oracle_chain_attempt or (None, 0)
+        chain_due = bool(missing_chains) and (not index['complete']
+            or previous_jobs != oracle_jobs or now-previous_attempt >= agent_card_sources.TTL)
+        if not due and not chain_due:
+            return
+        if chain_due:
+            self._oracle_chain_attempt = (oracle_jobs, now)
+            if 'chains' not in index or index['complete']:
+                # Keep known request identities while walking their chain metadata
+                # from the top. Reduced coverage cannot prove false off-panel rows.
+                index = dict(index, complete=False, oldest=index['newest'])
         matched, ambiguous, negative = sw.match_requests(index, due)
         failed = False
-        if any(row['job_id'] not in matched and row['job_id'] not in ambiguous
+        if chain_due or any(row['job_id'] not in matched and row['job_id'] not in ambiguous
                and row['job_id'] not in negative for row in due):
-            index, failed = await self._refresh_oracle_index(index)
+            index, failed = await self._refresh_oracle_index(index,
+                page_cap=SWARM_ORACLE_CHAIN_PAGE_CAP if chain_due else SWARM_ORACLE_PAGE_CAP)
             matched, ambiguous, negative = sw.match_requests(index, due)
         groups: dict[tuple[str, str], list[dict]] = {}
         for row in due:
@@ -7044,13 +7059,13 @@ class SurfManager:
         if index_prior is None or index_prior.payload != index:
             self.cache.store_last_good(SLOT_SWARM_ORACLE_INDEX, index, ts=now)
 
-    async def _refresh_oracle_index(self, index: dict) -> tuple[dict, bool]:
+    async def _refresh_oracle_index(self, index: dict, *, page_cap=None) -> tuple[dict, bool]:
         """Forward refresh then backfill, sharing one page budget; never publish mid-await."""
         previous_newest = sw.oracle_cursor_ts(index['newest'])
         newest = index['newest']
         before = None
         forward = True
-        for _ in range(SWARM_ORACLE_PAGE_CAP):
+        for _ in range(SWARM_ORACLE_PAGE_CAP if page_cap is None else page_cap):
             raw = await self._guard(
                 lambda: self.swarm_client.fetch_oracle_requests(limit=SWARM_ORACLE_PAGE_LIMIT, before=before),
                 "swarm oracle requests")

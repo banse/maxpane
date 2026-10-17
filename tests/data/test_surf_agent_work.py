@@ -23,13 +23,15 @@ def row(job, node='build', status='accepted'):
     return dict(jobId=job, nodeKey=node, status=status)
 
 
-def point(launched=False, age=0):
-    return dict(read_ts=NOW-age, launched=launched)
+def point(launched=False, age=0, chain_id=None, shipped=None):
+    return dict(read_ts=NOW-age, launched=launched,
+                chain_id=chain_id if chain_id is not None else 1 if launched else None,
+                shipped=launched if shipped is None else shipped)
 
 
 def test_exact_captures_require_actual_launch_not_requested_kind():
     assert work.membership_point(capture(LIVE), LIVE, NOW) == point(True)
-    assert work.membership_point(capture(BLOCKED), BLOCKED, NOW) == point(False)
+    assert work.membership_point(capture(BLOCKED), BLOCKED, NOW) == point(False, chain_id=11155111)
     assert work.membership_point(capture(PLAIN), PLAIN, NOW) == point(False)
 
 
@@ -54,12 +56,15 @@ def test_malformed_launch_never_becomes_a_positive_or_negative(field, value):
     assert work.membership_point(raw, LIVE, NOW) is None
 
 
-def test_live_testnet_counts_and_parked_launch_is_checked_but_not_live():
+def test_testnet_membership_remains_available_for_record_but_not_shipped():
     raw = capture(LIVE)
     raw['launch']['chainId'] = 11155111
-    assert work.membership_point(raw, LIVE, NOW) == point(True)
+    testnet = work.membership_point(raw, LIVE, NOW)
+    assert testnet == point(True, chain_id=11155111)
+    assert work.summarize({'work': [row(LIVE)]}, {LIVE: testnet}, NOW)['launches'] == 0
+    assert work.record_rows([dict(job_id=LIVE, node_key='build')], {LIVE: testnet}, now=NOW)[0]['launch_state'] == 'launched'
     raw['launch']['status'] = 'parked'
-    assert work.membership_point(raw, LIVE, NOW) == point(False)
+    assert work.membership_point(raw, LIVE, NOW) == point(False, chain_id=11155111)
 
 
 def test_accepted_rows_and_ids_keep_legacy_rows_exclude_other_attempts():
@@ -72,16 +77,55 @@ def test_accepted_rows_and_ids_keep_legacy_rows_exclude_other_attempts():
     assert work.candidates(seat) == [LIVE, PLAIN]
 
 
-def test_summary_counts_work_rows_oracle_precedes_launch_and_unknown_blocks_partition():
-    seat = {'work': [row(LIVE), row(LIVE, 'review'), row(LIVE, 'oracle_assess'),
-                     row(PLAIN), row(BLOCKED), row(BLOCKED, status='failed')]}
-    partial = work.summarize(seat, {LIVE: point(True), PLAIN: point()}, NOW)
-    assert partial == dict(oracle=1, launches=None, other=None, known_jobs=2, total_jobs=3)
-    assert work.summarize(seat, {LIVE: point(True), PLAIN: point(), BLOCKED: point()}, NOW) == dict(
-        oracle=1, launches=2, other=2, known_jobs=3, total_jobs=3)
-    assert work.candidates({'work': [row(LIVE, 'oracle_assess')]}) == []
-    assert work.summarize({'work': [row(LIVE, 'oracle_assess')]}, {}, NOW) == dict(
-        oracle=1, launches=0, other=0, known_jobs=0, total_jobs=0)
+def test_summary_counts_distinct_jobs_oracle_precedes_launch_and_completeness_is_independent():
+    seat = {'work': [row(LIVE), row(LIVE, 'review'), row(PLAIN, 'oracle_assess'),
+                     row(PLAIN, 'build'), row(PLAIN, 'oracle_assess'), row(BLOCKED)]}
+    assert work.candidates(seat) == [LIVE, BLOCKED]
+    assert work.oracle_candidates(seat) == [PLAIN]
+    partial = work.summarize(seat, {LIVE: point(True)}, NOW, oracle_chains={PLAIN: 1})
+    assert partial == dict(oracle=1, launches=None, other=None, known_jobs=1, total_jobs=2)
+    points = {LIVE: point(True), BLOCKED: point()}
+    assert work.summarize(seat, points, NOW, oracle_chains={PLAIN: 1}) == dict(
+        oracle=1, launches=1, other=1, known_jobs=2, total_jobs=2)
+    assert work.summarize(seat, points, NOW) == dict(
+        oracle=None, launches=1, other=1, known_jobs=2, total_jobs=2)
+    assert work.summarize(seat, points, NOW, oracle_chains={PLAIN: 11155111})['oracle'] == 0
+
+
+@pytest.mark.parametrize('chain,oracle', [
+    (1, 1), (8453, 1), (4663, 1), (56, 1), (42161, 1),
+    (11155111, 0), (84532, 0), (46630, 0), (97, 0), (421614, 0), (999999, None),
+])
+def test_launch_policy_and_verified_oracle_network_classification(chain, oracle):
+    seat = {'work': [row(LIVE), row(PLAIN, 'oracle_assess')]}
+    got = work.summarize(seat, {LIVE: point(True, chain_id=chain)}, NOW,
+                         oracle_chains={PLAIN: chain})
+    assert got['launches'] == int(chain in (1, 8453, 4663))
+    assert got['oracle'] == oracle
+
+
+@pytest.mark.parametrize('chains', [{}, {PLAIN: None}, {PLAIN: True}, {PLAIN: '1'}, {PLAIN: 0}])
+def test_missing_or_invalid_oracle_chain_is_unknown_without_blocking_launches(chains):
+    seat = {'work': [row(LIVE), row(PLAIN, 'oracle_assess')]}
+    got = work.summarize(seat, {LIVE: point(True)}, NOW, oracle_chains=chains)
+    assert got['oracle'] is None and got['launches'] == 1
+
+
+def test_oracle_invalid_job_never_uses_objective_or_seat_registration_chain():
+    seat = {'chainId': 1, 'work': [dict(row(None, 'oracle_assess'), objective='chain 1')]}
+    assert work.summarize(seat, {}, NOW)['oracle'] is None
+    assert work.oracle_candidates(seat) == []
+
+
+@pytest.mark.parametrize('launched', [False, True])
+def test_legacy_cache_keeps_record_membership_but_shipped_requires_backfill(launched):
+    old = {LIVE: dict(read_ts=NOW, launched=launched)}
+    seat = {'work': [row(LIVE)]}
+    assert work.coerce_points(old, NOW) == old
+    assert work.summarize(seat, old, NOW)['launches'] is None
+    assert work.due(seat, old, NOW) == [LIVE]
+    assert work.record_rows([dict(job_id=LIVE, node_key='build')], old, now=NOW)[0]['launch_state'] == (
+        'launched' if launched else 'not_launched')
 
 
 @pytest.mark.parametrize('seat', [None, {}, {'work': None}, {'work': [None]},
@@ -160,3 +204,17 @@ def test_record_rows_require_confirmed_launch_and_count_unknowns_without_mutatio
     assert work.record_rows(rows, points, failed={LIVE}, now=NOW)[0]['launch_state'] == 'unavailable'
     assert work.record_rows(rows, points, now=NOW+48*3600+1)[0]['launch_state'] == 'not_read'
     assert (rows, points) == original
+
+
+@pytest.mark.parametrize('changes', [
+    dict(chain_id=True), dict(chain_id='1'), dict(chain_id=0), dict(chain_id=-1),
+    dict(shipped=1), dict(shipped='true'), dict(shipped=None), dict(shipped=False), dict(chain_id=None),
+])
+def test_new_cache_rejects_invalid_chain_or_shipped_evidence(changes):
+    assert work.coerce_points({LIVE: dict(point(True), **changes)}, NOW) == {}
+
+
+def test_missing_workflow_evidence_does_not_prove_no_launch_contribution():
+    raw = capture(PLAIN)
+    del raw['workflow']
+    assert work.membership_point(raw, PLAIN, NOW) is None

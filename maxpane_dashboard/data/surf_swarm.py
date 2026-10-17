@@ -2251,7 +2251,8 @@ def empty_oracle_index() -> dict:
 
 def coerce_oracle_index(payload: object) -> dict | None:
     """The history proof is indivisible: reject any hostile or inconsistent slot."""
-    if (not isinstance(payload, dict) or set(payload) != {'jobs', 'newest', 'oldest', 'complete'}
+    keys = {'jobs', 'newest', 'oldest', 'complete'}
+    if (not isinstance(payload, dict) or set(payload) not in (keys, keys | {'chains'})
             or not isinstance(payload['jobs'], dict) or type(payload['complete']) is not bool):
         return None
     jobs = payload['jobs']
@@ -2262,6 +2263,12 @@ def coerce_oracle_index(payload: object) -> dict | None:
     requests = [request for request in jobs.values() if request is not None]
     if len(set(requests)) != len(requests):
         return None
+    chains = payload.get('chains', {})
+    if (not isinstance(chains, dict)
+            or any(job not in jobs or chain is not None and
+                   (type(chain) is not int or chain <= 0 or jobs[job] is None)
+                   for job, chain in chains.items())):
+        return None
     if jobs:
         newest, oldest = (oracle_cursor_ts(payload[key]) for key in ('newest', 'oldest'))
         if newest is None or oldest is None or oldest > newest:
@@ -2269,7 +2276,10 @@ def coerce_oracle_index(payload: object) -> dict | None:
     elif payload['newest'] is not None or payload['oldest'] is not None or payload['complete']:
         # A complete index with no entries is not a history proof (re-review N1).
         return None
-    return dict(payload, jobs=dict(jobs))
+    result = dict(payload, jobs=dict(jobs))
+    if 'chains' in payload:
+        result['chains'] = dict(chains)
+    return result
 
 
 def oracle_index_page(page: object) -> list[dict] | None:
@@ -2282,18 +2292,26 @@ def oracle_index_page(page: object) -> list[dict] | None:
                 or parse_job_id(item.get('id')) is None
                 or oracle_cursor_ts(item.get('createdAt')) is None):
             return None
-        clean.append({key: item[key] for key in ('jobId', 'id', 'createdAt')})
+        entry = {key: item[key] for key in ('jobId', 'id', 'createdAt')}
+        if type(item.get('chainId')) is int and item['chainId'] > 0:
+            entry['chainId'] = item['chainId']
+        clean.append(entry)
     return clean
 
 
 def add_oracle_index_page(index: dict, page: list[dict]) -> None:
     """Merge identities; repeated sightings are safe, conflicting requests ambiguous."""
+    chains = index.setdefault('chains', {})
     for item in page:
         job, request = item['jobId'], item['id']
         if job in index['jobs'] and index['jobs'][job] != request:
             index['jobs'][job] = None
+            chains[job] = None
         else:
             index['jobs'][job] = request
+            chain = item.get('chainId')
+            if type(chain) is int and chain > 0:
+                chains[job] = chain if job not in chains or chains[job] == chain else None
 
 
 def match_requests(index: object, due_rows: list[dict]) -> tuple[dict, set, set]:
