@@ -97,6 +97,7 @@ async def SwarmClient.read_job_detail(
     job_id: str, *, fresh_after: float | None = None
 ) -> JobDetailRead: ...
 async def SwarmClient.fetch_job(job_id: str) -> dict | None: ...
+def SwarmClient.known_job_revision(job_id: str) -> str | None: ...
 ```
 
 `fetch_job` bleibt der kompatible Payload-Adapter; nur Verbraucher mit Quellenzeit-/Frischebedarf nutzen `read_job_detail`. Busy bleibt eine frische Kopie von `SEAT_BUSY`, Fehler `None`.
@@ -126,6 +127,7 @@ TTL ist eine Obergrenze für Reuse, nicht eine zusätzliche Pollschleife. Fehler
 Gültige geänderte `updatedAt`-/State-Angaben in bereits gelesenen Joblisten markieren betroffene Einträge dirty; keine zusätzliche Listen-API. Unveränderte oder fehlende Angaben beweisen keine Unveränderlichkeit.
 Ein Dirty-Epoch verhindert, dass eine vor der Änderung begonnene Response den neuen Zustand überschreibt; sie wird nicht als aktuell veröffentlicht. Der nächste zulässige Read bestätigt den Zustand.
 `revision` bleibt `None`, solange ein zuverlässiger Wert fehlt. Kein lokaler Zeitstempel oder Payloadhash wird als Serverrevision ausgegeben. TTL und WORK-Revalidierung bleiben auch bei Revisionen bestehen.
+`known_job_revision` liest synchron und ohne I/O nur die bereits validierte Revision aus den vorhandenen begrenzten Detailhinweisen des aktuellen Clientscopes. RECORD verwendet sie auch vor seiner Due-Entscheidung. Fehlende oder evictete Hinweise löschen keine bereits bestätigte Revision; ein fehlgeschlagener oder wegen des Caps zurückgestellter Ressourcenread bestätigt keine neue Revision.
 
 ### 5.2 Cancellation und Ressourcenidentitäten
 

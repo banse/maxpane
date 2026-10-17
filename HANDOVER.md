@@ -1,6 +1,43 @@
 # HANDOVER — current session and open maintenance backlog
 
-## Current session handoff — 2026-10-16
+## Current session handoff — 2026-10-17
+
+Working directory: `/Users/banse/codex/maxpane`; branch:
+`feature/surfboard-hub-9`. The approved mandatory data-loading work is complete;
+final scoped re-review approved both integration corrections, with no open
+Critical or Important findings. Latest production commit: `f40f6df0`. Changes are
+local; no push or merge. Specification, package plan, verification and remaining
+measurement limits are in
+[the execution follow-ups](docs/surf_data_loading_followups.md).
+
+- Markets validate the exact Ethereum reference pool and token orientation.
+  DexScreener remains primary with same-pool GeckoTerminal fallback; ETH/USD has
+  an independent persisted observation. Full and passive projections share the
+  same source-clock rules. Missing market cap stays unknown, never FDV.
+- WORK, RECORD, membership, SITES and Scores share the bounded complete job-detail
+  memo. Concurrent same-job reads deduplicate; active WORK confirms details after
+  discovery. RECORD uses finite 120/600-second revalidation with existing 4/2
+  limits, retained last-good facts and original source observations.
+- Conditional scheduler changes, shared Gecko pacing/deadlines and earlier RECORD
+  staging were deferred at the approved measurement gate. Five concurrent readers
+  sharing one fetch is demonstrated; end-user speedup is not. Actual 149×45 live
+  previews were shown, but the bounded run did not complete selected-seat RECORD.
+- Final composing evidence before the final corrections: 683 passed and eight
+  failures reproduced identically on the untouched base `888a1dd4`. Fast guards:
+  125 passed. The final corrections have seven new passing regressions, four
+  killed mutations, and 408 affected-file passes with only the known BOARD-key
+  baseline failure. No full-suite run or all-green-suite claim. The older layout
+  residuals below also remain filed.
+
+Use `.venv/bin/python -m maxpane_dashboard --game surfboard` to start locally.
+Preserve the October 16 UI state below and all unrelated untracked user files;
+this work changes loading/provenance, not dashboard layout or navigation keys.
+There is no pending mandatory implementation. Measurement-gated scheduling work
+and the Minor logical-detail instrumentation issue remain filed follow-ups.
+
+---
+
+## Historical session handoff — 2026-10-16
 
 **Resume here.** All requested work is complete. The owner explicitly asked to save
 the current state for the next session. Working directory:
@@ -82,7 +119,7 @@ tools and SVG/PNG captures under `/private/tmp/` and `/tmp/` may not survive res
 
 ## Historical session handoff — 2026-10-10 (superseded)
 
-The following describes the October 10 state only; the October 16 handoff above
+The following describes the October 10 state only; the October 17 handoff above
 is authoritative for resuming work.
 
 **Resume here.** The owner ended the session with all requested work completed.

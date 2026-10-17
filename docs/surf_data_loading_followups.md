@@ -114,4 +114,27 @@ network attempts (8 failures in each run, identical assertion signatures):
 These baseline failures are follow-ups, not broadened repair scope. The final
 correctly isolated composing run finished with **683 passed and exactly those
 8 baseline failures** in 147.19 seconds. Fast guards: **125 passed**;
-documentation pins: **12 passed**. Final whole-change review is pending.
+documentation pins: **12 passed**.
+
+The final whole-change review found two Important integration defects: popup
+completion observations were pruned against an older cycle clock, and known
+server revisions did not invalidate the RECORD projection's due filter. The
+single final correction wave uses the post-await injected validation clock and
+includes already-known revisions in each resource's confirmation signature.
+It retains invalidations across caps and failed reads without another polling
+path. Seven new regression cases passed, and four rollback mutations were
+caught. The affected whole-file/composing run finished with **408 passed and
+the one known BOARD-key baseline failure**; fast guards again **125 passed**.
+Scoped re-review **Approved** both corrections, with no remaining Critical or
+Important findings. The reviewer independently passed all seven cases and
+caught/restored both rollback mutations. Final production commit: `f40f6df0`.
+The review also caught a deliberately removed exact-seat provenance gate; the
+mutation was inversely restored and the rejection test passed again.
+
+## Filed follow-up
+
+- **Minor — logical detail measurement boundaries:**
+  `scripts/measure_surf_loading.py` instruments `fetch_job`, while new consumers
+  call `read_job_detail`. Actual HTTP attempts remain counted, but logical
+  detail start/end events need to follow the new API on the next tooling touch.
+  Do not infer a logical-read latency comparison from the present measurements.
