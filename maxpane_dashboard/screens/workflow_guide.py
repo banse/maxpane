@@ -15,7 +15,8 @@ from maxpane_dashboard.widgets.workflow_guide import WorkflowGuideView
 
 #: Measured 2026-10-18 with the genuine bundled document in Matrix at 149×45.
 #: The guide has its own width; the app-wide 143-column recommendation is unchanged.
-#: Hero cards are removed; their dated facts live in the source popup.
+#: Six nine-row capacity heroes are restored above the unchanged framed diagram.
+#: Their one-row lower margin and the three-row topic strip use 13 viewport rows.
 #: The view's 143-column floor plus its composed padding/gutter needs 148 columns.
 #: At 147 columns the outer viewport scrolls one column; 148 clears it.
 #: Both the closed and 28-column expanded topic index preserve every diagram node.
@@ -23,16 +24,19 @@ from maxpane_dashboard.widgets.workflow_guide import WorkflowGuideView
 #: At the width boundary five-column graphs use 106 cells with index open.
 #: At 149 columns they use 110 cells open and 135 closed, including branch rails.
 #: CONTRACTS is tallest: six parallel stages stack spatially into 24 diagram rows.
-#: Its figure adds four title/source rows; the explanation row retains nine rows.
-#: This sets the 43-row layout floor, without shrinking or hiding a graph node.
-#: At 42 rows that topic scrolls one row; 43 clears the viewport.
-#: Shorter topics clear by 40 rows. Explanation and source prose scroll locally.
-#: All ten topics show the complete diagram and three lower panels at 149×45.
+#: Its figure adds four title/source rows; its source link is outside graph scrolling.
+#: The complete graph plus heroes clears at 44 rows; at 43 the graph scrolls one row.
+#: The lower nine-row detail group appears only when the whole diagram also fits.
+#: CONTRACTS details are hidden at 52 rows and return at 53, with either index state.
+#: At 149×45 all graphs fit; purchase, single skill, company and intake show details.
+#: At 24 rows graphs scroll internally while SOURCE DETAILS remains visible.
+#: At narrower widths the horizontal scrollbar may consume one vertical row.
 #: Source popup uses the existing RecordDetailScreen frame and scroll behavior.
 #: Default screen CSS and the production stylesheet are checked for agreement.
 #: Boundary tests compare actual overflow and painted hints on both sides of each pin.
 WORKFLOW_GUIDE_FULL_LAYOUT_COLUMNS = 148
-WORKFLOW_GUIDE_FULL_LAYOUT_ROWS = 43
+WORKFLOW_GUIDE_FULL_LAYOUT_ROWS = 44
+WORKFLOW_GUIDE_DETAILS_ROWS = 53
 
 
 class WorkflowSourceScreen(RecordDetailScreen):
@@ -43,6 +47,13 @@ class WorkflowSourceScreen(RecordDetailScreen):
 
     def compose_sections(self):
         source, topic, node = (self.row[key] for key in ('source', 'topic', 'node'))
+        guidance = '\n'.join(
+            flatten(card.get('title')) + ': ' + ' · '.join(filter(None, [
+                flatten(card.get('heading')), flatten(card.get('value')),
+                *[flatten(row) for row in card.get('rows') or []],
+                flatten(card.get('caption')), flatten(card.get('footer'))]))
+            for card in node.get('guidance') or [])
+        guidance += '\n\n' + '\n'.join(node.get('guidance_notes') or [])
         for title, value in (
             ('SOURCE SNAPSHOT', f"{source.get('title', '—')}\nDOCUMENTED {source.get('date', '—')}\n"
              f"Plane {source.get('plane', '—')} · Worker {source.get('worker', '—')}"),
@@ -53,6 +64,7 @@ class WorkflowSourceScreen(RecordDetailScreen):
             ('NODE SOURCE EXCERPT', node.get('source_excerpt') or '—'),
             ('TOPIC SOURCE EXCERPT', topic.get('source_excerpt') or '—'),
             ('REFERENCES', '\n'.join(source.get('references') or []) or '—'),
+            ('CAPACITY & ALTERNATIVES', guidance.strip() or '—'),
             ('DOCUMENTED FACTS', '\n'.join(
                 f"{flatten(stat.get('title'))}: {flatten(stat.get('value'))} · {flatten(stat.get('caption'))}"
                 for stat in topic.get('stats') or []) or '—'),
@@ -82,9 +94,11 @@ class WorkflowGuideScreen(SurfDashboardScreen):
     WorkflowGuideScreen #workflow-title {height: 1; margin: 1 1 0 1; text-wrap: nowrap;}
     WorkflowGuideScreen #workflow-viewport {height: 1fr; padding: 0 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size: 1 1;}
-    WorkflowGuideScreen WorkflowGuideView {width: 1fr; min-width: 143; height: 1fr; min-height: 25;}
+    WorkflowGuideScreen WorkflowGuideView {width: 1fr; min-width: 143; height: 1fr; min-height: 21;}
+    WorkflowGuideScreen #workflow-heroes {height: 9; margin-bottom: 1; grid-size: 6 1;
+        grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1;}
     WorkflowGuideScreen #workflow-topics {height: 2; margin-bottom: 1; text-wrap: nowrap;}
-    WorkflowGuideScreen #workflow-main {height: 1fr; min-height: 22;}
+    WorkflowGuideScreen #workflow-main {height: 1fr; min-height: 8;}
     WorkflowGuideScreen #workflow-index {width: 28; height: 1fr; margin-right: 1; display: none;}
     WorkflowGuideScreen #workflow-reading {width: 1fr; height: 1fr;}
     WorkflowGuideScreen #workflow-figure {height: 1fr; min-height: 8;}
@@ -134,7 +148,8 @@ class WorkflowGuideScreen(SurfDashboardScreen):
         view = self.query_one(WorkflowGuideView)
         viewport = self.query_one('#workflow-viewport', VerticalScroll)
         suffix = ' · ‹ widen' if viewport.max_scroll_x > 0 or view.needs_widen else ''
-        suffix += ' · ‹ taller' if viewport.max_scroll_y > 0 else ''
+        diagram = view.query_one('#workflow-diagram-scroll', VerticalScroll)
+        suffix += ' · ‹ taller' if viewport.max_scroll_y > 0 or diagram.max_scroll_y > 0 else ''
         title = self.query_one('#workflow-title', Static)
         caption = 'WORKFLOWS · DOCUMENTED ' + (flatten(view.source.get('date')) or '—')
         title.update(Text(clip(caption, max(1, title.size.width - cell_len(suffix))) + suffix))

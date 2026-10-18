@@ -5,6 +5,7 @@ fixture is the agreement source; production uses only these packaged literals.
 """
 
 from maxpane_dashboard.data.workflow_guide_models import Catalogue, Node, Stat, Topic
+from maxpane_dashboard.data.workflow_guide_profiles import add_guidance
 
 # Complete visible text of each supplied figure, including limits and captions.
 _EXCERPTS = (
@@ -127,6 +128,7 @@ def _stats(*values: tuple[str, str, str]) -> list[Stat]:
 
 def _topic(id: str, number: int, title: str, short_title: str, summary: str,
            stats: list[Stat], diagram: list[str], nodes: list[Node]) -> Topic:
+    add_guidance(id, nodes)
     return dict(id=id, number=number, title=title, short_title=short_title,
                 summary=summary, stats=stats, diagram=diagram, nodes=nodes,
                 source_excerpt=_EXCERPTS[number - 1])
@@ -141,7 +143,7 @@ CATALOG: Catalogue = {
             "Job records 2026-10-18: c3792acf, 53f5fb2b",
             "Oracle requests: cb72b826 / 4ee4290d / 03ccc51e / fa460b4b",
             "worker 0.1.2 dist/cli.js", "Identity-md/worker#6",
-            "Companion page: Swarm Work Options",
+            "Companion: aidude docs/swarm-work-options.html (2026-10-18 source snapshot)",
         ],
     },
     "topics": [

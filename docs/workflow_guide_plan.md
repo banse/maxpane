@@ -1,113 +1,164 @@
-# WORKFLOWS framed-diagram revision plan
+# WORKFLOWS capacity-card revision plan
 
-Date: 2026-10-18. Tier 2. Owner requested larger diagrams resembling hero inner
-cards and removal of this view's hero row. Contract: [PRD](workflow_guide_PRD.md).
-Source research: [game mechanics](workflow_guide_game_mechanics.md).
+Date: 2026-10-18. Tier 2. Owner requested native heroes above the existing
+framed diagrams, showing input capacity, roomier or integrated alternatives,
+and costs. Hide the three lower detail panels when they do not fit alongside
+the complete diagram; retain access through SOURCE DETAILS.
+Contract: [PRD](workflow_guide_PRD.md).
 
-The existing guide, local catalogue, lifecycle and boardroom route are already
-implemented. This revision changes presentation while retaining all ten topics,
-79 selectable nodes, source popups and caller-owned selection state. Expected
-under 1,000 production lines excluding authored presentation plans. One final
-review, no intermediate reviews, no full suite.
+The guide, all ten diagram plans, 79 selectable nodes, source popup, lifecycle
+and boardroom route already exist. Keep their behavior and the diagram's
+appearance. Expected change: fewer than 1,000 production lines. One final
+review, no package reviews, no full suite.
 
 ## Work packages and ownership
 
-All writers work alongside other agents and user changes. Do not revert or edit
-another owner's files. No child agents. File seams, rather than functions,
-define ownership.
+All writers share the working tree with other agents and user changes. Do not
+revert or edit another owner's files. No child agents. File seams define
+ownership; report cross-owner defects to the controller.
 
-| Package | Exclusive owner and files | Dependency and result |
+| Package | Exclusive owner and files | Dependencies and result |
 | --- | --- | --- |
-| P0: revision specification | Planning architect: `docs/workflow_guide_PRD.md`, this plan | Current source/catalogue and UI read; diagrams and interaction requirements fixed before renderer work. |
-| P1: outlined diagram renderer | Renderer implementer: new `maxpane_dashboard/widgets/workflow_guide_diagrams.py`, `tests/widgets/test_workflow_guide_diagrams.py` | Presentation-only authored placements/routes keyed by existing topic/node IDs, plus small Rich Text renderer. All roles, branches, joins, retries and failure states preserved. No imports from `data/`. |
-| P2: view integration | Controller: `widgets/workflow_guide.py`, `screens/workflow_guide.py`, `themes/minimal.tcss`, composing screen tests | Remove hero composition and sizing; integrate P1, preserve interaction/source detail; enlarge diagram; mirror screen CSS. P2 may remove heroes and write failing tests alongside P1, but rendering integration depends on P1's interface. |
-| P3: verification and documentation | Controller: registry/geometry tests if needed, README and follow-ups | After P1/P2: actual bundled-source preview, measured pins, scoped mutation checks, touched/composing tests, one final review and local commit. |
+| P0: specification | Planning architect: `docs/workflow_guide_PRD.md`, this plan | Freeze the selection guidance contract, source semantics and responsive behavior. No code or measured-pin changes. |
+| P1: source-backed profiles | Data implementer: new `maxpane_dashboard/data/workflow_guide_profiles.py`, `data/workflow_guide_models.py`, `data/workflow_guide_catalog.py`, new profile tests, `tests/data/test_workflow_guide.py`, companion HTML fixture | Use original and companion sources; attach six guidance records and notes to every node. No runtime source reads, I/O, dependency or top-level manager key. Parallel with P2 after the field seam below is frozen. |
+| P2: presentation | Controller: `widgets/workflow_guide.py`, `screens/workflow_guide.py`, `themes/minimal.tcss`, composing screen/layout tests | Restore six native nine-row heroes; map P1 primitives directly; keep current renderer; derive lower-panel visibility from available viewport versus intrinsic graph height; retain a source link outside the diagram scroll. |
+| P3: validation and documentation | Controller: README, follow-ups, measured pin evidence and composing/registry tests as needed | After P1/P2: actual bundled-source preview, responsive measurements, scoped mutations, affected-file checks, one final review, one fix wave and local commit. |
 
-The controller owns every existing production file and shared CSS/test seam.
-The catalogue, manager, model keys, boardroom routing and polling behavior do
-not need edits. New dependencies, generic graph layout engines, graph services
-and runtime HTML parsing are outside scope.
+The controller owns every shared screen/CSS seam. Diagram renderer/plans,
+manager lifecycle, boardroom keys and polling do not require edits. No live
+quote fetch, payment execution, generic recommendation engine or runtime HTML
+parser belongs in this revision.
 
-## Renderer handoff
+## Frozen profile-to-view seam
 
-Use authored presentation plans with primitive values: each node ID has a
-position; edges have explicit elbow routes and optional literal labels; group
-labels separate independent diagrams or observed/proposed paths. The agreed
-`render_diagram` helper returns `DiagramRender(text, width, height, boxes)`.
-The view passes selected topic, selected node ID, available content width and
-theme colors. Returned geometry sizes the diagram and keeps selected cards
-visible when scrolling is necessary.
+Keep `WORKFLOW_GUIDE_KEYS`, widget signatures, `Catalogue.source` and the manager
+handoff unchanged. Preserve original `Topic.stats` for DOCUMENTED FACTS.
+Extend each `Node` with:
 
-Use four-row cards: role embedded in top border, two wrapped label rows,
-bottom border. Adapt card widths within 18–25 cells, targeting
-five columns within the open-index width. Build strokes and arrows as a small
-cell canvas; place node cards after connector strokes so no line erases labels.
-Resolve branch/join intersections deliberately. Click metadata must cover card
-faces and borders. Literal source strings never become Rich markup.
+```text
+guidance: list[GuidanceCard]      # six cards in fixed order
+guidance_notes: list[str]        # exact scope, assumptions and source caveats
 
-Keep all 79 nodes individually addressable. The contracts-only six parallel
-stages use one vertical column at y=0,4,...20, with shared inlet and outlet rails
-and a PARALLEL label. Stacking is spatial, never a sequence: no arrows connect
-siblings. Import/adapt are left of the group, judge/deploy/live to its right;
-undeployed branches separately from judge. This bounds the dense graph to
-24 rows while avoiding the crossings of a two-dimensional audit group.
-For shapes, three distinct bands preserve CHAIN, FAN OUT / JOIN and DAG.
-Failure/retry edges and route conditions remain visible. Site/growth proposed
-paths must not read as observed successes. Intake's failed branch leaves
-admitted, not paid or received.
+GuidanceCard:
+  title: str                    # outer card title
+  heading: str                  # inner card header
+  value: str                    # numeric/estimated display, or empty for rows
+  rows: list[str]               # text alternative/capacity/cost rows
+  caption: str                   # inner card footer
+  footer: str                    # outer card footer
+```
 
-The source catalogue's ASCII figure remains a provenance/reference representation;
-the new boxed plans are presentation only. Validate plan IDs against the real
-catalogue in tests, not by importing the data layer into the widget. The six
-former hero facts remain available as DOCUMENTED FACTS in the source popup,
-after references, without consuming graph space.
+Card order: **STEP INPUT, RENDERED, BODY, MORE ROOM, INTEGRATED, COST**.
+This is a direct mapping to the existing native hero record, avoiding view-side
+parsing or inferred financial arithmetic. Reuse `NewsHeroCard` to avoid live
+observation timestamps/tooltips on dated documentation. All six hero widgets
+have nine rows; reserve the existing row spacing in the viewport budget.
+
+The pure data module owns formatted display records and explicit topic/node
+profile membership. A `plane`/`step`/`merge` diagram role alone does not determine
+an editable input budget: for example, payment stages are not authored steps
+and a design critic is plane-managed even when depicted as a merge or failure.
+The catalogue attaches profiles once. Widgets import no data-layer module.
+If guidance is absent, show neutral dashes; never retain a prior node's figures.
+
+Source evidence:
+
+- `/Library/Vibes/aidude/docs/swarm-workflows.html`, already committed as the
+  original fixture: flow topology, 3,000 own / 8,000 rendered characters,
+  16 KiB body, included stages, company combined limit, continuation semantics.
+- Its linked `/Library/Vibes/aidude/docs/swarm-work-options.html`, dated
+  2026-10-18 10:50 CEST: action/space tables, docs-only continuation, scoped
+  single-skill alternatives, integration options, and 0.5 IMD + runs for a
+  schedule. Commit a fixture and cite the companion; production reads neither
+  local absolute path.
+
+Word figures are estimates at six characters including spaces per word,
+rounded down, always visibly approximate. Preserve exact character units.
+Never convert byte capacity into a prose allowance, imply output guarantees,
+inflate a company request to 16,000 usable combined characters, assign a step
+budget to an uneditable plane node, or charge each diagram node separately.
+An alternative includes its applicability and source caveat. It is not a
+universal ranking: source-backed docs-in-build/DAG, docs-only continuation,
+scoped single skill and new-product company workflow have different semantics.
+
+## Layout decision and tradeoffs
+
+Two feasible arrangements were considered:
+
+1. Keep heroes, diagram and lower panels permanently in an outer scrolling page.
+   This preserves simultaneous content but makes the source link and selection
+   context disappear below dense graphs and recreates the owner's space issue.
+2. Keep heroes and framed diagram; hide the three detail panels when the full
+   graph plus those panels cannot fit. Retain the fixed source link beneath the
+   graph's own scroll region. This gives the diagram priority at the cost of
+   one popup action to read long explanations on dense/short views.
+
+Choose option 2, matching the owner's request. Keep explanations inline where
+there is enough height. Do not shrink or restyle the four-row diagram cards.
+
+Use the stable viewport as the budget, subtracting hero-row spacing, topic strip
+and actual screen chrome. Compare the resulting main-area height to the newly
+rendered diagram's intrinsic height plus diagram/title/source chrome and the
+nine-row lower-panel group. All three details show or hide together. Do not
+use the previous content minimum height as the input; that can oscillate after
+the details change visibility. Use an eight-row figure floor when the available
+space is truly small and internal diagram scrolling for excess graph rows.
+
+Recalculate after topic selection, resize and index toggle. Selecting a node
+repaints the six cards and detail snapshot but does not unnecessarily alter the
+graph plan or scroll position. Preserve the 28-column index, selected topic and
+node, existing color semantics, arrow topology, click surfaces and source popup
+style. Keyboard selection must reveal its framed box without moving the source
+link into the graph scroll. In compact mode show SOURCE DETAILS alone in the
+source row; the popup retains the full selected-node label and all details.
+
+At 149×45 dense contracts should prioritize heroes, the full framed graph and
+the source link, scrolling only if necessary. Short topics may show all three
+lower panels. These are desired behaviors; fit numbers must come from the
+actual-source preview and later composed measurements, not previous pins.
 
 ## Sequence and verification
 
-1. Write focused failing tests for no hero row, outlined node labels, existing
-   selection-to-detail behavior and larger diagram region. Confirm current
-   behavior fails the new requirements before implementation.
-2. Build authored plans and render all ten topics. Test all 79 nodes exactly
-   once, connector endpoints, true parallel joins, failure/retry branches and
-   separation of observed/proposed paths. Use real catalogue input in offline
-   tests; no network or live clipboard.
-3. Remove hero composition and hero-only imports/styles. Reallocate the freed
-   eleven rows to the graph. Keep the topic strip, 28-column index, three lower
-   panels, source popup and shared footer. Preserve topic/node/index state on
-   resize, index toggle and reopening. Scroll selected nodes into view only
-   where required, without resetting manual scroll on unrelated paints.
-4. Mirror screen rules into production CSS. Render actual bundled documentation
-   at **149×45** in Matrix: contracts, shapes, single-skill retry, site failure,
-   open index and source detail. Show the result before changing pin evidence,
-   writing measured documentation or requesting review. Incorporate the owner's
-   visual corrections in this implementation phase.
-5. Measure composed layout with index closed/open and all ten topics. Aim for
-   roughly 27 diagram rows including title/source link and nine detail rows;
-   these are a budget, not certified pin values. Dense content must scroll with
-   honest hints if a smaller terminal cannot fit it. Re-sweep actual boundaries
-   and update `#:` blocks only after preview. Keep app-wide pins unchanged unless
-   measurements demonstrate necessity.
-6. Confirm mouse clicks across card faces and borders, arrows, Enter popup,
-   Escape return, retained state, literal text safety, and unknown/empty data.
-   Regression tests must inspect composited output, not just a Text object's
-   content. Prove pin tests fail for both under/overstated thresholds and one
-   changed mapping/topology guard fails under a focused mutation; restore by
-   inverse edit.
-7. Once before commit, run touched and composing files with isolated HOME and
-   worksteal, plus `guard and not mounts_app` and docpin tests as required by
-   CLAUDE.md. Registration/mount tests are needed only if bindings or routing
-   actually change. Do not run the whole suite.
-8. One final reviewer receives the complete revision diff, repository reviewer
-   contract, exact evidence and risks: truthful topology, 79-node preservation,
-   literal text safety, click/keyboard selection and expanded-index geometry.
-   One fix wave; scoped re-review only for production fixes. File Minor residuals
-   in follow-ups and commit only authorized paths locally.
+1. P1 writes failing data/profile tests for exact source caps, visible word
+   approximation, complete six-card coverage of all 79 nodes, explicit authored
+   versus plane/action profiles, specific alternatives, and truthful cost units.
+   Add source-fixture agreement for new facts. Implement only the needed pure
+   records/helpers and contract fields, then pass the focused tests.
+2. P2 writes failing composed tests for six native heroes, selection updates,
+   dense-topic compact mode, short-topic details, resize/index transitions,
+   retained source access and popup completeness. Restore native heroes and
+   viewport-based layout using the frozen seam. Keep the existing renderer.
+3. Mirror screen CSS into the production block. Render actual bundled sources
+   at **149×45** in Matrix: contracts with authored/plane selections, a short
+   topic, site docs alternatives, company caps, schedule cost, open index and
+   source popup. Show the owner before writing measured pins or final evidence
+   and before dispatching review. Correct visual issues in this phase.
+4. Measure all ten topics with index closed/open across width and height
+   boundaries. Verify that hidden details are an intentional mode, not silent
+   clipping; graph overflow still has a truthful hint/scroll path. Derive any
+   new view pins and their `#:` explanation from the binding rendered content.
+   Leave app-wide pins unchanged unless measured evidence requires otherwise.
+5. Prove focused tests bite through relevant mutations: an incorrect input/cost
+   profile, always-show/always-hide details, and any changed pin in both
+   directions. Restore only by inverse edit. Check composited hero values and
+   source links rather than merely Rich Text contents.
+6. Once before commit, run touched test files and composing screen/data files
+   whole with isolated HOME and worksteal. Run `guard and not mounts_app` plus
+   required docpin checks. No registration/mount run unless routes/keys changed;
+   no full suite. Check malformed/empty payloads, literal strings, all 79 nodes,
+   arrow-key reveal, Enter/Escape popup flow and retained state.
+7. One final reviewer receives the complete revision diff and the verbatim
+   repository reviewer contract. Named risks: truthful scope/word estimates,
+   documented alternative applicability, per-action versus included-stage or
+   schedule costs, stable responsive mode, unchanged graph semantics and
+   source-link accessibility. One fix wave, scoped re-review only for production
+   fixes. Record Minor residuals in follow-ups and commit authorized paths only.
 
-## Evidence
+## Evidence status
 
-The framed renderer and view integration are implemented. Actual bundled-source
-previews at 149×45 cover contracts, site, step shapes, retry, schedules, index and
-source popup. Both CSS paths preserve every node at the measured 148×43 boundary.
-Final checks and residuals are recorded in [follow-ups](workflow_guide_followups.md).
-Existing static documentation dates remain dates of the source, never live
-observation times.
+The existing framed renderer is unchanged. Genuine-source previews show the
+restored cards and automatic detail collapse at 149×45, with expanded details
+on a larger view. Composed measurements preserve all diagrams at 148×44;
+the densest topic restores lower details at 53 rows. Final check results and
+review evidence belong in [follow-ups](workflow_guide_followups.md). Original
+and companion dates are documentation timestamps, never live prices.

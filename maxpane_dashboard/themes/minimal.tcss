@@ -3104,9 +3104,11 @@ WorkflowGuideScreen {background: $background; color: $text;}
     WorkflowGuideScreen #workflow-title {height: 1; margin: 1 1 0 1; text-wrap: nowrap;}
     WorkflowGuideScreen #workflow-viewport {height: 1fr; padding: 0 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size: 1 1;}
-    WorkflowGuideScreen WorkflowGuideView {width: 1fr; min-width: 143; height: 1fr; min-height: 25;}
+    WorkflowGuideScreen WorkflowGuideView {width: 1fr; min-width: 143; height: 1fr; min-height: 21;}
+    WorkflowGuideScreen #workflow-heroes {height: 9; margin-bottom: 1; grid-size: 6 1;
+        grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1;}
     WorkflowGuideScreen #workflow-topics {height: 2; margin-bottom: 1; text-wrap: nowrap;}
-    WorkflowGuideScreen #workflow-main {height: 1fr; min-height: 22;}
+    WorkflowGuideScreen #workflow-main {height: 1fr; min-height: 8;}
     WorkflowGuideScreen #workflow-index {width: 28; height: 1fr; margin-right: 1; display: none;}
     WorkflowGuideScreen #workflow-reading {width: 1fr; height: 1fr;}
     WorkflowGuideScreen #workflow-figure {height: 1fr; min-height: 8;}

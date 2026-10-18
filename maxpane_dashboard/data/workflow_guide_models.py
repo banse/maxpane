@@ -20,6 +20,15 @@ class Stat(TypedDict):
     caption: str
 
 
+class GuidanceCard(TypedDict):
+    title: str
+    heading: str
+    value: str
+    rows: list[str]
+    caption: str
+    footer: str
+
+
 class Node(TypedDict):
     id: str
     label: str
@@ -28,6 +37,8 @@ class Node(TypedDict):
     limits: list[str]
     example: str
     source_excerpt: str
+    guidance: list[GuidanceCard]
+    guidance_notes: list[str]
 
 
 class Topic(TypedDict):

@@ -9,7 +9,7 @@ from textual.containers import VerticalScroll
 
 from maxpane_dashboard.screens.workflow_guide import WorkflowGuideScreen, WorkflowSourceScreen
 from maxpane_dashboard.widgets.workflow_guide import WorkflowGuideView
-from maxpane_dashboard.widgets.surf.news_hero import LocalSourceHeroCard
+from maxpane_dashboard.widgets.surf.news_hero import NewsHeroCard
 
 
 TOPICS = ('purchase', 'single_skill', 'shapes', 'contracts', 'site', 'company',
@@ -68,6 +68,12 @@ def painted(app):
                      for strip in app.screen._compositor.render_strips())
 
 
+def painted_widget(app, widget):
+    region = widget.region
+    return '\n'.join(row[region.x:region.right]
+                     for row in painted(app).splitlines()[region.y:region.bottom])
+
+
 def target(app, action):
     for y, strip in enumerate(app.screen._compositor.render_strips()):
         x = 0
@@ -90,7 +96,7 @@ async def test_every_topic_click_updates_boxed_diagram_and_explanation_without_f
             await pilot.pause()
             output = painted(app)
             assert view.topic_id == key
-            assert not view.query(LocalSourceHeroCard)
+            assert len(view.query(NewsHeroCard)) == 6
             assert f'{key} start explanation' in output
             assert f'{key} start limit' in output
             assert f'{key} start example' in output
@@ -162,15 +168,15 @@ async def test_source_popup_has_literal_dated_provenance_and_escape_returns_to_s
 
 
 @pytest.mark.parametrize('size', [(160, 45), (149, 45)])
-async def test_diagram_replaces_hero_row_with_large_inner_card_boxes(size):
+async def test_capacity_hero_row_preserves_large_inner_card_diagram(size):
     app = Harness()
     async with app.run_test(size=size) as pilot:
         await pilot.pause()
         screen = app.screen
-        assert not screen.query(LocalSourceHeroCard)
-        assert not screen.query('#workflow-heroes')
+        assert len(screen.query(NewsHeroCard)) == 6
+        assert screen.query_one('#workflow-heroes').region.height == 9
         diagram = screen.query_one('#workflow-diagram')
-        assert diagram.region.height >= 25
+        assert diagram.region.height >= 15
         output = painted(app)
         for key in TOPICS:
             assert key in output
@@ -184,18 +190,77 @@ async def test_diagram_replaces_hero_row_with_large_inner_card_boxes(size):
         assert viewport.max_scroll_x == viewport.max_scroll_y == 0
 
 
-async def test_narrow_short_terminal_scrolls_to_last_topic_and_lower_panels_with_hints():
+async def test_dense_diagram_hides_lower_panels_and_restores_them_when_room_returns():
+    from maxpane_dashboard.data.workflow_guide_manager import WorkflowGuideManager
+
+    app = Harness(manager=WorkflowGuideManager())
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        view = app.screen.query_one(WorkflowGuideView)
+        assert len(view.query(NewsHeroCard)) == 6
+        assert not view.query_one('#workflow-details').display
+        assert 'EXPLANATION' not in painted(app)
+        assert 'SOURCE DETAILS >>' in painted(app)
+        assert '[audit imported code]' not in painted(app)
+        assert view.query_one('#workflow-diagram-scroll').max_scroll_y == 0
+        await pilot.click(offset=target(app, 'open_source'))
+        assert isinstance(app.screen, WorkflowSourceScreen)
+        assert 'EXPLANATION' in painted(app)
+        await pilot.press('escape')
+        await pilot.resize_terminal(149, 60)
+        assert view.query_one('#workflow-details').display
+        assert 'EXPLANATION' in painted(app)
+        await pilot.resize_terminal(149, 45)
+        assert not view.query_one('#workflow-details').display
+        view.select_topic(0)  # Short purchase graph leaves room for the details.
+        await pilot.pause()
+        assert view.query_one('#workflow-details').display
+        assert 'EXPLANATION' in painted(app)
+
+
+async def test_selected_node_capacity_and_alternatives_are_literal_and_retained_in_popup():
+    payload = catalogue()
+    node = payload['topics'][3]['nodes'][0]
+    node['guidance'] = [dict(title='STEP INPUT', heading='EST. WORDS', value='≈500',
+        rows=[], caption='3,000 chars', footer='authored input')]
+    node['guidance_notes'] = ['Estimate only: six characters per word. [/x]\x1b\u202e']
+    payload['topics'][3]['nodes'][1]['guidance'] = [dict(title='STEP INPUT', heading='MANAGED',
+        value='', rows=['No authored text'], caption='plane stage', footer='included in job')]
+    app = Harness(manager=Manager({'workflow_guide': payload}))
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        view = app.screen.query_one(WorkflowGuideView)
+        card = view.query_one('#hero-workflow-capacity-0')
+        output = painted_widget(app, card)
+        assert '≈500' in output and '3,000 chars' in output and 'EST. WORDS' in output
+        calls = app.manager.calls
+        await pilot.press('down')
+        assert 'MANAGED' in painted_widget(app, card)
+        assert '≈500' not in painted_widget(app, card)
+        await pilot.press('up', 'enter')
+        app.screen.query_one('.record-detail-scroll', VerticalScroll).scroll_end(animate=False)
+        await pilot.pause()
+        output = painted(app)
+        assert 'CAPACITY & ALTERNATIVES' in output
+        assert 'six characters per word' in output and '[/x]' in output
+        assert '\x1b' not in output and '\u202e' not in output
+        assert app.manager.calls == calls
+
+
+async def test_narrow_short_terminal_keeps_source_link_and_scrollable_diagram():
     app = Harness()
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
         viewport = app.screen.query_one('#workflow-viewport', VerticalScroll)
-        assert viewport.max_scroll_x > 0 and viewport.max_scroll_y > 0
-        assert '‹ widen' in painted(app) and '‹ taller' in painted(app)
+        assert viewport.max_scroll_x > 0
+        assert '‹ widen' in painted(app)
+        assert not app.screen.query_one('#workflow-details').display
         viewport.scroll_to(x=viewport.max_scroll_x, y=0, animate=False)
         await pilot.pause()
         await pilot.click(offset=target(app, 'choose_topic(9)'))
-        viewport.scroll_to(x=viewport.max_scroll_x, y=viewport.max_scroll_y, animate=False)
+        viewport.scroll_to(x=0, y=0, animate=False)
         await pilot.pause()
+        await pilot.click(offset=target(app, 'open_source'))
         assert 'growth start example' in painted(app)
 
 
@@ -305,6 +370,12 @@ async def test_all_real_catalogue_nodes_are_mouse_reachable():
                 await pilot.click(offset=target(app, f'choose_node({node_index})'))
                 assert view.node_id == node['id']
                 assert app.state['node_id'] == node['id']
+                for i, card in enumerate(node['guidance']):
+                    output = painted_widget(app, view.query_one(f'#hero-workflow-capacity-{i}'))
+                    for text in (card['title'], card['heading'], card['caption'], card['footer'], *card['rows']):
+                        assert text in output
+                    if not card['value'].replace('.', '').replace(',', '').isdigit():
+                        assert card['value'] in output
 
 
 async def test_clickable_nodes_keep_semantic_colors_and_selected_accent(monkeypatch):

@@ -4,7 +4,7 @@ from __future__ import annotations
 from rich.style import Style
 from rich.text import Text
 from textual import on
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.geometry import Region
 from textual.message import Message
 from textual.widgets import Static
@@ -12,6 +12,7 @@ from textual.widgets import Static
 from maxpane_dashboard.widgets.markup_safety import flatten, strip_controls
 from maxpane_dashboard.widgets.panels import PanelBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip
+from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, NewsHeroCard
 from maxpane_dashboard.widgets.workflow_guide_diagrams import render_diagram
 
 
@@ -78,6 +79,9 @@ class WorkflowGuideView(Vertical):
         self._diagram_boxes = {}
 
     def compose(self):
+        with Grid(id='workflow-heroes'):
+            for record in self._hero_records():
+                yield NewsHeroCard(record)
         yield _GuideText(Text('—'), id='workflow-topics')
         with Horizontal(id='workflow-main'):
             yield _GuidePanel('TOPIC INDEX', id='workflow-index')
@@ -215,6 +219,16 @@ class WorkflowGuideView(Vertical):
             self.query_one('#workflow-index-scroll', VerticalScroll).scroll_to(
                 y=max(0, selected_line - 2), animate=False)
 
+    def _hero_records(self):
+        guidance = (self.node or {}).get('guidance') or []
+        for i, title in enumerate(('STEP INPUT', 'RENDERED', 'BODY', 'MORE ROOM', 'INTEGRATED', 'COST')):
+            card = guidance[i] if i < len(guidance) else {}
+            yield HeroRecord(key=f'workflow-capacity-{i}', title=flatten(card.get('title')) or title,
+                heading=flatten(card.get('heading')), digits=flatten(card.get('value')),
+                rows=tuple(flatten(row) for row in card.get('rows') or ['—']),
+                subtitle=flatten(card.get('caption')), footer=flatten(card.get('footer')),
+                accent=i == 0 and bool(card.get('value')))
+
     def _paint_diagram(self):
         topic, node = self.topic or {}, self.node or {}
         scroll = self.query_one('#workflow-diagram-scroll', VerticalScroll)
@@ -227,14 +241,16 @@ class WorkflowGuideView(Vertical):
         canvas.update(diagram.text)
         caption = Text(flatten(topic.get('title')) or 'WORKFLOW DIAGRAM')
         self.query_one('#workflow-diagram .panel-title', Static).update(caption)
-        figure_height = max(8, diagram.height + 4)
-        self.query_one('#workflow-figure').styles.min_height = figure_height
-        floor = max(22, figure_height + 9)
-        self.query_one('#workflow-main').styles.min_height = floor
-        self.styles.min_height = 3 + floor
-        source = Text(flatten(node.get('label')))
+        # Use the viewport budget, independent of the current detail visibility.
+        # The hero row occupies 10 rows including its margin; the topic strip 3.
+        viewport = self.screen.query_one('#workflow-viewport', VerticalScroll)
+        main_height = viewport.scrollable_content_region.height - 13
+        show_details = main_height >= diagram.height + 4 + 9
+        self.query_one('#workflow-details').display = show_details
+        source = Text(flatten(node.get('label')) if show_details else '')
         if self.topic:
-            source.append('  SOURCE DETAILS >>', style=Style(bold=True, meta={'@click': 'open_source'}))
+            source.append(('  ' if source.plain else '') + 'SOURCE DETAILS >>',
+                          style=Style(bold=True, meta={'@click': 'open_source'}))
         self.query_one('#workflow-source', _GuideText).update(source)
         # Overflow hints must see the resized canvas, not its previous width.
         self.call_after_refresh(self._changed)
@@ -243,6 +259,11 @@ class WorkflowGuideView(Vertical):
         if not self.is_mounted:
             return
         topic, node = self.topic or {}, self.node or {}
+        for record in self._hero_records():
+            card = self.query_one(f'#hero-{record.key}', NewsHeroCard)
+            card.set_record(record)
+            card.tooltip = Text('DOCUMENTED ' + flatten(self.source.get('date')) + '\n' +
+                                strip_controls('\n'.join(node.get('guidance_notes') or [])))
         self._paint_topics()
         self._paint_diagram()
         for field, value in (

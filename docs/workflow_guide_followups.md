@@ -16,12 +16,17 @@ Contracts-only launch. Ten topics and 79 selectable nodes use the supplied
 - Genuine-source previews inspected in Matrix at 149×45: contracts, site,
   expanded index and source popup. Exported SVG needs `xml:space="preserve"`
   when rasterized by librsvg; otherwise leading spaces are lost in the image.
-- Hero row removed in the framed-diagram revision. Each node has a native inset
-  frame, semantic role header and full-card click target; all six dated facts
-  remain in the source popup. Explicit routing preserves parallel stages,
+- Each node has a native inset frame, semantic role header and full-card click
+  target; all six original dated facts remain in the source popup. Explicit routing preserves parallel stages,
   retries, joins and failure branches. Keyboard selection reveals offscreen nodes.
-- Measured guide layout: 148×43, both CSS paths, index open/closed, all topics.
-  Width 147 scrolls one column; CONTRACTS at height 42 scrolls one row.
+- Capacity-card revision: six native heroes show selected-node input capacity,
+  rendered envelope, body size, larger/integrated alternatives and cost. Word
+  counts are estimates at six characters per word, with authoritative exact
+  character caps. Companion source fixture and explicit profiles cover all nodes.
+- Measured guide layout: 148×44, both CSS paths, index open/closed, all topics.
+  Width 147 scrolls one column; CONTRACTS at height 43 scrolls one diagram row.
+  Its lower details hide at 52 rows and return at 53. On short views, the graph
+  scrolls internally while SOURCE DETAILS stays below it; details remain in the popup.
   Narrow/short terminals retain scroll access. The app-wide pin is unchanged.
 - Mutations caught loss of snapshot isolation, retained selection, correct
   source-node routing and the no-poll gate. Width and height pin mutations
@@ -53,4 +58,13 @@ The final review found one reversed schedule edge. The fix makes exhausted and
 paused states lead to the topup action; 87 touched/composing tests passed after
 the change. The scoped re-review approved, with a mutation proving the new
 composited assertion rejects the old direction. No residual findings remain.
+No full suite was run for this revision.
+
+Capacity-card revision: 174 scoped tests passed under isolated HOME/worksteal;
+128 fast guards passed. All 79 nodes' card labels, rows, captions, footers and
+approximate values are checked in composited output. Nine mutations were
+caught and restored: incorrect step/company capacities, a plane node exposed
+as editable, both directions of the graph/detail height boundaries, and
+always-show/always-hide lower panels. Independent final review approved with
+no findings. Its additional popup-sanitization mutation was caught and restored.
 No full suite was run for this revision.

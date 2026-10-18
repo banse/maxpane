@@ -145,6 +145,8 @@ async def test_manager_reuses_local_snapshot_without_io_and_returns_deep_copies(
     assert first["workflow_guide"] == CATALOG
     first["workflow_guide"]["source"]["references"].clear()
     first["workflow_guide"]["topics"][0]["nodes"][0]["limits"].clear()
+    first["workflow_guide"]["topics"][0]["nodes"][0]["guidance"].clear()
+    first["workflow_guide"]["topics"][0]["nodes"][0]["guidance_notes"].clear()
     second = await manager.fetch_and_compute()
     assert second["workflow_guide"] == CATALOG
     second["workflow_guide"]["topics"].clear()
@@ -163,11 +165,12 @@ def test_manager_retains_its_own_snapshot_if_catalogue_reference_changes(monkeyp
 @pytest.mark.guard
 def test_packaged_data_modules_import_only_their_contract_and_copy():
     modules = (
-        "workflow_guide_models", "workflow_guide_catalog", "workflow_guide_manager",
+        "workflow_guide_models", "workflow_guide_catalog", "workflow_guide_manager", "workflow_guide_profiles",
     )
     allowed = {
         "typing", "copy", "maxpane_dashboard.data.workflow_guide_models",
         "maxpane_dashboard.data.workflow_guide_catalog",
+        "maxpane_dashboard.data.workflow_guide_profiles",
     }
     root = Path(__file__).parents[2] / "maxpane_dashboard/data"
     for module in modules:

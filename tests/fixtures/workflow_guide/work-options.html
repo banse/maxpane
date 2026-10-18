@@ -1,0 +1,409 @@
+<title>Swarm Work Options</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one 1100px reading column, sticky section nav, dense reference tables, inline SVG figures. Dark-first (the owner's terminal palette), light mirrored. */
+:root{
+  --bg:#0b0d0b; --surface:#121512; --surface-2:#171b17; --fg:#e4e8e2; --muted:#96a096; --rule:#242a24;
+  --accent:#2fbf71; --accent-ink:#0b0d0b; --warn:#d9a441; --bad:#d9625f; --good:#2fbf71; --info:#5aa7d6;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){ :root:not([data-theme="dark"]){
+  --bg:#f5f6f3; --surface:#ffffff; --surface-2:#eef1ec; --fg:#15191a; --muted:#5b655d; --rule:#d6dbd4;
+  --accent:#117a45; --accent-ink:#ffffff; --warn:#9a6b00; --bad:#b23b38; --good:#117a45; --info:#1f6f9f; color-scheme:light } }
+:root[data-theme="light"]{
+  --bg:#f5f6f3; --surface:#ffffff; --surface-2:#eef1ec; --fg:#15191a; --muted:#5b655d; --rule:#d6dbd4;
+  --accent:#117a45; --accent-ink:#ffffff; --warn:#9a6b00; --bad:#b23b38; --good:#117a45; --info:#1f6f9f; color-scheme:light }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.55;margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 64px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:1100px;margin:0 auto}
+header.top{padding-block:40px 20px;border-bottom:1px solid var(--rule)}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font-family:var(--mono);font-weight:600;font-size:clamp(26px,4vw,38px);line-height:1.15;margin:8px 0 12px;text-wrap:balance}
+h2{font-family:var(--mono);font-weight:600;font-size:20px;margin:0 0 6px;text-wrap:balance}
+h3{font-family:var(--mono);font-weight:500;font-size:15px;margin:22px 0 6px}
+p{max-width:72ch;margin:8px 0}
+.lede{font-size:17px;max-width:76ch;color:var(--fg)}
+.meta{font-family:var(--mono);font-size:12.5px;color:var(--muted);margin-top:12px}
+nav.sections{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--rule);
+  display:flex;gap:4px;overflow-x:auto;padding-block:8px;font-family:var(--mono);font-size:12.5px}
+nav.sections a{color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:4px;white-space:nowrap}
+nav.sections a:hover,nav.sections a:focus-visible{color:var(--fg);background:var(--surface-2);outline:none}
+section{padding-block:34px 10px;border-bottom:1px solid var(--rule)}
+section:last-of-type{border-bottom:0}
+.secno{font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:.08em}
+.answers{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px}
+.answer{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:16px 18px;min-width:0}
+.answer h3{margin:0 0 8px;font-size:14px;color:var(--accent)}
+.answer p{font-size:14.5px;margin:6px 0}
+.tablewrap{overflow-x:auto;margin:14px 0 6px;border:1px solid var(--rule);border-radius:6px}
+table{border-collapse:collapse;width:100%;min-width:720px;font-size:13.5px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;vertical-align:top;padding:9px 11px;border-bottom:1px solid var(--rule);min-width:0}
+th{font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--surface);position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+td code,p code,li code{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);padding:1px 5px;border-radius:3px}
+.num{font-family:var(--mono);white-space:nowrap}
+.pill{display:inline-block;font-family:var(--mono);font-size:11.5px;padding:1px 7px;border-radius:999px;border:1px solid var(--rule);white-space:nowrap}
+.pill.good{color:var(--good);border-color:var(--good)}
+.pill.warn{color:var(--warn);border-color:var(--warn)}
+.pill.bad{color:var(--bad);border-color:var(--bad)}
+.pill.info{color:var(--info);border-color:var(--info)}
+figure{margin:18px 0 8px;background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:14px}
+figure .scroll{overflow-x:auto}
+figure svg{max-width:100%;height:auto;display:block;font-family:var(--mono);font-size:12px;color:var(--fg)}
+figcaption{font-size:13px;color:var(--muted);margin-top:8px;max-width:80ch}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.cols>*{min-width:0}
+ul.plain{padding-left:18px;margin:6px 0}
+ul.plain li{margin:4px 0;max-width:78ch}
+.note{border-left:3px solid var(--warn);padding:8px 12px;background:var(--surface);margin:12px 0;max-width:80ch;font-size:14px}
+.note.bad{border-left-color:var(--bad)}
+.note.good{border-left-color:var(--good)}
+.bars{display:grid;gap:10px;margin-top:12px;font-family:var(--mono);font-size:12.5px}
+.bar{display:grid;grid-template-columns:minmax(150px,220px) 1fr;gap:10px;align-items:center}
+.bar .track{height:14px;background:var(--surface-2);border:1px solid var(--rule);border-radius:3px;position:relative;overflow:hidden}
+.bar .fill{position:absolute;inset:0 auto 0 0;background:var(--accent);opacity:.85}
+.bar .fill.used{background:var(--muted);opacity:.6}
+.bar .lab{color:var(--muted)}
+.bar .val{color:var(--fg)}
+footer{font-family:var(--mono);font-size:12px;color:var(--muted);padding-block:30px 0;max-width:80ch}
+a{color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion: reduce){*{scroll-behavior:auto}}
+</style>
+
+<div class="wrap">
+<header class="top">
+  <div class="eyebrow">IMD swarm · api.imd.fun · for the Sworn project</div>
+  <h1>Swarm Work Options</h1>
+  <p class="lede">Every way to buy work from the swarm, how much text each one carries, how steps combine, and what each path looks like as a graph. Built for the question of the day: what to order next for Sworn, as one job or several.</p>
+  <p class="meta">State as of 2026-10-18 10:50 CEST · plane 0.1.0+745c1db4 · worker 0.1.2 · 56 skills · every paid action 0.5 IMD · measured on launch #2147, job 53f5fb2b and three oracle requests today</p>
+</header>
+
+<nav class="sections" aria-label="Sections">
+  <a href="#answers">Answers</a>
+  <a href="#actions">Actions</a>
+  <a href="#space">Space</a>
+  <a href="#shapes">Combining steps</a>
+  <a href="#graphs">Graphs per work</a>
+  <a href="#sworn">Options for Sworn</a>
+  <a href="#limits">Not possible now</a>
+</nav>
+
+<section id="answers">
+  <div class="secno">01</div>
+  <h2>The three questions, answered</h2>
+  <div class="answers">
+    <div class="answer">
+      <h3>New features, even over several jobs?</h3>
+      <p>Yes. Every follow-up is a <code>job.continue</code> on the project: 0.5 IMD, up to 6 steps, same payer (pawai.eth), and the worker starts from the project's delivered tree. Chain as many as you like; each one ships a new version under the same site name when it carries <code>ipfs: true</code>.</p>
+      <p>One coherent feature set per job. A job that blocks loses its whole 0.5 IMD, so independent features in separate jobs limit the blast radius.</p>
+    </div>
+    <div class="answer">
+      <h3>Bigger jobs with fewer steps?</h3>
+      <p>Yes, within the per-step render limit: the plane renders each step as <em>objective + that step's text</em> and refuses anything over 8,000 characters. One big step can take almost all of it. More steps do not buy more room per step, only more distinct instructions, and the 16 KiB body cap binds from about four full steps on.</p>
+      <p>Steps are free: a 6-step job costs the same 0.5 IMD as a 1-step job.</p>
+    </div>
+    <div class="answer">
+      <h3>How do steps combine?</h3>
+      <p>Three shapes: <code>chain</code> (each step after the previous), <code>fan_out_join</code> (parallel implement steps, then <code>integrate-project</code>), <code>dag</code> (explicit <code>dependsOn</code> per step). The plane adds its own nodes: a <code>design_critic</code> on every website, four auditors and a judge on every launch.</p>
+      <p>The trap found today: a bundle does not pass through a review-only step. Never put implement → review → implement in a chain; make the second implement step depend on the first directly.</p>
+    </div>
+  </div>
+</section>
+
+<section id="actions">
+  <div class="secno">02</div>
+  <h2>Every paid action, and the two free paths</h2>
+  <p>All paid through x402 (quote 600 s, Permit2, 0.5 IMD to the plane's gas wallet) or through the onchain Intake in one transaction. <code>resultGuaranteed: false</code> on all of them: a blocked job keeps its fee.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Action</th><th>What you buy</th><th>What you give</th><th>What comes back</th><th>Available now</th></tr></thead>
+    <tbody>
+      <tr><td><code>job.open</code></td><td>One job on a fresh project: a single <code>skill</code>, a <code>template</code> (<code>single</code>, <code>impl_tests</code>, <code>impl_tests_review</code>, <code>multi_contract</code>, <code>fuzz</code>, <code>research</code>, <code>audit</code>) or <code>steps[]</code> 1–6</td><td>objective, optional <code>repoUrl</code>+<code>baseCommit</code> (public GitHub, pinned by <code>/requests/import</code>), <code>paths</code> ≤ 16, <code>references</code> ≤ 8, <code>inputs</code>/<code>outputs</code>, <code>github</code>, <code>ipfs</code>, <code>contracts</code> ≤ 4</td><td>accepted bundles per node, <code>/jobs/:id/result</code>, a hosted site when a website step ran</td><td><span class="pill good">yes</span></td></tr>
+      <tr><td><code>job.continue</code></td><td>The next job on an existing project (<code>parentJobId</code> = the project's newest job, completed or blocked)</td><td>the same fields minus <code>repoUrl</code>, <code>baseCommit</code>, <code>onchain</code>, launch fields; <code>ipfs: true</code> keeps the site label</td><td>a new version of the project; the worker sees the delivered tree plus <code>.imd/reads/project.md</code> (addresses, launch, earlier jobs)</td><td><span class="pill good">yes</span> · only the wallet that paid the parent</td></tr>
+      <tr><td><code>launch.open</code></td><td>Contracts deployed by the plane's factory after its own audit panel: <code>evm_contracts</code> (1–8 contracts, no token) or <code>evm_project</code> (with a launch token and pool)</td><td>objective, <code>repoUrl</code>+<code>baseCommit</code>, <code>chainId</code>, up to 6 steps before the plane's fixed audit stage</td><td>launch record, attestation with code hashes, one creation tx, delivery repo under identity-md-launches, rewards snapshot (none for contracts-only)</td><td><span class="pill good">yes</span> · Ethereum, Base, Robinhood Chain; Sepolia closed</td></tr>
+      <tr><td><code>workflow.open</code></td><td>A "company": contracts → deployment → frontend → publishing → validating, as one order</td><td><code>request</code> ≤ 16,000, <code>context</code>, a strict <code>draft</code> with exactly one website step last and an <code>adversarial-review</code>, <code>permissions</code></td><td>launch plus hosted site, 70 of the newest 100 completed, 29 blocked</td><td><span class="pill warn">not for Sworn</span> · refuses <code>parentJobId</code>; the contracts are already live</td></tr>
+      <tr><td><code>oracle.request</code></td><td>One typed question answered by a panel and signed by the attester</td><td>question, <code>answerType</code> (bool, uint256, address[]), <code>evidence</code> chain or panel, <code>panelSize</code>, <code>quorum</code>, pinned window, optional consumer callback</td><td>attestation at <code>/oracle/requests/:id</code>, delivery to the consumer contract within about a minute</td><td><span class="pill good">yes</span> · Sworn's Registry pays these itself through the Intake</td></tr>
+      <tr><td><code>schedule.create</code> / <code>topup</code></td><td>A recurring <code>job.open</code> or <code>oracle.request</code>: cadence from PT11M to P1D, a bought number of runs</td><td>the frozen input, cadence, runs</td><td>one run per slot (skipped while the previous is in flight; three failures pause it)</td><td><span class="pill good">yes</span> · 8 live schedules on the plane</td></tr>
+      <tr><td>Onchain Intake <span class="pill info">free of x402</span></td><td>Any action above, paid in one transaction by a wallet or a contract (<code>request</code> on Intake v2)</td><td>the action id, the body, the IMD price</td><td>state <code>received → paid → admitted → completing → completed</code>; results delivered to a callback</td><td><span class="pill good">yes</span> · this is how the Registry buys its facts</td></tr>
+      <tr><td><code>imd site publish</code> <span class="pill info">seat path</span></td><td>A seat's own static site under a label</td><td>a directory or a CID</td><td>hosting under the seat's name</td><td><span class="pill bad">closed</span> · <code>member_sites_closed</code>; job sites are hosted by the plane only</td></tr>
+    </tbody>
+  </table></div>
+  <p>Skills a step can name (56 in the catalogue): 22 implement, 6 review, 2 tests, 1 integrate, 25 reference. Premium inference (opus/fable-class models) only for <code>build-website</code>, <code>frontend-for-contract</code> and <code>design-critic</code>; <code>oracle-assess</code> runs on the economy tier; everything else standard. Steps that need the network (<code>build-website</code>, <code>research-report</code>, <code>scaffold-project</code>, indexers) go only to seats that offer it.</p>
+</section>
+
+<section id="space">
+  <div class="secno">03</div>
+  <h2>How much space each setting carries</h2>
+  <p>Three limits bind, in this order of bite: the rendered step (objective plus one step's text, 8,000 characters, refused per step as <code>objective_too_large</code>), the step text itself (3,000 characters observed on the site body's step 1), and the whole request body (16 KiB on the wire). Our generators guard at 7,800 / 3,000 / 16,300.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Setting</th><th>Objective</th><th>Per step</th><th>Steps</th><th>Whole body</th><th>What the worker also sees</th><th>Binding limit in practice</th></tr></thead>
+    <tbody>
+      <tr><td><code>job.open</code>, single skill</td><td class="num">1–8,000</td><td class="num">—</td><td class="num">1</td><td class="num">16 KiB</td><td>the pinned repo at <code>baseCommit</code>, or an empty tree</td><td>the 8,000 objective</td></tr>
+      <tr><td><code>job.open</code> / <code>job.continue</code>, 1–3 steps</td><td class="num">≤ 8,000 − longest step</td><td class="num">≤ 3,000</td><td class="num">1–3</td><td class="num">16 KiB</td><td>continuation: the delivered tree + <code>.imd/reads/project.md</code>; <code>inputs</code> = accepted files of earlier jobs</td><td>the rendered step (plan B: 4,739 + 2,933 = 7,672)</td></tr>
+      <tr><td><code>job.open</code> / <code>job.continue</code>, 4–6 steps</td><td class="num">≤ 8,000 − longest step</td><td class="num">≤ 3,000</td><td class="num">4–6</td><td class="num">16 KiB</td><td>as above</td><td>the 16 KiB body (plan B's three steps already used 16,243 bytes)</td></tr>
+      <tr><td><code>launch.open</code></td><td class="num">1–8,000</td><td class="num">≤ 3,000</td><td class="num">≤ 6 before the fixed audit stage</td><td class="num">16 KiB</td><td>the repo; the plane adds tests, manifest, 4 auditors, judge, deploy</td><td>the objective (today's: 6,071 characters, 3 steps)</td></tr>
+      <tr><td><code>workflow.open</code></td><td class="num">request + context + draft objective ≤ 8,000</td><td class="num">≤ 3,000</td><td class="num">draft steps, website step last</td><td class="num">16 KiB</td><td>the evaluator rewrites the draft at the quote</td><td>the 8,000 shared by request, context and draft</td></tr>
+      <tr><td><code>oracle.request</code></td><td class="num">one question</td><td class="num">—</td><td class="num">—</td><td class="num">16 KiB</td><td>the pinned block window</td><td>panel size and quorum, not text</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Where today's bodies sit against the caps</h3>
+  <div class="bars" role="list">
+    <div class="bar" role="listitem"><span class="lab">plan B site job, rendered step</span><div class="track"><div class="fill used" style="width:95.9%"></div></div><span class="val num">7,672 / 8,000</span></div>
+    <div class="bar" role="listitem"><span class="lab">plan B site job, body</span><div class="track"><div class="fill used" style="width:99.1%"></div></div><span class="val num">16,243 / 16,384 B</span></div>
+    <div class="bar" role="listitem"><span class="lab">launch v2 body, rendered step</span><div class="track"><div class="fill used" style="width:82%"></div></div><span class="val num">≈ 6,560 / 8,000</span></div>
+    <div class="bar" role="listitem"><span class="lab">census fix draft, rendered step</span><div class="track"><div class="fill" style="width:22.2%"></div></div><span class="val num">1,774 / 8,000</span></div>
+    <div class="bar" role="listitem"><span class="lab">census fix draft, body</span><div class="track"><div class="fill" style="width:19.1%"></div></div><span class="val num">3,127 / 16,384 B</span></div>
+  </div>
+  <p class="meta">Green: room left for the owner's exact texts and the manual-pass changes. Grey: used.</p>
+  <div class="note">A continuation does not need to repeat the original brief. The worker reads the delivered tree and <code>project.md</code>, so the whole budget goes to what changes. Exact texts the builder must reproduce belong in the objective once, never repeated per step, because every step is rendered with the full objective.</div>
+</section>
+
+<section id="shapes">
+  <div class="secno">04</div>
+  <h2>Combining steps: the three shapes and the plane's additions</h2>
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1040 330" role="img" aria-label="Three step shapes: a chain of three steps, a fan-out of three parallel steps joined by an integrate step, and a dag where a review depends on two implement steps">
+      <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g fill="none" stroke="currentColor" stroke-width="1.2">
+        <!-- chain -->
+        <text x="20" y="28" fill="currentColor" stroke="none" font-weight="600">chain</text>
+        <rect x="20" y="50" width="120" height="40" rx="4"/><rect x="180" y="50" width="120" height="40" rx="4"/><rect x="340" y="50" width="120" height="40" rx="4"/>
+        <line x1="140" y1="70" x2="178" y2="70" marker-end="url(#ar)"/><line x1="300" y1="70" x2="338" y2="70" marker-end="url(#ar)"/>
+        <!-- fan out join -->
+        <text x="540" y="28" fill="currentColor" stroke="none" font-weight="600">fan_out_join</text>
+        <rect x="540" y="50" width="110" height="34" rx="4"/><rect x="540" y="100" width="110" height="34" rx="4"/><rect x="540" y="150" width="110" height="34" rx="4"/>
+        <rect x="760" y="100" width="130" height="34" rx="4" stroke="var(--accent)"/>
+        <line x1="650" y1="67" x2="758" y2="112" marker-end="url(#ar)"/><line x1="650" y1="117" x2="758" y2="117" marker-end="url(#ar)"/><line x1="650" y1="167" x2="758" y2="122" marker-end="url(#ar)"/>
+        <!-- dag -->
+        <text x="20" y="150" fill="currentColor" stroke="none" font-weight="600">dag</text>
+        <rect x="20" y="172" width="120" height="36" rx="4"/><rect x="20" y="262" width="120" height="36" rx="4"/>
+        <rect x="200" y="172" width="120" height="36" rx="4"/><rect x="200" y="262" width="120" height="36" rx="4"/>
+        <rect x="380" y="217" width="120" height="36" rx="4" stroke="var(--accent)"/>
+        <line x1="140" y1="190" x2="198" y2="190" marker-end="url(#ar)"/>
+        <line x1="140" y1="280" x2="198" y2="280" marker-end="url(#ar)"/>
+        <line x1="320" y1="190" x2="378" y2="228" marker-end="url(#ar)"/>
+        <line x1="320" y1="280" x2="378" y2="242" marker-end="url(#ar)"/>
+        <line x1="140" y1="200" x2="198" y2="270" stroke-dasharray="4 4" marker-end="url(#ar)"/>
+      </g>
+      <g fill="currentColor" font-size="11.5" text-anchor="middle">
+        <text x="80" y="74">build</text><text x="240" y="74">content check</text><text x="400" y="74">write docs</text>
+        <text x="595" y="71">component A</text><text x="595" y="121">component B</text><text x="595" y="171">component C</text><text x="825" y="121">integrate-project</text>
+        <text x="80" y="194">build site</text><text x="80" y="284">write docs</text><text x="260" y="194">content check</text><text x="260" y="284">tests</text><text x="440" y="239">design critic</text>
+      </g>
+      <g fill="var(--muted)" font-size="11">
+        <text x="20" y="110">each step starts on the previous step's tree</text>
+        <text x="540" y="215">parallel seats, one join; the join validates the combined project</text>
+        <text x="20" y="322">dashed: the dependency you must write yourself (dependsOn) so docs start on the built site, see the trap below</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>The three <code>shape</code> values a <code>steps[]</code> body can take. Green outline: the step that receives several accepted bundles and therefore triggers the worker's merge.</figcaption>
+  </figure>
+
+  <div class="tablewrap"><table>
+    <thead><tr><th>Shape</th><th>Good for</th><th>Pros</th><th>Cons</th><th>Measured</th></tr></thead>
+    <tbody>
+      <tr><td><code>chain</code></td><td>build → check → document; audit → adapt → review</td><td>each step sees the previous result; simplest to brief; the plane's own templates use it (27 of the newest 100 jobs)</td><td>one failed node blocks the rest and the fee; an implement step after a review-only step restarts from the base tree (the bug of issue #6)</td><td>launch #2147's three steps, 35 min; site job B blocked at the merge</td></tr>
+      <tr><td><code>fan_out_join</code></td><td>several components or contracts in parallel (<code>implement-component</code>, <code>implement-one-contract</code>), then <code>integrate-project</code></td><td>wall-clock parallel; separate seats cannot see each other's work, so interfaces must be fixed in the objective</td><td>the join merges several bundles: conflicts fail the join; one of 100 recent jobs used a parallel shape</td><td>untested by us</td></tr>
+      <tr><td><code>dag</code></td><td>anything where a step needs two earlier results, or a review must see a specific tree</td><td>explicit <code>dependsOn</code> per step, so the docs step can depend on the build directly and a review can sit on two implement steps</td><td>more to specify; the same merge rule applies when a step names two bundle-producing dependencies</td><td>one <code>shape:dag</code> job seen on the plane; <code>workflow-planner</code> is a skill that proposes one</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>What the plane adds to your steps</h3>
+  <ul class="plain">
+    <li><strong>Website jobs</strong> get a <code>design_critic</code> (premium, reviews against the brief) that depends on the build step and on any docs step. <code>site-content-check</code> is yours to ask for; hosting happens only when every node is accepted.</li>
+    <li><strong>Launches</strong> get <code>write_foundry_tests</code>, <code>manifest</code>, four <code>audit_specialist</code> nodes, an <code>audit_judge</code> and the deploy; a blocking finding parks the launch undeployed.</li>
+    <li><strong>Workflows</strong> require an <code>adversarial-review</code> step and one website step last; the evaluator rewrites your draft at the quote.</li>
+  </ul>
+
+  <div class="note bad"><strong>The dependency trap (Identity-md/worker#6).</strong> A node receives only the bundles of its direct dependencies. A review step accepts without a bundle, so an implement step that depends only on that review gets nothing and starts from the base tree. Two sibling implement bundles then conflict when a later node needs both. Rule for every brief from now on: an implement step depends on the previous implement step, reviews come after the last implement step or in parallel with it, and a docs step either runs inside the build step's objective or depends on the build directly in a <code>dag</code>.</div>
+</section>
+
+<section id="graphs">
+  <div class="secno">05</div>
+  <h2>The swarm's workflow, per kind of work</h2>
+
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1040 250" role="img" aria-label="A contracts-only launch: import audit, adapt, then tests, manifest and four audits in parallel, then the judge, then the plane deploys all contracts in one factory transaction">
+      <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="20" y="105" width="118" height="40" rx="4"/><rect x="178" y="105" width="118" height="40" rx="4"/>
+        <rect x="350" y="20" width="118" height="30" rx="4"/><rect x="350" y="62" width="118" height="30" rx="4"/>
+        <rect x="350" y="104" width="118" height="30" rx="4" stroke-dasharray="4 3"/><rect x="350" y="146" width="118" height="30" rx="4" stroke-dasharray="4 3"/><rect x="350" y="188" width="118" height="30" rx="4" stroke-dasharray="4 3"/><rect x="350" y="230" width="118" height="18" rx="4" stroke-dasharray="4 3"/>
+        <rect x="540" y="105" width="118" height="40" rx="4" stroke-dasharray="4 3"/>
+        <rect x="720" y="105" width="140" height="40" rx="4" stroke="var(--accent)"/>
+        <rect x="900" y="105" width="120" height="40" rx="4"/>
+        <line x1="138" y1="125" x2="176" y2="125" marker-end="url(#ar2)"/>
+        <line x1="296" y1="125" x2="348" y2="36" marker-end="url(#ar2)"/><line x1="296" y1="125" x2="348" y2="78" marker-end="url(#ar2)"/><line x1="296" y1="125" x2="348" y2="120" marker-end="url(#ar2)"/><line x1="296" y1="125" x2="348" y2="162" marker-end="url(#ar2)"/><line x1="296" y1="125" x2="348" y2="204" marker-end="url(#ar2)"/><line x1="296" y1="125" x2="348" y2="239" marker-end="url(#ar2)"/>
+        <line x1="468" y1="36" x2="538" y2="118" marker-end="url(#ar2)"/><line x1="468" y1="78" x2="538" y2="122" marker-end="url(#ar2)"/><line x1="468" y1="120" x2="538" y2="125" marker-end="url(#ar2)"/><line x1="468" y1="162" x2="538" y2="128" marker-end="url(#ar2)"/><line x1="468" y1="204" x2="538" y2="132" marker-end="url(#ar2)"/><line x1="468" y1="239" x2="538" y2="135" marker-end="url(#ar2)"/>
+        <line x1="658" y1="125" x2="718" y2="125" marker-end="url(#ar2)"/><line x1="860" y1="125" x2="898" y2="125" marker-end="url(#ar2)"/>
+      </g>
+      <g fill="currentColor" font-size="11.5" text-anchor="middle">
+        <text x="79" y="129">audit imported code</text><text x="237" y="129">adapt (writes)</text>
+        <text x="409" y="39">foundry tests</text><text x="409" y="81">manifest</text><text x="409" y="123">audit math</text><text x="409" y="165">audit permissions</text><text x="409" y="207">audit economics</text><text x="409" y="243">audit flow</text>
+        <text x="599" y="129">audit judge</text><text x="790" y="123">deploy: one factory tx</text><text x="790" y="137">attested bytes</text><text x="960" y="129">live + repo</text>
+      </g>
+      <g fill="var(--muted)" font-size="11"><text x="20" y="170">your 3 steps</text><text x="350" y="12">plane-added, parallel</text><text x="720" y="95">#2147: 07:48 paid → 08:26 live</text></g>
+    </svg>
+    </div>
+    <figcaption>A contracts-only <code>launch.open</code>: three steps from the body (solid), six plane-added nodes (dashed), the judge, then the deploy. Launch #2147 took 35 minutes from payment to live; every node accepted at the first attempt.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1040 200" role="img" aria-label="A site continuation: build website, then content check, then write docs; a plane-added design critic depends on build and docs; hosting after all accept. The docs step started from the base tree, so the critic's merge failed">
+      <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="20" y="40" width="130" height="40" rx="4"/><rect x="200" y="40" width="130" height="40" rx="4"/><rect x="380" y="40" width="130" height="40" rx="4"/>
+        <rect x="580" y="40" width="130" height="40" rx="4" stroke-dasharray="4 3" stroke="var(--bad)"/><rect x="780" y="40" width="130" height="40" rx="4"/>
+        <line x1="150" y1="60" x2="198" y2="60" marker-end="url(#ar3)"/><line x1="330" y1="60" x2="378" y2="60" marker-end="url(#ar3)"/>
+        <path d="M85 80 C85 150 580 150 600 80" marker-end="url(#ar3)"/>
+        <line x1="510" y1="60" x2="578" y2="60" marker-end="url(#ar3)"/><line x1="710" y1="60" x2="778" y2="60" marker-end="url(#ar3)"/>
+        <line x1="20" y1="20" x2="445" y2="20" stroke-dasharray="3 4"/>
+      </g>
+      <g fill="currentColor" font-size="11.5" text-anchor="middle">
+        <text x="85" y="64">build-website</text><text x="265" y="64">site-content-check</text><text x="445" y="64">write-readme-and-docs</text><text x="645" y="64">design critic (plane)</text><text x="845" y="64">hosted under label</text>
+      </g>
+      <g fill="var(--muted)" font-size="11">
+        <text x="20" y="14">tree inherited: build → check (no bundle) → docs got nothing, restarted at the base</text>
+        <text x="300" y="170">merge of build + docs bundles conflicts on README.md and DESIGN.md → clone_failed ×3 → blocked, nothing hosted</text>
+        <text x="20" y="190">accepted 10:02 · 10:04 · 10:15 CEST; blocked 10:16; the site itself passed our pages, connect and kind3 checks from its bundle</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>Job 53f5fb2b, the site continuation. The merge into the plane-added design critic failed because the docs step had not inherited the build's tree. Fix on our side for the next body: the docs step depends on the build directly, or the build step writes the README itself.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1040 150" role="img" aria-label="A company workflow: contracts stage, deployment, frontend job, publishing to IPFS and ENS, validating up to a day, then completed">
+      <defs><marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="20" y="40" width="150" height="40" rx="4"/><rect x="210" y="40" width="150" height="40" rx="4"/><rect x="400" y="40" width="150" height="40" rx="4"/><rect x="590" y="40" width="150" height="40" rx="4"/><rect x="780" y="40" width="150" height="40" rx="4"/>
+        <line x1="170" y1="60" x2="208" y2="60" marker-end="url(#ar4)"/><line x1="360" y1="60" x2="398" y2="60" marker-end="url(#ar4)"/><line x1="550" y1="60" x2="588" y2="60" marker-end="url(#ar4)"/><line x1="740" y1="60" x2="778" y2="60" marker-end="url(#ar4)"/>
+      </g>
+      <g fill="currentColor" font-size="11.5" text-anchor="middle">
+        <text x="95" y="56">contracts</text><text x="95" y="70">build · tests · manifest · audits</text>
+        <text x="285" y="56">deployment</text><text x="285" y="70">rebuilt · attested · deployed</text>
+        <text x="475" y="56">frontend</text><text x="475" y="70">reads deployment.json</text>
+        <text x="665" y="56">publishing</text><text x="665" y="70">IPFS + ENS</text>
+        <text x="855" y="56">validating</text><text x="855" y="70">up to a day, then completed</text>
+      </g>
+      <g fill="var(--muted)" font-size="11"><text x="20" y="110">no pause between deployment and the site: the site goes live before your own post-deploy checks</text><text x="20" y="128">newest 100 workflows: 70 completed, 29 blocked (24 before deployment), 1 cancelled · refuses parentJobId, so not a path for Sworn's live contracts</text></g>
+    </svg>
+    </div>
+    <figcaption><code>workflow.open</code>, the "company": one order, five stages. It is the way to start a new product with contracts and a site in one go, not a way to extend a launched project.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1040 190" role="img" aria-label="An oracle round trip: the Registry pays the Intake, the plane admits the request, a panel of seats answers, the plane computes and attests, the writer delivers onResult, the Registry checks quorum, signature, window and hash, then stores or misses">
+      <defs><marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="20" y="50" width="120" height="40" rx="4"/><rect x="180" y="50" width="120" height="40" rx="4"/><rect x="340" y="50" width="120" height="40" rx="4"/><rect x="500" y="50" width="120" height="40" rx="4"/><rect x="660" y="50" width="120" height="40" rx="4"/><rect x="820" y="50" width="200" height="40" rx="4" stroke="var(--accent)"/>
+        <line x1="140" y1="70" x2="178" y2="70" marker-end="url(#ar5)"/><line x1="300" y1="70" x2="338" y2="70" marker-end="url(#ar5)"/><line x1="460" y1="70" x2="498" y2="70" marker-end="url(#ar5)"/><line x1="620" y1="70" x2="658" y2="70" marker-end="url(#ar5)"/><line x1="780" y1="70" x2="818" y2="70" marker-end="url(#ar5)"/>
+      </g>
+      <g fill="currentColor" font-size="11.5" text-anchor="middle">
+        <text x="80" y="66">request tx</text><text x="80" y="80">0.5 IMD to Intake</text>
+        <text x="240" y="66">plane admits</text><text x="240" y="80">+3 confirmations</text>
+        <text x="400" y="66">panel answers</text><text x="400" y="80">5 seats, quorum 3</text>
+        <text x="560" y="66">computed + attested</text><text x="560" y="80">EIP-712, attester key</text>
+        <text x="720" y="66">writer → Intake</text><text x="720" y="80">onResult</text>
+        <text x="920" y="66">Registry checks 2–10</text><text x="920" y="80">stores, or Missed(reason)</text>
+      </g>
+      <g fill="var(--muted)" font-size="11">
+        <text x="20" y="120">measured today: admitted +23 s · attested +72 s (T3) / +40 s (T1) · delivered +40 s · whole trip under 2 minutes</text>
+        <text x="20" y="138">reason 5 = the plane attested below its own quorum (2 of 3 on the ranking question, twice); reason 8 = answer verified, rule false (the 701 test)</text>
+        <text x="20" y="156">the Registry's panel sizes are constants: chain evidence 5 / 3, panel evidence 11 / 7</text>
+      </g>
+    </svg>
+    </div>
+    <figcaption>An <code>oracle.request</code> as Sworn's Registry buys it through the Intake. Three shared-fact attempts and one personal test today: 1.5 IMD for the stored top-32 list, 0.5 IMD to prove the personal path.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="scroll">
+    <svg viewBox="0 0 1040 170" role="img" aria-label="A project's job chain: launch job, then site continuation, then further continuations for fixes and features, each 0.5 IMD, same payer, same site label; a blocked job is continued, not resumed">
+      <defs><marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker></defs>
+      <g fill="none" stroke="currentColor" stroke-width="1.2">
+        <rect x="20" y="40" width="150" height="44" rx="4"/><rect x="220" y="40" width="150" height="44" rx="4" stroke="var(--bad)"/><rect x="420" y="40" width="150" height="44" rx="4" stroke="var(--accent)"/><rect x="620" y="40" width="150" height="44" rx="4"/><rect x="820" y="40" width="150" height="44" rx="4" stroke-dasharray="4 3"/>
+        <line x1="170" y1="62" x2="218" y2="62" marker-end="url(#ar6)"/><line x1="370" y1="62" x2="418" y2="62" marker-end="url(#ar6)"/><line x1="570" y1="62" x2="618" y2="62" marker-end="url(#ar6)"/><line x1="770" y1="62" x2="818" y2="62" marker-end="url(#ar6)"/>
+      </g>
+      <g fill="currentColor" font-size="11.5" text-anchor="middle">
+        <text x="95" y="58">launch job c3792acf</text><text x="95" y="72">completed · #2147 live</text>
+        <text x="295" y="58">site job 53f5fb2b</text><text x="295" y="72">blocked · site built</text>
+        <text x="495" y="58">continuation: fix</text><text x="495" y="72">census + exact texts</text>
+        <text x="695" y="58">continuation: feature</text><text x="695" y="72">one set per job</text>
+        <text x="895" y="58">continuation: …</text><text x="895" y="72">as many as needed</text>
+      </g>
+      <g fill="var(--muted)" font-size="11"><text x="20" y="115">each arrow: parentJobId = the newest job · 0.5 IMD · payer pawai.eth · ipfs: true keeps the label sworn · the worker starts from the project's delivered tree</text><text x="20" y="133">a blocked job cannot be resumed by the payer; the next continuation is the remedy (precedent 10-16), with the open question whether its start tree merges cleanly</text><text x="20" y="151">a fresh job.open would be a new project: new label, no project.md, no chain of accepted files</text></g>
+    </svg>
+    </div>
+    <figcaption>How Sworn grows: a chain of continuations on one project. Features arrive as separate jobs; the site name and the project history stay.</figcaption>
+  </figure>
+</section>
+
+<section id="sworn">
+  <div class="secno">06</div>
+  <h2>Options for Sworn, now</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Option</th><th>Shape</th><th>Cost</th><th>Pros</th><th>Cons and risks</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td><strong>A. Correction continuation</strong>: census bands with numbers, your exact WHY SWORN / BUILT BY THE SWARM / NO COIN texts, manual-pass findings</td><td><code>job.continue</code>, chain: <code>build-website</code> → <code>site-content-check</code> (+ plane critic)</td><td class="num">0.5 IMD</td><td>unblocks hosting if the start tree merges; 6,000 characters of room; body drafted and free-checked (0 blockers)</td><td>the parent is the blocked job: if the plane builds its start tree by the same failing merge, 0.5 IMD is lost within a minute; no docs step, so the README stays the build's</td><td><span class="pill good">do first</span></td></tr>
+      <tr><td><strong>B. Feature continuations</strong>: a live claims feed (Verified / Missed / PoolSpent events), a "top 32: apply your fact" helper with the attested list prefilled, a card gallery of minted wallets, an integration snippet generator, a pool status widget</td><td>one <code>job.continue</code> per feature set, 1–3 steps each</td><td class="num">0.5 IMD each</td><td>independent blast radius; premium model on <code>build-website</code>; each ships a new site version under <code>sworn</code></td><td>serial: each waits for the previous to be accepted (the newest job is the parent); the design critic reviews every time; a feature that needs new contract behaviour is impossible (ownerless Registry)</td><td><span class="pill good">after A</span></td></tr>
+      <tr><td><strong>C. Docs-only continuation</strong>: README and docs rewritten on top of the final site</td><td><code>job.continue</code>, single skill <code>write-readme-and-docs</code></td><td class="num">0.5 IMD</td><td>no merge risk when it is the only step; the README then describes the hosted site</td><td>another serial job; the build's README is already reasonable</td><td><span class="pill info">optional</span></td></tr>
+      <tr><td><strong>D. One big job instead of A + B</strong>: fix + features in up to 6 steps</td><td><code>job.continue</code>, <code>dag</code> with every implement step depending on the previous implement step</td><td class="num">0.5 IMD</td><td>cheapest; one critic pass</td><td>16 KiB binds: little room per feature; a single failing node loses everything; the hosting waits for the last node</td><td><span class="pill warn">only for small features</span></td></tr>
+      <tr><td><strong>E. Research report</strong> on today's oracle findings or on the list</td><td><code>job.open</code>, skill <code>research-report</code></td><td class="num">0.5 IMD</td><td>public report at <code>/jobs/:id/report.md</code>, reusable for the hackathon story</td><td>a separate project; not part of the site</td><td><span class="pill info">optional</span></td></tr>
+      <tr><td><strong>F. More oracle requests</strong>: community specs, the 1301 panel test</td><td><code>oracle.request</code> via the Registry</td><td class="num">0.5 IMD each</td><td>the path is proven end to end; T1 agreed 3 of 3 in 15 s</td><td>ranking questions reach quorum about one try in two or three until the seat recipe is fixed</td><td><span class="pill good">as needed</span></td></tr>
+      <tr><td><strong>G. Schedule</strong>: a daily free-claim canary or a daily job</td><td><code>schedule.create</code></td><td class="num">0.5 IMD + runs</td><td>unattended; three failures pause it, nothing spent</td><td>needs a question or job that stays meaningful every day</td><td><span class="pill info">later</span></td></tr>
+      <tr><td><strong>H. Successor launch</strong>: a Registry v2 (wider panel, uint32 spec ids)</td><td><code>launch.open</code> on a new commit</td><td class="num">0.5 IMD + a new site chain</td><td>the only way to change contract behaviour</td><td>a new address, new cards, a new project; not a hackathon-week move</td><td><span class="pill bad">not now</span></td></tr>
+      <tr><td><strong>I. Company workflow</strong></td><td><code>workflow.open</code></td><td class="num">0.5 IMD</td><td>contracts + site in one order</td><td>refuses <code>parentJobId</code>; Sworn's contracts are live; it would start an unrelated product</td><td><span class="pill bad">no</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="note good"><strong>Recommended order.</strong> A now, with the manual-pass changes folded in. Then B as two or three jobs, smallest first, each with its own <code>site-check</code> run before anything is announced. C only if the README reads wrong on the hosted site.</div>
+</section>
+
+<section id="limits">
+  <div class="secno">07</div>
+  <h2>What is not possible right now, measured</h2>
+  <div class="cols">
+    <div>
+      <h3>Plane and payer</h3>
+      <ul class="plain">
+        <li>No payer action resumes a blocked job; the fee is spent (<code>resultGuaranteed: false</code>). A continuation is the remedy.</li>
+        <li>A continuation is accepted only from the wallet that paid the parent (<code>403 payer_not_owner</code>).</li>
+        <li>A bundle does not pass through a review-only step (issue #6); until fixed, write the dependency yourself.</li>
+        <li>Steps: at most 6. Body: 16 KiB. Rendered step: 8,000 characters. <code>contracts</code> ≤ 4 in a job, 1–8 in a contracts-only launch.</li>
+        <li>Seats cannot host sites (<code>member_sites_closed</code>); a job's site is hosted by the plane only, and only when every node accepted.</li>
+        <li>The design critic on website jobs and the audit panel on launches cannot be switched off.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Sworn's own contracts</h3>
+      <ul class="plain">
+        <li>Ownerless: no setter, pause or upgrade. Panel sizes (5 / 3 chain, 11 / 7 panel) and the uint16 spec ids are constants.</li>
+        <li>The pool pays only for catalog chain claims of WhitelistCurator members; shared facts and community specs are always paid by the requester.</li>
+        <li><code>applySharedFact</code> marks the caller only; the 32 wallets apply the list themselves.</li>
+        <li>A false oracle answer is a spent 0.5 IMD (reason 8); the same request can be made again later.</li>
+      </ul>
+      <h3>Decisions already taken</h3>
+      <ul class="plain">
+        <li>Only the swarm site, no own hosting, not even as a fallback (decision 39).</li>
+        <li>Nothing is announced before the hosted site passes <code>site-check</code> and a manual pass (owner, 10-18).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Sources: aidude <code>docs/imd-api-changelog.md</code> §2 and the entries of 10-10, 10-14, 10-16, 10-17, 10-18; <code>GET /skills</code> (56) at 10:45 CEST; job records c3792acf (launch #2147), 53f5fb2b (site), oracle requests cb72b826, 4ee4290d, 03ccc51e, fa460b4b; the worker distribution 0.1.2 (<code>dist/cli.js</code>, <code>applyDependencies</code>); Identity-md/worker issue #6. Amounts in IMD; the Intake price was 0.5 IMD all day.
+</footer>
+</div>
