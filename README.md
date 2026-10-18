@@ -47,6 +47,14 @@ The **NFTS** card below ONCHAIN FEED opens the NFT Explorer; `n` opens it direct
 The previous **PROTOCOL** view remains available with `p` in the BOARDROOM and
 `e` inside SURF. These letters remain ordinary text when an input is focused.
 
+Click **WORKFLOWS [g]** in the boardroom title row, or press `g`, to open the
+workflow guide. It bundles the ten diagrams from aidude's `swarm-workflows.html`
+with explanations, limits and examples dated **2026-10-18**. Left/right selects
+a topic; up/down selects a diagram node; `i` toggles the topic index. Click a
+node to select it, then Enter or **SOURCE DETAILS >>** opens its source popup.
+Escape returns to the boardroom; reopening keeps the selected topic/node and
+index state. The guide reads local documentation and does not poll APIs.
+
 NFT Explorer shows collection details and a **SUMMARY (github README.md)** excerpt
 from the selected collection's linked repository. Click a row's `»` or press Enter
 to open mint routes, IDMD conditions, utility, related tokens and Swarm/source
@@ -720,6 +728,9 @@ of any of the six alternate bodies.
 | RECORD `all` / `launches` click | Show all attempts or jobs in confirmed live launches before the row limit |
 | `f` in AGENT | Open RECORD's filter editor; in the editor, apply it |
 | `w` in Surf or the boardroom | Open WORK IN PROGRESS |
+| `g` or WORKFLOWS title click in the boardroom | Open the dated workflow guide |
+| Left/right / up/down in the workflow guide | Select topic / diagram node |
+| `i` / Enter in the workflow guide | Toggle topic index / open source details |
 | `ctrl+o` in Surf or the boardroom | Open ORACLES |
 | `/` / `f` / `c` in ORACLES | Find requests / cycle state / cycle chain |
 | Enter on an oracle request | Focus its answer tree |

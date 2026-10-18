@@ -57,6 +57,11 @@ from maxpane_dashboard.screens.ttt import TTTScreen
 from maxpane_dashboard.screens.surf_nft import (
     SurfNftScreen, SURF_NFT_FULL_LAYOUT_COLUMNS, SURF_NFT_FULL_LAYOUT_ROWS,
 )
+from maxpane_dashboard.screens.workflow_guide import (
+    WorkflowGuideScreen, WorkflowSourceScreen,
+    WORKFLOW_GUIDE_FULL_LAYOUT_COLUMNS, WORKFLOW_GUIDE_FULL_LAYOUT_ROWS,
+)
+from maxpane_dashboard.data.workflow_guide_manager import WorkflowGuideManager
 from maxpane_dashboard.data.swarm_tokens_demo import demo_snapshot
 from maxpane_dashboard.screens.swarm_tokens import (
     SwarmTokensScreen, SWARM_TOKENS_FULL_LAYOUT_COLUMNS, SWARM_TOKENS_FULL_LAYOUT_ROWS,
@@ -851,7 +856,28 @@ def _swarm_tokens_payload():
     return snapshot
 
 
+def _workflow_guide_app():
+    return _CopyHarness(WorkflowGuideScreen(WorkflowGuideManager()))
+
+
+def _workflow_source_app():
+    catalogue = WorkflowGuideManager().get_snapshot()['workflow_guide']
+    topic = catalogue['topics'][3]
+    return _CopyHarness(WorkflowSourceScreen(catalogue['source'], topic, topic['nodes'][0]))
+
+
 CASES: tuple[SweepCase, ...] = (
+    SweepCase(
+        name='workflow_guide', screen_class=WorkflowGuideScreen,
+        build=_workflow_guide_app, payload=lambda: WorkflowGuideManager().get_snapshot(),
+        pins=((WORKFLOW_GUIDE_FULL_LAYOUT_COLUMNS, WORKFLOW_GUIDE_FULL_LAYOUT_ROWS),),
+        address_free=True,
+    ),
+    SweepCase(
+        name='workflow_source', screen_class=WorkflowSourceScreen,
+        build=_workflow_source_app, payload=lambda: WorkflowGuideManager().get_snapshot(),
+        address_free=True,
+    ),
     SweepCase(
         name='surf_nft',screen_class=SurfNftScreen,build=_nft_app,payload=_nft_payload,
         pins=((SURF_NFT_FULL_LAYOUT_COLUMNS,SURF_NFT_FULL_LAYOUT_ROWS),),

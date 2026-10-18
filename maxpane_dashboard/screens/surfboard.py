@@ -5,6 +5,7 @@ from time import monotonic
 from urllib.parse import urlsplit
 
 from rich.text import Text
+from rich.style import Style
 from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -70,6 +71,7 @@ class SurfboardScreen(SurfDashboardScreen):
     BINDINGS = [
         Binding("w", "work", "Work in progress", show=False),
         Binding("n", "nfts", "NFTs", show=False),
+        Binding("g", "workflows", "Workflow guide", show=False),
         Binding("p", "protocol", "Protocol", show=False),
         Binding("ctrl+o", "oracles", "Oracles", show=False),
         Binding("slash", "command_input", "Command", show=False),
@@ -103,6 +105,8 @@ class SurfboardScreen(SurfDashboardScreen):
         self._cached_hub_snapshot = None
         self._last_hub_snapshot = None
         self._nft_view_state = {}
+        self._workflow_guide_manager = None
+        self._workflow_guide_view_state = {}
 
     def compose(self) -> ComposeResult:
         yield Static(Text("IMD BOARDROOM", style=f"dim {self.app.get_css_variables()['foreground']}"), id="surfboard-title")
@@ -193,9 +197,19 @@ class SurfboardScreen(SurfDashboardScreen):
             hints.append("‹ widen")
         if viewport.show_vertical_scrollbar:
             hints.append("‹ taller")
-        self.query_one("#surfboard-title", Static).update(Text.assemble(
+        title = Text.assemble(
             ("IMD BOARDROOM", f"dim {self.app.get_css_variables()['foreground']}"),
-            (" · " + " · ".join(hints) if hints else "") + self.loading_suffix))
+            (" · " + " · ".join(hints) if hints else "") + self.loading_suffix)
+        widget = self.query_one("#surfboard-title", Static)
+        width = widget.content_size.width
+        left = max(0, (width - title.cell_len) // 2)
+        entry = "WORKFLOWS [g]"
+        gap = width - left - title.cell_len - len(entry)
+        if gap > 0:
+            title = Text(" " * left) + title + Text(" " * gap)
+            title.append(entry, Style(color=self.app.get_css_variables()['foreground'],
+                                      meta={"@click": "screen.workflows"}))
+        widget.update(title)
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
         if event.seat_slot is not None:
@@ -248,6 +262,15 @@ class SurfboardScreen(SurfDashboardScreen):
     def action_protocol(self) -> None:
         if not isinstance(self.focused, Input):
             self.app.open_surf_mode(MODE_POOL4)
+
+    def action_workflows(self) -> None:
+        if not isinstance(self.focused, Input):
+            from maxpane_dashboard.data.workflow_guide_manager import WorkflowGuideManager
+            from maxpane_dashboard.screens.workflow_guide import WorkflowGuideScreen
+            if self._workflow_guide_manager is None:
+                self._workflow_guide_manager = WorkflowGuideManager()
+            self.app.push_screen(WorkflowGuideScreen(
+                self._workflow_guide_manager, view_state=self._workflow_guide_view_state))
 
     def action_oracles(self) -> None:
         self.app.open_surf_mode(MODE_ORACLES)

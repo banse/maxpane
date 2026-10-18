@@ -144,6 +144,9 @@ class DashboardScreen(RefreshGuard, Screen):
     #: The status bar is NOT a row — :meth:`_do_refresh` always updates it last.
     PANELS: tuple[tuple[type[Widget], Adapter], ...] = ()
 
+    #: Static documentation still loads on entry and manual refresh, without polling.
+    POLL_DATA: bool = True
+
     #: ``r`` refreshes on every dashboard, and every subclass inherits it:
     #: Textual merges ``BINDINGS`` along the MRO (verified on Textual 8.1.1 --
     #: a subclass declaring only ``c`` answers to ``c`` *and* ``r``), so a
@@ -191,7 +194,7 @@ class DashboardScreen(RefreshGuard, Screen):
         self._do_initial_refresh()
         if self._refresh_timer is not None:
             self._refresh_timer.stop()
-        if not isinstance(self._data_manager, ReaderHandle):
+        if self.POLL_DATA and not isinstance(self._data_manager, ReaderHandle):
             self._refresh_timer = self.set_interval(
                 self._poll_interval, self._schedule_refresh
             )

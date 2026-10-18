@@ -634,7 +634,7 @@ async def test_boardroom_title_is_centered_muted_green_after_refresh_and_resize(
             await app.hub._do_refresh()
             await pilot.pause()
             row = app.hub._compositor.render_strips()[0]
-            text = row.text.strip()
+            text = row.text.split('WORKFLOWS [g]', 1)[0].strip()
             assert text.startswith('IMD BOARDROOM')
             assert ('‹ widen' in text) == app.hub.query_one('#surfboard-viewport').show_horizontal_scrollbar
             assert abs(row.text.index(text) - (width - len(text)) / 2) <= .5

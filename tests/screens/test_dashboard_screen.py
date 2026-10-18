@@ -225,6 +225,27 @@ async def test_resume_starts_the_timer_and_primes_the_status_bar():
 
 
 @pytest.mark.asyncio
+async def test_static_dashboard_refreshes_on_entry_without_starting_poll_timer():
+    class StaticScreen(_MiniScreen):
+        POLL_DATA = False
+
+    manager = _FakeManager()
+    screen = StaticScreen(manager)
+    async with _Harness(screen).run_test() as pilot:
+        await pilot.pause()
+        assert manager.calls == 1
+        assert screen._refresh_timer is None
+        screen.on_screen_suspend()
+        screen.on_screen_resume()
+        await pilot.pause()
+        assert manager.calls == 2
+        assert screen._refresh_timer is None
+        screen.action_refresh()
+        await pilot.pause()
+        assert manager.calls == 3
+
+
+@pytest.mark.asyncio
 async def test_resume_calls_the_prime_status_bar_hook_with_the_bar():
     screen = _MiniScreen(_FakeManager(), poll_interval=30, name="mini")
     app = _Harness(screen)
