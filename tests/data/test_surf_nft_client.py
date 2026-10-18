@@ -262,3 +262,20 @@ async def test_readme_uses_cycle_deadline():
     with pytest.raises(BudgetExhausted):
         await c.readme('https://github.com/example/collection', None,
                        budget=budget(deadline_seconds=.01))
+
+
+def test_budget_wall_time_slice_restores_deadline_and_keeps_spent_credits():
+    clock = [100.]
+    b = Budget(monotonic=lambda: clock[0])
+    clock[0] += 2
+    with b.limit(http=6, rpc=64, seconds=3):
+        assert b.remaining_seconds == 3
+        b.consume(http=1, rpc=2)
+        with b.limit(http=3, rpc=16, seconds=10):
+            assert b.remaining_seconds == 3  # Nested limits never extend a deadline.
+        clock[0] += 3
+        with pytest.raises(BudgetExhausted):
+            b.consume(http=1)
+    assert b.remaining_seconds == 10
+    assert (b.http_attempts, b.rpc_calls) == (1, 2)
+    assert b.can_admit(http=23, rpc=254)

@@ -47,6 +47,8 @@ class SurfNftManager:
         self._failed = False
         self._error_count = 0
         self._inspection_attempts = {}
+        self._inspection_deferred = {}
+        self._inspection_focus = {}
         self.last_budget = None
         self._active_view = 'legacy'
         self._retired = set()
@@ -222,13 +224,15 @@ class SurfNftManager:
                 **self.state.get('child_candidates', {})}
 
     def _due(self, identity):
+        if self._clock() < self._inspection_deferred.get(identity, 0):
+            return False
         if identity in self.state.get('progress', {}):
             return True
         attempted = self._inspection_attempts.get(identity)
         if attempted is not None and self._clock() - attempted < self.FAILURE_BACKOFF:
             return False
         evidence = self.state.get('evidence', {}).get(identity)
-        if not evidence:
+        if not evidence or evidence.get('proofOnly'):
             return True
         stamp = _stamp(evidence.get('checkedAt'))
         ttl = self.CHAIN_TTL if evidence.get('standard') else self.PROBE_TTL
@@ -243,6 +247,40 @@ class SurfNftManager:
                                   item[0] not in self.state.get('progress', {}),
                                   _stamp(self.state.get('evidence', {}).get(item[0], {}).get('checkedAt')) or 0))
         return due
+
+    def _focus(self, candidates, *, probe=False):
+        """Finish one pinned inspection before admitting another in this lane."""
+        now = self._clock()
+        current, started = self._inspection_focus.get(probe, (None, now))
+        if current is not None and now - started >= 600:
+            self._inspection_deferred[current] = now + self.FAILURE_BACKOFF
+            current = None
+        evidence = self.state.get('evidence', {})
+        stages = self.state.get('progress', {})
+        known = {key for key, fact in evidence.items() if fact.get('standard')}
+        known.update(row['id'] for row in self.state.get('records') or [] if row['category'] == 'launched')
+        due = [key for key in candidates if (key not in known) == probe and self._due(key)
+               and (key in stages or len(stages) < SurfNftCache.MAX_STAGES)]
+        if current in due:
+            return current
+        # Unknown details beat periodic refreshes; attempts break ties so a
+        # reviewed or recently selected collection cannot monopolize admission.
+        due.sort(key=lambda key: (not evidence.get(key, {}).get('proofOnly', key not in evidence),
+                                 self._inspection_attempts.get(key, 0), key != self._selected,
+                                 key not in RULES, _stamp(evidence.get(key, {}).get('checkedAt')) or 0))
+        identity = due[0] if due else None
+        self._inspection_focus[probe] = identity, now
+        return identity
+
+    async def _slice(self, identity, candidate, budget, *, http, rpc, seconds=None, proof_only=False):
+        before = self.state.get('progress', {}).get(identity, {}).get('completed_operations', 0)
+        sent = budget.http_attempts
+        with budget.limit(http=http, rpc=rpc, seconds=seconds):
+            await self._inspect(identity, candidate, budget, proof_only=proof_only)
+        stage = self.state.get('progress', {}).get(identity)
+        if stage and (stage.get('restart_reason') or
+                      budget.http_attempts > sent and stage.get('completed_operations', 0) == before):
+            self._inspection_deferred[identity] = self._clock() + self.FAILURE_BACKOFF
 
     async def _inspect(self, identity, candidate, budget, *, proof_only=False):
         stages = self.state.setdefault('progress', {})
@@ -334,7 +372,11 @@ class SurfNftManager:
         self._failed = False
         try:
             # One discovery page always precedes the selection's reserved slice.
-            await self._discover(budget, page_limit=1, detail_limit=0, launch_limit=0)
+            try:
+                with budget.limit(http=2, rpc=0, seconds=2):
+                    await self._discover(budget, page_limit=1, detail_limit=0, launch_limit=0)
+            except BudgetExhausted:
+                pass  # A slow discovery page must leave time for retained rows.
             candidates = self._candidates()
             pending = self._pending(candidates)
             if proof_only:
@@ -349,21 +391,26 @@ class SurfNftManager:
                     if not budget.can_admit():
                         break
                 return
-            priority = pending[0][0] if pending else None
+            priority = self._selected if self._selected in candidates and self._due(self._selected) else None
             if priority is not None:
-                with budget.limit(http=6, rpc=64):
-                    await self._inspect(priority, candidates[priority], budget)
-            # Other collections must advance before slow job backfill can spend
-            # the deadline. Keep six credits for discovery; the first page above
-            # guarantees it also advances when chain reads take the whole window.
-            due = [(key, value) for key, value in self._pending(candidates) if key != priority]
-            if priority in self.state.get('progress', {}):
-                due.append((priority, candidates[priority]))
-            with budget.limit(http=max(0, budget.remaining_http - 6), rpc=192):
-                for identity, candidate in due:
-                    if not budget.can_admit():
-                        break
-                    await self._inspect(identity, candidate, budget)
+                await self._slice(priority, candidates[priority], budget, http=8, rpc=64, seconds=3)
+            probe = self._focus(candidates, probe=True)
+            if probe is not None and probe != priority and budget.can_admit():
+                await self._slice(probe, candidates[probe], budget, http=3, rpc=16,
+                                  seconds=2, proof_only=True)
+            # Finish an admitted collection within its ten-minute pinned context.
+            # A small separate proof lane keeps new discoveries moving. When no
+            # collection needs enrichment, lend its budget to that proof lane.
+            while budget.remaining_http > 3 and budget.can_admit():
+                identity = self._focus(candidates)
+                probing = identity is None
+                identity = self._focus(candidates, probe=True) if probing else identity
+                if identity is None:
+                    break
+                await self._slice(identity, candidates[identity], budget,
+                                  http=budget.remaining_http - 3, rpc=192, proof_only=probing)
+                if identity in self.state.get('progress', {}):
+                    break
             await self._discover(budget, page_limit=3, detail_limit=8, launch_limit=2)
         except BudgetExhausted:
             pass
@@ -385,6 +432,8 @@ class SurfNftManager:
                 self.state = prepare(self.state, selected_id=self._selected)
             keep = set(self.state.get('evidence', {})) | set(self.state.get('progress', {}))
             self._inspection_attempts = {key: stamp for key, stamp in self._inspection_attempts.items() if key in keep}
+            self._inspection_deferred = {key: stamp for key, stamp in self._inspection_deferred.items()
+                                        if key in keep and stamp > self._clock()}
             self.cache.save(self.state, selected_id=self._selected)
 
     async def wait_pending(self):

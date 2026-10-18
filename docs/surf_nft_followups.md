@@ -167,3 +167,49 @@ implementation workspace is removed at delivery. No push or release is made.
 
 No floor price, secondary volume, wallet portfolio, personal claim simulation,
 signing or paid job flow is included.
+
+## NFT refresh fairness — 2026-10-18
+
+The retained live catalogue had 18 deployed collections, 15 with deployment-only
+proof and no getter readings, competing with 981 candidate addresses. Static
+selected/reviewed/unseen ordering repeatedly displaced unfinished enrichment;
+its ten-minute pinned context could expire before completion.
+
+The NFT manager now retains one background inspection until completion, with
+unfinished known collections ahead of routine refreshes. A separate resumable
+proof allocation continues discovering new collections. Selection gets a bounded
+eight-request/three-second slice; discovery and probes also have time slices.
+All slices retain the same cycle counters and original 24-HTTP/256-RPC/fifteen-
+second network admission budget. Stuck/restarting work yields with backoff;
+full stage-cache admission cannot spin. Proof-only evidence without a retained
+stage is immediately eligible for enrichment. Existing reader ownership,
+30-second polling, cancellation, cache retention and proof-only BOARDROOM reads
+remain in place. No model keys, endpoints, mint rules or screen layout changed.
+
+Live verification used a temporary copy of the public NFT cache and real keyless
+reads. Over eleven consecutive bounded cycles (296.58 seconds, without adding
+30-second waits), the scheduler completed ArtifactsPiece, refreshed IMDenza and
+upgraded BMC Illuminati Pass from proof-only to 38 getter readings: mint `open`,
+IDMD `no`, supply `0/500`. It then advanced VisualIdentityEdition2. These are
+observations, not a latency guarantee or a complete catalogue refresh. The
+149×45 real-data render was shown before review. The user's cache was untouched.
+Artifacts: `/tmp/maxpane-nft-loading-fixed/` and
+`/tmp/maxpane-nft-loading-fixed.log`.
+
+Verification: 231 touched/composing data, reader, analytics, widget and screen
+tests passed; 126 fast guards passed. Four rollback mutations were killed and
+restored byte-for-byte: sticky completion, failed-stage backoff, stage-cap
+admission and time slicing. No full suite was run. Logs:
+`/tmp/maxpane-nft-loading-tests.log`, `/tmp/maxpane-nft-loading-guards.log`,
+`/tmp/maxpane-nft-loading-mutations.log`.
+
+Measured follow-up: `_publish()` took 6.026 seconds for this retained catalogue;
+cache preparation took 0.139 seconds and snapshot projection 0.007 seconds.
+Profile the repeated catalogue joins before optimizing them. The network
+admission deadline does not bound synchronous projection/persistence time.
+Mint/IDMD values without reviewed deployed semantics correctly remain unknown.
+
+Final independent review: **Approved, no findings**. Seven targeted regressions
+passed; the reviewer independently killed all four named mutations and restored
+the files byte-for-byte. The inspection/cancellation seam and the BOARDROOM
+proof-only boundary were checked. No reviewer changes remain.

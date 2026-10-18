@@ -75,17 +75,21 @@ class Budget:
         self.reserved_http = max(0, self.reserved_http - 2)
 
     @contextmanager
-    def limit(self, *, http, rpc):
+    def limit(self, *, http, rpc, seconds=None):
         """Temporary work slice, retaining the one cycle's actual counters."""
         if type(http) is not int or type(rpc) is not int or min(http, rpc) < 0:
             raise ValueError('invalid budget slice')
-        original = self.http_limit, self.rpc_limit
+        if seconds is not None and (not math.isfinite(seconds) or seconds <= 0):
+            raise ValueError('invalid time slice')
+        original = self.http_limit, self.rpc_limit, self.deadline_seconds
         self.http_limit = min(self.http_limit, self.http_attempts + self.reserved_http + http)
         self.rpc_limit = min(self.rpc_limit, self.rpc_calls + rpc)
+        if seconds is not None:
+            self.deadline_seconds = min(self.deadline_seconds, self.monotonic() - self.started + seconds)
         try:
             yield self
         finally:
-            self.http_limit, self.rpc_limit = original
+            self.http_limit, self.rpc_limit, self.deadline_seconds = original
 
 
 @dataclass(frozen=True)

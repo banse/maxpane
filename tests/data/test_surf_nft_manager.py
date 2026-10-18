@@ -194,10 +194,11 @@ async def test_cold_unselected_chain_work_precedes_slow_job_backfill(setup):
         if detail_limit:
             now.value += 16  # Time-consuming job response exhausts cycle deadline.
         return SimpleNamespace(state={}, coverage={'complete': False})
-    async def inspect(_candidate, progress, *, budget):
+    async def inspect(_candidate, progress, *, budget, proof_only=False):
         calls.append('chain')
         budget.consume(http=1, rpc=1)
-        return SimpleNamespace(progress={'started_at': now.value}, evidence=None,
+        return SimpleNamespace(progress={'started_at': now.value, 'completed_operations':
+                                         (progress or {}).get('completed_operations', 0) + 1}, evidence=None,
                                children=[], complete=False)
     manager.discovery.advance = discovery
     manager.inspector.advance = inspect
@@ -225,11 +226,12 @@ async def test_selected_enrichment_and_slow_backfill_do_not_starve_other_collect
             now.value += 16  # Slow job details used to consume the whole deadline.
         return SimpleNamespace(state={}, coverage={'complete': False})
 
-    async def inspect(candidate, progress, *, budget):
+    async def inspect(candidate, progress, *, budget, proof_only=False):
         identity = f"1:{candidate['address']}"
         seen.add(identity)
         budget.consume(http=1, rpc=1)
-        return SimpleNamespace(progress={'started_at': now.value}, children=[],
+        return SimpleNamespace(progress={'started_at': now.value, 'completed_operations':
+                                         (progress or {}).get('completed_operations', 0) + 1}, children=[],
             complete=identity != selected,
             evidence={'chainId': 1, 'address': candidate['address'],
                       'checkedAt': now.value, 'detectionStatus': 'unsupported'})
@@ -620,3 +622,188 @@ async def test_readme_publish_new_direct_launch_metadata_offers_selected_read(se
         assert manager.get_readme()['state'] == 'ok'
     finally:
         await manager.close()
+
+
+async def test_known_incomplete_collections_finish_before_stage_expiry_despite_large_probe_queue(setup):
+    """Two-provider getter fallbacks need sustained work, not 981-way rotation."""
+    from maxpane_dashboard.data.surf_nft_client import BudgetExhausted
+    manager, now, *_ = setup
+    known = [f'1:0x{i:040x}' for i in range(1, 19)]
+    probes = [f'1:0x{i:040x}' for i in range(100, 1081)]
+    candidates = {key: dict(chainId=1, address=key[2:]) for key in known + probes}
+    manager._candidates = lambda: candidates
+    manager._publish = lambda: None
+    manager.state['evidence'] = {key: dict(chainId=1, address=key[2:], standard='ERC-721',
+        proofOnly=True, checkedAt=900, deploymentConfirmed=True) for key in known}
+    manager.select(known[0])
+    manager.discovery.advance = AsyncMock(return_value=SimpleNamespace(state={}, coverage={}))
+    completed, attempted_probes, resets = [], set(), []
+
+    async def inspect(candidate, progress, *, budget, proof_only=False):
+        identity = f"1:{candidate['address']}"
+        if proof_only:
+            attempted_probes.add(identity)
+        stage = deepcopy(progress) if progress else dict(started_at=now.value, completed_operations=0)
+        if now.value - stage['started_at'] > 600:
+            resets.append(identity)
+            stage = dict(started_at=now.value, completed_operations=0)
+        target = 8 if proof_only else 64
+        try:
+            while stage['completed_operations'] < target:
+                budget.consume(http=2, rpc=1)
+                stage['completed_operations'] += 1
+        except BudgetExhausted:
+            pass
+        complete = stage['completed_operations'] == target
+        if complete and not proof_only:
+            completed.append((identity, now.value))
+        evidence = dict(chainId=1, address=candidate['address'], checkedAt=now.value,
+                        standard=None, detectionStatus='unsupported') if proof_only and complete else None
+        if not proof_only and complete:
+            evidence = dict(manager.state['evidence'][identity], proofOnly=False,
+                            checkedAt=now.value, reads={'totalSupply': 7})
+        return SimpleNamespace(progress=stage, evidence=evidence, children=[], complete=complete)
+
+    manager.inspector.advance = inspect
+    try:
+        for _ in range(65):
+            await manager.fetch_and_compute()
+            await manager.wait_pending()
+            assert manager.last_budget.http_attempts <= 24
+            assert manager.last_budget.rpc_calls <= 256
+            now.value += 30
+            if len({key for key, _ in completed}) >= 3:
+                break
+        assert len({key for key, _ in completed}) >= 3
+        assert known[0] in {key for key, _ in completed}
+        assert all(stamp < 1000 + 600 for key, stamp in completed[:1])
+        assert not resets  # Healthy admitted stages finish within their pinned context.
+        assert attempted_probes  # Discovery does not wait for the existing catalog.
+        assert len(attempted_probes) < 20  # Each probe is resumed to a terminal proof.
+        assert any(not manager.state['evidence'][key].get('proofOnly') for key in known[1:])
+    finally:
+        await manager.close()
+
+
+async def test_expired_or_stalled_background_focus_yields_to_another_collection(setup):
+    manager, now, *_ = setup
+    keys = [f'1:0x{i:040x}' for i in range(1, 4)]
+    candidates = {key: dict(chainId=1, address=key[2:]) for key in keys}
+    manager._candidates = lambda: candidates
+    manager._publish = lambda: None
+    manager.discovery.advance = AsyncMock(return_value=SimpleNamespace(state={}, coverage={}))
+    manager.state['evidence'] = {key: dict(chainId=1, address=key[2:], standard='ERC-721',
+        proofOnly=True, checkedAt=900, deploymentConfirmed=True) for key in keys}
+    seen = []
+
+    async def inspect(candidate, progress, *, budget, **_kw):
+        key = f"1:{candidate['address']}"
+        seen.append(key)
+        budget.consume(http=1, rpc=1)
+        # An archive/context failure must not hold the lane indefinitely.
+        stage = dict(started_at=now.value, completed_operations=1, restart_reason='header not found')
+        return SimpleNamespace(progress=stage, evidence=None, children=[], complete=False)
+
+    manager.inspector.advance = inspect
+    try:
+        for _ in range(3):
+            await manager.fetch_and_compute()
+            await manager.wait_pending()
+            now.value += 30
+        assert set(seen) == set(keys)
+        assert len(seen) == len(keys)  # Backoff applies even while a stage is retained.
+        assert all(manager.state['evidence'][key]['checkedAt'] == 900 for key in keys)
+    finally:
+        await manager.close()
+
+
+async def test_slow_discovery_and_selection_leave_time_for_background_enrichment(setup):
+    from maxpane_dashboard.data.surf_nft_client import BudgetExhausted
+    manager, now, *_ = setup
+    keys = ['1:0x' + c * 40 for c in 'ab']
+    candidates = {key: dict(chainId=1, address=key[2:]) for key in keys}
+    manager._candidates = lambda: candidates
+    manager._publish = lambda: None
+    manager.state['evidence'] = {key: dict(standard='ERC-721', proofOnly=True, checkedAt=900) for key in keys}
+    manager.select(keys[0])
+    slices = []
+    async def discovery(state, *, budget, detail_limit, **_kw):
+        if not detail_limit:
+            now.value += budget.remaining_seconds
+            raise BudgetExhausted('slow discovery')
+        return SimpleNamespace(state={}, coverage={})
+    async def inspect(candidate, progress, *, budget, **_kw):
+        key = f"1:{candidate['address']}"
+        slices.append((key, budget.remaining_seconds))
+        budget.consume(http=1, rpc=1)
+        if key == keys[0]:
+            now.value += budget.remaining_seconds
+            # Transport pauses without losing the previously completed reads.
+        return SimpleNamespace(progress=dict(started_at=1000, completed_operations=
+            (progress or {}).get('completed_operations', 0) + 1), evidence=None, children=[], complete=False)
+    manager.discovery.advance = discovery
+    manager.inspector.advance = inspect
+    try:
+        await manager.fetch_and_compute()
+        await manager.wait_pending()
+        assert keys[1] in [key for key, _ in slices]
+        assert slices[0] == (keys[0], 3)
+        assert manager.last_budget.deadline_seconds == 15
+        assert not manager._failed
+    finally:
+        await manager.close()
+
+
+async def test_leaving_nft_view_cancels_inspection_and_reentry_resumes_retained_stage(setup):
+    manager, now, *_ = setup
+    key = '1:0x' + 'a' * 40
+    manager._candidates = lambda: {key: dict(chainId=1, address=key[2:])}
+    manager._publish = lambda: None
+    manager.state['evidence'][key] = dict(standard='ERC-721', proofOnly=True, checkedAt=900)
+    manager.state['progress'][key] = dict(started_at=1000, completed_operations=4)
+    manager.discovery.advance = AsyncMock(return_value=SimpleNamespace(state={}, coverage={}))
+    entered, cancelled, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    seen = []
+    async def inspect(candidate, progress, **_kw):
+        seen.append(deepcopy(progress))
+        entered.set()
+        try:
+            await finish.wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        return SimpleNamespace(progress=dict(progress, completed_operations=5), evidence=None,
+                               children=[], complete=False)
+    manager.inspector.advance = inspect
+    try:
+        manager.set_active_view('NFT EXPLORER')
+        await manager.fetch_and_compute()
+        await asyncio.wait_for(entered.wait(), 1)
+        manager.set_active_view(None)
+        await manager.drain_reads()
+        assert cancelled.is_set() and not manager.is_loading()
+        for _ in range(3):
+            manager.get_snapshot()
+            await manager.fetch_and_compute()
+        assert len(seen) == 1
+        entered.clear()
+        manager.set_active_view('NFT EXPLORER')
+        await manager.fetch_and_compute()
+        await asyncio.wait_for(entered.wait(), 1)
+        assert seen[-1]['completed_operations'] == 4
+        finish.set()
+        await manager.wait_pending()
+        assert manager.state['progress'][key]['completed_operations'] == 5
+    finally:
+        finish.set()
+        await manager.close()
+
+
+def test_full_stage_cache_keeps_existing_work_admissible_without_spinning_on_new_rows(setup):
+    from maxpane_dashboard.data.surf_nft_cache import SurfNftCache
+    manager, *_ = setup
+    keys = [f'1:0x{i:040x}' for i in range(SurfNftCache.MAX_STAGES + 1)]
+    manager.state['progress'] = {key: dict(started_at=1000) for key in keys[:-1]}
+    manager.state['evidence'][keys[-1]] = dict(standard='ERC-721', proofOnly=True)
+    assert manager._focus({keys[-1]: {}}) is None
+    assert manager._focus({key: {} for key in keys}, probe=True) in keys[:-1]
