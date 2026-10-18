@@ -259,6 +259,155 @@ def test_first_proofs_precede_known_collection_details(setup, monkeypatch):
     assert [key for key, _ in manager._pending(candidates)] == [selected, unseen, known, ordinary]
 
 
+def test_unseen_nft_launches_precede_generic_contracts_without_excluding_them(setup):
+    manager, now, *_ = setup
+    generic, older, newer = [f'1:0x{char * 40}' for char in 'abc']
+    candidates = {
+        generic: {'launch': {'launchNumber': 50, 'jobs': [{'objective': 'Deploy an ERC20 token'}]}},
+        older: {'launch': {'launchNumber': 10, 'jobs': [{'objective': 'Build an ERC-721 collection'}]}},
+        newer: {'launch': {'launchNumber': 20, 'jobs': [{'objective': 'Build an ERC-1155 collection'}]}},
+    }
+    assert manager._focus(candidates, probe=True) == newer
+    assert [key for key, _ in manager._pending(candidates)] == [newer, older, generic]
+    # A description changes priority, never establishes that a contract is an NFT.
+    assert manager.get_snapshot()['nft_rows'] is None
+    for key in (older, newer):
+        manager.state['evidence'][key] = dict(checkedAt=now.value, detectionStatus='unsupported')
+    assert manager._focus(candidates, probe=True) == generic
+
+
+@pytest.mark.parametrize('kind', ['registry', 'constructor'])
+async def test_reviewed_factory_receives_child_discovery_instead_of_proof_only(setup, kind):
+    from maxpane_dashboard.data.surf_nft_rules.children import FACTORIES
+    from maxpane_dashboard.data.surf_nft_rules.references import SEASONS
+    manager, now, *_ = setup
+    config = FACTORIES[0] if kind == 'registry' else dict(chainId=4663, factory=SEASONS['hook'])
+    key = f"{config['chainId']}:{config['factory']}"
+    candidate = dict(chainId=config['chainId'], address=config['factory'], launch={})
+    manager._candidates = lambda: {key: candidate}
+    manager.state['evidence'][key] = dict(checkedAt=now.value - 121,
+        detectionStatus='unsupported', standard=None)
+    seen = []
+    async def discover(state, **kwargs):
+        return SimpleNamespace(state={}, coverage={'complete': False})
+    async def inspect(_candidate, progress, *, budget, proof_only=False):
+        seen.append(proof_only)
+        budget.consume(http=1, rpc=1)
+        return SimpleNamespace(progress={}, children=[], complete=True,
+            evidence=dict(chainId=config['chainId'], address=config['factory'],
+                          checkedAt=now.value, detectionStatus='unsupported'))
+    manager.discovery.advance = discover
+    manager.inspector.advance = inspect
+    manager._publish = lambda: None
+    try:
+        await manager._cycle()
+        assert seen == [False]
+    finally:
+        await manager.close()
+
+
+def test_retained_factory_scan_is_prioritized_after_restart(setup):
+    from maxpane_dashboard.data.surf_nft_rules.children import FACTORIES
+    manager, now, *_ = setup
+    factory = f"{FACTORIES[0]['chainId']}:{FACTORIES[0]['factory']}"
+    known = '1:0x' + 'a' * 40
+    manager.state['evidence'] = {
+        factory: dict(checkedAt=now.value, standard=None, detectionStatus='unsupported'),
+        known: dict(checkedAt=900, standard='ERC-721', proofOnly=True),
+    }
+    manager.state['progress'][factory] = dict(started_at=now.value - 60, completed_operations=7)
+    assert manager._focus({known: {}, factory: {}}) == factory
+
+
+async def test_discovered_child_is_inspected_before_waiting_for_negative_probe_ttl(setup):
+    manager, now, *_ = setup
+    child, generic = [f'1:0x{char * 40}' for char in 'ab']
+    candidate = dict(chainId=1, address=child[2:], artifact={'name': 'LoomCollection'})
+    manager.state['child_candidates'][child] = candidate
+    manager.state['evidence'][child] = dict(chainId=1, address=child[2:],
+        checkedAt=now.value, inspectionComplete=False, factoryCreationVerified=True)
+    manager._candidates = lambda: {generic: {}, child: candidate}
+    seen = []
+    async def discover(state, **kwargs):
+        return SimpleNamespace(state={}, coverage={'complete': False})
+    async def inspect(candidate, progress, *, budget, proof_only=False):
+        seen.append((candidate.get('address'), proof_only))
+        budget.consume(http=1, rpc=1)
+        return SimpleNamespace(progress={}, children=[], complete=True,
+            evidence=dict(chainId=1, address=candidate.get('address'),
+                          checkedAt=now.value, detectionStatus='unsupported'))
+    manager.discovery.advance = discover
+    manager.inspector.advance = inspect
+    manager._publish = lambda: None
+    try:
+        await manager._cycle()
+        assert (child[2:], False) in seen
+        # A completed negative still backs off; child origin alone admits no row.
+        assert not manager._due(child)
+        assert manager.get_snapshot()['nft_rows'] is None
+    finally:
+        await manager.close()
+
+
+async def test_linked_job_detail_has_budget_even_with_selected_and_background_reads(setup):
+    manager, now, *_ = setup
+    selected, background = [f'1:0x{char * 40}' for char in 'ab']
+    candidates = {key: {'chainId': 1, 'address': key[2:]} for key in (selected, background)}
+    manager._candidates = lambda: candidates
+    manager.select(selected)
+    manager.state['evidence'][background] = dict(standard='ERC-721', proofOnly=True)
+    progress = []
+    async def discover(state, *, budget, page_limit, launch_limit, detail_limit):
+        for _ in range(page_limit + launch_limit):
+            if budget.can_admit():
+                budget.consume(http=1)
+        if detail_limit and budget.can_admit(http=2):
+            budget.reserve_shared_job()
+            progress.append('job detail read')
+        return SimpleNamespace(state={}, coverage={'complete': False})
+    async def inspect(_candidate, stage, *, budget, proof_only=False):
+        while budget.can_admit():
+            budget.consume(http=1, rpc=1)
+        return SimpleNamespace(progress={'started_at': now.value,
+            'completed_operations': (stage or {}).get('completed_operations', 0) + 1},
+            evidence=None, children=[], complete=False)
+    manager.discovery.advance = discover
+    manager.inspector.advance = inspect
+    manager._publish = lambda: None
+    try:
+        await manager._cycle()
+        assert progress == ['job detail read']
+        assert manager.last_budget.http_attempts + manager.last_budget.reserved_http <= 24
+    finally:
+        await manager.close()
+
+
+async def test_background_inspection_leaves_time_for_reserved_job_detail(setup):
+    manager, now, *_ = setup
+    identity = '1:0x' + 'a' * 40
+    manager._candidates = lambda: {identity: {'chainId': 1, 'address': identity[2:]}}
+    manager.state['evidence'][identity] = dict(standard='ERC-721', proofOnly=True)
+    reads = []
+    async def discover(state, *, budget, detail_limit, **_kw):
+        if detail_limit and budget.can_admit(http=2):
+            reads.append(budget.remaining_seconds)
+            budget.reserve_shared_job()
+        return SimpleNamespace(state={}, coverage={'complete': False})
+    async def inspect(candidate, stage, *, budget, **_kw):
+        budget.consume(http=1)
+        now.value += budget.remaining_seconds  # the read reaches its admitted deadline
+        return SimpleNamespace(progress={'started_at': 1000., 'completed_operations': 1},
+                               evidence=None, children=[], complete=False)
+    manager.discovery.advance = discover
+    manager.inspector.advance = inspect
+    manager._publish = lambda: None
+    try:
+        await manager._cycle()
+        assert reads and reads[0] >= 2
+    finally:
+        await manager.close()
+
+
 @pytest.mark.parametrize('failed_method,retain', [('eth_getCode', True),
     ('eth_getTransactionReceipt', True), ('empty-code', False), ('reverted-receipt', False),
     ('partial-stage', True)])

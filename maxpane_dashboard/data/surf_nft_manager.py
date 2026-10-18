@@ -13,11 +13,14 @@ from maxpane_dashboard.data.surf_nft_cache import SurfNftCache, _stamp
 from maxpane_dashboard.data.surf_nft_client import Budget, BudgetExhausted, SurfNftClient
 from maxpane_dashboard.data.surf_nft_discovery import SurfNftDiscovery, discovery_candidates
 from maxpane_dashboard.data.surf_nft_chain import SurfNftInspector
-from maxpane_dashboard.data.surf_nft_rules.catalog import project_catalog
+from maxpane_dashboard.data.surf_nft_rules.catalog import NFT_WORDS, project_catalog
+from maxpane_dashboard.data.surf_nft_rules.children import FACTORIES
+from maxpane_dashboard.data.surf_nft_rules.references import SEASONS
 from maxpane_dashboard.data.surf_nft_rules.rules import RULES
 from maxpane_dashboard.data.surf_nft_readme import repository_reference
 
 log = logging.getLogger(__name__)
+_DISCOVERY_PARENTS = {f"{item['chainId']}:{item['factory']}" for item in FACTORIES} | {f"4663:{SEASONS['hook']}"}
 
 
 class SurfNftManager:
@@ -223,6 +226,10 @@ class SurfNftManager:
         return {**discovery_candidates(self.state.get('discovery') or {}),
                 **self.state.get('child_candidates', {})}
 
+    def _uninspected_child(self, identity):
+        return (identity in self.state.get('child_candidates', {}) and
+                not self.state.get('evidence', {}).get(identity, {}).get('detectionStatus'))
+
     def _due(self, identity):
         if self._clock() < self._inspection_deferred.get(identity, 0):
             return False
@@ -232,11 +239,22 @@ class SurfNftManager:
         if attempted is not None and self._clock() - attempted < self.FAILURE_BACKOFF:
             return False
         evidence = self.state.get('evidence', {}).get(identity)
-        if not evidence or evidence.get('proofOnly'):
+        if not evidence or evidence.get('proofOnly') or self._uninspected_child(identity):
             return True
         stamp = _stamp(evidence.get('checkedAt'))
-        ttl = self.CHAIN_TTL if evidence.get('standard') else self.PROBE_TTL
+        ttl = self.CHAIN_TTL if evidence.get('standard') or identity in _DISCOVERY_PARENTS else self.PROBE_TTL
         return stamp is None or self._clock() - stamp >= ttl
+
+    @staticmethod
+    def _discovery_priority(candidate):
+        """Reported NFT intent orders reads; only chain proof admits a row."""
+        launch = candidate.get('launch') or {}
+        notes = ((launch.get('attestation') or {}).get('manifest') or {}).get('notes')
+        texts = [notes, (candidate.get('artifact') or {}).get('name')]
+        texts.extend(job.get('objective') for job in launch.get('jobs') or [])
+        relevant = any(isinstance(text, str) and NFT_WORDS.search(text) for text in texts)
+        number = launch.get('launchNumber')
+        return not relevant, -(number if type(number) is int else 0)
 
     def _pending(self, candidates):
         """Prove reviewed candidates before enriching already observed collections."""
@@ -245,7 +263,8 @@ class SurfNftManager:
                                   item[0] not in RULES,
                                   item[0] in self.state.get('evidence', {}),
                                   item[0] not in self.state.get('progress', {}),
-                                  _stamp(self.state.get('evidence', {}).get(item[0], {}).get('checkedAt')) or 0))
+                                  _stamp(self.state.get('evidence', {}).get(item[0], {}).get('checkedAt')) or 0,
+                                  self._discovery_priority(item[1])))
         return due
 
     def _focus(self, candidates, *, probe=False):
@@ -258,6 +277,10 @@ class SurfNftManager:
         evidence = self.state.get('evidence', {})
         stages = self.state.get('progress', {})
         known = {key for key, fact in evidence.items() if fact.get('standard')}
+        # Reviewed factories are not necessarily NFTs themselves. Their full
+        # interpreter verifies the runtime/registry and discovers proven children.
+        known.update(_DISCOVERY_PARENTS)
+        known.update(self.state.get('child_candidates', {}))
         known.update(row['id'] for row in self.state.get('records') or [] if row['category'] == 'launched')
         due = [key for key in candidates if (key not in known) == probe and self._due(key)
                and (key in stages or len(stages) < SurfNftCache.MAX_STAGES)]
@@ -265,9 +288,12 @@ class SurfNftManager:
             return current
         # Unknown details beat periodic refreshes; attempts break ties so a
         # reviewed or recently selected collection cannot monopolize admission.
-        due.sort(key=lambda key: (not evidence.get(key, {}).get('proofOnly', key not in evidence),
+        due.sort(key=lambda key: (not (key in _DISCOVERY_PARENTS or self._uninspected_child(key) or
+                                      evidence.get(key, {}).get('proofOnly', key not in evidence)),
                                  self._inspection_attempts.get(key, 0), key != self._selected,
-                                 key not in RULES, _stamp(evidence.get(key, {}).get('checkedAt')) or 0))
+                                 key not in _DISCOVERY_PARENTS, key not in RULES,
+                                 self._discovery_priority(candidates[key]),
+                                 _stamp(evidence.get(key, {}).get('checkedAt')) or 0))
         identity = due[0] if due else None
         self._inspection_focus[probe] = identity, now
         return identity
@@ -396,22 +422,27 @@ class SurfNftManager:
                 await self._slice(priority, candidates[priority], budget, http=8, rpc=64, seconds=3)
             probe = self._focus(candidates, probe=True)
             if probe is not None and probe != priority and budget.can_admit():
-                await self._slice(probe, candidates[probe], budget, http=3, rpc=16,
-                                  seconds=2, proof_only=True)
+                await self._slice(probe, candidates[probe], budget,
+                                  http=3 if priority is not None else 6, rpc=32,
+                                  seconds=3, proof_only=True)
             # Finish an admitted collection within its ten-minute pinned context.
             # A small separate proof lane keeps new discoveries moving. When no
             # collection needs enrichment, lend its budget to that proof lane.
-            while budget.remaining_http > 3 and budget.can_admit():
+            while budget.remaining_http > 4 and budget.remaining_seconds > 2:
                 identity = self._focus(candidates)
                 probing = identity is None
                 identity = self._focus(candidates, probe=True) if probing else identity
                 if identity is None:
                     break
                 await self._slice(identity, candidates[identity], budget,
-                                  http=budget.remaining_http - 3, rpc=192, proof_only=probing)
+                                  http=budget.remaining_http - 4, rpc=192,
+                                  seconds=budget.remaining_seconds - 2, proof_only=probing)
                 if identity in self.state.get('progress', {}):
                     break
-            await self._discover(budget, page_limit=3, detail_limit=8, launch_limit=2)
+            # Pages and launch details used to spend every reserved send before
+            # a shared job could reserve its two-host allowance. Give it a turn.
+            await self._discover(budget, page_limit=0, detail_limit=1, launch_limit=0)
+            await self._discover(budget, page_limit=3, detail_limit=7, launch_limit=2)
         except BudgetExhausted:
             pass
         except asyncio.CancelledError:

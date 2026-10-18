@@ -227,3 +227,54 @@ UI refresh requests before they cross threads, and discards elapsed 30-second ti
 Opening/reopening still bootstraps immediately, including when README work starts
 in the activation setter. Partial/final snapshots and retained cached navigation
 remain available. Source TTLs, budgets and enrichment fairness are unchanged.
+
+## NFT catalogue discovery admission — 2026-10-18
+
+Fresh Swarm pages were reaching the cache, but 985 contract candidates competed
+without NFT/new-launch priority. Five live baseline cycles left the deployed
+count at 18 and job details at 86. Launch-detail reads repeatedly spent the
+remaining allowance before linked jobs could reserve their two-host reads.
+Reviewed factories also entered the proof-only path: their negative NFT interface
+result returned before their child-discovery adapters could run.
+
+The manager now orders probes by reported NFT intent and launch number, without
+using that text as deployment evidence. Existing reviewed factories receive full
+inspection and the collection refresh TTL; retained factory work keeps priority
+after reopening. Newly discovered child placeholders enter full inspection
+without waiting for the ten-minute negative-probe TTL; completed negatives still
+back off. Background inspection leaves four HTTP slots and two seconds
+for discovery, with one linked job offered before more page/launch reads. Total
+limits remain 24 HTTP attempts, 256 RPC calls and fifteen seconds of network
+admission per cycle. Existing proof gates, endpoint pools, source rules, UI layout
+and single-flight polling are unchanged.
+
+Real keyless reads against an isolated copy of the user's cache increased the
+deployed count from 18 to 20: NightFrogs and imd/place seasons. Job details advanced
+from 86 to 99; previously unfilled Veterans and Keel Notes details also populated.
+The final twelve-cycle sample took 6.92–9.23 seconds per cycle. These diagnostic
+cycles ran consecutively without thirty-second waits; this is not a complete
+catalogue latency guarantee. A 149×45 Matrix render with NightFrogs selected was
+shown before review. The user's active cache was not modified.
+
+Swarm Cats was discovered in the reviewed Loom factory registry but remained
+excluded because its creation-receipt proof failed in normal sliced scans.
+Subsequent direct reads and an isolated full factory inspection succeeded; the
+normal-cycle recovery was not verified. Follow up by capturing the receipt
+observation across sliced replay before attributing this to the provider. Its
+unverified row stays excluded. No source or origin gate was weakened.
+Mint/IDMD fields still require their own reviewed evidence and may remain unknown.
+
+Verification: 161 touched/composing tests and 126 fast guards passed. Eight restored
+mutations were killed: discovery priority, factory full-inspection admission,
+retained-factory rank, linked-job reservation, linked-job time allowance and
+factory refresh TTL, plus child initial admission and full inspection. No full
+suite was run. Live captures, render and test/mutation logs are under
+`/tmp/maxpane-nft-discovery-audit/`.
+
+Independent review approved the original diff. The scoped correction for initial
+child admission, negative backoff and preserved proof gates was marked ADDRESSED;
+the reviewer independently killed its two mutations. Minor test follow-up:
+`test_discovered_child_is_inspected_before_waiting_for_negative_probe_ttl` disables
+`_publish`, so its final empty-row assertion does not itself exercise projection.
+Use a real projection when that test is next maintained; the chain origin gates
+were checked separately and remain unchanged.
