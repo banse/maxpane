@@ -40,6 +40,40 @@ def setup(handler=None, monotonic=lambda: 1.):
 def budget(n=24):return Budget(http_limit=n,monotonic=lambda:1.)
 
 
+def test_candidate_projection_parses_each_job_once_and_refreshes_references(monkeypatch):
+    from unittest.mock import Mock
+    import maxpane_dashboard.data.surf_nft_rules.catalog as catalog
+
+    ids = [f'00000000-0000-4000-8000-{i:012d}' for i in range(4)]
+    commit = 'ab' * 20
+    details = {
+        ids[0]: {'id': ids[0], 'objective': 'Shared project'},
+        ids[1]: {'id': ids[1], 'objective': f'Continue {ids[0]}',
+                 'delivery': {'commit': commit}},
+        ids[2]: {'id': ids[2], 'objective': 'Shared project',
+                 'project': {'versions': [{'baseCommit': commit}]}},
+        ids[3]: {'id': ids[3], 'objective': 'Shared project'},
+    }
+    raw = {'jobDetails': details, 'launches': [
+        {'id': 'launch', 'chainId': 1, 'jobs': [{'id': ids[0]}],
+         'artifacts': [{'address': '0x' + char * 40} for char in '12']},
+    ]}
+    pattern = Mock(wraps=catalog.JOB_ID)
+    monkeypatch.setattr(catalog, 'JOB_ID', pattern)
+    original = deepcopy(raw)
+    first = discovery_candidates({'raw': raw})
+    assert len(first) == 2
+    assert all(candidate['jobIds'] == ids[:3] for candidate in first.values())
+    assert raw == original
+    assert pattern.findall.call_count == len(details)
+
+    details[ids[1]]['objective'] = 'Shared project'
+    details[ids[2]]['project']['versions'][0]['baseCommit'] = 'cd' * 20
+    second = discovery_candidates({'raw': raw})
+    assert all(candidate['jobIds'] == ids[:1] for candidate in second.values())
+    assert pattern.findall.call_count == 2 * len(details)
+
+
 @pytest.mark.parametrize('template', [[], {}])
 async def test_malformed_job_template_retains_other_page_progress(template):
     def handler(request):

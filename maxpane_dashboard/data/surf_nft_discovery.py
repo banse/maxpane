@@ -16,7 +16,7 @@ import time
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.data.surf_nft_client import BudgetExhausted, SourceUnavailable, valid_page_cursor
 from maxpane_dashboard.data.surf_nft_rules.catalog import (
-    JOB_ID, NFT_WORDS, NON_BUILD_TEMPLATES, deployment_candidates, related_records,
+    JOB_ID, NFT_WORDS, NON_BUILD_TEMPLATES, deployment_candidates, job_references, related_records,
 )
 
 SEARCHES = ('NFT', '721', '1155', 'non-fungible', 'generative', 'mint', 'collection')
@@ -292,8 +292,10 @@ def discovery_candidates(state):
     """Project accepted explicit deployment facts without fetching or clock reads."""
     raw = state.get('raw', {}) if isinstance(state, dict) else {}
     found = deployment_candidates(raw)
+    references = job_references(raw.get('jobDetails', {}))
     for identity, candidate in found.items():
-        jobs, sites, repos = related_records(raw, candidate['jobIds'], candidate['address'], candidate['launchIds'])
+        jobs, sites, repos = related_records(raw, candidate['jobIds'], candidate['address'],
+                                           candidate['launchIds'], references=references)
         candidate['jobIds'] = [j['id'] for j in jobs]
         candidate.update(id=identity, chain_id=candidate['chainId'], contract=candidate['address'],
                          tx_hash=candidate['artifact'].get('txHash'), block_number=candidate['artifact'].get('blockNumber'),

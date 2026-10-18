@@ -321,3 +321,78 @@ def test_confirmed_factory_source_details_keep_implementation_address():
     rows=project_catalog({'coverage':{},'jobDetails':{}},{key:candidate},{key:evidence},now_iso='2026-10-17T00:00:00Z')['collections']
     assert rows[0]['deployment']['factoryAddress']=='0x'+'22'*20
     assert rows[0]['deployment']['implementationAddress']=='0x'+'33'*20
+
+
+def test_related_records_preserves_explicit_transitive_and_directed_joins():
+    from maxpane_dashboard.data.surf_nft_rules.catalog import related_records
+
+    a, b, c, d, missing, reverse, workflow, published = [
+        f'00000000-0000-4000-8000-{i:012d}' for i in range(8)]
+    commit = 'ab' * 20
+    raw = {'jobDetails': {
+        a: {'id': a, 'objective': f'Shared project {c}', 'delivery': {'commit': commit}},
+        b: {'id': b, 'objective': f'Continue {c}'},
+        c: {'id': c, 'objective': f'Continue {a}'},
+        d: {'id': d, 'project': {'versions': [{'baseCommit': commit, 'jobId': missing}]}},
+        reverse: {'id': reverse, 'objective': 'Shared project',
+                  'project': {'versions': [{'jobId': a}]}},
+    }, 'workflows': [{'contractsJobId': b, 'frontendJobId': workflow}],
+        'publications': [{'id': 'job:' + workflow, 'versions': [{'jobId': published}]}]}
+    original = copy.deepcopy(raw)
+    jobs, sites, repos = related_records(raw, {a})
+    assert [job['id'] for job in jobs] == sorted([a, b, c, d, missing, workflow, published])
+    assert next(job for job in jobs if job['id'] == missing)['title'] == missing
+    assert sites == repos == []
+    assert raw == original
+    assert {job['id'] for job in related_records(raw, {reverse})[0]} == set(raw['jobDetails']) | {
+        missing, workflow, published}
+
+
+def test_related_records_keeps_source_overwrite_and_repository_order():
+    from maxpane_dashboard.data.surf_nft_rules.catalog import related_records
+
+    job = '00000000-0000-4000-8000-000000000001'
+    def site(name, identity='site'):
+        return {'id': identity, 'url': f'https://{name}.example', 'status': 'published'}
+    raw = {'jobDetails': {job: {'id': job, 'site': site('job')}}, 'publications': [
+        {'contracts': [{'id': 'launch'}], 'versions': [
+            {'jobId': job, 'repoUrl': 'https://github.com/test/first', 'commit': 'old'},
+            {'repoUrl': 'https://github.com/test/second', 'commit': 'second'}],
+         'sites': [site('first'), site('extra', 'other')]},
+        {'id': 'job:' + job, 'versions': [
+            {'repoUrl': 'https://github.com/test/first', 'commit': 'new'}],
+         'sites': [site('second')]},
+    ], 'sites': {'sites': [dict(site('final'), jobId=job)]}}
+    jobs, sites, repos = related_records(raw, set(), launch_ids=['launch'])
+    assert [entry['id'] for entry in jobs] == [job]
+    assert [entry['url'] for entry in sites] == ['https://final.example', 'https://extra.example']
+    assert repos == [{'url': 'https://github.com/test/first', 'commit': 'new'},
+                     {'url': 'https://github.com/test/second', 'commit': 'second'}]
+
+
+def test_catalog_parses_each_job_once_without_promoting_reported_mint_claims(monkeypatch):
+    from unittest.mock import Mock
+    import maxpane_dashboard.data.surf_nft_rules.catalog as catalog
+
+    job = '00000000-0000-4000-8000-000000000001'
+    claim = 'IDMD holders can claim a free NFT mint. Public mint price: 0 ETH.'
+    raw = {'jobDetails': {job: {'id': job, 'objective': claim}}}
+    candidates, checked = {}, {}
+    for char in '12':
+        address = '0x' + char * 40
+        key = '1:' + address
+        candidates[key] = {'chainId': 1, 'address': address, 'launch': {'id': char, 'chainId': 1},
+                           'artifact': {}, 'jobIds': [job], 'launchIds': [char]}
+        checked[key] = {'chainId': 1, 'address': address, 'standard': 'ERC-721',
+                        'codePresent': True, 'receiptSuccess': True, 'deploymentConfirmed': True}
+    pattern = Mock(wraps=catalog.JOB_ID)
+    monkeypatch.setattr(catalog, 'JOB_ID', pattern)
+    rows = catalog.project_catalog(raw, candidates, checked, now_iso='2026-10-17T00:00:00Z')['collections']
+    assert len(rows) == 2
+    for row in rows:
+        assert [entry['id'] for entry in row['jobs']] == [job]
+        assert row['mint']['state'] == 'unknown'
+        assert row['mint']['publicPrice'] is None
+        assert row['idmdBenefit']['status'] == 'unknown'
+        assert 'Public mint price: 0 ETH.' in row['mint']['reportedTerms']
+    assert pattern.findall.call_count == len(raw['jobDetails'])

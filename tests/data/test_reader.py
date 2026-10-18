@@ -1,5 +1,6 @@
 """The reader owns I/O and mutable managers; UI access stays local."""
 import asyncio
+from concurrent.futures import Future
 import threading
 
 import pytest
@@ -515,4 +516,176 @@ async def test_synchronous_board_offer_publishes_only_changed_contribution_snaps
         assert len(projected) == initial
         assert not handle.is_loading()
     finally:
+        await runtime.close()
+
+
+async def reader_turn(runtime, callback):
+    """Observe an explicit reader turn, without sleeping to assert an absence."""
+    future = Future()
+    def run():
+        try:
+            future.set_result(callback())
+        except BaseException as exc:
+            future.set_exception(exc)
+    runtime._submit(run)
+    return await asyncio.wrap_future(future)
+
+
+async def test_refresh_burst_while_reader_cpu_blocked_does_not_queue_a_followup():
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+    class Blocked(Manager):
+        async def fetch_and_compute(self):
+            self.record('fetch')
+            entered.set()
+            assert release.wait(3)
+            return self.value
+    runtime = ReaderRuntime()
+    handle = runtime.register('one', lambda: Blocked(calls))
+    try:
+        handle.set_active_view('one')
+        await eventually(entered.is_set)
+        for _ in range(20):
+            handle.request_refresh()
+        release.set()
+        await reader_turn(runtime, lambda: None)
+        await reader_turn(runtime, lambda: None)  # run any admitted coroutine
+        assert sum(name == 'fetch' for name, _ in calls) == 1
+        assert not handle.is_loading()
+        handle.request_refresh()  # a fresh request after completion still works
+        await eventually(lambda: sum(n == 'fetch' for n, _ in calls) == 2)
+    finally:
+        release.set()
+        await runtime.close()
+
+
+@pytest.mark.parametrize('detached', [False, True])
+async def test_busy_cycles_discard_elapsed_ticks_and_publish_without_catchup(detached):
+    now, calls = [100.0], []
+    started, finish = threading.Event(), threading.Event()
+    class Held(Manager):
+        task = None
+        async def read(self):
+            started.set()
+            while not finish.is_set():
+                await asyncio.sleep(.001)
+            self.value = {'rows': [{'value': 7}]}
+            return self.value
+        async def fetch_and_compute(self):
+            self.record('fetch')
+            if detached:
+                self.task = asyncio.create_task(self.read())
+                return self.value
+            return await self.read()
+        def is_loading(self, view=None):
+            return self.task is not None and not self.task.done()
+    runtime = ReaderRuntime(clock=lambda: now[0])
+    handle = runtime.register('one', lambda: Held(calls))
+    try:
+        handle.set_active_view('one')
+        await eventually(started.is_set)
+        now[0] = 165  # miss the 130 and 160 deadlines while still reading
+        await reader_turn(runtime, runtime._poll)
+        await reader_turn(runtime, lambda: runtime._request('one', handle._generation))
+        await reader_turn(runtime, lambda: None)
+        assert sum(n == 'fetch' for n, _ in calls) == 1
+        assert handle.is_loading()
+        if detached:
+            assert handle.get_snapshot() == {'rows': [{'value': 1}]}
+        finish.set()
+        await eventually(lambda: not handle.is_loading())
+        assert handle.get_snapshot() == {'rows': [{'value': 7}]}
+        await reader_turn(runtime, runtime._poll)
+        assert sum(n == 'fetch' for n, _ in calls) == 1
+        now[0] = 189
+        await reader_turn(runtime, runtime._poll)
+        assert sum(n == 'fetch' for n, _ in calls) == 1
+        now[0] = 190
+        await reader_turn(runtime, runtime._poll)
+        await eventually(lambda: sum(n == 'fetch' for n, _ in calls) == 2)
+    finally:
+        finish.set()
+        await runtime.close()
+
+
+@pytest.mark.parametrize('fails', [False, True])
+async def test_cpu_blocked_completion_or_error_skips_missed_poll_deadlines(fails):
+    now, calls = [100.0], []
+    class Slow(Manager):
+        async def fetch_and_compute(self):
+            self.record('fetch')
+            now[0] = max(now[0], 165)  # synchronous work prevents monitor ticks
+            if fails:
+                raise OSError('read failed after a long projection')
+            return self.value
+    runtime = ReaderRuntime(clock=lambda: now[0])
+    handle = runtime.register('one', lambda: Slow(calls))
+    try:
+        handle.set_active_view('one')
+        await eventually(lambda: bool(calls) and not handle.is_loading())
+        await reader_turn(runtime, runtime._poll)
+        await reader_turn(runtime, lambda: None)
+        assert sum(n == 'fetch' for n, _ in calls) == 1
+        now[0] = 190
+        await reader_turn(runtime, runtime._poll)
+        await eventually(lambda: sum(n == 'fetch' for n, _ in calls) == 2)
+    finally:
+        await runtime.close()
+
+
+async def test_detached_final_projection_skips_deadlines_crossed_while_publishing():
+    now, calls = [100.0], []
+    class Projection(Manager):
+        busy = True
+        def is_loading(self, view=None):
+            return self.busy
+        def get_snapshot(self):
+            now[0] = 165
+            return {'rows': [{'value': 7}]}
+    runtime = ReaderRuntime(clock=lambda: now[0])
+    handle = runtime.register('one', lambda: Projection(calls))
+    try:
+        handle.set_active_view('one')
+        await eventually(lambda: handle.get_snapshot() is not None)
+        def complete():
+            runtime.get_manager('one').busy = False
+            runtime._poll()
+        await reader_turn(runtime, complete)
+        await reader_turn(runtime, lambda: None)
+        assert handle.get_snapshot() == {'rows': [{'value': 7}]}
+        assert not handle.is_loading()
+        assert sum(n == 'fetch' for n, _ in calls) == 1
+        now[0] = 190
+        await reader_turn(runtime, runtime._poll)
+        await eventually(lambda: sum(n == 'fetch' for n, _ in calls) == 2)
+    finally:
+        await runtime.close()
+
+
+async def test_activation_bootstrap_runs_catalogue_despite_setter_started_readme():
+    calls, started, finish = [], threading.Event(), threading.Event()
+    class Catalogue(Manager):
+        def set_active_view(self, view):
+            super().set_active_view(view)
+            if view:
+                self.task = asyncio.create_task(self.readme())
+        async def readme(self):
+            started.set()
+            while not finish.is_set():
+                await asyncio.sleep(.001)
+        def is_loading(self, view=None):
+            return hasattr(self, 'task') and not self.task.done()
+    runtime = ReaderRuntime()
+    handle = runtime.register('one', lambda: Catalogue(calls))
+    try:
+        handle.set_active_view('NFT EXPLORER')
+        await handle.fetch_and_compute()
+        await eventually(started.is_set)
+        await eventually(lambda: handle.get_snapshot() is not None)
+        assert sum(n == 'fetch' for n, _ in calls) == 1
+        assert handle.is_loading()
+        finish.set()
+        await eventually(lambda: not handle.is_loading())
+    finally:
+        finish.set()
         await runtime.close()

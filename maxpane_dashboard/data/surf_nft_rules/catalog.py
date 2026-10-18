@@ -144,15 +144,27 @@ def live_site(site):
     return bool(isinstance(site, dict) and site.get("url") and site.get("status") in {"named", "live", "published", "pinned"} and not site.get("supersededBy") and not site.get("takenDownAt") and not site.get("takenDownReason"))
 
 
-def related_records(raw, seed_jobs, address=None, launch_ids=()):
-    """Explicit workflow/project/publication joins; name similarity is never a join."""
-    details = raw.get("jobDetails", {})
-    ids, sites, repos = set(seed_jobs), {}, {}
+def job_references(details):
+    """Prepare explicit UUID/commit links for one projection of unchanged facts."""
     commits = {}
     for job_id, job in details.items():
         commit = (job.get("delivery") or {}).get("commit")
         if isinstance(commit, str) and re.fullmatch(r"[0-9a-fA-F]{40}", commit):
             commits.setdefault(commit, set()).add(job_id)
+    references = {}
+    for job_id, job in details.items():
+        referenced = {v for v in JOB_ID.findall(job.get("objective") or "") if v in details}
+        for version in (job.get("project") or {}).get("versions", []):
+            referenced.update(commits.get(version.get("baseCommit"), set()))
+        references[job_id] = referenced
+    return references
+
+
+def related_records(raw, seed_jobs, address=None, launch_ids=(), *, references=None):
+    """Explicit workflow/project/publication joins; name similarity is never a join."""
+    details = raw.get("jobDetails", {})
+    ids, sites, repos = set(seed_jobs), {}, {}
+    references = job_references(details) if references is None else references
     # A site job that explicitly names the deployed contract is a direct reference.
     if address:
         for job in details.values():
@@ -161,10 +173,7 @@ def related_records(raw, seed_jobs, address=None, launch_ids=()):
     changed = True
     while changed:
         previous = len(ids)
-        for job_id, job in details.items():
-            referenced = {v for v in JOB_ID.findall(job.get("objective") or "") if v in details}
-            for version in (job.get("project") or {}).get("versions", []):
-                referenced.update(commits.get(version.get("baseCommit"), set()))
+        for job_id, referenced in references.items():
             if job_id in ids or referenced & ids:
                 ids.update(referenced)
                 ids.add(job_id)
@@ -280,6 +289,7 @@ def superseded_projects(details):
 def project_catalog(raw, candidates, checked, *, now_iso, active_days=7):
     collections, excluded, deployed_jobs = [], [], set()
     details = raw.get("jobDetails", {})
+    references = job_references(details)
     for key, candidate in candidates.items():
         chain, launch = checked.get(key, {}), candidate["launch"]
         if (not verified_nft(launch, chain) or chain.get("chainId") != candidate.get("chainId")
@@ -290,7 +300,8 @@ def project_catalog(raw, candidates, checked, *, now_iso, active_days=7):
         if template:
             excluded.append({"id": key, "launchIds": candidate["launchIds"], "reason": template})
             continue
-        jobs, sites, repos = related_records(raw, set(candidate["jobIds"]), candidate["address"], candidate["launchIds"])
+        jobs, sites, repos = related_records(raw, set(candidate["jobIds"]), candidate["address"],
+                                           candidate["launchIds"], references=references)
         deployed_jobs.update(j["id"] for j in jobs)
         notes = ((launch.get("attestation") or {}).get("manifest") or {}).get("notes") or ""
         objectives = "\n".join(details.get(j["id"], {}).get("objective", "") for j in jobs)
@@ -353,7 +364,7 @@ def project_catalog(raw, candidates, checked, *, now_iso, active_days=7):
         if project not in grouped or (timestamp(evidence) or 0) > (timestamp(grouped[project][1]) or 0):
             grouped[project] = (job, evidence, review)
     for project, (job, stamp, review) in grouped.items():
-        jobs, sites, repos = related_records(raw, {job["id"]})
+        jobs, sites, repos = related_records(raw, {job["id"]}, references=references)
         if any(j["id"] in deployed_jobs for j in jobs):
             continue
         for chain_id in ([review["chainId"]] if review else target_chains(job)):

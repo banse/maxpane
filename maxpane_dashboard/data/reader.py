@@ -41,10 +41,11 @@ class _Entry:
 class ReaderRuntime:
     """Lazy application-owned thread, shared by every dashboard manager."""
 
-    def __init__(self, poll_interval=30, publish_interval=1.0):
+    def __init__(self, poll_interval=30, publish_interval=1.0, *, clock=time.monotonic):
         if poll_interval <= 0 or publish_interval <= 0:
             raise ValueError('reader intervals must be positive')
         self.poll_interval, self.publish_interval = poll_interval, publish_interval
+        self._clock = clock
         self._lock = threading.Lock()
         self._entries, self._pending = {}, []
         self._loop = self._thread = None
@@ -148,7 +149,9 @@ class ReaderRuntime:
                 retirement.add_done_callback(self._retirements.discard)
             if entry.view is not None and not self._closing:
                 if changed:
-                    self._start_refresh(entry)
+                    # Activation may already have started a selected README.
+                    # The new scope still needs its catalogue bootstrap.
+                    self._start_refresh(entry, bootstrap=True)
                 elif method == 'offer_launch_contribution':
                     # A one-second eligibility offer is often a no-op. Publish
                     # just its small result, without rebuilding the full board.
@@ -167,7 +170,7 @@ class ReaderRuntime:
             logger.exception('Reader command %s.%s failed', key, method)
             if entry.manager is None:
                 entry.pending_commands.append((method, args, kwargs))
-            entry.next_read = time.monotonic() + self.poll_interval
+            entry.next_read = self._clock() + self.poll_interval
             entry.handle._finish_error(generation)
 
     def _request(self, key, generation):
@@ -175,12 +178,20 @@ class ReaderRuntime:
         if generation == entry.generation and entry.view is not None:
             self._start_refresh(entry)
 
-    def _start_refresh(self, entry):
+    def _start_refresh(self, entry, *, bootstrap=False):
         if self._closing or entry.view is None or entry.task is not None and not entry.task.done():
             return
-        entry.next_read = time.monotonic() + self.poll_interval
+        if not bootstrap and self._manager_loading(entry):
+            return
+        entry.next_read = self._clock() + self.poll_interval
         entry.handle._mark_loading(entry.generation, True)
         entry.task = asyncio.create_task(self._refresh(entry, entry.generation))
+
+    def _skip_elapsed_polls(self, entry):
+        """Keep the cadence, but never replay ticks missed during a read."""
+        now = self._clock()
+        if entry.next_read <= now:
+            entry.next_read += (int((now - entry.next_read) / self.poll_interval) + 1) * self.poll_interval
 
     async def _refresh(self, entry, generation):
         try:
@@ -209,6 +220,7 @@ class ReaderRuntime:
         finally:
             if generation == entry.generation:
                 entry.task = None
+                self._skip_elapsed_polls(entry)
 
     async def _drain(self, entry):
         retired = tuple(entry.retired)
@@ -264,32 +276,37 @@ class ReaderRuntime:
         # One memo keeps auxiliary views into a payload from being copied twice.
         payload, extras = deepcopy((payload, extras))
         entry.handle._publish(generation, payload, extras, metadata, busy)
-        entry.last_publish, entry.busy = time.monotonic(), busy
+        entry.last_publish, entry.busy = self._clock(), busy
 
     async def _monitor(self):
         while True:
             await asyncio.sleep(min(.1, self.publish_interval, self.poll_interval))
-            with self._lock:
-                entries = list(self._entries.values())
-            now = time.monotonic()
-            for entry in entries:
-                if entry.view is None or entry.closed or self._closing:
-                    continue
-                if entry.manager is None:
-                    if now >= entry.next_read:
-                        self._start_refresh(entry)
-                    continue
-                if entry.task is not None and not entry.task.done():
-                    continue
-                busy = self._manager_loading(entry)
-                if busy or entry.busy or not entry.last_publish:
-                    if not busy or not entry.last_publish or now - entry.last_publish >= self.publish_interval:
-                        try:
-                            self._publish(entry, entry.generation, busy=busy)
-                        except Exception:
-                            logger.exception('Reader projection %s failed', entry.handle.key)
+            self._poll()
+
+    def _poll(self):
+        with self._lock:
+            entries = list(self._entries.values())
+        for entry in entries:
+            if entry.view is None or entry.closed or self._closing:
+                continue
+            now = self._clock()
+            if entry.manager is None:
                 if now >= entry.next_read:
                     self._start_refresh(entry)
+                continue
+            if entry.task is not None and not entry.task.done():
+                self._skip_elapsed_polls(entry)
+                continue
+            busy = self._manager_loading(entry)
+            if busy or entry.busy or not entry.last_publish:
+                if not busy or not entry.last_publish or now - entry.last_publish >= self.publish_interval:
+                    try:
+                        self._publish(entry, entry.generation, busy=busy)
+                    except Exception:
+                        logger.exception('Reader projection %s failed', entry.handle.key)
+                self._skip_elapsed_polls(entry)
+            if self._clock() >= entry.next_read:
+                self._start_refresh(entry)
 
     def _begin_invoke(self, future, key, method, args, kwargs):
         entry = self._entries[key]
@@ -523,8 +540,12 @@ class ReaderHandle:
 
     def request_refresh(self):
         with self._lock:
+            # Coalesce before crossing threads: the reader may be CPU-bound
+            # and unable to reject queued callbacks until after it completes.
+            if self._view is None or self._loading:
+                return
             generation = self._generation
-            self._loading = self._view is not None
+            self._loading = True
         self.runtime._submit(self.runtime._request, self.key, generation)
 
     async def fetch_and_compute(self):

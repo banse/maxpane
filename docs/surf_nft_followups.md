@@ -203,7 +203,7 @@ admission and time slicing. No full suite was run. Logs:
 `/tmp/maxpane-nft-loading-tests.log`, `/tmp/maxpane-nft-loading-guards.log`,
 `/tmp/maxpane-nft-loading-mutations.log`.
 
-Measured follow-up: `_publish()` took 6.026 seconds for this retained catalogue;
+Measured follow-up (resolved by the polling audit below): `_publish()` took 6.026 seconds for this retained catalogue;
 cache preparation took 0.139 seconds and snapshot projection 0.007 seconds.
 Profile the repeated catalogue joins before optimizing them. The network
 admission deadline does not bound synchronous projection/persistence time.
@@ -213,3 +213,17 @@ Final independent review: **Approved, no findings**. Seven targeted regressions
 passed; the reviewer independently killed all four named mutations and restored
 the files byte-for-byte. The inspection/cancellation seam and the BOARDROOM
 proof-only boundary were checked. No reviewer changes remain.
+
+## NFT CPU work and shared poll admission — 2026-10-18
+
+The [dashboard polling audit](dashboard_polling_audit.md) resolves the repeated-join
+performance follow-up. UUID/commit references are now prepared once per projection.
+Five identical-input comparisons reduced publication CPU work from 5.885 to 0.802
+seconds, with identical catalogue/state values and JSON order. Three real reader/UI
+cycles took 6.150, 6.513 and 5.884 seconds; only one cycle ran at a time.
+
+Shared reader admission now includes manager-owned background work, coalesces busy
+UI refresh requests before they cross threads, and discards elapsed 30-second ticks.
+Opening/reopening still bootstraps immediately, including when README work starts
+in the activation setter. Partial/final snapshots and retained cached navigation
+remain available. Source TTLs, budgets and enrichment fairness are unchanged.
