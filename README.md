@@ -49,8 +49,9 @@ The previous **PROTOCOL** view remains available with `p` in the BOARDROOM and
 
 Click **WORKFLOWS [g]** in the boardroom title row, or press `g`, to open the
 workflow guide. It bundles the ten diagrams from aidude's `swarm-workflows.html`
-with explanations, limits and examples dated **2026-10-18**. Left/right selects
-a topic; up/down selects a diagram node; `i` toggles the topic index. Click a
+as large framed nodes, with explanations, limits and examples dated **2026-10-18**.
+The diagram fills the former hero-card space; documented facts are in the source
+popup. Left/right selects a topic; up/down selects a diagram node; `i` toggles the topic index. Click a
 node to select it, then Enter or **SOURCE DETAILS >>** opens its source popup.
 Escape returns to the boardroom; reopening keeps the selected topic/node and
 index state. The guide reads local documentation and does not poll APIs.

@@ -1,19 +1,18 @@
 """A literal, dated documentation atlas; selection only repaints local primitives."""
 from __future__ import annotations
 
-import re
-
 from rich.style import Style
 from rich.text import Text
 from textual import on
-from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.geometry import Region
 from textual.message import Message
 from textual.widgets import Static
 
 from maxpane_dashboard.widgets.markup_safety import flatten, strip_controls
 from maxpane_dashboard.widgets.panels import PanelBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip
-from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, LocalSourceHeroCard
+from maxpane_dashboard.widgets.workflow_guide_diagrams import render_diagram
 
 
 class _GuideText(Static):
@@ -76,11 +75,9 @@ class WorkflowGuideView(Vertical):
         self.source = {}
         self.topics = []
         self._strip_cut = False
+        self._diagram_boxes = {}
 
     def compose(self):
-        with Grid(id='workflow-heroes'):
-            for i in range(6):
-                yield LocalSourceHeroCard(self._record(i, {}))
         yield _GuideText(Text('—'), id='workflow-topics')
         with Horizontal(id='workflow-main'):
             yield _GuidePanel('TOPIC INDEX', id='workflow-index')
@@ -92,12 +89,6 @@ class WorkflowGuideView(Vertical):
                     yield _GuidePanel('EXPLANATION', id='workflow-explanation')
                     yield _GuidePanel('LIMITS', id='workflow-limits')
                     yield _GuidePanel('DOCUMENTED EXAMPLE', id='workflow-example')
-
-    @staticmethod
-    def _record(index, stat):
-        return HeroRecord(key=f'workflow-{index}', title=flatten(stat.get('title')) or '—',
-            heading='DOCUMENTED', footer=flatten(stat.get('caption')),
-            digits=flatten(stat.get('value')) or '—', accent=False)
 
     @property
     def topic(self):
@@ -127,6 +118,7 @@ class WorkflowGuideView(Vertical):
 
     def on_resize(self):
         self.call_after_refresh(self._paint_topics)
+        self.call_after_refresh(self._paint_diagram)
 
     def _changed(self):
         self.post_message(self.Changed({'topic_id': self.topic_id, 'node_id': self.node_id,
@@ -137,11 +129,26 @@ class WorkflowGuideView(Vertical):
             self.topic_id = self.topics[index]['id']
             self.node_id = self.nodes[0]['id'] if self.nodes else None
             self._paint()
+            self.call_after_refresh(self._reveal_selection)
 
     def select_node(self, index):
         if type(index) is int and 0 <= index < len(self.nodes):
             self.node_id = self.nodes[index]['id']
             self._paint()
+            self.call_after_refresh(self._reveal_selection)
+
+    def _reveal_selection(self):
+        if self.node_id not in self._diagram_boxes:
+            return
+        canvas = self.query_one('#workflow-diagram-content')
+        region = Region(*self._diagram_boxes[self.node_id]).translate(canvas.content_region.offset)
+        parent = canvas.parent
+        while parent is not None and parent is not self.screen:
+            if isinstance(parent, VerticalScroll):
+                local = region.translate(-parent.scrollable_content_region.offset + parent.scroll_offset)
+                delta = parent.scroll_to_region(local, animate=False, immediate=True)
+                region = region.translate(-delta)
+            parent = parent.parent
 
     def move_topic(self, delta):
         if self.topic:
@@ -156,6 +163,7 @@ class WorkflowGuideView(Vertical):
         self.index_open = not self.index_open
         self.query_one('#workflow-index').display = self.index_open
         self._paint()
+        self.call_after_refresh(self._paint_diagram)
 
     def open_source(self):
         if self.topic:
@@ -209,53 +217,32 @@ class WorkflowGuideView(Vertical):
 
     def _paint_diagram(self):
         topic, node = self.topic or {}, self.node or {}
-        palette = self.app.get_css_variables()
-        colors = {'step': self.rich_style.color, 'plane': self.rich_style.color,
-                  'merge': palette['success'], 'failure': palette['error'], 'state': palette['warning']}
-        lookup = {item['id']: (i, item) for i, item in enumerate(self.nodes)}
-        figure = Text()
-        lines = topic.get('diagram') or ['—']
-        for row, line in enumerate(lines):
-            offset = 0
-            line = strip_controls(str(line))
-            for match in re.finditer(r'\{([a-z][a-z0-9_]*)\}', line):
-                figure.append(line[offset:match.start()])
-                index, item = lookup[match[1]]
-                selected = item['id'] == self.node_id
-                style = self._selection_style(selected, f'choose_node({index})')
-                if not selected:
-                    style += Style(color=colors[item['kind']], dim=item['kind'] == 'plane')
-                figure.append(flatten(item['label']), style=style)
-                offset = match.end()
-            figure.append(line[offset:])
-            if row + 1 < len(lines):
-                figure.append('\n')
+        scroll = self.query_one('#workflow-diagram-scroll', VerticalScroll)
+        diagram = render_diagram(topic, self.node_id,
+            width=scroll.scrollable_content_region.width,
+            palette=self.app.get_css_variables(), text_color=self.rich_style.color)
+        self._diagram_boxes = diagram.boxes
         canvas = self.query_one('#workflow-diagram-content', _GuideText)
-        canvas.styles.width = max((cell_len(row) for row in figure.plain.splitlines()), default=1)
-        canvas.update(figure)
+        canvas.styles.width = diagram.width
+        canvas.update(diagram.text)
         caption = Text(flatten(topic.get('title')) or 'WORKFLOW DIAGRAM')
-        caption.append(' · colors = diagram roles', style='dim')
         self.query_one('#workflow-diagram .panel-title', Static).update(caption)
-        figure_height = max(8, len(lines) + 4)
-        self.query_one('#workflow-figure').styles.height = figure_height
+        figure_height = max(8, diagram.height + 4)
+        self.query_one('#workflow-figure').styles.min_height = figure_height
         floor = max(22, figure_height + 9)
         self.query_one('#workflow-main').styles.min_height = floor
-        self.styles.min_height = 14 + floor
+        self.styles.min_height = 3 + floor
         source = Text(flatten(node.get('label')))
         if self.topic:
             source.append('  SOURCE DETAILS >>', style=Style(bold=True, meta={'@click': 'open_source'}))
         self.query_one('#workflow-source', _GuideText).update(source)
+        # Overflow hints must see the resized canvas, not its previous width.
+        self.call_after_refresh(self._changed)
 
     def _paint(self):
         if not self.is_mounted:
             return
         topic, node = self.topic or {}, self.node or {}
-        stats = topic.get('stats') or []
-        for i, card in enumerate(self.query(LocalSourceHeroCard)):
-            card.set_record(self._record(i, stats[i] if i < len(stats) else {}))
-            stat = stats[i] if i < len(stats) else {}
-            card.tooltip = Text(' · '.join((flatten(stat.get('title')), flatten(stat.get('value')),
-                flatten(stat.get('caption')), 'DOCUMENTED ' + flatten(self.source.get('date')))))
         self._paint_topics()
         self._paint_diagram()
         for field, value in (
@@ -265,7 +252,6 @@ class WorkflowGuideView(Vertical):
         ):
             self.query_one(f'#workflow-{field}-content', _GuideText).update(Text(strip_controls(str(value))))
             self.query_one(f'#workflow-{field}-scroll', VerticalScroll).scroll_home(animate=False)
-        self._changed()
 
     @property
     def needs_widen(self):

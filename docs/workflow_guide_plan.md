@@ -1,94 +1,113 @@
-# WORKFLOWS guide implementation plan
+# WORKFLOWS framed-diagram revision plan
 
-Date: 2026-10-18. Tier 2. Owner approved Variant 2 plus collapsible index.
-Contract: [PRD](workflow_guide_PRD.md). Source research:
-[game mechanics](workflow_guide_game_mechanics.md). Repository conventions
-override this plan. Expected under 1,000 production lines excluding curated
-source content; one final review, no intermediate reviews, no full suite.
+Date: 2026-10-18. Tier 2. Owner requested larger diagrams resembling hero inner
+cards and removal of this view's hero row. Contract: [PRD](workflow_guide_PRD.md).
+Source research: [game mechanics](workflow_guide_game_mechanics.md).
+
+The existing guide, local catalogue, lifecycle and boardroom route are already
+implemented. This revision changes presentation while retaining all ten topics,
+79 selectable nodes, source popups and caller-owned selection state. Expected
+under 1,000 production lines excluding authored presentation plans. One final
+review, no intermediate reviews, no full suite.
 
 ## Work packages and ownership
 
-All writers are working alongside other agents. Do not revert or edit their
-files; accommodate the agreed contracts and report problems to the controller.
-No child agents. Owned seams are files, not functions.
+All writers work alongside other agents and user changes. Do not revert or edit
+another owner's files. No child agents. File seams, rather than functions,
+define ownership.
 
-| Package | Owner / exclusive files | Dependency and result |
+| Package | Exclusive owner and files | Dependency and result |
 | --- | --- | --- |
-| P0: specification | Planning architect: these three `docs/workflow_guide_*.md` files | Source and current integration read; frozen contract before dispatch. |
-| P1: catalogue and manager | Data implementer: `maxpane_dashboard/data/workflow_guide_models.py`, `workflow_guide_catalog.py`, `workflow_guide_manager.py`; `tests/data/test_workflow_guide.py` | Starts from frozen PRD; portable static content for every topic, node, limit/example and source excerpt; cached local manager. No shared files. |
-| P2: view and source detail | View implementer: new `maxpane_dashboard/widgets/workflow_guide.py`, `maxpane_dashboard/screens/workflow_guide.py`; `tests/screens/test_workflow_guide.py` | Parallel with P1 using handwritten primitive fixtures matching the contract. Six shared-style hero cards, two-row topics, authored diagram, three lower panels, retained selection, index and RecordDetailScreen popup. |
-| P3: boardroom/lifecycle integration | Controller: `screens/dashboard_screen.py`, `screens/surfboard.py`, `app.py` only if needed; `themes/minimal.tcss`; shared test/registry files, README and follow-ups; preview tooling if needed | POLL_DATA default-on capability can begin parallel; route/access lands after P1/P2. Controller alone owns all shared files and any registration changes. No new game or Surf live keys. |
-| P4: assembled verification | Controller | Depends on P1–P3; preview real packaged source, owner corrections, then layout/doc hardening, scoped tests and one final review. |
+| P0: revision specification | Planning architect: `docs/workflow_guide_PRD.md`, this plan | Current source/catalogue and UI read; diagrams and interaction requirements fixed before renderer work. |
+| P1: outlined diagram renderer | Renderer implementer: new `maxpane_dashboard/widgets/workflow_guide_diagrams.py`, `tests/widgets/test_workflow_guide_diagrams.py` | Presentation-only authored placements/routes keyed by existing topic/node IDs, plus small Rich Text renderer. All roles, branches, joins, retries and failure states preserved. No imports from `data/`. |
+| P2: view integration | Controller: `widgets/workflow_guide.py`, `screens/workflow_guide.py`, `themes/minimal.tcss`, composing screen tests | Remove hero composition and sizing; integrate P1, preserve interaction/source detail; enlarge diagram; mirror screen CSS. P2 may remove heroes and write failing tests alongside P1, but rendering integration depends on P1's interface. |
+| P3: verification and documentation | Controller: registry/geometry tests if needed, README and follow-ups | After P1/P2: actual bundled-source preview, measured pins, scoped mutation checks, touched/composing tests, one final review and local commit. |
 
-Keep the screen and popup in the view package's new screen file unless a clear
-need justifies another owned new file. Reuse existing hero rendering and panel
-primitives; no third-party layout framework, generic graph service or dependency.
-P2 coordinates its screen CSS with the controller, who mirrors applicable rules
-into the production stylesheet. Root owns the common lifecycle flag and tests.
+The controller owns every existing production file and shared CSS/test seam.
+The catalogue, manager, model keys, boardroom routing and polling behavior do
+not need edits. New dependencies, generic graph layout engines, graph services
+and runtime HTML parsing are outside scope.
+
+## Renderer handoff
+
+Use authored presentation plans with primitive values: each node ID has a
+position; edges have explicit elbow routes and optional literal labels; group
+labels separate independent diagrams or observed/proposed paths. The agreed
+`render_diagram` helper returns `DiagramRender(text, width, height, boxes)`.
+The view passes selected topic, selected node ID, available content width and
+theme colors. Returned geometry sizes the diagram and keeps selected cards
+visible when scrolling is necessary.
+
+Use four-row cards: role embedded in top border, two wrapped label rows,
+bottom border. Adapt card widths within 18–25 cells, targeting
+five columns within the open-index width. Build strokes and arrows as a small
+cell canvas; place node cards after connector strokes so no line erases labels.
+Resolve branch/join intersections deliberately. Click metadata must cover card
+faces and borders. Literal source strings never become Rich markup.
+
+Keep all 79 nodes individually addressable. The contracts-only six parallel
+stages use one vertical column at y=0,4,...20, with shared inlet and outlet rails
+and a PARALLEL label. Stacking is spatial, never a sequence: no arrows connect
+siblings. Import/adapt are left of the group, judge/deploy/live to its right;
+undeployed branches separately from judge. This bounds the dense graph to
+24 rows while avoiding the crossings of a two-dimensional audit group.
+For shapes, three distinct bands preserve CHAIN, FAN OUT / JOIN and DAG.
+Failure/retry edges and route conditions remain visible. Site/growth proposed
+paths must not read as observed successes. Intake's failed branch leaves
+admitted, not paid or received.
+
+The source catalogue's ASCII figure remains a provenance/reference representation;
+the new boxed plans are presentation only. Validate plan IDs against the real
+catalogue in tests, not by importing the data layer into the widget. The six
+former hero facts remain available as DOCUMENTED FACTS in the source popup,
+after references, without consuming graph space.
 
 ## Sequence and verification
 
-1. Freeze the PRD payload and public constructor/update names. Dispatch P1 and
-   P2 in parallel. Each implementer writes failing behavior tests first, then
-   the smallest implementation. Existing user changes remain untouched.
-2. P1 tests all ten ordered topic IDs; six stats/topic; unique nodes and exact
-   diagram-reference resolution; source date/version; branch coverage for all
-   three shapes, retries, site failure/remedy, intake failure/refusal and schedule
-   outcomes. Verify units and that sample counts are historically scoped. No
-   network or filesystem source read from the manager. Shared data models never
-   import widgets; widgets never import data modules.
-3. P2 tests composited content, selection-to-explanation/source correctness,
-   topic arrows/node arrows/click/Enter, index toggle and invalid stored state.
-   Cover long prose, literal markup and Unicode as content, scrolling, close
-   paths, and empty payload. It must not certify final layout pins before the
-   real-source preview. New tests must assert behavior, not only constants.
-4. Controller adds `DashboardScreen.POLL_DATA = True`; periodic timer creation
-   is conditional, initial/manual refresh behavior unchanged. A test verifies
-   default dashboards still poll and the static guide has no poll timer across
-   resume/suspend. The shared loading timer is presentation, not a data poll.
-5. Controller wires the clickable title label and `g` entry. Assert original
-   centered boardroom title and rack positions remain; input fields retain a
-   typed g; one activation opens one guide; Escape restores the same boardroom;
-   reopening retains selection/index. Keep the existing game registry intact.
-6. Show the real packaged-source guide at **149×45**, including a branching
-   topic, the site failure, open index and source detail. This task has no live
-   API: its genuine data is the dated source bundle, not fabricated fixture
-   metrics. Incorporate owner corrections before pin evidence or review.
-7. Measure collapsed/expanded layout and resize boundaries in the actual
-   composition and production CSS; ensure all ten diagrams remain reachable.
-   Add evidence blocks only for measured pins. No existing global pin increase
-   without demonstrated necessity. Complete focused mutation proof: disable
-   no-poll capability, misroute one node detail, or lose retained selection and
-   show the named behavior test fails; restore each mutation by inverse edit.
-8. Run touched tests and relevant composing files once, using isolated HOME
-   and worksteal where safe. Run `guard and not mounts_app`; because a key/route
-   changes, include the applicable registration/mount guards named in CLAUDE.md.
-   Run docpin checks after documentation edits. Never run the whole suite here.
-9. One final reviewer receives the complete diff, repository reviewer contract,
-   exact tests/evidence and risks: static no-poll lifecycle, navigation/input
-   collision, source provenance, and real compositor geometry. One fix wave;
-   scoped re-review only if production fixes result. File Minor residuals in
-   follow-ups, update completion evidence and commit only authorized paths.
+1. Write focused failing tests for no hero row, outlined node labels, existing
+   selection-to-detail behavior and larger diagram region. Confirm current
+   behavior fails the new requirements before implementation.
+2. Build authored plans and render all ten topics. Test all 79 nodes exactly
+   once, connector endpoints, true parallel joins, failure/retry branches and
+   separation of observed/proposed paths. Use real catalogue input in offline
+   tests; no network or live clipboard.
+3. Remove hero composition and hero-only imports/styles. Reallocate the freed
+   eleven rows to the graph. Keep the topic strip, 28-column index, three lower
+   panels, source popup and shared footer. Preserve topic/node/index state on
+   resize, index toggle and reopening. Scroll selected nodes into view only
+   where required, without resetting manual scroll on unrelated paints.
+4. Mirror screen rules into production CSS. Render actual bundled documentation
+   at **149×45** in Matrix: contracts, shapes, single-skill retry, site failure,
+   open index and source detail. Show the result before changing pin evidence,
+   writing measured documentation or requesting review. Incorporate the owner's
+   visual corrections in this implementation phase.
+5. Measure composed layout with index closed/open and all ten topics. Aim for
+   roughly 27 diagram rows including title/source link and nine detail rows;
+   these are a budget, not certified pin values. Dense content must scroll with
+   honest hints if a smaller terminal cannot fit it. Re-sweep actual boundaries
+   and update `#:` blocks only after preview. Keep app-wide pins unchanged unless
+   measurements demonstrate necessity.
+6. Confirm mouse clicks across card faces and borders, arrows, Enter popup,
+   Escape return, retained state, literal text safety, and unknown/empty data.
+   Regression tests must inspect composited output, not just a Text object's
+   content. Prove pin tests fail for both under/overstated thresholds and one
+   changed mapping/topology guard fails under a focused mutation; restore by
+   inverse edit.
+7. Once before commit, run touched and composing files with isolated HOME and
+   worksteal, plus `guard and not mounts_app` and docpin tests as required by
+   CLAUDE.md. Registration/mount tests are needed only if bindings or routing
+   actually change. Do not run the whole suite.
+8. One final reviewer receives the complete revision diff, repository reviewer
+   contract, exact evidence and risks: truthful topology, 79-node preservation,
+   literal text safety, click/keyboard selection and expanded-index geometry.
+   One fix wave; scoped re-review only for production fixes. File Minor residuals
+   in follow-ups and commit only authorized paths locally.
 
-## Integration decisions grounded in current code
+## Evidence
 
-`DashboardScreen.on_screen_resume` sets a timer for every non-ReaderHandle;
-passing None/zero as its interval is not a supported no-poll contract. A
-default-on capability is the smallest explicit change and avoids overriding
-shared lifecycle. The static catalogue manager has no I/O, so no reader thread
-registration or reader scheduler change is necessary.
-
-`SurfboardScreen` already pushes nested NFT/token screens; a nested guide keeps
-the boardroom return model and excludes it from `_GAME_CYCLE`. Boardroom `g`
-and app-level q/t/tab/m do not collide in inspected bindings. Respect focused
-Input consumption and cover it with a test. `RecordDetailScreen` supplies the
-existing modal frame and close behavior; subclass its content/title only.
-
-## Remaining evidence and assumptions
-
-- Source content is a deliberately frozen documentation snapshot. Updating it
-  is a later content change with provenance, never an automatic live claim.
-- The owner approved the design; precise pins and observed production line
-  count remain unmeasured until the assembled preview.
-- No production implementation or tests were written by the planner. The
-  completion step records actual commands and results; this plan claims none.
+The framed renderer and view integration are implemented. Actual bundled-source
+previews at 149×45 cover contracts, site, step shapes, retry, schedules, index and
+source popup. Both CSS paths preserve every node at the measured 148×43 boundary.
+Final checks and residuals are recorded in [follow-ups](workflow_guide_followups.md).
+Existing static documentation dates remain dates of the source, never live
+observation times.

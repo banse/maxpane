@@ -43,8 +43,18 @@ async def test_every_bundled_diagram_is_whole_with_index_open_and_closed(product
                 for title in ('EXPLANATION', 'LIMITS', 'DOCUMENTED EXAMPLE'):
                     assert title in output
                 for n, node in enumerate(topic['nodes']):
-                    assert node['label'] in output
-                    target(app, f'choose_node({n})')
+                    x, y = target(app, f'choose_node({n})')
+                    _, _, w, h = view._diagram_boxes[node['id']]
+                    rows = output.splitlines()
+                    assert rows[y][x] == '┌' and rows[y][x + w - 1] == '┐'
+                    assert rows[y + h - 1][x] == '└' and rows[y + h - 1][x + w - 1] == '┘'
+                    # Compare all label cells, allowing the source's wrapper
+                    # brackets and whitespace to become native card framing.
+                    label = node['label'].strip('[]')
+                    if node['kind'] == 'plane':
+                        label = label.removeprefix('- ').removesuffix(' -')
+                    body = ''.join(rows[y + dy][x + 1:x + w - 1] for dy in (1, 2))
+                    assert ''.join(label.split()) == ''.join(body.split())
 
 
 @pytest.mark.sweep
@@ -54,7 +64,7 @@ async def test_width_pin_matches_actual_outer_overflow_and_hint(width):
     async with app.run_test(size=(width, 45)) as pilot:
         await pilot.pause()
         view = app.screen.query_one(WorkflowGuideView)
-        view.select_topic(0)  # Widest authored diagram.
+        view.select_topic(3)  # Five-column framed contracts graph.
         view.toggle_index()
         await pilot.pause()
         viewport = app.screen.query_one('#workflow-viewport', VerticalScroll)
@@ -69,7 +79,7 @@ async def test_height_pin_matches_tallest_diagram_and_hint(height):
     async with app.run_test(size=(149, height)) as pilot:
         await pilot.pause()
         view = app.screen.query_one(WorkflowGuideView)
-        view.select_topic(2)  # STEP SHAPES is the source's tallest diagram.
+        view.select_topic(3)  # Six stacked parallel stages set the 24-row graph.
         await pilot.pause()
         viewport = app.screen.query_one('#workflow-viewport', VerticalScroll)
         assert (viewport.max_scroll_y > 0) == (height < HEIGHT)

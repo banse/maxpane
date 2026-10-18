@@ -15,14 +15,18 @@ from maxpane_dashboard.widgets.workflow_guide import WorkflowGuideView
 
 #: Measured 2026-10-18 with the genuine bundled document in Matrix at 149×45.
 #: The guide has its own width; the app-wide 143-column recommendation is unchanged.
-#: The six equal native cards retain nine rows and a one-cell horizontal gap.
+#: Hero cards are removed; their dated facts live in the source popup.
 #: The view's 143-column floor plus its composed padding/gutter needs 148 columns.
 #: At 147 columns the outer viewport scrolls one column; 148 clears it.
 #: Both the closed and 28-column expanded topic index preserve every diagram node.
-#: The longest diagram is 106 columns, including its authored whitespace.
-#: The tallest diagram is STEP SHAPES (13 lines), setting the 43-row layout floor.
+#: Native inset nodes use four rows with two centered label rows and full-box clicks.
+#: At the width boundary five-column graphs use 106 cells with index open.
+#: At 149 columns they use 110 cells open and 135 closed, including branch rails.
+#: CONTRACTS is tallest: six parallel stages stack spatially into 24 diagram rows.
+#: Its figure adds four title/source rows; the explanation row retains nine rows.
+#: This sets the 43-row layout floor, without shrinking or hiding a graph node.
 #: At 42 rows that topic scrolls one row; 43 clears the viewport.
-#: Shorter topics clear at 39–41 rows. Explanation and source prose scroll locally.
+#: Shorter topics clear by 40 rows. Explanation and source prose scroll locally.
 #: All ten topics show the complete diagram and three lower panels at 149×45.
 #: Source popup uses the existing RecordDetailScreen frame and scroll behavior.
 #: Default screen CSS and the production stylesheet are checked for agreement.
@@ -49,6 +53,9 @@ class WorkflowSourceScreen(RecordDetailScreen):
             ('NODE SOURCE EXCERPT', node.get('source_excerpt') or '—'),
             ('TOPIC SOURCE EXCERPT', topic.get('source_excerpt') or '—'),
             ('REFERENCES', '\n'.join(source.get('references') or []) or '—'),
+            ('DOCUMENTED FACTS', '\n'.join(
+                f"{flatten(stat.get('title'))}: {flatten(stat.get('value'))} · {flatten(stat.get('caption'))}"
+                for stat in topic.get('stats') or []) or '—'),
         ):
             yield from self.section(title, Text(strip_controls(str(value))), first=title == 'SOURCE SNAPSHOT')
 
@@ -75,18 +82,16 @@ class WorkflowGuideScreen(SurfDashboardScreen):
     WorkflowGuideScreen #workflow-title {height: 1; margin: 1 1 0 1; text-wrap: nowrap;}
     WorkflowGuideScreen #workflow-viewport {height: 1fr; padding: 0 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size: 1 1;}
-    WorkflowGuideScreen WorkflowGuideView {width: 1fr; min-width: 143; height: 1fr; min-height: 36;}
-    WorkflowGuideScreen #workflow-heroes {height: 9; margin: 1 0; grid-size: 6 1;
-        grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1;}
+    WorkflowGuideScreen WorkflowGuideView {width: 1fr; min-width: 143; height: 1fr; min-height: 25;}
     WorkflowGuideScreen #workflow-topics {height: 2; margin-bottom: 1; text-wrap: nowrap;}
     WorkflowGuideScreen #workflow-main {height: 1fr; min-height: 22;}
     WorkflowGuideScreen #workflow-index {width: 28; height: 1fr; margin-right: 1; display: none;}
     WorkflowGuideScreen #workflow-reading {width: 1fr; height: 1fr;}
-    WorkflowGuideScreen #workflow-figure {height: 8;}
+    WorkflowGuideScreen #workflow-figure {height: 1fr; min-height: 8;}
     WorkflowGuideScreen #workflow-diagram {height: 1fr;}
     WorkflowGuideScreen #workflow-diagram-content {height: auto; text-wrap: nowrap;}
     WorkflowGuideScreen #workflow-source {height: 1; margin: 0 1 1 1; text-wrap: nowrap;}
-    WorkflowGuideScreen #workflow-details {height: 1fr; min-height: 9;}
+    WorkflowGuideScreen #workflow-details {height: 9; min-height: 9;}
     WorkflowGuideScreen #workflow-details > _GuidePanel {width: 1fr; height: 1fr;}
     WorkflowGuideScreen #workflow-explanation {margin-right: 1;}
     WorkflowGuideScreen #workflow-limits {margin-right: 1;}

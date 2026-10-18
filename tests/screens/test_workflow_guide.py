@@ -78,7 +78,7 @@ def target(app, action):
     raise AssertionError(f'No visible action {action!r}:\n{painted(app)}')
 
 
-async def test_every_topic_click_updates_six_facts_and_selected_explanation_without_fetch():
+async def test_every_topic_click_updates_boxed_diagram_and_explanation_without_fetch():
     app = Harness()
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
@@ -90,8 +90,7 @@ async def test_every_topic_click_updates_six_facts_and_selected_explanation_with
             await pilot.pause()
             output = painted(app)
             assert view.topic_id == key
-            for n in range(6):
-                assert f'{i + 1}.{n}' in output
+            assert not view.query(LocalSourceHeroCard)
             assert f'{key} start explanation' in output
             assert f'{key} start limit' in output
             assert f'{key} start example' in output
@@ -163,20 +162,24 @@ async def test_source_popup_has_literal_dated_provenance_and_escape_returns_to_s
 
 
 @pytest.mark.parametrize('size', [(160, 45), (149, 45)])
-async def test_normal_layout_shows_six_native_cards_topics_graph_and_three_panels(size):
+async def test_diagram_replaces_hero_row_with_large_inner_card_boxes(size):
     app = Harness()
     async with app.run_test(size=size) as pilot:
         await pilot.pause()
         screen = app.screen
-        cards = list(screen.query(LocalSourceHeroCard))
-        assert len(cards) == 6 and all(card.region.height == 9 for card in cards)
-        assert len({card.region.y for card in cards}) == 1
+        assert not screen.query(LocalSourceHeroCard)
+        assert not screen.query('#workflow-heroes')
+        diagram = screen.query_one('#workflow-diagram')
+        assert diagram.region.height >= 25
         output = painted(app)
         for key in TOPICS:
             assert key in output
-        for text in ('[contracts start]', '[contracts review]', '[contracts done]',
+        for text in ('contracts start', 'contracts review', 'contracts done',
                      'EXPLANATION', 'LIMITS', 'DOCUMENTED EXAMPLE', 'SOURCE DETAILS >>'):
             assert text in output
+        for i in range(3):
+            x, y = target(app, f'choose_node({i})')
+            assert output.splitlines()[y][x] == '┌'
         viewport = screen.query_one('#workflow-viewport', VerticalScroll)
         assert viewport.max_scroll_x == viewport.max_scroll_y == 0
 
@@ -218,6 +221,20 @@ async def test_empty_catalogue_has_no_phantom_selection():
         assert 'SOURCE DETAILS >>' not in painted(app)
 
 
+async def test_keyboard_selection_reveals_box_in_short_scrolled_view():
+    from maxpane_dashboard.data.workflow_guide_manager import WorkflowGuideManager
+
+    app = Harness(manager=WorkflowGuideManager())
+    async with app.run_test(size=(100, 24)) as pilot:
+        await pilot.pause()
+        view = app.screen.query_one(WorkflowGuideView)
+        await pilot.press('up')  # Wrap to the last authored contracts node.
+        assert view.node_id == 'blocked'
+        x, y = target(app, f'choose_node({len(view.nodes) - 1})')
+        assert painted(app).splitlines()[y][x] == '┌'
+        assert 'undeployed' in painted(app)
+
+
 async def test_long_literal_prose_and_source_tail_remain_scroll_reachable():
     payload = catalogue()
     node = payload['topics'][3]['nodes'][0]
@@ -239,26 +256,40 @@ async def test_long_literal_prose_and_source_tail_remain_scroll_reachable():
         assert 'SOURCE END' in painted(app)
 
 
-@pytest.mark.parametrize('size', [(149, 45), (160, 45)])
-async def test_source_example_counts_fit_inside_native_card_frames(size):
+async def test_removed_hero_facts_remain_in_source_popup():
     from maxpane_dashboard.data.workflow_guide_manager import WorkflowGuideManager
-    from rich.style import Style
-    from textual.renderables.digits import Digits
 
     app = Harness(manager=WorkflowGuideManager())
-    async with app.run_test(size=size) as pilot:
+    async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         view = app.screen.query_one(WorkflowGuideView)
         view.select_topic(next(i for i, topic in enumerate(view.topics) if topic['id'] == 'site'))
         await pilot.pause()
+        await pilot.press('enter')
+        scroll = app.screen.query_one('.record-detail-scroll', VerticalScroll)
+        scroll.scroll_end(animate=False)
+        await pilot.pause()
+        output = painted(app)
+        assert 'DOCUMENTED FACTS' in output
+        for stat in view.topic['stats']:
+            assert stat['title'] in output and stat['value'] in output
+
+
+async def test_schedule_topup_is_an_action_from_exhausted_and_paused():
+    from maxpane_dashboard.data.workflow_guide_manager import WorkflowGuideManager
+
+    app = Harness(manager=WorkflowGuideManager())
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        view = app.screen.query_one(WorkflowGuideView)
+        view.select_topic(next(i for i, topic in enumerate(view.topics) if topic['id'] == 'schedules'))
+        await pilot.pause()
+        index = next(i for i, node in enumerate(view.nodes) if node['id'] == 'topup')
+        x, y = target(app, f'choose_node({index})')
+        _, _, width, height = view._diagram_boxes['topup']
         rows = painted(app).splitlines()
-        for index, value in enumerate(('7,672', '16,243')):
-            card = view.query_one(f'#hero-workflow-{index}')
-            rectangle = [row[card.region.x:card.region.right]
-                         for row in rows[card.region.y:card.region.bottom]]
-            digits = [segment.text for segment in Digits(value).render(Style()) if segment.text != '\n']
-            assert all(value in row for value, row in zip(digits, rectangle[3:6]))
-            assert all(row.startswith('│') and row.endswith('│') for row in rectangle[1:-1])
+        assert rows[y - 1][x + width // 2] == '▼'  # Exhausted leads to the action.
+        assert rows[y + height][x + width // 2] == '▲'  # Paused also leads to it.
 
 
 async def test_all_real_catalogue_nodes_are_mouse_reachable():
@@ -289,6 +320,9 @@ async def test_clickable_nodes_keep_semantic_colors_and_selected_accent(monkeypa
         for kind, token in (('merge', 'success'), ('failure', 'error')):
             index = next(i for i, node in enumerate(view.nodes) if node['kind'] == kind)
             x, y = target(app, f'choose_node({index})')
-            assert app.screen.get_style_at(x, y).color == Color.parse(palette[token])
+            role = 'JOIN' if kind == 'merge' else 'FAILED'
+            role_x = painted(app).splitlines()[y].index(role, x)
+            assert app.screen.get_style_at(role_x, y).color == Color.parse(palette[token])
         await pilot.click(offset=(x, y))
         assert app.screen.get_style_at(x, y).color == Color.parse(palette['accent'])
+        assert app.screen.get_style_at(role_x, y).color == Color.parse(palette['error'])
