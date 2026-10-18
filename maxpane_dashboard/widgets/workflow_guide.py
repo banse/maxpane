@@ -82,17 +82,17 @@ class WorkflowGuideView(Vertical):
         with Grid(id='workflow-heroes'):
             for record in self._hero_records():
                 yield NewsHeroCard(record)
-        yield _GuideText(Text('—'), id='workflow-topics')
         with Horizontal(id='workflow-main'):
             yield _GuidePanel('TOPIC INDEX', id='workflow-index')
             with Vertical(id='workflow-reading'):
-                with Vertical(id='workflow-figure'):
-                    yield _GuidePanel('WORKFLOW DIAGRAM', id='workflow-diagram')
-                    yield _GuideText(Text(), id='workflow-source')
+                yield _GuideText(Text(), id='workflow-source')
                 with Horizontal(id='workflow-details'):
                     yield _GuidePanel('EXPLANATION', id='workflow-explanation')
                     yield _GuidePanel('LIMITS', id='workflow-limits')
                     yield _GuidePanel('DOCUMENTED EXAMPLE', id='workflow-example')
+                with Vertical(id='workflow-figure'):
+                    yield _GuidePanel('WORKFLOW DIAGRAM', id='workflow-diagram')
+        yield _GuideText(Text('—'), id='workflow-topics')
 
     @property
     def topic(self):

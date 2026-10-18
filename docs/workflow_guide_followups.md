@@ -25,8 +25,8 @@ Contracts-only launch. Ten topics and 79 selectable nodes use the supplied
   character caps. Companion source fixture and explicit profiles cover all nodes.
 - Measured guide layout: 148×44, both CSS paths, index open/closed, all topics.
   Width 147 scrolls one column; CONTRACTS at height 43 scrolls one diagram row.
-  Its lower details hide at 52 rows and return at 53. On short views, the graph
-  scrolls internally while SOURCE DETAILS stays below it; details remain in the popup.
+  Its details hide at 52 rows and return at 53. On short views, the graph
+  scrolls internally while SOURCE DETAILS stays above it; details remain in the popup.
   Narrow/short terminals retain scroll access. The app-wide pin is unchanged.
 - Mutations caught loss of snapshot isolation, retained selection, correct
   source-node routing and the no-poll gate. Width and height pin mutations
@@ -59,6 +59,14 @@ paused states lead to the topup action; 87 touched/composing tests passed after
 the change. The scoped re-review approved, with a mutation proving the new
 composited assertion rejects the old direction. No residual findings remain.
 No full suite was run for this revision.
+
+Reading-order revision: source row and optional text panels now precede the
+diagram; the topic strip follows it. Actual-source purchase and contracts
+previews were shown at 149×45 before hardening. All layout thresholds remain
+unchanged. 132 touched/composing tests, 128 fast guards and 12 documentation
+checks passed. Independent final review approved without findings; moving
+the topic strip back above the diagram failed the new composed-order test,
+and the mutation was restored byte-for-byte. No full suite was run.
 
 Capacity-card revision: 174 scoped tests passed under isolated HOME/worksteal;
 128 fast guards passed. All 79 nodes' card labels, rows, captions, footers and

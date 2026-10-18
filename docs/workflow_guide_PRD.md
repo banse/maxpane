@@ -3,7 +3,7 @@
 Date: 2026-10-18. Tier 2. Design approved by the owner: **Variant 2 plus a
 collapsible topic index**. The current revision restores a compact native hero
 row for input capacity, documented alternatives and costs while retaining the
-larger outlined diagram nodes. Lower explanations yield their space when the
+larger outlined diagram nodes. Inline explanations yield their space when the
 diagram needs it. Revision target: under 1,000 production lines. One final
 review; no package reviews.
 
@@ -23,15 +23,17 @@ It never signs, pays, creates jobs, constructs transactions or takes credentials
   These are dated documentation facts and explicitly labeled estimates, not
   live quotes or promised output sizes. Original topic facts remain in source
   detail.
-- A two-row topic strip exposes all ten topics. Below it, a full-width manually
-  authored terminal diagram preserves branches, joins, retries and failures.
+- View order is **heroes → SOURCE DETAILS → optional detail panels → diagram
+  → topic strip**. The two-row strip below the diagram exposes all ten topics.
+  The full-width manually authored terminal diagram preserves branches, joins,
+  retries and failures.
   Diagram nodes are prominent framed cards with a role in the top border,
   two wrapped label rows, and a bottom border. Explicit arrowheads and elbow
   connectors show direction. All 79 node IDs remain individually selectable.
-- Bottom panels are **EXPLANATION**, **LIMITS**, **DOCUMENTED EXAMPLE**. Show
-  all three only when the full intrinsic diagram and the panels fit the
+- Panels above the diagram are **EXPLANATION**, **LIMITS**, **DOCUMENTED EXAMPLE**.
+  Show all three only when the full intrinsic diagram and the panels fit the
   available height. Otherwise hide all three and retain the **SOURCE DETAILS**
-  popup link below the diagram. The popup always includes the full explanation,
+  popup link above the diagram. The popup always includes the full explanation,
   limits and example, plus the capacity/alternative/cost notes. Selecting a
   node updates the cards, panels and popup snapshot immediately from local
   data. Unknown limits are dashes.
@@ -47,8 +49,8 @@ It never signs, pays, creates jobs, constructs transactions or takes credentials
 - Shared footer retains app/version/theme and centered loading only during
   the local guarded acquisition. Idle has no spinner; no extra shortcut row.
 - At 149×45, dense topics such as contracts prioritize the heroes, topic strip,
-  framed diagram and source link; short diagrams may also show the three lower
-  panels. The nine-row hero budget and nine-row lower-panel budget are design
+  framed diagram and source link; short diagrams may also show the three detail
+  panels. The nine-row hero budget and nine-row detail-panel budget are design
   constraints, not measured fit pins. Keep the source link outside the graph's
   own scroll area so it remains reachable when graph scrolling is necessary.
   The 28-column expanded index remains usable. Smaller terminals scroll with
@@ -185,7 +187,7 @@ Source interpretations to preserve:
 
 The source popup retains all six original DOCUMENTED FACTS and adds the selected
 guidance and its qualifications. The documentation date stays visible even when
-lower panels are collapsed.
+detail panels are collapsed.
 
 ## Framed diagram presentation
 
@@ -256,7 +258,7 @@ outside this PRD.
 | --- | --- | --- |
 | First open | Header/frame; initial cached catalogue paints through guarded refresh | No network, writes, payment or DB state |
 | Select topic/node | Diagram, six guidance cards and available panels agree on selection | Local repaint only; old selection cannot overwrite new one |
-| Resize / toggle index | Details appear only when graph and lower panels both fit; source link remains accessible | Stable viewport-based calculation; no acquisition or selection reset |
+| Resize / toggle index | Details above the graph appear only when graph and panels both fit; source link remains accessible | Stable viewport-based calculation; no acquisition or selection reset |
 | Open/close detail | Full explanation, limits, example, guidance qualifications, excerpt and provenance; previous guide selection retained | Snapshot only; Space/Escape/X closes |
 | Invalid retained selection | Contracts topic (or first valid topic) and first node selected | Normalize retained in-memory state |
 | Empty/missing payload | Neutral dashes and no selectable phantom node | Existing good content retained where available; no retry loop |
@@ -275,7 +277,7 @@ All ten topics and all declared nodes can be reached by keyboard and mouse;
 index and selected state survive return; each node resolves the correct detail.
 Source and diagram discrepancy notes remain available. Six native heroes show
 scoped capacity/alternative/cost guidance; existing framed nodes and the shared
-footer retain their appearance. Dense diagrams suppress only the three lower
+footer retain their appearance. Dense diagrams suppress only the three detail
 panels, whose content remains in source detail. Word estimates cannot be
 mistaken for exact character limits, plane nodes cannot acquire fabricated
 input budgets, and paid-action prices cannot become per-node/workflow totals.

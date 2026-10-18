@@ -74,11 +74,12 @@ def painted_widget(app, widget):
                      for row in painted(app).splitlines()[region.y:region.bottom])
 
 
-def target(app, action):
+def target(app, action, *, within=None):
     for y, strip in enumerate(app.screen._compositor.render_strips()):
         x = 0
         for segment in strip:
-            if segment.style and segment.style.meta.get('@click') == action:
+            if (segment.style and segment.style.meta.get('@click') == action
+                    and (within is None or within.region.contains(x, y))):
                 return x, y
             x += cell_len(segment.text)
     raise AssertionError(f'No visible action {action!r}:\n{painted(app)}')
@@ -190,7 +191,43 @@ async def test_capacity_hero_row_preserves_large_inner_card_diagram(size):
         assert viewport.max_scroll_x == viewport.max_scroll_y == 0
 
 
-async def test_dense_diagram_hides_lower_panels_and_restores_them_when_room_returns():
+@pytest.mark.parametrize('topic_index, has_details', [(0, True), (3, False)])
+@pytest.mark.parametrize('index_open', [False, True])
+async def test_source_and_details_above_diagram_topics_below(topic_index, has_details, index_open):
+    from maxpane_dashboard.data.workflow_guide_manager import WorkflowGuideManager
+
+    app = Harness(manager=WorkflowGuideManager())
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        view = app.screen.query_one(WorkflowGuideView)
+        view.select_topic(topic_index)
+        if index_open:
+            view.toggle_index()
+        await pilot.pause()
+        output = painted(app).splitlines()
+        source_y = target(app, 'open_source')[1]
+        node_rows = [target(app, f'choose_node({i})')[1] for i in range(len(view.nodes))]
+        topics = view.query_one('#workflow-topics')
+        topic_rows = [target(app, f'choose_topic({i})', within=topics)[1] for i in range(10)]
+        assert view.query_one('#workflow-heroes').region.bottom <= source_y
+        assert source_y < min(node_rows)
+        assert max(node_rows) + 3 < min(topic_rows)  # Four-row framed nodes.
+        assert view.query_one('#workflow-details').display == has_details
+        for title in ('EXPLANATION', 'LIMITS', 'DOCUMENTED EXAMPLE'):
+            title_rows = [i for i, line in enumerate(output) if title in line]
+            if has_details:
+                assert len(title_rows) == 1
+                assert source_y < title_rows[0] < min(node_rows)
+            else:
+                assert not title_rows
+        await pilot.click(offset=target(app, 'open_source'))
+        assert isinstance(app.screen, WorkflowSourceScreen)
+        await pilot.press('escape')
+        await pilot.click(offset=target(app, 'choose_topic(9)', within=topics))
+        assert view.topic_id == 'growth'
+
+
+async def test_dense_diagram_hides_details_and_restores_them_when_room_returns():
     from maxpane_dashboard.data.workflow_guide_manager import WorkflowGuideManager
 
     app = Harness(manager=WorkflowGuideManager())
@@ -255,7 +292,7 @@ async def test_narrow_short_terminal_keeps_source_link_and_scrollable_diagram():
         assert viewport.max_scroll_x > 0
         assert '‹ widen' in painted(app)
         assert not app.screen.query_one('#workflow-details').display
-        viewport.scroll_to(x=viewport.max_scroll_x, y=0, animate=False)
+        viewport.scroll_to(x=viewport.max_scroll_x, y=viewport.max_scroll_y, animate=False)
         await pilot.pause()
         await pilot.click(offset=target(app, 'choose_topic(9)'))
         viewport.scroll_to(x=0, y=0, animate=False)

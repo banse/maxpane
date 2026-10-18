@@ -24,13 +24,14 @@ from maxpane_dashboard.widgets.workflow_guide import WorkflowGuideView
 #: At the width boundary five-column graphs use 106 cells with index open.
 #: At 149 columns they use 110 cells open and 135 closed, including branch rails.
 #: CONTRACTS is tallest: six parallel stages stack spatially into 24 diagram rows.
-#: Its figure adds four title/source rows; its source link is outside graph scrolling.
+#: Diagram title and preceding source row add four rows, outside graph scrolling.
 #: The complete graph plus heroes clears at 44 rows; at 43 the graph scrolls one row.
-#: The lower nine-row detail group appears only when the whole diagram also fits.
+#: The nine-row detail group above the diagram appears only when the graph also fits.
 #: CONTRACTS details are hidden at 52 rows and return at 53, with either index state.
 #: At 149×45 all graphs fit; purchase, single skill, company and intake show details.
 #: At 24 rows graphs scroll internally while SOURCE DETAILS remains visible.
 #: At narrower widths the horizontal scrollbar may consume one vertical row.
+#: The two-row topic selector follows the diagram, with a one-row upper margin.
 #: Source popup uses the existing RecordDetailScreen frame and scroll behavior.
 #: Default screen CSS and the production stylesheet are checked for agreement.
 #: Boundary tests compare actual overflow and painted hints on both sides of each pin.
@@ -97,11 +98,11 @@ class WorkflowGuideScreen(SurfDashboardScreen):
     WorkflowGuideScreen WorkflowGuideView {width: 1fr; min-width: 143; height: 1fr; min-height: 21;}
     WorkflowGuideScreen #workflow-heroes {height: 9; margin-bottom: 1; grid-size: 6 1;
         grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1;}
-    WorkflowGuideScreen #workflow-topics {height: 2; margin-bottom: 1; text-wrap: nowrap;}
+    WorkflowGuideScreen #workflow-topics {height: 2; margin-top: 1; text-wrap: nowrap;}
     WorkflowGuideScreen #workflow-main {height: 1fr; min-height: 8;}
     WorkflowGuideScreen #workflow-index {width: 28; height: 1fr; margin-right: 1; display: none;}
     WorkflowGuideScreen #workflow-reading {width: 1fr; height: 1fr;}
-    WorkflowGuideScreen #workflow-figure {height: 1fr; min-height: 8;}
+    WorkflowGuideScreen #workflow-figure {height: 1fr; min-height: 6;}
     WorkflowGuideScreen #workflow-diagram {height: 1fr;}
     WorkflowGuideScreen #workflow-diagram-content {height: auto; text-wrap: nowrap;}
     WorkflowGuideScreen #workflow-source {height: 1; margin: 0 1 1 1; text-wrap: nowrap;}

@@ -53,7 +53,8 @@ as large framed nodes, with explanations, limits and examples dated **2026-10-18
 Six top cards show the selected node's estimated input words, exact character
 caps, request size, roomier/integrated alternatives and documented action cost.
 Word estimates use six characters per word; prices and limits are dated source
-facts. Dense diagrams hide the lower text panels and retain **SOURCE DETAILS >>**;
+facts. Source details and text panels sit above the diagram; topic choices sit
+below it. Dense diagrams hide the text panels and retain **SOURCE DETAILS >>**;
 those panels return when space permits. Left/right selects a topic; up/down
 selects a diagram node; `i` toggles the topic index. Click a
 node to select it, then Enter or **SOURCE DETAILS >>** opens its source popup.

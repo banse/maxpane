@@ -2,7 +2,7 @@
 
 Date: 2026-10-18. Tier 2. Owner requested native heroes above the existing
 framed diagrams, showing input capacity, roomier or integrated alternatives,
-and costs. Hide the three lower detail panels when they do not fit alongside
+and costs. Hide the three detail panels when they do not fit alongside
 the complete diagram; retain access through SOURCE DETAILS.
 Contract: [PRD](workflow_guide_PRD.md).
 
@@ -21,13 +21,29 @@ ownership; report cross-owner defects to the controller.
 | --- | --- | --- |
 | P0: specification | Planning architect: `docs/workflow_guide_PRD.md`, this plan | Freeze the selection guidance contract, source semantics and responsive behavior. No code or measured-pin changes. |
 | P1: source-backed profiles | Data implementer: new `maxpane_dashboard/data/workflow_guide_profiles.py`, `data/workflow_guide_models.py`, `data/workflow_guide_catalog.py`, new profile tests, `tests/data/test_workflow_guide.py`, companion HTML fixture | Use original and companion sources; attach six guidance records and notes to every node. No runtime source reads, I/O, dependency or top-level manager key. Parallel with P2 after the field seam below is frozen. |
-| P2: presentation | Controller: `widgets/workflow_guide.py`, `screens/workflow_guide.py`, `themes/minimal.tcss`, composing screen/layout tests | Restore six native nine-row heroes; map P1 primitives directly; keep current renderer; derive lower-panel visibility from available viewport versus intrinsic graph height; retain a source link outside the diagram scroll. |
+| P2: presentation | Controller: `widgets/workflow_guide.py`, `screens/workflow_guide.py`, `themes/minimal.tcss`, composing screen/layout tests | Restore six native nine-row heroes; map P1 primitives directly; keep current renderer; derive detail-panel visibility from available viewport versus intrinsic graph height; retain a source link outside the diagram scroll. |
 | P3: validation and documentation | Controller: README, follow-ups, measured pin evidence and composing/registry tests as needed | After P1/P2: actual bundled-source preview, responsive measurements, scoped mutations, affected-file checks, one final review, one fix wave and local commit. |
 
 The controller owns every shared screen/CSS seam. Diagram renderer/plans,
 manager lifecycle, boardroom keys and polling do not require edits. No live
 quote fetch, payment execution, generic recommendation engine or runtime HTML
 parser belongs in this revision.
+
+## Follow-up: reorder the reading area
+
+Owner-approved order: **heroes → source row → optional EXPLANATION / LIMITS /
+DOCUMENTED EXAMPLE → unchanged diagram → topic strip**. The controller owns
+this scoped package: `widgets/workflow_guide.py`, `screens/workflow_guide.py`,
+`themes/minimal.tcss` and the affected composed/layout tests. Fewer than 30
+production lines; no data or diagram-plan changes; one final review.
+
+Move the source row outside the figure and above the optional details. Its two
+rows plus the six-row figure floor retain the eight-row main minimum. Change
+the topic strip's bottom margin to a top margin. Composed verification confirms
+that the viewport budget and graph thresholds remain unchanged.
+Actual-source previews of expanded purchase and compact contracts at 149×45
+have been shown before this documentation update. Check vertical order, source
+access, bottom topic visibility, resizing and selection reveal before review.
 
 ## Frozen profile-to-view seam
 
@@ -85,11 +101,11 @@ scoped single skill and new-product company workflow have different semantics.
 
 Two feasible arrangements were considered:
 
-1. Keep heroes, diagram and lower panels permanently in an outer scrolling page.
+1. Keep heroes, diagram and detail panels permanently in an outer scrolling page.
    This preserves simultaneous content but makes the source link and selection
    context disappear below dense graphs and recreates the owner's space issue.
 2. Keep heroes and framed diagram; hide the three detail panels when the full
-   graph plus those panels cannot fit. Retain the fixed source link beneath the
+   graph plus those panels cannot fit. Retain the fixed source link above the
    graph's own scroll region. This gives the diagram priority at the cost of
    one popup action to read long explanations on dense/short views.
 
@@ -99,10 +115,11 @@ there is enough height. Do not shrink or restyle the four-row diagram cards.
 Use the stable viewport as the budget, subtracting hero-row spacing, topic strip
 and actual screen chrome. Compare the resulting main-area height to the newly
 rendered diagram's intrinsic height plus diagram/title/source chrome and the
-nine-row lower-panel group. All three details show or hide together. Do not
+nine-row detail-panel group. All three details show or hide together. Do not
 use the previous content minimum height as the input; that can oscillate after
-the details change visibility. Use an eight-row figure floor when the available
-space is truly small and internal diagram scrolling for excess graph rows.
+the details change visibility. Use a six-row figure floor plus the separate
+two-row source area when the available space is truly small, with internal
+diagram scrolling for excess graph rows.
 
 Recalculate after topic selection, resize and index toggle. Selecting a node
 repaints the six cards and detail snapshot but does not unnecessarily alter the
@@ -114,8 +131,9 @@ source row; the popup retains the full selected-node label and all details.
 
 At 149×45 dense contracts should prioritize heroes, the full framed graph and
 the source link, scrolling only if necessary. Short topics may show all three
-lower panels. These are desired behaviors; fit numbers must come from the
-actual-source preview and later composed measurements, not previous pins.
+detail panels above the diagram. These are desired behaviors; fit numbers must
+come from the actual-source preview and later composed measurements, not
+previous pins.
 
 ## Sequence and verification
 
@@ -159,6 +177,6 @@ actual-source preview and later composed measurements, not previous pins.
 The existing framed renderer is unchanged. Genuine-source previews show the
 restored cards and automatic detail collapse at 149×45, with expanded details
 on a larger view. Composed measurements preserve all diagrams at 148×44;
-the densest topic restores lower details at 53 rows. Final check results and
+the densest topic restores inline details at 53 rows. Final check results and
 review evidence belong in [follow-ups](workflow_guide_followups.md). Original
 and companion dates are documentation timestamps, never live prices.
