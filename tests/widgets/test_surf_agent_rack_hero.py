@@ -66,6 +66,11 @@ def painted(app, key):
     return "\n".join(strip.text for strip in strips(app, key))
 
 
+def inner_caption(app, key):
+    row = next(strip.text for strip in strips(app, key) if "└" in strip.text)
+    return row.split("└", 1)[1].split("┘", 1)[0].strip("─ ")
+
+
 def body_rows(app, key):
     """Read the actual inset cells without either its or the card's frame."""
     rows = []
@@ -79,6 +84,42 @@ def body_rows(app, key):
 def word_styles(row, word):
     start = row.text.index(word)
     return [segment.style for segment in row.crop(start, start + len(word)) if segment.text.strip()]
+
+
+@pytest.mark.parametrize("width", [132, 149])
+async def test_inner_captions_move_to_muted_outer_footers_except_seat_and_status(width):
+    from maxpane_dashboard.widgets.fmt import mmdd
+
+    data = payload()
+    data["runtime"]["update_state"] = "outdated"
+    expected = {"accepted": "96%", "effort": "1.8M tokens", "rank": "of 1,024",
+                "rewards": "$120.82", "runtime": "update available", "models": "2 models",
+                "owner": "paired " + mmdd(data["owner"]["paired_ts"]), "nodes": "oracle 120",
+                "collab": "collaborators", "earnings": "4 new"}
+    async with Harness(data).run_test(size=(width, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        native = word_styles(strips(app, "seat")[-1], "ERC-8004")[0]
+        for key, caption in expected.items():
+            rows = strips(app, key)
+            inner = next(row.text for row in rows if "└" in row.text)
+            assert not inner.split("└", 1)[1].split("┘", 1)[0].strip("─ "), key
+            outer = rows[-1]
+            shown = outer.text.strip("╰─╯ ")
+            if key == "runtime" and width == 132:
+                assert shown.endswith("…") and caption.startswith(shown[:-1])
+                assert "‹" in painted(app, key)
+            else:
+                assert shown == caption, (key, outer.text)
+            styles = word_styles(outer, shown)
+            assert styles and all(style.color == native.color and not style.bold and not style.italic
+                                  for style in styles), key
+        for key, inner, outer in (("seat", "working", "ERC-8004 #8127"),
+                                  ("status", "reviewing", "BUSY")):
+            rows = strips(app, key)
+            assert inner in next(row.text for row in rows if "└" in row.text)
+            assert outer in rows[-1].text
+        assert "▰" in strips(app, "status")[-1].text
 
 
 @pytest.mark.parametrize("width", [132, 149])
@@ -175,8 +216,8 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             "seat": ("AGENT", "working", "ERC-8004 #8127"),
             "accepted": ("WORK", "96%"),
             "effort": ("HOURS", "1.8M tokens"),
-            "rewards": ("IMD", "$120.82", "paid "),
-            "rank": ("POSITION", "of 1,024", "↑ 2"),
+            "rewards": ("IMD", "$120.82"),
+            "rank": ("POSITION", "of 1,024"),
             "status": ("WORKER", "reviewing", "BUSY", "▰"),
             "owner": ("WALLET", "example.eth ⧉", "paired"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "up to date"),
@@ -189,9 +230,6 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             assert all(word in text for word in words), (key, text)
             footer = strips(app, key)[-1].text
             label = footer.strip("╰─╯ ")
-            if key in ("owner", "models", "nodes", "accepted", "effort", "earnings", "collab"):
-                assert not label, (key, footer)
-                continue
             left = footer.index(label)
             assert abs(left - (len(footer) - left - len(label))) <= 1, (key, footer)
         # 420 and 960, asserted as digit glyphs that actually reach the terminal.
@@ -200,7 +238,7 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
 
 
 @pytest.mark.parametrize("width", [132, 149])
-async def test_acceptance_rate_moves_inside_and_updates_without_an_outer_meter(width):
+async def test_acceptance_rate_updates_in_outer_footer_without_a_meter(width):
     data = payload()
     async with Harness(data).run_test(size=(width, 45)) as pilot:
         app = pilot.app
@@ -214,10 +252,8 @@ async def test_acceptance_rate_moves_inside_and_updates_without_an_outer_meter(w
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             rows = strips(app, "accepted")
-            inner_footer = next(row.text for row in rows if "└" in row.text)
-            caption = inner_footer.split("└", 1)[1].split("┘", 1)[0].strip("─ ")
-            assert caption == expected
-            assert not rows[-1].text.strip("╰─╯ ")
+            assert not inner_caption(app, "accepted")
+            assert rows[-1].text.strip("╰─╯ ") == expected
             assert not any(char in painted(app, "accepted") for char in "▰▱")
             assert "of " not in painted(app, "accepted")
             if attempts == 0:
@@ -481,7 +517,7 @@ async def test_unknown_runtime_check_fixed_wording_fits_owner_terminal(state):
         assert '‹' not in text
 
 
-async def test_owner_models_and_nodes_outer_footers_stay_blank_in_every_source_state():
+async def test_owner_models_and_nodes_inner_footers_stay_blank_in_every_source_state():
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
@@ -492,13 +528,12 @@ async def test_owner_models_and_nodes_outer_footers_stay_blank_in_every_source_s
             pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             for key in ("owner", "models", "nodes"):
-                footer = strips(pilot.app, key)[-1].text
-                assert set(footer) <= set(" ╰─╯"), (state, key, footer)
+                assert not inner_caption(pilot.app, key), (state, key)
                 if state in ("unknown_seat", "stale_unknown_seat"):
-                    assert "never paired" in painted(pilot.app, key)
+                    assert "never paired" in strips(pilot.app, key)[-1].text
             if state in ("ok", "partial", "stale"):
                 for key, word in (("owner", "paired"), ("models", "2 models"), ("nodes", "oracle 120")):
-                    assert word in painted(pilot.app, key)
+                    assert word in strips(pilot.app, key)[-1].text
 
 
 def border_color(app, key):
@@ -537,9 +572,9 @@ async def test_accepted_keeps_formatted_digits_and_only_status_has_a_footer_mete
     async with Harness(data).run_test(size=(width, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "95.86%" in strips(app, "accepted")[6].text
+        assert "95.86%" in strips(app, "accepted")[-1].text
         assert "," in strips(app, "accepted")[5].text
-        assert not strips(app, "accepted")[-1].text.strip("╰─╯ ")
+        assert not inner_caption(app, "accepted")
         card = app.query_one("#hero-status")
         footer = strips(app, "status")[-1].text
         assert footer.count("▰") + footer.count("▱") == card.region.width - 6 - len("BUSY") - 1, footer
@@ -565,17 +600,17 @@ async def test_rank_and_reward_borders_follow_read_changes_and_payment_recency()
         app = pilot.app
         green = Color.parse(app.get_css_variables()["accent"]).get_truecolor()
         neutral = border_color(app, "accepted")
-        assert "paid " in painted(app, "rewards") and "OWNER SHARE" not in painted(app, "rewards")
+        assert "$120.82" in strips(app, "rewards")[-1].text
+        assert "paid " not in painted(app, "rewards") and "OWNER SHARE" not in painted(app, "rewards")
         for delta, recent, arrow, expected in [(2, True, "↑ 2", green), (-3, False, "↓ 3", app.ansi_theme.ansi_colors[1]),
                                                (0, False, "", neutral), (None, None, "", neutral)]:
             data["rank"]["delta"] = delta
             data["rewards"]["paid_recent"] = recent
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
-            if arrow:
-                assert arrow in strips(app, "rank")[-1].text
-            else:
-                assert set(strips(app, "rank")[-1].text) <= set(" ╰─╯")
+            assert "of 1,024" in strips(app, "rank")[-1].text
+            assert "rank change " + (f"{delta:+g}" if delta is not None else "--") in str(app.query_one("#hero-rank").tooltip)
+            assert not arrow or arrow not in painted(app, "rank")
             assert border_color(app, "rank") == expected
             assert border_color(app, "rewards") == (green if recent else neutral)
 
@@ -597,7 +632,7 @@ async def test_pending_uses_loading_indicator_without_masking_failed_sources():
 
 
 @pytest.mark.parametrize("width", [132, 134])
-async def test_reward_payment_time_fits_narrow_footer_without_losing_date(width):
+async def test_reward_usd_fits_narrow_footer_and_payment_time_stays_in_tooltip(width):
     from maxpane_dashboard.widgets.surf._fmt import mmdd_hhmm
     data = payload()
     async with Harness(data).run_test(size=(width, 45)) as pilot:
@@ -605,12 +640,13 @@ async def test_reward_payment_time_fits_narrow_footer_without_losing_date(width)
         card = pilot.app.query_one("#hero-rewards")
         date = mmdd_hhmm(data["rewards"]["last_paid_ts"])
         text = painted(pilot.app, "rewards")
-        assert date in strips(pilot.app, "rewards")[-1].text
+        assert "$120.82" in strips(pilot.app, "rewards")[-1].text
+        assert date not in text
         assert "‹" not in text
         assert "last paid " + date in str(card.tooltip)
         await pilot.resize_terminal(170, 45)
         await pilot.pause()
-        assert "paid " + date in strips(pilot.app, "rewards")[-1].text
+        assert "$120.82" in strips(pilot.app, "rewards")[-1].text
 
 
 @pytest.mark.parametrize("width,working,glyph", [(149, 2, "╭─╮╭─╴"), (132, None, "0F")])
@@ -631,13 +667,13 @@ async def test_status_separator_uses_midpoint_gray_in_tall_and_compact_readouts(
 
 
 @pytest.mark.parametrize("percent,listed", [(75., True), (0., True), (None, True), (101., True), (75., False)])
-async def test_effort_keeps_model_coverage_in_hover_without_outer_caption(percent, listed):
+async def test_effort_keeps_model_coverage_in_hover_and_tokens_in_outer_caption(percent, listed):
     data = payload()
     data["effort"].update(premium_percent=percent, listed=listed)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert not strips(app, "effort")[-1].text.strip("╰─╯ ")
+        assert strips(app, "effort")[-1].text.strip("╰─╯ ") == ("1.8M tokens" if listed else "")
         assert "CONTRIBUTORS" not in painted(app, "effort")
         assert "Premium models: 3/4 known-model work attempts; model coverage 4/10 recorded attempts. Astra, Opus, Fable." in str(app.query_one("#hero-effort").tooltip)
         assert border_color(app, "effort") == border_color(app, "accepted")
@@ -649,12 +685,12 @@ async def test_premium_hover_survives_independent_contributor_failure(state):
     data["effort"].update(state=state, hours=None, output_tokens=None)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert not strips(pilot.app, "effort")[-1].text.strip("╰─╯ ")
+        assert "-- tokens" in strips(pilot.app, "effort")[-1].text
         assert "Premium models: 3/4" in str(pilot.app.query_one("#hero-effort").tooltip)
         data["effort"].update(premium_percent=None, premium_jobs=None, model_jobs=None, work_jobs=None)
         pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
-        assert not strips(pilot.app, "effort")[-1].text.strip("╰─╯ ")
+        assert "-- tokens" in strips(pilot.app, "effort")[-1].text
         assert "Premium models: --/--" in str(pilot.app.query_one("#hero-effort").tooltip)
 
 
@@ -711,15 +747,14 @@ async def test_long_model_keeps_effort_visible_with_ellipsis_and_hover():
 
 
 @pytest.mark.parametrize("width", [132, 149, 211])
-async def test_runtime_since_uses_connection_time_with_full_hover_context(width):
-    from maxpane_dashboard.widgets.fmt import hhmm
+async def test_runtime_outer_footer_shows_update_and_keeps_connection_time_in_hover(width):
     from maxpane_dashboard.widgets.surf._fmt import mmdd_hhmm
     data = payload()
     async with Harness(data).run_test(size=(width, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         footer = strips(app, "runtime")[-1].text
-        assert "since " in footer and hhmm(data["runtime"]["connected_ts"]) in footer
+        assert "up to date" in footer and "since " not in painted(app, "runtime")
         assert "VERSION" not in footer
         tip = str(app.query_one("#hero-runtime").tooltip)
         assert "last connected " + mmdd_hhmm(data["runtime"]["connected_ts"]) in tip
@@ -727,7 +762,8 @@ async def test_runtime_since_uses_connection_time_with_full_hover_context(width)
         data["runtime"]["connected_ts"] = None
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
-        assert "since --" in strips(app, "runtime")[-1].text
+        assert "up to date" in strips(app, "runtime")[-1].text
+        assert "last connected ??-?? ??:??" in str(app.query_one("#hero-runtime").tooltip)
 
 
 async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
@@ -758,7 +794,7 @@ async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
 
 
 @pytest.mark.parametrize("new,worked", [(4, 2), (4, 0), (4, None), (0, 0), (None, None), (None, 2)])
-async def test_earnings_inner_footer_shows_new_tokens_from_last_24h(new, worked):
+async def test_earnings_outer_footer_shows_new_tokens_from_last_24h(new, worked):
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
@@ -767,11 +803,9 @@ async def test_earnings_inner_footer_shows_new_tokens_from_last_24h(new, worked)
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
         footer = strips(app, "earnings")[-1].text
-        assert not footer.strip("╰─╯ ")
+        assert footer.strip("╰─╯ ") == f"{new if new is not None else '--'} new"
         assert "CLAIMED" not in painted(app, "earnings")
-        inner_footer = next(row.text for row in strips(app, "earnings") if "└" in row.text)
-        caption = inner_footer.split("└", 1)[1].split("┘", 1)[0].strip("─ ")
-        assert caption == f"{new if new is not None else '--'} new"
+        assert not inner_caption(app, "earnings")
         assert "worked on" not in painted(app, "earnings")
         tooltip = str(app.query_one("#hero-earnings").tooltip)
         assert "this agent's accepted work" in tooltip
@@ -783,20 +817,20 @@ async def test_earnings_inner_footer_shows_new_tokens_from_last_24h(new, worked)
             assert "unknown" in tooltip
 
 
-async def test_earnings_keeps_exact_hover_counts_and_blank_footer_across_resize():
+async def test_earnings_keeps_exact_hover_counts_and_outer_footer_across_resize():
     data = payload()
     data["earnings"].update(earned=4096, worked_on=4096, earned_24h=4096, worked_on_24h=4096)
     async with Harness(data).run_test(size=(132, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         footer = strips(app, "earnings")[-1].text
-        assert not footer.strip("╰─╯ ")
+        assert footer.strip("╰─╯ ") == "4,096 new"
         tooltip = str(app.query_one("#hero-earnings").tooltip)
         assert "Last 24h: 4,096 earned" in tooltip and "4,096 worked on by this agent" in tooltip
         assert "4,096 new" in painted(app, "earnings")
         await pilot.resize_terminal(211, 45)
         await pilot.pause()
-        assert not strips(app, "earnings")[-1].text.strip("╰─╯ ")
+        assert "4,096 new" in strips(app, "earnings")[-1].text
         assert "4,096 new" in painted(app, "earnings")
 
 
@@ -806,7 +840,7 @@ def test_agent_card_states_match_declared_contract():
     assert _STATES == SURF_AGENT_HERO_STATES
 
 
-async def test_removed_outer_captions_stay_empty_across_source_states_and_recovery():
+async def test_moved_captions_stay_outside_across_source_states_and_recovery():
     data = payload()
     async with Harness(data).run_test(size=(132, 45)) as pilot:
         app = pilot.app
@@ -818,7 +852,7 @@ async def test_removed_outer_captions_stay_empty_across_source_states_and_recove
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             for key in keys:
-                assert not strips(app, key)[-1].text.strip("╰─╯ "), (key, state)
+                assert not inner_caption(app, key), (key, state)
         assert "4 new" in painted(app, "earnings")
         assert "#527 x84" in str(app.query_one("#hero-collab").tooltip)
 
@@ -846,8 +880,8 @@ async def test_shipped_uses_launch_digits_and_production_oracle_footer_without_g
             assert "NODES" not in text and "work by type" not in text and "other" not in text
             for glyph in digits:
                 assert any(glyph in row.text for row in body_rows(app, "nodes")), text
-            assert footer in strips(app, "nodes")[6].text
-            assert not strips(app, "nodes")[-1].text.strip("╰─╯ ")
+            assert footer in strips(app, "nodes")[-1].text
+            assert not inner_caption(app, "nodes")
             assert border_color(app, "nodes") == border_color(app, "accepted")
             tooltip = str(app.query_one("#hero-nodes").tooltip)
             assert "Distinct accepted jobs on production networks; testnets excluded." in tooltip

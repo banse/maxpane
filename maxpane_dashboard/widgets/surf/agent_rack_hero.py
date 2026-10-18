@@ -58,8 +58,8 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         ("accepted", "ACCEPTED", "WORK", ""),
         ("effort", "EFFORT", "HOURS", ""),
         ("rank", "RANK", "POSITION", ""),
-        ("rewards", "REWARDS", "IMD", "paid --"),
-        ("runtime", "RUNTIME", "SOFTWARE", "since --"),
+        ("rewards", "REWARDS", "IMD", ""),
+        ("runtime", "RUNTIME", "SOFTWARE", ""),
         ("models", "MODELS", "ADVERTISED", ""),
         ("owner", "OWNER", "WALLET", ""),
         ("nodes", "SHIPPED", "LAUNCHES", ""),
@@ -107,14 +107,11 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             usd_state = section.get("usd_state")
             usd = number(section.get("usd")) if usd_state in _AVAILABLE else None
             fields["subtitle"] = "$" + (f"{usd:.2f}" if usd is not None and (usd == 0 or .01 <= usd < 100000) else _face(usd, 2))
-            paid = number(section.get("last_paid_ts"))
-            fields["footer"] = "paid " + mmdd_hhmm(paid) if paid is not None else "paid --"
             fields["accent"] = section.get("paid_recent") is True
         elif key == "rank":
             fields["digits"] = _digits(section.get("rank"))
             fields["subtitle"] = "of " + _count(count(section.get("ranked_of")))
             delta = _number(section.get("delta"), signed=True)
-            fields["footer"] = f"{'↑' if delta > 0 else '↓'} {abs(delta):g}" if delta else ""
             fields["accent"] = delta is not None and delta > 0
         elif key == "status":
             fields["digits"] = f"{_count(count(section.get('working')))} 0F {_count(count(section.get('capacity')))}"
@@ -145,8 +142,6 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["subtitle"] = "up to date" if current else "update available" if update == "outdated" else ""
             if section.get("daemon_differs") is True and update in ("current", "outdated"):
                 fields["subtitle"] = "runtime + daemon ↑" if update == "outdated" else "daemon differs"
-            connected = number(section.get("connected_ts"))
-            fields["footer"] = "since " + (mmdd_hhmm(connected) if connected is not None else "--")
             fields["accent"] = False
         elif key == "earnings":
             fields["digits"] = _count(count(section.get("earned")))
@@ -176,6 +171,9 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                 fields["accent"] = False
         if state in ("unknown_seat", "stale_unknown_seat"):
             fields["subtitle"] = "never paired"
+        if key not in ("seat", "status"):
+            fields["footer"] = fields.get("subtitle", "")
+            fields["subtitle"] = ""
         records.append(HeroRecord(**fields))
     return tuple(records)
 
@@ -233,8 +231,8 @@ class AgentRackCard(Pool4HeroCard):
 
     def _footer(self):
         data = self.data
-        if data.key in ("owner", "models", "nodes", "accepted", "effort", "earnings", "collab"):
-            self.border_subtitle = Text()
+        if data.key not in ("seat", "status"):
+            self.border_subtitle = Text(flatten(data.footer), style="dim")
         elif data.state in ("unknown_seat", "stale_unknown_seat", "empty", "unavailable"):
             word = {"unknown_seat": "never paired", "stale_unknown_seat": "never paired", "empty": "EMPTY"}.get(data.state, "")
             # The selected identity remains meaningful if only its detail read failed.
@@ -243,20 +241,8 @@ class AgentRackCard(Pool4HeroCard):
             room = max(5, self.region.width - 6)
             meter = {key: self.source.get(key) for key in ("meter_kind", "meter_state", "numerator", "denominator")}
             self.border_subtitle = meter_text(dict(meter, key="agent"), width=room)
-        elif data.key == "rewards":
-            footer = data.footer
-            if cell_len(footer) > max(0, self.region.width - 6):
-                footer = footer.removeprefix("paid ")
-            self.border_subtitle = Text().append(footer, style="dim")
-        elif data.key == "runtime":
-            footer = data.footer
-            if cell_len(footer) > max(0, self.region.width - 6):
-                footer = "since " + hhmm(number(self.source.get("connected_ts")), unknown="--")
-            self.border_subtitle = Text().append(footer, style="dim")
         else:
-            delta = _number(self.source.get("delta"), signed=True) if data.key == "rank" else None
-            color = "green" if delta and delta > 0 else "red" if delta and delta < 0 else "dim"
-            self.border_subtitle = Text().append(flatten(data.footer), style=color)
+            self.border_subtitle = Text(flatten(data.footer), style="dim")
 
     def _frame_style(self):
         palette = self.app.get_css_variables()
