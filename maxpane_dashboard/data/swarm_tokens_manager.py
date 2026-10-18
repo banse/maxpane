@@ -54,6 +54,7 @@ class SwarmTokensManager:
     HISTORY_TTL, TRADES_TTL, LIQUIDITY_TTL = 900, 120, 600
     PAGE_SIZE, PAGE_BUDGET, MARKET_BATCH, DETAIL_BATCH = 500, 3, 30, 2
     VOLUME_BATCH = 10
+    PROVENANCE_BATCH, PROVENANCE_RETRY = 3, 60
 
     def __init__(self, surf_manager, *, client=None, market=None, clock=time.time):
         self.surf = surf_manager
@@ -86,6 +87,7 @@ class SwarmTokensManager:
         self._portfolio_priority_ids = set()
         self._active_view = 'legacy'
         self._retired = set()
+        self._provenance_attempts = {}
 
     def set_active_view(self, view):
         if view == self._active_view:
@@ -102,6 +104,7 @@ class SwarmTokensManager:
             self._cat_attempt = None
             for attempts in self._attempts.values():
                 attempts.clear()
+            self._provenance_attempts.clear()
 
     async def drain_reads(self):
         if self._retired:
@@ -159,6 +162,10 @@ class SwarmTokensManager:
             self._cat_failed = True
             self._error_count += 1
             self._scan = self._cursor = None
+        finally:
+            # A cold catalogue completes between polls. Start its missing
+            # provenance now; passive UI projections must never schedule I/O.
+            self._offer_provenance()
 
     def _catalogue_rows(self):
         if self._scan:
@@ -230,7 +237,11 @@ class SwarmTokensManager:
                                      ('trades', self._trades, self.TRADES_TTL)):
                 point = cache.get(token_id)
                 if name == 'markets' and point and point[0].get('_expected_pool') != token['launch_pool']:
-                    point = None
+                    # Newly verified provenance may confirm the very pool
+                    # already quoted. Keep that observation and its clock;
+                    # a different or withdrawn identity still invalidates it.
+                    if not token['launch_pool'] or point[0].get('market_pool') != token['launch_pool']:
+                        point = None
                 if name != 'markets' and point and point[0].get('_pool') != token['market_pool']:
                     point = None
                 label = 'market' if name == 'markets' else name
@@ -494,6 +505,45 @@ class SwarmTokensManager:
             result.update(state='stale', as_of=min(stale_stamps))
         return result
 
+    def _offer_provenance(self, tokens=None):
+        read = getattr(self.surf, 'refresh_swarm_token_evidence', None)
+        task = self._tasks.get('provenance')
+        if (not callable(read) or self._closed or self._retired
+                or self._active_view not in ('SWARM TOKENS', 'legacy')
+                or task is not None and not task.done()):
+            return
+        now = self._clock()
+        if tokens is None:
+            source = self.surf.swarm_tokens_source(catalogue=self._catalogue_rows())
+            tokens = self._tokens(source, now)
+        raw = {row['id']: row for row in self._catalogue_rows() or []}
+        due = []
+        for token in tokens or []:
+            row = raw.get(token['launch_uuid'])
+            if (row is None or token['verdict'] not in ('unknown', 'partial')
+                    or _token_artifacts(row)[1]):
+                continue
+            version = (row.get('status'), row.get('updatedAt'),
+                       row.get('chainId'), token['token_address'])
+            prior_version, attempted = self._provenance_attempts.get(row['id'], (None, -1))
+            attempted = attempted if version == prior_version else -1
+            if attempted == -1 or now - attempted >= self.PROVENANCE_RETRY:
+                due.append((attempted, -row['launchNumber'], row, version, token['id']))
+        due.sort(key=lambda candidate: candidate[:2])
+        batch = due[:self.PROVENANCE_BATCH]
+        if batch:
+            self._start('provenance', self._refresh_provenance(read, deepcopy(batch)),
+                        token_ids=(candidate[4] for candidate in batch))
+
+    async def _refresh_provenance(self, read, batch):
+        for _, _, row, version, _ in batch:
+            self._provenance_attempts[row['id']] = (version, self._clock())
+        try:
+            await read([candidate[2] for candidate in batch])
+        except Exception:
+            # Keep last-good facts and let the bounded retry queue advance.
+            self._error_count += 1
+
     def _offer_enrichment(self, tokens, now, *, hub_volume=False, markets_only=False):
         tiers = [('markets', self.MARKET_TTL, self.MARKET_BATCH)]
         tiers += ([] if markets_only else [('volume', self.HISTORY_TTL, self.VOLUME_BATCH)] if hub_volume else [
@@ -583,6 +633,8 @@ class SwarmTokensManager:
         if offer:
             self.offer_catalogue()
             self._offer_enrichment(enrichment, now)
+            if not portfolio:
+                self._offer_provenance(tokens)
         activity = {f"launch:{row['id']}:{row['launch_uuid']}":
                     {'id': f"launch:{row['id']}:{row['launch_uuid']}", 'token_id': row['id'],
                      'ts': row['launched_at'], 'kind': 'LAUNCH', 'amount': None, 'asset': ''}

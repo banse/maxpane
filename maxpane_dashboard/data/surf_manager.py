@@ -5689,20 +5689,91 @@ class SurfManager:
         """
         if catalogue is not None:
             self._swarm_tokens_catalogue = copy.deepcopy(catalogue)
-        now = self._clock()
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         return {
-            'rows': self._swarm_launch_keys()['swarm_launch_rows'],
+            'rows': self._swarm_launch_keys(catalogue=getattr(self, '_swarm_tokens_catalogue', None))['swarm_launch_rows'],
             'as_of': slot.get('launches_ts'),
             'pool_ids': self._swarm_token_pool_ids(),
         }
 
+    def _swarm_launch_catalogue(self, slot, catalogue=None):
+        rows = getattr(self, '_swarm_tokens_catalogue', []) if catalogue is None else catalogue
+        current = {row['id']: row for raw in rows
+                   if (row := sw._launch_list_row(raw)) is not None}
+        for raw in slot.get('launches') or []:
+            row = sw._launch_list_row(raw)
+            if row is not None and (row.get('updatedAt') or '') >= (current.get(row['id'], {}).get('updatedAt') or ''):
+                current[row['id']] = row
+        return current
+
     def _swarm_token_pool_ids(self):
         facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}})
+        current = self._swarm_launch_catalogue(self._launch_slot(SLOT_SWARM_LAUNCHES, {}))
         return {key: point['pool_initialize']['pool_id']
                 for key, point in facts['launches'].items()
                 if point.get('pool_initialize') and point.get('detail_version') ==
-                [point['row']['status'], point['row'].get('updatedAt')]}
+                [point['row']['status'], point['row'].get('updatedAt')]
+                and current.get(key, point['row']) == point['row']}
+
+    async def refresh_swarm_token_evidence(self, rows):
+        """Acquire at most three token launches; the visible child owns this task."""
+        slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
+        current = self._swarm_launch_catalogue(slot)
+        selected = {}
+        for raw in rows:
+            row = sw._launch_list_row(raw)
+            if row is None or not lc.is_production(row):
+                continue
+            tokens = [a for a in row['artifacts'] if a['role'] == 'token']
+            if len(tokens) != 1 or not tokens[0]['address'] or current.get(row['id'], row) != row:
+                continue
+            selected[row['id']] = row
+            if len(selected) == 3:
+                break
+        if not selected:
+            return
+        facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
+        points = []
+        for key, row in selected.items():
+            point = facts['launches'].get(key, {})
+            if point.get('row') != row or point.get('detail_version') != [row['status'], row.get('updatedAt')]:
+                point = {k: point[k] for k in ('detail_attempt_ts', 'detail_failed_ts') if k in point}
+            point['row'] = row
+            points.append(point)
+        legacy_policies = (slot.get('policies_schema') != 1
+                           and any(not p.get('kind') for p in slot.get('policies') or []))
+        now = self._clock()
+        refreshed_policy = (legacy_policies or slot.get('policies_ts') is None
+                            or now - slot['policies_ts'] >= 1800)
+        policy_read_ok = True
+        if refreshed_policy:
+            policies = await self._guard(self.swarm_client.fetch_launch_policies, 'swarm token policies')
+            policy_read_ok = isinstance(policies, list)
+            if policy_read_ok:
+                slot.update(policies=policies, policies_ts=now, policies_schema=1)
+        await self._enrich_swarm_launch_evidence(slot, points, now,
+            refreshed_policy=refreshed_policy, policy_read_ok=policy_read_ok, strict_identity=True)
+        # Awaited reads may outlive a newer catalogue; merge only still-current identities.
+        latest_slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
+        current = self._swarm_launch_catalogue(latest_slot)
+        latest_facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
+        accepted = [point for point in points
+                    if current.get(point['row']['id'], point['row']) == point['row']]
+        for point in accepted:
+            latest_facts['launches'][point['row']['id']] = point
+        if accepted:
+            previous = self.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS)
+            self.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, sw.coerce_launch_facts_slot(latest_facts),
+                                       ts=min(now, previous.ts) if previous else now)
+        if slot.get('policies_ts') is not None and slot['policies_ts'] >= (latest_slot.get('policies_ts') or 0):
+            for key in ('policies', 'policies_ts', 'policies_schema'):
+                latest_slot[key] = slot[key]
+        latest_slot.setdefault('policies_refreshed_for', {}).update(slot.get('policies_refreshed_for', {}))
+        stamps = [latest_slot.get(key + '_ts') for key in ('launches', 'sites', 'policies')
+                  if latest_slot.get(key + '_ts') is not None]
+        if stamps:
+            self.cache.store_last_good(SLOT_SWARM_LAUNCHES, sw.coerce_launches_slot(latest_slot, now=now), ts=max(stamps))
+        self.cache.save()
 
     def _spawn_swarm_launches(self, tiers, now):
         if TIER_SWARM_LAUNCHES not in tiers or not self._view_allows('dashboard', 'swarm'):
@@ -5783,6 +5854,57 @@ class SurfManager:
             else:
                 facts['launches'].pop(row['id'], None)
         points = sorted(facts['launches'].values(), key=lambda p: p['row']['launchNumber'], reverse=True)
+        rpc, requests = await self._enrich_swarm_launch_evidence(
+            slot, points, now, refreshed_policy=refreshed_policy, policy_read_ok=policy_read_ok)
+        await self._refresh_launch_liquidity(points, rpc, slot.get('policies') or [], now,
+            receipt_attempts={chain: set(request['hashes']) for chain, request in requests.items()})
+        production_times = [sw._ts(p['row'].get('createdAt')) for p in points]
+        earliest = min((ts for ts in production_times if ts is not None), default=None)
+        site_budget = 3
+        for site in sorted(slot.get('sites') or [], key=lambda s: s.get('createdAt') or '', reverse=True):
+            if not site_budget:
+                break
+            created = sw._ts(site.get('createdAt'))
+            if site['id'] in facts['sites'] or earliest is None or created is None or created < earliest:
+                continue
+            site_budget -= 1
+            read = await self._guard(lambda site=site: self.swarm_client.read_job_detail(site['jobId']), 'swarm site job')
+            job = read.payload if read is not None else None
+            if isinstance(job, dict) and job.get('id') == site['jobId']:
+                facts['sites'][site['id']] = ls.site_job_facts(job)
+                if read.observed_at is not None:
+                    fact_observations.append(read.observed_at)
+        facts = sw.coerce_launch_facts_slot(facts)
+        facts_entry = self.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS)
+        if facts_entry is not None and previous_facts.get('sites'):
+            fact_observations.append(facts_entry.ts)
+        facts_ts = (min([now, *fact_observations]) if facts != previous_facts or facts_entry is None
+                    else facts_entry.ts)
+        scores = self._launch_slot(SLOT_SWARM_SCORES, {})
+        inputs = ls.site_match_key(slot.get('sites') or [], facts['launches'],
+                                   facts['sites'], scores.get('workflows'))
+        if slot.get('site_links_inputs') != inputs:
+            try:
+                slot['site_links'] = await asyncio.to_thread(ls.match_sites, slot.get('sites') or [],
+                                                            facts['launches'], facts['sites'], scores.get('workflows'))
+            except Exception as exc:
+                if type(exc) not in self._swarm_match_errors:
+                    logger.warning('SURF launch site match failed; retaining last-good links', exc_info=True)
+                    self._swarm_match_errors.add(type(exc))
+            else:
+                self._swarm_match_errors.clear()
+                slot['site_links_inputs'] = inputs
+        stamps = [slot.get(route + '_ts') for route in ('launches', 'sites', 'policies') if slot.get(route + '_ts') is not None]
+        if stamps:
+            self.cache.store_last_good(SLOT_SWARM_LAUNCHES, sw.coerce_launches_slot(slot, now=now), ts=max(stamps))
+        if facts['launches'] or facts['sites'] or self._swarm_launch_read_ok or facts != previous_facts:
+            self.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, sw.coerce_launch_facts_slot(facts), ts=facts_ts)
+        (self.cache.mark_failed if failed else self.cache.mark_fetched)(TIER_SWARM_LAUNCHES, now)
+
+    async def _enrich_swarm_launch_evidence(self, slot, points, now, *,
+                                            refreshed_policy=False, policy_read_ok=True,
+                                            strict_identity=False):
+        """Shared bounded details and provenance checks; caller owns cache publication."""
         detail_budget = 3
         detail_candidates = sorted(points, key=lambda p: (
             'detail_failed_ts' in p, p.get('detail_failed_ts', 0), -p['row']['launchNumber']))
@@ -5799,7 +5921,8 @@ class SurfManager:
             detail_budget -= 1
             point['detail_attempt_ts'] = now
             detail = await self._guard(lambda row=row: self.swarm_client.fetch_launch(row['id']), 'swarm launch detail')
-            if not isinstance(detail, dict) or detail.get('id') != row['id']:
+            if (not isinstance(detail, dict) or detail.get('id') != row['id']
+                    or strict_identity and sw._launch_list_row(detail) != sw._launch_list_row(row)):
                 point['detail_failed_ts'] = now
                 continue
             try:
@@ -5885,50 +6008,7 @@ class SurfManager:
                 # A stale policy cannot convict a sender/factory mismatch.
                 checks['K2'] = lc.result()
             point['checks'] = checks
-        await self._refresh_launch_liquidity(points, rpc, slot.get('policies') or [], now,
-            receipt_attempts={chain: set(request['hashes']) for chain, request in requests.items()})
-        production_times = [sw._ts(p['row'].get('createdAt')) for p in points]
-        earliest = min((ts for ts in production_times if ts is not None), default=None)
-        site_budget = 3
-        for site in sorted(slot.get('sites') or [], key=lambda s: s.get('createdAt') or '', reverse=True):
-            if not site_budget:
-                break
-            created = sw._ts(site.get('createdAt'))
-            if site['id'] in facts['sites'] or earliest is None or created is None or created < earliest:
-                continue
-            site_budget -= 1
-            read = await self._guard(lambda site=site: self.swarm_client.read_job_detail(site['jobId']), 'swarm site job')
-            job = read.payload if read is not None else None
-            if isinstance(job, dict) and job.get('id') == site['jobId']:
-                facts['sites'][site['id']] = ls.site_job_facts(job)
-                if read.observed_at is not None:
-                    fact_observations.append(read.observed_at)
-        facts = sw.coerce_launch_facts_slot(facts)
-        facts_entry = self.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS)
-        if facts_entry is not None and previous_facts.get('sites'):
-            fact_observations.append(facts_entry.ts)
-        facts_ts = (min([now, *fact_observations]) if facts != previous_facts or facts_entry is None
-                    else facts_entry.ts)
-        scores = self._launch_slot(SLOT_SWARM_SCORES, {})
-        inputs = ls.site_match_key(slot.get('sites') or [], facts['launches'],
-                                   facts['sites'], scores.get('workflows'))
-        if slot.get('site_links_inputs') != inputs:
-            try:
-                slot['site_links'] = await asyncio.to_thread(ls.match_sites, slot.get('sites') or [],
-                                                            facts['launches'], facts['sites'], scores.get('workflows'))
-            except Exception as exc:
-                if type(exc) not in self._swarm_match_errors:
-                    logger.warning('SURF launch site match failed; retaining last-good links', exc_info=True)
-                    self._swarm_match_errors.add(type(exc))
-            else:
-                self._swarm_match_errors.clear()
-                slot['site_links_inputs'] = inputs
-        stamps = [slot.get(route + '_ts') for route in ('launches', 'sites', 'policies') if slot.get(route + '_ts') is not None]
-        if stamps:
-            self.cache.store_last_good(SLOT_SWARM_LAUNCHES, sw.coerce_launches_slot(slot, now=now), ts=max(stamps))
-        if facts['launches'] or facts['sites'] or self._swarm_launch_read_ok or facts != previous_facts:
-            self.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, sw.coerce_launch_facts_slot(facts), ts=facts_ts)
-        (self.cache.mark_failed if failed else self.cache.mark_fetched)(TIER_SWARM_LAUNCHES, now)
+        return rpc, requests
 
     def _launch_rpc_client(self, chain):
         if chain == 1:
@@ -6046,13 +6126,15 @@ class SurfManager:
                 if result is not None:
                     point['liquidity'] = result
 
-    def _swarm_launch_keys(self):
+    def _swarm_launch_keys(self, *, catalogue=None):
         slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         facts = self._launch_slot(SLOT_SWARM_LAUNCH_FACTS, {'launches': {}, 'sites': {}})
         points = facts['launches']
         raw = {r['id']: r for r in slot.get('launches') or []}
         raw.update({key: p['row'] for key, p in points.items()})
-        rows = sw.launch_rows(list(raw.values())) if slot.get('launches') is not None else None
+        if catalogue is not None:
+            raw.update(self._swarm_launch_catalogue(slot, catalogue))
+        rows = sw.launch_rows(list(raw.values())) if slot.get('launches') is not None or catalogue is not None else None
         links = slot.get('site_links') or {}
         linked_sites = {}
         for site in sorted(slot.get('sites') or [], key=lambda s: s.get('createdAt') or ''):
@@ -6063,7 +6145,7 @@ class SurfManager:
             if row['chain_id'] in (1, 8453, 4663) and row['status'] in ('parked', 'abandoned') and not row['artifacts']:
                 row['liquidity'] = ll.empty_liquidity('na')
             point = points.get(row['launch_id'])
-            if point is None:
+            if point is None or (catalogue is not None and raw[row['launch_id']] != point['row']):
                 continue
             row['production'] = True
             if point.get('detail_version') != [point['row']['status'], point['row'].get('updatedAt')]:

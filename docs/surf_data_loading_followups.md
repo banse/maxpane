@@ -313,3 +313,54 @@ and handoff files passed **163 tests in 43.37 seconds**. Final fast guards:
   `_swarm_seat_keys` accounted for approximately 69% of the baseline projection
   profile. This is a separate measured optimization, not a reason to repaint or
   poll hidden dashboards.
+
+## SWARM TOKENS provenance acquisition (2026-10-18)
+
+Implements [the verdict-reader plan](swarm_tokens_verdict_reader.md) from
+`bce65c4e`. The overview now owns a three-launch provenance batch after catalogue
+completion and during active refreshes. Attempts are ordered fairly, retried
+after 60 seconds and reset for a changed identity/version. Existing longer
+policy/coverage retry limits remain in force. Departure cancels the task through
+the token manager's existing lifecycle. Passive getters, BOARDROOM and PORTFOLIO
+do not start this acquisition, and the parent SURF collectors remain inactive.
+
+The narrow SURF helper reuses existing verification, persists accepted facts,
+rejects superseded/foreign detail responses and supports a session with no parent
+launch-head read. It does not fetch parent head/sites/K8 state or invent their
+observation times. When verification confirms the already quoted market pool,
+the quote and its original read timestamp survive; other pool quotes are withheld.
+
+The live keyless render at 149×45 reproduced missing SHIFT #2124 evidence in a
+separate public-only temporary cache. The final run moved from `unknown` to
+`swarm` at 3.52 seconds with its price and volume retained. This is one observed
+read, not a latency guarantee; the user's cache was not changed. Evidence:
+`/tmp/maxpane-verdict-live/` and `/tmp/maxpane-verdict-live-final.log`.
+
+### Verification and existing failures
+
+The touched/composing run had **248 passed and 33 failures**. All 33 failed node
+IDs reproduce on an untouched `bce65c4e` archive: 32 parameter cases of
+`test_surf_swarm_launches_v8.py::test_crowded_swarm_title_keeps_every_fact` and
+`test_launch_news_multiple_literal_and_default_worst_case_fit`. They expect older
+title wording or the previously suppressed source-warning text. They remain
+outside this data-reader fix.
+
+After the matching-pool quote correction, **93 affected data/source/market tests
+passed**. Fast guards: **126 passed**. Publication identity, foreign detail,
+scope, cold-start, cancellation and both quote-match branches have killed and
+restored rollback mutations. No full suite was run. Logs:
+`/tmp/maxpane-verdict-tests.log`, `/tmp/maxpane-verdict-baseline.log`,
+`/tmp/maxpane-verdict-final-data.log`, `/tmp/maxpane-verdict-guards.log`.
+
+Final independent Agency review: **Approved, no findings**. The reviewer checked
+25 source/lifecycle cases and three policy/retry cases, killed and restored the
+publication identity mutation, and confirmed the restored test passed.
+
+### Filed follow-up
+
+- Existing cold-entry log: before the first reader publication,
+  `SwarmTokensScreen._fetch_data` passes an empty dictionary to `project_snapshot`,
+  which expects `tokens`. The screen logs `SWARM TOKENS refresh failed: 'tokens'`
+  and recovers on the first snapshot (under 0.6 seconds in the final live probe).
+  Handle the empty reader snapshot on the next token-screen touch. No layout or
+  screen code changed in this task.
