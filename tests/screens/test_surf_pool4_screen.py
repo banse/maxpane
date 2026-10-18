@@ -627,37 +627,29 @@ def test_the_two_pool4_fixtures_disagree_about_the_reward_path() -> None:
     assert _mainnet_pool4_payload()["pool4_distributor_addr"] is not None
 
 
-async def test_every_pool4_panel_is_dispatched_before_p_is_pressed() -> None:
-    """Composed-once-shown-by-``display``: the first ``p`` paints a complete
-    frame, not a blank one that fills in a beat later.
+async def test_every_pool4_panel_waits_until_protocol_is_open(monkeypatch) -> None:
+    """Protocol panels paint on entry and do no hidden table work."""
+    from unittest.mock import Mock
 
-    Checked on the widgets' own stored payloads while the body is still
-    hidden -- a hidden widget reaches no compositor row at all, so there is
-    nothing to read off the screen -- and then on composited output once
-    ``p`` has been pressed, because a panel that stored a payload and
-    rendered nothing would satisfy the first half alone.
-    """
     async with _pool4_app().run_test(size=(150, 50)) as pilot:
-        await pilot.app.screen._do_refresh()
-        await pilot.pause()
+        await pilot.app.workers.wait_for_complete()
         screen = pilot.app.screen
-        assert screen.query_one(f"#{POOL4_BODY_ID}").display is False
-        for name, cls in _POOL4_WIDGET_CLASSES.items():
-            assert screen.query_one(cls)._payload, (
-                f"{name} was not dispatched while the body was hidden -- the "
-                "first `p` will paint it blank"
-            )
+        calls = []
+        for cls in _POOL4_WIDGET_CLASSES.values():
+            widget = screen.query_one(cls)
+            update = Mock(wraps=widget.update_data)
+            monkeypatch.setattr(widget, 'update_data', update)
+            calls.append(update)
+        await screen._do_refresh()
+        assert not any(call.called for call in calls)
         await pilot.press("e")
+        await pilot.app.workers.wait_for_complete()
         await pilot.pause()
+        assert all(call.called for call in calls)
         text = _screen_text(pilot.app)
 
     for title in ("HATCHES", "THE SPLIT", "THE RATCHET", "sIMD VAULT"):
         assert title in text, title
-    # The payload, not just the titles -- a dispatched panel rendering its
-    # empty state would satisfy the four checks above. `SELL` was the third
-    # value here, off POOL4 FLOW, until the owner removed that panel from `p`
-    # on 2026-09-14; THE SPLIT's and sIMD VAULT's values still prove two
-    # panels in different columns rendered their payload, not a placeholder.
     assert "SELL" not in text
     assert "89.10%" in text and "1.302986" in text
 

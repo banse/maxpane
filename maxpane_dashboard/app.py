@@ -21,6 +21,7 @@ from maxpane_dashboard.data.dota_manager import DOTAManager
 from maxpane_dashboard.data.frenpet_manager import FrenPetManager
 from maxpane_dashboard.data.fwa_manager import FWAManager
 from maxpane_dashboard.data.manager import DataManager
+from maxpane_dashboard.data.reader import ReaderHandle, ReaderRuntime
 from maxpane_dashboard.data.ocm_manager import OCMManager
 from maxpane_dashboard.data.surf_manager import SurfManager
 from maxpane_dashboard.data.talismans_manager import TalismansManager
@@ -88,66 +89,64 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         self.poll_interval = poll_interval
         self._initial_theme = theme if theme in THEMES else "minimal"
         self._initial_game = initial_game
-        self._bakery_manager = DataManager(poll_interval=poll_interval)
-        self._frenpet_manager = FrenPetManager(
-            poll_interval=poll_interval,
-            wallet_address=wallet_address,
-        )
-        self._frenpet_full_manager = FrenPetManager(
-            poll_interval=poll_interval,
-            wallet_address=wallet_address,
-        )
-        self._frenpet_wallet_manager = FrenPetManager(
-            poll_interval=poll_interval,
-            wallet_address=wallet_address,
-            fetch_rewards=True,
-        )
-        self._frenpet_perf_manager = FrenPetManager(
-            poll_interval=poll_interval,
-            wallet_address=wallet_address,
-        )
-        self._base_manager = BaseManager(remote_only=True)
-        self._cattown_manager = CatTownManager(poll_interval=poll_interval)
-        self._ocm_manager = OCMManager(poll_interval=poll_interval)
-        self._dota_manager = DOTAManager(poll_interval=poll_interval)
-        self._ttt_manager = TTTManager(poll_interval=poll_interval)
-        self._talismans_manager = TalismansManager(poll_interval=poll_interval)
-        # The saved IDMD seat (``config.get_seat``, read by ``__main__``) is
-        # handed in rather than read here: a bare ``MaxPaneApp()`` in a test
-        # must not pick up the developer's own ``~/.maxpane/config.toml``.
-        self._surf_manager = SurfManager(poll_interval=poll_interval, seat=seat)
-        if surfboard_seats is not None:
-            self._surf_manager.set_hub_seats(surfboard_seats)
-            self._surf_manager.set_seat(self._surf_manager.get_hub_seats()[0])
+        # Factories run lazily on one reader loop. App construction never loads
+        # a cache or creates an HTTP client on Textual's event loop.
+        self._reader = ReaderRuntime(poll_interval=poll_interval)
+        register = self._reader.register
+        self._bakery_manager = register(
+            "bakery", lambda: DataManager(poll_interval=poll_interval))
+        self._frenpet_manager = register(
+            "frenpet", lambda: FrenPetManager(
+                poll_interval=poll_interval, wallet_address=wallet_address),
+            {"_wallet_address": wallet_address})
+
+        def frenpet_variant(*, fetch_rewards=False):
+            manager = FrenPetManager(poll_interval=poll_interval,
+                                     wallet_address=wallet_address,
+                                     fetch_rewards=fetch_rewards)
+            # Every variant persists the same cache file; preserve one live
+            # cache even when a variant is opened before the ordinary board.
+            manager.cache = self._reader.get_manager("frenpet").cache
+            return manager
+
+        self._frenpet_full_manager = register(
+            "frenpet_full", frenpet_variant, {"_wallet_address": wallet_address})
+        self._frenpet_wallet_manager = register(
+            "frenpet_wallet", lambda: frenpet_variant(fetch_rewards=True),
+            {"_wallet_address": wallet_address})
+        self._frenpet_perf_manager = register(
+            "frenpet_perf", frenpet_variant, {"_wallet_address": wallet_address})
+        self._base_manager = register("base", lambda: BaseManager(remote_only=True))
+        self._cattown_manager = register(
+            "cattown", lambda: CatTownManager(poll_interval=poll_interval))
+        self._ocm_manager = register(
+            "ocm", lambda: OCMManager(poll_interval=poll_interval))
+        self._dota_manager = register(
+            "dota", lambda: DOTAManager(poll_interval=poll_interval))
+        self._ttt_manager = register(
+            "ttt", lambda: TTTManager(poll_interval=poll_interval))
+        self._talismans_manager = register(
+            "talismans", lambda: TalismansManager(poll_interval=poll_interval))
+
+        def surf_manager():
+            manager = SurfManager(poll_interval=poll_interval, seat=seat)
+            if surfboard_seats is not None:
+                manager.set_hub_seats(surfboard_seats)
+                manager.set_seat(manager.get_hub_seats()[0])
+            return manager
+
+        self._surf_manager = register("surf", surf_manager, {
+            "seat": surfboard_seats[0] if surfboard_seats is not None else seat,
+            "hub_seats": tuple(surfboard_seats) if surfboard_seats is not None
+                         else (seat, None, None, None),
+        })
         self._surfboard_wallet_address = wallet_address
-        # THE LIST's YOU row is wallet-scoped, so the curator manager is one of
-        # the few that takes the address.  It normalises with ``wallet or None``,
-        # so the empty string ``get_wallet()`` returns when nothing is
-        # configured is safe to pass straight through.  The screen is built
-        # later, in _launch_game, where this local is out of scope -- it reads
-        # the address back off ``self._curator_manager.wallet`` rather than the
-        # app keeping a second copy that could drift.
-        self._curator_manager = CuratorManager(
-            poll_interval=poll_interval,
-            wallet=wallet_address,
-        )
-        # FWAManager builds its own market client with coingecko_min_spacing=6.0
-        # (COINGECKO_MIN_SPACING); do not pass one in here.
-        self._fwa_manager = FWAManager(poll_interval=poll_interval)
-        # All four FrenPet managers persist to the same
-        # ~/.maxpane/frenpet_cache.json and FrenPetCache.save_to_file is a
-        # full overwrite invoked from close(), so on quit the three managers
-        # whose screens never polled used to rewrite the file with their
-        # construction-time snapshot — discarding the score history the active
-        # manager had just saved.  One shared cache means every writer holds
-        # the same live state, whichever of them writes last.
-        _shared_frenpet_cache = self._frenpet_manager.cache
-        for _frenpet_variant in (
-            self._frenpet_full_manager,
-            self._frenpet_wallet_manager,
-            self._frenpet_perf_manager,
-        ):
-            _frenpet_variant.cache = _shared_frenpet_cache
+        self._curator_manager = register(
+            "curator", lambda: CuratorManager(
+                poll_interval=poll_interval, wallet=wallet_address),
+            {"wallet": wallet_address or None})
+        self._fwa_manager = register(
+            "fwa", lambda: FWAManager(poll_interval=poll_interval))
         self._current_game = initial_game
         self._launch_notifications = LaunchNotifications()
 
@@ -405,20 +404,20 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         if not address:
             return
         if self._current_game == "frenpet_wallet":
-            self._frenpet_wallet_manager._wallet_address = address
+            self._frenpet_wallet_manager.set_wallet(address)
             self._launch_game("frenpet_wallet", first=True)
         elif self._current_game == "frenpet_perf":
-            self._frenpet_perf_manager._wallet_address = address
+            self._frenpet_perf_manager.set_wallet(address)
             self._launch_game("frenpet_perf", first=True)
         else:
-            self._frenpet_full_manager._wallet_address = address
+            self._frenpet_full_manager.set_wallet(address)
             self._current_game = "frenpet_full"
             self._launch_game("frenpet_full", first=True)
 
     def _ensure_frenpet_full_screen(self, wallet: str) -> None:
         """Install the FrenPet Full screen if not already installed."""
         if not self.is_screen_installed("frenpet_full"):
-            self._frenpet_full_manager._wallet_address = wallet
+            self._frenpet_full_manager.set_wallet(wallet)
             self.install_screen(
                 FrenPetFullScreen(self._frenpet_full_manager, self.poll_interval, name="frenpet_full"),
                 name="frenpet_full",
@@ -427,7 +426,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
     def _ensure_frenpet_wallet_screen(self, wallet: str) -> None:
         """Install the FrenPet Wallet screen if not already installed."""
         if not self.is_screen_installed("frenpet_wallet"):
-            self._frenpet_wallet_manager._wallet_address = wallet
+            self._frenpet_wallet_manager.set_wallet(wallet)
             self.install_screen(
                 FrenPetWalletScreen(self._frenpet_wallet_manager, self.poll_interval, name="frenpet_wallet"),
                 name="frenpet_wallet",
@@ -436,7 +435,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
     def _ensure_frenpet_perf_screen(self, wallet: str) -> None:
         """Install the FrenPet Performance screen if not already installed."""
         if not self.is_screen_installed("frenpet_perf"):
-            self._frenpet_perf_manager._wallet_address = wallet
+            self._frenpet_perf_manager.set_wallet(wallet)
             self.install_screen(
                 FrenPetPerfScreen(self._frenpet_perf_manager, self.poll_interval, name="frenpet_perf"),
                 name="frenpet_perf",
@@ -496,62 +495,23 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         except Exception:
             pass
 
+    async def _close_readers(self) -> None:
+        if getattr(self, "_readers_closed", False):
+            return
+        self._readers_closed = True
+        await self._reader.close()
+        # Injected offline managers remain supported by app harnesses.
+        for name, manager in vars(self).items():
+            if name.endswith("_manager") and not isinstance(manager, ReaderHandle):
+                try:
+                    await manager.close()
+                except Exception as exc:
+                    logger.warning("Error during %s shutdown: %s", name, exc)
+
+    async def on_unmount(self) -> None:
+        await self._close_readers()
+
     async def action_quit(self) -> None:
-        """Shut down gracefully: persist cache and close HTTP clients."""
-        try:
-            await self._bakery_manager.close()
-        except Exception as exc:
-            logger.warning("Error during bakery shutdown: %s", exc)
-        try:
-            await self._frenpet_manager.close()
-        except Exception as exc:
-            logger.warning("Error during frenpet shutdown: %s", exc)
-        try:
-            await self._frenpet_full_manager.close()
-        except Exception as exc:
-            logger.warning("Error during frenpet_full shutdown: %s", exc)
-        try:
-            await self._frenpet_wallet_manager.close()
-        except Exception as exc:
-            logger.warning("Error during frenpet_wallet shutdown: %s", exc)
-        try:
-            await self._frenpet_perf_manager.close()
-        except Exception as exc:
-            logger.warning("Error during frenpet_perf shutdown: %s", exc)
-        try:
-            await self._base_manager.close()
-        except Exception as exc:
-            logger.warning("Error during base shutdown: %s", exc)
-        try:
-            await self._cattown_manager.close()
-        except Exception as exc:
-            logger.warning("Error during cattown shutdown: %s", exc)
-        try:
-            await self._ocm_manager.close()
-        except Exception as exc:
-            logger.warning("Error during ocm shutdown: %s", exc)
-        try:
-            await self._dota_manager.close()
-        except Exception as exc:
-            logger.warning("Error during dota shutdown: %s", exc)
-        try:
-            await self._ttt_manager.close()
-        except Exception as exc:
-            logger.warning("Error during ttt shutdown: %s", exc)
-        try:
-            await self._talismans_manager.close()
-        except Exception as exc:
-            logger.warning("Error during talismans shutdown: %s", exc)
-        try:
-            await self._fwa_manager.close()
-        except Exception as exc:
-            logger.warning("Error during fwa shutdown: %s", exc)
-        try:
-            await self._surf_manager.close()
-        except Exception as exc:
-            logger.warning("Error during surf shutdown: %s", exc)
-        try:
-            await self._curator_manager.close()
-        except Exception as exc:
-            logger.warning("Error during curator shutdown: %s", exc)
+        """Persist and close data on its reader loop, then exit Textual."""
+        await self._close_readers()
         self.exit()

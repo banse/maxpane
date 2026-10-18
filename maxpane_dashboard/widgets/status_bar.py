@@ -70,6 +70,7 @@ class StatusBar(Horizontal):
     def _prime_footer(self) -> None:
         self._update_right()
         self.set_loading(self._busy)
+        self._update_message()
 
     def on_unmount(self) -> None:
         self._busy = False
@@ -102,7 +103,10 @@ class StatusBar(Horizontal):
 
     def set_loading(self, busy: bool) -> None:
         """Animate only while a screen reports an active request."""
-        self._busy = bool(busy)
+        busy = bool(busy)
+        if busy == self._busy and (not busy or self._loading_timer is not None):
+            return
+        self._busy = busy
         if not self._busy:
             self._stop_loading_timer()
         elif self.is_mounted and self._loading_timer is None:

@@ -2426,6 +2426,24 @@ _SWARM_PANELS = (
 )
 
 
+# Only the selected body consumes a published snapshot. Other bodies retain
+# their last paint and receive their cached snapshot when opened again.
+_MODE_PANELS = {
+    MODE_DASHBOARD: (SurfNewsHero, SurfSignals, SurfFeed, SurfDevActivity, SurfMarket, SurfNft),
+    MODE_LAUNCHPAD: (SurfLaunchpadHero, SurfLaunchpadCoins, SurfCurveFlow,
+                    SurfBurnPipeline, SurfLaunchpadActivity, SurfBurnkeepers),
+    MODE_POOL4: (SurfProtocolHero, SurfPool4Split, SurfPool4Ratchet, SurfPool4Vault, SurfPool4Hatches),
+    MODE_POOL4_USER: (SurfPool4RackHero, SurfPool4Flow, SurfPool4UStakers,
+                     SurfPool4UBurn, SurfPool4USignals, SurfPool4UDepth),
+    MODE_SWARM: (SurfSwarmRackHero, SurfSwarmLatestLaunches, SurfSwarmWorkflows,
+                 SurfSwarmLaunches, SurfSwarmSites),
+    MODE_AGENT: (SurfSwarmAgentRackHero, SurfSwarmSeatRecord),
+    MODE_BOARD: (SurfSwarmBoardHero, SurfSwarmLeaderboard, SurfSwarmFleet),
+    MODE_WORK: (SurfWorkHero, SurfWorkBody),
+    MODE_ORACLES: (SurfOraclesHero, SurfOraclesBody),
+}
+
+
 # -- format helpers ----------------------------------------------------
 
 
@@ -3558,6 +3576,8 @@ class SurfScreen(SurfDashboardScreen):
         self._agent_slot = 0
         self._oracles_timer = None
         self._launch_contribution_timer = None
+        self._last_oracles_snapshot = None
+        self._last_contribution_snapshot = None
         self._board_view = "recorded"
         self.record_cap = SurfSwarmSeatRecord.ROW_CAP
         self.record_launches_only = False
@@ -3822,6 +3842,9 @@ class SurfScreen(SurfDashboardScreen):
         if offer is not None and getter is not None:
             offer()
             snapshot = getter()
+            if snapshot == self._last_contribution_snapshot:
+                return
+            self._last_contribution_snapshot = snapshot
             self.query_one(SurfSwarmLeaderboard).set_launch_contribution(snapshot)
             self.query_one(SurfSwarmBoardHero).set_launch_contribution(snapshot)
 
@@ -3835,6 +3858,9 @@ class SurfScreen(SurfDashboardScreen):
         getter = getattr(self._data_manager, "get_oracles_snapshot", None)
         if getter is not None and self.is_current and self._mode == MODE_ORACLES:
             payload = getter()
+            if payload == self._last_oracles_snapshot:
+                return
+            self._last_oracles_snapshot = payload
             self.query_one(SurfOraclesHero).update_data(surf_oracles=payload)
             self.query_one(SurfOraclesBody).update_data(surf_oracles=payload)
 
@@ -4573,6 +4599,11 @@ class SurfScreen(SurfDashboardScreen):
             return
         await self.app.push_screen(screen_type(row))
 
+    def _update_panel(self, widget_class, **payload):
+        """Keep hidden bodies mounted without rebuilding their tables."""
+        if widget_class in _MODE_PANELS[self._mode]:
+            self.query_one(widget_class).update_data(**payload)
+
     async def _do_refresh(self) -> None:
         try:
             data = await self._fetch_data()
@@ -4661,7 +4692,7 @@ class SurfScreen(SurfDashboardScreen):
         #
         # See ``META_KEYS`` in the test module for the fuller accounting.
         try:
-            self.query_one(SurfHero).update_data(
+            self._update_panel(SurfHero,
                 launchpad_coin_count=data.get("launchpad_coin_count"),
                 launchpad_new_24h=data.get("launchpad_new_24h"),
                 launchpad_creator_count=data.get("launchpad_creator_count"),
@@ -4678,13 +4709,13 @@ class SurfScreen(SurfDashboardScreen):
             logger.debug("Failed to update SurfHero: %s", exc)
 
         try:
-            self.query_one(SurfLaunchpadHero).update_data(
+            self._update_panel(SurfLaunchpadHero,
                 surf_launchpad_hero=data.get("surf_launchpad_hero"))
         except Exception as exc:
             logger.debug("Failed to update SurfLaunchpadHero: %s", exc)
 
         try:
-            self.query_one(SurfNewsHero).update_data(surf_news_hero=data.get("surf_news_hero"))
+            self._update_panel(SurfNewsHero, surf_news_hero=data.get("surf_news_hero"))
         except Exception as exc:
             logger.debug("Failed to update SurfNewsHero: %s", exc)
 
@@ -4692,7 +4723,7 @@ class SurfScreen(SurfDashboardScreen):
         # from six: DECOY POOL, BURN READY, HOT COIN are the v4-launchpad
         # additions, quiet-collapsed like every other ``ok`` row).
         try:
-            self.query_one(SurfSignals).update_data(
+            self._update_panel(SurfSignals,
                 sig_post_state=data.get("sig_post_state"),
                 sig_post_detail=data.get("sig_post_detail"),
                 sig_post_age_s=data.get("sig_post_age_s"),
@@ -4734,7 +4765,7 @@ class SurfScreen(SurfDashboardScreen):
 
         # Announce feed (middle row, left)
         try:
-            self.query_one(SurfFeed).update_data(
+            self._update_panel(SurfFeed,
                 feed_items=data.get("feed_items"),
                 feed_nonce=data.get("feed_nonce"),
                 feed_last_post_age_s=data.get("feed_last_post_age_s"),
@@ -4745,7 +4776,7 @@ class SurfScreen(SurfDashboardScreen):
 
         # Dev activity (middle row, right rail, under the signals)
         try:
-            self.query_one(SurfDevActivity).update_data(
+            self._update_panel(SurfDevActivity,
                 dev_activity=data.get("dev_activity"),
             )
         except Exception as exc:
@@ -4753,7 +4784,7 @@ class SurfScreen(SurfDashboardScreen):
 
         # Market (bottom row, left)
         try:
-            self.query_one(SurfMarket).update_data(
+            self._update_panel(SurfMarket,
                 imd_price_usd=data.get("imd_price_usd"),
                 imd_change_24h_pct=data.get("imd_change_24h_pct"),
                 imd_vol_24h_usd=data.get("imd_vol_24h_usd"),
@@ -4782,7 +4813,7 @@ class SurfScreen(SurfDashboardScreen):
 
         # NFT (bottom row, right)
         try:
-            self.query_one(SurfNft).update_data(
+            self._update_panel(SurfNft,
                 nft_holders=data.get("nft_holders"),
                 nft_transfers_24h=data.get("nft_transfers_24h"),
                 nft_dev_holdings=data.get("nft_dev_holdings"),
@@ -4793,14 +4824,10 @@ class SurfScreen(SurfDashboardScreen):
         except Exception as exc:
             logger.debug("Failed to update SurfNft: %s", exc)
 
-        # Launchpad body (`l` view) -- dispatched every refresh whether or
-        # not `l` is showing it, exactly like curator's `f`/`l` bodies: a
-        # body that starts rendering only when it becomes visible is blank
-        # for a beat after the keypress. ``launchpad_as_of_hhmm`` is the
-        # detached launchpad tier's own slower clock (surf_manager.py's
-        # ``_launchpad_payload``), shared by all three panels below.
+        # Launchpad body (`l` view). Its retained snapshot is painted on entry;
+        # the launchpad tier's own slower clock is shared by its panels.
         try:
-            self.query_one(SurfLaunchpadCoins).update_data(
+            self._update_panel(SurfLaunchpadCoins,
                 coins=data.get("launchpad_coins"),
                 coin_count=data.get("launchpad_coin_count"),
                 launch_count=data.get("launchpad_launch_count"),
@@ -4817,7 +4844,7 @@ class SurfScreen(SurfDashboardScreen):
             logger.debug("Failed to update SurfLaunchpadCoins: %s", exc)
 
         try:
-            self.query_one(SurfCurveFlow).update_data(
+            self._update_panel(SurfCurveFlow,
                 swap_count=data.get("launchpad_swap_count"),
                 trader_count=data.get("launchpad_trader_count"),
                 creator_eth_owed=data.get("launchpad_creator_eth_owed"),
@@ -4827,7 +4854,7 @@ class SurfScreen(SurfDashboardScreen):
             logger.debug("Failed to update SurfCurveFlow: %s", exc)
 
         try:
-            self.query_one(SurfBurnPipeline).update_data(
+            self._update_panel(SurfBurnPipeline,
                 burn_accrued=data.get("burn_accrued"),
                 burn_staged=data.get("burn_staged"),
                 burn_ready=data.get("burn_ready"),
@@ -4839,11 +4866,8 @@ class SurfScreen(SurfDashboardScreen):
         except Exception as exc:
             logger.debug("Failed to update SurfBurnPipeline: %s", exc)
 
-        # The two panels the `l` body grew on 2026-08-25. Same contract as
-        # the three above and for the same reason -- dispatched on EVERY
-        # refresh, whether or not `l` is showing them, so the first keypress
-        # paints a complete frame rather than a blank one. Each in its own
-        # `try` so one bad panel cannot blank the others.
+        # The two other launchpad panels share the active-body dispatch.
+        # Each has its own guard so one bad panel cannot blank the others.
         #
         # Both take their PRD §5 key under its own name (`launchpad_activity`,
         # `launchpad_burnkeepers`) rather than the short names the first three
@@ -4853,7 +4877,7 @@ class SurfScreen(SurfDashboardScreen):
         # one elision they keep is `as_of_hhmm`, which every launchpad panel
         # spells short.
         try:
-            self.query_one(SurfLaunchpadActivity).update_data(
+            self._update_panel(SurfLaunchpadActivity,
                 launchpad_activity=data.get("launchpad_activity"),
                 as_of_hhmm=data.get("launchpad_as_of_hhmm"),
             )
@@ -4861,18 +4885,14 @@ class SurfScreen(SurfDashboardScreen):
             logger.debug("Failed to update SurfLaunchpadActivity: %s", exc)
 
         try:
-            self.query_one(SurfBurnkeepers).update_data(
+            self._update_panel(SurfBurnkeepers,
                 launchpad_burnkeepers=data.get("launchpad_burnkeepers"),
                 as_of_hhmm=data.get("launchpad_as_of_hhmm"),
             )
         except Exception as exc:
             logger.debug("Failed to update SurfBurnkeepers: %s", exc)
 
-        # POOL4 body (`p` view, 2026-09-01) -- the same contract as the five
-        # launchpad panels above and for the same reason: dispatched on EVERY
-        # refresh, whether or not `p` is showing them, so the first keypress
-        # paints a complete frame rather than a blank one. Each in its own
-        # `try` so one bad panel cannot blank the other four.
+        # POOL4 protocol body. Each active panel has its own dispatch guard.
         #
         # Every kwarg is spelled with its full `pool4_` prefix, including
         # `pool4_as_of_hhmm`. That is a deliberate departure from the
@@ -4890,7 +4910,7 @@ class SurfScreen(SurfDashboardScreen):
         # deliberately not the title bar's faster one: these numbers can be
         # half an hour older than it.
         try:
-            self.query_one(SurfPool4Split).update_data(
+            self._update_panel(SurfPool4Split,
                 pool4_network=data.get("pool4_network"),
                 pool4_measured_inference_pct=data.get(
                     "pool4_measured_inference_pct"
@@ -4977,6 +4997,8 @@ class SurfScreen(SurfDashboardScreen):
         # see CLAUDE.md and followups F8.)
         try:
             for _flow in self.query(SurfPool4Flow):
+                if self._mode != MODE_POOL4_USER:
+                    continue
                 _flow.update_data(
                     pool4_flow=data.get("pool4_flow"),
                     pool4_network=data.get("pool4_network"),
@@ -4986,7 +5008,7 @@ class SurfScreen(SurfDashboardScreen):
             logger.debug("Failed to update SurfPool4Flow: %s", exc)
 
         try:
-            self.query_one(SurfPool4Ratchet).update_data(
+            self._update_panel(SurfPool4Ratchet,
                 pool4_network=data.get("pool4_network"),
                 pool4_tokens_in_pool=data.get("pool4_tokens_in_pool"),
                 pool4_cap_floor=data.get("pool4_cap_floor"),
@@ -5022,7 +5044,7 @@ class SurfScreen(SurfDashboardScreen):
             logger.debug("Failed to update SurfPool4Ratchet: %s", exc)
 
         try:
-            self.query_one(SurfPool4Vault).update_data(
+            self._update_panel(SurfPool4Vault,
                 pool4_network=data.get("pool4_network"),
                 pool4_share_price=data.get("pool4_share_price"),
                 pool4_share_price_delta_pct=data.get(
@@ -5042,7 +5064,7 @@ class SurfScreen(SurfDashboardScreen):
             logger.debug("Failed to update SurfPool4Vault: %s", exc)
 
         try:
-            self.query_one(SurfPool4Hatches).update_data(
+            self._update_panel(SurfPool4Hatches,
                 pool4_hatches=data.get("pool4_hatches"),
                 pool4_network=data.get("pool4_network"),
                 pool4_discovery_state=data.get("pool4_discovery_state"),
@@ -5083,12 +5105,8 @@ class SurfScreen(SurfDashboardScreen):
         except Exception as exc:
             logger.debug("Failed to update SurfPool4Hatches: %s", exc)
 
-        # POOL4 MARKET body (`4` view, 2026-09-11) -- the same contract as
-        # the two bodies above and for the same reason: dispatched on EVERY
-        # refresh, whether or not `4` is showing it, so the first keypress
-        # paints a complete frame. Each panel in its own `try` so one bad
-        # panel cannot blank the others. RECENT FLOW is not here -- it is
-        # dispatched with the `p` body's copy, in one statement, above.
+        # POOL4 MARKET body (`4` view), including RECENT FLOW above.
+        # Each active panel has its own guard so one failure stays contained.
         #
         # Every kwarg is the contract key verbatim, `pool4_as_of_hhmm` and
         # `pool4_stakers_as_of_hhmm` included, on the `p` body's decision and
@@ -5102,21 +5120,21 @@ class SurfScreen(SurfDashboardScreen):
         # much slower one, which advances only when a new fold lands. The
         # rack hero carries the matching source clocks in its projection.
         try:
-            self.query_one(SurfProtocolHero).update_data(
+            self._update_panel(SurfProtocolHero,
                 surf_protocol_hero=data.get("surf_protocol_hero"),
             )
         except Exception as exc:
             logger.debug("Failed to update SurfProtocolHero: %s", exc)
 
         try:
-            self.query_one(SurfPool4RackHero).update_data(
+            self._update_panel(SurfPool4RackHero,
                 surf_pool4_hero=data.get("surf_pool4_hero"),
             )
         except Exception as exc:
             logger.debug("Failed to update SurfPool4RackHero: %s", exc)
 
         try:
-            self.query_one(SurfPool4UStakers).update_data(
+            self._update_panel(SurfPool4UStakers,
                 pool4_stakers=data.get("pool4_stakers"),
                 pool4_staker_count=data.get("pool4_staker_count"),
                 pool4_staker_top3_pct=data.get("pool4_staker_top3_pct"),
@@ -5139,7 +5157,7 @@ class SurfScreen(SurfDashboardScreen):
             logger.debug("Failed to update SurfPool4UStakers: %s", exc)
 
         try:
-            self.query_one(SurfPool4UBurn).update_data(
+            self._update_panel(SurfPool4UBurn,
                 # Shared with RECENT FLOW, which renders the same rows as a
                 # log. Reuse of a KEY, not of a widget: two questions off one
                 # read, where folding a second copy into the payload would
@@ -5155,7 +5173,7 @@ class SurfScreen(SurfDashboardScreen):
             logger.debug("Failed to update SurfPool4UBurn: %s", exc)
 
         try:
-            self.query_one(SurfPool4USignals).update_data(
+            self._update_panel(SurfPool4USignals,
                 pool4_cap_headroom=data.get("pool4_cap_headroom"),
                 pool4_cheaper_venue=data.get("pool4_cheaper_venue"),
                 pool4_venue_gap_pct=data.get("pool4_venue_gap_pct"),
@@ -5176,7 +5194,7 @@ class SurfScreen(SurfDashboardScreen):
             logger.debug("Failed to update SurfPool4USignals: %s", exc)
 
         try:
-            self.query_one(SurfPool4UDepth).update_data(
+            self._update_panel(SurfPool4UDepth,
                 pool4_current_tick=data.get("pool4_current_tick"),
                 pool4_position_liquidity=data.get("pool4_position_liquidity"),
                 pool4_backstop_lower_tick=data.get("pool4_backstop_lower_tick"),
@@ -5197,9 +5215,8 @@ class SurfScreen(SurfDashboardScreen):
         except Exception as exc:
             logger.debug("Failed to update SurfPool4UDepth: %s", exc)
 
-        # The `s` SWARM body's six widgets and the `a` AGENT body's five
-        # (swarm v2, WP7): dispatched every refresh, whether or not either
-        # body is showing, so the first keypress paints a complete frame.
+        # Dispatch the selected swarm body from its frozen contract. Hidden
+        # bodies retain their previous paint until their next cached entry.
         # One loop over the frozen contract -- every kwarg is a key
         # `SWARM_WIDGET_SIGNATURES` names for that class, verbatim -- and
         # each panel in its own `try`, so one bad panel cannot blank the
@@ -5209,7 +5226,7 @@ class SurfScreen(SurfDashboardScreen):
         # in `data/surf_models.py` rather than re-argued here.
         selected = data.get("swarm_seat_selected")
         token = selected.get("token_id") if isinstance(selected, dict) else None
-        if token != self._record_seat_token:
+        if self._mode == MODE_AGENT and token != self._record_seat_token:
             # The manager reads by its own copy of the view, so it is reset
             # too -- also when the old view was set before any seat arrived
             # (final review I-1): a filter applied with no seat would
@@ -5223,8 +5240,11 @@ class SurfScreen(SurfDashboardScreen):
             if setter is not None and (self._record_seat_token is not None or changed):
                 setter(self.record_cap, self.record_launches_only, None)
             self._record_seat_token = token
-        self._repaint_record_view()
+        if self._mode == MODE_AGENT:
+            self._repaint_record_view()
         for cls in _SWARM_PANELS:
+            if cls not in _MODE_PANELS[self._mode]:
+                continue
             try:
                 keys = SWARM_WIDGET_SIGNATURES[cls.__name__]
                 self.query_one(cls).update_data(**{k: data.get(k) for k in keys})
@@ -5233,6 +5253,11 @@ class SurfScreen(SurfDashboardScreen):
                     self._oracle_answer_rows = deepcopy(rows) if isinstance(rows, list) and data.get('swarm_seat_state') == 'ok' else []
             except Exception as exc:
                 logger.debug("Failed to update %s: %s", cls.__name__, exc)
+
+        if self._mode == MODE_ORACLES:
+            self._last_oracles_snapshot = data.get('surf_oracles')
+        elif self._mode == MODE_BOARD:
+            self._last_contribution_snapshot = data.get('swarm_launch_contribution')
 
         # Status bar. A refresh that reaches this line just fetched, so the
         # staleness is honestly 0 without consulting any clock; ``as_of`` is

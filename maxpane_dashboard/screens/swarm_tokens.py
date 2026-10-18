@@ -14,6 +14,7 @@ from maxpane_dashboard.widgets.swarm_tokens import (
     BestPlays, NewlyLaunched, TokenActivity, TokensHero, TokensTable,
 )
 from maxpane_dashboard.data.swarm_token_detail import SwarmTokenDetailManager
+from maxpane_dashboard.data.reader import ReaderHandle
 from maxpane_dashboard.screens.swarm_token_detail import SwarmTokenScreen
 from maxpane_dashboard.widgets.swarm_tokens.filter import SwarmTokensFilterEditor
 
@@ -202,7 +203,9 @@ class SwarmTokensScreen(SurfDashboardScreen):
     def on_tokens_table_selected(self,event):
         event.stop()
         if event.token:
-            detail = SwarmTokenDetailManager(self._data_manager, event.token)
+            detail = (self._data_manager.token_detail_manager(event.token)
+                      if isinstance(self._data_manager, ReaderHandle)
+                      else SwarmTokenDetailManager(self._data_manager, event.token))
             self.app.push_screen(SwarmTokenScreen(detail))
 
     def action_search(self):

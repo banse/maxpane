@@ -100,6 +100,8 @@ class SurfboardScreen(SurfDashboardScreen):
         self._age_timer = None
         self._loading = False
         self._cache_only = False
+        self._cached_hub_snapshot = None
+        self._last_hub_snapshot = None
         self._nft_view_state = {}
 
     def compose(self) -> ComposeResult:
@@ -143,13 +145,18 @@ class SurfboardScreen(SurfDashboardScreen):
             self.query_one(SurfboardTerminal).update_age(
                 max(0, self._age_clock() - self._age_captured))
             if self._loading and not self._refresh_in_flight:
+                snapshot = self._data_manager.get_hub_snapshot()
+                if snapshot == self._last_hub_snapshot:
+                    return
                 self._cache_only = True
+                self._cached_hub_snapshot = snapshot
                 self.start_refresh()
 
     async def _fetch_data(self) -> dict:
         if self._cache_only:
             self._cache_only = False
-            return self._data_manager.get_hub_snapshot()
+            snapshot, self._cached_hub_snapshot = self._cached_hub_snapshot, None
+            return snapshot
         return await super()._fetch_data()
 
     def _snapshot_data(self):
@@ -166,6 +173,7 @@ class SurfboardScreen(SurfDashboardScreen):
         bar.set_key_hints("arrows · enter · n NFTs · p protocol · w work · / cmd · esc")
 
     def _update_title(self, data: dict) -> None:
+        self._last_hub_snapshot = data
         self.post_message(SurfLaunchesUpdated(self, data))
         self._age_captured = self._age_clock()
         self._loading = any(card.get('status') == 'loading' for card in data.get('surfboard_cards') or [])

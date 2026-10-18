@@ -2450,7 +2450,12 @@ async def test_screen_dispatches_every_data_key():
     async with app.run_test(size=(150, 46)) as pilot:
         await pilot.pause()
         calls = _record_dispatches(screen)
-        await screen._do_refresh()
+        # Each mode owns its dispatch; hidden bodies retain their previous paint.
+        from maxpane_dashboard.screens.surf import SURF_MODES
+        for mode in SURF_MODES:
+            screen._mode = mode
+            screen._show_mode(refresh=False)
+            await screen._do_refresh()
         await pilot.pause()
         assert manager.calls >= 1
 
@@ -2458,6 +2463,9 @@ async def test_screen_dispatches_every_data_key():
         dispatched: set[str] = set()
         checked_values = 0
         for name, signature in SURF_WIDGET_SIGNATURES.items():
+            if name == "SurfHero":  # Mounted legacy renderer; no active mode uses it.
+                assert not calls[name]
+                continue
             assert calls[name], f"{name}.update_data was never called"
             kwargs = calls[name][-1]
             expected_kwargs = set(signature.values())
@@ -2554,6 +2562,9 @@ async def test_screen_dispatches_every_data_key():
             - _KEYS_WITHOUT_A_RENDERER
             - _KEYS_PENDING_CONSUMERS
             - _PARKED_KEYS
+            # The former hero retains its renderer contract for the dedicated
+            # legacy render tests, but no current mode dispatches that widget.
+            - set(SURF_WIDGET_SIGNATURES['SurfHero'])
         )
         assert not unconsumed, f"contract keys reach no widget: {sorted(unconsumed)}"
 
@@ -4496,6 +4507,10 @@ async def _hero_text(width: int) -> str:
         screen.action_toggle_launchpad()
         await pilot.pause()
         # Legacy renderer checks explicitly mount its former visible state.
+        screen.query_one(SurfHero).update_data(**{
+            kwarg: manager._payload.get(key)
+            for key, kwarg in SURF_WIDGET_SIGNATURES['SurfHero'].items()
+        })
         screen.query_one(SurfLaunchpadHero).display = False
         screen.query_one(SurfHero).display = True
         await pilot.pause()

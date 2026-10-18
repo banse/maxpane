@@ -116,10 +116,11 @@ def test_every_manager_attribute_exists_on_a_fresh_app() -> None:
 
 def test_surf_manager_takes_the_poll_interval() -> None:
     """The app hands its poll interval to SurfManager like every other game."""
-    from maxpane_dashboard.data.surf_manager import SurfManager
+    from maxpane_dashboard.data.reader import ReaderHandle
 
     app = MaxPaneApp(poll_interval=45)
-    assert isinstance(app._surf_manager, SurfManager)
+    assert isinstance(app._surf_manager, ReaderHandle)
+    assert app._surf_manager.runtime.poll_interval == 45
 
 
 def test_surf_has_a_prefetch_manager() -> None:

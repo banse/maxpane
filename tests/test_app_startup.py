@@ -297,33 +297,43 @@ def test_tab_does_not_cycle_games_off_a_dashboard() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_frenpet_managers_share_one_cache(tmp_path, monkeypatch) -> None:
-    """A session's history survives the quit-time save of the idle managers."""
+@pytest.mark.asyncio
+async def test_frenpet_managers_share_one_cache(tmp_path, monkeypatch) -> None:
+    """Reader-owned variants preserve the live history through shutdown."""
+    from maxpane_dashboard import app as app_module
     from maxpane_dashboard.data import frenpet_manager as fm
     from maxpane_dashboard.data.frenpet_cache import FrenPetCache
 
+    class DeadClient:
+        async def close(self):
+            pass
+
+        def __getattr__(self, name):
+            raise AssertionError(f"unexpected network access: {name}")
+
+    class Probe(fm.FrenPetManager):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs, client=DeadClient(), cache_path=cache_file)
+
+        def seed(self):
+            self.cache._pet_histories[7] = deque([(1234.0, 99.0)], maxlen=120)
+
+        def cache_identity(self):
+            return id(self.cache)
+
     cache_file = tmp_path / "frenpet_cache.json"
-    monkeypatch.setattr(fm, "_CACHE_FILE", cache_file)
-
+    monkeypatch.setattr(app_module, "FrenPetManager", Probe)
+    monkeypatch.setattr(fm, "PriceClient", DeadClient)
     app = MaxPaneApp()
-    managers = [
-        app._frenpet_manager,
-        app._frenpet_full_manager,
-        app._frenpet_wallet_manager,
-        app._frenpet_perf_manager,
-    ]
-    for other in managers[1:]:
-        assert other.cache is managers[0].cache
-
-    # A session's worth of pet-score history on the only manager that polls
-    # (same structure FrenPetCache.update fills, and the only state
-    # save_to_file persists).
-    live = app._frenpet_manager.cache
-    live._pet_histories[7] = deque([(1234.0, 99.0)], maxlen=120)
-
-    # action_quit's order: active manager first, then the three idle ones.
-    for manager in managers:
-        manager.save_cache()
+    managers = [app._frenpet_manager, app._frenpet_full_manager,
+                app._frenpet_wallet_manager, app._frenpet_perf_manager]
+    try:
+        # Construct an inactive variant after the active manager's history grew.
+        await managers[0].invoke('seed')
+        identities = [await manager.invoke('cache_identity') for manager in managers]
+        assert len(set(identities)) == 1
+    finally:
+        await app._reader.close()
 
     reloaded = FrenPetCache(max_history=120)
     reloaded.load_from_file(str(cache_file))

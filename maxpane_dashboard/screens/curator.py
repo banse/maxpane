@@ -147,6 +147,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+from dataclasses import replace
 import json
 import logging
 import os
@@ -185,6 +186,7 @@ from maxpane_dashboard.data.curator_list_source import (
 )
 from maxpane_dashboard.data.curator_models import CURATOR_ROW_KEYS, PHASES
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
+from maxpane_dashboard.data.reader import ReaderHandle
 from maxpane_dashboard.widgets.curator import (
     CuratorActivity,
     CuratorClosestCalls,
@@ -1224,6 +1226,8 @@ class CuratorScreen(DashboardScreen):
         self._filter_editor_open = False
         self._nft_name_lookup_generation = 0
         self._list_ens_generation = 0
+        self._reader_filter_generation = self._reader_list_generation = 0
+        self._reader_filter_pending = False
         self._raw_list_ens_fingerprint: tuple[str, ...] | None = None
         self._background_status_generation = 0
         self._list_export_running = False
@@ -1377,6 +1381,8 @@ class CuratorScreen(DashboardScreen):
         Exactly one body and one matching hero are displayed. Analysis keeps
         the dashboard doomsday clock; list and wallet modes use their own.
         """
+        if isinstance(self._data_manager, ReaderHandle) and self._mode != MODE_LIST:
+            self._invalidate_reader_queries()
         wallet = self._mode == MODE_WALLET
         analysis = self._mode == MODE_ANALYSIS
         lists = self._mode == MODE_LIST
@@ -1640,6 +1646,54 @@ class CuratorScreen(DashboardScreen):
         if self._mode == MODE_LIST and self._filter_editor_open:
             self._accept_filter_editor()
 
+    def _invalidate_reader_queries(self):
+        self._reader_filter_generation += 1
+        self._reader_list_generation += 1
+        self._reader_filter_pending = False
+        for group in ('curator-reader-filter', 'curator-reader-list'):
+            self.workers.cancel_group(self, group)
+
+    def _queue_reader_filter(self, data, spec, *, preserve_receipt=False):
+        self._reader_filter_generation += 1
+        self._reader_filter_pending = True
+        self.run_worker(self._read_filter(data, spec, self._reader_filter_generation,
+                        preserve_receipt, self._filter_editor_open),
+                        group='curator-reader-filter', exclusive=True, exit_on_error=False)
+
+    async def _read_filter(self, data, spec, generation, preserve_receipt, from_editor):
+        try:
+            try:
+                result = await self._data_manager.invoke('filtered_list_rows',
+                    self._export_dir or Path.home() / '.maxpane',
+                    expected_count=data.get('contributors_total'), live_rows=data.get('leaderboard_rows'),
+                    you_row=data.get('you_list_row'), spec=spec)
+            except FilterDataUnavailable as exc:
+                if generation != self._reader_filter_generation or not self.is_current:
+                    return
+                if from_editor and not isinstance(exc, (NftHolderPending, NftHolderUnavailable)):
+                    self._filter_editor_open = True
+                    self.query_one(CuratorListFilterEditor).show_error(None, str(exc))
+                    self._show_list_view()
+                    return
+                self._store_filter_unavailable(spec, str(exc))
+                if not preserve_receipt:
+                    self.query_one(CuratorFilteredList).mark_filter_unavailable(str(exc))
+            else:
+                if generation != self._reader_filter_generation or not self.is_current:
+                    return
+                self._store_filter_result(spec, result)
+                panel = self.query_one(CuratorFilteredList)
+                if not preserve_receipt:
+                    if result.rows is None:
+                        panel.mark_filter_unavailable(result.source_reason or FILTERED_LIST_UNAVAILABLE)
+                    else:
+                        panel.mark_filter_applied(limited=not result.complete, holder_receipt=result.holder_receipt)
+            self._dispatch_filtered_list(data)
+            self._dispatch_list_hero(data)
+        finally:
+            if generation == self._reader_filter_generation:
+                self._reader_filter_pending = False
+
     def _filter_result(self, data: dict, spec: FilterSpec):
         return self._data_manager.filtered_list_rows(
             self._export_dir or Path.home() / ".maxpane",
@@ -1670,6 +1724,9 @@ class CuratorScreen(DashboardScreen):
         self._you_filtered_index = None
 
     def _clear_filter(self) -> None:
+        self._reader_filter_generation += 1
+        self._reader_filter_pending = False
+        self.workers.cancel_group(self, 'curator-reader-filter')
         self._active_filter = None
         self._filter_summary = ()
         self._filtered_rows = []
@@ -1687,6 +1744,9 @@ class CuratorScreen(DashboardScreen):
             self._dispatch_filtered_list(data)
             self.query_one(CuratorFilteredList).mark_filter_applied(limited=False)
             self._dispatch_list_hero(data)
+            return True
+        if isinstance(self._data_manager, ReaderHandle):
+            self._queue_reader_filter(data, spec)
             return True
         result = self._filter_result(data, spec)
         self._store_filter_result(spec, result)
@@ -1711,6 +1771,10 @@ class CuratorScreen(DashboardScreen):
             return
         panel = self.query_one(CuratorFilteredList)
         preserve_user_receipt = bool(panel._export_path) or panel._export_failed
+        if isinstance(self._data_manager, ReaderHandle):
+            if not self._reader_filter_pending:
+                self._queue_reader_filter(data, spec, preserve_receipt=preserve_user_receipt)
+            return
         try:
             result = self._filter_result(data, spec)
         except FilterDataUnavailable as exc:
@@ -1882,9 +1946,10 @@ class CuratorScreen(DashboardScreen):
         """Write one complete list off-loop, then load its validated source."""
         try:
             try:
-                rows = await asyncio.to_thread(
-                    self._data_manager.full_list_rows, cleaned=cleaned
-                )
+                if isinstance(self._data_manager, ReaderHandle):
+                    rows = await self._data_manager.invoke('full_list_rows', cleaned=cleaned)
+                else:
+                    rows = await asyncio.to_thread(self._data_manager.full_list_rows, cleaned=cleaned)
             except Exception as exc:  # noqa: BLE001 -- export is optional
                 logger.debug("List export read failed: %s", exc)
                 rows = None
@@ -2004,6 +2069,7 @@ class CuratorScreen(DashboardScreen):
         # The base stops and clears the poll timer; everything below is this
         # screen's own -- the workers it may have left running.
         super().on_screen_suspend()
+        self._invalidate_reader_queries()
         self._invalidate_nft_name_lookup(
             self.query_one(CuratorListFilterEditor)
         )
@@ -2013,6 +2079,7 @@ class CuratorScreen(DashboardScreen):
         self._reset_background_status()
 
     def on_unmount(self) -> None:
+        self._invalidate_reader_queries()
         self._invalidate_nft_name_lookup()
         self.workers.cancel_group(self, _LIST_EXPORT_WORKER_GROUP)
         self._list_export_running = False
@@ -2178,6 +2245,12 @@ class CuratorScreen(DashboardScreen):
         if not isinstance(data, dict):
             return
         cleaned = self._list_view == LIST_CLEANED
+        if isinstance(self._data_manager, ReaderHandle):
+            self._reader_list_generation += 1
+            self._list_source_pending = False
+            self.run_worker(self._reload_exported_list(cleaned), group='curator-reader-list',
+                            exclusive=True, exit_on_error=False)
+            return
         source = self._list_source_context(data, cleaned)
         panel_cls, live_rows, expected_count = source
         try:
@@ -2212,7 +2285,7 @@ class CuratorScreen(DashboardScreen):
     def _apply_list_source(self, panel_cls, result) -> None:
         """Paint cached names; hydrate ENS once per complete raw address set."""
         rows = result.rows
-        if isinstance(rows, list):
+        if isinstance(rows, list) and not isinstance(self._data_manager, ReaderHandle):
             try:
                 rows = self._data_manager.cached_list_rows_with_ens(rows)
             except Exception as exc:  # noqa: BLE001 -- names are decoration
@@ -2255,6 +2328,7 @@ class CuratorScreen(DashboardScreen):
 
     async def _reload_exported_list(self, cleaned: bool) -> None:
         """Re-read a just-written list without blocking the Textual loop."""
+        generation = self._reader_list_generation
         data = self._title_data
         if not isinstance(data, dict):
             return
@@ -2270,8 +2344,20 @@ class CuratorScreen(DashboardScreen):
                 live_rows=live_rows,
                 you_row=data.get("you_list_row"),
             )
+            if isinstance(self._data_manager, ReaderHandle):
+                if isinstance(result.rows, list):
+                    try:
+                        rows = await self._data_manager.invoke('cached_list_rows_with_ens', result.rows)
+                        result = replace(result, rows=rows)
+                    except Exception as exc:
+                        logger.debug("Could not read cached list ENS names: %s", exc)
+                if generation != self._reader_list_generation or not self.is_current:
+                    return
             self._apply_list_source(panel_cls, result)
         except Exception as exc:  # noqa: BLE001 -- a local file is optional
+            if isinstance(self._data_manager, ReaderHandle) and (
+                    generation != self._reader_list_generation or not self.is_current):
+                return
             logger.debug("Curator list source reload failed: %s", exc)
             self._restore_live_list_source(panel_cls, live_rows)
         self._list_source_pending = False

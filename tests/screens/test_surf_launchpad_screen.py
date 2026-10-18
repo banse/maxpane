@@ -91,30 +91,24 @@ async def test_l_also_hides_the_separator_and_bottom_row() -> None:
         assert pilot.app.screen.query_one("#bottom-row").display is False
 
 
-async def test_the_launchpad_widgets_are_dispatched_hidden_before_l_is_pressed() -> None:
-    """Composed-once-shown-by-display: the first ``l`` paints a complete
-    frame, not a blank one that fills in a beat later (curator's own reason
-    for dispatching its `f`/`l` bodies whether or not they are showing)."""
+async def test_the_launchpad_widgets_wait_until_l_is_pressed(monkeypatch) -> None:
+    """A hidden body consumes no snapshots; opening paints its cached data."""
+    from unittest.mock import Mock
+
     async with _surf_app().run_test(size=(150, 46)) as pilot:
+        await pilot.app.workers.wait_for_complete()
+        screen = pilot.app.screen
+        coins = screen.query_one(SurfLaunchpadCoins)
+        update = Mock(wraps=coins.update_data)
+        monkeypatch.setattr(coins, 'update_data', update)
+        await screen._do_refresh()
+        assert not update.called
+        assert not screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display
+        await pilot.press('l')
+        await pilot.app.workers.wait_for_complete()
         await pilot.pause()
-        await pilot.app.screen._do_refresh()
-        await pilot.pause()
-        coins = pilot.app.screen.query_one(SurfLaunchpadCoins)
-        # The widget's own ``.display`` is untouched by ``_show_mode`` --
-        # only the container's is set, and it is what actually hides
-        # everything inside it -- so this checks the container, not the
-        # child.
-        assert pilot.app.screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is False
-        # Dispatched: the population note has moved off its "Loading"
-        # placeholder even though nothing has displayed it yet. It rides on
-        # the panel's own title row since Task 11 -- `#surf-lpc-note` is
-        # gone, and a widget whose whole job was a blank line was renamed
-        # `#surf-lpc-gap` rather than left carrying a name it had stopped
-        # earning. ``_plain`` reads the widget's own visual directly, unlike
-        # ``_screen_text`` -- a hidden widget reaches no compositor row at
-        # all.
-        title = coins.query_one("#surf-lpc-title")
-        assert "146 coins" in _plain(title)
+        assert update.called
+        assert '146 coins' in _screen_text(pilot.app)
 
 
 # -- the launchpad body's right rail (2026-08-24) -------------------------
@@ -208,24 +202,26 @@ async def test_the_launchpad_body_holds_five_panels_in_two_columns() -> None:
         assert left.region.y == rail.region.y
 
 
-async def test_both_new_panels_are_dispatched_on_every_refresh() -> None:
-    """Dispatched whether or not ``l`` is showing, so the first keypress
-    paints a complete frame instead of a blank one -- the contract the other
-    three launchpad panels already keep.
-    """
+async def test_both_new_panels_are_dispatched_when_launchpad_is_open(monkeypatch) -> None:
+    from unittest.mock import Mock
+
     async with _surf_app().run_test(size=(150, 50)) as pilot:
-        await pilot.app.screen._do_refresh()
-        await pilot.pause()
-        # Still in MODE_DASHBOARD: neither panel has been displayed once.
-        assert pilot.app.screen.query_one(f"#{LAUNCHPAD_BODY_ID}").display is False
-        assert pilot.app.screen.query_one(SurfLaunchpadActivity)._payload
-        assert pilot.app.screen.query_one(SurfBurnkeepers)._payload
+        await pilot.app.workers.wait_for_complete()
+        screen = pilot.app.screen
+        calls = []
+        for cls in (SurfLaunchpadActivity, SurfBurnkeepers):
+            widget = screen.query_one(cls)
+            update = Mock(wraps=widget.update_data)
+            monkeypatch.setattr(widget, 'update_data', update)
+            calls.append(update)
+        await screen._do_refresh()
+        assert not any(call.called for call in calls)
         await pilot.press("l")
+        await pilot.app.workers.wait_for_complete()
         await pilot.pause()
+        assert all(call.called for call in calls)
         text = _screen_text(pilot.app)
     assert "LAUNCHPAD ACTIVITY" in text and "BURNKEEPERS" in text
-    # The payload, not just the titles -- a dispatched panel that rendered
-    # its empty state would satisfy the two title checks above.
     assert "PANE" in text and "0xbbbb…bbbb" in text
 
 

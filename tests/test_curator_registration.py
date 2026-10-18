@@ -444,8 +444,9 @@ def test_every_copy_of_manager_attrs_names_every_manager_the_app_builds() -> Non
 def test_the_curator_manager_takes_the_poll_interval() -> None:
     """The app hands its poll interval on, like every other game."""
     app = MaxPaneApp(poll_interval=45)
-    assert isinstance(app._curator_manager, CuratorManager)
-    assert app._curator_manager.poll_interval == 45
+    from maxpane_dashboard.data.reader import ReaderHandle
+    assert isinstance(app._curator_manager, ReaderHandle)
+    assert app._curator_manager.runtime.poll_interval == 45
 
 
 def test_the_curator_manager_takes_the_wallet_and_normalises_it() -> None:

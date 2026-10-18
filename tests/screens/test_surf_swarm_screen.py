@@ -938,7 +938,9 @@ async def test_record_view_resets_on_refresh_seat_change_but_not_initial_refresh
     async with _ThemedHarness(screen).run_test(size=(139, 35)) as pilot:
         assert screen._record_seat_token is None
         await screen._do_refresh()
+        assert screen._record_seat_token is None  # Hidden AGENT does not consume NEWS snapshots.
         await pilot.press("a")
+        await screen._do_refresh()  # Scheduling is disabled above; explicitly paint the active body.
         record = screen.query_one(SurfSwarmSeatRecord)
         table = record.query_one(DataTable)
         await settled(pilot, lambda: table.row_count == 40)

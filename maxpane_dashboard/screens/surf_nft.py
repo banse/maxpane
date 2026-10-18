@@ -148,7 +148,7 @@ class SurfNftScreen(SurfDashboardScreen):
                 self.query_one(NftSummary).update_data(nft_readme=data)
 
     def _repaint_cached(self):
-        self._raw=self._data_manager.get_snapshot()
+        self._raw=self._data_manager.get_snapshot() or {}
         data=self._project()
         self._update_title(data)
         for widget,adapt in self.PANELS:

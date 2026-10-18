@@ -66,6 +66,7 @@ from textual import events, on
 from textual.screen import Screen
 from textual.widget import Widget
 
+from maxpane_dashboard.data.reader import ReaderHandle
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard, _join
 from maxpane_dashboard.widgets.status_bar import StatusBar
 
@@ -173,6 +174,7 @@ class DashboardScreen(RefreshGuard, Screen):
         self._scope_active = False
         self._reads_ready = False
         self._entry_snapshot = None
+        self._reader_revision = -1
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -189,9 +191,10 @@ class DashboardScreen(RefreshGuard, Screen):
         self._do_initial_refresh()
         if self._refresh_timer is not None:
             self._refresh_timer.stop()
-        self._refresh_timer = self.set_interval(
-            self._poll_interval, self._schedule_refresh
-        )
+        if not isinstance(self._data_manager, ReaderHandle):
+            self._refresh_timer = self.set_interval(
+                self._poll_interval, self._schedule_refresh
+            )
         if self._loading_timer is None:
             self._loading_timer = self.set_interval(0.2, self._tick_loading)
         self.call_after_refresh(self._tick_loading)
@@ -214,7 +217,7 @@ class DashboardScreen(RefreshGuard, Screen):
         self._stop_view()
 
     def _stop_view(self) -> None:
-        if self._scope_active:
+        if self._scope_active and not isinstance(self._data_manager, ReaderHandle):
             retired = getattr(self.app, '_retired_dashboards', [])
             if self not in retired:
                 retired.append(self)
@@ -271,6 +274,14 @@ class DashboardScreen(RefreshGuard, Screen):
     def _tick_loading(self):
         if not self.is_current:
             return
+        if isinstance(self._data_manager, ReaderHandle):
+            # Local metadata only: acquisition and expensive projection belong
+            # to the reader's independent clock, not this animation timer.
+            if self._reader_revision != self._data_manager.revision and not self._refresh_in_flight:
+                self._loading_projection = True
+                self.start_refresh()
+            self._set_loading(self._reads_pending())
+            return
         background = self._reads_pending()
         if self._background_loading and not background:
             self._projection_due = True
@@ -289,6 +300,13 @@ class DashboardScreen(RefreshGuard, Screen):
 
     async def _guarded_refresh(self, generation=None):
         try:
+            if isinstance(self._data_manager, ReaderHandle):
+                self._entry_refresh = False
+                self._reads_ready = True
+                # The reader owns cancellation/drain barriers. A UI worker only
+                # reads its published snapshot and must not wait behind I/O.
+                await super()._guarded_refresh(generation)
+                return
             if self._entry_refresh:
                 self._entry_refresh = False
                 self._entry_snapshot = self._snapshot_data()
@@ -341,6 +359,17 @@ class DashboardScreen(RefreshGuard, Screen):
 
     async def _fetch_data(self) -> dict:
         """Fetch the payload; snapshot screens may supply a cheaper projection."""
+        if isinstance(self._data_manager, ReaderHandle):
+            # Read revision first: a racing publication can cause an extra
+            # paint, but can never mark an older snapshot as the newest one.
+            revision = self._data_manager.revision
+            if self._loading_projection:
+                self._loading_projection = False
+                data = self._snapshot_data()
+            else:
+                data = await self._fetch_live_data()
+            self._reader_revision = revision
+            return data or {}
         if self._loading_projection:
             self._loading_projection = False
             data = self._entry_snapshot if self._entry_snapshot is not None else self._snapshot_data()

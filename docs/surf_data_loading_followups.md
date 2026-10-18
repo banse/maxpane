@@ -231,3 +231,85 @@ not a claim that the repository's full suite is green.
   owner override at the top. Align on the next touch.
 - `screens/refresh_guard.py`, module/PREFETCH_WORKER_NAME comments: describe
   the retained startup joining helper as compatibility behavior on next touch.
+
+## Independent UI and reader threads (2026-10-18)
+
+Implements [the reader specification and plan](reader_thread.md), based on
+`5fe52bbf`. Agency Software Architect, UX Architect and Performance Benchmarker
+packages were integrated by the controller. A single lazy reader thread owns
+manager construction, clients, cache I/O, projections, polling and shutdown.
+Textual consumes locally published snapshots and revision/loading metadata.
+View and identity generations prevent a late completion from replacing the
+current view. Inactive dashboards stop acquisition; retained data paints on
+reentry before fresh reads finish. CURATOR queries and child NFT/token managers
+use the same reader boundary. Hidden SURF bodies and unchanged snapshots no
+longer receive repeated widget updates.
+
+### Measurements and live evidence
+
+The offline public-capture comparison at 149×45 measured navigation median
+**598 → 97 ms**, navigation p95 **721 → 159 ms**, and UI heartbeat lateness p95
+**520 → 90 ms**. Mounting measured **715 → 315 ms**. Eight navigation samples
+are diagnostic evidence, not a latency guarantee. Mounting does not mean the
+sources finished loading; the new UI refresh consumes local data while the
+reader works independently. This does not establish faster API responses.
+See the specification for workload and measurement limits.
+
+BOARDROOM and AGENT were rendered with live keyless sources at 149×45 using a
+separate temporary public-only cache. The Matrix theme, populated values and
+animated loading footer were inspected before final review. Temporary evidence:
+`/tmp/maxpane-reader-live-preview/`, `/tmp/maxpane-reader-benchmark/`.
+
+### Verification and baseline limits
+
+The initial touched/composing run had **1,102 passed and five failures**. One
+test expected NEWS to prepopulate a hidden AGENT table while refresh scheduling
+was disabled. Its setup now explicitly refreshes the selected AGENT body and
+asserts that NEWS leaves it untouched. The other four failures were reproduced
+on an untouched `5fe52bbf` archive with isolated HOME and no network:
+
+- `test_surf_registration.py::test_a_full_outage_renders_explicit_states_not_zeros`:
+  expects the previously suppressed outage warning.
+- `test_surf_screen.py::test_every_list_row_in_the_fixture_matches_the_frozen_row_shape`:
+  fixture omits `named_ts`.
+- `test_surf_pool4_screen.py::test_the_bindings_are_refresh_and_the_two_view_toggles`:
+  expects the older key set.
+- `test_surf_pool4_screen.py::test_the_three_bodies_are_never_showing_at_once`:
+  expects the older launchpad hero.
+
+The additional WORK/POOL4-market composing run had **58 passed and two failures**,
+also reproduced on untouched `5fe52bbf`:
+`test_exactly_one_hero_shows_in_every_mode[launchpad]` and
+`test_exactly_one_hero_survives_every_transition_between_bodies` both expect the
+older launchpad hero. These six baseline failures remain open. Fast guards:
+**126 passed**. No full suite was run; overlapping run totals must not be summed.
+
+Logs: `/tmp/maxpane-reader-final-tests.log`,
+`/tmp/maxpane-reader-mode-tests.log`, `/tmp/maxpane-reader-baseline-tests.log`,
+`/tmp/maxpane-reader-baseline-mode-tests.log`, `/tmp/maxpane-reader-guards.log`.
+
+The single final review found two Important issues. Its one correction wave
+settles query Futures even when the reader task is cancelled before its first
+step, and publishes only the narrow contribution result for idle BOARD offers.
+Both synchronous cached updates and asynchronous completions remain visible,
+including tasks that complete between monitor ticks. Core tests: **19 passed**.
+The scoped re-review marked both findings **ADDRESSED** and approved the change;
+it independently passed all five regression cases and killed/restored both
+rollback mutations. Generation rejection, snapshot isolation, cancellation
+barriers, UI-copy avoidance, visible-only dispatch and CURATOR I/O also have
+targeted mutation evidence. No Critical or Important review finding remains.
+
+After the corrections, the affected reader/app/startup/shutdown/CURATOR/AGENT
+and handoff files passed **163 tests in 43.37 seconds**. Final fast guards:
+**126 passed**. `git diff --check` passed. Logs:
+`/tmp/maxpane-reader-postfix-tests.log`, `/tmp/maxpane-reader-finalguards.log`.
+
+### Remaining measured performance work
+
+- The reader still performs expensive cached projections and JSON serialization
+  (baseline medians 187 ms and 141 ms). Thread isolation removes these operations
+  from Textual's loop, but Python GIL contention can still cause jitter. Profile
+  repeated seat-history projection before considering a process boundary;
+  `_swarm_seat_keys` accounted for approximately 69% of the baseline projection
+  profile. This is a separate measured optimization, not a reason to repaint or
+  poll hidden dashboards.
