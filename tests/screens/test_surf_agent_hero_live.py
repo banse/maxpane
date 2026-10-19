@@ -33,15 +33,15 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         for key in ('owner', 'models', 'nodes', 'runtime'):
             assert not str(hero.query_one('#hero-' + key).border_subtitle)
         record = screen.query_one(SurfSwarmSeatRecord)
-        assert record.display and record.region.y == hero.region.bottom
+        assert record.display and record.region.y == hero.region.bottom + 1
         title = record.query_one('.panel-title')
         table = record.query_one(DataTable)
         assert title.region.y == record.region.y
-        assert title.region.y == 21
+        assert title.region.y == 22
         assert table.region.y == 23
         assert table.region.height == 20
-        assert table.region.y == title.region.bottom + 1
-        title_gap = screen._compositor.render_strips()[title.region.bottom].crop(record.region.x, record.region.right)
+        assert table.region.y == title.region.bottom
+        title_gap = screen._compositor.render_strips()[title.region.y - 1].crop(record.region.x, record.region.right)
         assert not title_gap.text.strip()
         assert table.region.bottom == record.region.bottom - 1
         gap = screen._compositor.render_strips()[table.region.bottom].crop(record.region.x, record.region.right)
@@ -77,7 +77,7 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
 
 
 @pytest.mark.parametrize("themed", [False, True])
-async def test_record_title_moves_up_without_moving_or_shrinking_table(monkeypatch, themed):
+async def test_record_title_sits_above_table_with_gap_before_widget(monkeypatch, themed):
     if not themed:
         monkeypatch.setattr(_ThemedHarness, "CSS_PATH", [])
     data = _frozen_payload(surf_agent_hero=payload())
@@ -91,11 +91,11 @@ async def test_record_title_moves_up_without_moving_or_shrinking_table(monkeypat
         for width, height, table_height in ((149, 45, 20), (134, 29, 4), (134, 28, 4), (149, 45, 20)):
             await pilot.resize_terminal(width, height)
             await pilot.pause()
-            assert title.region.y == 21
+            assert title.region.y == 22
             assert (table.region.y, table.region.height, table.region.bottom) == (23, table_height, 23 + table_height)
             rows = screen._compositor.render_strips()
-            assert "RECORD" in rows[21].text
-            assert not rows[22].text.strip()
+            assert not rows[21].text.strip()
+            assert "RECORD" in rows[22].text
             assert "when" in rows[23].text
         before = table.region
         await pilot.press("f", "escape")

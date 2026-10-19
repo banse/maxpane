@@ -85,3 +85,8 @@ The live 149×45 render used agent #420; in-situ measurements retain 134×29.
 All 770 relevant tests, 128 fast guards and 12 documentation pins passed; six
 targeted mutations were detected. Final review approved without findings after
 independent job-semantics and mutation checks. No new follow-up remains.
+
+Owner rollback after this round: restore only RECORD's previous title position,
+with the blank row above the widget and the title directly above the table.
+Table position and height remain unchanged; the new card order, titles and JOBS
+units remain. Live render at 149×45 and stress at 134×28..30 retain the 134×29 pin.
