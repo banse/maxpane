@@ -5,7 +5,7 @@ from maxpane_dashboard.widgets.surf.agent_rack_hero import SurfSwarmAgentRackHer
 from maxpane_dashboard.widgets.surf._fmt import mmdd_hhmm
 from maxpane_dashboard.widgets.surf import SurfSwarmAgentHero, SurfSwarmSeatCards, SurfSwarmSeatRecord
 from maxpane_dashboard.widgets.surf.swarm_record_filter import SurfRecordFilterEditor
-from tests.screens.test_surf_screen import _surf_app, _frozen_payload, _region_text
+from tests.screens.test_surf_screen import _surf_app, _frozen_payload, _region_text, _ThemedHarness
 from tests.widgets.test_surf_agent_rack_hero import payload
 
 
@@ -27,17 +27,22 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         text = _region_text(pilot.app, hero)
         paid = mmdd_hhmm(data['surf_agent_hero']['rewards']['last_paid_ts'])
         for expected in ("AGENT", "SEAT", "96%", "ERC-8004 #8127", paid, "example.eth ⧉",
-                         "EARNINGS", "4 new", "RESEARCHED", "ORACLE"):
+                         "EARNINGS", "4 new", "RESEARCH", "ORACLE"):
             assert expected in text
         assert 'implementing' in _region_text(pilot.app, hero.query_one('#hero-status'))
         for key in ('owner', 'models', 'nodes', 'runtime'):
             assert not str(hero.query_one('#hero-' + key).border_subtitle)
         record = screen.query_one(SurfSwarmSeatRecord)
-        assert record.display and record.region.y > hero.region.bottom
+        assert record.display and record.region.y == hero.region.bottom
         title = record.query_one('.panel-title')
         table = record.query_one(DataTable)
         assert title.region.y == record.region.y
-        assert table.region.y == title.region.bottom
+        assert title.region.y == 21
+        assert table.region.y == 23
+        assert table.region.height == 20
+        assert table.region.y == title.region.bottom + 1
+        title_gap = screen._compositor.render_strips()[title.region.bottom].crop(record.region.x, record.region.right)
+        assert not title_gap.text.strip()
         assert table.region.bottom == record.region.bottom - 1
         gap = screen._compositor.render_strips()[table.region.bottom].crop(record.region.x, record.region.right)
         assert not gap.text.strip()
@@ -69,3 +74,29 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         assert "96%" in _region_text(pilot.app, hero)
         await pilot.press("escape")
         assert not hero.display
+
+
+@pytest.mark.parametrize("themed", [False, True])
+async def test_record_title_moves_up_without_moving_or_shrinking_table(monkeypatch, themed):
+    if not themed:
+        monkeypatch.setattr(_ThemedHarness, "CSS_PATH", [])
+    data = _frozen_payload(surf_agent_hero=payload())
+    async with _surf_app(payload=data).run_test(size=(149, 45)) as pilot:
+        screen = pilot.app.screen
+        await screen._do_refresh()
+        await pilot.press("a")
+        record = screen.query_one(SurfSwarmSeatRecord)
+        table = record.query_one(DataTable)
+        title = record.query_one('.panel-title')
+        for width, height, table_height in ((149, 45, 20), (134, 29, 4), (134, 28, 4), (149, 45, 20)):
+            await pilot.resize_terminal(width, height)
+            await pilot.pause()
+            assert title.region.y == 21
+            assert (table.region.y, table.region.height, table.region.bottom) == (23, table_height, 23 + table_height)
+            rows = screen._compositor.render_strips()
+            assert "RECORD" in rows[21].text
+            assert not rows[22].text.strip()
+            assert "when" in rows[23].text
+        before = table.region
+        await pilot.press("f", "escape")
+        assert record.display and table.region == before

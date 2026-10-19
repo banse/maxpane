@@ -62,15 +62,15 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     for key, title, heading, footer in (
         ("seat", "AGENT", "SEAT", "ERC-8004 #--"),
         ("status", "STATUS", "WORKER", "UNKNOWN"),
-        ("accepted", "ACCEPTED", "WORK", ""),
+        ("accepted", "JOBS", "ACCEPTED", ""),
+        ("nodes", "SHIP", "LAUNCHES", ""),
+        ("models", "RESEARCH", "ORACLE", ""),
         ("effort", "EFFORT", "HOURS", ""),
-        ("rank", "RANK", "POSITION", ""),
-        ("rewards", "REWARDS", "IMD", "paid --"),
         ("runtime", "RUNTIME", "SOFTWARE", ""),
-        ("models", "RESEARCHED", "ORACLE", ""),
         ("owner", "OWNER", "WALLET", ""),
-        ("nodes", "SHIPPED", "LAUNCHES", ""),
+        ("rank", "RANK", "POSITION", ""),
         ("collab", "COLLAB", "SEATS", ""),
+        ("rewards", "REWARDS", "IMD", "paid --"),
         ("earnings", "EARNINGS", "TOKENS", ""),
     ):
         raw = _card_source(payload, key)
@@ -163,6 +163,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["accent"] = False
         elif key in ("nodes", "models"):
             fields["digits"] = _digits(section.get("launches" if key == "nodes" else "oracle"))
+            fields["subtitle"] = "JOBS"
             fields["accent"] = False
         if state in ("unknown_seat", "stale_unknown_seat") and key not in ("models", "nodes", "runtime"):
             fields["subtitle"] = "never paired"

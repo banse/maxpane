@@ -1938,11 +1938,14 @@ SURF_AGENT_FULL_LAYOUT_COLUMNS = 134
 #: Capture swept 25..36 rows: 25..28 show taller; 29..36 are whole.
 #: Five-digit stress at 27..30 also clears from 29. Twelve nine-line
 #: cards occupy a fixed nineteen-line hero including the inter-row gap;
-#: RECORD retains its six-row floor and scrolls its own unbounded history.
+#: RECORD scrolls its own unbounded history; its current floor is recorded below.
 #: The outer body alone scrolls fixed cards below this measured floor.
 #: Boundary tests bind the independent measured restatement and check
 #: content, geometry and markers on both sides of width and height.
 #: 2026-10-13 adjustments: stress re-swept at 132x26..32, whole from 29.
+#: 2026-10-19: RECORD's title moves into its former top margin. The panel
+#: floor grows from six to seven rows while the outer margin becomes zero,
+#: preserving table height. Stress at 134x28..30 still clears from 29.
 SURF_AGENT_FULL_LAYOUT_ROWS = 29
 
 #: RECORD answer-clearance onset, re-swept 2026-09-24 in the real AGENT body.
@@ -3521,12 +3524,12 @@ class SurfScreen(SurfDashboardScreen):
     SurfScreen SurfSwarmSeatRecord {
         width: 100%;
         height: 1fr;
-        min-height: 6;
+        min-height: 7;
         padding: 0 1;
-        margin: 1 0 0 0;
+        margin: 0;
     }
     SurfScreen SurfSwarmSeatRecord > .panel-title {
-        margin-bottom: 0;
+        margin-bottom: 1;
     }
     SurfScreen SurfSwarmSeatRecord > DataTable {
         margin-bottom: 1;

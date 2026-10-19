@@ -163,8 +163,8 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         hero = app.query_one(SurfSwarmAgentRackHero)
         cards = list(hero.children)
         assert [card.data.key for card in cards] == [
-            "seat", "status", "accepted", "effort", "rank", "rewards",
-            "runtime", "models", "owner", "nodes", "collab", "earnings",
+            "seat", "status", "accepted", "nodes", "models", "effort",
+            "runtime", "owner", "rank", "collab", "rewards", "earnings",
         ]
         assert len(cards) == 12 and hero.region.height == 19
         assert {card.region.height for card in cards} == {9}
@@ -173,17 +173,17 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         assert cards[6].region.y - cards[0].region.bottom == 1
         for key, words in {
             "seat": ("AGENT", "SEAT", "OPERATING", "ERC-8004 #8127"),
-            "accepted": ("WORK", "96%"),
+            "accepted": ("JOBS", "ACCEPTED", "96%"),
             "effort": ("HOURS", "1.8M tokens"),
             "rewards": ("IMD", "$120.82", "paid "),
             "rank": ("POSITION", "of 1,024", "↑ 2"),
             "status": ("WORKER", "reviewing", "BUSY", "▰"),
             "owner": ("WALLET", "example.eth ⧉", "paired"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "model… +1", "high"),
-            "models": ("RESEARCHED", "ORACLE"),
+            "models": ("RESEARCH", "ORACLE", "JOBS"),
             "earnings": ("EARNINGS", "TOKENS", "4 new"),
             "collab": ("SEATS", "collaborators"),
-            "nodes": ("SHIPPED", "LAUNCHES"),
+            "nodes": ("SHIP", "LAUNCHES", "JOBS"),
         }.items():
             text = painted(app, key)
             assert all(word in text for word in words), (key, text)
@@ -718,11 +718,11 @@ async def test_researched_uses_production_oracle_count_independently_of_models()
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             text = painted(app, "models")
-            assert "RESEARCHED" in strips(app, "models")[0].text
+            assert strips(app, "models")[0].text.strip("╭─╮ ⊙") == "RESEARCH"
             assert "ORACLE" in strips(app, "models")[2].text
             assert all(any(glyph in row.text for row in body_rows(app, "models")) for glyph in glyphs), text
-            assert not strips(app, "models")[6].text.split("└")[1].split("┘")[0].strip("─ ")
-            assert not strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ")
+            assert strips(app, "models")[6].text.split("└")[1].split("┘")[0].strip("─ ") == "JOBS"
+            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == "JOBS"
             card = app.query_one("#hero-models")
             assert card.data.state == state and card.data.read_ts == data["nodes"]["read_ts"]
             assert "production networks; testnets excluded" in str(card.tooltip)
@@ -877,7 +877,7 @@ async def test_removed_outer_captions_stay_empty_across_source_states_and_recove
         assert "#527 x84" in str(app.query_one("#hero-collab").tooltip)
 
 
-async def test_shipped_keeps_launch_digits_without_inner_footer():
+async def test_ship_counts_launch_jobs_and_labels_the_unit():
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
@@ -896,11 +896,12 @@ async def test_shipped_keeps_launch_digits_without_inner_footer():
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             text = painted(app, "nodes")
-            assert "SHIPPED" in text and "LAUNCHES" in text
+            assert strips(app, "nodes")[0].text.strip("╭─╮ ⊙") == "SHIP"
+            assert "LAUNCHES" in text
             assert "NODES" not in text and "work by type" not in text and "other" not in text
             for glyph in digits:
                 assert any(glyph in row.text for row in body_rows(app, "nodes")), text
-            assert not strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ")
+            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == "JOBS"
             assert not strips(app, "nodes")[-1].text.strip("╰─╯ ")
             assert border_color(app, "nodes") == border_color(app, "accepted")
             tooltip = str(app.query_one("#hero-nodes").tooltip)

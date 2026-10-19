@@ -71,3 +71,17 @@ in the touched test. The final review found one Runtime source-state override;
 the fix preserves an observed model effort even when Runtime reports an unknown
 seat. No data readers, production-chain policy or polling behavior changed.
 Scoped re-review approved the fix; no new follow-up remains from this round.
+
+## 2026-10-19: CR round a6c8ea64
+
+The twelve notes in `cr-round-a6c8ea64-plan.md` set the card order to
+AGENT / STATUS / JOBS / SHIP / RESEARCH / EFFORT, then
+RUNTIME / OWNER / RANK / COLLAB / REWARDS / EARNINGS. SHIP and RESEARCH show
+JOBS as their inner unit. Existing production-job counting remains unchanged.
+The RECORD title moves up one row while the table retains its position and
+height in both stylesheet modes, including below the minimum size and on resize.
+
+The live 149×45 render used agent #420; in-situ measurements retain 134×29.
+All 770 relevant tests, 128 fast guards and 12 documentation pins passed; six
+targeted mutations were detected. Final review approved without findings after
+independent job-semantics and mutation checks. No new follow-up remains.

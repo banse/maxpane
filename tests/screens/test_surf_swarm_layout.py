@@ -1317,8 +1317,8 @@ async def test_agent_rack_rows_boundary(kind, height):
     assert result['taller'] == (height < SURF_AGENT_FULL_LAYOUT_ROWS)
     assert not result['overflow']
     cards = result['hero_cards']
-    assert [name for name, _ in cards] == ['seat', 'status', 'accepted', 'effort', 'rank', 'rewards',
-                                         'runtime', 'models', 'owner', 'nodes', 'collab', 'earnings']
+    assert [name for name, _ in cards] == ['seat', 'status', 'accepted', 'nodes', 'models', 'effort',
+                                         'runtime', 'owner', 'rank', 'collab', 'rewards', 'earnings']
     regions = [region for _, region in cards]
     assert {region[3] for region in regions} == {9}
     assert max(region[2] for region in regions) - min(region[2] for region in regions) <= 1
