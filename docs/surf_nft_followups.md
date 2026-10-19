@@ -278,3 +278,29 @@ the reviewer independently killed its two mutations. Minor test follow-up:
 `_publish`, so its final empty-row assertion does not itself exercise projection.
 Use a real projection when that test is next maintained; the chain origin gates
 were checked separately and remain unchanged.
+
+## NFT card coverage footers — 2026-10-19
+
+Approved scope: remove coverage notices from the outer footer of Boardroom's NFT
+card and all six NFT dashboard cards in every source state. Keep the existing
+active-loading indicator. Preserve counts, inner headings, data states and
+coverage/provenance in the dashboard header, popup and tooltips.
+No data, pin or layout change. Keep shared `LocalSourceHeroCard` unchanged;
+an NFT-only subclass clears its footer while retaining its local-time tooltip.
+
+Single controller-owned package: `widgets/surfboard/rack.py`,
+`widgets/surf_nft/hero.py`, `tests/widgets/test_surfboard_rack.py` and
+`tests/widgets/test_surf_nft.py`, plus the composing assertions in
+`tests/screens/test_surfboard_layout.py`. Under 30 production lines; one final review.
+Verify composed blank borders through updates, resize and source-state changes,
+with existing counts/provenance and other card footers preserved.
+
+Actual-source 149×45 previews were shown before hardening at
+`/tmp/nft-coverage-preview/{nft,boardroom}.png`; an isolated cache copy and a real
+NFT cycle supplied 23 collections. All 235 affected/composing cases passed
+(75 unchanged cases, then 160 after updating the three obsolete footer
+expectations); the 128 fast guards passed. Final review: Approved, no findings.
+Both rollback mutations were killed by the named NFT hero and Boardroom tests;
+the reviewer restored production files byte-for-byte. Missing versus zero counts,
+pending/unavailable blank footers at 132 and 149 columns, and other cards' partial
+notices passed focused checks.

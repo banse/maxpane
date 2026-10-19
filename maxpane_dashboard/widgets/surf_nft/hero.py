@@ -1,4 +1,5 @@
 """Six observed NFT counts in the native nine-line rack cards."""
+from rich.text import Text
 from textual.containers import Grid
 
 from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, LocalSourceHeroCard, _count
@@ -13,10 +14,15 @@ def nft_records(summary):
         ('conditional','CONDITIONAL','IDMD ROUTES'),('chains','CHAINS','OBSERVED')):
         value=summary.get(key)
         records.append(HeroRecord(key='nft-'+key,title=title,heading=heading,
-            footer='OBSERVED',digits=_count(value),read_ts=summary.get('observed_at'),
+            footer='',digits=_count(value),read_ts=summary.get('observed_at'),
             state='unavailable' if value is None else 'partial' if summary.get('partial') else 'ok',
             accent=value is not None))
     return tuple(records)
+
+
+class _NftHeroCard(LocalSourceHeroCard):
+    def _footer(self):
+        self.border_subtitle=Text()
 
 
 class NftHero(Grid):
@@ -26,7 +32,7 @@ class NftHero(Grid):
     '''
     def compose(self):
         for record in nft_records(None):
-            yield LocalSourceHeroCard(record)
+            yield _NftHeroCard(record)
 
     def update_data(self, *, nft_summary=None):
         for record in nft_records(nft_summary):

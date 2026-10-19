@@ -137,10 +137,7 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
     if key == "surf-nft":
-        summary = card.get("nft_summary") or {}
-        known = summary.get("deployed") is not None
-        label = "partial catalogue" if known and summary.get("partial") else "observed collections" if known else "—"
-        return fit_prose(label, 24 if width is None else width, style=MUTED)[0]
+        return Text()
     if key == "protocol":
         return _protocol_footer(card, 24 if width is None else width)[0]
     if key == "oracles":

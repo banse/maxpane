@@ -560,9 +560,11 @@ async def test_translated_side_labels_are_muted_green_in_three_line_gap_above_ag
 
 
 @pytest.mark.parametrize('kind', ['normal', 'stress'])
-async def test_nft_coverage_footer_fits_at_owner_size(kind):
+async def test_nft_card_footer_stays_blank_at_owner_size(kind):
     rendered=await _render(hub_payload(kind),(149,45))
-    assert 'partial catalogue' in rendered['card_text']['surf-nft']
+    text=rendered['card_text']['surf-nft']
+    assert 'partial' not in text
+    assert not text.splitlines()[-1].strip('╰╯─ ')
     assert 'surf-nft' not in rendered['clipped']
 
 

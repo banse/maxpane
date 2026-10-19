@@ -344,7 +344,8 @@ async def test_nft_card_preserves_collection_digits_and_build_mint_counts(size):
         await pilot.pause()
         text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
         assert 'COLLECTIONS' in text and '3 build · 15 open' in text
-        assert 'partial catalogue' in text
+        assert 'partial' not in text
+        assert not card_strips(pilot.app,card)[-1].text.strip('╰─╯ ')
         assert '╭─╮' in text
         assert card.data['destination']=='surf-nft'
 
@@ -915,7 +916,7 @@ async def test_fleet_long_unicode_model_and_daemon_fit_and_tooltip_remains_liter
         assert not card.tooltip.spans
 
 
-async def test_nft_card_unknown_counts_remain_neutral_and_partial_is_visible():
+async def test_nft_card_unknown_counts_remain_neutral_without_coverage_footer():
     async with RackApp().run_test(size=(149,45)) as pilot:
         card=pilot.app.query_one('#surfboard-card-surf-nft',SurfboardCard)
         card.set_data(dict(primary='—',nft_summary={}))
@@ -926,7 +927,9 @@ async def test_nft_card_unknown_counts_remain_neutral_and_partial_is_visible():
             'deployed':0,'building':0,'mint_open':0,'partial':True}))
         await pilot.pause()
         text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
-        assert '0 build · 0 open' in text and 'partial catalogue' in text
+        assert '0 build · 0 open' in text and 'partial' not in text
+        assert card.data['nft_summary']['partial'] is True
+        assert not card_strips(pilot.app,card)[-1].text.strip('╰─╯ ')
 
 
 
@@ -959,6 +962,9 @@ async def test_all_boardroom_card_footers_center_on_resize():
             for card in app.hub.query(SurfboardCard):
                 row = card_strips(app, card)[-1].text
                 label = row.strip('╰╯─ ')
+                if card.id == 'surfboard-card-surf-nft':
+                    assert not label
+                    continue
                 assert label
                 assert abs(row.index(label) - (card.region.width - len(label)) / 2) <= .5
 

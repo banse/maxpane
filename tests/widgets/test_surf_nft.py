@@ -47,7 +47,7 @@ def test_signatures_match_frozen_contract_and_widgets_do_not_import_data():
         assert 'maxpane_dashboard.data' not in path.read_text()
 
 
-async def test_six_heroes_use_observed_counts_and_explicit_partial_coverage():
+async def test_six_heroes_keep_coverage_state_without_card_footer_notices():
     widget=NftHero()
     async with Probe(widget).run_test(size=(149,45)) as pilot:
         widget.update_data(nft_summary=project_snapshot(snapshot())['nft_summary'])
@@ -55,11 +55,28 @@ async def test_six_heroes_use_observed_counts_and_explicit_partial_coverage():
         output=painted(pilot.app)
         for title in ('COLLECTIONS','IN THE MAKING','MINT OPEN','IDMD FREE','CONDITIONAL','CHAINS'):
             assert title in output
-        assert output.count('partial')==6
+        assert 'partial' not in output
         assert len(list(widget.children))==6
+        for card in widget.children:
+            assert card.data.state == 'partial'
+            assert 'partial' in str(card.tooltip)
+            region=card.region
+            footer=pilot.app.screen._compositor.render_strips()[region.bottom-1].crop(region.x,region.right).text
+            assert not footer.strip('╰─╯ ')
         widget.update_data(nft_summary=None)
         await pilot.pause()
         assert '--' in painted(pilot.app)
+        widget.update_data(nft_summary=dict(deployed=0,building=0,mint_open=0,idmd_free=0,
+                                           conditional=0,chains=0,partial=False))
+        await pilot.resize_terminal(132,45)
+        for card in widget.children:
+            assert card.data.digits == '0' and card.data.state == 'ok'
+            region=card.region
+            footer=pilot.app.screen._compositor.render_strips()[region.bottom-1].crop(region.x,region.right).text
+            assert not footer.strip('╰─╯ ')
+        widget.update_data(nft_summary=project_snapshot(snapshot())['nft_summary'])
+        await pilot.resize_terminal(149,45)
+        assert 'partial' not in painted(pilot.app)
 
 
 async def test_table_keeps_same_name_contracts_and_identity_through_reorder():
