@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>MaxPane · Change requests</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#workspace">Skip to workspace</a>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="MaxPane change requests"><span class="brand-mark" aria-hidden="true">M</span>MaxPane</a>
+    <p class="sidebar-label">Your workspace</p>
+    <nav id="views" aria-label="Dashboard views"></nav>
+    <div class="sidebar-footer"><span class="connection-dot" id="connection-dot" aria-hidden="true"></span><span id="connection">Connecting…</span><p>Local change requests</p></div>
+  </aside>
+  <main id="workspace" tabindex="-1">
+    <header class="page-header"><div><p class="eyebrow">BOARDROOM / Feedback</p><h1>Change requests</h1><p>Keep the details here. Send a round when you’re ready.</p></div><span class="local-label">Local workspace</span></header>
+    <nav class="tabs" aria-label="Request history"><button id="active-tab" type="button" aria-current="page">Active <span id="active-count">0</span></button><button id="archive-tab" type="button">Archive <span id="archive-count">0</span></button></nav>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <div id="error" class="notice error" role="alert" hidden></div>
+    <div id="connection-error" class="notice error" role="status" hidden></div>
+    <section id="active-panel" aria-label="Active requests">
+      <section id="batch" class="batch" aria-label="Submitted round" hidden></section>
+      <div class="workspace-grid">
+        <section class="editor" aria-labelledby="editor-title">
+          <div class="section-heading"><h2 id="editor-title">New note</h2><span id="edit-state" class="metadata">Not saved</span></div>
+          <form id="note-form">
+            <label for="view">View</label><select id="view" name="view" required></select>
+            <fieldset><legend>What needs changing?</legend><div class="kind-switch"><label><input type="radio" name="kind" value="card" checked><span>Card</span></label><label><input type="radio" name="kind" value="content"><span>Content</span></label></div></fieldset>
+            <label for="area">Area</label><select id="area" name="area" required></select>
+            <label for="text">Your change request</label><textarea id="text" name="text" rows="8" required maxlength="20000" placeholder="Describe what should change and how it should work…" aria-describedby="text-help"></textarea>
+            <p id="text-help" class="field-help">Plain text. One request per note keeps each round easy to follow.</p>
+            <div class="editor-actions"><button id="save" class="button dark" type="submit">Save note</button><button id="new-note" class="button quiet" type="button">Clear</button></div>
+          </form>
+        </section>
+        <section class="round" aria-labelledby="round-title">
+          <div class="section-heading"><div><h2 id="round-title">Current round</h2><p id="round-help">Notes for the same area stay together.</p></div><span id="draft-count" class="count">0</span></div>
+          <div id="drafts"></div>
+          <div class="queue-actions"><button id="send" class="button accent" type="button" disabled>Codex Queue <span aria-hidden="true">↗</span></button><p id="send-help">Connecting to this coding conversation…</p></div>
+        </section>
+      </div>
+    </section>
+    <section id="archive-panel" aria-label="Completed rounds" hidden><div class="section-heading"><div><h2>Completed rounds</h2><p>Changes, validation and notes from earlier rounds.</p></div></div><div id="archive"></div></section>
+    <footer class="page-footer">Save a note. Collect a round. Keep moving.</footer>
+  </main>
+</body>
+</html>
