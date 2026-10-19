@@ -3083,9 +3083,9 @@ SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1 0; overflow: auto 
     SurfNftScreen {background: $background; color: $text;}
     SurfNftScreen #nft-viewport {height: 1fr; padding: 0 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size: 1 1;}
-    SurfNftScreen #nft-body {width: 1fr; min-width: 143; height: 1fr; min-height: 32;}
-    SurfNftScreen NftHero {height: 9; margin: 1 0;}
-    SurfNftScreen #nft-controls {height: 1; padding: 0 1; margin-bottom: 1;}
+    SurfNftScreen #nft-body {width: 1fr; min-width: 143; height: 1fr; min-height: 29;}
+    SurfNftScreen NftHero {height: 9; margin: 0 0 1 0;}
+    SurfNftScreen #nft-controls {height: 1; padding: 0 2;}
     SurfNftScreen #nft-content {height: 1fr; min-height: 18;}
     SurfNftScreen #nft-market {height: 1fr;}
     SurfNftScreen NftTable {width: 77; height: 1fr; min-height: 18; margin-right: 1; border: none;}

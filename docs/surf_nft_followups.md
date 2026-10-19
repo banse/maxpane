@@ -1,5 +1,32 @@
 # NFT Explorer delivery evidence and follow-ups
 
+## Collected CR round 1a5b8604 — 2026-10-19
+
+Four saved requests were frozen and claimed together before implementation.
+BOARDROOM now puts observed build/open counts in the NFT card's outer footer.
+The NFT Explorer heading occupies the previously blank top row; collections and
+inspection start two rows earlier. Generated width notices are omitted at the
+owner's request, while clipping and scrolling remain. Each collection with a
+valid linked site gains a separate `↗` after its copy glyph. This reuses the
+validated site-label explorer action and adds no data reads.
+
+A fresh keyless cycle in an isolated cache found 23 deployed collections,
+six with linked sites and seven with matched workflows. The six-site condition
+was checked against distinct collections, not individual URLs or filtered rows.
+149×45 Matrix previews of both affected dashboards were shown before NFT pin
+hardening. Captures: `/tmp/nft-coverage-preview/{nft,boardroom}.png`.
+The source clock and partial-catalogue state remain in the existing header and
+details; card coverage footers remain absent. Website UX changes are a separate
+stage after this round is completed.
+
+The measured boundary is 146×31; normal, empty and unknown payloads retain all
+six hero frames. Height 30 has a one-row outer scroll, height 31 clears.
+Verification: 178 BOARDROOM tests, 51 NFT/widget/address-sweep tests and 128
+fast guards passed with isolated HOME where applicable and `NO_COLOR` unset.
+Three restored mutations rejected both incorrect height pins and the old
+header position. Final independent review: Approved, no findings; it also
+killed removal of the site action and the outer NFT footer. No new residuals.
+
 Implementation: 2026-10-17, approved combination of proposal 1's collection/detail
 layout, proposal 2's IDMD/mint filters and proposal 3's explicit sources.
 

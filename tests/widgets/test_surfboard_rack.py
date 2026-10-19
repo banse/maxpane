@@ -345,7 +345,9 @@ async def test_nft_card_preserves_collection_digits_and_build_mint_counts(size):
         text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
         assert 'COLLECTIONS' in text and '3 build · 15 open' in text
         assert 'partial' not in text
-        assert not card_strips(pilot.app,card)[-1].text.strip('╰─╯ ')
+        assert card_strips(pilot.app,card)[-1].text.strip('╰─╯ ') == '3 build · 15 open'
+        inset_footer=next(strip.text for strip in card_strips(pilot.app,card) if '└' in strip.text)
+        assert 'build' not in inset_footer and 'open' not in inset_footer
         assert '╭─╮' in text
         assert card.data['destination']=='surf-nft'
 
@@ -929,7 +931,7 @@ async def test_nft_card_unknown_counts_remain_neutral_without_coverage_footer():
         text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
         assert '0 build · 0 open' in text and 'partial' not in text
         assert card.data['nft_summary']['partial'] is True
-        assert not card_strips(pilot.app,card)[-1].text.strip('╰─╯ ')
+        assert card_strips(pilot.app,card)[-1].text.strip('╰─╯ ') == '0 build · 0 open'
 
 
 
@@ -962,9 +964,6 @@ async def test_all_boardroom_card_footers_center_on_resize():
             for card in app.hub.query(SurfboardCard):
                 row = card_strips(app, card)[-1].text
                 label = row.strip('╰╯─ ')
-                if card.id == 'surfboard-card-surf-nft':
-                    assert not label
-                    continue
                 assert label
                 assert abs(row.index(label) - (card.region.width - len(label)) / 2) <= .5
 

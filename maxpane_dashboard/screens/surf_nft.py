@@ -15,8 +15,10 @@ from maxpane_dashboard.widgets.surf_nft import NftHero, NftTable, NftDetail, Nft
 from maxpane_dashboard.widgets.surf_nft.filter import NftFilterEditor
 
 
-#: Measured 2026-10-17 after the owner-visible keyless 149×45 preview.
-#: Six nine-row rack heroes precede one controls line and the native panels.
+#: Measured 2026-10-19 after the owner-visible keyless Matrix 149×45 preview.
+#: The controls occupy the previously unused top row above six rack heroes.
+#: Hero tops remain at row 1; table and basics start at row 11 instead of 13.
+#: Removing the old controls slot and spacer recovers two panel rows.
 #: The list keeps a fixed width; basics and README summary share the right column.
 #: Basic facts and README prose scroll independently inside their panels.
 #: At 149×45 the complete list and detail headers are visible together.
@@ -25,32 +27,35 @@ from maxpane_dashboard.widgets.surf_nft.filter import NftFilterEditor
 #: Width samples began at 120 columns and extended to 160, independently of
 #: this constant; near the transition every column from 140 to 149 was read.
 #: At 145 columns the reserved viewport gutter clips the rightmost frame.
-#: Its horizontal scroll extent is one column and the controls mark widen.
+#: Its horizontal scroll extent is one column; generated widen hints are hidden
+#: everywhere in this view by owner request. Geometry remains the width signal.
 #: At 146 columns all six right corners are visible and no outer scroll remains.
 #: At 147 and 149 columns the complete frames and both panels stay visible.
 #: The table's five installed columns fit without internal horizontal scrolling;
 #: its row-end popup action uses two cells from the existing final column.
 #: Name windows retain copy icons and the full identity stays in the detail.
+#: A linked site's one-cell glyph and spacer use two cells of the name window;
+#: its shared validated explorer action follows the copy icon without widening.
 #: Source text may still wrap or scroll; the pin is not a promise about text length.
 #: Height samples began at 24 rows and extended through 45 rows.
-#: At 32 rows the body exceeds the viewport by one row and marks taller.
-#: At 33 rows the body, table floor and status bar fit without outer scrolling.
-#: At 34 rows the extra row goes to the independently scrolling summary/list.
-#: The fixed body floor is 32 rows; the bottom status bar remains outside it.
+#: At 30 rows the body exceeds the viewport by one row and marks taller.
+#: At 31 rows the body, table floor and status bar fit without outer scrolling.
+#: At 32 rows the extra row goes to the independently scrolling summary/list.
+#: The fixed body floor is 29 rows; header and status bar remain outside it.
 #: Normal, unread and confirmed-empty payloads share these geometry boundaries.
 #: Basics are capped at half the column so extra holder/project facts cannot
 #: push the summary below the column. Its eight-row floor stays wholly visible.
 #: The ordinary fixture has nine-row basics and a nine-row summary at the pin.
 #: A longer basics fixture scrolls internally while the outer viewport stays whole.
 #: Extended mint/source evidence now uses the independently scrolling RECORD modal.
-#: The public Sinopia README and its modal were shown at 149×45 before this sweep.
-#: The compact card footer preserves observed counts at the unchanged hub pin.
+#: The live NFT catalogue and Boardroom were shown at 149×45 before this sweep.
+#: Boardroom's NFT card moves build/open counts to its outer footer.
 #: Neither the hub's 143×37 pin nor the application width changes here.
 #: Boundary tests exercise both sides of each measured onset and inspect frames,
 #: table columns and viewport extents rather than trusting a marker alone.
 #: Pin mutations in either direction must change the expected boundary result.
 SURF_NFT_FULL_LAYOUT_COLUMNS = 146
-SURF_NFT_FULL_LAYOUT_ROWS = 33
+SURF_NFT_FULL_LAYOUT_ROWS = 31
 
 
 class SurfNftScreen(SurfDashboardScreen):
@@ -68,9 +73,9 @@ class SurfNftScreen(SurfDashboardScreen):
     SurfNftScreen {background: $background; color: $text;}
     SurfNftScreen #nft-viewport {height: 1fr; padding: 0 1; overflow: auto auto;
         scrollbar-gutter: stable; scrollbar-size: 1 1;}
-    SurfNftScreen #nft-body {width: 1fr; min-width: 143; height: 1fr; min-height: 32;}
-    SurfNftScreen NftHero {height: 9; margin: 1 0;}
-    SurfNftScreen #nft-controls {height: 1; padding: 0 1; margin-bottom: 1;}
+    SurfNftScreen #nft-body {width: 1fr; min-width: 143; height: 1fr; min-height: 29;}
+    SurfNftScreen NftHero {height: 9; margin: 0 0 1 0;}
+    SurfNftScreen #nft-controls {height: 1; padding: 0 2;}
     SurfNftScreen #nft-content {height: 1fr; min-height: 18;}
     SurfNftScreen #nft-market {height: 1fr;}
     SurfNftScreen NftTable {width: 77; height: 1fr; min-height: 18; margin-right: 1; border: none;}
@@ -91,10 +96,10 @@ class SurfNftScreen(SurfDashboardScreen):
         self._readme=None
 
     def compose(self):
+        yield Static(Text('NFT EXPLORER'),id='nft-controls')
         with VerticalScroll(id='nft-viewport'):
             with Vertical(id='nft-body'):
                 yield NftHero()
-                yield Static(Text('NFT EXPLORER'),id='nft-controls')
                 with Vertical(id='nft-content'):
                     with Horizontal(id='nft-market'):
                         yield NftTable()
@@ -161,8 +166,7 @@ class SurfNftScreen(SurfDashboardScreen):
         viewport=self.query_one('#nft-viewport',VerticalScroll)
         editor=self.query_one(NftFilterEditor)
         editor.styles.width=viewport.scrollable_content_region.width
-        suffix=' · ‹ widen' if viewport.max_scroll_x>0 else ''
-        suffix+=' · ‹ taller' if viewport.max_scroll_y>0 else ''
+        suffix=' · ‹ taller' if viewport.max_scroll_y>0 else ''
         chain={'all':'all chains','ethereum':'Ethereum','robinhood':'Robinhood'}[self.filters['chain']]
         selection=' · '.join(f'{key}: {flatten(value)}' for key,value in self.filters.items()
             if key in ('idmd','mint','utility','search') and value not in ('all',''))
@@ -175,10 +179,7 @@ class SurfNftScreen(SurfDashboardScreen):
         control=self.query_one('#nft-controls',Static)
         room=max(1,control.content_size.width)
         explorer=EXPLORER({'ethereum':1,'robinhood':4663}.get(self.filters['chain']))
-        caption,cut=fit_prose(text,max(1,room-cell_len(suffix)),explorer=explorer)
-        if cut and '‹ widen' not in suffix:
-            suffix=' · ‹ widen'+suffix
-            caption,_=fit_prose(text,max(1,room-cell_len(suffix)),explorer=explorer)
+        caption,_=fit_prose(text,max(1,room-cell_len(suffix)),explorer=explorer)
         control.update(caption.append(suffix))
 
     def on_nft_table_highlighted(self,event):

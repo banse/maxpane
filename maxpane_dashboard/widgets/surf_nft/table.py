@@ -4,11 +4,23 @@ from rich.text import Text
 from textual.message import Message
 from textual.widgets import DataTable, Static
 
-from maxpane_dashboard.widgets.address import address_text, is_address, is_copy_click, is_explorer_click
+from maxpane_dashboard.widgets.address import address_text, is_address, is_copy_click, is_explorer_click, site_text
+from maxpane_dashboard.widgets.explorer import SITES
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import TableLeaderboard
 from maxpane_dashboard.widgets.rowfit import clip, cell_len
 from . import EXPLORER
+
+
+def _site_icon(sites):
+    for site in sites or []:
+        if not isinstance(site,dict):
+            continue
+        icon=site_text(site.get('ensName') or '↗',1,label=site.get('label'),explorer=SITES)
+        if any(isinstance(span.style,Style) and span.style.link for span in icon.spans):
+            icon.plain='↗'
+            return icon
+    return Text()
 
 
 class _CollectionTable(DataTable):
@@ -57,12 +69,16 @@ class NftTable(TableLeaderboard):
 
     def build_row(self,index,row):
         name=flatten(row.get('name')) or flatten(row.get('symbol')) or 'Unnamed collection'
+        site=_site_icon(row.get('sites'))
+        name_width=self.COLUMNS[0][1]-(2 if site else 0)
         if row.get('contract'):
-            label=address_text(row['contract'],label=name,width=21,explorer=EXPLORER(row.get('chain_id')))
+            label=address_text(row['contract'],label=name,width=name_width-2,explorer=EXPLORER(row.get('chain_id')))
         elif is_address(name):
-            label=address_text(name,width=21,explorer=EXPLORER(row.get('chain_id')))
+            label=address_text(name,width=name_width-2,explorer=EXPLORER(row.get('chain_id')))
         else:
-            label=Text(clip(name,23))
+            label=Text(clip(name,name_width))
+        if site:
+            label.append(' ').append_text(site)
         mint=row.get('mint') or {}; benefit=row.get('idmd_benefit') or {}; stats=row.get('stats') or {}
         minted,maximum=stats.get('totalMinted'),stats.get('maxSupply')
         quantity=lambda value: str(value) if type(value) is int and value>=0 else '—'
@@ -96,10 +112,7 @@ class NftTable(TableLeaderboard):
 
     def refresh_title(self):
         label='COLLECTIONS' if self.stage=='launched' else 'IN THE MAKING'
-        table=self.query_one(DataTable)
-        needed=sum(width+2 for _,width in self.COLUMNS)
-        marker=' · ‹ widen' if self.clipped or table.content_size.width<needed else ''
-        self.query_one('.panel-title',Static).update(Text(f'{label} · {len(self.rows)} shown{marker}',style='bold'))
+        self.query_one('.panel-title',Static).update(Text(f'{label} · {len(self.rows)} shown',style='bold'))
 
     def on_resize(self):
         self.call_after_refresh(self.refresh_title)

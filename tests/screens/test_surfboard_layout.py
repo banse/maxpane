@@ -560,11 +560,14 @@ async def test_translated_side_labels_are_muted_green_in_three_line_gap_above_ag
 
 
 @pytest.mark.parametrize('kind', ['normal', 'stress'])
-async def test_nft_card_footer_stays_blank_at_owner_size(kind):
+async def test_nft_card_footer_shows_build_open_counts_at_owner_size(kind):
     rendered=await _render(hub_payload(kind),(149,45))
     text=rendered['card_text']['surf-nft']
     assert 'partial' not in text
-    assert not text.splitlines()[-1].strip('╰╯─ ')
+    footer=text.splitlines()[-1].strip('╰╯─ ')
+    assert footer == ('3 build · 15 open' if kind == 'normal' else '100bld · 999open')
+    inset_footer=next(line for line in text.splitlines() if '└' in line)
+    assert 'build' not in inset_footer and 'open' not in inset_footer
     assert 'surf-nft' not in rendered['clipped']
 
 

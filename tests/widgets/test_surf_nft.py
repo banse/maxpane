@@ -97,6 +97,39 @@ async def test_table_keeps_same_name_contracts_and_identity_through_reorder():
             assert title in painted(pilot.app)
 
 
+async def test_table_site_glyphs_fit_long_names_and_keep_safe_actions_after_reorder():
+    from tests.widgets.address_probe import icon_targets, link_targets
+    widget=NftTable()
+    rows=project_snapshot(snapshot())['nft_rows'][:4]
+    for row in rows:
+        row['name']='[/x]界'*30
+    rows[0]['sites']=[{'label':'bad/label','url':'javascript:alert(1)'},
+                      {'label':'first-valid'},{'label':'second-valid'}]
+    rows[1].update(chain_id=9999,sites=[{'ensName':'legacy-site.site.identitymd.eth'}])
+    rows[2]['sites']=[None,{'label':'bad.label','url':'https://evil.example/'}]
+    rows[3]['sites']=[]
+    async with Probe(widget).run_test(size=(149,45)) as pilot:
+        for values in (rows,list(reversed(rows))):
+            widget.update_data(nft_rows=values)
+            await pilot.pause()
+            links=[target for target in link_targets(pilot.app) if target[2]=='sites']
+            assert [target[4] for target in links]==[
+                'first-valid' if row['id']==rows[0]['id'] else 'legacy-site'
+                for row in values if row['id'] in (rows[0]['id'],rows[1]['id'])]
+            for row in values:
+                x,y,_=next(target for target in icon_targets(pilot.app) if target[-1]==row['contract'])
+                cell=pilot.app.screen._compositor.render_strips()[y].crop(1,24).text
+                assert '[/x]' in cell and '…' in cell
+                row_links=[target for target in links if target[1]==y]
+                if row['id'] in (rows[0]['id'],rows[1]['id']):
+                    assert len(row_links)==1 and row_links[0][:2]==(x+2,y)
+                    assert cell.endswith('⧉ ↗')
+                else:
+                    assert not row_links and '↗' not in cell
+            assert not any(target[4]==rows[1]['contract'] for target in link_targets(pilot.app))
+            assert '‹ widen' not in painted(pilot.app)
+
+
 async def test_detail_keeps_collection_basics_and_moves_routes_to_popup():
     widget=NftDetail()
     row=next(r for r in snapshot()['nft_rows'] if r['name']=='IMDenza')

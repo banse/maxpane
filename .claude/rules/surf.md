@@ -1027,9 +1027,13 @@ on load. Cached own-work `submittedAt` can seed or advance an idle anchor when
 polling missed the work; a newer observed stop wins. Heartbeat, acceptance and
 feedback timestamps cannot reset it. Without either source, cold idle has a dash,
 not a full orange bar. The last green segment remains until the full 24h expires.
-NFTS uses COLLECTIONS tall digits, building/open counts and an explicit partial
-catalog qualifier. Counts describe observed, verified deployments; unread values
-remain neutral dashes. Its inset retains the rack's shared padding and geometry.
+NFTS uses COLLECTIONS tall digits with building/open counts in its outer footer.
+Card coverage notices are omitted; the Explorer header and source details retain
+the partial-catalogue state. Counts describe observed, verified deployments;
+unread values remain neutral dashes. Its inset retains the shared geometry.
+The Explorer controls occupy the top row; collection widgets start two rows
+earlier. Generated width hints are hidden there. A validated site-link glyph
+follows the copy icon for collections with linked sites, using existing facts.
 POOL4 keeps neutral inset borders/title/USD and white price digits. Consecutive valid
 USD price reads drive the same green ↑ / red ↓ indicators as TOKENS, with no indicator
 on first or unchanged reads. The indicator sits beside the price on its middle row;

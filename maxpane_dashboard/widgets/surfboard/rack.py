@@ -137,7 +137,14 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
     if key == "surf-nft":
-        return Text()
+        summary = card.get("nft_summary") or {}
+        shown = lambda value: str(int(value)) if _number(value) and value == int(value) else "—"
+        building, opened = (shown(summary.get(name)) for name in ("building", "mint_open"))
+        width = 24 if width is None else width
+        text = f"{building} build · {opened} open"
+        if cell_len(text) > width:
+            text = f"{building}bld · {opened}open"
+        return fit_prose(text, width, style=MUTED)[0]
     if key == "protocol":
         return _protocol_footer(card, 24 if width is None else width)[0]
     if key == "oracles":
@@ -370,12 +377,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 color = AMBER
             secondary = (secondary or "offline") if status == "offline" else secondary.removesuffix(" slots")
         if self.key == "surf-nft":
-            summary = self.data.get("nft_summary") or {}
-            building, opened = summary.get("building"), summary.get("mint_open")
-            shown = lambda value: str(int(value)) if _number(value) and value == int(value) else "—"
-            secondary = f"{shown(building)} build · {shown(opened)} open"
-            if cell_len(secondary) > inside:
-                secondary = f"{shown(building)}bld · {shown(opened)}open"
+            secondary = ""
         if self.key == "announce":
             secondary = secondary.removesuffix(" replies").removesuffix(" reply")
         elif self.key == "protocol":

@@ -25,7 +25,7 @@ it. This file is the method; the constants are the record.
 | surf `w` work (six rack heroes, workflow/job/step tree and selected details, 2026-10-16) | 138 cols · 30 rows; BLOCKED inner caption binds width, child panel floors bind height; long objectives may still mark; live preview at 149×45 | `screens/surf.SURF_WORK_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `Ctrl+o` oracles (six rack heroes, 66/34 request/detail split, 2026-10-16) | 143 cols · 42 rows; REQUESTS inner caption binds width, 28-row child floors bind height; long questions may still mark; live API preview at 149×45 | `screens/surf.SURF_ORACLES_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | dashboard 9 `surfboard` (four-row equipment rack with four AGENT seats, re-swept 2026-10-17) | 143 cols · 37 rows; six equal columns without idle gutter; FLEET is top-right and NFTS below ONCHAIN FEED; text rows reserve one blank at both edges; empty seat inputs keep the five-line inset; three-line gaps below NFTS/TOKENS contain regular muted captions on the middle line; terminal fills the center span; live preview at 149×45 | `screens/surfboard.SURFBOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| NFT Explorer, nested from BOARDROOM `n` (2026-10-17) | 146 cols · 33 rows; rightmost hero frame binds width, nine-row heroes and body floor bind height; selected details scroll internally; live cold discovery preview at 149×45 | `screens/surf_nft.SURF_NFT_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| NFT Explorer, nested from BOARDROOM `n` (2026-10-19) | 146 cols · 31 rows; rightmost hero frame binds width; controls reuse the top blank row and remove two body rows; selected details scroll internally; live preview at 149×45 | `screens/surf_nft.SURF_NFT_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
 | coin table's own | 89 | `widgets/surf/launchpad._TABLE_FULL_WIDTH` |
 | SWARM TOKENS selected token (2026-10-15; six cards above launch/contributors and market/position, full-width artifacts) | 146 cols · 44 rows; rightmost card/gutter binds width, fixed body floors bind height; live preview 149×45 | `screens/swarm_token_detail.SWARM_TOKEN_FULL_LAYOUT_{COLUMNS,ROWS}` |
@@ -54,6 +54,10 @@ Owner exception (2026-10-15): BOARD's LEADERBOARD omits the visible `‹ widen`
 hint in both tabs at every width. Responsive tiers, ellipses and hover detail
 remain. Measure installed columns and clipped fields directly; no hint is not
 proof that this table is whole. Other panels keep the normal hint behavior.
+
+Owner exception (2026-10-19): NFT Explorer also omits generated `‹ widen`
+notices in its header and collection table. Keep fitting, ellipses and scrolling;
+measure visible frames and column extents directly. `‹ taller` remains.
 
 **The app-wide record, appended never rewritten: 198 → 172 → 143 → 176 → 152 →
 143.** FWA set the first three and the last; surf the two in between. It tracks

@@ -134,7 +134,22 @@ async def test_hub_nfts_and_protocol_keys_preserve_input_and_retained_state():
         assert isinstance(app.screen,SurfNftScreen)
 
 
-async def test_long_filter_caption_is_fitted_and_marks_lost_text():
+async def test_header_uses_top_row_and_recovers_two_rows_below_heroes():
+    from maxpane_dashboard.widgets.surf_nft import NftHero
+    app=Harness()
+    async with app.run_test(size=(149,45)) as pilot:
+        await pilot.pause()
+        screen=app.screen
+        header=screen.query_one('#nft-controls')
+        assert header.region.y==0
+        assert 'NFT EXPLORER' in screen._compositor.render_strips()[0].text
+        assert screen.query_one(NftHero).region.y==1
+        for panel in (NftTable,NftDetail):
+            assert screen.query_one(panel).region.y==11
+        assert screen.query_one(NftSummary).region.y==21
+
+
+async def test_long_filter_caption_is_fitted_without_widen_hint():
     app=Harness()
     async with app.run_test(size=(149,45)) as pilot:
         await pilot.pause()
@@ -145,7 +160,8 @@ async def test_long_filter_caption_is_fitted_and_marks_lost_text():
         from textual.widgets import Static
         region=screen.query_one('#nft-controls',Static).region
         line=app.screen._compositor.render_strips()[region.y].text
-        assert '‹ widen' in line
+        assert '‹ widen' not in painted(app)
+        assert '…' in line
         assert '[/x]' in line
 
 
@@ -170,7 +186,7 @@ async def test_measured_width_boundary_keeps_all_six_frames_and_table_columns(wi
         frames=screen._compositor.render_strips()[hero.region.y].text.count('╮')
         whole=frames==6 and viewport.max_scroll_x==0
         assert whole==(width>=SURF_NFT_FULL_LAYOUT_COLUMNS)
-        assert ('‹ widen' in painted(app))==(not whole)
+        assert '‹ widen' not in painted(app)
         assert screen.query_one(DataTable).max_scroll_x==0
         if whole:
             assert list(hero.children)[-1].region.right<=viewport.scrollable_content_region.right
@@ -347,3 +363,36 @@ async def test_table_address_clicks_keep_copy_and_explorer_actions_separate_from
         await pilot.click(offset=(x,y))
         assert app.screen is screen
         assert app.opened==['https://etherscan.io/address/'+first['contract']]
+
+
+async def test_collection_site_icon_opens_site_after_copy_without_selecting_or_fetching():
+    from maxpane_dashboard.explorer_action import ExplorerLinkMixin
+    from tests.widgets.address_probe import CopyRecorder, LinkRecorder, icon_targets, link_targets
+    class LinkedHarness(CopyRecorder,ExplorerLinkMixin,LinkRecorder,Harness): pass
+    app=LinkedHarness()
+    async with app.run_test(size=(149,45)) as pilot:
+        await pilot.pause()
+        screen=app.screen; table=screen.query_one(NftTable)
+        rows=list(table.rows.values())
+        row=next(row for row in rows[1:] if row['sites'])
+        label=row['sites'][0]['label']
+        selected=table.selected_row()['id']; calls=app.manager.calls
+        selections=len(app.manager.selections)
+        copy_x,copy_y,_=next(target for target in icon_targets(app)
+                            if target[-1]==row['contract'])
+        x,y,*_=next(target for target in link_targets(app)
+                   if target[1]==copy_y and target[2:5]==('sites','site',label))
+        assert screen._compositor.render_strips()[y].crop(x,x+1).text=='↗'
+        assert (x,y)==(copy_x+2,copy_y)
+        await pilot.click(offset=(x,y))
+        assert app.opened==[f'https://{label}.sites.imd.fun/']
+        assert app.screen is screen and table.selected_row()['id']==selected
+        assert app.manager.calls==calls and len(app.manager.selections)==selections
+        await pilot.click(offset=(copy_x,copy_y))
+        assert app.copied==[row['contract']]
+        assert len(app.opened)==1
+        screen.filters['search']=row['contract']
+        screen._repaint_cached(); await pilot.pause()
+        assert len(table.rows)==1
+        assert any(target[2:5]==('sites','site',label) for target in link_targets(app))
+        assert app.manager.calls==calls
