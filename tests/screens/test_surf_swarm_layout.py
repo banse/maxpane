@@ -714,24 +714,7 @@ def _measure(pilot, key: str) -> dict:
                     expected.append(card.data.digits)
             for label, value in card.data.stats:
                 if not any(label in line and value in line for line in painted.splitlines()):
-                    # Model/node names are unbounded source text. Their exact
-                    # spelling stays in the tooltip; values must remain whole.
-                    tip = str(card.tooltip)
-                    # Short display aliases (for example fable 5.1) retain
-                    # the complete advertised model name on hover.
-                    model_on_hover = False
-                    if key == "a" and card.data.key == "models":
-                        from maxpane_dashboard.widgets.markup_safety import flatten
-                        from maxpane_dashboard.widgets.surf._fmt import short_model
-                        model_on_hover = any(
-                            short_model(row.get("model")) == label and flatten(row.get("model")) in tip
-                            for row in card.source.get("rows", []) if isinstance(row, dict))
-                    if (key == "a" and card.data.key in ("models", "nodes")
-                            and "‹" in painted and "…" in painted
-                            and value in painted and (label in tip or model_on_hover)):
-                        metadata_cut = True
-                    else:
-                        card_clipped.append(f"{label} {value}")
+                    card_clipped.append(f"{label} {value}")
             if card.data.preview:
                 prose = " ".join(painted.replace("│", " ").split())
                 if card.data.preview not in prose:

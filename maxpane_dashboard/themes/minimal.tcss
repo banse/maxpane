@@ -2657,6 +2657,12 @@ SurfSwarmSeatRecord {
     padding: 0 1;
     margin: 1 0 0 0;
 }
+SurfSwarmSeatRecord > .panel-title {
+    margin-bottom: 0;
+}
+SurfSwarmSeatRecord > DataTable {
+    margin-bottom: 1;
+}
 
 /* RECORD's `f` filter editor takes the cards' and RECORD's place while open
  * (2026-10-02); it scrolls inside itself, so it is a floor, not a pin. */

@@ -57,3 +57,17 @@ AGENT minimum to 137 columns × 29 rows. The review's outdated OWNER width expec
 and the analogous compact STATUS test were corrected in tests only; no production fix
 or scoped re-review was needed. The focused files pass all 100 cases; the two baseline
 failures above remain outside this swap.
+
+## 2026-10-19: CR round 0ad057bc
+
+The approved AGENT/SEAT, RESEARCHED/ORACLE, RUNTIME model/effort, SHIPPED footer
+and RECORD spacing changes are specified in `cr-round-0ad057bc-plan.md`.
+The live preview used agent #420 at 149×45. The current pin remains 134×29;
+historical measurements above belong to their earlier card arrangements.
+
+The old composing test still asserted premium/worked-on/connection footer text
+that had already been removed before this batch. Those assertions were updated
+in the touched test. The final review found one Runtime source-state override;
+the fix preserves an observed model effort even when Runtime reports an unknown
+seat. No data readers, production-chain policy or polling behavior changed.
+Scoped re-review approved the fix; no new follow-up remains from this round.

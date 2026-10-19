@@ -3525,6 +3525,12 @@ class SurfScreen(SurfDashboardScreen):
         padding: 0 1;
         margin: 1 0 0 0;
     }
+    SurfScreen SurfSwarmSeatRecord > .panel-title {
+        margin-bottom: 0;
+    }
+    SurfScreen SurfSwarmSeatRecord > DataTable {
+        margin-bottom: 1;
+    }
     SurfScreen SurfRecordFilterEditor {
         width: 100%;
         height: 1fr;

@@ -82,7 +82,7 @@ def word_styles(row, word):
 
 
 @pytest.mark.parametrize("width", [132, 149])
-async def test_custom_models_owner_and_runtime_keep_padded_labels_and_values(width):
+async def test_owner_and_runtime_keep_padded_labels_and_values(width):
     from rich.color import Color
     data = payload()
     data["models"]["rows"] = [dict(model="gpt-5.1-fable", effort="high")]
@@ -94,13 +94,13 @@ async def test_custom_models_owner_and_runtime_keep_padded_labels_and_values(wid
         app = pilot.app
         label = app.query_one('#hero-runtime').rich_style.color.get_truecolor()
         value = Color.parse(app.get_css_variables()["foreground"]).get_truecolor()
-        for key in ("owner", "runtime", "models"):
+        for key in ("owner", "runtime"):
             rows = body_rows(app, key)
             assert all(row.text.startswith(" ") and row.text.endswith(" ") for row in rows), (key, painted(app, key))
-        model_row = body_rows(app, "models")[1]
-        assert all(style.color.get_truecolor() == value and style.bold for style in word_styles(model_row, "fable"))
+        model_row = body_rows(app, "runtime")[2]
+        assert all(style.color.get_truecolor() == value for style in word_styles(model_row, "fable"))
         assert ("…" in model_row.text) == (width == 132)
-        assert all(style.color.get_truecolor() == value and not style.bold for style in word_styles(model_row, "high"))
+        assert "high" in strips(app, "runtime")[6].text
         owner_row = body_rows(app, "owner")[1]
         icon = [segment for segment in owner_row if "⧉" in segment.text]
         assert icon and all("@click" in segment.style.meta for segment in icon)
@@ -172,24 +172,24 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         assert [(card.region.x, card.region.width) for card in cards[:6]] == [(card.region.x, card.region.width) for card in cards[6:]]
         assert cards[6].region.y - cards[0].region.bottom == 1
         for key, words in {
-            "seat": ("AGENT", "working", "ERC-8004 #8127"),
+            "seat": ("AGENT", "SEAT", "OPERATING", "ERC-8004 #8127"),
             "accepted": ("WORK", "96%"),
             "effort": ("HOURS", "1.8M tokens"),
             "rewards": ("IMD", "$120.82", "paid "),
             "rank": ("POSITION", "of 1,024", "↑ 2"),
             "status": ("WORKER", "reviewing", "BUSY", "▰"),
             "owner": ("WALLET", "example.eth ⧉", "paired"),
-            "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "up to date"),
-            "models": ("model A", "high", "model B", "medium", "2 models"),
+            "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "model… +1", "high"),
+            "models": ("RESEARCHED", "ORACLE"),
             "earnings": ("EARNINGS", "TOKENS", "4 new"),
             "collab": ("SEATS", "collaborators"),
-            "nodes": ("SHIPPED", "LAUNCHES", "oracle 120"),
+            "nodes": ("SHIPPED", "LAUNCHES"),
         }.items():
             text = painted(app, key)
             assert all(word in text for word in words), (key, text)
             footer = strips(app, key)[-1].text
             label = footer.strip("╰─╯ ")
-            if key in ("owner", "models", "nodes", "accepted", "effort", "earnings", "collab"):
+            if key in ("owner", "models", "nodes", "runtime", "accepted", "effort", "earnings", "collab"):
                 assert not label, (key, footer)
                 continue
             left = footer.index(label)
@@ -290,8 +290,9 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
         await pilot.pause()
         app = pilot.app
         assert "no attempts" in painted(app, "accepted") and "0%" not in painted(app, "accepted")
-        assert "not advertised" in painted(app, "models")
-        assert "oracle" in painted(app, "nodes") and "collaborators" in painted(app, "collab")
+        assert "model" in painted(app, "runtime") and "none" in painted(app, "runtime")
+        assert "not advertised" in str(app.query_one("#hero-runtime").tooltip)
+        assert "ORACLE" in painted(app, "models") and "collaborators" in painted(app, "collab")
         assert "0 new" in painted(app, "earnings")
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=None)
         await pilot.pause()
@@ -343,8 +344,8 @@ async def test_more_rows_have_visible_count_and_literal_full_tooltips():
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "+3 more" in painted(app, "models") and "+2 more" not in painted(app, "nodes")
-        assert "model-4[/x]" in str(app.query_one("#hero-models").tooltip)
+        assert "+4" in painted(app, "runtime") and "+2 more" not in painted(app, "nodes")
+        assert "model-4[/x]" in str(app.query_one("#hero-runtime").tooltip)
         assert "unknown[/x]" not in str(app.query_one("#hero-nodes").tooltip)
         assert "510 attempts" not in str(app.query_one("#hero-nodes").tooltip)
         assert "#1 x52" in str(app.query_one("#hero-collab").tooltip)
@@ -385,8 +386,9 @@ async def test_live_runtime_qualifier_and_daemon_difference_remain_readable():
         text = painted(pilot.app, 'runtime')
         assert 'claude' in text and '2.1.296' in text
         assert 'daemon' in text and '↑' in text
-        assert 'daemon differs' in text and 'up to date' not in text
-        assert '1 model' in painted(pilot.app, 'models') and '1 models' not in painted(pilot.app, 'models')
+        assert 'high' in strips(pilot.app, 'runtime')[6].text
+        assert 'daemon differs' in str(pilot.app.query_one('#hero-runtime').tooltip)
+        assert 'model' in text and 'opus 4.1' in text
         assert '0.1.0+aca0ff06' in str(pilot.app.query_one('#hero-runtime').tooltip)
         await pilot.resize_terminal(211, 45)
         await pilot.pause()
@@ -396,6 +398,7 @@ async def test_live_runtime_qualifier_and_daemon_difference_remain_readable():
 async def test_narrow_runtime_preserves_version_with_named_compact_label_then_restores():
     data = payload()
     data["runtime"].update(runtime="claude 2.1.278 (Claude Code)", daemon="0.1.2+long-postfix")
+    data["models"]["rows"] = [dict(model="tiny", effort="high")]
     async with Harness(data).run_test(size=(132, 45)) as pilot:
         await pilot.pause()
         row = body_rows(pilot.app, "runtime")[0].text
@@ -439,7 +442,10 @@ async def test_retained_facts_keep_independent_tooltip_clocks_without_source_bad
             text = painted(pilot.app, key)
             assert state not in text, (key, text)
             tooltip = str(pilot.app.query_one(f'#hero-{key}').tooltip)
-            assert hhmm(section['read_ts']) in tooltip and 'stale' not in tooltip
+            source = data['nodes'] if key == 'models' else section
+            assert hhmm(source['read_ts']) in tooltip
+            if key != 'runtime':
+                assert 'stale' not in tooltip
         assert '96%' in painted(pilot.app, 'accepted')
         assert 'example.eth ⧉' in painted(pilot.app, 'owner')
         assert 'up to date' not in painted(pilot.app, 'runtime')
@@ -468,36 +474,37 @@ async def test_malformed_numbers_dates_and_nested_values_clear_old_facts_safely(
         assert '[/x]' in str(pilot.app.query_one('#hero-runtime').tooltip)
 
 
-@pytest.mark.parametrize('state', ['pending', 'unavailable', 'unknown_seat', 'empty'])
+@pytest.mark.parametrize('state', ['pending', 'unavailable', 'unknown_seat', 'stale_unknown_seat', 'empty'])
 async def test_unknown_runtime_check_fixed_wording_fits_owner_terminal(state):
     data = payload()
     data['runtime']['state'] = state
+    data['models']['rows'] = [dict(model='tiny', effort='high')]
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         text = painted(pilot.app, 'runtime')
         assert 'check unknown' not in text
-        if state == 'unknown_seat':
-            assert 'never paired' in text
+        assert 'high' in strips(pilot.app, 'runtime')[6].text
+        assert 'never paired' not in text
         assert '‹' not in text
 
 
-async def test_owner_models_and_nodes_outer_footers_stay_blank_in_every_source_state():
+async def test_owner_researched_shipped_runtime_outer_footers_stay_blank_in_every_source_state():
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         for state in ("ok", "partial", "stale", "unavailable", "pending", "busy",
                       "unknown_seat", "stale_unknown_seat", "empty", "failed", "malformed"):
-            for key in ("owner", "models", "nodes"):
+            for key in ("owner", "models", "nodes", "runtime"):
                 data[key]["state"] = state
             pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
-            for key in ("owner", "models", "nodes"):
+            for key in ("owner", "models", "nodes", "runtime"):
                 footer = strips(pilot.app, key)[-1].text
                 assert set(footer) <= set(" ╰─╯"), (state, key, footer)
-                if state in ("unknown_seat", "stale_unknown_seat"):
+                if state in ("unknown_seat", "stale_unknown_seat") and key == "owner":
                     assert "never paired" in painted(pilot.app, key)
             if state in ("ok", "partial", "stale"):
-                for key, word in (("owner", "paired"), ("models", "2 models"), ("nodes", "oracle 120")):
+                for key, word in (("owner", "paired"), ("models", "ORACLE"), ("nodes", "LAUNCHES"), ("runtime", "high")):
                     assert word in painted(pilot.app, key)
 
 
@@ -507,21 +514,21 @@ def border_color(app, key):
     return frames[0].style.color.get_truecolor()
 
 
-@pytest.mark.parametrize("live,word,color", [("working", "working", "accent"), ("idle", "ONLINE", "accent"),
-                                          ("paused", "ONLINE", "accent"), ("offline", "offline", "red")])
+@pytest.mark.parametrize("live,word,color", [("working", "OPERATING", "accent"), ("idle", "ON", "accent"),
+                                          ("paused", "ON", "accent"), ("offline", "OFFLINE", "red")])
 @pytest.mark.parametrize("api_status", [None, "revoked", "suspended", "", "  ", 123])
 async def test_seat_uses_worker_presence_and_erc8004_registration(live, word, color, api_status):
     from rich.color import Color
     data = payload()
     data["seat"]["state"] = "stale"
     data["seat"]["api_status"] = api_status
-    if live == "offline" and isinstance(api_status, str) and api_status.strip():
-        word = api_status
     data["status"].update(live_state=live, meter_state='unavailable')
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert word in painted(app, "seat")
+        assert strips(app, "seat")[0].text.strip("╭─╮ ⊙") == "AGENT"
+        assert "SEAT" in strips(app, "seat")[2].text
+        assert strips(app, "seat")[6].text.split("└")[1].split("┘")[0].strip("─ ") == word
         assert "ERC-8004 #8127" in painted(app, "seat")
         assert "IDMD" not in painted(app, "seat")
         assert "stale" not in painted(app, "seat")
@@ -681,22 +688,44 @@ async def test_second_row_uses_neutral_frames_except_outdated_runtime():
             assert "0.1.0+long-build-identifier" in str(app.query_one("#hero-runtime").tooltip)
 
 
-async def test_single_model_is_centered_on_middle_row_with_normal_effort():
+async def test_model_moves_to_runtime_third_row_with_effort_in_inner_footer():
     data = payload()
     data["models"]["rows"] = [dict(model="gpt-5.1-fable", effort="high")]
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        rendered = strips(app, "models")
+        rendered = strips(app, "runtime")
         text = [strip.text for strip in rendered]
-        assert "fable 5.1 high" in text[4], text
-        assert "fable" not in text[3] and "high" not in text[5]
-        row = text[4].split("│")[2]
-        assert abs(len(row) - len(row.lstrip()) - (len(row) - len(row.rstrip()))) <= 1
-        model = [segment for segment in rendered[4] if "fable 5.1" in segment.text]
-        effort = [segment for segment in rendered[4] if "high" in segment.text]
-        assert model and all(segment.style.bold for segment in model)
-        assert effort and all(not segment.style.bold for segment in effort)
+        assert "model" in text[5] and "fable 5.1" in text[5], text
+        assert "high" in text[6]
+        assert "devices" not in painted(app, "runtime")
+        assert not text[-1].strip("╰─╯ ")
+        assert "gpt-5.1-fable · high" in str(app.query_one("#hero-runtime").tooltip)
+
+
+async def test_researched_uses_production_oracle_count_independently_of_models():
+    data = payload()
+    data["models"].update(state="unavailable", read_ts=None, rows=None)
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        app = pilot.app
+        for state, oracle, glyphs in (
+            ("ok", 120, ("╶╮ ╶─╮╭─╮", " │ ┌─┘│ │", "╶┴╴╰─╴╰─╯")),
+            ("partial", 0, ("╭─╮", "│ │", "╰─╯")),
+            ("partial", None, ("--",)),
+            ("pending", 999, ("--",)),
+        ):
+            data["nodes"].update(state=state, oracle=oracle)
+            app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+            await pilot.pause()
+            text = painted(app, "models")
+            assert "RESEARCHED" in strips(app, "models")[0].text
+            assert "ORACLE" in strips(app, "models")[2].text
+            assert all(any(glyph in row.text for row in body_rows(app, "models")) for glyph in glyphs), text
+            assert not strips(app, "models")[6].text.split("└")[1].split("┘")[0].strip("─ ")
+            assert not strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ")
+            card = app.query_one("#hero-models")
+            assert card.data.state == state and card.data.read_ts == data["nodes"]["read_ts"]
+            assert "production networks; testnets excluded" in str(card.tooltip)
 
 
 async def test_long_model_keeps_effort_visible_with_ellipsis_and_hover():
@@ -705,21 +734,46 @@ async def test_long_model_keeps_effort_visible_with_ellipsis_and_hover():
     data['models']['rows'] = [dict(model=model, effort='xhigh')]
     async with Harness(data).run_test(size=(132, 45)) as pilot:
         await pilot.pause()
-        text = painted(pilot.app, 'models')
+        text = painted(pilot.app, 'runtime')
         assert 'xhigh' in text and '…' in text and '‹' in text
-        assert model in str(pilot.app.query_one('#hero-models').tooltip)
+        assert model in str(pilot.app.query_one('#hero-runtime').tooltip)
+
+
+@pytest.mark.parametrize("width", [132, 149])
+async def test_runtime_retains_model_count_and_independent_model_source(width):
+    data = payload()
+    data["runtime"].update(state="unavailable")
+    long_model = "claude-experimental-frontier-preview-2026-10-01-long-context"
+    data["models"]["rows"] = [dict(model=long_model, effort="xhigh"), dict(model="second", effort="low")]
+    async with Harness(data).run_test(size=(width, 45)) as pilot:
+        app = pilot.app
+        await pilot.pause()
+        row = body_rows(app, "runtime")[2].text
+        assert "model" in row and "… +1" in row
+        assert "xhigh" in strips(app, "runtime")[6].text
+        assert "‹" in strips(app, "runtime")[0].text
+        tip = str(app.query_one("#hero-runtime").tooltip)
+        assert long_model + " · xhigh" in tip and "second · low" in tip
+        for state, rows, value in (("ok", [], "none"), ("pending", data["models"]["rows"], "--"),
+                                   ("unavailable", None, "--")):
+            data["runtime"]["state"] = "ok"
+            data["models"].update(state=state, rows=rows)
+            app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+            await pilot.pause()
+            assert body_rows(app, "runtime")[2].text.split() == ["model", value]
+            assert strips(app, "runtime")[6].text.split("└")[1].split("┘")[0].strip("─ ") == "--"
+            assert "xhigh" not in str(app.query_one("#hero-runtime").tooltip)
 
 
 @pytest.mark.parametrize("width", [132, 149, 211])
-async def test_runtime_since_uses_connection_time_with_full_hover_context(width):
-    from maxpane_dashboard.widgets.fmt import hhmm
+async def test_runtime_has_no_outer_footer_but_retains_connection_hover(width):
     from maxpane_dashboard.widgets.surf._fmt import mmdd_hhmm
     data = payload()
     async with Harness(data).run_test(size=(width, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         footer = strips(app, "runtime")[-1].text
-        assert "since " in footer and hhmm(data["runtime"]["connected_ts"]) in footer
+        assert not footer.strip("╰─╯ ")
         assert "VERSION" not in footer
         tip = str(app.query_one("#hero-runtime").tooltip)
         assert "last connected " + mmdd_hhmm(data["runtime"]["connected_ts"]) in tip
@@ -727,7 +781,7 @@ async def test_runtime_since_uses_connection_time_with_full_hover_context(width)
         data["runtime"]["connected_ts"] = None
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
-        assert "since --" in strips(app, "runtime")[-1].text
+        assert not strips(app, "runtime")[-1].text.strip("╰─╯ ")
 
 
 async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
@@ -823,20 +877,20 @@ async def test_removed_outer_captions_stay_empty_across_source_states_and_recove
         assert "#527 x84" in str(app.query_one("#hero-collab").tooltip)
 
 
-async def test_shipped_uses_launch_digits_and_production_oracle_footer_without_guessing():
+async def test_shipped_keeps_launch_digits_without_inner_footer():
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        for values, digits, footer in (
+        for values, digits in (
             (dict(oracle=120, launches=340, other=500, known_jobs=840, total_jobs=840),
-             ("╶─╮╷ ╷╭─╮", " ─┤╰─┤│ │", "╶─╯  ╵╰─╯"), "oracle 120"),
+             ("╶─╮╷ ╷╭─╮", " ─┤╰─┤│ │", "╶─╯  ╵╰─╯")),
             (dict(state="partial", oracle=120, launches=None, other=None, known_jobs=17, total_jobs=840),
-             ("--",), "oracle 120"),
+             ("--",)),
             (dict(state="partial", oracle=None, launches=12, known_jobs=840, total_jobs=840),
-             ("╶╮ ╶─╮", " │ ┌─┘", "╶┴╴╰─╴"), "oracle --"),
+             ("╶╮ ╶─╮", " │ ┌─┘", "╶┴╴╰─╴")),
             (dict(state="ok", oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0),
-             ("╭─╮", "│ │", "╰─╯"), "oracle 0"),
+             ("╭─╮", "│ │", "╰─╯")),
         ):
             data["nodes"].update(values)
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
@@ -846,7 +900,7 @@ async def test_shipped_uses_launch_digits_and_production_oracle_footer_without_g
             assert "NODES" not in text and "work by type" not in text and "other" not in text
             for glyph in digits:
                 assert any(glyph in row.text for row in body_rows(app, "nodes")), text
-            assert footer in strips(app, "nodes")[6].text
+            assert not strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ")
             assert not strips(app, "nodes")[-1].text.strip("╰─╯ ")
             assert border_color(app, "nodes") == border_color(app, "accepted")
             tooltip = str(app.query_one("#hero-nodes").tooltip)

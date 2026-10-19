@@ -26,19 +26,20 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         assert len(cards) == 12 and {card.region.height for card in cards} == {9}
         text = _region_text(pilot.app, hero)
         paid = mmdd_hhmm(data['surf_agent_hero']['rewards']['last_paid_ts'])
-        earned_footer = "2 new worked on"
-        for expected in ("AGENT", "75% premium", "of 1,000", "ERC-8004 #8127", paid, "example.eth ⧉", "TOP #527 x84",
-                         "EARNINGS", "7 worked on", earned_footer, "since "):
+        for expected in ("AGENT", "SEAT", "96%", "ERC-8004 #8127", paid, "example.eth ⧉",
+                         "EARNINGS", "4 new", "RESEARCHED", "ORACLE"):
             assert expected in text
         assert 'implementing' in _region_text(pilot.app, hero.query_one('#hero-status'))
-        for key in ('owner', 'models', 'nodes'):
+        for key in ('owner', 'models', 'nodes', 'runtime'):
             assert not str(hero.query_one('#hero-' + key).border_subtitle)
         record = screen.query_one(SurfSwarmSeatRecord)
         assert record.display and record.region.y > hero.region.bottom
         title = record.query_one('.panel-title')
         table = record.query_one(DataTable)
-        assert table.region.y == title.region.bottom + 1
-        gap = screen._compositor.render_strips()[title.region.bottom].crop(record.region.x, record.region.right)
+        assert title.region.y == record.region.y
+        assert table.region.y == title.region.bottom
+        assert table.region.bottom == record.region.bottom - 1
+        gap = screen._compositor.render_strips()[table.region.bottom].crop(record.region.x, record.region.right)
         assert not gap.text.strip()
         await pilot.press("f")
         assert not record.display and screen.query_one(SurfRecordFilterEditor).display
@@ -55,7 +56,7 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         await screen._do_refresh()
         await pilot.pause()
         assert 'testing' not in _region_text(pilot.app, hero.query_one('#hero-status'))
-        assert 'ONLINE' in _region_text(pilot.app, hero.query_one('#hero-seat'))
+        assert 'ON' in _region_text(pilot.app, hero.query_one('#hero-seat'))
         changed = payload()
         changed["seat"].update(token_id=7, state="pending", agent_id=None)
         changed["owner"].update(state="pending")
@@ -65,6 +66,6 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         assert "ERC-8004 #--" in _region_text(pilot.app, hero.query_one("#hero-seat"))
         assert hero.query_one('#hero-seat').data.digits == '7'
         assert "example.eth" not in _region_text(pilot.app, hero.query_one("#hero-owner"))
-        assert "of 1,000" in _region_text(pilot.app, hero)
+        assert "96%" in _region_text(pilot.app, hero)
         await pilot.press("escape")
         assert not hero.display

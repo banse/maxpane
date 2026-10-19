@@ -26,8 +26,8 @@ CATALOGUE = [
         ("activity", "DEV ACTIVITY"), ("market", "IMD MARKET"), ("boards", "NFT BOARDS")],
         [("feed", "Onchain feed"), ("signals", "Signals"), ("activity", "Activity")]),
     view("surf.agent", "AGENT", [
-        ("seat", "SEAT"), ("status", "STATUS"), ("accepted", "ACCEPTED"), ("effort", "EFFORT"),
-        ("rank", "RANK"), ("rewards", "REWARDS"), ("runtime", "RUNTIME"), ("models", "MODELS"),
+        ("seat", "AGENT"), ("status", "STATUS"), ("accepted", "ACCEPTED"), ("effort", "EFFORT"),
+        ("rank", "RANK"), ("rewards", "REWARDS"), ("runtime", "RUNTIME"), ("models", "RESEARCHED"),
         ("owner", "OWNER"), ("nodes", "SHIPPED"), ("collab", "COLLAB"), ("earnings", "EARNINGS")],
         [("records", "RECORDS table"), ("filters", "Record filters"), ("popup", "Record popup")]),
     view("surf-nft", "NFT EXPLORER", [
