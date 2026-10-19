@@ -7,7 +7,7 @@ let pending;
 try { pending = JSON.parse(sessionStorage.getItem('maxpane-cr-pending') || 'null'); } catch { pending = null; }
 const element = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
 const values = () => ({view: $('view').value, kind: form.elements.kind.value, area: $('area').value, text: $('text').value});
-const dirty = () => !!state && JSON.stringify(values()) !== baseline;
+const dirty = () => !!state && (editing || !!$('text').value.trim()) && JSON.stringify(values()) !== baseline;
 const tell = (message, error = false) => { const node = $(error ? 'error' : 'notice'); node.textContent = message; node.hidden = !message; };
 const clearMessages = () => { tell(''); tell('', true); };
 const connectivity = message => { $('connection-error').textContent = message; $('connection-error').hidden = !message; };
@@ -43,14 +43,14 @@ function updateControls() {
   for (const input of form.elements) input.disabled = busy || !state || waiting;
   $('new-note').disabled = busy || !state || waiting;
   $('save').disabled = busy || !state || waiting || !changed || !$('text').value.trim();
-  $('save').textContent = editing ? 'Save changes' : 'Save note';
+  $('save').textContent = editing ? 'Save changes' : 'Save & add another';
   $('new-note').textContent = editing ? 'New note' : 'Clear';
   $('editor-title').textContent = editing ? 'Edit note' : 'New note';
   $('edit-state').textContent = changed ? 'Unsaved changes' : editing ? 'Saved note' : 'Not saved';
   $('send').disabled = busy || !state?.session.connected || !!state?.active_batch || changed || (!waiting && !state?.drafts.length);
   $('send').replaceChildren(document.createTextNode(waiting ? 'Retry Codex Queue' : 'Codex Queue'), element('span', '↗'));
   $('send').lastChild.setAttribute('aria-hidden', 'true');
-  $('send-help').textContent = !state ? 'Connecting to this coding conversation…' : !state.session.connected ? 'No coding conversation connected. Start this workspace from your current Codex session to enable the queue.' : state.active_batch ? 'A round is in progress. Save notes here for the next round.' : changed ? 'Save or clear your unsaved changes before sending this round.' : waiting ? 'The last request could not be confirmed. Retry to check and send the same round safely.' : 'Queues the saved round in your current coding conversation.';
+  $('send-help').textContent = !state ? 'Connecting to this coding conversation…' : !state.session.connected ? 'No coding conversation connected. Start this workspace from your current Codex session to enable the queue.' : state.active_batch ? 'A round is in progress. Save notes here for the next round.' : changed ? 'Save this note to add it to the round, then send all notes together.' : waiting ? 'The last request could not be confirmed. Retry to check and send the same round safely.' : `Queues ${state.drafts.length} saved ${state.drafts.length === 1 ? 'note' : 'notes'} from all views together.`;
   for (const button of document.querySelectorAll('#drafts button, #views button')) button.disabled = busy || waiting;
   for (const button of document.querySelectorAll('#batch button')) button.disabled = busy || !state?.session.connected;
 }
@@ -63,7 +63,7 @@ function renderViews() {
     const button = element('button', undefined, 'view-button'); button.type = 'button';
     button.append(element('span', view.label), element('small', String(state.drafts.filter(note => note.view === view.id).length)));
     if (view.id === $('view').value) button.setAttribute('aria-current', 'page');
-    button.addEventListener('click', () => { if (busy || pending || !mayDiscard()) return; showTab('active'); resetEditor(null, {view: view.id, kind: 'card'}); $('text').focus(); });
+    button.addEventListener('click', () => { if (busy || pending) return; showTab('active'); $('view').value = view.id; $('view').dispatchEvent(new Event('change')); $('text').focus(); });
     return button;
   }));
 }
@@ -165,7 +165,7 @@ async function removeNote(note) {
 form.addEventListener('submit', event => {
   event.preventDefault();
   if (!$('text').value.trim() || pending) return;
-  mutate(async () => { const note = values(); await api(editing ? `/api/notes/${encodeURIComponent(editing.id)}` : '/api/notes', editing ? 'PATCH' : 'POST', editing ? {...note, version: editing.version} : note); resetEditor(null, note); tell('Note saved.'); });
+  mutate(async () => { const note = values(); await api(editing ? `/api/notes/${encodeURIComponent(editing.id)}` : '/api/notes', editing ? 'PATCH' : 'POST', editing ? {...note, version: editing.version} : note); resetEditor(null, note); tell('Note saved to the round. Add another, or send all saved notes with Codex Queue.'); });
 });
 form.addEventListener('input', updateControls);
 $('view').addEventListener('change', () => { areas(); renderViews(); updateControls(); });
