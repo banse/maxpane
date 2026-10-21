@@ -30,7 +30,7 @@ class HubHarness(App):
 
 
 @pytest.mark.parametrize('themed', [False, True])
-async def test_boardroom_heading_and_navigation_gap_preserve_content_geometry(monkeypatch, themed):
+async def test_boardroom_heading_contains_navigation_and_preserves_content_geometry(monkeypatch, themed):
     if not themed:
         monkeypatch.setattr(HubHarness, 'CSS_PATH', [])
     app = HubHarness(hub_payload())
@@ -46,13 +46,18 @@ async def test_boardroom_heading_and_navigation_gap_preserve_content_geometry(mo
             assert {card.region.height for card in cards} == {card_height}
             assert (terminal.region.y, terminal.region.height) == (terminal_y, terminal_height)
             assert heading.region.y == 0
-            hint = app.hub.query_one('#surfboard-navigation')
-            assert hint.region.y == terminal_y - 1
-            assert hint.region.x == terminal.region.x
-            assert hint.region.width == terminal.region.width
+            assert not app.hub.query('#surfboard-navigation')
             rows = app.hub._compositor.render_strips()
-            assert 'IMD BOARDROOM' in rows[0].text
-            assert '↑ ↓ ← → arrow keys to navigate cards · ↵ to open selected dashboard' in rows[terminal_y - 1].text
+            heading_text = rows[0].text
+            left = '↑ ↓ ← → arrow keys to navigate cards'
+            title = 'IMD BOARDROOM'
+            right = '↵ to open selected dashboard'
+            assert heading_text.index(left) < heading_text.index(title) < heading_text.index(right)
+            left_gap = heading_text.index(title) - (heading_text.index(left) + len(left))
+            right_gap = heading_text.index(right) - (heading_text.index(title) + len(title))
+            assert abs(left_gap - right_gap) <= 1
+            assert abs(heading_text.index(title) - (width - len(title)) / 2) <= .5
+            assert left not in rows[terminal_y - 1].text
             assert all('WORKFLOWS [g]' not in row.text for row in rows)
             assert sum('IMD BOARDROOM' in row.text for row in rows) == 1
 
@@ -667,8 +672,7 @@ async def test_boardroom_title_is_centered_muted_green_after_refresh_and_resize(
             await pilot.pause()
             heading = app.hub.query_one('#surfboard-title')
             row = app.hub._compositor.render_strips()[heading.region.y].crop(heading.region.x, heading.region.right)
-            text = row.text.split('WORKFLOWS [g]', 1)[0].strip()
-            assert text.startswith('IMD BOARDROOM')
+            text = row.text[row.text.index('IMD BOARDROOM'):].split('↵', 1)[0].strip()
             assert ('‹ widen' in text) == app.hub.query_one('#surfboard-viewport').show_horizontal_scrollbar
             assert abs(row.text.index(text) - (heading.region.width - len(text)) / 2) <= .5
             title = next(segment for segment in row if 'IMD BOARDROOM' in segment.text)

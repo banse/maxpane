@@ -17,13 +17,13 @@ it. This file is the method; the constants are the record.
 | app-wide | 143 | `__main__.FULL_LAYOUT_COLUMNS` |
 | surf dashboard body | 143 | `screens/surf.SURF_FULL_LAYOUT_COLUMNS` |
 | surf `l` launchpad (six rack heroes, 2026-10-12) | 138 cols · 33 rows (native COINS table binds width; nine-row hero adds two rows; live preview 149×45) | `screens/surf.SURF_LAUNCHPAD_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `p` pool4 (key `e`, PROTOCOL; padded rack heroes, 2026-10-15) | 138 cols · 47 rows (unavailable CHECKS row binds width; compact labels preserve values; native body remains 99; live preview 149×45) | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `p` pool4 (key `e`, PROTOCOL; discovery segment removed, 2026-10-16) | 138 cols · 44 rows (unavailable CHECKS row binds width; compact labels preserve values; native body remains 99; live preview 149×45) | `screens/surf.SURF_POOL4_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `4` pool4 market (hint `4 pl4`; six rack heroes, 2026-10-12) | 148 cols · 38 rows (partial-holder row binds width; native STAKERS remains 119; live preview 149×45) | `screens/surf.SURF_POOL4_USER_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `s` swarm (rack heroes, 2026-10-15; LAUNCHES beside SHIPPED RECENTLY, full-width WORKFLOWS and SITES; `x` opens the newest launch) | 141 cols · 38 rows (LATEST WORKFLOW outer title binds width; nine-row heroes and nine-line body top floor) | `screens/surf.SURF_SWARM_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | surf `a` agent (twelve rack cards over RECORD, STATUS/ACCEPTED swapped, 2026-10-16) | 134 cols · 29 rows; STATUS activity subtitle/counts in the second column bind width; RECORD clears at 167; live preview 149×45 | `screens/surf.SURF_AGENT_FULL_LAYOUT_{COLUMNS,ROWS}`, `RECORD_NEVER_CLEARS_BELOW` |
 | surf `b` board (neutral rack frames with green primary values; capped LEADERBOARD beside wider FLEET, 2026-10-15) | 142 cols · 43 rows; launch contributors table binds width (recorded seats clears at 140); grouped FLEET metadata/paused detail bind height after heartbeat removal; production render at 149×45 | `screens/surf.SURF_BOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `w` work (six rack heroes, workflow/job/step tree and selected details, 2026-10-16) | 138 cols · 30 rows; BLOCKED inner caption binds width, child panel floors bind height; long objectives may still mark; live preview at 149×45 | `screens/surf.SURF_WORK_FULL_LAYOUT_{COLUMNS,ROWS}` |
-| surf `Ctrl+o` oracles (six rack heroes, 66/34 request/detail split, 2026-10-16) | 143 cols · 42 rows; REQUESTS inner caption binds width, 28-row child floors bind height; long questions may still mark; live API preview at 149×45 | `screens/surf.SURF_ORACLES_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `w` work (six rack heroes, WORKFLOWS/JOBS stack and selected details, 2026-10-21) | 138 cols · 30 rows; BLOCKED inner caption binds width, child panel floors bind height; long objectives may still mark; live preview at 149×45 | `screens/surf.SURF_WORK_FULL_LAYOUT_{COLUMNS,ROWS}` |
+| surf `Ctrl+o` oracles (six rack heroes, 60/40 request/detail split, 2026-10-21) | 143 cols · 42 rows; REQUESTS inner caption binds width, 28-row child floors bind height; long questions may still mark; live API preview at 149×45 | `screens/surf.SURF_ORACLES_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | dashboard 9 `surfboard` (four-row equipment rack with four AGENT seats, re-swept 2026-10-17) | 143 cols · 37 rows; six equal columns without idle gutter; FLEET is top-right and NFTS below ONCHAIN FEED; text rows reserve one blank at both edges; empty seat inputs keep the five-line inset; three-line gaps below NFTS/TOKENS contain regular muted captions on the middle line; terminal fills the center span; live preview at 149×45 | `screens/surfboard.SURFBOARD_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | NFT Explorer, nested from BOARDROOM `n` (2026-10-19) | 146 cols · 31 rows; rightmost hero frame binds width; controls reuse the top blank row and remove two body rows; selected details scroll internally; live preview at 149×45 | `screens/surf_nft.SURF_NFT_FULL_LAYOUT_{COLUMNS,ROWS}` |
 | curator (all bodies) | 138 | `screens/curator.CURATOR_FULL_LAYOUT_COLUMNS` |
@@ -63,7 +63,7 @@ measure visible frames and column extents directly. `‹ taller` remains.
 143.** FWA set the first three and the last; surf the two in between. It tracks
 *that* number only — a dashboard measuring under 143 does not append to it,
 which is why nothing has been added since 2026-08-12 despite five new bodies
-since. surf's `p` pool4 body holds the **row** record at 47, the largest pinned
+since. surf's `p` pool4 body shares the **row** record at 44 with selected-token detail, the largest pinned
 here, and unlike the column pins it is a **worst case over payloads** rather
 than a constant, so it is re-swept when a panel's line count changes, not
 merely re-checked. surf's `4` market body is the newest, and **it was the

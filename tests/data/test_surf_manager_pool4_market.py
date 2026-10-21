@@ -193,6 +193,11 @@ class MarketPool4Client(FakePool4Client):
     three would let the manager sweep the wrong contract and still pass.
     """
 
+    async def fetch_block_timestamps(self, from_block, to_block, *, network):
+        if 'fetch_block_timestamps' in self._returns:
+            return self._answer('fetch_block_timestamps', network)
+        return DRIPPED['from_block_timestamp'], DRIPPED['to_block_timestamp']
+
     def __init__(self, **overrides) -> None:
         self.reference_calls: list[tuple[str, str]] = []
         self.log_reads: list[tuple[str, int, int]] = []
@@ -491,6 +496,16 @@ async def test_the_usd_price_is_none_rather_than_zero_without_an_eth_price(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize('tick', [0, 100, 201, None])
+def test_backstop_eth_is_the_remaining_position_at_current_price(tmp_path, tick):
+    manager = _market_manager(tmp_path)
+    slot = dict(network='MAINNET', current_tick=tick, backstop_tick_lower=0,
+                backstop_tick_upper=200, backstop_liquidity=10**18)
+    data = manager._pool4_keys(slot, None, POOL4_NOW)
+    expected = None if tick is None else max(0., 1.0001 ** (-tick / 2) - 1.0001 ** (-100))
+    assert data['pool4_backstop_eth'] == (None if expected is None else pytest.approx(expected))
+
+
 async def test_a_deployed_band_publishes_its_tick_liquidity_and_eth(
     tmp_path,
 ) -> None:
@@ -688,8 +703,7 @@ async def test_a_quiet_window_is_a_real_zero_once_a_block_time_is_known(
 
     The return is lumpy by construction — trims only happen when sells exceed
     headroom — so a quiet stretch is the *expected* reading, not a failure.
-    The span it is annualised over comes from the previous sweep's measurement,
-    because a window with no events cannot measure its own block time.
+    Its boundary headers supply the duration even when no events arrive.
     """
     client = MarketPool4Client()
     manager = _market_manager(tmp_path, pool4_client=client)
@@ -731,17 +745,38 @@ def test_a_window_too_quiet_to_measure_its_own_block_time_reports_no_span() -> N
 def test_the_block_time_is_measured_rather_than_assumed() -> None:
     """Against the capture's own header-read span.
 
-    ``window_seconds`` in the fixture came from two block **headers**; this
-    comes from the logs' own timestamps. Two independent routes to the same
-    number is the whole claim.
+    The fixture carries the exact boundary block-header timestamps. Event
+    timestamps never stand in for either boundary.
     """
     window = SurfManager._pool4_drip_window(
-        DRIPPED_LOGS, DRIPPED["from_block"], DRIPPED["to_block"], None
+        DRIPPED_LOGS, DRIPPED["from_block"], DRIPPED["to_block"],
+        (DRIPPED['from_block_timestamp'], DRIPPED['to_block_timestamp'])
     )
     assert window["window_seconds"] == pytest.approx(
         DRIPPED_WINDOW_SECONDS, rel=0.001
     )
     assert window["dripped_imd"] == pytest.approx(DRIPPED_IMD)
+
+
+@pytest.mark.parametrize('logs', [[], DRIPPED_LOGS[:1]])
+async def test_quiet_or_clustered_drips_use_the_actual_boundary_duration(tmp_path, logs):
+    client = MarketPool4Client(fetch_block_timestamps=(100, 604913))
+    client._returns['fetch_flow_logs_' + str(DRIPPER_ADDR).lower()] = logs
+    payload = await _sweep_pool4(_market_manager(tmp_path, pool4_client=client))
+    delivered = sum(int(log['data'][2:66], 16) for log in logs) / 1e18
+    assert payload['pool4_trailing_return_pct'] == pytest.approx(
+        delivered / payload['pool4_vault_assets'] * 31536000 / 604813 * 100)
+
+
+async def test_missing_boundary_read_does_not_reuse_an_old_duration(tmp_path):
+    client = MarketPool4Client()
+    manager = _market_manager(tmp_path, pool4_client=client)
+    await _sweep_pool4(manager)
+    client._returns['fetch_block_timestamps'] = None
+    manager._clock_double.advance(TIER_TTL_SECONDS[TIER_POOL4] + 1)
+    payload = await _sweep_pool4(manager)
+    assert payload['pool4_trailing_return_pct'] is None
+    assert payload['pool4_vault_assets'] is not None
 
 
 def test_a_delivery_topic_that_is_not_the_dripped_one_is_not_counted() -> None:

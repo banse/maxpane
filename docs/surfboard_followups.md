@@ -15,9 +15,8 @@ hero visibility, and the STAKERS 40-character address expectation. No full suite
 was run. Three implementation mutations and the reviewer's unread/empty mutation
 were rejected and restored. Review: Approved.
 
-Minor follow-up: the terminal-layout skill's POOL4 table and row-record paragraph
-still quote 47 rows. Update them to the current 44-row measurement when that
-skill is next edited; the source pin and Surf rules already record the new size.
+Resolved 2026-10-21: the terminal-layout skill now quotes the existing 44-row
+measurement in both its POOL4 table and row-record paragraph.
 
 ## Selected-token dashboard — 2026-10-15
 
@@ -657,3 +656,34 @@ older-open-job retention issue; it was fixed in one wave and scoped re-review ap
 956 affected cases, 128 guards and 12 doc pins passed across the scoped runs/reruns.
 The final Work live read took 34.92s with 493 normalized jobs and 197 workflows.
 No remaining review findings.
+
+## CR 89249bf6 — 2026-10-21
+
+Nine requests implemented in four groups: WORK/ORACLES navigation, BOARDROOM
+header, token ranking/loading presentation, and POOL4 data verification. The
+24h ranking covers every selected token age, as clarified by the owner.
+The POOL4 audit corrected APR duration, remaining backstop ETH, unsupported BOND
+market status and the unrelated retained launchpad quote in POOL4 headers.
+See `cr-round-89249bf6-plan.md` and `cr-round-89249bf6-pool4-audit.md`.
+
+Separate existing defect: nine `tests/screens/test_portfolio.py` cases fail
+because PortfolioHero still calls the removed `render_box` helper. All nine
+reproduce with the baseline `d28d4fff` Portfolio module; this round changes only
+PortfolioMovers inheritance flags to preserve its prior marker/legend behavior.
+Repair PortfolioHero with the existing hero rendering pattern in its own change.
+
+The POOL4 affected/composing run passed 762 cases. Five existing failures also
+reproduce with the baseline Surf screen: two old launchpad hero expectations,
+the old exact key set, an old body/hero assertion, and the staker clipping
+fixture's obsolete width. Update these independently when their behaviors are
+touched; the new data and header regressions pass.
+
+Audit boundaries for future hardening: production POOL4 getter batches are not
+explicitly pinned to one block; the eight-week staker completeness heuristic
+should compare raw folded balances against same-block vault totalSupply before
+claiming complete coverage. The captured current fold did reconcile exactly.
+
+The one review/fix wave corrected blocked-workflow filtering and repeated
+cross-tree mouse selection. Scoped re-review approved both, with regression
+and mutation proof. Final WORK/rack checks: 144 passed; fast guards: 128 passed;
+documentation pins: 12 passed. No unresolved findings in this CR round.

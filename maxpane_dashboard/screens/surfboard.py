@@ -48,7 +48,7 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: shows SWARM's 24H history; build/review counts stay under BUILT BY SWARM.
 #: FLEET shows STATS: tokens/jobs/capacity with an acceptance-rate footer.
 #: Rechecked 2026-10-21 after live preview: 143×37 is unchanged. The title occupies
-#: its original top row; a centered arrow/Enter navigation hint fills the existing gap.
+#: its original top row; navigation now flanks the title with symmetric spacing.
 #: Normal, stress, unavailable and wide payloads fit at 143×37 and 149×45.
 #: Resize checks preserve card/terminal alignment, captions and visible footers
 #: in both the screen's default CSS and the production stylesheet.
@@ -85,7 +85,6 @@ class SurfboardScreen(SurfDashboardScreen):
     DEFAULT_CSS = """
     SurfboardScreen { background: $background; color: $text; }
     SurfboardScreen #surfboard-title { height: 1; color: $text-muted; content-align: center middle; }
-    SurfboardScreen #surfboard-navigation { dock: top; layer: heading; height: 1; background: $background; color: $text-muted; content-align: center middle; }
     SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1 0; overflow: auto auto;
         scrollbar-gutter: auto; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
     """
@@ -201,14 +200,18 @@ class SurfboardScreen(SurfDashboardScreen):
         title = Text.assemble(
             ("IMD BOARDROOM", f"dim {self.app.get_css_variables()['foreground']}"),
             (" · " + " · ".join(hints) if hints else "") + self.loading_suffix)
-        self.query_one("#surfboard-title", Static).update(title)
-        widget = self.query_one("#surfboard-navigation", Static)
-        rack = self.query_one(SurfboardRack)
-        terminal = self.query_one(SurfboardTerminal)
-        widget.styles.width = terminal.region.width
-        widget.styles.offset = (terminal.region.x - rack.content_region.x,
-                                terminal.region.y - rack.content_region.y - 1)
-        widget.update(Text("↑ ↓ ← → arrow keys to navigate cards · ↵ to open selected dashboard"))
+        heading = self.query_one("#surfboard-title", Static)
+        width = heading.content_size.width
+        left, right = "↑ ↓ ← → arrow keys to navigate cards", "↵ to open selected dashboard"
+        # Equal side widths keep the title centered, with the same gap on each side.
+        side = max(len(left), len(right))
+        if 2 * side + title.cell_len + 4 > width:
+            left, right = "↑ ↓ ← → navigate", "↵ open dashboard"
+            side = max(len(left), len(right))
+        if 2 * side + title.cell_len + 4 <= width:
+            gap = max(1, (width - 2 * side - title.cell_len) // 4)
+            title = Text(left.rjust(side) + " " * gap) + title + Text(" " * gap + right.ljust(side))
+        heading.update(title)
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
         if event.seat_slot is not None:

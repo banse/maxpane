@@ -8,7 +8,7 @@ from maxpane_dashboard.screens.swarm_tokens import (
     SwarmTokensScreen, SWARM_TOKENS_FULL_LAYOUT_COLUMNS, SWARM_TOKENS_FULL_LAYOUT_ROWS,
 )
 from maxpane_dashboard.widgets.swarm_tokens import (
-    TokensTable, TokensHero, NewlyLaunched, BestPlays, TokenActivity,
+    TokensTable, TokensHero, NewlyLaunched, BestPlays, TopTraded,
 )
 
 
@@ -50,7 +50,7 @@ async def test_measured_layout_boundary_matches_composited_content(axis,delta):
             assert len({card.region.y for card in cards})==1
             assert cards[-1].region.right <= viewport.scrollable_content_region.right
             assert text.splitlines()[cards[0].region.y].count('╮')==6
-            for label in ('NEWLY LAUNCHED','BEST PLAYS','ACTIVITY','PAIRED LP',
+            for label in ('NEWLY LAUNCHED','BEST PLAYS','TOP TRADED','PAIRED LP',
                           'PRICE 24H','VERDICT'):
                 assert label in text
             assert app.screen.query_one(TokensTable).region.bottom <= viewport.region.bottom
@@ -73,7 +73,7 @@ async def test_mock_overview_renders_all_panels_and_every_token_without_network(
     async with app.run_test(size=(149,45)) as pilot:
         await pilot.pause()
         text = painted(app)
-        for word in ('MOCK DATA','SWARM TOKENS','NEWLY LAUNCHED','BEST PLAYS','ACTIVITY','PAIRED LP'):
+        for word in ('MOCK DATA','SWARM TOKENS','NEWLY LAUNCHED','BEST PLAYS','TOP TRADED','PAIRED LP'):
             assert word in text
         assert app.screen.query_one(TokensTable).query_one(DataTable).row_count == 24
         assert '* one-sided' in text and 'two-sided' in text
@@ -87,7 +87,7 @@ async def test_native_layout_starts_with_heroes_and_standard_panels_have_no_fram
         hero=app.screen.query_one(TokensHero)
         assert hero.region.y <= 1
         assert not app.screen.query('#st-title, #st-selection')
-        activity = app.screen.query_one(TokenActivity)
+        activity = app.screen.query_one(TopTraded)
         newly = app.screen.query_one(NewlyLaunched)
         plays = app.screen.query_one(BestPlays)
         table = app.screen.query_one(TokensTable)
@@ -96,11 +96,11 @@ async def test_native_layout_starts_with_heroes_and_standard_panels_have_no_fram
         assert table.region.y == activity.region.bottom+1
         lines=painted(app).splitlines()
         heading=next(i for i,line in enumerate(lines) if 'NEWLY LAUNCHED' in line)
-        assert lines[heading].index('ACTIVITY') < lines[heading].index('NEWLY LAUNCHED') < lines[heading].index('BEST PLAYS')
+        assert lines[heading].index('TOP TRADED') < lines[heading].index('NEWLY LAUNCHED') < lines[heading].index('BEST PLAYS')
         assert next(i for i,line in enumerate(lines) if 'ALL TOKENS' in line) > heading
         assert 'Enter for mock details' not in painted(app)
         assert not any(w.region.width for w in app.screen.query('Input, Select'))
-        for kind in (TokensTable,NewlyLaunched,BestPlays,TokenActivity):
+        for kind in (TokensTable,NewlyLaunched,BestPlays,TopTraded):
             panel=app.screen.query_one(kind)
             assert panel.styles.border_top[0] in ('','none')
             assert panel.styles.border_left[0] in ('','none')

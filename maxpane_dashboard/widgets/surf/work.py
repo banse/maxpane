@@ -6,7 +6,7 @@ from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Grid, Horizontal, VerticalScroll
+from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Input, Static, Tree
 
 from maxpane_dashboard.widgets.address import address_prose, job_text
@@ -91,6 +91,13 @@ class SurfWorkHero(Grid):
 class _WorkTree(ClickSelectTree):
     BINDINGS = [Binding("left", "fold", show=False), Binding("right", "unfold", show=False)]
 
+    async def _on_click(self, event):
+        line = event.style.meta.get("line")
+        unchanged = isinstance(line, int) and line == self.cursor_line
+        await super()._on_click(event)
+        if unchanged and self.cursor_node and not (event.style.meta.get("toggle") or event.style.meta.get("@click")):
+            self.post_message(self.NodeHighlighted(self.cursor_node))
+
     def action_fold(self):
         if self.cursor_node and self.cursor_node.is_expanded:
             self.cursor_node.collapse()
@@ -126,11 +133,20 @@ class _WorkTree(ClickSelectTree):
 
 
 class _WorkTreePanel(PanelBase):
-    TITLE = "WORK TREE"
+    TITLE = "WORKFLOWS"
     def compose_body(self):
         yield Static(Text(""), id="work-coverage")
         yield Input(placeholder="find project, workflow, job or seat", id="work-find")
         tree = _WorkTree("work", id="work-tree")
+        tree.show_root = False
+        tree.auto_expand = False
+        yield tree
+
+
+class _WorkJobsPanel(PanelBase):
+    TITLE = "JOBS"
+    def compose_body(self):
+        tree = _WorkTree("jobs", id="work-jobs-tree")
         tree.show_root = False
         tree.auto_expand = False
         yield tree
@@ -147,13 +163,15 @@ class SurfWorkBody(Horizontal):
     """Local tree navigation and detail selection; consumes one projected snapshot."""
     DEFAULT_CSS = """
     SurfWorkBody { width: 1fr; height: 1fr; min-height: 16; }
-    SurfWorkBody > _WorkTreePanel { width: 1fr; height: 1fr; min-height: 16; margin-right: 1; }
+    SurfWorkBody > #work-navigation { width: 1fr; height: 1fr; min-height: 16; margin-right: 1; }
+    SurfWorkBody #work-tree-panel { height: 1fr; min-height: 6; margin-bottom: 1; }
+    SurfWorkBody #work-jobs-panel { height: 2fr; min-height: 8; }
     SurfWorkBody > _WorkDetailPanel { width: 1fr; height: 1fr; min-height: 16; }
     SurfWorkBody PanelBase { border: none; background: $background; padding: 0 1; }
     SurfWorkBody .panel-title { height: 1; text-wrap: nowrap; }
     SurfWorkBody #work-coverage { height: 1; color: $text-muted; text-wrap: nowrap; }
     SurfWorkBody #work-find { display: none; height: 3; }
-    SurfWorkBody #work-tree { height: 1fr; min-height: 8; padding: 0; background: $background;
+    SurfWorkBody _WorkTree { height: 1fr; min-height: 1; padding: 0; background: $background;
         overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
     SurfWorkBody #work-detail-scroll { height: 1fr; min-height: 8; overflow-x: hidden;
         overflow-y: auto; scrollbar-gutter: stable; }
@@ -172,7 +190,9 @@ class SurfWorkBody(Horizontal):
         self._tree_search = False
 
     def compose(self):
-        yield _WorkTreePanel(id="work-tree-panel")
+        with Vertical(id="work-navigation"):
+            yield _WorkTreePanel(id="work-tree-panel")
+            yield _WorkJobsPanel(id="work-jobs-panel")
         yield _WorkDetailPanel(id="work-detail-panel")
 
     def update_data(self, *, surf_work=None, **_kwargs):
@@ -180,7 +200,8 @@ class SurfWorkBody(Horizontal):
         self._rebuild()
 
     def focus_tree(self):
-        self.query_one("#work-tree", Tree).focus()
+        selected = self._work_nodes.get(self._selected)
+        (selected.tree if selected else self.query_one("#work-tree", Tree)).focus()
 
     def focus_find(self):
         field = self.query_one("#work-find", Input)
@@ -238,22 +259,20 @@ class SurfWorkBody(Horizontal):
         return not self._search or workflow_match or self._search in haystack.casefold()
 
     def _rebuild(self):
-        tree = self.query_one("#work-tree", Tree)
+        tree, jobs_tree = self.query_one("#work-tree", Tree), self.query_one("#work-jobs-tree", Tree)
         if not self._tree_search:
             self._expansion.update((key, node.is_expanded) for key, node in self._work_nodes.items() if node.allow_expand)
         self._tree_search = bool(self._search)
         selected = self._selected
         tree.clear()
+        jobs_tree.clear()
         self._work_nodes, self._entries = {}, {}
         jobs = self._payload.get("jobs")
         workflows = self._payload.get("workflows")
         projects = self._payload.get("projects") or []
         by_id = {j["id"]: j for j in jobs or []}
         flow_by_id = {w["id"]: w for w in workflows or []}
-        linked = {w.get(key) for w in workflows or [] for key in ("contracts_job_id", "frontend_job_id") if w.get(key)}
         project_flows = {wid for project in projects for wid in project.get("workflow_ids", [])}
-        project_jobs = {jid for project in projects for jid in _project_job_ids(project, workflows)}
-        added_jobs = set()
 
         def add(parent, key, kind, row, label, children=False, suffix="", expanded=True):
             label, suffix = flatten(label), flatten(suffix)
@@ -266,109 +285,86 @@ class SurfWorkBody(Horizontal):
             self._work_nodes[key], self._entries[key] = node, entry
             return node
 
-        def add_job(parent, job, label=None):
-            if job["id"] in added_jobs:
-                return
-            added_jobs.add(job["id"])
-            key = "job:" + job["id"]
-            nodes = job.get("nodes") or []
-            node = add(parent, key, "job", job,
-                       label or job.get('objective') or job['id'], bool(nodes), suffix=job.get('state') or 'unknown',
-                       expanded=job.get("state") == "executing")
-            for step in nodes:
-                seat = f"#{step['seat']}" if step.get("seat") is not None else "seat --"
-                add(node, f"step:{job['id']}:{step['key']}", "step", step,
-                    step['key'], suffix=f"{seat} {step.get('role') or '--'} {step.get('state') or 'unknown'}")
-
         def matches_row(row):
             return self._search in flatten(f"{row['id']} {row.get('objective') or ''}").casefold()
 
-        def visible_job(jid, parent_match=False, blocked=False):
-            if jid in by_id:
-                return self._matches(by_id[jid], workflow_match=parent_match, workflow_blocked=blocked)
-            return (parent_match or self._search in jid.casefold()) and (self._filter == "open" and not blocked or self._filter == "blocked" and blocked)
-
-        def add_link(parent, jid, label=None):
-            if jid in by_id:
-                add_job(parent, by_id[jid], label)
-            elif jid not in added_jobs:
-                added_jobs.add(jid)
-                add(parent, "missing:" + jid, "missing", {"id": jid}, (label or jid) + " · job not loaded")
+        context_matches = {jid for project in projects if matches_row(project)
+                           for jid in _project_job_ids(project, workflows)}
+        context_matches.update(workflow[key] for workflow in workflows or [] if matches_row(workflow)
+                               for key in ("contracts_job_id", "frontend_job_id") if workflow.get(key))
+        visible_jobs = {job["id"] for job in jobs or []
+                        if self._matches(job, workflow_match=job["id"] in context_matches)}
+        missing_jobs = set()
 
         def flow_view(workflow, parent_match=False):
-            match = parent_match or matches_row(workflow)
+            linked = {workflow[key] for key in ("contracts_job_id", "frontend_job_id") if workflow.get(key)}
             blocked = workflow.get("status") == "blocked"
-            ids = [(label, workflow.get(key)) for label, key in (("Contracts", "contracts_job_id"), ("Frontend", "frontend_job_id"))]
-            visible = [(label, jid) for label, jid in ids if jid and visible_job(jid, match, blocked)]
-            return visible, match and (self._filter == "open" and not blocked or self._filter == "blocked" and blocked)
+            if blocked and self._filter != "blocked":
+                return False
+            state_match = self._filter == "open" and not blocked or self._filter == "blocked" and blocked
+            show = bool(linked & visible_jobs) or (parent_match or matches_row(workflow)) and state_match
+            if show and state_match:
+                missing_jobs.update(linked - by_id.keys())
+            return show
 
-        def add_flow(parent, workflow, visible):
+        def add_flow(parent, workflow):
             key = "workflow:" + workflow["id"]
-            if key in self._entries:
-                return
-            active = any(by_id.get(jid, {}).get("state") == "executing" for _, jid in visible)
-            branch = add(parent, key, "workflow", workflow, workflow.get("objective") or workflow["id"],
-                         bool(visible), suffix=workflow.get("status") or "unknown",
-                         expanded=active or workflow.get("status") not in _TERMINAL | {"blocked"})
-            for label, jid in visible:
-                add_link(branch, jid, label)
+            if key not in self._entries:
+                add(parent, key, "workflow", workflow, workflow.get("objective") or workflow["id"],
+                    suffix=workflow.get("status") or "unknown")
 
         for project in sorted(projects, key=lambda p: not p.get("active_job_ids")):
             match = matches_row(project)
-            flows = [(flow_by_id[wid], flow_view(flow_by_id[wid], match))
-                     for wid in project.get("workflow_ids", []) if wid in flow_by_id]
+            flows = [flow_by_id[wid] for wid in project.get("workflow_ids", [])
+                     if wid in flow_by_id and flow_view(flow_by_id[wid], match)]
             missing_flows = [wid for wid in project.get("workflow_ids", []) if wid not in flow_by_id
                              and self._filter == "open" and (match or self._search in wid.casefold())]
-            visible = [jid for jid in _project_job_ids(project, workflows) if visible_job(jid, match)]
-            if not visible and not missing_flows and not any(children or show for _, (children, show) in flows) and not (match and self._filter == "open"):
+            project_jobs = set(_project_job_ids(project, workflows))
+            if not flows and not missing_flows and not project_jobs & visible_jobs and not (match and self._filter == "open"):
                 continue
             parent = add(tree.root, "project:" + project["id"], "project", project,
-                         project.get("objective") or project["id"], True, suffix="project")
-            for workflow, (children, show) in flows:
-                if children or show:
-                    add_flow(parent, workflow, children)
+                         project.get("objective") or project["id"], bool(flows or missing_flows), suffix="project")
+            for workflow in flows:
+                add_flow(parent, workflow)
             for wid in missing_flows:
                 if "missing-workflow:" + wid not in self._entries:
                     add(parent, "missing-workflow:" + wid, "missing workflow", {"id": wid}, wid, suffix="workflow not loaded")
-            for jid in visible:
-                add_link(parent, jid)
+            if self._filter == "open" and match:
+                missing_jobs.update(project_jobs - by_id.keys())
 
-        def add_others():
-            others = [j for j in jobs or [] if j["id"] not in linked | project_jobs and self._matches(j)]
-            if others:
-                group = add(tree.root, "other", "group", {}, "OTHER JOBS", True)
-                for job in sorted(others, key=lambda j: (j.get("state") != "executing", -(j.get("updated_ts") or j.get("created_ts") or 0))):
-                    add_job(group, job)
-
-        others_added = False
         for workflow in sorted(workflows or [], key=lambda w: (w.get("status") == "blocked", -(w.get("created_ts") or 0))):
-            if workflow["id"] in project_flows:
-                continue
-            if workflow.get("status") == "blocked" and not others_added:
-                add_others()
-                others_added = True
-            visible, workflow_visible = flow_view(workflow)
-            if not visible and not workflow_visible:
-                continue
-            add_flow(tree.root, workflow, visible)
-        if not others_added:
-            add_others()
-        if not self._entries:
-            unavailable = jobs is None or workflows is None
-            tree.root.add_leaf(Text("" if unavailable else "No matching work" if self._search or self._filter != "open" else "No work in progress", style="dim"))
+            if workflow["id"] not in project_flows and flow_view(workflow):
+                add_flow(tree.root, workflow)
+        for job in sorted((j for j in jobs or [] if j["id"] in visible_jobs),
+                          key=lambda j: (j.get("state") != "executing", -(j.get("updated_ts") or j.get("created_ts") or 0))):
+            nodes = job.get("nodes") or []
+            branch = add(jobs_tree.root, "job:" + job["id"], "job", job,
+                         job.get("objective") or job["id"], bool(nodes), suffix=job.get("state") or "unknown",
+                         expanded=job.get("state") == "executing")
+            for step in nodes:
+                seat = f"#{step['seat']}" if step.get("seat") is not None else "seat --"
+                add(branch, f"step:{job['id']}:{step['key']}", "step", step, step['key'],
+                    suffix=f"{seat} {step.get('role') or '--'} {step.get('state') or 'unknown'}")
+        for jid in sorted(missing_jobs):
+            add(jobs_tree.root, "missing:" + jid, "missing", {"id": jid}, jid + " · job not loaded")
+        for target, noun in ((tree, "workflows"), (jobs_tree, "jobs")):
+            if not target.root.children:
+                unavailable = jobs is None or workflows is None
+                target.root.add_leaf(Text("" if unavailable else "No matching " + noun if self._search or self._filter != "open"
+                                          else "No " + noun + " loaded", style="dim"))
         if selected not in self._entries:
             def newest(rows):
                 return sorted(rows, key=lambda row: (row.get("updated_ts") or row.get("created_ts") or 0,
                                                      row.get("created_ts") or 0, row["id"]), reverse=True)
-            visible_jobs = newest(j for j in jobs or [] if "job:" + j["id"] in self._entries)
-            active = [j for j in visible_jobs if j.get("state") == "executing"]
+            visible = newest(j for j in jobs or [] if "job:" + j["id"] in self._entries)
+            active = [j for j in visible if j.get("state") == "executing"]
             flows = newest(w for w in workflows or [] if "workflow:" + w["id"] in self._entries and w.get("status") not in _TERMINAL)
             if active:
                 selected = "job:" + active[0]["id"]
             elif flows:
                 selected = "workflow:" + flows[0]["id"]
             else:
-                selected = "job:" + visible_jobs[0]["id"] if visible_jobs else next(iter(self._entries), None)
+                selected = "job:" + visible[0]["id"] if visible else next(iter(self._entries), None)
         if selected != self._selected:
             self.query_one("#work-detail-scroll", VerticalScroll).scroll_home(animate=False)
         self._selected = selected
@@ -380,7 +376,9 @@ class SurfWorkBody(Horizontal):
     def _restore_cursor(self, selected):
         if selected not in self._entries:
             return
-        tree = self.query_one("#work-tree", Tree)
+        tree = self._work_nodes[selected].tree
+        if isinstance(self.app.focused, _WorkTree):
+            self.screen.set_focus(tree, scroll_visible=False)
         tree._tree_lines  # Lay out node line numbers before moving the cursor.
         node = self._work_nodes[selected]
         self._selected = selected
@@ -390,9 +388,10 @@ class SurfWorkBody(Horizontal):
 
     def _titles(self):
         tree = self.query_one("#work-tree", _WorkTree)
-        clipped = any(cell_len(node.label.plain) > tree.label_width(node) - (2 if node.allow_expand else 0) for node in self._work_nodes.values())
+        clipped = any(cell_len(node.label.plain) > tree.label_width(node) - (2 if node.allow_expand else 0)
+                      for node in self._work_nodes.values() if node.tree is tree)
         state = self._payload.get("state", "unavailable")
-        title = Text("WORK TREE · ")
+        title = Text("WORKFLOWS · ")
         for index, choice in enumerate(_FILTERS):
             if index: title.append(" · ")
             active = choice == self._filter
@@ -404,6 +403,13 @@ class SurfWorkBody(Horizontal):
         title.truncate(max(1, room - (len(WIDEN_HINT) + 2 if clipped else 0)), overflow="ellipsis")
         if clipped: title.append(" · " + WIDEN_HINT)
         panel.query_one(".panel-title", Static).update(title)
+        jobs_tree = self.query_one("#work-jobs-tree", _WorkTree)
+        shown = sum(entry[1] == 'job' for entry in self._entries.values()) if self._payload.get('jobs') is not None else None
+        jobs_title = f"JOBS · {_count(shown)} shown"
+        if any(cell_len(node.label.plain) > jobs_tree.label_width(node) - (2 if node.allow_expand else 0)
+               for node in self._work_nodes.values() if node.tree is jobs_tree):
+            jobs_title += " · " + WIDEN_HINT
+        self.query_one("#work-jobs-panel .panel-title", Static).update(Text(jobs_title))
         coverage = f"{_count(self._payload.get('jobs_loaded'))} jobs · {_count(self._payload.get('workflows_loaded'))} workflows loaded · {hhmm(self._payload.get('read_ts'), unknown='--:--')}"
         if self._payload.get("partial"):
             coverage += " · partial"
@@ -411,20 +417,20 @@ class SurfWorkBody(Horizontal):
             coverage = ""
         self.query_one("#work-coverage", Static).update(fit_prose(coverage, max(1, tree.content_size.width)))
 
-    @on(Tree.NodeHighlighted, "#work-tree")
+    @on(Tree.NodeHighlighted, "#work-tree, #work-jobs-tree")
     def _highlight(self, event):
-        if event.node.data and event.node.data[0] in self._entries:
+        if event.control.has_focus and event.node.data and self._work_nodes.get(event.node.data[0]) is event.node:
             if self._selected != event.node.data[0]:
                 self.query_one("#work-detail-scroll", VerticalScroll).scroll_home(animate=False)
             self._selected = event.node.data[0]
             self._detail()
 
-    @on(Tree.NodeSelected, "#work-tree")
+    @on(Tree.NodeSelected, "#work-tree, #work-jobs-tree")
     def _open(self, event):
-        if event.node.data:
+        if event.node.data and self._work_nodes.get(event.node.data[0]) is event.node:
             self._selected = event.node.data[0]
             self._detail()
-            if event.node.data[1] in ("project", "workflow", "group"):
+            if event.node.data[1] in ("project", "workflow", "group") and event.node.allow_expand:
                 event.node.toggle()
             else:
                 self.query_one("#work-detail-scroll", VerticalScroll).focus()

@@ -678,6 +678,32 @@ class Pool4Client(OwnedHttpClient):
             return None
         return _hex_int(results[0])
 
+    async def fetch_block_timestamps(
+        self, from_block: int, to_block: int, *, network: str
+    ) -> tuple[int, int] | None:
+        """Read and validate both headers of the exact requested log window."""
+        if not (type(from_block) is int and type(to_block) is int and 0 <= from_block < to_block):
+            return None
+        try:
+            results = await self._rpc_state_batch(network, [
+                ("eth_getBlockByNumber", [hex(block), False])
+                for block in (from_block, to_block)
+            ])
+        except (RuntimeError, ValueError) as exc:
+            logger.warning("fetch_block_timestamps: %s", exc)
+            return None
+        if results is None or len(results) != 2:
+            return None
+        stamps = []
+        for block, header in zip((from_block, to_block), results):
+            if not isinstance(header, dict) or _hex_int(header.get("number")) != block:
+                return None
+            stamp = _hex_int(header.get("timestamp"))
+            if stamp is None or stamp < 0:
+                return None
+            stamps.append(stamp)
+        return (stamps[0], stamps[1]) if stamps[1] > stamps[0] else None
+
     async def fetch_transaction(
         self,
         tx_hash: str,

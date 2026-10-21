@@ -50,7 +50,13 @@ async def _render(payload, size):
             assert "stale" not in text and "unavailable" not in text
         status = screen.query_one(StatusBar)
         body = screen.query_one("#surf-work-body")
-        panels = [screen.query_one("#work-tree-panel"), screen.query_one("#work-detail-panel")]
+        panels = [screen.query_one("#work-navigation"), screen.query_one("#work-detail-panel")]
+        workflows, jobs = screen.query_one("#work-tree-panel"), screen.query_one("#work-jobs-panel")
+        assert workflows.region.bottom < jobs.region.y
+        assert workflows.region.height < jobs.region.height
+        assert jobs.region.bottom <= panels[0].region.bottom
+        assert "WORKFLOWS" in _region_text(pilot.app, workflows)
+        assert "JOBS" in _region_text(pilot.app, jobs)
         overflow = [p.id for p in panels if p.region.right > body.region.right or p.region.bottom > body.region.bottom]
         return {
             "missing": missing, "overflow": overflow,

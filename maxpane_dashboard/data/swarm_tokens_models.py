@@ -47,5 +47,6 @@ WIDGET_SIGNATURES = {
     'TokensTable': ('tokens', 'as_of'),
     'NewlyLaunched': ('newly_launched', 'as_of'),
     'BestPlays': ('gainers', 'losers'),
+    'TopTraded': ('tokens',),
     'TokenActivity': ('activity', 'tokens'),
 }

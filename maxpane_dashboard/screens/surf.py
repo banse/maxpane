@@ -2022,7 +2022,8 @@ MODE_SWARM = "swarm"
 #: The detail pane wraps prose and scrolls independently. Its fixed step
 #: columns fit within the allocated pane at the width pin. Work-tree rows
 #: and detail prose are intentionally unbounded and scroll internally.
-#: The height binder is the two 16-row child panels. The body can shrink
+#: The height binder is the 16-row navigation/detail floor. WORKFLOWS takes
+#: one share above JOBS with two shares; each tree scrolls independently. The body can shrink
 #: below that floor and scroll, preserving the title and hero row. At 29
 #: terminal rows the body needs vertical scrolling and ‹ taller is lit;
 #: at 30 both fit, with the status bar visible and a blank row above it.
@@ -2041,7 +2042,7 @@ SURF_WORK_FULL_LAYOUT_ROWS = 30
 MODE_WORK = "work"
 WORK_BODY_ID = "surf-work-body"
 #: ORACLES, measured after the keyless live API render at 149×45 on
-#: 2026-10-16. REQUESTS retains the approved 66% of the body and the
+#: 2026-10-21. REQUESTS takes 60% of the body after the live 149×45 preview; the
 #: selected detail uses the remaining width. Both panels reserve gutters.
 #: Six equal fractional hero columns remain nine terminal rows high.
 #: The width sweep began at 110 and extended through 149: the final
@@ -4552,6 +4553,14 @@ class SurfScreen(SurfDashboardScreen):
             line = "WORK IN PROGRESS" + (f" · [yellow]{TALLER_HINT}[/]" if cut else "")
         elif self._mode == MODE_ORACLES:
             line = "ORACLES / SURFBOARD" + (f" · [yellow]{TALLER_HINT}[/]" if cut else "")
+        elif self._mode in (MODE_POOL4, MODE_POOL4_USER):
+            data = self._title_data or {}
+            label = "POOL4 MARKET" if self._mode == MODE_POOL4_USER else "PROTOCOL / POOL4"
+            network = safe_markup(flatten(data.get("pool4_network") or "—"))
+            stamp = safe_markup(flatten(data.get("pool4_as_of_hhmm") or "—"))
+            line = f"{label} · {network} · as of {stamp}"
+            if cut:
+                line += f" · [yellow]{TALLER_HINT}[/]"
         elif self._title_data is None:
             # No payload yet -- or the manager raised and there never will
             # be one. The marker simply goes on the end here, and *neither*

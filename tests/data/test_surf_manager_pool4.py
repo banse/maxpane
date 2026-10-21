@@ -370,6 +370,9 @@ class FakePool4Client:
     async def fetch_block_number(self, *, network):
         return self._answer("fetch_block_number", network)
 
+    async def fetch_block_timestamps(self, from_block, to_block, *, network):
+        return None
+
     async def fetch_hook_state(self, addr, *, network, token_addr=None):
         self.hook_asked = addr
         return self._answer("fetch_hook_state", network)
@@ -3587,53 +3590,28 @@ async def test_the_bond_row_always_exists(tmp_path) -> None:
 async def test_a_bond_reserve_is_not_rendered_as_an_open_market(
     tmp_path,
 ) -> None:
-    """**Three facts, and only the middle one used to reach the screen.**
-
-    The bonding *share* is live (the remainder of the reward split); the
-    bonding *reserve* is live and readable as ``heldBonding``; the bond
-    *market* is **not** -- it opens at $4 per IMD.
-
-    This row used to say ``no bond contract is named by the hook``. That was
-    true of the hook, and was the right sentence when no deployed contract
-    carried a bond. After the launch it reads as "bonding does not exist"
-    while 6% of every retired batch accrues to a reserve we already read.
-
-    So the row must say the market is shut **without** saying the programme is
-    absent, and it must name both halves: the reserve, and the gate that opens
-    it.
-    """
+    """A held reserve proves funds, not whether a bond market is deployed/open."""
     payload = await _sweep(_manager(tmp_path, pool4_client=_mainnet_client()))
     bond, = [r for r in payload["pool4_hatches"] if r["scope"] == "bond"]
 
-    assert bond["state"] == "closed"
+    assert bond["state"] == "unknown"
     # Not the word the vault's and hook's owner rows carry: a reserve accruing
     # into a market nobody can enter is not a live product.
     assert bond["state"] != "live"
     # ... and not absence either, which is the other half of the same error.
     assert bond["state"] != "absent"
-    assert bond["detail"] == "reserve, opens $4"
+    assert bond["detail"] == "reserve held"
 
     # The reserve it is talking about is one we actually read.
     assert payload["pool4_distributor_held_bonding"] is not None
 
 
 def test_the_bond_detail_fits_the_cell_it_is_given() -> None:
-    """**Seventeen cells**, because that is what the hatch grid's last column
-    gives a row with no address.
-
-    ``reserve accruing · market opens at $4`` truncates to
-    ``reserve accruing…`` and the market's closure -- the whole point of the
-    sentence -- never reaches the screen. Widening the cell was measured and
-    rejected: the rail's need goes past 49 and the body's width pin past 106.
-    Shorten the value, not the pin.
-
-    Measured with ``cell_len``, never ``len``: the two agree on ASCII and the
-    habit is what keeps them agreeing when a word is not.
-    """
+    """Keep the known reserve and unknown deployment text inside its cell."""
     from rich.cells import cell_len
 
-    assert cell_len("reserve, opens $4") == 17
-    assert cell_len("no bonding leg") <= 17
+    assert cell_len("reserve held") <= 17
+    assert cell_len("deployment unread") <= 17
     # The line this replaced, for the record: more than double the budget.
     assert cell_len("no bond contract is named by the hook") > 17
 
@@ -3641,16 +3619,12 @@ def test_the_bond_detail_fits_the_cell_it_is_given() -> None:
 async def test_a_deployment_with_no_bonding_leg_does_not_claim_a_reserve(
     tmp_path,
 ) -> None:
-    """Sepolia has no Distributor, so there is no bonding leg and no reserve.
-
-    Claiming ``reserve, opens $4`` there would be the same class of error one
-    chain over -- describing a reserve nobody is accruing into.
-    """
+    """No read of a reserve is not evidence of an absent bond deployment."""
     payload = await _sweep(_manager(tmp_path))
     bond, = [r for r in payload["pool4_hatches"] if r["scope"] == "bond"]
 
     assert payload["pool4_distributor_addr"] is None
-    assert bond["state"] == "absent"
+    assert bond["state"] == "unknown"
     assert "reserve" not in bond["detail"]
 
 

@@ -11,7 +11,7 @@ from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.swarm_tokens import (
-    BestPlays, NewlyLaunched, TokenActivity, TokensHero, TokensTable,
+    BestPlays, NewlyLaunched, TopTraded, TokensHero, TokensTable,
 )
 from maxpane_dashboard.data.swarm_token_detail import SwarmTokenDetailManager
 from maxpane_dashboard.data.reader import ReaderHandle
@@ -20,7 +20,7 @@ from maxpane_dashboard.widgets.swarm_tokens.filter import SwarmTokensFilterEdito
 
 #: Overview remeasured after the live 149x45 panel-order revision (2026-10-10).
 #: Compact revision: at 145x32 all twelve table columns, four heroes and
-#: the Activity / Newly Launched / Best Plays row fit above All Tokens without
+#: the Top Traded / Newly Launched / Best Plays row fit above All Tokens without
 #: an outer scrollbar. At 144x32 or 145x31
 #: the viewport scrolls and advertises the reduced space. At 149x45 the
 #: table shows twenty data rows, with the remaining rows behind its scrollbar.
@@ -56,7 +56,7 @@ class SwarmTokensScreen(SurfDashboardScreen):
         (TokensTable, keys('tokens', 'as_of')),
         (NewlyLaunched, keys('newly_launched', 'as_of')),
         (BestPlays, keys('gainers', 'losers')),
-        (TokenActivity, keys('activity', 'tokens')),
+        (TopTraded, keys('tokens')),
     )
     BINDINGS = [
         Binding('escape', 'back', show=False), Binding('m', 'back', show=False),
@@ -75,9 +75,9 @@ class SwarmTokensScreen(SurfDashboardScreen):
     SwarmTokensScreen TokensTable { height: 1fr; min-height: 10; border: none; }
     SwarmTokensScreen DataTable { height: 1fr; background: $background; scrollbar-size: 1 1; }
     SwarmTokensScreen #st-summary { height: 11; margin-bottom: 1; }
-    SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays, SwarmTokensScreen TokenActivity {
+    SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays, SwarmTokensScreen TopTraded {
         width: 1fr; height: 1fr; border: none; }
-    SwarmTokensScreen TokenActivity, SwarmTokensScreen NewlyLaunched { margin-right: 1; }
+    SwarmTokensScreen TopTraded, SwarmTokensScreen NewlyLaunched { margin-right: 1; }
     SwarmTokensScreen .panel-title { height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted;
         text-wrap: nowrap; text-overflow: ellipsis; }
     SwarmTokensScreen RichLog { height: 1fr; padding: 0 1; background: $background;
@@ -105,7 +105,7 @@ class SwarmTokensScreen(SurfDashboardScreen):
                 with Vertical(id='st-content'):
                     with Vertical(id='st-market'):
                         with Horizontal(id='st-summary'):
-                            yield TokenActivity()
+                            yield TopTraded()
                             yield NewlyLaunched()
                             yield BestPlays()
                         yield TokensTable()
@@ -157,9 +157,6 @@ class SwarmTokensScreen(SurfDashboardScreen):
             source_text+=f" · quotes {quoted}/{len(rows)}"
         self.query_one(TokensTable).query_one('.panel-title',Static).update(Text(
             f'ALL TOKENS{self.loading_suffix} · {count}{suffix} · {chain}{selection} · sort: {self.sort}{source_text}', style='bold'))
-        if sources:
-            self.query_one(TokenActivity).query_one('.panel-title',Static).update(Text(
-                "ACTIVITY",style='bold'))
 
     def _show_filter(self, editing):
         self._filter_open=editing

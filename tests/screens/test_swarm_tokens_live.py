@@ -1,5 +1,8 @@
 """Live presentation and navigation, using only an injected offline provider."""
 from copy import deepcopy
+import asyncio
+
+import pytest
 
 from textual.widgets import Static, DataTable
 
@@ -51,7 +54,7 @@ async def test_live_screen_has_coverage_and_explorer_details_without_mock_label(
         assert 'MOCK' not in text
         assert 'quotes 5/24' in text and 'as of' in text
         assert '30s poll' not in text
-        assert 'ACTIVITY' in text and 'trades unavailable' not in text
+        assert 'TOP TRADED / 24H' in text and 'trades unavailable' not in text
         app.screen.query_one(DataTable).focus()
         await pilot.press('enter')
         await pilot.pause()
@@ -108,3 +111,78 @@ async def test_rack_heroes_follow_native_chain_filter_and_source_clocks():
         assert 'TESTER' in card_text(app, cards[5])
         assert 'MEAT' not in card_text(app, cards[5]) and 'SC' not in card_text(app, cards[5])
         assert app.screen.snapshot['tokens_hero']['volume']['amount'] == 14800
+
+
+async def test_top_traded_includes_old_launches_while_newly_display_keeps_full_totals():
+    from maxpane_dashboard.widgets.swarm_tokens import NewlyLaunched, TopTraded, TokensTable
+    from tests.screens.test_surf_news_hero_demo import painted as panel_text
+
+    provider = LiveProvider()
+    now = provider.snapshot['as_of']
+    template = provider.snapshot['tokens'][0]
+    rows = [dict(template, id=f"new-{i}", symbol=f"NEW{i}", chain="base",
+                 launched_at=now-i, volume_24h=100+i) for i in range(8)]
+    rows.append(dict(template, id="old", symbol="OLD", launched_at=now-86400*365,
+                     volume_24h=1000))
+    provider.snapshot['tokens'] = rows
+    app = LiveApp(provider)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        screen = app.screen
+        assert screen.snapshot['metrics']['new_24h'] == 8
+        assert screen.query_one(TokensTable).query_one(DataTable).row_count == 9
+        newly = panel_text(app, screen.query_one(NewlyLaunched))
+        assert "NEW6" in newly and "NEW7" not in newly
+        ranked = panel_text(app, screen.query_one(TopTraded))
+        assert ranked.index("OLD") < ranked.index("NEW7")
+        assert "NEW2" in ranked and "NEW1" not in ranked
+        await pilot.press('c', 'c')
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert "OLD" not in panel_text(app, screen.query_one(TopTraded))
+        assert "NEW7" in panel_text(app, screen.query_one(TopTraded))
+
+
+@pytest.mark.parametrize("failure", [False, True])
+async def test_actual_pending_token_refresh_animates_shared_footer_then_clears(failure):
+    from maxpane_dashboard.widgets.status_bar import StatusBar
+
+    class ControlledProvider(LiveProvider):
+        def __init__(self):
+            super().__init__()
+            self.started, self.release = asyncio.Event(), asyncio.Event()
+            self.block = False
+
+        async def fetch_and_compute(self):
+            if self.block:
+                self.started.set()
+                await self.release.wait()
+                if failure:
+                    raise RuntimeError("controlled source failure")
+            return await super().fetch_and_compute()
+
+    provider = ControlledProvider()
+    app = LiveApp(provider)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert "loading" not in painted(app).splitlines()[-1]
+        provider.block = True
+        app.screen.action_refresh()
+        await asyncio.wait_for(provider.started.wait(), 1)
+        app.screen._tick_loading()
+        await pilot.pause()
+        bar = app.screen.query_one(StatusBar)
+        first = painted(app).splitlines()[-1]
+        assert "loading" in first and "SC" in painted(app)
+        assert bar._loading_timer is not None
+        bar._tick_loading()
+        await pilot.pause()
+        assert painted(app).splitlines()[-1] != first
+        provider.release.set()
+        await app.workers.wait_for_complete()
+        app.screen._tick_loading()
+        await pilot.pause()
+        assert "loading" not in painted(app) and "SC" in painted(app)
+        assert bar._loading_timer is None

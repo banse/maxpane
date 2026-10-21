@@ -105,7 +105,8 @@ async def test_hero_counts_unknown_states_coverage_and_approved_layout():
         assert "NO QUORUM" in painted(app, SurfOraclesHero)
         assert "YES" in painted(app, "#oracle-summary")
         assert "Question 0 [literal]" in painted(app, "#oracle-summary")
-        assert app.query_one("#oracle-request-panel").size.width > 1.8 * app.query_one("#oracle-detail-panel").size.width
+        ratio = app.query_one("#oracle-request-panel").size.width / app.query_one("#oracle-detail-panel").size.width
+        assert 1.3 < ratio < 1.7
 
 
 @pytest.mark.parametrize("rows,expected", [(None, "--"), ([], "0")])

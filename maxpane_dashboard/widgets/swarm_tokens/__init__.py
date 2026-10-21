@@ -15,7 +15,7 @@ from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_comp
 from maxpane_dashboard.widgets.explorer import is_address
 from .hero import TokensHero
 
-__all__ = ["TokensHero", "TokensTable", "NewlyLaunched", "BestPlays", "TokenActivity"]
+__all__ = ["TokensHero", "TokensTable", "NewlyLaunched", "BestPlays", "TopTraded", "TokenActivity"]
 
 # Explicit neutral ink renders identically in RichLog and Static; ANSI dim
 # white is resolved differently by the two renderers.
@@ -185,7 +185,7 @@ class NewlyLaunched(_CompactFeed):
 
     def update_data(self, newly_launched=None, as_of=None):
         self._as_of = as_of
-        self.render_events(newly_launched)
+        self.render_events(newly_launched[:7] if newly_launched is not None else None)
 
     def format_row(self, event):
         return (Text() + _cell(_age(event, self._as_of), 5, "dim") +
@@ -197,6 +197,8 @@ class NewlyLaunched(_CompactFeed):
 class BestPlays(PanelBase):
     DEFAULT_CSS = "BestPlays > #st-best-body { color: $foreground; }"
     TITLE = "BEST PLAYS / 24H · TOP 5"
+    _SHOW_UNKNOWN = False
+    _LEGEND_GAP = True
 
     def compose_body(self):
         yield Static(Text("--", style="dim white"), id="st-best-body")
@@ -211,7 +213,8 @@ class BestPlays(PanelBase):
                     name = f"{flatten(item.get('symbol', '--'))} {flatten(item.get('chain', '--')).upper()}"
                     state = item.get("lp_state", "unknown")
                     marker, meaning = {"one-token": ("*", "one-sided"), "one-quote": ("*", "one-sided"),
-                                       "withdrawn": ("!", "withdrawn"), "unknown": ("?", "unknown")}.get(state, ("", ""))
+                                       "withdrawn": ("!", "withdrawn"),
+                                       "unknown": ("?", "unknown") if self._SHOW_UNKNOWN else ("", "")}.get(state, ("", ""))
                     if marker:
                         markers[marker] = (meaning, _lp_color(state))
                     result += Text() + _cell(marker, 2, _lp_color(state)) + _cell(name, 11) + _cell(_change(item.get("change_24h")), 8,
@@ -221,9 +224,37 @@ class BestPlays(PanelBase):
                 if not side:
                     result += Text(" ")
             result += Text("\n")
+        if markers and self._LEGEND_GAP:
+            result += Text("\n")
         result += Text("  ").join(Text(f"{marker} {meaning}", style=color)
                                   for marker, (meaning, color) in markers.items())
         self.write("#st-best-body", result)
+
+
+class TopTraded(_CompactFeed):
+    TITLE = "TOP TRADED / 24H"
+    LOG_ID = "st-top-traded-log"
+    HEADER_LINE = (_cell("TOKEN", 16, _COLUMN_HEADER_STYLE)
+                   + _cell("CHAIN", 7, _COLUMN_HEADER_STYLE)
+                   + _cell("USD/24H", 16, _COLUMN_HEADER_STYLE, right=True) + Text("\n"))
+    EMPTY_LINE = Text("No matching tokens", style="dim white")
+
+    def update_data(self, tokens=None):
+        ranked = []
+        for row in tokens or []:
+            if not isinstance(row, dict) or row.get("market_state", "ok") != "ok":
+                continue
+            volume = as_float(row.get("volume_24h"))
+            if volume is not None and volume >= 0:
+                ranked.append((volume, str(row.get("id", "")), row))
+        ranked.sort(key=lambda item: (-item[0], item[1]))
+        rows = [row for _, _, row in ranked[:7]]
+        self.render_events(rows if rows or tokens == [] else None)
+
+    def format_row(self, token):
+        return (_cell(token.get("symbol", "--"), 16, "bold")
+                + _cell(flatten(token.get("chain", "--")).upper(), 7)
+                + _cell(_usd(token.get("volume_24h")), 16, right=True))
 
 
 class TokenActivity(_CompactFeed):

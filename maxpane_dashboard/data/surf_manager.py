@@ -383,14 +383,6 @@ POOL4_TOPIC_DRIPPED = (
     "0x5fb8477ff22eb8f519d892e5b053a5fb5c2bd4f4e9ae598ae94fa281ecb79be7"
 )
 
-#: The narrowest dated block span this module will measure a block time from.
-#: Two ``Dripped`` logs a handful of blocks apart give an estimate dominated by
-#: the jitter between two individual block timestamps; over a thousand blocks
-#: that jitter is noise on a real average. Below this the estimate is refused
-#: and the previous sweep's is reused, which is the honest "we could not
-#: measure it this time" rather than a number carrying a hidden error bar.
-POOL4_BLOCK_TIME_MIN_SPAN = 1_000
-
 #: How far back the sIMD ``Transfer`` sweep opens its window — eight weeks.
 #: It is a **window, not a deploy block**: nothing here trusts a hardcoded
 #: birth block, and completeness is *derived* from where the first log actually
@@ -3577,9 +3569,9 @@ class SurfManager:
         span. The two answer different questions and the protocol's docs say so
         (PRD 8.1); a window under the cap must produce the smaller number.
 
-        ``prior`` is read for one thing only: the block time a previous sweep
-        measured. See :meth:`_pool4_drip_window` for why a quiet window needs
-        it and why it is not a hardcoded twelve.
+        Both boundary headers are read even when delivery events are absent
+        or clustered. The duration never depends on event spacing or a prior
+        sweep's estimated block time.
         """
         if not dripper_addr:
             return None
@@ -3594,65 +3586,32 @@ class SurfManager:
         if head is None:
             return None
         start = max(0, head - POOL4_DRIP_WINDOW_BLOCKS + 1)
-        logs = await self._guard(
-            lambda: self.pool4_client.fetch_flow_logs(
-                dripper_addr, start, head, network=network
+        logs, timestamps = await asyncio.gather(
+            self._guard(
+                lambda: self.pool4_client.fetch_flow_logs(
+                    dripper_addr, start, head, network=network
+                ), "pool4 drip fetch_flow_logs",
             ),
-            "pool4 drip fetch_flow_logs",
+            self._guard(
+                lambda: self.pool4_client.fetch_block_timestamps(start, head, network=network),
+                "pool4 drip fetch_block_timestamps",
+            ),
         )
         if logs is None:
             return None
-        return self._pool4_drip_window(
-            logs, start, head, prior.get("drip_seconds_per_block")
-        )
+        return self._pool4_drip_window(logs, start, head, timestamps)
 
     @staticmethod
     def _pool4_drip_window(
-        logs: Any, from_block: int, to_block: int, prior_seconds_per_block: Any = None
+        logs: Any, from_block: int, to_block: int, timestamps: Any = None
     ) -> dict[str, Any]:
-        """Fold a delivery window into ``(IMD delivered, seconds it spanned)``.
+        """Sum delivered IMD over the measured header-to-header duration.
 
-        **Only the first data word is summed.** The event's second word is the
-        keeper's reward, which never reaches the vault; adding it would
-        overstate what stakers received, and the committed fixture's
-        ``operand_proof`` is what settles which word is which — reconciled
-        against the receipt's own IMD ``Transfer`` to the vault, to the wei.
-
-        **A swept, quiet window is ``0.0``, never ``None``.** The return is
-        lumpy by construction — trims only happen when sells exceed headroom —
-        so a quiet week is a real zero and rendering it as a dash would hide a
-        fact that was read. ``None`` here means the *read* failed, and that
-        case never reaches this method.
-
-        **The span is measured across the whole window, not between the first
-        and last delivery.** Those are different numbers and the difference has
-        a direction: deliveries cluster, so first-to-last is shorter than the
-        window, and a shorter denominator annualises to a *larger* return. That
-        is the flattering direction, which is the one to refuse.
-
-        Measuring it costs a block time, and there is no block-header read on
-        this client to get one from. So it is **measured from the logs
-        themselves** — their own ``blockTimestamp``s against their own block
-        numbers — and never assumed to be twelve seconds: a constant that
-        happens to agree with the chain today is not evidence for the constant,
-        and this one would silently skew every return on a chain with a
-        different cadence. The estimate is refused below
-        :data:`POOL4_BLOCK_TIME_MIN_SPAN` blocks of separation, where it is
-        dominated by the jitter between two individual timestamps.
-
-        A window too quiet to measure its own block time reuses the previous
-        sweep's measurement, which is what lets a genuinely quiet week still
-        publish ``0.0%`` instead of a dash. With no previous measurement either
-        — a cold cache on a silent dripper — the span is ``None`` and the panel
-        says so, because annualising over a duration nobody read is arithmetic
-        on an assumption.
-
-        The span is rounded to whole seconds on purpose: an unrounded estimate
-        jitters on every sweep, and a slot field that always differs would
-        advance ``pool4_as_of_hhmm`` on sweeps that read nothing new.
+        Only the first event word reaches the vault; the second is a keeper
+        reward. A complete empty sweep is a real zero. Missing boundary reads
+        leave the duration unknown, including when a previous read succeeded.
         """
         delivered = 0.0
-        dated: list[tuple[int, float]] = []
         for log in logs or ():
             if not isinstance(log, dict):
                 continue
@@ -3662,22 +3621,13 @@ class SurfManager:
             words = _data_words(log.get("data"))
             if words:
                 delivered += int(words[0], 16) / 1e18
-            block = _hex_int(log.get("blockNumber"))
-            stamp = _hex_int(log.get("blockTimestamp") or log.get("timestamp"))
-            if block is not None and stamp:
-                dated.append((block, float(stamp)))
-
-        seconds_per_block = _opt_float(prior_seconds_per_block)
-        if len(dated) >= 2:
-            dated.sort()
-            span_blocks = dated[-1][0] - dated[0][0]
-            span_seconds = dated[-1][1] - dated[0][1]
-            if span_blocks >= POOL4_BLOCK_TIME_MIN_SPAN and span_seconds > 0.0:
-                seconds_per_block = span_seconds / span_blocks
-
         window_seconds = None
-        if seconds_per_block is not None and seconds_per_block > 0.0:
-            window_seconds = round(seconds_per_block * (to_block - from_block))
+        if (isinstance(timestamps, (tuple, list)) and len(timestamps) == 2
+                and all(type(stamp) is int and stamp >= 0 for stamp in timestamps)
+                and timestamps[1] > timestamps[0] and to_block > from_block):
+            window_seconds = timestamps[1] - timestamps[0]
+        seconds_per_block = (window_seconds / (to_block - from_block)
+                             if window_seconds is not None else None)
         return {
             "dripped_imd": delivered,
             "window_seconds": window_seconds,
@@ -4623,9 +4573,7 @@ class SurfManager:
                 return "unknown"
             return on if value else off
 
-        # Is a bonding reserve actually readable on this deployment? Read, not
-        # assumed: the Distributor is mainnet-only today, so on Sepolia there
-        # is no bonding leg at all and no reserve to describe.
+        # A readable balance describes held funds, not market deployment.
         bonding_reserve = (
             distributor_addr is not None
             and _dget(distributor, "heldBonding") is not None
@@ -4723,33 +4671,12 @@ class SurfManager:
                 "addr_known": known(burn_sink),
             },
             {
-                # **Three facts, and only the middle one used to reach the
-                # screen.** The bonding SHARE is live (the remainder of the
-                # reward split); the bonding RESERVE is live and readable
-                # (``heldBonding`` on the Distributor); the bond MARKET is not
-                # -- it opens at $4 per IMD.
-                #
-                # This row said ``no bond contract is named by the hook``,
-                # which was true of the hook and was the right sentence when
-                # no deployed contract carried a bond. After the launch it
-                # reads as "bonding does not exist" while 6% of every retired
-                # batch accrues to a reserve we already read.
-                #
-                # ``closed`` is the state word that says the market is shut
-                # without saying the programme is absent, and the detail is
-                # SEVENTEEN CELLS because that is what the hatch grid's last
-                # column gives a row with no address. "reserve accruing ·
-                # market opens at $4" truncates to "reserve accruing…" and the
-                # market's closure -- the whole point -- never reaches the
-                # screen. Shorten the value, not the pin.
+                # heldBonding proves a reserve, not a deployed/open market.
+                # These words fit the existing 17-cell detail column.
                 "scope": "bond", "label": "deployed",
-                "state": "closed" if bonding_reserve else "absent",
+                "state": "unknown",
                 "detail": (
-                    "reserve, opens $4" if bonding_reserve
-                    # No Distributor on this deployment, so there is no bonding
-                    # leg to have a reserve. Claiming one would be the same
-                    # class of error one chain over.
-                    else "no bonding leg"
+                    "reserve held" if bonding_reserve else "deployment unread"
                 ),
                 "addr": None, "addr_known": False,
             },
@@ -4878,6 +4805,7 @@ class SurfManager:
             # ``backstop_liquidity`` is raw ``uint128`` L and is never divided
             # — it is not an amount of any token, ``position_liquidity``'s rule.
             "backstop_tick_lower": _opt_int(_field(hook, "backstop_tick_lower")),
+            "backstop_tick_upper": _opt_int(_field(hook, "backstop_tick_upper")),
             "backstop_liquidity": _opt_int(_field(hook, "backstop_liquidity")),
             # The hook's own configured LP fee, read from the hook rather than
             # from its pool's ``slot0``: a hook pool may carry the dynamic-fee
@@ -5078,7 +5006,9 @@ class SurfManager:
         # still returns a real ladder there, because the full-range position
         # goes on bidding.
         band_lower = _opt_int(slot.get("backstop_tick_lower"))
+        band_upper = _opt_int(slot.get("backstop_tick_upper"))
         band_liquidity = _opt_int(slot.get("backstop_liquidity"))
+        current_tick = _opt_int(slot.get("current_tick"))
         if band_lower is None or band_liquidity is None:
             backstop_state = None
             backstop_lower = backstop_liquidity = backstop_eth = None
@@ -5089,23 +5019,17 @@ class SurfManager:
             backstop_state = POOL4_BACKSTOP_DEPLOYED
             backstop_lower = band_lower
             backstop_liquidity = band_liquidity
-            # The band is single-sided ETH from its lower tick to the top of
-            # the range, which is what ``MAX_TICK`` is doing here rather than
-            # the band's upper tick: WP1's module owns this conversion and is
-            # cross-checked against an independent implementation of it
-            # (``tests/fixtures/surf/pool4/oracle_25955365.json``). It is not
-            # re-derived here — two copies of this math is how two panels on
-            # one screen come to disagree about the same band.
-            backstop_eth = pool4_depth.eth_between(
-                float(band_liquidity), band_lower, pool4_depth.MAX_TICK
-            )
+            # Remaining token0 ETH shrinks after price enters the band.
+            # Reuse the pure position math with the actual upper bound.
+            backstop_eth = (pool4_depth.eth_between(
+                float(band_liquidity), max(current_tick, band_lower), band_upper
+            ) if current_tick is not None and band_upper is not None else None)
 
         # USD per IMD. The pool prices IMD per ETH and ``sqrt_ratio`` is the
         # one place that orientation is written down, so it is called rather
         # than restated — getting it upside down produces a plausible number,
         # not an error. ``current_tick`` and not the venue batch's tick, so
         # this price and ``pool4_current_tick`` below can never disagree.
-        current_tick = _opt_int(slot.get("current_tick"))
         eth_usd_value = _opt_float(eth_usd)
         price_usd = None
         if current_tick is not None and eth_usd_value is not None:

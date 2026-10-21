@@ -80,6 +80,38 @@ def load_request(name: str) -> Any:
         return json.load(fh)
 
 
+@pytest.mark.parametrize('broken', [None, 'missing', 'wrong_block', 'malformed', 'reversed'])
+async def test_window_timestamps_validate_both_requested_headers(broken):
+    fixture = load('mainnet_drip_window_boundaries')
+    sent = []
+    def handler(request):
+        calls = json.loads(request.content)
+        sent.extend(calls)
+        headers = {row['result']['number']: dict(row['result']) for row in fixture['response']}
+        response = [{'jsonrpc': '2.0', 'id': call['id'], 'result': headers[call['params'][0]]}
+                    for call in calls]
+        if broken == 'missing':
+            response.pop()
+        elif broken == 'wrong_block':
+            response[1]['result']['number'] = hex(fixture['to_block'] - 1)
+        elif broken == 'malformed':
+            response[1]['result']['timestamp'] = 'not a timestamp'
+        elif broken == 'reversed':
+            response[1]['result']['timestamp'] = response[0]['result']['timestamp']
+        return httpx.Response(200, json=response)
+    client = _client_on(httpx.MockTransport(handler))
+    result = await client.fetch_block_timestamps(fixture['from_block'], fixture['to_block'], network=MAINNET)
+    assert [(r['method'], r['params']) for r in sent] == [
+        ('eth_getBlockByNumber', [hex(fixture['from_block']), False]),
+        ('eth_getBlockByNumber', [hex(fixture['to_block']), False]),
+    ]
+    if broken:
+        assert result is None
+    else:
+        assert result[1] - result[0] == fixture['window_seconds']
+
+
+
 # ---------------------------------------------------------------------------
 # Transport doubles
 # ---------------------------------------------------------------------------

@@ -173,7 +173,7 @@ class SurfOraclesBody(Horizontal):
     SurfOraclesBody { width: 1fr; height: 1fr; min-height: 28; }
     SurfOraclesBody PanelBase { border: none; background: $background; padding: 0 1;
         height: 1fr; min-height: 28; }
-    SurfOraclesBody > _RequestPanel { width: 66%; margin-right: 1; }
+    SurfOraclesBody > _RequestPanel { width: 60%; margin-right: 1; }
     SurfOraclesBody > _DetailPanel { width: 1fr; overflow-y: auto; scrollbar-gutter: stable; }
     SurfOraclesBody .panel-title { height: 1; text-wrap: nowrap; }
     SurfOraclesBody #oracle-coverage { height: auto; margin-bottom: 1; color: $text-muted; }

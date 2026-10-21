@@ -38,7 +38,7 @@ CATALOGUE = [
     view("swarm-tokens", "SWARM TOKENS", [
         ("tokens", "TOKENS"), ("volume", "VOLUME"), ("liquidity", "LIQUIDITY"),
         ("pools", "POOLS"), ("momentum", "MOMENTUM"), ("top_volume", "TOP VOLUME")],
-        [("tokens", "All tokens table"), ("activity", "Activity"), ("launches", "Newly launched"),
+        [("tokens", "All tokens table"), ("activity", "Top traded / 24H"), ("launches", "Newly launched"),
          ("best", "Best plays"), ("detail", "Token detail"), ("filters", "Filters")]),
     view("workflow-guide", "WORKFLOW GUIDE", [("capacity", "Step capacity"),
         ("alternatives", "Alternatives"), ("costs", "Costs")],
@@ -50,7 +50,7 @@ CATALOGUE = [
                              ("workflows", "Workflows"), ("sites", "Sites")]),
     view("surf.work", "WIP", [("jobs", "JOBS"), ("workflows", "WORKFLOWS"),
         ("seats", "SEATS"), ("build", "BUILD"), ("review", "REVIEW"), ("blocked", "BLOCKED")],
-        [("tree", "Workflow / job tree"), ("details", "Selected job details")]),
+        [("tree", "Workflows"), ("jobs", "Jobs"), ("details", "Selected job details")]),
     view("surf.oracles", "ORACLES", [("requests", "REQUESTS"), ("assessing", "ASSESSING"),
         ("attested", "ATTESTED"), ("disagreed", "NO QUORUM"), ("blocked", "BLOCKED"),
         ("networks", "NETWORKS")], [("requests", "Requests table"), ("details", "Request details")]),

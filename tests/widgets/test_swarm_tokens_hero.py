@@ -111,18 +111,17 @@ async def test_partial_and_stale_keep_coverage_and_their_own_clocks(local_clock)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "partial 05:00" in painted(app, "volume") and "41/48 known" in painted(app, "volume")
+        assert "partial" not in painted(app, "volume") and "41/48 known" in painted(app, "volume")
+        assert "MEASURED" in painted(app, "volume")
+        assert "partial" in str(app.query_one("#hero-volume").tooltip)
         assert "stale" not in str(app.query_one("#hero-volume").tooltip)
         assert "05:00 local" in str(app.query_one("#hero-volume").tooltip)
         assert "stale" not in painted(app, "liquidity") and "43/48 known" in painted(app, "liquidity")
         assert "-- IMD" in painted(app, "liquidity") and "-- ETH" in painted(app, "liquidity")
         assert "41/48 known" in painted(app, "top_volume")
         assert "2 other" in painted(app, "pools")
-        card = app.query_one("#hero-volume")
-        footer = app.screen._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
         assert "05:10 local" in str(app.query_one("#hero-liquidity").tooltip)
-        assert any(segment.style.color.get_truecolor() == app.ansi_theme.ansi_colors[3]
-                   for segment in footer if "partial" in segment.text)
+        assert all("partial" not in painted(app, key) for key in data)
 
 
 

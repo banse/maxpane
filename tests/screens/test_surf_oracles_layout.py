@@ -74,7 +74,7 @@ async def test_oracles_fixed_chrome_at_owner_size_and_pin(kind, size):
     result = await _render(oracle_payload(kind), size)
     assert not result["missing"] and not result["overflow"], result
     assert not result["taller"] and result["status_whole"] and result["table_headers"]
-    assert result["panel_widths"][0] > result["panel_widths"][1] * 1.8
+    assert 1.4 < result["panel_widths"][0] / result["panel_widths"][1] < 1.6
     assert result["question_width"] >= 48
     assert max(result["widths"]) - min(result["widths"]) <= 1
     assert set(result["heights"]) == {9}

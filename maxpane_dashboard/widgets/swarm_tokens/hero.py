@@ -7,7 +7,7 @@ from textual.containers import Grid
 from maxpane_dashboard.widgets.address import PROSE_ADDRESS_RE
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.sparkline_common import fmt_compact
-from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, LocalSourceHeroCard, _count, _number
+from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, LocalSourceHeroCard, NewsHeroCard, _count, _number
 
 
 def _quantity(value):
@@ -89,7 +89,10 @@ def token_records(payload: dict | None) -> tuple[HeroRecord, ...]:
 
 
 class TokensHeroCard(LocalSourceHeroCard):
-    """LAUNCHES card using the shared local source footer."""
+    """Keep source coverage in hover and counts while using the normal footer."""
+
+    def _footer(self):
+        NewsHeroCard._footer(self)
 
     def _text_rows(self, label_style, value_style):
         rows = super()._text_rows(label_style, value_style)

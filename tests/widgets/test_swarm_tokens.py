@@ -37,7 +37,7 @@ class Probe(App):
     TokensTable { width: 145; height: 22; }
     TokensTable DataTable { height: 1fr; scrollbar-size: 1 1; }
     TokensHero { height: 9; }
-    NewlyLaunched, BestPlays, TokenActivity { width: 47; height: 12; }
+    NewlyLaunched, BestPlays, TokenActivity, TopTraded { width: 47; height: 12; }
     RichLog { min-width: 1; height: 1fr; scrollbar-size: 1 1; }
     """
 
@@ -211,4 +211,82 @@ async def test_best_plays_is_explicitly_top_five():
         assert "TOP 5" in output and "RANK5" in output
         assert "RANK6" not in output and "RANK7" not in output
         assert "* RANK1" in output and "* one-sided" in output
+
+
+async def test_newly_launched_caps_rendered_rows_without_mutating_the_selection():
+    from textual.widgets import RichLog
+    rows = [token(id=str(i), symbol=f"NEW{i}", launched_at=NOW-i) for i in range(1, 9)]
+    panel = NewlyLaunched()
+    async with Probe(panel).run_test(size=(149, 45)) as pilot:
+        panel.update_data(newly_launched=rows, as_of=NOW)
+        panel.query_one(RichLog).scroll_end(animate=False)
+        await pilot.pause()
+        output = painted(pilot.app)
+        assert "NEW7" in output and "NEW8" not in output
+        assert len(rows) == 8
+
+
+async def test_top_traded_ranks_seven_fresh_volumes_including_old_launches():
+    from maxpane_dashboard.widgets import swarm_tokens
+    from textual.widgets import RichLog
+    rows = [token(id="b", symbol="TIEB", volume_24h=200),
+            token(id="a", symbol="TIEA", volume_24h=200),
+            token(id="old", symbol="OLD", volume_24h=999, launched_at=NOW-86400*365)]
+    rows += [token(id=str(i), symbol=f"RANK{i}", volume_24h=100-i) for i in range(3, 8)]
+    rows += [token(id="stale", symbol="STALE", market_state="stale", volume_24h=10000),
+             token(id="missing", symbol="MISSING", volume_24h=None),
+             token(id="bad", symbol="BAD", volume_24h=float("nan"))]
+    original_ids = [row["id"] for row in rows]
+    panel = swarm_tokens.TopTraded()
+    async with Probe(panel).run_test(size=(149, 45)) as pilot:
+        panel.update_data(tokens=rows)
+        await pilot.pause()
+        output = painted(pilot.app)
+        assert "TOP TRADED / 24H" in output and "USD/24H" in output
+        assert output.index("OLD") < output.index("TIEA") < output.index("TIEB")
+        panel.query_one(RichLog).scroll_end(animate=False)
+        await pilot.pause()
+        output = painted(pilot.app)
+        assert "RANK6" in output
+        assert all(word not in output for word in ("RANK7", "STALE", "MISSING", "BAD"))
+        assert [row["id"] for row in rows] == original_ids
+
+
+async def test_top_traded_keeps_zero_literal_symbols_and_unknown_distinct():
+    from maxpane_dashboard.widgets import swarm_tokens
+    panel = swarm_tokens.TopTraded()
+    async with Probe(panel).run_test(size=(149, 45)) as pilot:
+        panel.update_data(tokens=[token(symbol="[/x]", volume_24h=0)])
+        await pilot.pause()
+        assert "[/x]" in painted(pilot.app) and "$0" in painted(pilot.app)
+        panel.update_data(tokens=None)
+        await pilot.pause()
+        assert "—" in painted(pilot.app) and "No matching" not in painted(pilot.app)
+        panel.update_data(tokens=[])
+        await pilot.pause()
+        assert "No matching tokens" in painted(pilot.app)
+
+
+async def test_best_plays_omits_unknown_marker_and_separates_remaining_legend():
+    panel = BestPlays()
+    async with Probe(panel).run_test(size=(149, 45)) as pilot:
+        panel.update_data(gainers=[token(symbol="UNKNOWN", lp_state="unknown"),
+                                  token(symbol="ONE", lp_state="one-token")], losers=[])
+        await pilot.pause()
+        lines = painted(pilot.app).splitlines()
+        assert any("UNKNOWN" in line and "+24.8%" in line for line in lines)
+        assert "?" not in "\n".join(lines) and "? unknown" not in "\n".join(lines)
+        legend = next(i for i, line in enumerate(lines) if "* one-sided" in line)
+        assert not lines[legend-1].strip() and "ONE" in lines[legend-2]
+
+
+async def test_portfolio_movers_keeps_its_unknown_marker_and_existing_legend_spacing():
+    from maxpane_dashboard.widgets.portfolio import PortfolioMovers
+    panel = PortfolioMovers()
+    async with Probe(panel).run_test(size=(149, 45)) as pilot:
+        panel.update_data(gainers=[token(symbol="UNKNOWN", lp_state="unknown")], losers=[])
+        await pilot.pause()
+        lines = painted(pilot.app).splitlines()
+        legend = next(i for i, line in enumerate(lines) if "? unknown" in line)
+        assert "? UNKNOWN" in lines[legend-1]
 

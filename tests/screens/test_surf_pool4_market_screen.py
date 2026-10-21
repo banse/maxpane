@@ -915,3 +915,16 @@ async def test_the_p_body_mounts_no_flow_panel() -> None:
             f"the `p` body's {name} stopped naming MAINNET -- the quiet-title "
             f"opt-in leaked out of the `4` body's mount site: {title}"
         )
+
+
+@pytest.mark.parametrize('mode,label', [('pool4_user', 'POOL4 MARKET'), ('pool4', 'PROTOCOL / POOL4')])
+async def test_pool4_header_uses_its_own_source_instead_of_retained_launchpad_quote(mode, label):
+    payload = _frozen_payload(imd_price_usd=12345., parity_pct=87., as_of=None,
+                              pool4_network='MAINNET', pool4_as_of_hhmm='12:34')
+    async with _surf_app(payload).run_test(size=(149, 45)) as pilot:
+        await pilot.app.screen._do_refresh()
+        pilot.app.screen.open_mode(mode)
+        await pilot.pause()
+        text = _region_text(pilot.app, pilot.app.screen.query_one('#title-bar'))
+        assert label in text and 'MAINNET' in text and 'as of 12:34' in text
+        assert 'parity' not in text and '$' not in text and 'as of —' not in text

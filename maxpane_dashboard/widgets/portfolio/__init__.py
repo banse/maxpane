@@ -112,6 +112,8 @@ class PortfolioActivity(TokenActivity):
 
 class PortfolioMovers(BestPlays):
     TITLE = 'MOVERS / 24H'
+    _SHOW_UNKNOWN = True
+    _LEGEND_GAP = False
 
 
 class PortfolioDetail(SwarmTokenDetail):
