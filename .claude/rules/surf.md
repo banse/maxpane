@@ -1117,8 +1117,10 @@ green, including retained counts during stale or pending reads. Zero and unknown
 use the default inset color. Coverage and read details remain in the card tooltip.
 Click/Enter opens Work and Escape returns to the retained boardroom.
 
-The tree groups active projects → optional workflows → jobs → steps, then other unfinished
-work. Historical jobs start collapsed; active branches expand. Each job appears once.
+The upper WORKFLOWS tree groups projects → workflows → their jobs → steps.
+The larger lower JOBS tree contains only jobs not linked to a loaded workflow, with their
+steps; its shown count excludes workflow jobs. Missing linked jobs stay under their workflow.
+Historical jobs start collapsed; active branches expand. Each job appears once across both trees.
 Selection and collapsed branches survive refreshes. Local `/` search and `f` filters preserve parents;
 heroes remain unfiltered. Enter focuses details, and Escape closes search before leaving.
 Addresses in objective/dependency/note prose use copy helpers without a guessed chain;

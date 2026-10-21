@@ -687,3 +687,17 @@ The one review/fix wave corrected blocked-workflow filtering and repeated
 cross-tree mouse selection. Scoped re-review approved both, with regression
 and mutation proof. Final WORK/rack checks: 144 passed; fast guards: 128 passed;
 documentation pins: 12 passed. No unresolved findings in this CR round.
+
+## CR 12c342ef — WORK hierarchy correction, 2026-10-21
+
+The owner corrected the previous split: WORKFLOWS again nests its linked jobs
+and their steps, while JOBS contains only standalone jobs. The JOBS count uses
+that same scope. Missing linked jobs stay with their workflow; search, status
+filters, stable selection and collapse state work across both trees. This
+supersedes the earlier round's instruction to show every job in the lower tree.
+The live public-data preview at 149×45 contained 465 jobs and 198 workflows;
+the complete read took 39.22 seconds. No reader, polling, source or pin changed.
+All 48 WORK widget cases and 18 composing/layout cases pass, as do 128 guards
+and 12 documentation pins. The single review approved with no findings and
+independently killed two mutations; two implementation mutations were also
+killed/restored. No remaining follow-up for this correction.

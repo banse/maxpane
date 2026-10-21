@@ -79,13 +79,12 @@ async def test_hero_captions_share_inner_bottom_border_and_color(state, monkeypa
 
 
 def node(tree, key):
-    selector = "#work-jobs-tree" if key.startswith(("job:", "step:", "missing:")) else "#work-tree"
-    tree = tree.app.query_one(selector, Tree)
     def walk(parent):
         for child in parent.children:
             yield child
             yield from walk(child)
-    return next(n for n in walk(tree.root) if n.data and n.data[0] == key)
+    return next(n for selector in ("#work-tree", "#work-jobs-tree")
+                for n in walk(tree.app.query_one(selector, Tree).root) if n.data and n.data[0] == key)
 
 
 def select(tree, key):
@@ -173,10 +172,10 @@ async def test_project_nests_terminal_workflows_and_deduplicates_jobs_across_lin
         assert "Vault project" in output and "Old completed workflow" in output
         assert "OTHER JOBS" not in output
         assert node(tree, "workflow:flow-a").parent is node(tree, "project:project-a")
-        assert node(tree, "job:" + data["jobs"][3]["id"]).parent is app.query_one("#work-jobs-tree", Tree).root
+        assert node(tree, "job:" + data["jobs"][3]["id"]).parent is node(tree, "workflow:flow-old")
         def jobs(parent):
             return [child.data[0] for child in parent.children if child.data and child.data[1] == "job"] + [key for child in parent.children for key in jobs(child)]
-        keys = jobs(app.query_one("#work-jobs-tree", Tree).root)
+        keys = jobs(tree.root) + jobs(app.query_one("#work-jobs-tree", Tree).root)
         assert len(keys) == len(set(keys)) == 3
         assert "BunkerVault [limits]" in painted(app, "#work-detail-panel")
 
@@ -435,7 +434,8 @@ async def test_blocked_workflow_selection_survives_refresh_and_exposes_missing_j
         app.query_one(SurfWorkBody).cycle_filter()
         await pilot.pause()
         blocked = node(tree, "workflow:flow-blocked")
-        assert not blocked.allow_expand
+        assert blocked.allow_expand
+        blocked.expand()
         tree.focus()
         await pilot.pause()
         tree.move_cursor(blocked)
@@ -660,7 +660,7 @@ async def test_open_and_blocked_tabs_partition_work_and_keep_history():
         assert all(edge[0] == '' for edge in app.query_one('#work-detail-panel').styles.border)
 
 
-async def test_workflow_and_all_job_trees_share_detail_and_preserve_navigation():
+async def test_workflow_and_standalone_job_trees_share_detail_and_preserve_navigation():
     data = project_payload()
     data['projects'][0]['workflow_ids'] = ['flow-a']
     async with Harness(data).run_test(size=(149, 45)) as pilot:
@@ -674,10 +674,10 @@ async def test_workflow_and_all_job_trees_share_detail_and_preserve_navigation()
         workflows, jobs = app.query_one('#work-tree', Tree), app.query_one('#work-jobs-tree', Tree)
         assert node(workflows, 'workflow:flow-a').parent is node(workflows, 'project:project-a')
         assert all(child.data[1] in ('project', 'workflow', 'missing workflow') for child in workflows.root.children)
-        assert node(jobs, 'job:job-a').parent is jobs.root
+        assert node(jobs, 'job:job-a').parent is node(workflows, 'workflow:flow-a')
         assert node(jobs, 'job:job-c').parent is jobs.root
         assert 'Earlier release' in painted(app, '#work-jobs-panel')
-        jobs.select_node(node(jobs, 'step:job-a:vault'))
+        workflows.select_node(node(jobs, 'step:job-a:vault'))
         await pilot.pause()
         assert 'DEPENDENCIES' in painted(app, '#work-detail-panel')
         node(jobs, 'job:job-a').collapse()
@@ -687,8 +687,8 @@ async def test_workflow_and_all_job_trees_share_detail_and_preserve_navigation()
         assert 'DEPENDENCIES' in painted(app, '#work-detail-panel')
         body.focus_tree()
         await pilot.pause()
-        assert app.focused is jobs
-        workflows.move_cursor(node(workflows, 'workflow:flow-old'))
+        assert app.focused is workflows
+        jobs.move_cursor(node(jobs, 'job:job-c'))
         await pilot.pause()
         assert 'DEPENDENCIES' in painted(app, '#work-detail-panel')
         workflows.select_node(node(workflows, 'workflow:flow-a'))
@@ -702,7 +702,7 @@ async def test_workflow_and_all_job_trees_share_detail_and_preserve_navigation()
         app.query_one('#work-find', Input).value = 'flow-a'
         await pilot.pause()
         assert 'BunkerVault' in painted(app, '#work-tree-panel')
-        assert 'BunkerVault' in painted(app, '#work-jobs-panel')
+        assert 'BunkerVault' not in painted(app, '#work-jobs-panel')
         assert 'Repair logging' not in painted(app, '#work-jobs-panel')
 
 
@@ -720,6 +720,7 @@ async def test_blocked_workflow_cannot_bypass_filter_through_visible_job(job_sta
             body._rebuild()
             await pilot.pause()
             assert 'Awaiting deployment' not in painted(app, '#work-tree-panel')
+            assert 'BunkerVault' not in painted(app, '#work-jobs-panel')
         body._filter = 'blocked'
         body._rebuild()
         await pilot.pause()
@@ -748,3 +749,54 @@ async def test_mouse_returns_to_same_cursor_in_other_work_tree():
             assert app.focused is tree
             assert heading in painted(app, '#work-detail-panel')
             assert label in painted(app, '#work-detail-panel')
+
+
+@pytest.mark.parametrize('in_project', [False, True])
+async def test_workflow_keeps_jobs_and_steps_out_of_standalone_tree(in_project):
+    data = payload()
+    data['jobs'][1].update(state='completed', nodes=[dict(data['jobs'][0]['nodes'][0], key='frontend', state='accepted')])
+    if in_project:
+        data['projects'] = [dict(id='project-a', objective='Vault project', workflow_ids=['flow-a'],
+                                 job_ids=['job-a', 'job-b', 'job-c'], active_job_ids=['job-a'])]
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app, body = pilot.app, pilot.app.query_one(SurfWorkBody)
+        tree, jobs = app.query_one('#work-tree', Tree), app.query_one('#work-jobs-tree', Tree)
+        workflow = node(tree, 'workflow:flow-a')
+        assert workflow.allow_expand
+        assert node(tree, 'job:job-a').parent is workflow
+        assert node(tree, 'job:job-b').parent is workflow
+        assert node(tree, 'step:job-a:vault').parent is node(tree, 'job:job-a')
+        assert 'vault' in painted(app, '#work-tree-panel')
+        assert 'Repair logging' in painted(app, '#work-jobs-panel')
+        assert 'BunkerVault' not in painted(app, '#work-jobs-panel')
+        assert 'JOBS · 1 shown' in painted(app, '#work-jobs-panel')
+        assert [child.data[0] for child in jobs.root.children if child.data] == ['job:job-c']
+        select(tree, 'step:job-a:vault')
+        await pilot.pause()
+        assert 'DEPENDENCIES' in painted(app, '#work-detail-panel')
+        body.update_data(surf_work=deepcopy(data))
+        await pilot.pause()
+        body.focus_tree()
+        await pilot.pause()
+        assert app.focused is tree
+        assert 'DEPENDENCIES' in painted(app, '#work-detail-panel')
+        body.focus_find()
+        app.query_one('#work-find', Input).value = 'frontend'
+        await pilot.pause()
+        assert node(tree, 'step:job-b:frontend').tree is tree
+        assert 'frontend' in painted(app, '#work-tree-panel')
+        assert 'Repair logging' not in painted(app, '#work-jobs-panel')
+
+
+async def test_missing_workflow_job_stays_under_its_workflow():
+    data = payload()
+    data['workflows'][0]['frontend_job_id'] = 'missing-id'
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app = pilot.app
+        tree = app.query_one('#work-tree', Tree)
+        missing = node(tree, 'missing:missing-id')
+        assert missing.parent is node(tree, 'workflow:flow-a')
+        assert 'job not loaded' in painted(app, '#work-tree-panel')
+        assert 'missing-id' not in painted(app, '#work-jobs-panel')
