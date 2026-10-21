@@ -719,3 +719,18 @@ expects “acceptance unavailable” where the owner-approved display is now
 update that old wording assertion when the data test is next touched.
 The single review approved without findings. Three implementation mutations
 and two independent review mutations were killed and restored byte for byte.
+
+### Seat shortcut correction — 2026-10-21
+
+The numbered headers initially supported mouse clicks only. BOARDROOM now
+also binds keys 1–4 to the same per-slot popup; digits still type normally in
+the command and inline seat inputs. The header labels read '1' through '4',
+with both apostrophes inside the clickable area. Fresh public-data preview
+at 149×45 retained the layout (6.32s read). No source or polling change.
+All 191 BOARDROOM cases and 128 fast guards pass. The registration checks
+pass 79 cases; their full-outage case still expects the removed source-warning
+list in Surf's title (`tests/test_surf_registration.py:2404`). That unrelated
+failure reproduces on baseline `d9074556`; update its display expectation when
+the registration test is next touched.
+The single review approved without findings; the missing-shortcut, unquoted
+label and independently checked wrong-slot mutations were caught and restored.

@@ -177,9 +177,9 @@ async def test_slot_numbers_are_right_aligned_muted_and_only_on_agent_headers():
                     header, *_, footer = rows(pilot.app, card)
                     digits = [segment for segment in header if segment.style and 'seat_edit' in segment.style.meta]
                     assert len(digits) == 1
-                    assert digits[0].text == str(slot + 1)
+                    assert digits[0].text == f"'{slot + 1}'"
                     assert digits[0].style.meta['seat_edit'] == slot
-                    assert header.text.index(str(slot + 1)) == card.region.width - 4
+                    assert header.text.index(f"'{slot + 1}'") == card.region.width - 6
                     footer_label = 'IDLE' if assigned else 'Identity.md'
                     ink = next(iter(footer.crop(footer.text.index(footer_label), footer.text.index(footer_label) + 1))).style.color
                     assert digits[0].style.color == ink

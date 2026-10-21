@@ -339,7 +339,8 @@ async def test_agent_modal_escape_closes_prompt_before_hub(monkeypatch):
         assert app.screen.name == "surfboard"
 
 
-async def test_agent_header_numbers_edit_only_the_clicked_slot_and_keep_boardroom(monkeypatch):
+@pytest.mark.parametrize('activation', ['mouse', 'keyboard'])
+async def test_agent_header_numbers_edit_only_the_clicked_slot_and_keep_boardroom(monkeypatch, activation):
     from maxpane_dashboard.screens.seat_input import SeatInputScreen
     from maxpane_dashboard.widgets.surfboard.rack import AGENT_KEYS, SurfboardCard
     saved = []
@@ -364,7 +365,12 @@ async def test_agent_header_numbers_edit_only_the_clicked_slot_and_keep_boardroo
             else:
                 pytest.fail('Clickable slot number missing from the card header')
             original = manager.hub_seats
-            await pilot.click(offset=(x, card.region.y))
+            async def open_editor():
+                if activation == 'mouse':
+                    await pilot.click(offset=(x + slot % 3, card.region.y))
+                else:
+                    await pilot.press(str(slot + 1))
+            await open_editor()
             await pilot.pause()
             assert isinstance(app.screen, SeatInputScreen)
             field = app.screen.query_one('#wi-input', Input)
@@ -374,7 +380,7 @@ async def test_agent_header_numbers_edit_only_the_clicked_slot_and_keep_boardroo
             await pilot.pause()
             assert app.screen is hub and manager.hub_seats == original
             assert len(saved) == slot
-            await pilot.click(offset=(x, card.region.y))
+            await open_editor()
             await pilot.pause()
             field = app.screen.query_one('#wi-input', Input)
             field.value = ''
@@ -398,6 +404,26 @@ async def test_agent_header_numbers_edit_only_the_clicked_slot_and_keep_boardroo
             assert manager.hub_seats == tuple(expected)
             assert saved == [(index, 0 if index == 0 else 100 + index) for index in range(slot + 1)]
             assert manager.seat == 0
+
+
+async def test_agent_number_shortcuts_do_not_intercept_input():
+    from maxpane_dashboard.screens.seat_input import SeatInputScreen
+    from maxpane_dashboard.widgets.surfboard import SurfboardTerminal
+    app, _ = hub_app()
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        hub = app.screen
+        for field in (hub.query_one(SurfboardTerminal).query_one(Input),
+                      hub.query_one('#surfboard-seat-2', Input)):
+            field.focus()
+            await pilot.press('1', '2', '3', '4')
+            assert app.screen is hub
+            assert field.value == '1234'
+        card = hub.query_one('#surfboard-card-agent')
+        await pilot.click(offset=(card.region.right - 5, card.region.y))
+        assert isinstance(app.screen, SeatInputScreen)
+        await pilot.press('escape')
+        assert app.screen is hub
 
 
 @pytest.mark.asyncio

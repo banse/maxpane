@@ -76,6 +76,10 @@ class SurfboardScreen(SurfDashboardScreen):
         Binding("p", "protocol", "Protocol", show=False),
         Binding("ctrl+o", "oracles", "Oracles", show=False),
         Binding("slash", "command_input", "Command", show=False),
+        Binding("1", "edit_seat(0)", "Seat 1", show=False),
+        Binding("2", "edit_seat(1)", "Seat 2", show=False),
+        Binding("3", "edit_seat(2)", "Seat 3", show=False),
+        Binding("4", "edit_seat(3)", "Seat 4", show=False),
         Binding("left", "card('left')", show=False),
         Binding("right", "card('right')", show=False),
         Binding("up", "card('up')", show=False),
@@ -251,11 +255,15 @@ class SurfboardScreen(SurfDashboardScreen):
         self._seat_entered(event.seat_slot, token)
 
     def on_surfboard_rack_seat_edit_requested(self, event: SurfboardRack.SeatEditRequested) -> None:
+        event.stop()
+        self.action_edit_seat(event.seat_slot)
+
+    def action_edit_seat(self, slot: int) -> None:
+        if isinstance(self.focused, Input):
+            return
         from maxpane_dashboard import config
         from maxpane_dashboard.screens.seat_input import SeatInputScreen
 
-        event.stop()
-        slot = event.seat_slot
         prompt = SeatInputScreen(current=self._data_manager.get_hub_seats()[slot],
                                  saver=lambda token: config.save_surfboard_seat(slot, token))
         self.app.push_screen(prompt, callback=lambda token: self._seat_entered(slot, token))

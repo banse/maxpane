@@ -42,6 +42,8 @@ view. TOKENS opens live markets; its LAST 24h inset ranks recent launches by USD
 with price arrows comparing successive loads. The outer footer shows the newest launch.
 Partial market coverage is labelled. Portfolio opens the offline mock preview below;
 the four lower AGENT cards keep their independently saved seats.
+In BOARDROOM, press `1`–`4` or click the matching `'1'`–`'4'` in an AGENT
+card header to edit that slot's seat. Digits remain ordinary text while an input is focused.
 
 The **NFTS** card below ONCHAIN FEED opens the NFT Explorer; `n` opens it directly.
 The previous **PROTOCOL** view remains available with `p` in the BOARDROOM and

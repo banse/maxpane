@@ -354,12 +354,12 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
 
     def _update_title(self, clipped=False):
         available = max(0, self.region.width - 6)
-        numbered = self.seat_slot is not None and available >= 3
-        title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, available - 3) if numbered else max(0, self.size.width - 4)))
+        numbered = self.seat_slot is not None and available >= 5
+        title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, available - 5) if numbered else max(0, self.size.width - 4)))
         if numbered:
-            title.append(" " + "─" * max(0, available - title.cell_len - 3) + " ",
+            title.append(" " + "─" * max(0, available - title.cell_len - 5) + " ",
                          style=Style(color=self.styles.border_top[1].rich_color))
-            title.append(str(self.seat_slot + 1), style=Style(dim=True, meta={"seat_edit": self.seat_slot}))
+            title.append(f"'{self.seat_slot + 1}'", style=Style(dim=True, meta={"seat_edit": self.seat_slot}))
         self.border_title = title
 
     def render(self):
