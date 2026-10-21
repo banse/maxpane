@@ -442,7 +442,7 @@ def fleet_summary(workers, source):
     return facts
 
 
-def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, nft_catalogue: dict | None = None, activity: dict | None = None, agent_seats: list[dict] | None = None, pool4_price_direction: str | None = None, workers: dict | None = None, worker_source: dict | None = None) -> list[dict]:
+def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = None, announce_read_ts: float | None = None, announce_items: list | None = None, family_sources: dict | None = None, tokens_catalogue: dict | None = None, nft_catalogue: dict | None = None, activity: dict | None = None, agent_seats: list[dict] | None = None, pool4_price_direction: str | None = None, workers: dict | None = None, worker_source: dict | None = None, current_work: dict | None = None) -> list[dict]:
     from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES, FIRED_TTL_S, _tx_hash
     result = []
     def card(key,title,primary,secondary,detail,destination,n=None,d=None,points=None,source=None):
@@ -528,6 +528,10 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
             api_status = seat.get('api_status')
             result[-1]['secondary'] = api_status.strip() if isinstance(api_status, str) and api_status.strip() else 'offline'
     fleet = fleet_summary(workers, worker_source)
+    board_hero = data.get('surf_leaderboard_hero') or {}
+    effort_facts, worker_facts, rate_facts = (board_hero.get(key) or {} for key in ('effort', 'workers', 'rate'))
+    fleet.update(tokens=count(effort_facts.get('tokens')), jobs=count(worker_facts.get('working')),
+                 capacity=count(worker_facts.get('capacity')), accept_rate=number(rate_facts.get('percent')))
     card("board", "FLEET", "", "",
          f"FLEET · workers read {hhmm(fleet['read_ts'])}"
          f" · runtime metadata {_value(fleet['runtime_known'])}/{_value(fleet['online'])} online seats"
@@ -541,6 +545,12 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     result[-1].update(meter_kind='duration', numerator=worked_ms, denominator=None)
     result[-1]['detail'] += (f" · fleet worked {_value(worked_ms)} ms across all contributor devices"
                             f" · contributors read {data.get('swarm_contributors_as_of_hhmm') or '—'}"
+                            f" · effort read {hhmm(effort_facts.get('read_ts'))}"
+                            f" ({effort_facts.get('state', 'unavailable')})"
+                            f" · capacity read {hhmm(worker_facts.get('read_ts'))}"
+                            f" ({worker_facts.get('state', 'unavailable')})"
+                            f" · acceptance read {hhmm(rate_facts.get('read_ts'))}"
+                            f" ({rate_facts.get('state', 'unavailable')})"
                             " · 365-day years, whole days only")
     oracles = data.get("surf_oracles") or {}
     oracle_rows = oracles.get("rows")
@@ -554,14 +564,18 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     if oracle_state == "ok" and oracles.get("partial"):
         oracle_state = "partial"
     count_names = sorted(set(counts) - {"assessing", "attested"} | {"disagreed", "blocked"})
-    subtitle = "in progress"
+    current_work = current_work or {}
+    agents = count(current_work.get('oracle_agents'))
+    subtitle = f'{agents:,} agents' if agents is not None else '— agents'
     card("oracles", "ORACLES", f"{assessing:,}" if assessing is not None else "—", subtitle,
          f"ORACLES · newest {ORACLE_PAGE_LIMIT} requests · counts from loaded rows"
          + f" · {_value(loaded)} loaded · {_value(assessing)} assessing · {_value(attested)} attested"
          + f" · {_value(chains)} chains"
          + (" · " + " · ".join(f"{counts[state]:,} {state}" for state in count_names)
             if loaded is not None else "")
-         + f" · {'partial · ' if oracle_state == 'partial' else ''}read {hhmm(oracles.get('read_ts'))} · Enter to open", "oracles")
+         + f" · {'partial · ' if oracle_state == 'partial' else ''}read {hhmm(oracles.get('read_ts'))}"
+         + f" · agents read {hhmm(current_work.get('read_ts'))} · {current_work.get('reason') or 'Current node coverage incomplete'}"
+         + " · Enter to open", "oracles")
     result[-1].update(meter_kind="oracles", meter_state=oracle_state, numerator=chains, denominator=loaded,
                      status=("assessing" if assessing else "idle") if oracle_state in ("ok", "partial") else oracle_state)
     price = number(data.get("pool4_price_usd"))
@@ -644,12 +658,15 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     summary = {key: count((work.get("summary") or {}).get(key)) for key in SURF_WORK_SUMMARY_KEYS}
     jobs, workflows = summary["jobs"], summary["workflows"]
     state = work.get("state", "unavailable")
-    subtitle = (f"{workflows:,} workflow{'s' if workflows != 1 else ''}"
-                if workflows is not None else "— workflows")
+    node_counts = current_work.get('node_counts')
+    top = min(node_counts, key=lambda key: (-node_counts[key], key)) if node_counts else None
+    subtitle = f'{node_counts[top]:,} {top}' if top else '0 working' if node_counts == {} else '— working'
     card("work", "WORK IN PROGRESS", f"{jobs:,}" if jobs is not None else "—", subtitle,
          "WORK IN PROGRESS · " + " · ".join(f"{_value(summary[key])} {key}" for key in SURF_WORK_SUMMARY_KEYS)
          + f" · loaded {_value(work.get('jobs_loaded'))} jobs · {_value(work.get('workflows_loaded'))} workflows"
          + f" · {_value(work.get('details_loaded'))}/{_value(work.get('details_expected'))} details"
+         + f" · current nodes {_value(current_work.get('jobs_loaded'))}/{_value(current_work.get('jobs_expected'))} jobs"
+         + f" · nodes read {hhmm(current_work.get('read_ts'))}"
          + (" · partial" if work.get("partial") else "")
          + f" · read {hhmm(work.get('read_ts'))} · Enter to open", "work")
     result[-1].update(work_summary=summary, meter_kind="work", meter_state=state,

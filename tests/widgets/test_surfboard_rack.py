@@ -118,10 +118,10 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
         app = pilot.app
         card = app.query_one('#surfboard-card-oracles', SurfboardCard)
         for status, primary, subtitle, chains, glyphs in [
-            ('assessing', '7', 'in progress', 2, ['╶─┐', '  │', '  ╵']),
-            ('idle', '0', 'in progress', 0, ['╭─╮', '│ │', '╰─╯']),
-            ('stale', '7', 'in progress', 2, ['╶─┐', '  │', '  ╵']),
-            ('unavailable', '—', 'in progress', None, ['', '—', '']),
+            ('assessing', '7', '8 agents', 2, ['╶─┐', '  │', '  ╵']),
+            ('idle', '0', '0 agents', 0, ['╭─╮', '│ │', '╰─╯']),
+            ('stale', '7', '8 agents', 2, ['╶─┐', '  │', '  ╵']),
+            ('unavailable', '—', '— agents', None, ['', '—', '']),
         ]:
             card.set_data(dict(primary=primary, secondary=subtitle, status=status,
                                numerator=chains, denominator=100, meter_kind='oracles'))
@@ -130,7 +130,7 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
             assert '⊙ ORACLES' in strips[0].text
-            assert 'ASSESSING' in strips[top].text
+            assert strips[top].text.strip('│┌┐─ ') == 'JOBS'
             for strip, expected in zip(strips[top+1:top+4], glyphs):
                 assert strip.text[left+1:right].strip() == expected.strip()
                 if primary != '—':
@@ -145,7 +145,7 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
             for strip in strips[top:top+5]:
                 for x in (left, right):
                     assert next(iter(strip.crop(x, x+1))).style.color.get_truecolor() == tone
-            for label in ('ASSESSING', subtitle):
+            for label in ('JOBS', subtitle):
                 segment = next(s for row in strips for s in row if label in s.text)
                 assert segment.style.color.get_truecolor() == tone
             assert card.data['destination'] == 'oracles'
@@ -339,7 +339,7 @@ async def test_pool4_digit_face(size,key,primary,secondary,label,expected,green,
 async def test_nft_card_preserves_collection_digits_and_build_mint_counts(size):
     async with RackApp().run_test(size=size) as pilot:
         card=pilot.app.query_one('#surfboard-card-surf-nft',SurfboardCard)
-        card.set_data(dict(primary='20',status='active',nft_summary={
+        card.set_data(dict(primary='20',secondary='3 building',status='active',nft_summary={
             'deployed':20,'building':3,'mint_open':15,'partial':True}))
         await pilot.pause()
         text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
@@ -347,7 +347,8 @@ async def test_nft_card_preserves_collection_digits_and_build_mint_counts(size):
         assert 'partial' not in text
         assert card_strips(pilot.app,card)[-1].text.strip('╰─╯ ') == '3 build · 15 open'
         inset_footer=next(strip.text for strip in card_strips(pilot.app,card) if '└' in strip.text)
-        assert 'build' not in inset_footer and 'open' not in inset_footer
+        assert inset_footer.strip('│└┘─ ') == '3 building'
+        assert 'open' not in inset_footer
         assert '╭─╮' in text
         assert card.data['destination']=='surf-nft'
 
@@ -774,13 +775,14 @@ def test_surfboard_and_surf_widgets_import_in_either_order(module):
 def fleet_card_data():
     return dict(status='active', destination='board', meter_kind='duration',
                 numerator=51231599999, detail='FLEET · workers observed',
-                fleet_summary=dict(codex_percent=52.5, claude_percent=47.4,
+                fleet_summary=dict(tokens=1234567890, jobs=21, capacity=1500, accept_rate=95.84,
+                                   codex_percent=52.5, claude_percent=47.4,
                                    daemon='0.1.2', model='gpt-6-astra', effort='xhigh',
                                    online=880, runtime_known=880, state='ok', read_ts=100))
 
 
 @pytest.mark.parametrize('size', [(149, 45), (146, 37)])
-async def test_fleet_runtime_rows_values_green_frame_and_model_neutral(size):
+async def test_fleet_stats_rows_values_green_frame_and_acceptance_neutral(size):
     async with RackApp().run_test(size=size) as pilot:
         app = pilot.app
         card = app.query_one('#surfboard-card-board', SurfboardCard)
@@ -790,12 +792,12 @@ async def test_fleet_runtime_rows_values_green_frame_and_model_neutral(size):
             strips = card_strips(app, card)
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
-            assert 'RUNTIMES' in strips[top].text and 'TOP AGENTS' not in strips[top].text
+            assert 'STATS' in strips[top].text and 'RUNTIMES' not in strips[top].text
             value_ends = []
             green = Color.parse(app.get_css_variables()['foreground']).get_truecolor()
             neutral = neutral_inset_color(app)
             for strip, label, value in zip(strips[top+1:top+4],
-                                          ('codex', 'claude', 'daemon'), ('52.5%', '47.4%', '0.1.2')):
+                                          ('tokens', 'jobs', 'capacity'), ('1.2B', '21', '1,500')):
                 assert strip.crop(left+1, right).text.split() == [label, value]
                 value_start = strip.text.index(value)
                 value_ends.append(value_start + len(value))
@@ -804,11 +806,11 @@ async def test_fleet_runtime_rows_values_green_frame_and_model_neutral(size):
                 label_start = strip.text.index(label)
                 assert next(iter(strip.crop(label_start, label_start+len(label)))).style.color == card.rich_style.color
             assert len(set(value_ends)) == 1
-            assert strips[top+4].crop(left+1, right).text.strip('─ ') == 'astra 6 xhigh'
+            assert strips[top+4].crop(left+1, right).text.strip('─ ') == '95.84%'
             for strip in strips[top:top+5]:
                 for x in (left, right):
                     assert next(iter(strip.crop(x, x+1))).style.color.get_truecolor() == neutral
-            for value in ('RUNTIMES', 'astra 6 xhigh'):
+            for value in ('STATS', '95.84%'):
                 segment = next(segment for strip in strips for segment in strip if value in segment.text)
                 assert segment.style.color.get_truecolor() == neutral and not segment.style.bold
             assert 'worked 1y 32w 3d' in strips[-1].text
@@ -841,42 +843,47 @@ async def test_fleet_worked_footer_floors_time_and_centers_without_activity_bar(
 
 
 @pytest.mark.parametrize('size', [(149, 45), (146, 37)])
-async def test_fleet_long_base_daemon_keeps_padded_edges(size):
+async def test_fleet_large_counts_keep_padded_edges_and_aligned_values(size):
     async with RackApp().run_test(size=size) as pilot:
         card = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
         data = fleet_card_data()
-        data['fleet_summary'].update(daemon='100.22.33', model='claude-opus-5-5', effort='medium')
+        data['fleet_summary'].update(tokens=99999999999, jobs=99999, capacity=9999,
+                                     accept_rate=100, daemon='100.22.33', model='claude-opus-5-5', effort='medium')
         card.set_data(data)
         await pilot.pause()
         strips = card_strips(pilot.app, card)
         top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
-        assert '100.22.33' in strips[top+3].text
-        assert 'opus 5.5 medium' in strips[top+4].text
+        left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
+        assert '100.00%' in strips[top+4].text
         assert '‹' not in strips[0].text
         assert len({strip.text.index(value) + len(value) for strip, value in
-                    zip(strips[top+1:top+4], ('52.5%', '47.4%', '100.22.33'))}) == 1
+                    zip(strips[top+1:top+4], ('100.0B', '99,999', '9,999'))}) == 1
+        for strip in strips[top+1:top+4]:
+            assert strip.crop(left+1, left+2).text == strip.crop(right-1, right).text == ' '
+        assert '100.22.33' not in '\n'.join(strip.text for strip in strips)
+        assert 'Daemon: 100.22.33' in card.tooltip.plain
 
 
-async def test_fleet_unknown_zero_missing_effort_and_retained_data_on_resize():
+async def test_fleet_unknown_zero_invalid_counts_and_retained_data_on_resize():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
-        for summary, values, model in [
+        for summary, values, acceptance in [
             (None, ['—', '—', '—'], '—'),
-            ({'codex_percent': 0, 'claude_percent': 100, 'daemon': '0.1.2',
-              'model': 'gpt-6-astra', 'effort': None}, ['0%', '100%', '0.1.2'], 'astra 6'),
-            ({'codex_percent': True, 'claude_percent': float('inf'), 'daemon': None,
-              'model': None, 'effort': 'high'}, ['—', '—', '—'], '—'),
+            ({'tokens': 0, 'jobs': 0, 'capacity': 0, 'accept_rate': 0}, ['0', '0', '0'], '0.00%'),
+            ({'tokens': True, 'jobs': float('inf'), 'capacity': -1, 'accept_rate': True}, ['—', '—', '—'], '—'),
+            ({'tokens': -1, 'jobs': '21', 'capacity': 1.5, 'accept_rate': 101}, ['—', '—', '—'], '—'),
+            ({'tokens': 12500, 'jobs': 2, 'capacity': None, 'accept_rate': float('nan')}, ['12.5K', '2', '—'], '—'),
         ]:
             card.set_data(dict(fleet_card_data(), fleet_summary=summary))
             await pilot.pause()
             strips = card_strips(pilot.app, card)
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
-            for strip, label, value in zip(strips[top+1:top+4], ('codex', 'claude', 'daemon'), values):
+            for strip, label, value in zip(strips[top+1:top+4], ('tokens', 'jobs', 'capacity'), values):
                 assert strip.text.strip('│ ').split() == [label, value]
                 if value == '—':
                     segment = next(segment for segment in strip if '—' in segment.text)
                     assert segment.style.color == card.rich_style.color
-            assert strips[top+4].text.strip('│└┘─ ') == model
+            assert strips[top+4].text.strip('│└┘─ ') == acceptance
         data = fleet_card_data()
         card.set_data(dict(data, status='stale'))
         for width in (110, 149, 220, 146):
@@ -884,14 +891,14 @@ async def test_fleet_unknown_zero_missing_effort_and_retained_data_on_resize():
             card.scroll_visible(animate=False, force=True)
             await pilot.pause()
             strips = card_strips(pilot.app, card)
-            assert all(value in '\n'.join(row.text for row in strips) for value in ('52.5%', '47.4%', '0.1.2'))
+            assert all(value in '\n'.join(row.text for row in strips) for value in ('1.2B', '21', '1,500'))
             assert card.data['fleet_summary'] == data['fleet_summary']
             if width >= 146:
-                assert 'astra 6 xhigh' in '\n'.join(row.text for row in strips)
+                assert '95.84%' in '\n'.join(row.text for row in strips)
                 assert '‹' not in strips[0].text
 
 
-async def test_fleet_long_unicode_model_and_daemon_fit_and_tooltip_remains_literal():
+async def test_fleet_hostile_model_and_daemon_stay_in_literal_tooltip_only():
     from rich.text import Text
     async with RackApp().run_test(size=(146, 37)) as pilot:
         card = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
@@ -909,8 +916,10 @@ async def test_fleet_long_unicode_model_and_daemon_fit_and_tooltip_remains_liter
                 assert strip.crop(left, left+1).text == '│'
                 assert strip.crop(right, right+1).text == '│'
             assert strips[top+4].crop(right, right+1).text == '┘'
-            assert '…' in '\n'.join(strip.text for strip in strips[top:top+5])
-            assert '‹' in strips[0].text
+            visible = '\n'.join(strip.text for strip in strips[top:top+5])
+            assert all(value in visible for value in ('1.2B', '21', '1,500', '95.84%'))
+            assert '…' not in visible and '模型' not in visible and '[red]' not in visible
+            assert '100.200.300' not in visible and '‹' not in strips[0].text
         assert isinstance(card.tooltip, Text)
         expected_detail = detail.replace('\x1b', '').replace('\u202e', '')
         assert card.tooltip.plain == (expected_detail + '\nModel: ' + summary['model'] +
@@ -921,17 +930,19 @@ async def test_fleet_long_unicode_model_and_daemon_fit_and_tooltip_remains_liter
 async def test_nft_card_unknown_counts_remain_neutral_without_coverage_footer():
     async with RackApp().run_test(size=(149,45)) as pilot:
         card=pilot.app.query_one('#surfboard-card-surf-nft',SurfboardCard)
-        card.set_data(dict(primary='—',nft_summary={}))
+        card.set_data(dict(primary='—',secondary='— building',nft_summary={}))
         await pilot.pause()
         text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
         assert '— build · — open' in text and '0 build' not in text
-        card.set_data(dict(primary='0',nft_summary={
+        assert '— building' in next(strip.text for strip in card_strips(pilot.app, card) if '└' in strip.text)
+        card.set_data(dict(primary='0',secondary='0 building',nft_summary={
             'deployed':0,'building':0,'mint_open':0,'partial':True}))
         await pilot.pause()
         text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
         assert '0 build · 0 open' in text and 'partial' not in text
         assert card.data['nft_summary']['partial'] is True
         assert card_strips(pilot.app,card)[-1].text.strip('╰─╯ ') == '0 build · 0 open'
+        assert '0 building' in next(strip.text for strip in card_strips(pilot.app, card) if '└' in strip.text)
 
 
 
@@ -1023,11 +1034,11 @@ async def test_token_volume_footer_shares_swarm_label_color_and_retains_gaps(poi
 
 
 @pytest.mark.parametrize('size', [(149, 45), (144, 37)])
-async def test_work_card_approved_digits_workflows_and_step_footer(size):
+async def test_work_card_approved_digits_build_caption_and_step_footer(size):
     async with RackApp().run_test(size=size) as pilot:
         app = pilot.app
         card = app.query_one('#surfboard-card-work', SurfboardCard)
-        card.set_data(dict(primary='5', secondary='1 workflow', status='active',
+        card.set_data(dict(primary='5', secondary='3 build', status='active',
                            work_summary=dict(build=5, review=4)))
         await pilot.pause()
         strips = card_strips(app, card)
@@ -1035,9 +1046,9 @@ async def test_work_card_approved_digits_workflows_and_step_footer(size):
         left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
         assert '⊙ WIP' in strips[0].text
         assert 'WORK IN PROGRESS' not in strips[0].text
-        assert 'ACTIVE JOBS' in strips[top].text
+        assert 'JOBS' in strips[top].text and 'ACTIVE JOBS' not in strips[top].text
         assert [strip.text[left+1:right].strip() for strip in strips[top+1:top+4]] == ['╭─╴', '╰─╮', '╶─╯']
-        assert '1 workflow' in strips[top+4].text
+        assert '3 build' in strips[top+4].text
         footer = strips[-1].text
         assert ('5 build · 4 review' if card.region.width >= 24 else '5 build · 4 rev') in footer
         assert inset_border_color(strips[top]) == Color.parse(app.get_css_variables()['accent'])
@@ -1054,20 +1065,21 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
         await pilot.pause()
         card = app.hub.query_one('#surfboard-card-work', SurfboardCard)
         for state, primary, secondary, counts in [
-            ('active', '5', '1 workflow', dict(build=5, review=4)),
-            ('idle', '0', '0 workflows', dict(build=0, review=0)),
-            ('stale', '5', '1 workflow', dict(build=5, review=4)),
-            ('stale', '0', '0 workflows', dict(build=0, review=0)),
-            ('active', '0', '0 workflows', dict(build=0, review=0)),
-            ('unavailable', '5', '1 workflow', dict(build=5, review=4)),
-            ('loading', '5', '1 workflow', dict(build=5, review=4)),
-            ('error', '1,000', '1 workflow', dict(build=5, review=4)),
-            ('unavailable', '—', '— workflows', dict(build=None, review=None)),
+            ('active', '5', '3 build', dict(build=5, review=4)),
+            ('idle', '0', '0 build', dict(build=0, review=0)),
+            ('stale', '5', '3 build', dict(build=5, review=4)),
+            ('stale', '0', '0 build', dict(build=0, review=0)),
+            ('active', '0', '0 build', dict(build=0, review=0)),
+            ('unavailable', '5', '3 build', dict(build=5, review=4)),
+            ('loading', '5', '3 build', dict(build=5, review=4)),
+            ('error', '1,000', '3 build', dict(build=5, review=4)),
+            ('unavailable', '—', '— build', dict(build=None, review=None)),
         ]:
             card.set_data(dict(status=state, primary=primary, secondary=secondary, work_summary=counts))
             await pilot.pause()
             strips = card_strips(app, card)
-            top = next(i for i, s in enumerate(strips) if 'ACTIVE JOBS' in s.text)
+            top = next(i for i, s in enumerate(strips) if '┌' in s.text)
+            assert strips[top].text.strip('│┌┐─ ') == 'JOBS'
             expected = (Color.parse(app.get_css_variables()['accent']).get_truecolor()
                         if primary in ('5', '1,000') else neutral_inset_color(app))
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
@@ -1075,11 +1087,11 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
                 for x in (left, right):
                     assert next(iter(row.crop(x, x+1))).style.color.get_truecolor() == expected
             if primary != '—':
-                digit_ink = (Color.parse(app.get_css_variables()['accent']).get_truecolor()
+                digit_ink = (app.ansi_theme.ansi_colors[2]
                              if primary in ('5', '1,000') else card.rich_style.color.get_truecolor())
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for row in strips[top+1:top+4] for s in row.crop(left+1, right) if s.text.strip())
-            for row, label in ((strips[top], 'ACTIVE JOBS'), (strips[top+4], secondary)):
+            for row, label in ((strips[top], 'JOBS'), (strips[top+4], secondary)):
                 caption = next(s for s in row if label in s.text)
                 assert caption.style.color.get_truecolor() == expected
                 assert not caption.style.bold

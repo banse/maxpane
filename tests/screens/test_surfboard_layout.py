@@ -29,8 +29,34 @@ class HubHarness(App):
         self.push_screen(self.hub)
 
 
+@pytest.mark.parametrize('themed', [False, True])
+async def test_boardroom_heading_moves_into_gap_without_resizing_content(monkeypatch, themed):
+    if not themed:
+        monkeypatch.setattr(HubHarness, 'CSS_PATH', [])
+    app = HubHarness(hub_payload())
+    async with app.run_test(size=(149, 45)) as pilot:
+        for width, height, card_height, terminal_y, terminal_height in (
+            (149, 45, 9, 12, 31), (143, 37, 7, 10, 25), (149, 45, 9, 12, 31),
+        ):
+            await pilot.resize_terminal(width, height)
+            await pilot.pause()
+            heading = app.hub.query_one('#surfboard-title')
+            terminal = app.hub.query_one(SurfboardTerminal)
+            cards = list(app.hub.query(SurfboardCard))
+            assert {card.region.height for card in cards} == {card_height}
+            assert (terminal.region.y, terminal.region.height) == (terminal_y, terminal_height)
+            assert heading.region.y == terminal_y - 1
+            assert heading.region.x == terminal.region.x
+            assert heading.region.width == terminal.region.width
+            rows = app.hub._compositor.render_strips()
+            assert not rows[0].text.strip()
+            assert 'IMD BOARDROOM' in rows[terminal_y - 1].text
+            assert 'WORKFLOWS [g]' in rows[terminal_y - 1].text
+            assert sum('IMD BOARDROOM' in row.text for row in rows) == 1
+
+
 @pytest.mark.parametrize('size', [(146, 37), (149, 45)])
-async def test_fleet_runtime_card_model_effort_and_duration_survive_refresh(size):
+async def test_fleet_stats_acceptance_and_duration_survive_refresh(size):
     payload = hub_payload()
     app = HubHarness(payload)
     async with app.run_test(size=size) as pilot:
@@ -40,19 +66,18 @@ async def test_fleet_runtime_card_model_effort_and_duration_survive_refresh(size
             return '\n'.join(strip.crop(card.region.x, card.region.right).text for strip in
                              app.hub._compositor.render_strips()[card.region.y:card.region.bottom])
         output = painted()
-        assert all(text in output for text in ('RUNTIMES', 'codex', '52.5%', 'claude', '47.4%',
-                                              'daemon', '0.1.2', 'astra 6 xhigh', 'worked 1y 32w 3d'))
+        assert all(text in output for text in ('STATS', 'tokens', '189.1B', 'jobs', '9',
+                                              'capacity', '1,500', '95.84%', 'worked 1y 32w 3d'))
         assert 'top model' not in output and 'TOP AGENTS' not in output
         bottom = next(line for line in output.splitlines() if '└' in line)
-        assert '┘' in bottom and 'astra 6 xhigh' in bottom
+        assert '┘' in bottom and '95.84%' in bottom
         facts = next(row for row in payload['surfboard_cards'] if row['key'] == 'board')['fleet_summary']
-        facts.update(model='claude-fable-5-1', effort='high', daemon='0.2.0',
-                     codex_percent=25., claude_percent=75.)
+        facts.update(tokens=5000000, jobs=12, capacity=2000, accept_rate=96.25)
         await app.hub._do_refresh()
         await pilot.pause()
         output = painted()
-        assert 'fable 5.1 high' in output and 'astra' not in output
-        assert '0.2.0' in output and 'worked 1y 32w 3d' in output
+        assert '5.0M' in output and '96.25%' in output
+        assert '2,000' in output and 'worked 1y 32w 3d' in output
         assert card.data['destination'] == 'board'
 
 
@@ -135,7 +160,7 @@ async def test_terminal_uses_dashboard_background_and_native_text_colors():
             assert terminal.query_one(RichLog).styles.background == app.hub.styles.background
             strips = app.hub._compositor.render_strips()
             value = next(segment for strip in strips for segment in strip
-                         if "52.5%" in segment.text)
+                         if "189.1B" in segment.text)
             reply = next(segment for strip in strips for segment in strip
                          if "palette reply" in segment.text)
             assert value.style.bgcolor == Color.parse(theme.background)
@@ -333,7 +358,8 @@ async def _render(payload, size):
                 clipped.append(card.key)
         bar = screen.query_one(StatusBar)
         right = bar.query_one("#status-right")
-        return dict(text=text, size=size, cards=card_regions, card_text=card_text,
+        return dict(text=text, title=strips[screen.query_one("#surfboard-title").region.y].text,
+                    size=size, cards=card_regions, card_text=card_text,
                     terminal=terminal.region, rack=rack.region,
                     horizontal=viewport.show_horizontal_scrollbar,
                     vertical=viewport.show_vertical_scrollbar,
@@ -390,7 +416,7 @@ async def test_width_boundary_reserves_six_columns_even_with_vertical_scrolling(
     r = await _render(hub_payload(kind), (width, SURFBOARD_FULL_LAYOUT_ROWS - 1))
     # A short viewport needs one real scrollbar cell; tall viewports reserve none.
     assert r["horizontal"] == (width < SURFBOARD_FULL_LAYOUT_COLUMNS + 1), r
-    assert ("‹ widen" in r["text"].splitlines()[0]) == r["horizontal"], r
+    assert ("‹ widen" in r["title"]) == r["horizontal"], r
     assert len({region.y for region in r["cards"].values()}) == 4
     if width >= SURFBOARD_FULL_LAYOUT_COLUMNS:
         assert not r["clipped"] and r["status_whole"], r
@@ -403,7 +429,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
     payload = hub_payload(kind)
     r = await _render(payload, (SURFBOARD_FULL_LAYOUT_COLUMNS, height))
     assert r["vertical"] == (height < SURFBOARD_FULL_LAYOUT_ROWS), r
-    assert ("‹ taller" in r["text"].splitlines()[0]) == r["vertical"], r
+    assert ("‹ taller" in r["title"]) == r["vertical"], r
     assert r["horizontal"] == (height < SURFBOARD_FULL_LAYOUT_ROWS), r
     assert not r["clipped"] and r["status_whole"], r
     assert all(value >= 7 for value in r["heights"].values()), r
@@ -428,19 +454,18 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 continue
             if card["key"] == "board":
                 text = r["card_text"]["board"]
-                assert "RUNTIMES" in text
-                assert all(label in text for label in ('codex', 'claude'))
-                assert 'daemon' in text or 'ver.' in text
+                assert "STATS" in text
+                assert all(label in text for label in ('tokens', 'jobs'))
+                assert 'capacity' in text or 'cap.' in text
                 assert 'top model' not in text and 'TOP AGENTS' not in text
                 if kind == "unavailable":
                     assert "—" in text and "unavailable" not in text
                 else:
-                    assert card['fleet_summary']['daemon'] in text
-                    assert ('opus 5.5 medium' if kind == 'stress' else 'astra 6 xhigh') in text
+                    assert ('100.00%' if kind == 'stress' else '95.84%') in text
                 continue
             if card["key"] == "oracles":
                 text = r["card_text"]["oracles"]
-                assert "ASSESSING" in text
+                assert "JOBS" in text
                 if kind == "unavailable":
                     assert '—' in text
                 elif kind == "stress":
@@ -491,16 +516,16 @@ async def test_width_pin_is_the_measured_scroll_transition(short):
     below = await _render(hub_payload(), (width - 1, height))
     at = await _render(hub_payload(), (width, height))
     assert below["horizontal"] and not at["horizontal"], (below, at)
-    assert "‹ widen" in below["text"].splitlines()[0]
-    assert "‹ widen" not in at["text"].splitlines()[0]
+    assert "‹ widen" in below["title"]
+    assert "‹ widen" not in at["title"]
 
 
 async def test_height_pin_is_the_measured_scroll_transition():
     below = await _render(hub_payload(), (149, SURFBOARD_FULL_LAYOUT_ROWS - 1))
     at = await _render(hub_payload(), (149, SURFBOARD_FULL_LAYOUT_ROWS))
     assert below["vertical"] and not at["vertical"], (below, at)
-    assert "‹ taller" in below["text"].splitlines()[0]
-    assert "‹ taller" not in at["text"].splitlines()[0]
+    assert "‹ taller" in below["title"]
+    assert "‹ taller" not in at["title"]
 
 
 async def test_scrollbars_and_hints_return_after_repeated_short_tall_resizes():
@@ -515,7 +540,7 @@ async def test_scrollbars_and_hints_return_after_repeated_short_tall_resizes():
             await pilot.resize_terminal(width, height)
             await pilot.pause()
             viewport = app.hub.query_one('#surfboard-viewport')
-            title = app.hub._compositor.render_strips()[0].text
+            title = app.hub._compositor.render_strips()[app.hub.query_one('#surfboard-title').region.y].text
             assert viewport.show_horizontal_scrollbar == horizontal, (width, height)
             assert viewport.show_vertical_scrollbar == vertical, (width, height)
             assert ('‹ widen' in title) == horizontal
@@ -567,7 +592,7 @@ async def test_nft_card_footer_shows_build_open_counts_at_owner_size(kind):
     footer=text.splitlines()[-1].strip('╰╯─ ')
     assert footer == ('3 build · 15 open' if kind == 'normal' else '100bld · 999open')
     inset_footer=next(line for line in text.splitlines() if '└' in line)
-    assert 'build' not in inset_footer and 'open' not in inset_footer
+    assert ('3 building' if kind == 'normal' else '100 building') in inset_footer
     assert 'surf-nft' not in rendered['clipped']
 
 
@@ -638,11 +663,12 @@ async def test_boardroom_title_is_centered_muted_green_after_refresh_and_resize(
             await pilot.resize_terminal(width, 34 if width == 143 else 45)
             await app.hub._do_refresh()
             await pilot.pause()
-            row = app.hub._compositor.render_strips()[0]
+            heading = app.hub.query_one('#surfboard-title')
+            row = app.hub._compositor.render_strips()[heading.region.y].crop(heading.region.x, heading.region.right)
             text = row.text.split('WORKFLOWS [g]', 1)[0].strip()
             assert text.startswith('IMD BOARDROOM')
             assert ('‹ widen' in text) == app.hub.query_one('#surfboard-viewport').show_horizontal_scrollbar
-            assert abs(row.text.index(text) - (width - len(text)) / 2) <= .5
+            assert abs(row.text.index(text) - (heading.region.width - len(text)) / 2) <= .5
             title = next(segment for segment in row if 'IMD BOARDROOM' in segment.text)
             card = app.hub.query_one('#surfboard-card-announce')
             card_title = app.hub._compositor.render_strips()[card.region.y].crop(card.region.x, card.region.right)

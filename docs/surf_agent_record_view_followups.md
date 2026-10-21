@@ -90,3 +90,22 @@ Owner rollback after this round: restore only RECORD's previous title position,
 with the blank row above the widget and the title directly above the table.
 Table position and height remain unchanged; the new card order, titles and JOBS
 units remain. Live render at 149×45 and stress at 134×28..30 retain the 134×29 pin.
+
+## 2026-10-21: CR round 946ef8b5
+
+The ten notes in `cr-round-946ef8b5-plan.md` update AGENT labels and RUNTIME
+formatting, restore the NFT inset footer, move the BOARDROOM title into its
+existing center gap, and change WIP/ORACLES/FLEET summaries. Card order and
+the RECORD rollback remain intact. Fresh 149×45 renders were shown before
+hardening; AGENT remains 134×29 and BOARDROOM remains 143×37.
+
+The public API still does not establish a complete current Oracle competitor
+roster. The owner accepted `— agents` for unprovable counts and `0 agents` only
+for proven emptiness. A positive exact count would need new source evidence;
+this is an accepted limitation, not unfinished work in this batch.
+
+Final independent review approved without findings. Fourteen mutation probes
+(twelve implementation probes and two independent review probes) were detected
+and restored. Six outdated test expectations were corrected without production
+changes, including two legacy token-reader mocks and a missing site fixture
+field. No new review follow-up remains from this round.

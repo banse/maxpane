@@ -81,15 +81,16 @@ def _token_preview(rows, width, style, value_style):
 def _fleet_preview(summary, width, style, value_style):
     """Three fixed rows, with only observed values in the leaderboard ink."""
     values = []
-    for key in ('codex_percent', 'claude_percent'):
+    for key in ('tokens', 'jobs', 'capacity'):
         value = summary.get(key)
-        values.append(f"{value:.1f}".removesuffix('.0') + '%'
-                      if _number(value) and value <= 100 else '—')
-    values.append(flatten(summary.get('daemon')) or '—')
+        values.append((fmt_compact(value) if key == 'tokens' else f'{value:,}')
+                      if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else '—')
     lines = []
-    for label, value in zip(('codex', 'claude', 'daemon'), values):
-        if label == 'daemon' and cell_len(label) + cell_len(value) + 3 > width:
-            label = 'ver.'
+    for label, value in zip(('tokens', 'jobs', 'capacity'), values):
+        if label == 'tokens' and cell_len(label) + cell_len(value) + 3 > width:
+            value = f"{summary['tokens']:.2e}"
+        if label == 'capacity' and cell_len(label) + cell_len(value) + 3 > width:
+            label = 'cap.'
         prefix = label + ' '
         available = max(0, width - 2 - cell_len(prefix))
         fitted, lost = fit_prose(value, available, style=value_style if value != '—' else style)
@@ -99,11 +100,9 @@ def _fleet_preview(summary, width, style, value_style):
     return lines
 
 
-def _fleet_model(summary):
-    # Surf's package imports rack; keep the shared formatter import lazy.
-    from maxpane_dashboard.widgets.surf._fmt import short_model
-    model = short_model(summary.get('model'))
-    return ' '.join(filter(None, (model, flatten(summary.get('effort'))))) if model else '—'
+def _fleet_accept_rate(summary):
+    rate = summary.get('accept_rate')
+    return f'{rate:.2f}%' if _number(rate) and rate <= 100 else '—'
 
 
 def _protocol_footer(card, width):
@@ -303,7 +302,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.key == "oracles":
             self.data["destination"] = "oracles"
             self.data.setdefault("primary", "—")
-            self.data.setdefault("secondary", "in progress")
+            self.data.setdefault("secondary", "— agents")
             self.data.setdefault("detail", "ORACLES · Enter to open")
             self.tooltip = Text(self.detail)
         if self.key == "board":
@@ -311,7 +310,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.key == "work":
             self.data["destination"] = "work"
             self.data.setdefault("primary", "—")
-            self.data.setdefault("secondary", "— workflows")
+            self.data.setdefault("secondary", "—")
             self.data.setdefault("detail", "WORK IN PROGRESS · Enter to open")
             self.tooltip = Text(self.detail)
         if self.empty_seat:
@@ -376,8 +375,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             if status == "active":
                 color = AMBER
             secondary = (secondary or "offline") if status == "offline" else secondary.removesuffix(" slots")
-        if self.key == "surf-nft":
-            secondary = ""
         if self.key == "announce":
             secondary = secondary.removesuffix(" replies").removesuffix(" reply")
         elif self.key == "protocol":
@@ -401,8 +398,6 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         label_style, value_style, readout_style = inner_styles(
             palette, active=border_inset.color in (Style.parse(palette['accent']).color, Style.parse(GREEN).color),
             frame_color=border_inset.color, ansi_theme=self.app.ansi_theme, text_color=self.rich_style.color)
-        if self.key == "work" and active:
-            readout_style += Style(color=border_inset.color, dim=False)
         label = ""
         marker, marker_ink = _price_indicator(self._price_direction)
         marker_width = 0
@@ -411,8 +406,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         rows = [("", False), (primary, not muted), (secondary, False)]
         if self.key in ("swarm", "launchpad", "oracles", "pool4", "work", "surf-nft") or self.seat_slot is not None:
             label = " SEAT " if self.seat_slot is not None else {"swarm": " AGENTS ",
-                     "launchpad": " COINS ", "oracles": " ASSESSING ",
-                     "pool4": " IMD PRICE ", "work": " ACTIVE JOBS ", "surf-nft": " COLLECTIONS "}[self.key]
+                     "launchpad": " COINS ", "oracles": " JOBS ",
+                     "pool4": " IMD PRICE ", "work": " JOBS ", "surf-nft": " COLLECTIONS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
             if self.key == "pool4":
@@ -461,7 +456,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                        for line in _post_preview(primary, max(0, inside-2), prose_style)]
         elif self.key == "board":
             summary = self.data.get("fleet_summary") or {}
-            label, secondary = " RUNTIMES ", _fleet_model(summary)
+            label, secondary = " STATS ", _fleet_accept_rate(summary)
             preview = _fleet_preview(summary, inside, label_style, value_style)
         elif self.key == "swarm-tokens":
             label = " LAST 24h "
@@ -617,6 +612,7 @@ class SurfboardRack(Grid):
                 yield SurfboardTerminal(id="surfboard-terminal")
         yield Static(Text("キープ"), id="surfboard-keep", classes="rack-tagline")
         yield Static(Text("ビルディング"), id="surfboard-building", classes="rack-tagline")
+        yield Static(Text("IMD BOARDROOM"), id="surfboard-title")
 
     def update_data(self, surfboard_cards=None, surfboard_sources=None, **_kwargs):
         cards = {card["key"]: card for card in surfboard_cards if isinstance(card, dict) and isinstance(card.get("key"), str)} if isinstance(surfboard_cards, list) else {}

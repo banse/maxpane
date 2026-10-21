@@ -227,8 +227,11 @@ class NewsHeroCard(HeroBoxBase):
             row.align("center" if centered else "left", inside)
             result.append("│", style=frame).append_text(row).append("│\n", style=frame)
         subtitle = " " + clip(flatten(data.subtitle), max(0, inside - 2)) + " " if data.subtitle else ""
-        result.append("└" + subtitle.center(inside, "─") + "┘", style=frame)
+        result.append_text(self._inner_footer(subtitle, inside, frame, value_ink))
         return result
+
+    def _inner_footer(self, subtitle, inside, frame, value_ink):
+        return Text("└" + subtitle.center(inside, "─") + "┘", style=frame)
 
 
 class LocalSourceHeroCard(NewsHeroCard):

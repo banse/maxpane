@@ -1595,8 +1595,12 @@ SURFBOARD_CARD_FIELDS = ("key", "title", "status", "primary", "secondary", "deta
 # fleet_summary: current workers on FLEET only; distinct online-seat runtime shares,
 # most-used base daemon version and advertised (model, effort) pair by worker.
 # Missing or partial rosters do not establish a winner. Duration remains independent.
+# tokens/jobs/capacity/accept_rate reuse BOARD effort, live working slots, available
+# capacity and canonical outcome rate respectively; percent is 0..100, unknown None.
+# Their independent source states/clocks remain in the card detail.
 SURFBOARD_FLEET_FIELDS = ("codex_percent", "claude_percent", "daemon", "model", "effort",
-                         "online", "runtime_known", "state", "read_ts")
+                         "online", "runtime_known", "state", "read_ts",
+                         "tokens", "jobs", "capacity", "accept_rate")
 # seat_slot/token_id identify the four saved AGENT cards; None on other cards.
 # meter_state: independent activity (busy/idle/offline/stale/unavailable/empty) or volume coverage;
 # share_price: IMD per whole sIMD from the existing protocol vault read, or None.

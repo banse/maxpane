@@ -11,7 +11,7 @@ def hub_payload(kind="normal"):
         ("swarm", "SWARM", "swarm", "863 online", "9 working", None, None),
         ("agent", "AGENT", "agent", "IDMD #420", "0 of 3 slots", 43200, 86400),
         ("board", "FLEET", "board", "52.5%", "astra 6 xhigh", None, None),
-        ("oracles", "ORACLES", "oracles", "7", "in progress", 2, 100),
+        ("oracles", "ORACLES", "oracles", "7", "— agents", 2, 100),
         ("pool4", "POOL4", "pool4_user", "7.90", "USD", None, None),
         ("surf-nft", "NFTS", "surf-nft", "20", "3 building", None, None),
         ("swarm-tokens", "TOKENS", "swarm-tokens", "116", "4 new", None, None),
@@ -46,11 +46,12 @@ def hub_payload(kind="normal"):
         state='ok', read_ts=STAMP, known=4, total=4)
     fleet_summary = dict(codex_percent=52.5, claude_percent=47.4, daemon='0.1.2',
                          model='gpt-6-astra', effort='xhigh', online=1000,
-                         runtime_known=1000, state='ok', read_ts=STAMP)
+                         runtime_known=1000, state='ok', read_ts=STAMP,
+                         tokens=189121393249, jobs=9, capacity=1500, accept_rate=95.84)
     next(card for card in cards if card['key'] == 'board').update(
         fleet_summary=fleet_summary, meter_kind='duration', numerator=51235199999, denominator=None)
     cards.append(dict(key="work", title="WORK IN PROGRESS", destination="work", status="active",
-                      seat_slot=None, token_id=None, primary="5", secondary="1 workflow",
+                      seat_slot=None, token_id=None, primary="5", secondary="3 build",
                       detail="WORK IN PROGRESS · 5 jobs · 1 workflow · 5 build · 4 review · read 22:00",
                       meter_kind="work", meter_state="ok", share_price=None,
                       numerator=None, denominator=None, points=None, token_ranking=None, fleet_summary=None,
@@ -83,9 +84,10 @@ def hub_payload(kind="normal"):
             primary="You can now deploy via the swarm on rh and mainnet. " * 4, secondary="99,999 new replies")
         next(card for card in cards if card["key"] == "board").update(
             fleet_summary=dict(fleet_summary, codex_percent=100., claude_percent=100.,
-                               daemon='100.22.33', model='claude-opus-5-5', effort='medium'))
+                               daemon='100.22.33', model='claude-opus-5-5', effort='medium',
+                               tokens=999999999999999, jobs=99999, capacity=999999, accept_rate=100.))
         next(card for card in cards if card["key"] == "oracles").update(
-            primary="100", secondary="in progress", numerator=100, denominator=100)
+            primary="100", secondary="99,999 agents", numerator=100, denominator=100)
         next(card for card in cards if card["key"] == "pool4").update(
             primary="999,999.99", secondary="USD")
         next(card for card in cards if card["key"] == "surf-nft").update(
@@ -94,7 +96,7 @@ def hub_payload(kind="normal"):
         next(card for card in cards if card["key"] == "swarm-tokens").update(
             primary="1,234,567", secondary="99,999 new")
         next(card for card in cards if card["key"] == "work").update(
-            primary="124", secondary="100 workflows",
+            primary="124", secondary="4,800 build",
             work_summary=dict(jobs=124, workflows=100, seats=4800, build=4800, review=4800, blocked=0))
         overview = dict(agents_online=99999, working_now=99999, jobs_24h=999999,
                         oracles_24h=99999, accepted_24h=99999999, seats_enrolled=99999,

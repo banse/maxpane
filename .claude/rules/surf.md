@@ -412,6 +412,13 @@ box tooltip is a literal `Text`: npm latest/version/check time, fleet reference/
 no new degraded group. Cached AGENT refreshes also offer the existing guarded
 runtime check, using the same eligibility, TTL and endpoints.
 
+Owner CR round 946ef8b5 (2026-10-21): AGENT uses `swarming` / `ready` / `offline`
+for working / idle / offline, retaining paused `ON`. ACCEPTED/JOBS are the outer
+and inner titles; SHIPPED retains LAUNCHES/JOBS. REWARDS has no outer paid caption;
+payment evidence remains in hover. RUNTIME strips daemon `+build` only for display
+and right-aligns green model effort below the model value. Full raw versions still
+drive update comparison and remain on hover; unknown effort uses neutral dashes.
+
 COLLAB shows the collaborator count as digits and the top teammate/count in its
 outer footer. Its tooltip retains the ordered teammate list. NODES partitions accepted
 work rows into oracle, launches and other, with oracle precedence and `work by type`
@@ -932,7 +939,9 @@ popup remains available to Portfolio.
 ## SURFBOARD HUB (dashboard 9)
 
 `surfboard` is a separate DashboardScreen using the same SurfManager and installed SurfScreen.
-The title is centered `IMD BOARDROOM`, using the dim dashboard foreground like activity timestamps. ONCHAIN FEED uses white active inset
+The title is centered `IMD BOARDROOM` in the center gap above the terminal, with
+WORKFLOWS alongside it. The former top row remains blank so card and terminal
+heights do not change. It uses the dim dashboard foreground like activity timestamps. ONCHAIN FEED uses white active inset
 borders and border text; its body follows the shared palette. SWARM BUILDS retains its activity colors.
 The top row is ONCHAIN FEED, BUILT BY SWARM, WIP, ORACLES, POOL4, FLEET.
 NFTS sits below ONCHAIN FEED, opposite TOKENS below FLEET beside the terminal.
@@ -988,14 +997,13 @@ and trade readers are unchanged.
 The inset footer shows positive `x new` from the eligible canonical last-24-hour population.
 Per the owner, no partial/stale/clock labels appear there; the literal tooltip retains coverage
 and source clocks. Known zero-new text remains hidden on TOKENS and ONCHAIN FEED.
-Portfolio opens its existing preview. FLEET opens LEADERBOARD and shows a neutral RUNTIMES
-inset with codex/claude shares of distinct online seats and the most-used daemon base version.
-Shares deduplicate devices, count a both-runtime seat once in each runtime, and remain unknown
-until the roster and runtime metadata are complete. The daemon strips `+build` before grouping;
-the most-used advertised model/effort pair forms the inner footer without a label. Counts are
-per worker for daemon and model settings; hover preserves source coverage.
-The three row values use the leaderboard foreground; labels use light green and frames stay neutral.
-Long metadata fits with ellipsis and retains full text on hover. Its centered outer footer is
+Portfolio opens its existing preview. FLEET opens LEADERBOARD and shows a neutral STATS
+inset with contributor tokens, occupied working slots (`jobs`) and worker capacity.
+Its inner footer shows canonical seat-record acceptance percentage; zero attempts
+remain unknown. Each source retains its own state and clock in hover, alongside the
+previous runtime, daemon and model metadata. Labels are white and values green;
+the frame and percentage stay neutral. Large counts use compact notation only as
+needed to preserve the inset corners. Its centered outer footer is
 `worked Ny Nw Nd`, using the complete contributor
 summary's `wall_clock_ms` across all devices. Whole days are split into 365-day years,
 seven-day weeks and days; remaining hours are discarded. The existing meter fields
@@ -1027,7 +1035,15 @@ on load. Cached own-work `submittedAt` can seed or advance an idle anchor when
 polling missed the work; a newer observed stop wins. Heartbeat, acceptance and
 feedback timestamps cannot reset it. Without either source, cold idle has a dash,
 not a full orange bar. The last green segment remains until the full 24h expires.
-NFTS uses COLLECTIONS tall digits with building/open counts in its outer footer.
+WIP and ORACLES use JOBS inner headings. WIP's inner footer shows the most frequent
+currently working node category from a bounded fresh job-detail sample. A fresh
+overview count match is required before asserting complete coverage. ORACLES shows
+`— agents` unless complete current evidence proves no Oracle work (`0 agents`);
+the public API does not establish a complete live competitor roster. Both preserve
+their primary job-count scopes. The card reader offers at most 24 fresh details
+from one recent 100-job page every 30 seconds, retaining and revalidating known
+active IDs, with a 12-second timeout and cancellation when leaving BOARDROOM.
+NFTS uses COLLECTIONS tall digits, an `N building` inner footer, and building/open counts in its outer footer.
 Card coverage notices are omitted; the Explorer header and source details retain
 the partial-catalogue state. Counts describe observed, verified deployments;
 unread values remain neutral dashes. Its inset retains the shared geometry.

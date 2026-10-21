@@ -119,12 +119,12 @@ def test_unknown_detector_prevents_a_false_zero_bar():
 
 
 @pytest.mark.parametrize('state,partial,rows,primary,secondary,status,meter', [
-    ('unavailable', False, None, '—', 'in progress', 'unavailable', 'unavailable'),
-    ('ok', False, [], '0', 'in progress', 'idle', 'ok'),
-    ('ok', False, ['assessing', 'attested', 'mismatch'], '1', 'in progress', 'assessing', 'ok'),
+    ('unavailable', False, None, '—', '— agents', 'unavailable', 'unavailable'),
+    ('ok', False, [], '0', '— agents', 'idle', 'ok'),
+    ('ok', False, ['assessing', 'attested', 'mismatch'], '1', '— agents', 'assessing', 'ok'),
     ('ok', True, ['assessing'] * 7 + ['attested'] * 86 + ['blocked'] * 7,
-     '7', 'in progress', 'assessing', 'partial'),
-    ('stale', True, ['assessing', 'attested'], '1', 'in progress', 'stale', 'stale'),
+     '7', '— agents', 'assessing', 'partial'),
+    ('stale', True, ['assessing', 'attested'], '1', '— agents', 'stale', 'stale'),
 ])
 def test_oracle_card_counts_only_loaded_rows_and_retains_source_state(
         state, partial, rows, primary, secondary, status, meter):
@@ -161,8 +161,8 @@ def test_oracle_card_counts_distinct_known_chains(chain_ids, expected):
 
 
 @pytest.mark.parametrize('jobs,workflows,status,subtitle', [
-    (5, 1, 'active', '1 workflow'), (0, 0, 'idle', '0 workflows'),
-    (12, 3, 'active', '3 workflows'),
+    (5, 1, 'active', '— working'), (0, 0, 'idle', '— working'),
+    (12, 3, 'active', '— working'),
 ])
 def test_work_card_projects_loaded_counts(jobs, workflows, status, subtitle):
     summary = dict(jobs=jobs, workflows=workflows, seats=9, build=5, review=4, blocked=11)
@@ -184,11 +184,29 @@ def test_work_card_preserves_stale_and_unknown_counts_without_false_zero():
     stale = dict(state='stale', read_ts=90, summary=summary, partial=True,
                  jobs_loaded=100, workflows_loaded=100, details_loaded=24, details_expected=42)
     row = next(c for c in hub.cards({'surf_work': stale}, {}, now=300) if c['key']=='work')
-    assert (row['primary'], row['secondary'], row['status'], row['meter_state']) == ('5', '1 workflow', 'stale', 'stale')
+    assert (row['primary'], row['secondary'], row['status'], row['meter_state']) == ('5', '— working', 'stale', 'stale')
     assert row['work_summary']['build'] is row['work_summary']['review'] is None
     unknown = next(c for c in hub.cards({}, {}, now=300) if c['key']=='work')
-    assert (unknown['primary'], unknown['secondary'], unknown['status'], unknown['meter_state']) == ('—', '— workflows', 'unavailable', 'unavailable')
+    assert (unknown['primary'], unknown['secondary'], unknown['status'], unknown['meter_state']) == ('—', '— working', 'unavailable', 'unavailable')
     assert all(value is None for value in unknown['work_summary'].values())
+
+
+@pytest.mark.parametrize('counts,expected', [
+    ({'build': 3, 'audit': 2}, '3 build'), ({'build': 1, 'audit': 2}, '2 audit'),
+    ({'build': 2, 'audit': 2}, '2 audit'), ({}, '0 working'), (None, '— working'),
+])
+def test_work_footer_uses_current_node_majority_with_deterministic_ties(counts, expected):
+    rows = hub.cards({}, {}, now=1000, current_work=dict(node_counts=counts, read_ts=900))
+    assert next(row for row in rows if row['key'] == 'work')['secondary'] == expected
+
+
+@pytest.mark.parametrize('agents,expected', [(0, '0 agents'), (7, '7 agents'), (None, '— agents')])
+def test_oracle_footer_never_uses_request_or_submitted_member_counts(agents, expected):
+    rows = hub.cards(dict(surf_oracles=dict(rows=[dict(status='assessing', chain_id=1)])), {}, now=1000,
+                     current_work=dict(oracle_agents=agents, reason='live panel unknown', read_ts=900))
+    card = next(row for row in rows if row['key'] == 'oracles')
+    assert card['secondary'] == expected
+    assert 'live panel unknown' in card['detail']
 
 
 @pytest.mark.parametrize('kind,age,expected', [
@@ -820,7 +838,8 @@ def test_fleet_runtime_shares_use_distinct_online_seats_and_deduplicate_devices(
     card = fleet_card(workers)
     facts = card['fleet_summary']
     assert facts == dict(codex_percent=pytest.approx(100/3), claude_percent=100, daemon='0.1.2',
-        model='model-b', effort='medium', online=3, runtime_known=3, state='ok', read_ts=900)
+        model='model-b', effort='medium', online=3, runtime_known=3, state='ok', read_ts=900,
+        tokens=None, jobs=None, capacity=None, accept_rate=None)
     assert card['destination'] == 'board' and card['title'] == 'FLEET'
     assert card['status'] == 'idle'
     assert all(text in card['detail'] for text in ('3/3', 'online seats', 'both', 'advertised', '0.1.2+first'))
@@ -884,8 +903,28 @@ def test_fleet_empty_roster_known_zero_and_stale_source_retains_exact_facts():
     workers.update(count=0, workers=[])
     empty = fleet_card(workers)['fleet_summary']
     assert empty == dict(codex_percent=None, claude_percent=None, daemon=None, model=None,
-                        effort=None, online=0, runtime_known=0, state='ok', read_ts=900)
+                        effort=None, online=0, runtime_known=0, state='ok', read_ts=900,
+                        tokens=None, jobs=None, capacity=None, accept_rate=None)
     assert all(card['fleet_summary'] is None for card in hub.cards({}, {}, now=1000) if card['key'] != 'board')
+
+
+def test_fleet_metrics_reuse_board_hero_independent_sources_and_percent_scale():
+    data = dict(surf_leaderboard_hero=dict(
+        effort=dict(tokens=5000001, state='stale', read_ts=800),
+        workers=dict(working=7, capacity=30, state='ok', read_ts=900),
+        rate=dict(percent=95.84, state='ok', read_ts=850)))
+    card = fleet_card(None, data=data)
+    assert {key: card['fleet_summary'][key] for key in ('tokens', 'jobs', 'capacity', 'accept_rate')} == dict(
+        tokens=5000001, jobs=7, capacity=30, accept_rate=95.84)
+    assert all(text in card['detail'] for text in (
+        'effort read ' + hub.hhmm(800) + ' (stale)', 'capacity read ' + hub.hhmm(900) + ' (ok)',
+        'acceptance read ' + hub.hhmm(850) + ' (ok)'))
+    data['surf_leaderboard_hero']['rate']['percent'] = None
+    data['surf_leaderboard_hero']['workers'].update(working=0, capacity=0)
+    facts = fleet_card(None, data=data)['fleet_summary']
+    assert facts['accept_rate'] is None
+    assert facts['jobs'] == facts['capacity'] == 0
+    assert facts['tokens'] == 5000001
 
 
 @pytest.mark.parametrize('state,points', [('ok', [0]*8), ('partial', [1, None, 2, 3, 4, 5, 6, 7]),
@@ -906,11 +945,15 @@ def test_token_volume_projection_is_independent_of_recent_launch_ranking(state, 
         assert 'partial' in row['detail']
 
 
-def test_card_details_omit_source_warnings_but_keep_internal_state():
+def test_card_details_keep_independent_fleet_source_evidence():
     from maxpane_dashboard.data.surfboard import cards
     rows = cards({}, {}, now=1_800_000_000)
     assert any(row['status'] == 'unavailable' for row in rows)
     for row in rows:
+        if row['key'] == 'board':
+            for metric in ('effort', 'capacity', 'acceptance'):
+                assert f'{metric} read — (unavailable)' in row['detail']
+            continue
         assert 'unavailable' not in row['detail']
         assert 'stale' not in row['detail']
 

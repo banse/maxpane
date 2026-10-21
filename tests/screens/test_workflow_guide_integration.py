@@ -9,8 +9,9 @@ async def test_boardroom_workflows_entry_retains_title_and_does_not_steal_input(
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         hub = app.screen
-        title = painted(app).splitlines()[0]
-        assert title.index('IMD BOARDROOM') == (149 - len('IMD BOARDROOM')) // 2
+        heading = hub.query_one('#surfboard-title')
+        title = painted(app).splitlines()[heading.region.y][heading.region.x:heading.region.right]
+        assert title.index('IMD BOARDROOM') == (heading.region.width - len('IMD BOARDROOM')) // 2
         assert 'WORKFLOWS [g]' in title
         await pilot.press('/')
         assert isinstance(hub.focused, Input)
@@ -37,7 +38,8 @@ async def test_guide_route_stops_hub_reads_and_reopens_retained_selection():
         selection = view.topic_id, view.node_id, view.index_open
         await pilot.press('escape')
         assert app.screen is hub and manager.hub_active
-        title = painted(app).splitlines()[0]
+        heading = hub.query_one('#surfboard-title')
+        title = painted(app).splitlines()[heading.region.y][heading.region.x:heading.region.right]
         await pilot.click('#surfboard-title', offset=(title.index('WORKFLOWS'), 0))
         assert isinstance(app.screen, WorkflowGuideScreen)
         assert app.screen._data_manager is guide._data_manager

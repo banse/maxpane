@@ -62,15 +62,15 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     for key, title, heading, footer in (
         ("seat", "AGENT", "SEAT", "ERC-8004 #--"),
         ("status", "STATUS", "WORKER", "UNKNOWN"),
-        ("accepted", "JOBS", "ACCEPTED", ""),
-        ("nodes", "SHIP", "LAUNCHES", ""),
+        ("accepted", "ACCEPTED", "JOBS", ""),
+        ("nodes", "SHIPPED", "LAUNCHES", ""),
         ("models", "RESEARCH", "ORACLE", ""),
         ("effort", "EFFORT", "HOURS", ""),
         ("runtime", "RUNTIME", "SOFTWARE", ""),
         ("owner", "OWNER", "WALLET", ""),
         ("rank", "RANK", "POSITION", ""),
         ("collab", "COLLAB", "SEATS", ""),
-        ("rewards", "REWARDS", "IMD", "paid --"),
+        ("rewards", "REWARDS", "IMD", ""),
         ("earnings", "EARNINGS", "TOKENS", ""),
     ):
         raw = _card_source(payload, key)
@@ -83,7 +83,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             token = count(raw.get("token_id"))
             fields["digits"] = str(token) if token is not None and number(token) is not None else "--"
             presence = _source(payload, "status").get("live_state")
-            fields["subtitle"] = {"working": "OPERATING", "idle": "ON", "paused": "ON", "offline": "OFFLINE"}.get(presence, "status --")
+            fields["subtitle"] = {"working": "swarming", "idle": "ready", "paused": "ON", "offline": "offline"}.get(presence, "status --")
             agent_id = raw.get("agent_id")
             agent_id = agent_id if isinstance(agent_id, str) and agent_id.isascii() and agent_id.isdecimal() else "--"
             fields["footer"] = f"ERC-8004 #{agent_id}"
@@ -111,8 +111,6 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             usd_state = section.get("usd_state")
             usd = number(section.get("usd")) if usd_state in _AVAILABLE else None
             fields["subtitle"] = "$" + (f"{usd:.2f}" if usd is not None and (usd == 0 or .01 <= usd < 100000) else _face(usd, 2))
-            paid = number(section.get("last_paid_ts"))
-            fields["footer"] = "paid " + mmdd_hhmm(paid) if paid is not None else "paid --"
             fields["accent"] = section.get("paid_recent") is True
         elif key == "rank":
             fields["digits"] = _digits(section.get("rank"))
@@ -149,7 +147,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                 if len(rows) > 1:
                     model += f" +{len(rows) - 1}"
             fields["stats"] = ((runtime_id or "runtime", version or "--"),
-                               ("daemon", flatten(section.get("daemon")) or "--"),
+                               ("daemon", flatten(section.get("daemon")).partition("+")[0] or "--"),
                                ("model", model))
             fields["subtitle"] = (flatten(rows[0].get("effort")) or "--") if rows else "--"
             fields["accent"] = False
@@ -232,7 +230,7 @@ class AgentRackCard(Pool4HeroCard):
 
     def _footer(self):
         data = self.data
-        if data.key in ("owner", "models", "nodes", "runtime", "accepted", "effort", "earnings", "collab"):
+        if data.key in ("owner", "models", "nodes", "runtime", "accepted", "effort", "earnings", "collab", "rewards"):
             self.border_subtitle = Text()
         elif data.state in ("unknown_seat", "stale_unknown_seat", "empty", "unavailable"):
             word = {"unknown_seat": "never paired", "stale_unknown_seat": "never paired", "empty": "EMPTY"}.get(data.state, "")
@@ -242,11 +240,6 @@ class AgentRackCard(Pool4HeroCard):
             room = max(5, self.region.width - 6)
             meter = {key: self.source.get(key) for key in ("meter_kind", "meter_state", "numerator", "denominator")}
             self.border_subtitle = meter_text(dict(meter, key="agent"), width=room)
-        elif data.key == "rewards":
-            footer = data.footer
-            if cell_len(footer) > max(0, self.region.width - 6):
-                footer = footer.removeprefix("paid ")
-            self.border_subtitle = Text().append(footer, style="dim")
         else:
             delta = _number(self.source.get("delta"), signed=True) if data.key == "rank" else None
             color = "green" if delta and delta > 0 else "red" if delta and delta < 0 else "dim"
@@ -264,6 +257,13 @@ class AgentRackCard(Pool4HeroCard):
             color = Color.from_triplet(self.app.ansi_theme.ansi_colors[1])
             return Style(color=color, bgcolor=palette["background"], dim=False)
         return Style.parse(color) + Style(bgcolor=palette["background"])
+
+    def _inner_footer(self, subtitle, inside, frame, value_ink):
+        if self.data.key != "runtime":
+            return super()._inner_footer(subtitle, inside, frame, value_ink)
+        footer = Text("└" + "─" * max(0, inside - cell_len(subtitle)), style=frame)
+        ink = value_ink if subtitle.strip() not in ("", "--") else frame
+        return footer.append(subtitle, style=ink).append("┘", style=frame)
 
     def _status_content(self):
         """One tall readout with an independently muted 0F separator."""

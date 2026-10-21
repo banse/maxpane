@@ -54,9 +54,9 @@ async def test_scope_change_drains_detached_reads_before_reentry(manager):
         await m.close()
 
 
-async def test_work_summary_uses_global_counter_without_job_details(manager):
+async def test_work_summary_uses_global_counter_with_only_bounded_card_reads(manager):
     m, clock = manager
-    m.swarm_client.fetch_jobs = AsyncMock(side_effect=AssertionError('job body'))
+    m.swarm_client.fetch_jobs = AsyncMock(return_value=[])
     m.swarm_client.fetch_workflows = AsyncMock(return_value=[])
     m.set_active_view('surfboard')
     try:
@@ -67,7 +67,38 @@ async def test_work_summary_uses_global_counter_without_job_details(manager):
         card = next(c for c in data['surfboard_cards'] if c['key'] == 'work')
         assert card['primary'] == '4'
         assert card['work_summary']['build'] is None
-        m.swarm_client.fetch_jobs.assert_not_awaited()
+        m.swarm_client.fetch_jobs.assert_awaited_once_with(limit=100)
+        m.swarm_client.fetch_job.assert_not_awaited()
+    finally:
+        await m.close()
+
+
+async def test_leaving_boardroom_cancels_current_card_read_without_late_publication(manager):
+    m, clock = manager
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+    async def jobs(**_):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+    m.swarm_client.fetch_jobs = AsyncMock(side_effect=jobs)
+    m.swarm_client.fetch_workflows = AsyncMock(return_value=[])
+    m.set_active_view('surfboard')
+    try:
+        m._card_reader.offer()
+        await asyncio.wait_for(entered.wait(), 1)
+        pending = m._card_reader.tasks['current']
+        clock.now += 90
+        m._card_reader.offer()
+        assert m._card_reader.tasks['current'] is pending
+        m.set_active_view('agent')
+        await m.drain_reads()
+        assert cancelled.is_set() and pending.cancelled()
+        assert m._card_reader.current_ts is None
+        m.get_hub_snapshot()
+        assert m._card_reader.tasks == {}
+        m.swarm_client.fetch_jobs.assert_awaited_once_with(limit=100)
         m.swarm_client.fetch_job.assert_not_awaited()
     finally:
         await m.close()

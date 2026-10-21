@@ -2,7 +2,6 @@
 import pytest
 from textual.widgets import DataTable
 from maxpane_dashboard.widgets.surf.agent_rack_hero import SurfSwarmAgentRackHero
-from maxpane_dashboard.widgets.surf._fmt import mmdd_hhmm
 from maxpane_dashboard.widgets.surf import SurfSwarmAgentHero, SurfSwarmSeatCards, SurfSwarmSeatRecord
 from maxpane_dashboard.widgets.surf.swarm_record_filter import SurfRecordFilterEditor
 from tests.screens.test_surf_screen import _surf_app, _frozen_payload, _region_text, _ThemedHarness
@@ -25,12 +24,12 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         cards = list(hero.children)
         assert len(cards) == 12 and {card.region.height for card in cards} == {9}
         text = _region_text(pilot.app, hero)
-        paid = mmdd_hhmm(data['surf_agent_hero']['rewards']['last_paid_ts'])
-        for expected in ("AGENT", "SEAT", "96%", "ERC-8004 #8127", paid, "example.eth ⧉",
+        for expected in ("AGENT", "SEAT", "96%", "ERC-8004 #8127", "$120.82", "example.eth ⧉",
                          "EARNINGS", "4 new", "RESEARCH", "ORACLE"):
             assert expected in text
         assert 'implementing' in _region_text(pilot.app, hero.query_one('#hero-status'))
-        for key in ('owner', 'models', 'nodes', 'runtime'):
+        assert "paid " not in _region_text(pilot.app, hero.query_one('#hero-rewards'))
+        for key in ('owner', 'models', 'nodes', 'runtime', 'rewards'):
             assert not str(hero.query_one('#hero-' + key).border_subtitle)
         record = screen.query_one(SurfSwarmSeatRecord)
         assert record.display and record.region.y == hero.region.bottom + 1
@@ -61,7 +60,7 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         await screen._do_refresh()
         await pilot.pause()
         assert 'testing' not in _region_text(pilot.app, hero.query_one('#hero-status'))
-        assert 'ON' in _region_text(pilot.app, hero.query_one('#hero-seat'))
+        assert 'ready' in _region_text(pilot.app, hero.query_one('#hero-seat'))
         changed = payload()
         changed["seat"].update(token_id=7, state="pending", agent_id=None)
         changed["owner"].update(state="pending")

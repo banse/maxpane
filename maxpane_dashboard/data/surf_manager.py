@@ -7903,6 +7903,7 @@ class SurfManager:
                 family_sources['pool4'] = news_hero.source(pool_ts,
                     now=now, ttl=TIER_TTL_SECONDS[TIER_POOL4], failed=self._card_reader.pool_failed)
         data["surfboard_cards"] = hub.cards(data, sources, now=now, launchpad=launchpad,
+                                                 current_work=self._card_reader.current_work(sources['overview']),
                                                  agent_seats=agent_seats, workers=workers,
                                                  worker_source=board_sources["workers"],
                                                  pool4_price_direction=self._hub_pool4_price_direction(data, family_sources),
@@ -7942,8 +7943,9 @@ class SurfManager:
             'pool4': (self._card_reader.tasks.get('pool4'), self._full_task, self._pool4_task),
             'board': (self._swarm_board_task,),
             'agent': (self._swarm_board_task, sources.get('records')),
-            'work': (self._card_reader.tasks.get('work'), sources.get('overview')) if self._hub_active else (self._work_reader.task,),
-            'oracles': (() if self._oracles_reader._reading_detail else (self._oracles_reader.task,)),
+            'work': (self._card_reader.tasks.get('work'), self._card_reader.tasks.get('current'), sources.get('overview')) if self._hub_active else (self._work_reader.task,),
+            'oracles': (() if self._oracles_reader._reading_detail else (self._oracles_reader.task,))
+                       + ((self._card_reader.tasks.get('current'),) if self._hub_active else ()),
             'swarm-tokens': tuple(tokens._tasks.get(name) for name in ('catalogue', 'markets', 'volume')) if tokens else (),
         }
         for card in data['surfboard_cards']:

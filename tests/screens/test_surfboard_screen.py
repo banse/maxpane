@@ -422,6 +422,9 @@ async def test_work_card_loads_only_when_open_and_cancels_on_return(work_manager
     cancelled = asyncio.Event()
 
     async def jobs(*, limit):
+        if manager._hub_active:
+            assert not manager._work_active
+            return []  # Bounded card discovery does not activate the Work board.
         entered.set()
         try:
             await asyncio.Event().wait()
@@ -433,7 +436,8 @@ async def test_work_card_loads_only_when_open_and_cancels_on_return(work_manager
     app._surf_manager = manager
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        manager.swarm_client.fetch_jobs.assert_not_awaited()
+        manager.swarm_client.fetch_jobs.assert_awaited_once_with(limit=100)
+        assert manager._work_reader.task is None
         await pilot.click('#surfboard-card-work')
         await asyncio.wait_for(entered.wait(), 2)
         await pilot.pause()

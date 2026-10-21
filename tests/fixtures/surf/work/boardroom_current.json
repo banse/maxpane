@@ -1,0 +1,971 @@
+{
+  "read_ts": 1792576082.05552,
+  "commit": "a9b5b7319c35cc420c7dfd36506a142a79660bec",
+  "executing": 4,
+  "jobs": [
+    {
+      "id": "b0295de4-6e71-4976-a139-7b4d5c011895",
+      "state": "completed",
+      "template": "skill:token-logo",
+      "createdAt": "2026-10-21T09:34:06.869Z",
+      "updatedAt": "2026-10-21T09:36:06.500Z"
+    },
+    {
+      "id": "e54037a2-a546-418a-a4b8-c3538fb8d651",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-21T09:21:01.578Z",
+      "updatedAt": "2026-10-21T09:22:09.168Z"
+    },
+    {
+      "id": "56d0529c-000d-4978-8bcd-892cc49010f1",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-21T09:20:59.936Z",
+      "updatedAt": "2026-10-21T09:22:21.927Z"
+    },
+    {
+      "id": "a9268c47-5864-45b4-ae6e-022d726eed3c",
+      "state": "executing",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T09:09:39.898Z",
+      "updatedAt": "2026-10-21T09:34:44.001Z"
+    },
+    {
+      "id": "6571be23-b887-48f4-813e-28f672c321cf",
+      "state": "executing",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T09:09:04.138Z",
+      "updatedAt": "2026-10-21T09:09:15.791Z"
+    },
+    {
+      "id": "0fef66e0-28bf-47a9-b456-fc4c52ce2cd9",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T09:02:02.332Z",
+      "updatedAt": "2026-10-21T09:34:10.321Z"
+    },
+    {
+      "id": "45e202ab-ef69-4d51-b1ab-23474fa4bcc5",
+      "state": "completed",
+      "template": "shape:dag",
+      "createdAt": "2026-10-21T08:58:20.598Z",
+      "updatedAt": "2026-10-21T09:02:23.900Z"
+    },
+    {
+      "id": "c5960233-cfe7-4bc8-8158-9b1e8300ddad",
+      "state": "completed",
+      "template": "skill:create-image",
+      "createdAt": "2026-10-21T08:47:17.286Z",
+      "updatedAt": "2026-10-21T08:54:47.236Z"
+    },
+    {
+      "id": "6ac93aae-1442-40d4-88bc-31902982eaff",
+      "state": "completed",
+      "template": "skill:create-image",
+      "createdAt": "2026-10-21T08:45:43.021Z",
+      "updatedAt": "2026-10-21T09:12:31.159Z"
+    },
+    {
+      "id": "6e626f12-cab0-45cb-87c7-6801b57c9802",
+      "state": "completed",
+      "template": "skill:create-image",
+      "createdAt": "2026-10-21T08:44:09.220Z",
+      "updatedAt": "2026-10-21T08:55:36.536Z"
+    },
+    {
+      "id": "fb3a1f64-b816-4fbb-8d1d-0ed414f4e25d",
+      "state": "completed",
+      "template": "skill:create-image",
+      "createdAt": "2026-10-21T08:42:40.435Z",
+      "updatedAt": "2026-10-21T08:58:12.490Z"
+    },
+    {
+      "id": "945e8ac6-fc7d-48d9-9ea8-e5930e8657e0",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T08:40:50.869Z",
+      "updatedAt": "2026-10-21T09:31:39.065Z"
+    },
+    {
+      "id": "d666bdd3-8940-4ff4-860a-d0d2708c6abb",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T08:38:56.650Z",
+      "updatedAt": "2026-10-21T09:27:34.901Z"
+    },
+    {
+      "id": "b31ee524-c45e-4b58-aa11-baae8bf261b6",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T08:30:29.080Z",
+      "updatedAt": "2026-10-21T09:11:04.368Z"
+    },
+    {
+      "id": "d7f17b1e-b76e-4e29-a106-5689ed58e8c8",
+      "state": "executing",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T08:06:45.159Z",
+      "updatedAt": "2026-10-21T08:51:31.730Z"
+    },
+    {
+      "id": "7ebc8b93-5fc8-48c4-908a-952ad473da06",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-21T07:59:45.394Z",
+      "updatedAt": "2026-10-21T08:49:30.652Z"
+    },
+    {
+      "id": "869d3a45-6af7-4085-952b-5768d63c6ec8",
+      "state": "completed",
+      "template": "shape:dag",
+      "createdAt": "2026-10-21T07:58:21.456Z",
+      "updatedAt": "2026-10-21T08:01:48.462Z"
+    },
+    {
+      "id": "2ba831ea-5c11-4ec5-9bde-74ca6bf581c9",
+      "state": "blocked",
+      "template": "skill:build-contract-project",
+      "createdAt": "2026-10-21T07:55:19.778Z",
+      "updatedAt": "2026-10-21T07:58:56.657Z"
+    },
+    {
+      "id": "1388af94-f48c-4d17-87d0-11b924bb4e65",
+      "state": "blocked",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T07:40:29.296Z",
+      "updatedAt": "2026-10-21T07:51:12.113Z"
+    },
+    {
+      "id": "83f90aa0-bf87-44b3-a393-f4ca4eed7614",
+      "state": "blocked",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T07:40:09.459Z",
+      "updatedAt": "2026-10-21T08:44:10.067Z"
+    },
+    {
+      "id": "1fe1023b-66a7-471c-810a-574ce9794e8a",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T07:26:15.403Z",
+      "updatedAt": "2026-10-21T09:33:46.219Z"
+    },
+    {
+      "id": "4cc83fbc-42d7-49fe-a9db-4310fb61a570",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T07:21:56.397Z",
+      "updatedAt": "2026-10-21T08:47:50.938Z"
+    },
+    {
+      "id": "ea41fa36-f4c4-469b-a971-f539b0b3ed41",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T07:16:50.091Z",
+      "updatedAt": "2026-10-21T08:00:46.645Z"
+    },
+    {
+      "id": "6c7284e0-b2d3-4f38-87e7-cbec1b0b1fd5",
+      "state": "completed",
+      "template": "skill:create-image",
+      "createdAt": "2026-10-21T07:15:18.518Z",
+      "updatedAt": "2026-10-21T07:25:49.349Z"
+    },
+    {
+      "id": "ae8a24f3-a95d-4905-aff8-222404e085e6",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T06:22:21.441Z",
+      "updatedAt": "2026-10-21T07:07:27.548Z"
+    },
+    {
+      "id": "8b71d45d-4679-48bf-acf2-c660652e590f",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-21T06:21:27.190Z",
+      "updatedAt": "2026-10-21T06:30:03.204Z"
+    },
+    {
+      "id": "87e8c221-a04e-45a4-8d65-afc06dd528b3",
+      "state": "blocked",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T06:14:09.484Z",
+      "updatedAt": "2026-10-21T06:18:28.742Z"
+    },
+    {
+      "id": "843c2630-3031-4385-9b31-52858a7cb8b6",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T06:01:27.919Z",
+      "updatedAt": "2026-10-21T06:55:53.775Z"
+    },
+    {
+      "id": "cd805c00-3263-495a-a3cf-7659cff67e41",
+      "state": "completed",
+      "template": "skill:frontend-for-contract",
+      "createdAt": "2026-10-21T05:57:14.944Z",
+      "updatedAt": "2026-10-21T07:50:14.921Z"
+    },
+    {
+      "id": "5b630958-5d27-4b47-bebf-4e682a6d2ab7",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T05:53:57.613Z",
+      "updatedAt": "2026-10-21T09:18:31.005Z"
+    },
+    {
+      "id": "57137446-adaf-4385-8ca1-265dd92c3b1b",
+      "state": "blocked",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T05:36:33.639Z",
+      "updatedAt": "2026-10-21T05:49:59.430Z"
+    },
+    {
+      "id": "210ee6e0-e812-474b-824e-ac4f561ba60e",
+      "state": "blocked",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T05:23:18.876Z",
+      "updatedAt": "2026-10-21T05:24:14.192Z"
+    },
+    {
+      "id": "315032e8-1b26-4aa1-8f1e-03dce4cd18b0",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T05:09:16.137Z",
+      "updatedAt": "2026-10-21T09:24:39.775Z"
+    },
+    {
+      "id": "ed909f82-0fa3-4cb7-8219-952be6e3bde3",
+      "state": "executing",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T05:01:08.562Z",
+      "updatedAt": "2026-10-21T09:44:14.758Z"
+    },
+    {
+      "id": "5d68c9ee-de0d-4dfb-9b5a-32e13dee6a30",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T04:24:27.854Z",
+      "updatedAt": "2026-10-21T05:59:57.414Z"
+    },
+    {
+      "id": "49ef8f6f-07fa-4260-aba2-57e8ab1c972a",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-21T04:11:56.816Z",
+      "updatedAt": "2026-10-21T04:13:26.230Z"
+    },
+    {
+      "id": "1637817b-a023-48be-88e6-40d112ff4017",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-21T04:11:54.938Z",
+      "updatedAt": "2026-10-21T04:13:25.201Z"
+    },
+    {
+      "id": "108b5045-525e-4e20-bef0-22ef583b0c98",
+      "state": "completed",
+      "template": "skill:token-logo",
+      "createdAt": "2026-10-21T04:11:27.685Z",
+      "updatedAt": "2026-10-21T04:12:39.230Z"
+    },
+    {
+      "id": "4c96c6ff-9121-4ff3-9a7b-fb0db56cc9bc",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T04:03:46.014Z",
+      "updatedAt": "2026-10-21T08:28:29.061Z"
+    },
+    {
+      "id": "58681b92-9d23-465a-9fd6-f900c51c19d8",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T03:56:28.199Z",
+      "updatedAt": "2026-10-21T04:10:52.621Z"
+    },
+    {
+      "id": "c306c194-fc02-4e32-b2f1-afaf010adcb9",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-21T03:54:02.202Z",
+      "updatedAt": "2026-10-21T04:06:36.646Z"
+    },
+    {
+      "id": "399ed075-0982-49ca-9877-f4575a9eef07",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T03:53:36.521Z",
+      "updatedAt": "2026-10-21T04:35:00.501Z"
+    },
+    {
+      "id": "e8db191b-8f74-4e26-849a-1da59f3c133b",
+      "state": "completed",
+      "template": "skill:token-logo",
+      "createdAt": "2026-10-21T03:50:53.308Z",
+      "updatedAt": "2026-10-21T03:52:00.434Z"
+    },
+    {
+      "id": "54b72fb6-80c8-4475-a6d5-5034a50b6bd3",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-21T03:45:46.445Z",
+      "updatedAt": "2026-10-21T03:52:30.813Z"
+    },
+    {
+      "id": "fe7df5fa-9cc3-4415-b2ad-a04173a5b297",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T03:37:21.393Z",
+      "updatedAt": "2026-10-21T03:50:29.953Z"
+    },
+    {
+      "id": "d782e6f0-bf44-4737-841b-ab11cf25e247",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T03:27:04.240Z",
+      "updatedAt": "2026-10-21T04:08:53.674Z"
+    },
+    {
+      "id": "370f5399-e66a-45c3-aedd-6c38855d62cc",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T03:23:22.242Z",
+      "updatedAt": "2026-10-21T03:45:28.525Z"
+    },
+    {
+      "id": "78129196-e04c-411d-ae51-553cfaf90709",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T02:17:08.444Z",
+      "updatedAt": "2026-10-21T02:57:48.215Z"
+    },
+    {
+      "id": "00d5a9e3-456d-4aba-8321-4f2a12c33aa6",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-21T02:00:41.293Z",
+      "updatedAt": "2026-10-21T02:03:26.698Z"
+    },
+    {
+      "id": "56e8494f-67b5-4fab-819c-fe894e01dc73",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-21T02:00:39.686Z",
+      "updatedAt": "2026-10-21T02:02:26.233Z"
+    },
+    {
+      "id": "6bebb5f8-8bf4-4997-b811-08677a209ac3",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-21T01:44:04.925Z",
+      "updatedAt": "2026-10-21T01:45:10.375Z"
+    },
+    {
+      "id": "cf90f9d9-9f4b-4a24-a94a-6ee8b93942d1",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-21T01:20:52.869Z",
+      "updatedAt": "2026-10-21T01:23:18.183Z"
+    },
+    {
+      "id": "b562fde8-2e03-446f-87fa-c4caf1357905",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-21T01:08:56.240Z",
+      "updatedAt": "2026-10-21T01:09:36.875Z"
+    },
+    {
+      "id": "7827ab29-59f2-4f06-a6ad-ddbd9b17d639",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-21T01:03:27.625Z",
+      "updatedAt": "2026-10-21T01:04:45.287Z"
+    },
+    {
+      "id": "31017648-c06c-422f-8a78-ac7c0dce01a7",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-21T00:57:16.709Z",
+      "updatedAt": "2026-10-21T00:59:41.735Z"
+    },
+    {
+      "id": "796405ca-1aef-4b22-945a-61cadefb4cb4",
+      "state": "blocked",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T00:57:15.527Z",
+      "updatedAt": "2026-10-21T02:38:30.274Z"
+    },
+    {
+      "id": "f3ce294d-cf76-4a33-9be7-baf7bae21c81",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-21T00:36:56.313Z",
+      "updatedAt": "2026-10-21T00:38:53.346Z"
+    },
+    {
+      "id": "c41faf15-e12c-4910-97fb-e23fe03fe778",
+      "state": "blocked",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T23:58:33.774Z",
+      "updatedAt": "2026-10-21T00:29:30.429Z"
+    },
+    {
+      "id": "b76c8eb8-0780-4462-8ad1-045c89fc98e2",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-20T23:28:54.440Z",
+      "updatedAt": "2026-10-20T23:29:59.775Z"
+    },
+    {
+      "id": "63d5456d-2c14-4686-9133-f11b087f1deb",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-20T23:27:50.998Z",
+      "updatedAt": "2026-10-20T23:28:26.161Z"
+    },
+    {
+      "id": "d7afb51e-bb96-46a2-8a27-5f34278bc139",
+      "state": "completed",
+      "template": "skill:token-logo",
+      "createdAt": "2026-10-20T23:26:41.933Z",
+      "updatedAt": "2026-10-20T23:27:47.137Z"
+    },
+    {
+      "id": "5fff9f74-06f9-4039-a489-d9c24b45c9df",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-10-20T23:18:10.631Z",
+      "updatedAt": "2026-10-20T23:57:54.166Z"
+    },
+    {
+      "id": "d74ffa16-c4d0-4d51-acb0-1c5cb94359e4",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-20T23:18:05.368Z",
+      "updatedAt": "2026-10-20T23:19:13.994Z"
+    },
+    {
+      "id": "a8466c99-447f-4be6-b302-94ecfb4a26d9",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-20T23:18:02.996Z",
+      "updatedAt": "2026-10-20T23:19:30.022Z"
+    },
+    {
+      "id": "3fb0ebcb-9d55-42f2-9812-7d0bc084ad0c",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T23:14:18.480Z",
+      "updatedAt": "2026-10-20T23:26:27.838Z"
+    },
+    {
+      "id": "adb68898-0a4d-43c8-b902-f01c185a3e71",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T22:47:54.362Z",
+      "updatedAt": "2026-10-20T23:13:26.757Z"
+    },
+    {
+      "id": "3da48eb3-85c6-4f15-9c32-e1c105df852c",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-20T22:23:02.077Z",
+      "updatedAt": "2026-10-20T22:32:12.315Z"
+    },
+    {
+      "id": "fbbf341e-0fd8-4821-9dfa-3bcf5a4ba21a",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T22:15:20.246Z",
+      "updatedAt": "2026-10-20T22:56:39.076Z"
+    },
+    {
+      "id": "ae49972a-bcbf-4ba0-a03b-042495a786c4",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-10-20T22:02:00.502Z",
+      "updatedAt": "2026-10-20T22:02:48.163Z"
+    },
+    {
+      "id": "5b1328b2-8c9a-4a69-aeb9-91171eac96e3",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-20T21:50:44.422Z",
+      "updatedAt": "2026-10-20T21:55:26.851Z"
+    },
+    {
+      "id": "139742fb-2cbc-4a3b-8307-9bd5a49d38c0",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-20T21:35:55.353Z",
+      "updatedAt": "2026-10-20T21:37:42.501Z"
+    },
+    {
+      "id": "d9e5eeba-db85-4efa-8fde-bbc36a1effb2",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T20:52:27.800Z",
+      "updatedAt": "2026-10-20T21:25:53.562Z"
+    },
+    {
+      "id": "de7aa0c8-e190-477a-bb26-7c3f82354414",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-20T20:45:33.229Z",
+      "updatedAt": "2026-10-20T20:48:42.485Z"
+    },
+    {
+      "id": "fd8cb957-afe1-4d5c-a3c7-e745a0d99eac",
+      "state": "completed",
+      "template": "skill:frontend-for-contract",
+      "createdAt": "2026-10-20T20:44:03.508Z",
+      "updatedAt": "2026-10-20T23:22:46.670Z"
+    },
+    {
+      "id": "b8abdc6c-7990-406e-a674-da092f6f13ab",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T20:41:00.332Z",
+      "updatedAt": "2026-10-20T21:06:57.493Z"
+    },
+    {
+      "id": "0d434487-fe65-4253-bda9-abb4393cd2ab",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-20T20:40:21.524Z",
+      "updatedAt": "2026-10-20T20:43:18.529Z"
+    },
+    {
+      "id": "7ba62ec7-90d0-47eb-bd94-f33d36417330",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T20:18:27.500Z",
+      "updatedAt": "2026-10-20T20:35:20.825Z"
+    },
+    {
+      "id": "6dd01206-159b-4dd6-950e-b5c8168ed6e2",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T20:09:20.905Z",
+      "updatedAt": "2026-10-20T21:43:13.780Z"
+    },
+    {
+      "id": "040611d4-bc95-477a-9a0a-1a6cf829bf81",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T20:08:26.935Z",
+      "updatedAt": "2026-10-20T20:32:28.812Z"
+    },
+    {
+      "id": "ad6fc8d6-e85b-4015-998f-e3dc092398ad",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-10-20T20:00:59.776Z",
+      "updatedAt": "2026-10-20T20:21:58.288Z"
+    },
+    {
+      "id": "7b49c873-7509-4f7a-add3-cfee6d38298b",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T19:58:28.911Z",
+      "updatedAt": "2026-10-20T20:18:40.125Z"
+    },
+    {
+      "id": "a5f4a1f0-45f3-4b22-9a9d-fbcdc6d3018f",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T19:57:35.293Z",
+      "updatedAt": "2026-10-21T03:54:16.418Z"
+    },
+    {
+      "id": "a680304c-d3de-49eb-b581-d66c2e39f622",
+      "state": "completed",
+      "template": "skill:token-logo",
+      "createdAt": "2026-10-20T19:55:42.008Z",
+      "updatedAt": "2026-10-20T19:57:46.259Z"
+    },
+    {
+      "id": "472763cf-7481-495d-950c-000db51d562f",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T19:51:39.939Z",
+      "updatedAt": "2026-10-20T22:13:37.236Z"
+    },
+    {
+      "id": "22de979d-754d-4842-8c95-17d7bc7c0f3b",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T19:51:33.653Z",
+      "updatedAt": "2026-10-20T20:31:24.013Z"
+    },
+    {
+      "id": "765d0411-5f36-4233-9e2f-cf73ce443738",
+      "state": "completed",
+      "template": "skill:token-logo",
+      "createdAt": "2026-10-20T19:18:01.263Z",
+      "updatedAt": "2026-10-20T19:19:34.556Z"
+    },
+    {
+      "id": "2b996151-e811-41ca-98ff-553f3176e90c",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-10-20T19:16:06.964Z",
+      "updatedAt": "2026-10-20T19:31:18.496Z"
+    },
+    {
+      "id": "42b4b3b5-4c53-4368-aa49-ffdd71222d33",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-10-20T19:12:00.204Z",
+      "updatedAt": "2026-10-20T19:31:44.606Z"
+    },
+    {
+      "id": "efa2cadb-a38c-413d-b35b-862dcbedd917",
+      "state": "completed",
+      "template": "skill:token-logo",
+      "createdAt": "2026-10-20T19:10:14.994Z",
+      "updatedAt": "2026-10-20T19:12:38.074Z"
+    },
+    {
+      "id": "8397b3aa-732c-4cf9-80d5-a1ed917ccc0b",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T19:00:53.851Z",
+      "updatedAt": "2026-10-20T20:02:38.673Z"
+    },
+    {
+      "id": "7be3d349-fa0a-45be-8fde-75fb7d119f1d",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T18:57:27.612Z",
+      "updatedAt": "2026-10-20T19:09:51.202Z"
+    },
+    {
+      "id": "863eba48-5cac-4fee-a772-9695de63efd2",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T18:49:15.567Z",
+      "updatedAt": "2026-10-20T19:54:56.841Z"
+    },
+    {
+      "id": "ba9d232e-9213-459b-963d-811773f73376",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T18:47:49.475Z",
+      "updatedAt": "2026-10-20T19:17:25.840Z"
+    },
+    {
+      "id": "0f6b32eb-3264-4989-b178-9ec5b8fbedd1",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T18:46:34.436Z",
+      "updatedAt": "2026-10-20T18:52:56.860Z"
+    },
+    {
+      "id": "41f29f0a-262c-4d21-94e7-11a6e3869239",
+      "state": "completed",
+      "template": "skill:create-image",
+      "createdAt": "2026-10-20T18:19:43.333Z",
+      "updatedAt": "2026-10-20T18:21:51.096Z"
+    },
+    {
+      "id": "705dd677-45f9-42ee-aec3-4437447e5350",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-10-20T18:17:33.012Z",
+      "updatedAt": "2026-10-20T19:13:02.362Z"
+    },
+    {
+      "id": "a82821d1-8c4e-4fc1-959d-becc7380deea",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-10-20T18:07:15.980Z",
+      "updatedAt": "2026-10-20T19:15:18.629Z"
+    },
+    {
+      "id": "7a446fa7-8392-46ef-8834-4574673cc274",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T18:04:02.744Z",
+      "updatedAt": "2026-10-20T18:28:59.096Z"
+    },
+    {
+      "id": "5b996885-40f2-4278-8b7c-0fbf48f98a99",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T18:04:01.968Z",
+      "updatedAt": "2026-10-20T18:17:46.936Z"
+    },
+    {
+      "id": "f9199ee5-d961-4d46-afb6-cd311026c4ec",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-20T18:03:55.659Z",
+      "updatedAt": "2026-10-20T18:08:54.309Z"
+    }
+  ],
+  "details": [
+    {
+      "id": "a9268c47-5864-45b4-ae6e-022d726eed3c",
+      "state": "executing",
+      "template": "skill:build-website",
+      "createdAt": "2026-10-21T09:09:39.898Z",
+      "updatedAt": "2026-10-21T09:09:39.898Z",
+      "nodes": [
+        {
+          "key": "build_website",
+          "role": "implement",
+          "state": "working",
+          "seat": {
+            "tokenId": "74",
+            "agentId": "51196"
+          },
+          "live": {
+            "seat": {
+              "tokenId": "7",
+              "agentId": "51075"
+            },
+            "runtime": "codex",
+            "model": "gpt-6.1-sol",
+            "modelSource": "asked",
+            "state": "accepted",
+            "since": "2026-10-21T09:34:34.668Z"
+          }
+        },
+        {
+          "key": "design_critic",
+          "role": "review",
+          "state": "waiting",
+          "seat": {
+            "tokenId": "3",
+            "agentId": "52082"
+          },
+          "live": null
+        }
+      ]
+    },
+    {
+      "id": "6571be23-b887-48f4-813e-28f672c321cf",
+      "state": "executing",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T09:09:04.138Z",
+      "updatedAt": "2026-10-21T09:09:04.138Z",
+      "nodes": [
+        {
+          "key": "adversarial_review",
+          "role": "review",
+          "state": "waiting",
+          "seat": null,
+          "live": null
+        },
+        {
+          "key": "build_contract_project",
+          "role": "implement",
+          "state": "working",
+          "seat": {
+            "tokenId": "1558",
+            "agentId": "51751"
+          },
+          "live": {
+            "seat": {
+              "tokenId": "1558",
+              "agentId": "51751"
+            },
+            "runtime": "codex",
+            "model": "gpt-6-astra",
+            "modelSource": "asked",
+            "state": "accepted",
+            "since": "2026-10-21T09:09:08.957Z"
+          }
+        }
+      ]
+    },
+    {
+      "id": "d7f17b1e-b76e-4e29-a106-5689ed58e8c8",
+      "state": "executing",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T08:06:45.159Z",
+      "updatedAt": "2026-10-21T08:06:45.159Z",
+      "nodes": [
+        {
+          "key": "adapt_contract_project",
+          "role": "implement",
+          "state": "working",
+          "seat": {
+            "tokenId": "1563",
+            "agentId": "52209"
+          },
+          "live": {
+            "seat": {
+              "tokenId": "1563",
+              "agentId": "52209"
+            },
+            "runtime": "codex",
+            "model": "gpt-6-astra",
+            "modelSource": "asked",
+            "state": "accepted",
+            "since": "2026-10-21T08:51:24.722Z"
+          }
+        },
+        {
+          "key": "audit_economics",
+          "role": "review",
+          "state": "waiting",
+          "seat": null,
+          "live": null
+        },
+        {
+          "key": "audit_flow",
+          "role": "review",
+          "state": "waiting",
+          "seat": null,
+          "live": null
+        },
+        {
+          "key": "audit_imported_code",
+          "role": "review",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "1240",
+            "agentId": "52268"
+          },
+          "live": null
+        },
+        {
+          "key": "audit_judge",
+          "role": "review",
+          "state": "waiting",
+          "seat": null,
+          "live": null
+        },
+        {
+          "key": "audit_math",
+          "role": "review",
+          "state": "waiting",
+          "seat": null,
+          "live": null
+        },
+        {
+          "key": "audit_permissions",
+          "role": "review",
+          "state": "waiting",
+          "seat": null,
+          "live": null
+        },
+        {
+          "key": "manifest",
+          "role": "integrate",
+          "state": "waiting",
+          "seat": null,
+          "live": null
+        },
+        {
+          "key": "write_foundry_tests",
+          "role": "tests",
+          "state": "waiting",
+          "seat": null,
+          "live": null
+        }
+      ]
+    },
+    {
+      "id": "ed909f82-0fa3-4cb7-8219-952be6e3bde3",
+      "state": "executing",
+      "template": "shape:chain",
+      "createdAt": "2026-10-21T05:01:08.562Z",
+      "updatedAt": "2026-10-21T05:01:08.562Z",
+      "nodes": [
+        {
+          "key": "audit_economics",
+          "role": "review",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "586",
+            "agentId": "51514"
+          },
+          "live": null
+        },
+        {
+          "key": "audit_flow",
+          "role": "review",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "127",
+            "agentId": "51020"
+          },
+          "live": null
+        },
+        {
+          "key": "audit_judge",
+          "role": "review",
+          "state": "working",
+          "seat": {
+            "tokenId": "1773",
+            "agentId": "52139"
+          },
+          "live": {
+            "seat": {
+              "tokenId": "81",
+              "agentId": "52178"
+            },
+            "runtime": "claude",
+            "model": "claude-fable-5-1",
+            "modelSource": "asked",
+            "state": "accepted",
+            "since": "2026-10-21T09:47:51.529Z"
+          }
+        },
+        {
+          "key": "audit_math",
+          "role": "review",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "507",
+            "agentId": "52685"
+          },
+          "live": null
+        },
+        {
+          "key": "audit_permissions",
+          "role": "review",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "1473",
+            "agentId": "51481"
+          },
+          "live": null
+        },
+        {
+          "key": "build_contract_project",
+          "role": "implement",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "1198",
+            "agentId": "52548"
+          },
+          "live": null
+        },
+        {
+          "key": "manifest",
+          "role": "integrate",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "832",
+            "agentId": "52231"
+          },
+          "live": null
+        },
+        {
+          "key": "write_foundry_tests",
+          "role": "tests",
+          "state": "accepted",
+          "seat": {
+            "tokenId": "1794",
+            "agentId": "51537"
+          },
+          "live": null
+        }
+      ]
+    }
+  ]
+}

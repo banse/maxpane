@@ -110,7 +110,8 @@ async def test_hub_work_summary_does_not_hydrate_the_detail_board(manager):
         assert card['primary'] == '4'  # Global counter, not the two sampled active jobs.
         assert card['work_summary']['build'] is None
         assert m._work_reader.task is None
-        m.swarm_client.fetch_jobs.assert_not_awaited()
+        m.swarm_client.fetch_jobs.assert_awaited_once_with(limit=100)
+        m.swarm_client.fetch_jobs.reset_mock()
         m.set_active_view('work')
         await m.fetch_and_compute()
         await m._work_reader.task
@@ -227,7 +228,7 @@ async def test_hub_oracles_share_list_native_detail_and_retained_failure_clock(m
         card = next(c for c in second['surfboard_cards'] if c['key'] == 'oracles')
         assert card['denominator'] == len(second['surf_oracles']['rows']) == 100
         assert card['primary'] == str(sum(r['status'] == 'assessing' for r in second['surf_oracles']['rows']))
-        assert card['secondary'] == 'in progress' and card['meter_state'] == 'partial'
+        assert card['secondary'] == '— agents' and card['meter_state'] == 'partial'
         m.set_oracles_active(True); m.set_hub_active(False)
         m._offer_full = lambda _: pytest.fail('unrelated collection in oracle mode')
         native = await m.fetch_and_compute()
@@ -243,7 +244,7 @@ async def test_hub_oracles_share_list_native_detail_and_retained_failure_clock(m
         assert stale['surf_oracles']['read_ts'] == raw['read_ts']
         assert retained['primary'] == card['primary']
         assert retained['meter_state'] == retained['status'] == 'stale'
-        assert retained['secondary'] == 'in progress'
+        assert retained['secondary'] == '— agents'
         clock.now += 119
         await m.fetch_and_compute()
         assert m.swarm_client.fetch_oracle_requests.await_count == 2
@@ -744,12 +745,12 @@ async def test_tokens_card_shares_retained_catalogue_and_counts_24h_without_full
         cached[0].update(ticker='SFPT', token_address=next(
             a['address'] for a in cached[0]['artifacts'] if a['role'] == 'token'),
             liquidity=dict(state='info', read_ts=1000, token_amount=100, paired_amount=1, paired_symbol='ETH'))
-        m._swarm_launch_keys = lambda: dict(swarm_launch_rows=cached)
+        m._swarm_launch_keys = lambda **_: dict(swarm_launch_rows=cached)
         second = await m.fetch_hub_snapshot()
         card = next(c for c in second['surfboard_cards'] if c['key']=='swarm-tokens')
         assert (card['primary'], card['secondary'], card['status']) == ('3', '3 new', 'active')
         assert adapter is m.swarm_tokens_manager()
-        assert set(adapter._tasks) == {'catalogue', 'markets'}
+        assert set(adapter._tasks) == {'catalogue', 'markets', 'provenance'}
         await adapter.wait_pending()
         assert next(c for c in m.get_hub_snapshot()['surfboard_cards'] if c['key']=='swarm-tokens')['status'] == 'active'
         for i, token in enumerate(adapter._tokens(m.swarm_tokens_source(), clock.now, include_inactive=True)):
@@ -902,7 +903,7 @@ async def test_hub_ranking_projection_preserves_reader_pool_identity(manager):
     launch = launch_rows(rows())[0]
     launch['token_address'] = next(a['address'] for a in launch['artifacts'] if a['role']=='token')
     pool = '0x'+'a'*64
-    m._swarm_launch_keys = lambda: dict(swarm_launch_rows=[launch])
+    m._swarm_launch_keys = lambda **_: dict(swarm_launch_rows=[launch])
     facts = {'launches':{launch['launch_id']:dict(pool_initialize={'pool_id':pool},
         detail_version=[launch['status'], rows()[0].get('updatedAt')], row=rows()[0])}}
     original_slot = m._launch_slot

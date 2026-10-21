@@ -44,11 +44,12 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: The terminal fills the four center columns down to the rack bottom,
 #: measuring 95 columns at the pin and 99 at 149×45.
 #: NFTS and TOKENS retain equal inset padding. NFTS shows native collection digits,
-#: build/open counts and partial-catalogue coverage; token arrows stay right-aligned.
-#: WORK IN PROGRESS keeps job digits and workflow subtitle. Its outer footer
+#: building inset footer and build/open outer counts; token arrows stay right-aligned.
+#: WIP keeps bright job digits and the leading current node category. Its outer footer
 #: shows SWARM's 24H history; build/review counts stay under BUILT BY SWARM.
-#: FLEET keeps three RUNTIMES rows and the model/effort footer. A nine-cell base
-#: daemon fits the trailing value cell; model footers retain both lower corners.
+#: FLEET shows STATS: tokens/jobs/capacity with an acceptance-rate footer.
+#: Rechecked 2026-10-21 after live preview: 143×37 is unchanged. The title occupies
+#: the center gap above the terminal; its former one-row allocation stays blank.
 #: Normal, stress, unavailable and wide payloads fit at 143×37 and 149×45.
 #: Resize checks preserve card/terminal alignment, captions and visible footers
 #: in both the screen's default CSS and the production stylesheet.
@@ -84,7 +85,8 @@ class SurfboardScreen(SurfDashboardScreen):
     ]
     DEFAULT_CSS = """
     SurfboardScreen { background: $background; color: $text; }
-    SurfboardScreen #surfboard-title { height: 1; background: $surface; color: $text-muted; padding: 0 1; content-align: center middle; }
+    SurfboardScreen #surfboard-header-space { height: 1; }
+    SurfboardScreen #surfboard-title { dock: top; layer: heading; height: 1; background: $background; color: $text-muted; content-align: center middle; }
     SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1 0; overflow: auto auto;
         scrollbar-gutter: auto; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
     """
@@ -109,7 +111,7 @@ class SurfboardScreen(SurfDashboardScreen):
         self._workflow_guide_view_state = {}
 
     def compose(self) -> ComposeResult:
-        yield Static(Text("IMD BOARDROOM", style=f"dim {self.app.get_css_variables()['foreground']}"), id="surfboard-title")
+        yield Static("", id="surfboard-header-space")
         with VerticalScroll(id="surfboard-viewport"):
             yield SurfboardRack(id="surfboard-rack")
         yield SurfStatusBar()
@@ -201,7 +203,12 @@ class SurfboardScreen(SurfDashboardScreen):
             ("IMD BOARDROOM", f"dim {self.app.get_css_variables()['foreground']}"),
             (" · " + " · ".join(hints) if hints else "") + self.loading_suffix)
         widget = self.query_one("#surfboard-title", Static)
-        width = widget.content_size.width
+        rack = self.query_one(SurfboardRack)
+        terminal = self.query_one(SurfboardTerminal)
+        widget.styles.width = terminal.region.width
+        widget.styles.offset = (terminal.region.x - rack.content_region.x,
+                                terminal.region.y - rack.content_region.y - 1)
+        width = terminal.region.width
         left = max(0, (width - title.cell_len) // 2)
         entry = "WORKFLOWS [g]"
         gap = width - left - title.cell_len - len(entry)

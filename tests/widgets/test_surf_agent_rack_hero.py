@@ -107,7 +107,8 @@ async def test_owner_and_runtime_keep_padded_labels_and_values(width):
         assert any(segment.style.link for segment in owner_row)
         assert all(segment.style.color.get_truecolor() == value for segment in owner_row if segment.text.strip())
         daemon_row = body_rows(app, "runtime")[1]
-        assert "↑" in daemon_row.text and "…" in daemon_row.text
+        assert ("0.1…↑" if width == 132 else "0.1.2↑") in daemon_row.text
+        assert "+" not in daemon_row.text
         assert all(style.color.get_truecolor() == label for style in word_styles(daemon_row, "daemon"))
         assert all(style.color.get_truecolor() == value for style in word_styles(daemon_row, "↑"))
         assert border_color(app, "runtime") == app.ansi_theme.ansi_colors[3]
@@ -172,10 +173,10 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         assert [(card.region.x, card.region.width) for card in cards[:6]] == [(card.region.x, card.region.width) for card in cards[6:]]
         assert cards[6].region.y - cards[0].region.bottom == 1
         for key, words in {
-            "seat": ("AGENT", "SEAT", "OPERATING", "ERC-8004 #8127"),
+            "seat": ("AGENT", "SEAT", "swarming", "ERC-8004 #8127"),
             "accepted": ("JOBS", "ACCEPTED", "96%"),
             "effort": ("HOURS", "1.8M tokens"),
-            "rewards": ("IMD", "$120.82", "paid "),
+            "rewards": ("IMD", "$120.82"),
             "rank": ("POSITION", "of 1,024", "↑ 2"),
             "status": ("WORKER", "reviewing", "BUSY", "▰"),
             "owner": ("WALLET", "example.eth ⧉", "paired"),
@@ -183,13 +184,13 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             "models": ("RESEARCH", "ORACLE", "JOBS"),
             "earnings": ("EARNINGS", "TOKENS", "4 new"),
             "collab": ("SEATS", "collaborators"),
-            "nodes": ("SHIP", "LAUNCHES", "JOBS"),
+            "nodes": ("SHIPPED", "LAUNCHES", "JOBS"),
         }.items():
             text = painted(app, key)
             assert all(word in text for word in words), (key, text)
             footer = strips(app, key)[-1].text
             label = footer.strip("╰─╯ ")
-            if key in ("owner", "models", "nodes", "runtime", "accepted", "effort", "earnings", "collab"):
+            if key in ("owner", "models", "nodes", "runtime", "accepted", "effort", "earnings", "collab", "rewards"):
                 assert not label, (key, footer)
                 continue
             left = footer.index(label)
@@ -197,6 +198,9 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         # 420 and 960, asserted as digit glyphs that actually reach the terminal.
         assert "  ╵╰─╴╰─╯" in painted(app, "seat")
         assert "╶─╯╰─╯╰─╯" in painted(app, "accepted")
+        assert strips(app, "accepted")[0].text.strip("╭─╮ ⊙") == "ACCEPTED"
+        assert strips(app, "accepted")[2].text.split("┌")[1].split("┐")[0].strip("─ ") == "JOBS"
+        assert strips(app, "nodes")[0].text.strip("╭─╮ ⊙") == "SHIPPED"
 
 
 @pytest.mark.parametrize("width", [132, 149])
@@ -392,7 +396,8 @@ async def test_live_runtime_qualifier_and_daemon_difference_remain_readable():
         assert '0.1.0+aca0ff06' in str(pilot.app.query_one('#hero-runtime').tooltip)
         await pilot.resize_terminal(211, 45)
         await pilot.pause()
-        assert '0.1.0+aca0ff06↑' in painted(pilot.app, 'runtime')
+        assert '0.1.0↑' in painted(pilot.app, 'runtime')
+        assert '+aca0ff06' not in painted(pilot.app, 'runtime')
 
 
 async def test_narrow_runtime_preserves_version_with_named_compact_label_then_restores():
@@ -514,8 +519,8 @@ def border_color(app, key):
     return frames[0].style.color.get_truecolor()
 
 
-@pytest.mark.parametrize("live,word,color", [("working", "OPERATING", "accent"), ("idle", "ON", "accent"),
-                                          ("paused", "ON", "accent"), ("offline", "OFFLINE", "red")])
+@pytest.mark.parametrize("live,word,color", [("working", "swarming", "accent"), ("idle", "ready", "accent"),
+                                          ("paused", "ON", "accent"), ("offline", "offline", "red")])
 @pytest.mark.parametrize("api_status", [None, "revoked", "suspended", "", "  ", 123])
 async def test_seat_uses_worker_presence_and_erc8004_registration(live, word, color, api_status):
     from rich.color import Color
@@ -572,7 +577,7 @@ async def test_rank_and_reward_borders_follow_read_changes_and_payment_recency()
         app = pilot.app
         green = Color.parse(app.get_css_variables()["accent"]).get_truecolor()
         neutral = border_color(app, "accepted")
-        assert "paid " in painted(app, "rewards") and "OWNER SHARE" not in painted(app, "rewards")
+        assert "paid " not in painted(app, "rewards") and "OWNER SHARE" not in painted(app, "rewards")
         for delta, recent, arrow, expected in [(2, True, "↑ 2", green), (-3, False, "↓ 3", app.ansi_theme.ansi_colors[1]),
                                                (0, False, "", neutral), (None, None, "", neutral)]:
             data["rank"]["delta"] = delta
@@ -604,7 +609,7 @@ async def test_pending_uses_loading_indicator_without_masking_failed_sources():
 
 
 @pytest.mark.parametrize("width", [132, 134])
-async def test_reward_payment_time_fits_narrow_footer_without_losing_date(width):
+async def test_reward_payment_time_stays_in_hover_with_no_outer_footer(width):
     from maxpane_dashboard.widgets.surf._fmt import mmdd_hhmm
     data = payload()
     async with Harness(data).run_test(size=(width, 45)) as pilot:
@@ -612,12 +617,14 @@ async def test_reward_payment_time_fits_narrow_footer_without_losing_date(width)
         card = pilot.app.query_one("#hero-rewards")
         date = mmdd_hhmm(data["rewards"]["last_paid_ts"])
         text = painted(pilot.app, "rewards")
-        assert date in strips(pilot.app, "rewards")[-1].text
+        assert not strips(pilot.app, "rewards")[-1].text.strip("╰─╯ ")
+        assert "$120.82" in text
         assert "‹" not in text
         assert "last paid " + date in str(card.tooltip)
         await pilot.resize_terminal(170, 45)
         await pilot.pause()
-        assert "paid " + date in strips(pilot.app, "rewards")[-1].text
+        assert not strips(pilot.app, "rewards")[-1].text.strip("╰─╯ ")
+        assert "$120.82" in painted(pilot.app, "rewards")
 
 
 @pytest.mark.parametrize("width,working,glyph", [(149, 2, "╭─╮╭─╴"), (132, None, "0F")])
@@ -688,16 +695,24 @@ async def test_second_row_uses_neutral_frames_except_outdated_runtime():
             assert "0.1.0+long-build-identifier" in str(app.query_one("#hero-runtime").tooltip)
 
 
-async def test_model_moves_to_runtime_third_row_with_effort_in_inner_footer():
+@pytest.mark.parametrize("width", [132, 149, 211])
+async def test_model_moves_to_runtime_third_row_with_effort_in_inner_footer(width):
+    from rich.color import Color
     data = payload()
     data["models"]["rows"] = [dict(model="gpt-5.1-fable", effort="high")]
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data).run_test(size=(width, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         rendered = strips(app, "runtime")
         text = [strip.text for strip in rendered]
-        assert "model" in text[5] and "fable 5.1" in text[5], text
+        assert "model" in text[5] and ("fable 5.1" if width >= 149 else "fable") in text[5], text
         assert "high" in text[6]
+        inner_right = [index for index, char in enumerate(text[5]) if char == "│"][-2]
+        model_end = inner_right - 1  # one blank cell between value and inner edge
+        assert text[6].index("high") + len("high") == model_end
+        foreground = Color.parse(app.get_css_variables()["foreground"]).get_truecolor()
+        assert all(style.color.get_truecolor() == foreground and not style.dim
+                   for style in word_styles(rendered[6], "high"))
         assert "devices" not in painted(app, "runtime")
         assert not text[-1].strip("╰─╯ ")
         assert "gpt-5.1-fable · high" in str(app.query_one("#hero-runtime").tooltip)
@@ -864,7 +879,7 @@ async def test_removed_outer_captions_stay_empty_across_source_states_and_recove
     data = payload()
     async with Harness(data).run_test(size=(132, 45)) as pilot:
         app = pilot.app
-        keys = ("accepted", "effort", "earnings", "collab")
+        keys = ("accepted", "effort", "earnings", "collab", "rewards")
         for state in ("ok", "partial", "stale", "pending", "busy", "failed", "unavailable",
                       "unknown_seat", "stale_unknown_seat", "empty", "ok"):
             for key in keys:
@@ -874,6 +889,8 @@ async def test_removed_outer_captions_stay_empty_across_source_states_and_recove
             for key in keys:
                 assert not strips(app, key)[-1].text.strip("╰─╯ "), (key, state)
         assert "4 new" in painted(app, "earnings")
+        assert "$120.82" in painted(app, "rewards")
+        assert "last paid " in str(app.query_one("#hero-rewards").tooltip)
         assert "#527 x84" in str(app.query_one("#hero-collab").tooltip)
 
 
@@ -896,7 +913,7 @@ async def test_ship_counts_launch_jobs_and_labels_the_unit():
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             text = painted(app, "nodes")
-            assert strips(app, "nodes")[0].text.strip("╭─╮ ⊙") == "SHIP"
+            assert strips(app, "nodes")[0].text.strip("╭─╮ ⊙") == "SHIPPED"
             assert "LAUNCHES" in text
             assert "NODES" not in text and "work by type" not in text and "other" not in text
             for glyph in digits:
