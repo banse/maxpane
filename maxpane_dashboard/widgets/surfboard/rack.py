@@ -333,7 +333,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         if self.footer_data.get("key") != self.key and self.footer_data.get("detail"):
             self.tooltip.append("\nFooter: " + flatten(self.footer_data["detail"]))
         self.set_class(self.empty_seat, "empty")
-        self.border_title = Text("⊙ " + self.title)
+        self._update_title()
         self._update_meter()
         self._update_input()
         self.refresh()
@@ -351,6 +351,16 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
     def on_resize(self):
         self._update_meter()
         self._update_input()
+
+    def _update_title(self, clipped=False):
+        available = max(0, self.region.width - 6)
+        numbered = self.seat_slot is not None and available >= 3
+        title = Text(title_with_hint("⊙ " + self.title, clipped, max(0, available - 3) if numbered else max(0, self.size.width - 4)))
+        if numbered:
+            title.append(" " + "─" * max(0, available - title.cell_len - 3) + " ",
+                         style=Style(color=self.styles.border_top[1].rich_color))
+            title.append(str(self.seat_slot + 1), style=Style(dim=True, meta={"seat_edit": self.seat_slot}))
+        self.border_title = title
 
     def render(self):
         width = max(4, self.content_size.width)
@@ -508,8 +518,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                     # Move into the next padding cell without shifting the price.
                     line = line[:arrow_at] + Text(' ', style=style) + line[arrow_at:arrow_at+1] + line[arrow_at+2:]
             body.append("│", style=border_inset).append_text(line).append("│\n", style=border_inset)
-        self.border_title = Text(title_with_hint("⊙ " + self.title,
-            clipped, max(0, self.size.width - 4)))
+        self._update_title(clipped)
         fitted_bottom = clip(bottom, inside)
         footer = Text("└" + fitted_bottom.center(inside + len(fitted_bottom) - cell_len(fitted_bottom), "─") + "┘",
                       style=border_inset + Style(bold=False))
@@ -540,6 +549,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             self.refresh()
 
     def on_click(self, event):
+        if self.seat_slot is not None and event.style.meta.get("seat_edit") == self.seat_slot:
+            event.stop()
+            self.focus()
+            self.post_message(SurfboardRack.SeatEditRequested(self.seat_slot))
+            return
         if is_copy_click(event) or is_explorer_click(event):
             return
         if isinstance(event.widget, Input):
@@ -579,6 +593,11 @@ class SurfboardRack(Grid):
         def __init__(self, seat_slot, value):
             super().__init__()
             self.seat_slot, self.value = seat_slot, value
+
+    class SeatEditRequested(Message):
+        def __init__(self, seat_slot):
+            super().__init__()
+            self.seat_slot = seat_slot
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

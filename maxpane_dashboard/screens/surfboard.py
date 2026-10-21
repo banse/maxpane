@@ -8,6 +8,7 @@ from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.constants import DIM_FACTOR
 from textual.containers import VerticalScroll
 from textual.widgets import Input, Static
 
@@ -202,7 +203,7 @@ class SurfboardScreen(SurfDashboardScreen):
             (" · " + " · ".join(hints) if hints else "") + self.loading_suffix)
         heading = self.query_one("#surfboard-title", Static)
         width = heading.content_size.width
-        left, right = "↑ ↓ ← → arrow keys to navigate cards", "↵ to open selected dashboard"
+        left, right = "↑ ↓ ← → to navigate cards", "↵ to open selected dashboard"
         # Equal side widths keep the title centered, with the same gap on each side.
         side = max(len(left), len(right))
         if 2 * side + title.cell_len + 4 > width:
@@ -210,7 +211,12 @@ class SurfboardScreen(SurfDashboardScreen):
             side = max(len(left), len(right))
         if 2 * side + title.cell_len + 4 <= width:
             gap = max(1, (width - 2 * side - title.cell_len) // 4)
-            title = Text(left.rjust(side) + " " * gap) + title + Text(" " * gap + right.ljust(side))
+            card = self.query_one("#surfboard-card-agent")
+            base, surface = card.background_colors
+            background = base + surface
+            # Match the footer's dim ink despite the header's different background.
+            ink = background.blend(background + card.styles.border_subtitle_color, DIM_FACTOR).hex
+            title = Text(left.rjust(side) + " " * gap, style=ink) + title + Text(" " * gap + right.ljust(side), style=ink)
         heading.update(title)
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
@@ -242,10 +248,25 @@ class SurfboardScreen(SurfDashboardScreen):
         except OSError:
             self.query_one(SurfboardRack).set_seat_error(event.seat_slot, "save failed")
             return
+        self._seat_entered(event.seat_slot, token)
+
+    def on_surfboard_rack_seat_edit_requested(self, event: SurfboardRack.SeatEditRequested) -> None:
+        from maxpane_dashboard import config
+        from maxpane_dashboard.screens.seat_input import SeatInputScreen
+
+        event.stop()
+        slot = event.seat_slot
+        prompt = SeatInputScreen(current=self._data_manager.get_hub_seats()[slot],
+                                 saver=lambda token: config.save_surfboard_seat(slot, token))
+        self.app.push_screen(prompt, callback=lambda token: self._seat_entered(slot, token))
+
+    def _seat_entered(self, slot: int, token: int | None) -> None:
+        if token is None:
+            return
         seats = list(self._data_manager.get_hub_seats())
-        seats[event.seat_slot] = token
+        seats[slot] = token
         self._data_manager.set_hub_seats(seats)
-        if event.seat_slot == 0:
+        if slot == 0:
             self._data_manager.set_seat(token)
         self.start_refresh()
 

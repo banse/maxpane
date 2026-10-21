@@ -701,3 +701,21 @@ All 48 WORK widget cases and 18 composing/layout cases pass, as do 128 guards
 and 12 documentation pins. The single review approved with no findings and
 independently killed two mutations; two implementation mutations were also
 killed/restored. No remaining follow-up for this correction.
+
+## CR 23a8b26c — BOARDROOM header and seat shortcuts, 2026-10-21
+
+Removed “arrow keys” from the navigation hint and matched both hints to the
+card footer's rendered gray. The four AGENT headers now show right-aligned
+slot numbers; clicking a number opens the existing seat popup for that slot
+without leaving BOARDROOM. Cancel, invalid input and save failure preserve
+the assignments; seat zero remains valid. The live 149×45 preview used fresh
+public data (6.67s read), with the existing card and terminal geometry intact.
+
+The affected/composing run passed 200 cases; all 128 fast guards passed.
+One additional data test already fails on baseline `6c5ca8c2`:
+`tests/data/test_surfboard_seats.py::test_mismatched_outcome_identity_never_relabels_another_seats_acceptance`
+expects “acceptance unavailable” where the owner-approved display is now
+“acceptance —”. Reproduced serially and with baseline production files;
+update that old wording assertion when the data test is next touched.
+The single review approved without findings. Three implementation mutations
+and two independent review mutations were killed and restored byte for byte.

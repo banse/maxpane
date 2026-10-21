@@ -159,3 +159,30 @@ async def test_news_renders_neutral_text_with_every_agent_seat_assigned():
         await pilot.pause()
         assert "Latest saved" in "\n".join(row.text for row in rows(pilot.app, news))
         assert not pilot.app.query(".empty")
+
+
+async def test_slot_numbers_are_right_aligned_muted_and_only_on_agent_headers():
+    async with SeatApp().run_test(size=(149, 45)) as pilot:
+        pilot.app.register_theme(THEMES['matrix'])
+        pilot.app.theme = 'matrix'
+        for width in (149, 200, 144):
+            await pilot.resize_terminal(width, 45)
+            for assigned in (False, True):
+                for slot, key in enumerate(KEYS):
+                    card = pilot.app.query_one('#surfboard-card-' + key, SurfboardCard)
+                    card.set_data(dict(token_id=420, status='idle', primary='420', meter_state='idle') if assigned else None)
+                await pilot.pause()
+                for slot, key in enumerate(KEYS):
+                    card = pilot.app.query_one('#surfboard-card-' + key, SurfboardCard)
+                    header, *_, footer = rows(pilot.app, card)
+                    digits = [segment for segment in header if segment.style and 'seat_edit' in segment.style.meta]
+                    assert len(digits) == 1
+                    assert digits[0].text == str(slot + 1)
+                    assert digits[0].style.meta['seat_edit'] == slot
+                    assert header.text.index(str(slot + 1)) == card.region.width - 4
+                    footer_label = 'IDLE' if assigned else 'Identity.md'
+                    ink = next(iter(footer.crop(footer.text.index(footer_label), footer.text.index(footer_label) + 1))).style.color
+                    assert digits[0].style.color == ink
+                for card in pilot.app.query(SurfboardCard):
+                    if card.key not in KEYS:
+                        assert not any(segment.style and 'seat_edit' in segment.style.meta for segment in rows(pilot.app, card)[0])

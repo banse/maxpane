@@ -339,6 +339,67 @@ async def test_agent_modal_escape_closes_prompt_before_hub(monkeypatch):
         assert app.screen.name == "surfboard"
 
 
+async def test_agent_header_numbers_edit_only_the_clicked_slot_and_keep_boardroom(monkeypatch):
+    from maxpane_dashboard.screens.seat_input import SeatInputScreen
+    from maxpane_dashboard.widgets.surfboard.rack import AGENT_KEYS, SurfboardCard
+    saved = []
+    monkeypatch.setattr('maxpane_dashboard.config.save_surfboard_seat', lambda slot, token: saved.append((slot, token)))
+    app, managers = hub_app()
+    manager = managers['_surf_manager']
+    manager.hub_seats = (420, 7, None, 0)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        hub = app.screen
+        for slot, key in enumerate(AGENT_KEYS):
+            replacement = 0 if slot == 0 else 100 + slot
+            card = hub.query_one('#surfboard-card-' + key, SurfboardCard)
+            card.set_data(dict(token_id=manager.hub_seats[slot], status='idle', primary='420', meter_state='idle'))
+            await pilot.pause()
+            row = hub._compositor.render_strips()[card.region.y]
+            x = 0
+            for segment in row:
+                if segment.style and segment.style.meta.get('seat_edit') == slot:
+                    break
+                x += segment.cell_length
+            else:
+                pytest.fail('Clickable slot number missing from the card header')
+            original = manager.hub_seats
+            await pilot.click(offset=(x, card.region.y))
+            await pilot.pause()
+            assert isinstance(app.screen, SeatInputScreen)
+            field = app.screen.query_one('#wi-input', Input)
+            assert field.value == ('' if original[slot] is None else str(original[slot]))
+            field.value = str(replacement)
+            await pilot.press('escape')
+            await pilot.pause()
+            assert app.screen is hub and manager.hub_seats == original
+            assert len(saved) == slot
+            await pilot.click(offset=(x, card.region.y))
+            await pilot.pause()
+            field = app.screen.query_one('#wi-input', Input)
+            field.value = ''
+            await pilot.press('enter')
+            assert isinstance(app.screen, SeatInputScreen) and len(saved) == slot
+            field.value = str(replacement)
+            if slot == 2:
+                def fail_save(slot, token):
+                    raise OSError('read-only config')
+                monkeypatch.setattr('maxpane_dashboard.config.save_surfboard_seat', fail_save)
+                await pilot.press('enter')
+                assert isinstance(app.screen, SeatInputScreen)
+                assert manager.hub_seats == original and len(saved) == slot
+                assert 'Could not save seat' in painted(app)
+                monkeypatch.setattr('maxpane_dashboard.config.save_surfboard_seat', lambda slot, token: saved.append((slot, token)))
+            await pilot.press('enter')
+            await pilot.pause()
+            assert app.screen is hub
+            expected = list(original)
+            expected[slot] = replacement
+            assert manager.hub_seats == tuple(expected)
+            assert saved == [(index, 0 if index == 0 else 100 + index) for index in range(slot + 1)]
+            assert manager.seat == 0
+
+
 @pytest.mark.asyncio
 async def test_hub_paints_while_startup_full_fetch_is_blocked():
     from maxpane_dashboard.screens.refresh_guard import PREFETCH_WORKER_NAME

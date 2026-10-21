@@ -49,10 +49,17 @@ async def test_boardroom_heading_contains_navigation_and_preserves_content_geome
             assert not app.hub.query('#surfboard-navigation')
             rows = app.hub._compositor.render_strips()
             heading_text = rows[0].text
-            left = '↑ ↓ ← → arrow keys to navigate cards'
+            left = '↑ ↓ ← → to navigate cards'
             title = 'IMD BOARDROOM'
             right = '↵ to open selected dashboard'
             assert heading_text.index(left) < heading_text.index(title) < heading_text.index(right)
+            assert 'arrow keys' not in heading_text
+            empty_card = app.hub.query_one('#surfboard-card-agent-4', SurfboardCard)
+            footer = rows[empty_card.region.bottom - 1]
+            footer_ink = next(iter(footer.crop(footer.text.index('Identity.md'), footer.text.index('Identity.md') + 1))).style.color
+            for hint in (left, right):
+                hint_ink = next(iter(rows[0].crop(heading_text.index(hint), heading_text.index(hint) + 1))).style.color
+                assert hint_ink == footer_ink
             left_gap = heading_text.index(title) - (heading_text.index(left) + len(left))
             right_gap = heading_text.index(right) - (heading_text.index(title) + len(title))
             assert abs(left_gap - right_gap) <= 1
