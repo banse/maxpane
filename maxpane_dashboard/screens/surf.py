@@ -2024,13 +2024,15 @@ MODE_SWARM = "swarm"
 #: and detail prose are intentionally unbounded and scroll internally.
 #: The height binder is the two 16-row child panels. The body can shrink
 #: below that floor and scroll, preserving the title and hero row. At 29
-#: terminal rows both panels overflow inside the body and ‹ taller is lit;
+#: terminal rows the body needs vertical scrolling and ‹ taller is lit;
 #: at 30 both fit, with the status bar visible and a blank row above it.
 #: The same transition holds for capture, stress, empty, stale and unread.
 #: Keeping the floor on the children avoids scrolling the entire screen
 #: to focus the tree, which previously hid the heroes on a short terminal.
 #: Header 1 + hero margin 1 + hero 9 + body margins 2 + body 16 + status 1
 #: explains the measured 30 rows; the compositor sweep is the authority.
+#: Border removal rechecked 2026-10-21 after live 149×45: pins unchanged;
+#: body virtual extent binds height even when focus scrolls a child into view.
 #: tests/screens/test_surf_work_layout.py certifies both adjacent boundaries
 #: and the owner size. scripts/measure_layout.py w uses that same helper.
 #: App-wide width remains 143; this body does not raise another body's pin.
@@ -2068,7 +2070,9 @@ WORK_BODY_ID = "surf-work-body"
 #: scripts/measure_layout.py o uses the same production-composite helper;
 #: o is its tool selector, while the actual application shortcut is Ctrl+o.
 #: Both pin ±1 mutations must fail the corresponding boundary test.
-#: App-wide width stays 143; this body's new pin changes no other view.
+#: Borderless panels rechecked 2026-10-21 after live 149×45: pins unchanged;
+#: height certification uses body virtual extent independently of focus scrolling.
+#: App-wide width stays 143; this body's pin changes no other view.
 SURF_ORACLES_FULL_LAYOUT_COLUMNS = 143
 SURF_ORACLES_FULL_LAYOUT_ROWS = 42
 MODE_ORACLES = "oracles"

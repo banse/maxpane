@@ -917,7 +917,8 @@ async def test_hub_ranking_projection_preserves_reader_pool_identity(manager):
         assert expected['rows'][0]['volume_usd'] == 12500
         row = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
         assert row['token_ranking'] == expected
-        assert row['points'] is None and row['meter_kind'] == 'sparkline'
+        assert row['points'] is None and row['meter_kind'] == 'volume'
+        assert row['numerator'] == 12500
         facts['launches'][launch['launch_id']]['pool_initialize']['pool_id'] = '0x'+'b'*64
         changed = next(c for c in m._project_hub()['surfboard_cards'] if c['key']=='swarm-tokens')
         assert not changed['token_ranking']['rows']
@@ -941,7 +942,7 @@ async def test_terminal_commands_keep_read_times_but_omit_stale_labels(manager):
         await m.close()
 
 
-async def test_hub_snapshot_offers_bounded_volume_reads_without_awaiting_them(manager):
+async def test_hub_snapshot_offers_only_market_reads_without_awaiting_them(manager):
     from unittest.mock import Mock
     m, _ = manager
     adapter = m.swarm_tokens_manager()
@@ -949,11 +950,11 @@ async def test_hub_snapshot_offers_bounded_volume_reads_without_awaiting_them(ma
     adapter.offer_hub_markets = Mock()
     try:
         await m.fetch_hub_snapshot()
-        adapter.offer_hub_volume.assert_called_once_with()
-        adapter.offer_hub_markets.assert_not_called()
+        adapter.offer_hub_markets.assert_called_once_with()
+        adapter.offer_hub_volume.assert_not_called()
         m._closing = True
         await m.fetch_hub_snapshot()
-        adapter.offer_hub_volume.assert_called_once_with()
+        adapter.offer_hub_markets.assert_called_once_with()
     finally:
         m._closing = False
         await m.close()

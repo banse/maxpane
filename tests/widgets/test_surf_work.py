@@ -98,7 +98,7 @@ def project_payload():
     return data
 
 
-async def test_project_history_includes_completed_and_blocked_versions_without_a_workflow():
+async def test_open_project_history_includes_completed_but_excludes_blocked_versions():
     data = project_payload()
     data["workflows"] = []
     async with Harness(data).run_test(size=(149, 45)) as pilot:
@@ -106,7 +106,8 @@ async def test_project_history_includes_completed_and_blocked_versions_without_a
         app = pilot.app
         tree = app.query_one("#work-tree", Tree)
         output = painted(app, "#work-tree-panel")
-        assert all(text in output for text in ["Vault project", "Earlier release", "Earlier blocked attempt", "BunkerVault", "Repair logging"]), output
+        assert all(text in output for text in ["Vault project", "Earlier release", "BunkerVault", "Repair logging"]), output
+        assert "Earlier blocked attempt" not in output
         assert output.index("Vault project") < output.index("OTHER JOBS")
         assert "legacy_step" not in output
         assert not node(tree, "job:" + data["jobs"][3]["id"]).is_expanded
@@ -164,7 +165,7 @@ async def test_project_nests_terminal_workflows_and_deduplicates_jobs_across_lin
         def jobs(parent):
             return [child.data[0] for child in parent.children if child.data and child.data[1] == "job"] + [key for child in parent.children for key in jobs(child)]
         keys = jobs(tree.root)
-        assert len(keys) == len(set(keys)) == 5
+        assert len(keys) == len(set(keys)) == 3
         assert "BunkerVault [limits]" in painted(app, "#work-detail-panel")
 
 
@@ -195,6 +196,7 @@ async def test_project_filters_exclude_historical_working_nodes_but_keep_parent_
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         body = pilot.app.query_one(SurfWorkBody)
+        body.cycle_filter()  # Open -> Blocked -> Build
         body.cycle_filter()
         await pilot.pause()
         output = painted(pilot.app, "#work-tree-panel")
@@ -204,6 +206,7 @@ async def test_project_filters_exclude_historical_working_nodes_but_keep_parent_
         await pilot.pause()
         assert "Vault project" in painted(pilot.app, "#work-tree-panel")
         assert "Earlier release" not in painted(pilot.app, "#work-tree-panel")
+        body.cycle_filter()  # Review -> Open -> Blocked
         body.cycle_filter()
         await pilot.pause()
         output = painted(pilot.app, "#work-tree-panel")
@@ -295,7 +298,7 @@ async def test_six_cards_tree_and_default_job_detail_are_painted():
         assert max(c.region.width for c in cards) - min(c.region.width for c in cards) <= 1
         tree = painted(app, "#work-tree-panel")
         assert all(value in tree for value in ["WORK TREE", "loaded", "BunkerVault", "OTHER JOBS", "Repair logging", "#393", "#827"])
-        assert "Old completed" not in tree
+        assert "Old completed" in tree
         detail = painted(app, "#work-detail-panel")
         assert all(value in detail for value in ["SELECTED JOB", "BunkerVault [limits]", "executing", "CREATED", "LAST UPDATE", "vault", "#393", "Build withdrawal limits"]), detail
 
@@ -336,13 +339,15 @@ async def test_find_and_filter_are_local_and_restore_tree_focus():
         await pilot.pause()
         assert app.focused.id == "work-tree"
         assert body.close_find() is False
+        body.cycle_filter()  # Open -> Blocked -> Build
         body.cycle_filter()
         await pilot.pause()
-        assert "build" in painted(app, "#work-tree-panel")
+        assert body._filter == "build" and "Build" in painted(app, "#work-tree-panel")
         assert "Repair logging" not in painted(app, "#work-tree-panel")
         body.cycle_filter()
         await pilot.pause()
-        assert "review" in painted(app, "#work-tree-panel")
+        assert body._filter == "review" and "Review" in painted(app, "#work-tree-panel")
+        body.cycle_filter()  # Review -> Open -> Blocked
         body.cycle_filter()
         await pilot.pause()
         assert "BunkerVault" in painted(app, "#work-detail-panel")
@@ -411,7 +416,10 @@ async def test_active_work_precedes_blocked_workflows_and_user_expansion_survive
         app = pilot.app
         tree = app.query_one("#work-tree", Tree)
         output = painted(app, "#work-tree-panel")
-        assert output.index("BunkerVault") < output.index("OTHER JOBS") < output.index("Blocked deployment")
+        assert output.index("BunkerVault") < output.index("OTHER JOBS")
+        assert "Blocked deployment" not in output
+        app.query_one(SurfWorkBody).cycle_filter()
+        await pilot.pause()
         blocked = node(tree, "workflow:flow-blocked")
         assert not blocked.is_expanded
         tree.move_cursor(blocked)
@@ -466,7 +474,7 @@ async def test_selecting_a_new_job_returns_scrolled_details_to_top():
         assert "STATE" in painted(app, "#work-detail-panel")
 
 
-async def test_default_selection_uses_latest_update_and_hides_superseded_work():
+async def test_default_selection_uses_latest_update_and_keeps_superseded_history():
     data = payload()
     data["jobs"][2]["updated_ts"] = 10000
     data["jobs"].append(dict(id="old-job", state="superseded", objective="Replaced objective"))
@@ -474,7 +482,8 @@ async def test_default_selection_uses_latest_update_and_hides_superseded_work():
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         assert "Repair logging" in painted(pilot.app, "#work-detail-panel")
-        assert "Replaced" not in painted(pilot.app, "#work-tree-panel")
+        assert "Replaced workflow" in painted(pilot.app, "#work-tree-panel")
+        assert "Replaced objective" in painted(pilot.app, "#work-tree-panel")
 
 
 @pytest.mark.parametrize("width", [125, 130, 149])
@@ -505,8 +514,7 @@ async def test_blocked_filter_keeps_workflow_without_blocked_child(linked):
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         body = pilot.app.query_one(SurfWorkBody)
-        for _ in range(3):
-            body.cycle_filter()
+        body.cycle_filter()
         await pilot.pause()
         output = painted(pilot.app, "#work-tree-panel")
         assert "Awaiting deployment" in output
@@ -583,3 +591,46 @@ async def test_mouse_expanders_toggle_top_level_and_nested_branches(key, child_t
         await pilot.pause()
         assert branch.is_expanded
         assert child_text in painted(app, "#work-tree-panel")
+
+
+async def test_mouse_label_selects_without_folding_or_leaving_tree():
+    async with Harness(payload()).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app, tree = pilot.app, pilot.app.query_one("#work-tree", Tree)
+        branch = node(tree, "workflow:flow-a")
+        for _ in range(2):
+            for y, strip in enumerate(app.screen._compositor.render_strips()):
+                if "BunkerVault" in strip.text and tree.region.y <= y < tree.region.bottom:
+                    await pilot.click(offset=(strip.text.index("BunkerVault") + 2, y))
+                    break
+            else:
+                pytest.fail("visible workflow label required")
+            await pilot.pause()
+            assert branch.is_expanded and tree.cursor_node is branch
+            assert app.focused is tree
+            assert "SELECTED WORKFLOW" in painted(app, "#work-detail-panel")
+
+
+async def test_open_and_blocked_tabs_partition_work_and_keep_history():
+    data = project_payload()
+    data['jobs'].append(dict(id='blocked-other', state='blocked', objective='Blocked standalone'))
+    data['workflows'].append(dict(id='blocked-flow', status='blocked', objective='Blocked workflow', contracts_job_id=None, frontend_job_id=None))
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app, body = pilot.app, pilot.app.query_one(SurfWorkBody)
+        assert body._filter == 'open'
+        text = painted(app, '#work-tree-panel')
+        assert 'Old completed workflow' in text and 'Earlier release' in text
+        assert 'Earlier blocked attempt' not in text and 'Blocked standalone' not in text and 'Blocked workflow' not in text
+        title = app.query_one('#work-tree-panel .panel-title')
+        for y, strip in enumerate(app.screen._compositor.render_strips()):
+            if y == title.region.y:
+                await pilot.click(offset=(strip.text.index('Blocked') + 2, y))
+                break
+        await pilot.pause()
+        text = painted(app, '#work-tree-panel')
+        assert body._filter == 'blocked'
+        assert all(word in text for word in ('Vault project', 'Earlier blocked attempt', 'Blocked standalone', 'Blocked workflow'))
+        assert 'Earlier release' not in text and 'Repair logging' not in text
+        assert all(edge[0] == '' for edge in app.query_one('#work-tree-panel').styles.border)
+        assert all(edge[0] == '' for edge in app.query_one('#work-detail-panel').styles.border)

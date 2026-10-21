@@ -166,6 +166,10 @@ def meter_text(card: dict, width: int | None = None) -> Text:
                     value = candidate
                     break
         return Text(value, style=MUTED)
+    if key == "swarm-tokens":
+        value = card.get("numerator")
+        amount = ("≥" if state == "partial" else "") + "$" + (fmt_compact(value) if value >= 1000 else f"{value:.2f}") if _number(value) else "—"
+        return Text("24h " + amount, style=MUTED)
     label = METER_LABELS.get(key, "AUX")
     label_ink = MUTED
     if key in (*AGENT_KEYS, "board"):
@@ -612,7 +616,7 @@ class SurfboardRack(Grid):
                 yield SurfboardTerminal(id="surfboard-terminal")
         yield Static(Text("キープ"), id="surfboard-keep", classes="rack-tagline")
         yield Static(Text("ビルディング"), id="surfboard-building", classes="rack-tagline")
-        yield Static(Text("IMD BOARDROOM"), id="surfboard-title")
+        yield Static(Text(""), id="surfboard-navigation")
 
     def update_data(self, surfboard_cards=None, surfboard_sources=None, **_kwargs):
         cards = {card["key"]: card for card in surfboard_cards if isinstance(card, dict) and isinstance(card.get("key"), str)} if isinstance(surfboard_cards, list) else {}

@@ -63,6 +63,7 @@ async def _render(payload, size):
                     panel_widths=[p.region.width for p in panels],
                     question_width=table.ordered_columns[-1].width,
                     table_headers=all(c.label.plain in _region_text(pilot.app, table) for c in table.ordered_columns),
+                    body_scroll=body.virtual_size.height > body.scrollable_content_region.height,
                     body_bottom=body.region.bottom, status_top=status.region.y,
                     text=_screen_text(pilot.app))
 
@@ -98,5 +99,6 @@ async def test_oracles_height_pin_is_bound_by_child_panels():
     below = await _render(oracle_payload(), (149, SURF_ORACLES_FULL_LAYOUT_ROWS - 1))
     whole = await _render(oracle_payload(), (149, SURF_ORACLES_FULL_LAYOUT_ROWS))
     assert below["taller"] and not whole["taller"]
-    assert below["overflow"] and not whole["overflow"]
+    assert below["body_scroll"] and not whole["body_scroll"]
+    assert not whole["overflow"]
     assert not below["missing"] and below["status_whole"]

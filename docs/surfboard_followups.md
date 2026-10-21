@@ -640,3 +640,20 @@ normal card text while preserving red-frame and recovery checks, its whole
 Portfolio/Surf baseline failures in `surf_data_loading_followups.md` (nine
 Portfolio, two POOL4 market, two POOL4 protocol, one AGENT row, one NEWS fixture).
 Logs: `/tmp/maxpane-white-labels/tests.log`. No full suite or pin changes.
+
+## CR round 3b86085d — 2026-10-21
+
+The top title and center navigation hint replace the previous gap-title/WORKFLOWS link.
+FLEET jobs means successfully completed jobs, per the owner's clarification. TOKENS uses
+rolling selected-pool USD volume for the entire launched-token catalogue, with `≥` for a known
+subtotal and details for coverage; the hourly-volume fetch is no longer offered from BOARDROOM.
+Work/Oracle mouse selection, workflow history, border removal and the NFT source-timeout fix
+are documented in `cr-round-3b86085d-plan.md` with live evidence and scoped validation.
+
+Current limits remain explicit: public NFT source failures can leave fields unknown; selected
+pool quotes do not claim all pools of a token; workflow safety caps publish partial coverage.
+No new endpoint, signer, payment path or API key was added. The final review found one
+older-open-job retention issue; it was fixed in one wave and scoped re-review approved it.
+956 affected cases, 128 guards and 12 doc pins passed across the scoped runs/reruns.
+The final Work live read took 34.92s with 493 normalized jobs and 197 workflows.
+No remaining review findings.

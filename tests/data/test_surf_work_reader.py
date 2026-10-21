@@ -26,7 +26,7 @@ def setup(tmp_path):
         async def fetch_jobs(self, *, limit, before=None):
             self.calls.append(('jobs', before or limit))
             return raw.get('next_jobs') if before else raw['jobs']
-        async def fetch_workflows(self, *, limit):
+        async def fetch_workflows(self, *, limit, before=None):
             self.calls.append(('workflows', limit)); return raw['workflows']
         async def fetch_overview(self):
             return {'counts': {'jobStates': {'executing': raw.get('executing_count', sum(j.get('state') == 'executing' for j in raw['jobs']))}}}
@@ -570,7 +570,7 @@ async def test_revalidated_prior_job_does_not_hide_other_active_jobs_on_cursor_p
     assert client.calls.count(('detail', fresh['id'])) == 1
     identities = [job['id'] for job in data['jobs']]
     assert fresh['id'] in identities and len(identities) == len(set(identities))
-    assert data['jobs_loaded'] == 102 and data['details_loaded'] == 3
+    assert data['jobs_loaded'] == 2 and data['details_loaded'] == 3  # older completed head rows expire
     assert not data['partial']
     assert cache.get_last_good(SLOT_SURF_WORK).payload['active_scan_complete']
 
@@ -750,3 +750,201 @@ async def test_later_discovery_revalidation_cap_cannot_authorize_stale_context(s
     assert data['projects'] == []
     assert next(j for j in data['jobs'] if j['id'] == active['id'])['nodes'] is None
     assert data['partial'] and data['summary']['build'] is None
+
+
+@pytest.mark.asyncio
+async def test_jobs_scan_retains_24h_history_after_active_hint_is_satisfied(setup):
+    reader, client, _, clock, raw = setup
+    def iso(stamp):
+        return datetime.fromtimestamp(stamp, timezone.utc).isoformat().replace('+00:00', 'Z')
+    base = raw['jobs'][0]
+    raw['jobs'] = [dict(base, id=f'00000000-0000-0000-0000-{n:012d}', state='completed',
+                       createdAt=iso(clock.now - n)) for n in range(100)]
+    recent = dict(base, id='00000000-0000-0000-0000-000000000100', state='completed', createdAt=iso(clock.now - 86400))
+    old = dict(recent, id='00000000-0000-0000-0000-000000000101', createdAt=iso(clock.now - 86401))
+    raw.update(next_jobs=[recent, old], workflows=[], executing_count=0)
+    await reader.offer()
+    data = reader.project()
+    assert data['jobs_loaded'] == 101
+    assert recent['id'] in {job['id'] for job in data['jobs']}
+    assert old['id'] not in {job['id'] for job in data['jobs']}
+    assert data['summary']['jobs'] == 0 and not data['partial']
+    assert len([call for call in client.calls if call[0] == 'jobs']) == 2
+
+
+@pytest.mark.asyncio
+async def test_workflow_catalogue_pages_past_old_cap_and_resumes_budget(setup, monkeypatch):
+    from maxpane_dashboard.data import surf_work as work
+    reader, client, cache, clock, raw = setup
+    base = raw['workflows'][0]
+    flows = [dict(base, id=f'11111111-1111-4111-8111-{n:012d}', status='completed',
+                  contractsJobId=None, frontendJobId=None,
+                  createdAt=datetime.fromtimestamp(clock.now - n * 86400, timezone.utc).isoformat().replace('+00:00', 'Z'))
+             for n in range(250)]
+    calls = []
+    async def pages(*, limit, before=None):
+        calls.append(before)
+        start = next((i + 1 for i, flow in enumerate(flows) if flow['createdAt'] == before), 0)
+        return copy.deepcopy(flows[start:start + limit])
+    client.fetch_workflows = pages
+    raw.update(jobs=[], workflows=[], executing_count=0)
+    monkeypatch.setattr(work, 'WORKFLOW_PAGES_PER_READ', 1)
+    for expected in (100, 200, 250):
+        await reader.offer()
+        data = reader.project()
+        assert data['workflows_loaded'] == expected
+        assert data['partial'] == (expected < 250)
+        clock.now += 60
+    assert calls == [None, flows[99]['createdAt'], flows[199]['createdAt']]
+    assert work.coerce_snapshot(cache.get_last_good(SLOT_SURF_WORK).payload, now=clock.now) is not None
+
+
+@pytest.mark.asyncio
+async def test_mixed_workflow_page_retains_valid_rows_as_partial(setup):
+    reader, _, _, _, raw = setup
+    valid = dict(raw['workflows'][0], status='completed', contractsJobId=None, frontendJobId=None)
+    raw.update(jobs=[], workflows=[valid, None], executing_count=0)
+    await reader.offer()
+    data = reader.project()
+    assert data['state'] == 'ok' and data['partial']
+    assert [row['id'] for row in data['workflows']] == [valid['id']]
+
+
+@pytest.mark.asyncio
+async def test_interrupted_workflow_catalogue_retains_rows_clock_and_context_scope(setup):
+    from maxpane_dashboard.data import surf_work as work
+    reader, client, cache, clock, raw = setup
+    base = dict(raw['workflows'][0], contractsJobId=None, frontendJobId=None)
+    historical = dict(base, id='22222222-2222-4222-8222-222222222222', status='blocked')
+    prior = work.snapshot([], [base, historical], {}, read_ts=clock.now - 60,
+                          expected_ids=[], context_workflow_ids=[historical['id']])
+    assert work.coerce_snapshot(prior, now=clock.now) is not None
+    cache.store_last_good(SLOT_SURF_WORK, prior, ts=clock.now - 60)
+    flows = [dict(base, id=f'11111111-1111-4111-8111-{n:012d}', status='completed',
+                  createdAt=datetime.fromtimestamp(clock.now - n * 86400, timezone.utc).isoformat().replace('+00:00', 'Z'))
+             for n in range(100)]
+    calls = []
+    second_page = None
+    async def pages(*, limit, before=None):
+        calls.append(before)
+        return copy.deepcopy(second_page if before else flows)
+    client.fetch_workflows = pages
+    raw.update(jobs=[], workflows=[], executing_count=0)
+    await reader.offer()
+    retained = cache.get_last_good(SLOT_SURF_WORK).payload
+    assert len(retained['workflows']) == 102 and retained['partial']
+    assert retained['read_ts'] == prior['read_ts']
+    assert base['id'] in retained['current_workflow_ids']
+    assert historical['id'] not in retained['current_workflow_ids']
+    assert reader.project()['summary']['jobs'] == 0
+    assert work.coerce_snapshot(retained, now=clock.now) is not None
+    clock.now += 60
+    second_page = []
+    await reader.offer()
+    complete = cache.get_last_good(SLOT_SURF_WORK).payload
+    assert len(complete['workflows']) == 100 and not complete['partial']
+    assert base['id'] not in complete['current_workflow_ids']
+    assert calls == [None, flows[-1]['createdAt'], flows[-1]['createdAt']]
+
+
+@pytest.mark.asyncio
+async def test_failed_later_history_page_retains_entire_previous_snapshot(setup):
+    reader, _, cache, clock, raw = setup
+    base = dict(raw['jobs'][0], state='completed')
+    raw['jobs'] = [dict(base, id=f'00000000-0000-0000-0000-{n:012d}',
+                       createdAt=datetime.fromtimestamp(clock.now - n, timezone.utc).isoformat().replace('+00:00', 'Z'))
+                   for n in range(100)]
+    raw.update(next_jobs=[dict(base, id='00000000-0000-0000-0000-000000000100')],
+               workflows=[], executing_count=0)
+    await reader.offer()
+    before = copy.deepcopy(cache.get_last_good(SLOT_SURF_WORK))
+    assert before.payload['jobs_loaded'] == 101
+    clock.now += 60
+    raw['next_jobs'] = None
+    await reader.offer()
+    assert cache.get_last_good(SLOT_SURF_WORK) == before
+    assert cache.last_failure_ts(TIER_SURF_WORK) == clock.now
+    assert reader.project()['state'] == 'stale'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('full_head', [False, True])
+@pytest.mark.parametrize('population', ['missing', 'valid', 'inconsistent'])
+async def test_older_open_jobs_survive_cutoff_and_do_not_require_details(setup, full_head, population):
+    reader, client, _, clock, raw = setup
+    base = raw['jobs'][0]
+    def old_job(index, state):
+        return dict(base, id=f'00000000-0000-0000-0000-{index:012d}', state=state,
+                    createdAt=datetime.fromtimestamp(clock.now - 86401 - index, timezone.utc).isoformat().replace('+00:00', 'Z'))
+    tail = [old_job(100, 'blocked'), old_job(101, 'queued'), old_job(102, 'completed')]
+    raw.update(jobs=[old_job(n, 'completed') for n in range(100)] if full_head else tail,
+               next_jobs=tail, workflows=[], executing_count=0)
+    if population != 'missing':
+        async def overview():
+            total = 103 if full_head else 3
+            return {'counts': {'jobs': total - (population == 'inconsistent'),
+                               'jobStates': {'executing': 0, 'blocked': 1, 'queued': 1, 'completed': total - 2}}}
+        client.fetch_overview = overview
+    await reader.offer()
+    data = reader.project()
+    assert {job['id'] for job in data['jobs']} == {job['id'] for job in tail[:2]}
+    assert data['summary']['jobs'] == 0 and data['summary']['blocked'] == 1
+    assert not data['partial']
+    assert not any(call[0] == 'detail' for call in client.calls)
+    assert len([call for call in client.calls if call[0] == 'jobs']) == (2 if full_head else 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('warm', [False, True])
+async def test_capped_older_open_scan_is_partial_or_retains_previous_snapshot(setup, monkeypatch, warm):
+    from maxpane_dashboard.data import surf_work as work
+    reader, _, cache, clock, raw = setup
+    before = None
+    if warm:
+        await reader.offer()
+        before = copy.deepcopy(cache.get_last_good(SLOT_SURF_WORK))
+        clock.now += 60
+    base = raw['jobs'][0]
+    raw.update(jobs=[dict(base, id=f'00000000-0000-0000-0000-{n:012d}', state='completed',
+                          createdAt=datetime.fromtimestamp(clock.now - 86401 - n, timezone.utc).isoformat().replace('+00:00', 'Z'))
+                     for n in range(100)], workflows=[], executing_count=0)
+    monkeypatch.setattr(work, 'SCAN_PAGES', 1)
+    await reader.offer()
+    if warm:
+        assert cache.get_last_good(SLOT_SURF_WORK) == before
+        assert reader.project()['state'] == 'stale'
+    else:
+        assert reader.project()['partial']
+        assert not cache.get_last_good(SLOT_SURF_WORK).payload['active_scan_complete']
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('total', [1000, 999, True, '1000'])
+async def test_open_population_shortcut_requires_matching_validated_total(setup, total):
+    reader, client, _, clock, raw = setup
+    base = raw['jobs'][0]
+    raw.update(jobs=[dict(base, id=f'00000000-0000-0000-0000-{n:012d}',
+                         state='blocked' if n == 0 else 'completed',
+                         createdAt=datetime.fromtimestamp(clock.now - 86401 - n, timezone.utc).isoformat().replace('+00:00', 'Z'))
+                    for n in range(100)], next_jobs=[], workflows=[], executing_count=0)
+    async def overview():
+        return {'counts': {'jobs': total, 'jobStates': {'executing': 0, 'blocked': 1, 'completed': 999}}}
+    client.fetch_overview = overview
+    await reader.offer()
+    assert not reader.project()['partial']
+    assert reader.project()['summary']['blocked'] == 1
+    assert len([call for call in client.calls if call[0] == 'jobs']) == (1 if type(total) is int and total == 1000 else 2)
+
+
+@pytest.mark.asyncio
+async def test_recent_blocked_diagnostics_remain_bounded_while_old_rows_only_list(setup):
+    reader, client, _, clock, raw = setup
+    recent = dict(raw['details'][0], state='blocked',
+                  createdAt=datetime.fromtimestamp(clock.now, timezone.utc).isoformat().replace('+00:00', 'Z'))
+    old = dict(recent, id='00000000-0000-0000-0000-000000000100',
+               createdAt=datetime.fromtimestamp(clock.now - 86401, timezone.utc).isoformat().replace('+00:00', 'Z'))
+    raw.update(jobs=[recent, old], details=[recent], workflows=[], executing_count=0)
+    await reader.offer()
+    assert [call for call in client.calls if call[0] == 'detail'] == [('detail', recent['id'])]
+    assert reader.project()['summary']['blocked'] == 2
+    assert not reader.project()['partial']

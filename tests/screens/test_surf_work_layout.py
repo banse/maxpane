@@ -60,6 +60,7 @@ async def _render(payload, size):
             "widths": [c.region.width for c in cards],
             "panel_widths": [p.region.width for p in panels],
             "heights": [c.region.height for c in cards],
+            "body_scroll": body.virtual_size.height > body.scrollable_content_region.height,
             "body_bottom": body.region.bottom, "status_top": status.region.y,
             "text": _screen_text(pilot.app),
         }
@@ -103,7 +104,7 @@ async def test_work_row_pin_is_bound_by_panel_floors():
     pin = SURF_WORK_FULL_LAYOUT_ROWS
     below = await _render(work_payload(), (149, pin - 1))
     whole = await _render(work_payload(), (149, pin))
-    assert set(below["overflow"]) == {"work-tree-panel", "work-detail-panel"}
+    assert below["body_scroll"] and not whole["body_scroll"]
     assert below["taller"] and not whole["taller"]
     assert not whole["overflow"]
 

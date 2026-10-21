@@ -604,8 +604,8 @@ async def test_tokens_ranked_rows_direction_ink_volume_footer_and_activity(size)
     async with RackApp().run_test(size=size) as pilot:
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
         for status, footer in [('active', '2 new'), ('idle', '0 new')]:
-            card.set_data(dict(data, status=status, secondary=footer, meter_kind='sparkline',
-                               meter_state='partial', points=list(range(8))))
+            card.set_data(dict(data, status=status, secondary=footer, meter_kind='volume',
+                               meter_state='partial', numerator=123456))
             await pilot.pause()
             strips = card_strips(pilot.app, card)
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
@@ -641,10 +641,7 @@ async def test_tokens_ranked_rows_direction_ink_volume_footer_and_activity(size)
             assert not bottom.style.bold and bottom.style.color.get_truecolor() == expected
             assert strips[-1].text.strip('╰╯─ ').startswith('24h ')
             assert 'NEWEST' not in strips[-1].text
-            chart = ''.join(s.text for s in strips[-1] if any(c in s.text for c in '▁▂▃▄▅▆▇█'))
-            assert chart.strip() and chart.strip().endswith('█')
-            assert all(s.style.color.get_truecolor() == pilot.app.ansi_theme.ansi_colors[2]
-                       for s in strips[-1] if any(c in s.text for c in '▁▂▃▄▅▆▇█'))
+            assert strips[-1].text.strip('╰╯─ ') == '24h ≥$123.5K'
             assert not any(c in ''.join(s.text for s in strips) for c in '✔⚠')
 
 
@@ -683,7 +680,7 @@ async def test_token_degraded_ranking_keeps_new_count_and_literal_source_tooltip
         assert state not in ''.join(s.text for s in strips)
         assert '2 new' not in ''.join(s.text for s in strips)
         assert inset_border_color(strips[top]).get_truecolor() == neutral_inset_color(pilot.app)
-        assert strips[-1].text.strip('╰╯─ ') == '24h —'
+        assert strips[-1].text.strip('╰╯─ ') == '24h ≥$123.5K'
         assert isinstance(card.tooltip, Text)
         assert card.tooltip.plain == data['detail'].replace('\x1b', '').replace('\u202e', '')
         assert not card.tooltip.spans
@@ -711,7 +708,7 @@ async def test_token_empty_unread_and_unavailable_keep_independent_volume_footer
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
             assert [s.crop(left+1, right).text.strip() for s in strips[top+1:top+4]] == ['', body, '']
             assert strips[top+4].text.strip('│└┘─ ') == ''
-            assert strips[-1].text.strip('╰╯─ ') == '24h —'
+            assert strips[-1].text.strip('╰╯─ ') == '24h ≥$123.5K'
 
 
 async def test_token_hostile_wide_tickers_preserve_age_marker_and_advertise_clipping():
@@ -733,7 +730,7 @@ async def test_token_hostile_wide_tickers_preserve_age_marker_and_advertise_clip
         assert all(s.crop(right, right+1).text == '│' for s in strips[top+1:top+4])
         assert '‹' in strips[0].text
         assert '\x1b' not in ''.join(s.text for s in strips) and '\u202e' not in ''.join(s.text for s in strips)
-        assert strips[-1].text.strip('╰╯─ ') == '24h —'
+        assert strips[-1].text.strip('╰╯─ ') == '24h ≥$123.5K'
         assert all(not s.style.bold for s in row if '[/x]' in s.text)
 
 
@@ -1012,25 +1009,21 @@ async def test_pool4_price_direction_only_colors_centered_indicator(primary):
                 assert abs(content[1].text.index(face) - (right-left-1-original_width)/2) <= .5
 
 
-@pytest.mark.parametrize('points', [[0]*8, [1, None, 3, 4, 5, 6, 7, 8], None])
-async def test_token_volume_footer_shares_swarm_label_color_and_retains_gaps(points):
+@pytest.mark.parametrize('value,state,label', [(0, 'ok', '24h $0.00'),
+    (123456, 'partial', '24h ≥$123.5K'), (None, 'unavailable', '24h —')])
+async def test_token_numeric_volume_footer_shares_swarm_label_color(value, state, label):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
         swarm = pilot.app.query_one('#surfboard-card-swarm', SurfboardCard)
         swarm.set_data(dict(meter_kind='sparkline', points=list(range(8))))
-        card.set_data(dict(token_card_data(), meter_kind='sparkline', points=points, meter_state='partial'))
+        card.set_data(dict(token_card_data(), meter_kind='volume', numerator=value, meter_state=state))
         await pilot.pause()
         footer = card_strips(pilot.app, card)[-1]
-        label = next(s for s in footer if '24h' in s.text)
+        segment = next(s for s in footer if '24h' in s.text)
         other = next(s for s in card_strips(pilot.app, swarm)[-1] if '24H' in s.text)
-        assert label.style.color == other.style.color
-        assert '~' not in footer.text and 'NEWEST' not in footer.text
-        if points is None:
-            assert footer.text.strip('╰╯─ ') == '24h —'
-        else:
-            assert '—' not in footer.text
-            assert ('·' in footer.text) == (None in points)
-            assert any(c in footer.text for c in '▁▂▃▄▅▆▇█')
+        assert segment.style.color == other.style.color
+        assert footer.text.strip('╰╯─ ') == label
+        assert not any(c in footer.text for c in '▁▂▃▄▅▆▇█')
 
 
 @pytest.mark.parametrize('size', [(149, 45), (144, 37)])

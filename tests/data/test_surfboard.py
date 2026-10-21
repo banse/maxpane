@@ -593,7 +593,7 @@ def test_tokens_card_carries_ranking_and_keeps_count_in_detail(ranked):
     assert row['token_ranking'] == ranking
     assert '116 tokens' in row['detail']
     assert all(r['token_ranking'] is None for r in cards if r['key'] != 'swarm-tokens')
-    assert row['points'] is None and row['meter_kind'] == 'sparkline'
+    assert row['points'] is None and row['meter_kind'] == 'volume'
     assert row['meter_state'] == 'unavailable'
 
 
@@ -721,15 +721,15 @@ def test_token_ranking_projection_discloses_coverage_and_source_clock():
                              volume_usd=12500, price_direction='up')],
                    newest=None, state='partial', read_ts=90, known=8, total=10)
     source = dict(count=10, state='ok', as_of=100, ranking=ranking,
-        volume=dict(points=[1]*8, state='ok', known=10, total=10, as_of=100))
+        turnover=dict(value=25000, state='ok', known=10, total=10, as_of=100))
     row = next(c for c in hub.cards({}, {}, now=100, tokens_catalogue=source) if c['key']=='swarm-tokens')
     assert row['token_ranking'] == ranking
-    assert row['meter_kind'] == 'sparkline' and row['points'] == [1]*8
+    assert row['meter_kind'] == 'volume' and row['numerator'] == 25000 and row['points'] is None
     assert row['meter_state'] == 'ok'
     assert 'USD' in row['detail'] and '8/10' in row['detail']
     assert 'partial' in row['detail'] and f'read {hub.hhmm(90)}' in row['detail']
     assert '12,500' in row['detail']
-    assert 'all swarm tokens' in row['detail'] and '10/10' in row['detail']
+    assert 'all launched tokens' in row['detail'] and '10/10' in row['detail']
 
 
 def launchpad_volume_snapshot(**changes):
@@ -909,13 +909,13 @@ def test_fleet_empty_roster_known_zero_and_stale_source_retains_exact_facts():
 
 
 def test_fleet_metrics_reuse_board_hero_independent_sources_and_percent_scale():
-    data = dict(surf_leaderboard_hero=dict(
+    data = dict(surfboard_overview=dict(job_states=dict(completed=14206, executing=5)), surf_leaderboard_hero=dict(
         effort=dict(tokens=5000001, state='stale', read_ts=800),
         workers=dict(working=7, capacity=30, state='ok', read_ts=900),
         rate=dict(percent=95.84, state='ok', read_ts=850)))
     card = fleet_card(None, data=data)
     assert {key: card['fleet_summary'][key] for key in ('tokens', 'jobs', 'capacity', 'accept_rate')} == dict(
-        tokens=5000001, jobs=7, capacity=30, accept_rate=95.84)
+        tokens=5000001, jobs=14206, capacity=30, accept_rate=95.84)
     assert all(text in card['detail'] for text in (
         'effort read ' + hub.hhmm(800) + ' (stale)', 'capacity read ' + hub.hhmm(900) + ' (ok)',
         'acceptance read ' + hub.hhmm(850) + ' (ok)'))
@@ -923,22 +923,25 @@ def test_fleet_metrics_reuse_board_hero_independent_sources_and_percent_scale():
     data['surf_leaderboard_hero']['workers'].update(working=0, capacity=0)
     facts = fleet_card(None, data=data)['fleet_summary']
     assert facts['accept_rate'] is None
-    assert facts['jobs'] == facts['capacity'] == 0
+    assert facts['jobs'] == 14206 and facts['capacity'] == 0
+    data['surfboard_overview']['job_states'].clear()
+    assert fleet_card(None, data=data)['fleet_summary']['jobs'] is None
+    data['surfboard_overview']['job_states']['completed'] = 0
+    assert fleet_card(None, data=data)['fleet_summary']['jobs'] == 0
     assert facts['tokens'] == 5000001
 
 
-@pytest.mark.parametrize('state,points', [('ok', [0]*8), ('partial', [1, None, 2, 3, 4, 5, 6, 7]),
-                                         ('stale', None), ('unavailable', None)])
-def test_token_volume_projection_is_independent_of_recent_launch_ranking(state, points):
-    volume = dict(points=points, state=state, known=20, total=178, as_of=9000, until=7200)
-    catalogue = dict(count=178, state='ok', as_of=9900, volume=volume,
+@pytest.mark.parametrize('state,value', [('ok', 0), ('partial', 123456), ('unavailable', None)])
+def test_token_volume_projection_is_independent_of_recent_launch_ranking(state, value):
+    volume = dict(value=value, state=state, known=20, total=178, as_of=9000)
+    catalogue = dict(count=178, state='ok', as_of=9900, turnover=volume,
                      ranking=dict(rows=[], total=0, known=0, state='ok'))
     row = next(c for c in hub.cards({}, {}, now=10000, tokens_catalogue=catalogue)
                if c['key'] == 'swarm-tokens')
     assert row['secondary'] == '0 new'
-    assert row['meter_kind'] == 'sparkline' and row['meter_state'] == state
-    assert row['points'] == points
-    assert 'all swarm tokens' in row['detail'] and '20/178' in row['detail']
+    assert row['meter_kind'] == 'volume' and row['meter_state'] == state
+    assert row['numerator'] == value and row['points'] is None
+    assert 'all launched tokens' in row['detail'] and '20/178' in row['detail']
     assert 'read '+hub.hhmm(9000) in row['detail']
     assert 'stale' not in row['detail'] and 'unavailable' not in row['detail']
     if state == 'partial':
@@ -966,3 +969,15 @@ def test_agent_card_hides_stale_activity_in_tooltip(monkeypatch):
     agent = next(row for row in rows if row.get('token_id') == 3)
     assert agent['meter_state'] == 'stale'
     assert 'stale' not in agent['detail']
+
+
+def test_token_footer_uses_all_token_turnover_not_top_three_or_hourly_curve():
+    catalogue = dict(count=178, state='ok', as_of=9900,
+                     turnover=dict(value=123456, state='partial', known=170, total=178, as_of=9000),
+                     volume=dict(points=[1]*8, state='ok'),
+                     ranking=dict(rows=[], total=0, known=0, state='ok'))
+    row = next(c for c in hub.cards({}, {}, now=10000, tokens_catalogue=catalogue)
+               if c['key'] == 'swarm-tokens')
+    assert row['numerator'] == 123456 and row['meter_kind'] == 'volume'
+    assert row['meter_state'] == 'partial' and row['points'] is None
+    assert '170/178' in row['detail'] and 'all launched tokens' in row['detail']

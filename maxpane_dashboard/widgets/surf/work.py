@@ -13,7 +13,8 @@ from maxpane_dashboard.widgets.address import address_prose, job_text
 from maxpane_dashboard.widgets.fmt import fmt_age, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import PanelBase
-from maxpane_dashboard.widgets.rowfit import WIDEN_HINT, cell_len, clip, pad, title_with_hint
+from maxpane_dashboard.widgets.rowfit import WIDEN_HINT, cell_len, clip, pad
+from maxpane_dashboard.widgets.selection_tree import ClickSelectTree
 from ._fmt import JOB_EXPLORER
 from ._icons import fit_prose, post_preview
 from .news_hero import HeroRecord, NewsHeroCard, _count, _number
@@ -21,6 +22,7 @@ from .pool4_hero import Pool4HeroCard
 
 _BUILD = {"implement", "integrate", "test", "tests"}
 _TERMINAL = {"completed", "cancelled", "failed", "superseded"}
+_FILTERS = ("open", "blocked", "build", "review")
 
 
 def _tone(state, accent):
@@ -86,7 +88,7 @@ class SurfWorkHero(Grid):
             self.query_one(f"#hero-work-{key}", _WorkHeroCard).set_record(record)
 
 
-class _WorkTree(Tree):
+class _WorkTree(ClickSelectTree):
     BINDINGS = [Binding("left", "fold", show=False), Binding("right", "unfold", show=False)]
 
     def action_fold(self):
@@ -120,7 +122,7 @@ class _WorkTree(Tree):
             label = fit_prose(node.label.plain, width, style=node.label.style)
         label.stylize(style)
         # Preserve Textual's expander action on the arrow at every tree depth.
-        return Text(prefix, style=base_style + Style(meta={"toggle": True})) + label
+        return Text.assemble((prefix, base_style + Style(meta={"toggle": True})), label)
 
 
 class _WorkTreePanel(PanelBase):
@@ -147,7 +149,7 @@ class SurfWorkBody(Horizontal):
     SurfWorkBody { width: 1fr; height: 1fr; min-height: 16; }
     SurfWorkBody > _WorkTreePanel { width: 1fr; height: 1fr; min-height: 16; margin-right: 1; }
     SurfWorkBody > _WorkDetailPanel { width: 1fr; height: 1fr; min-height: 16; }
-    SurfWorkBody PanelBase { border: round $panel; background: $background; padding: 0 1; }
+    SurfWorkBody PanelBase { border: none; background: $background; padding: 0 1; }
     SurfWorkBody .panel-title { height: 1; text-wrap: nowrap; }
     SurfWorkBody #work-coverage { height: 1; color: $text-muted; text-wrap: nowrap; }
     SurfWorkBody #work-find { display: none; height: 3; }
@@ -162,7 +164,7 @@ class SurfWorkBody(Horizontal):
         super().__init__(**kwargs)
         self._payload = {}
         self._selected = None
-        self._filter = "all"
+        self._filter = "open"
         self._search = ""
         self._work_nodes = {}
         self._entries = {}
@@ -197,9 +199,16 @@ class SurfWorkBody(Horizontal):
         return True
 
     def cycle_filter(self):
-        options = ("all", "build", "review", "blocked")
-        self._filter = options[(options.index(self._filter) + 1) % len(options)]
+        self._filter = _FILTERS[(_FILTERS.index(self._filter) + 1) % len(_FILTERS)]
         self._rebuild()
+
+    def on_click(self, event):
+        choice = event.style.meta.get("work_filter")
+        if choice in _FILTERS:
+            self._filter = choice
+            self._rebuild()
+            self.focus_tree()
+            event.stop()
 
     @on(Input.Changed, "#work-find")
     def _find_changed(self, event):
@@ -216,6 +225,8 @@ class SurfWorkBody(Horizontal):
 
     def _matches(self, job, *, workflow_match=False, workflow_blocked=False):
         nodes = job.get("nodes") or []
+        if self._filter != "blocked" and (job.get("state") == "blocked" or workflow_blocked):
+            return False
         if self._filter == "blocked" and job.get("state") != "blocked" and not workflow_blocked:
             return False
         if self._filter in ("build", "review"):
@@ -275,7 +286,7 @@ class SurfWorkBody(Horizontal):
         def visible_job(jid, parent_match=False, blocked=False):
             if jid in by_id:
                 return self._matches(by_id[jid], workflow_match=parent_match, workflow_blocked=blocked)
-            return (parent_match or self._search in jid.casefold()) and (self._filter == "all" or self._filter == "blocked" and blocked)
+            return (parent_match or self._search in jid.casefold()) and (self._filter == "open" and not blocked or self._filter == "blocked" and blocked)
 
         def add_link(parent, jid, label=None):
             if jid in by_id:
@@ -289,7 +300,7 @@ class SurfWorkBody(Horizontal):
             blocked = workflow.get("status") == "blocked"
             ids = [(label, workflow.get(key)) for label, key in (("Contracts", "contracts_job_id"), ("Frontend", "frontend_job_id"))]
             visible = [(label, jid) for label, jid in ids if jid and visible_job(jid, match, blocked)]
-            return visible, match and (self._filter == "all" or self._filter == "blocked" and blocked)
+            return visible, match and (self._filter == "open" and not blocked or self._filter == "blocked" and blocked)
 
         def add_flow(parent, workflow, visible):
             key = "workflow:" + workflow["id"]
@@ -298,7 +309,7 @@ class SurfWorkBody(Horizontal):
             active = any(by_id.get(jid, {}).get("state") == "executing" for _, jid in visible)
             branch = add(parent, key, "workflow", workflow, workflow.get("objective") or workflow["id"],
                          bool(visible), suffix=workflow.get("status") or "unknown",
-                         expanded=active or workflow.get("status") != "blocked")
+                         expanded=active or workflow.get("status") not in _TERMINAL | {"blocked"})
             for label, jid in visible:
                 add_link(branch, jid, label)
 
@@ -307,9 +318,9 @@ class SurfWorkBody(Horizontal):
             flows = [(flow_by_id[wid], flow_view(flow_by_id[wid], match))
                      for wid in project.get("workflow_ids", []) if wid in flow_by_id]
             missing_flows = [wid for wid in project.get("workflow_ids", []) if wid not in flow_by_id
-                             and self._filter == "all" and (match or self._search in wid.casefold())]
+                             and self._filter == "open" and (match or self._search in wid.casefold())]
             visible = [jid for jid in _project_job_ids(project, workflows) if visible_job(jid, match)]
-            if not visible and not missing_flows and not any(children or show for _, (children, show) in flows) and not (match and self._filter == "all"):
+            if not visible and not missing_flows and not any(children or show for _, (children, show) in flows) and not (match and self._filter == "open"):
                 continue
             parent = add(tree.root, "project:" + project["id"], "project", project,
                          project.get("objective") or project["id"], True, suffix="project")
@@ -323,7 +334,7 @@ class SurfWorkBody(Horizontal):
                 add_link(parent, jid)
 
         def add_others():
-            others = [j for j in jobs or [] if j["id"] not in linked | project_jobs and j.get("state") not in _TERMINAL and self._matches(j)]
+            others = [j for j in jobs or [] if j["id"] not in linked | project_jobs and self._matches(j)]
             if others:
                 group = add(tree.root, "other", "group", {}, "OTHER JOBS", True)
                 for job in sorted(others, key=lambda j: (j.get("state") != "executing", -(j.get("updated_ts") or j.get("created_ts") or 0))):
@@ -336,9 +347,6 @@ class SurfWorkBody(Horizontal):
             if workflow.get("status") == "blocked" and not others_added:
                 add_others()
                 others_added = True
-            ids = [("Contracts", workflow.get("contracts_job_id")), ("Frontend", workflow.get("frontend_job_id"))]
-            if workflow.get("status") in _TERMINAL and not any(by_id.get(jid, {}).get("state") == "executing" for _, jid in ids):
-                continue
             visible, workflow_visible = flow_view(workflow)
             if not visible and not workflow_visible:
                 continue
@@ -347,7 +355,7 @@ class SurfWorkBody(Horizontal):
             add_others()
         if not self._entries:
             unavailable = jobs is None or workflows is None
-            tree.root.add_leaf(Text("" if unavailable else "No matching work" if self._search or self._filter != "all" else "No work in progress", style="dim"))
+            tree.root.add_leaf(Text("" if unavailable else "No matching work" if self._search or self._filter != "open" else "No work in progress", style="dim"))
         if selected not in self._entries:
             def newest(rows):
                 return sorted(rows, key=lambda row: (row.get("updated_ts") or row.get("created_ts") or 0,
@@ -384,14 +392,19 @@ class SurfWorkBody(Horizontal):
         tree = self.query_one("#work-tree", _WorkTree)
         clipped = any(cell_len(node.label.plain) > tree.label_width(node) - (2 if node.allow_expand else 0) for node in self._work_nodes.values())
         state = self._payload.get("state", "unavailable")
-        title = f"WORK TREE · {self._filter} · as of {hhmm(self._payload.get('read_ts'), unknown='--:--')}"
+        title = Text("WORK TREE · ")
+        for index, choice in enumerate(_FILTERS):
+            if index: title.append(" · ")
+            active = choice == self._filter
+            title.append(choice.title(), style=Style(color=self.app.get_css_variables()["accent"] if active else None,
+                         bold=active, dim=not active, meta={"work_filter": choice}))
         panel = self.query_one("#work-tree-panel", PanelBase)
         room = max(1, panel.content_size.width - 2)
-        if cell_len(title) + (len(WIDEN_HINT) + 2 if clipped else 0) > room:
-            title = clip(title, max(1, room - len(WIDEN_HINT) - 2))
-            clipped = True
-        panel.query_one(".panel-title", Static).update(Text(title_with_hint(title, clipped, room)))
-        coverage = f"{_count(self._payload.get('jobs_loaded'))} jobs · {_count(self._payload.get('workflows_loaded'))} workflows loaded"
+        clipped |= title.cell_len > room
+        title.truncate(max(1, room - (len(WIDEN_HINT) + 2 if clipped else 0)), overflow="ellipsis")
+        if clipped: title.append(" · " + WIDEN_HINT)
+        panel.query_one(".panel-title", Static).update(title)
+        coverage = f"{_count(self._payload.get('jobs_loaded'))} jobs · {_count(self._payload.get('workflows_loaded'))} workflows loaded · {hhmm(self._payload.get('read_ts'), unknown='--:--')}"
         if self._payload.get("partial"):
             coverage += " · partial"
         if state == "unavailable":

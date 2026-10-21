@@ -37,6 +37,7 @@ def hub_payload(kind="normal"):
         elif key == "pool4":
             cards[-1]["detail"] = "POOL4 · 1 sIMD = 1.302986 IMD · pool4 ok · read 22:00"
         elif key == "swarm-tokens":
+            cards[-1].update(meter_kind='volume', numerator=123456., meter_state='partial')
             cards[-1]["detail"] = "TOKENS · USD volume 24h · 4/4 eligible markets · ok · source 22:00 · SFPT $300 · RAI $200 · TDEMO $0"
     cards[-1]['token_ranking'] = dict(rows=[
         dict(id='eth:sfpt', age_s=7200, symbol='SFPT', chain='eth', volume_usd=300., price_direction='up'),
@@ -47,7 +48,7 @@ def hub_payload(kind="normal"):
     fleet_summary = dict(codex_percent=52.5, claude_percent=47.4, daemon='0.1.2',
                          model='gpt-6-astra', effort='xhigh', online=1000,
                          runtime_known=1000, state='ok', read_ts=STAMP,
-                         tokens=189121393249, jobs=9, capacity=1500, accept_rate=95.84)
+                         tokens=189121393249, jobs=14206, capacity=1500, accept_rate=95.84)
     next(card for card in cards if card['key'] == 'board').update(
         fleet_summary=fleet_summary, meter_kind='duration', numerator=51235199999, denominator=None)
     cards.append(dict(key="work", title="WORK IN PROGRESS", destination="work", status="active",
@@ -94,7 +95,7 @@ def hub_payload(kind="normal"):
             primary="1,000", secondary="100 building",
             nft_summary=dict(deployed=1000, building=100, mint_open=999, partial=True, observed_at=STAMP))
         next(card for card in cards if card["key"] == "swarm-tokens").update(
-            primary="1,234,567", secondary="99,999 new")
+            primary="1,234,567", secondary="99,999 new", numerator=999999999999.99)
         next(card for card in cards if card["key"] == "work").update(
             primary="124", secondary="4,800 build",
             work_summary=dict(jobs=124, workflows=100, seats=4800, build=4800, review=4800, blocked=0))

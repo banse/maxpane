@@ -530,7 +530,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     fleet = fleet_summary(workers, worker_source)
     board_hero = data.get('surf_leaderboard_hero') or {}
     effort_facts, worker_facts, rate_facts = (board_hero.get(key) or {} for key in ('effort', 'workers', 'rate'))
-    fleet.update(tokens=count(effort_facts.get('tokens')), jobs=count(worker_facts.get('working')),
+    fleet.update(tokens=count(effort_facts.get('tokens')), jobs=count((overview.get('job_states') or {}).get('completed')),
                  capacity=count(worker_facts.get('capacity')), accept_rate=number(rate_facts.get('percent')))
     card("board", "FLEET", "", "",
          f"FLEET · workers read {hhmm(fleet['read_ts'])}"
@@ -551,6 +551,8 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
                             f" ({worker_facts.get('state', 'unavailable')})"
                             f" · acceptance read {hhmm(rate_facts.get('read_ts'))}"
                             f" ({rate_facts.get('state', 'unavailable')})"
+                            f" · completed jobs read {hhmm((sources.get('overview') or {}).get('read_ts'))}"
+                            " · successfully completed jobs; excludes cancelled, blocked and executing"
                             " · 365-day years, whole days only")
     oracles = data.get("surf_oracles") or {}
     oracle_rows = oracles.get("rows")
@@ -641,19 +643,19 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          f"TOKENS · {primary if total is not None else '—'} tokens · production-chain markets · catalogue read {hhmm(catalogue.get('as_of'))}"
          f" · launched in last 24h · evaluated {hhmm(now)}", "swarm-tokens")
     result[-1]["status"] = "unavailable" if new is None else "active" if new else "idle"
-    volume = catalogue.get("volume") or {}
-    result[-1].update(token_ranking=catalogue.get("ranking"), meter_kind="sparkline",
-                     points=volume.get("points"), meter_state=volume.get("state", "unavailable"))
+    volume = catalogue.get("turnover") or {}
+    result[-1].update(token_ranking=catalogue.get("ranking"), meter_kind="volume",
+                     numerator=number(volume.get("value")), meter_state=volume.get("state", "unavailable"))
     volumes = [number(row.get("volume_usd")) for row in ranking.get("rows") or []]
     result[-1]["detail"] += (f" · launched in last 24h · ranked by selected-pool 24h USD volume"
                             f" · {ranking.get('known', 0)}/{ranking.get('total') if ranking.get('total') is not None else '—'} tokens"
                             f" · {'partial · ' if ranking.get('state') == 'partial' else ''}read {hhmm(ranking.get('read_ts'))}"
                             f" · ranked USD volumes {', '.join(f'{v:,.2f}' for v in volumes if v is not None) or '—'}"
                             " · price arrows compare successive loads"
-                            " · USD volume 24h across all swarm tokens · 3h buckets"
+                            " · rolling USD volume 24h across all launched tokens · unique selected pools"
                             f" · {volume.get('known', 0)}/{volume.get('total', '—')} tokens"
                             f" · {'partial · ' if volume.get('state') == 'partial' else ''}read {hhmm(volume.get('as_of'))}"
-                            f" · until {hhmm(volume.get('until'))}")
+                            )
     work = data.get("surf_work") or {}
     summary = {key: count((work.get("summary") or {}).get(key)) for key in SURF_WORK_SUMMARY_KEYS}
     jobs, workflows = summary["jobs"], summary["workflows"]

@@ -8056,7 +8056,7 @@ class SurfManager:
                 setter = getattr(tokens, 'set_active_view', None)
                 if setter is not None:
                     setter('surfboard')
-            tokens.offer_hub_volume()
+            tokens.offer_hub_markets()
             self._offer_hub_sources(now)
             self._spawn_swarm_board({TIER_SWARM_BOARD}, now)
             if self._hub_active:

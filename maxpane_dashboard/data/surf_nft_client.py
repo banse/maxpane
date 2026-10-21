@@ -193,15 +193,19 @@ class SurfNftClient(OwnedHttpClient):
         return all(self.cooldown.get(urlsplit(url).hostname, 0) <= self.monotonic()
                    for url in SWARM_API_HOSTS)
 
-    async def _request(self, method, url, *, budget, params=None, payload=None, text=False, missing_ok=False):
+    async def _request(self, method, url, *, budget, params=None, payload=None, text=False,
+                       missing_ok=False, timeout_seconds=None):
         host = urlsplit(url).hostname
         if self.cooldown.get(host, 0) > self.monotonic():
             raise SourceUnavailable('host cooldown')
         if not budget.can_admit():
             raise BudgetExhausted('request not admitted')
         slots = self._hosts.setdefault(host, asyncio.Semaphore(2))
+        remaining = budget.remaining_seconds
+        source_limited = timeout_seconds is not None and timeout_seconds < remaining
+        deadline = min(remaining, timeout_seconds) if source_limited else remaining
         try:
-            async with asyncio.timeout(budget.remaining_seconds):
+            async with asyncio.timeout(deadline):
                 async with self._global, slots:
                     async with self._pace_locks.setdefault(host, asyncio.Lock()):
                         if self.cooldown.get(host, 0) > self.monotonic():
@@ -247,6 +251,10 @@ class SurfNftClient(OwnedHttpClient):
                         except (ValueError, UnicodeDecodeError) as exc:
                             raise SourceUnavailable('malformed public response') from exc
         except TimeoutError as exc:
+            # Optional enrichment must not exhaust every inspection slice and
+            # replay forever. Retain its failure so pinned RPC reads can advance.
+            if source_limited and budget.remaining_seconds > 0:
+                raise SourceUnavailable('optional public source timed out') from exc
             raise BudgetExhausted('cycle deadline reached') from exc
         except (httpx.HTTPError, OSError) as exc:
             raise SourceUnavailable('transport failed') from exc
@@ -389,10 +397,10 @@ class SurfNftClient(OwnedHttpClient):
         raise SourceUnavailable('RPC providers did not answer: ' + '; '.join(failures))
 
     async def source_json(self, reference, *, budget):
-        return await self._request('GET', _source_url(reference), budget=budget)
+        return await self._request('GET', _source_url(reference), budget=budget, timeout_seconds=2.)
 
     async def source_text(self, reference, *, budget):
-        return await self._request('GET', _source_url(reference), budget=budget, text=True)
+        return await self._request('GET', _source_url(reference), budget=budget, text=True, timeout_seconds=2.)
 
     async def readme(self, repository_url, revision, *, budget):
         repository_url, revision = repository_reference(dict(url=repository_url, commit=revision))

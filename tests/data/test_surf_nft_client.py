@@ -264,6 +264,99 @@ async def test_readme_uses_cycle_deadline():
                        budget=budget(deadline_seconds=.01))
 
 
+@pytest.mark.parametrize('kind', ['json', 'text'])
+@pytest.mark.parametrize('seconds,error,expected_timeout', [
+    (3., SourceUnavailable, 2.), (.5, BudgetExhausted, .5),
+])
+async def test_optional_source_timeout_is_distinct_from_cycle_budget(
+        monkeypatch, kind, seconds, error, expected_timeout):
+    deadlines = []
+    original_timeout = asyncio.timeout
+    def expire_without_waiting(delay):
+        deadlines.append(delay)
+        return original_timeout(0)
+    monkeypatch.setattr(asyncio, 'timeout', expire_without_waiting)
+    async def handler(request):
+        await asyncio.Event().wait()
+    c, b = client(handler), budget(deadline_seconds=seconds)
+    reference = ('https://eth.blockscout.com/api/v2/smart-contracts/0x' + '12' * 20
+                 if kind == 'json' else
+                 'https://raw.githubusercontent.com/example/collection/' + 'a' * 40 + '/NFT.sol')
+    with pytest.raises(error):
+        await getattr(c, 'source_' + kind)(reference, budget=b)
+    assert deadlines == [expected_timeout]
+    assert b.http_attempts == 1
+
+
+async def test_optional_source_cancellation_does_not_become_source_failure():
+    entered = asyncio.Event()
+    async def handler(request):
+        entered.set()
+        await asyncio.Event().wait()
+    c, b = client(handler), budget()
+    task = asyncio.create_task(c.source_json(
+        'https://eth.blockscout.com/api/v2/tokens/0x' + '12' * 20, budget=b))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert b.http_attempts == 1
+
+
+async def test_optional_source_timeout_after_cycle_expiry_preserves_resume(monkeypatch):
+    original_timeout, clock = asyncio.timeout, [1.]
+    monkeypatch.setattr(asyncio, 'timeout', lambda _: original_timeout(0))
+    async def handler(request):
+        clock[0] += 3
+        await asyncio.Event().wait()
+    c = client(handler)
+    b = Budget(deadline_seconds=3, monotonic=lambda: clock[0])
+    with pytest.raises(BudgetExhausted):
+        await c.source_json('https://eth.blockscout.com/api/v2/tokens/0x' + '12' * 20,
+                            budget=b)
+    assert b.http_attempts == 1 and b.remaining_seconds == 0
+
+
+async def test_optional_source_timeout_allows_resumed_and_fresh_chain_observations():
+    from tests.data.test_surf_nft_chain import FakeRPC, ADDRESS, TX, word
+    from maxpane_dashboard.data.surf_nft_chain import SurfNftInspector
+    rpc, now, sources = FakeRPC(), [1792200000.], []
+    async def handler(request):
+        if request.method == 'GET':
+            sources.append(str(request.url))
+            raise TimeoutError('injected optional source deadline')
+        body = json.loads(request.content)
+        response = {'jsonrpc': '2.0', 'id': body['id']}
+        try:
+            response['result'] = rpc(1, body['method'], body['params'])
+        except RuntimeError as error:
+            response['error'] = {'code': -32000, 'message': str(error)}
+        return httpx.Response(200, json=response)
+    c = client(handler)
+    inspector = SurfNftInspector(c, clock=lambda: now[0])
+    candidate = {'chainId': 1, 'address': ADDRESS, 'artifact': {'txHash': TX}}
+    observations = []
+    for supply in (7, 9):
+        rpc.reads['totalSupply()'] = word(supply)
+        progress, before = None, len(sources)
+        for _ in range(12):
+            result = await inspector.advance(candidate, progress,
+                                             budget=budget(http_limit=8, deadline_seconds=3))
+            progress = result.progress
+            if result.complete:
+                break
+        assert result.complete, 'optional source timeout must not stall every resumed cycle'
+        assert result.evidence['stats']['totalSupply'] == supply
+        assert result.evidence['stats']['holders'] is None
+        assert any('timed out' in warning for warning in result.evidence['warnings'])
+        assert len(sources[before:]) == len(set(sources[before:])) > 0
+        observations.append(result.evidence['checkedAt'])
+        now[0] += 121
+    assert observations == ['2026-10-17T01:20:00+00:00', '2026-10-17T01:22:01+00:00']
+    assert all(params[-1] == '0x100' for method, params in rpc.calls
+               if method in ('eth_getCode', 'eth_call'))
+
+
 def test_budget_wall_time_slice_restores_deadline_and_keeps_spent_credits():
     clock = [100.]
     b = Budget(monotonic=lambda: clock[0])

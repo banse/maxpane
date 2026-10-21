@@ -5,7 +5,6 @@ from time import monotonic
 from urllib.parse import urlsplit
 
 from rich.text import Text
-from rich.style import Style
 from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -49,7 +48,7 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: shows SWARM's 24H history; build/review counts stay under BUILT BY SWARM.
 #: FLEET shows STATS: tokens/jobs/capacity with an acceptance-rate footer.
 #: Rechecked 2026-10-21 after live preview: 143×37 is unchanged. The title occupies
-#: the center gap above the terminal; its former one-row allocation stays blank.
+#: its original top row; a centered arrow/Enter navigation hint fills the existing gap.
 #: Normal, stress, unavailable and wide payloads fit at 143×37 and 149×45.
 #: Resize checks preserve card/terminal alignment, captions and visible footers
 #: in both the screen's default CSS and the production stylesheet.
@@ -85,8 +84,8 @@ class SurfboardScreen(SurfDashboardScreen):
     ]
     DEFAULT_CSS = """
     SurfboardScreen { background: $background; color: $text; }
-    SurfboardScreen #surfboard-header-space { height: 1; }
-    SurfboardScreen #surfboard-title { dock: top; layer: heading; height: 1; background: $background; color: $text-muted; content-align: center middle; }
+    SurfboardScreen #surfboard-title { height: 1; color: $text-muted; content-align: center middle; }
+    SurfboardScreen #surfboard-navigation { dock: top; layer: heading; height: 1; background: $background; color: $text-muted; content-align: center middle; }
     SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1 0; overflow: auto auto;
         scrollbar-gutter: auto; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
     """
@@ -111,7 +110,7 @@ class SurfboardScreen(SurfDashboardScreen):
         self._workflow_guide_view_state = {}
 
     def compose(self) -> ComposeResult:
-        yield Static("", id="surfboard-header-space")
+        yield Static(Text("IMD BOARDROOM"), id="surfboard-title")
         with VerticalScroll(id="surfboard-viewport"):
             yield SurfboardRack(id="surfboard-rack")
         yield SurfStatusBar()
@@ -202,21 +201,14 @@ class SurfboardScreen(SurfDashboardScreen):
         title = Text.assemble(
             ("IMD BOARDROOM", f"dim {self.app.get_css_variables()['foreground']}"),
             (" · " + " · ".join(hints) if hints else "") + self.loading_suffix)
-        widget = self.query_one("#surfboard-title", Static)
+        self.query_one("#surfboard-title", Static).update(title)
+        widget = self.query_one("#surfboard-navigation", Static)
         rack = self.query_one(SurfboardRack)
         terminal = self.query_one(SurfboardTerminal)
         widget.styles.width = terminal.region.width
         widget.styles.offset = (terminal.region.x - rack.content_region.x,
                                 terminal.region.y - rack.content_region.y - 1)
-        width = terminal.region.width
-        left = max(0, (width - title.cell_len) // 2)
-        entry = "WORKFLOWS [g]"
-        gap = width - left - title.cell_len - len(entry)
-        if gap > 0:
-            title = Text(" " * left) + title + Text(" " * gap)
-            title.append(entry, Style(color=self.app.get_css_variables()['foreground'],
-                                      meta={"@click": "screen.workflows"}))
-        widget.update(title)
+        widget.update(Text("↑ ↓ ← → arrow keys to navigate cards · ↵ to open selected dashboard"))
 
     def on_surfboard_rack_card_activated(self, event: SurfboardRack.CardActivated) -> None:
         if event.seat_slot is not None:

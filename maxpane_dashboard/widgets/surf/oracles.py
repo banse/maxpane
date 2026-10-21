@@ -19,6 +19,7 @@ from maxpane_dashboard.widgets.fmt import fmt_age, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import PanelBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
+from maxpane_dashboard.widgets.selection_tree import ClickSelectTree
 from ._icons import fit_prose, keep_units, link_in_order, link_prose, mark_addresses, unmark
 from ._oracle_answer import consensus_value, failed_answer, panel_text, seat_value
 from .news_hero import HeroRecord, NewsHeroCard, _count
@@ -115,7 +116,7 @@ class SurfOraclesHero(Grid):
                 read_ts=payload.get("read_ts"), accent=state in ("ok", "partial") and key in _COLORS and value not in ("0", "--")))
 
 
-class _AnswerTree(Tree):
+class _AnswerTree(ClickSelectTree):
     BINDINGS = [Binding("left", "fold", show=False), Binding("right", "unfold", show=False)]
 
     def render_label(self, node, base_style, style):
@@ -170,7 +171,7 @@ class SurfOraclesBody(Horizontal):
     """Local filters and selection; messages delegate reads and popups to the screen."""
     DEFAULT_CSS = """
     SurfOraclesBody { width: 1fr; height: 1fr; min-height: 28; }
-    SurfOraclesBody PanelBase { border: round $panel; background: $background; padding: 0 1;
+    SurfOraclesBody PanelBase { border: none; background: $background; padding: 0 1;
         height: 1fr; min-height: 28; }
     SurfOraclesBody > _RequestPanel { width: 66%; margin-right: 1; }
     SurfOraclesBody > _DetailPanel { width: 1fr; overflow-y: auto; scrollbar-gutter: stable; }

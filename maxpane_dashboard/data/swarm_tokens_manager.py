@@ -381,7 +381,45 @@ class SwarmTokensManager:
         return {'count': len(tokens) if tokens is not None else None,
                 'state': catalogue['state'], 'as_of': catalogue['as_of'], 'latest_launches': latest,
                 'volume': self._volume_summary(source, now, catalogue),
+                'turnover': self._turnover_summary(source, now, catalogue),
                 'ranking': self._ranking_summary(source, now, catalogue)}
+
+    def _turnover_summary(self, source, now, catalogue):
+        """Rolling USD volume of every launched token, once per selected pool."""
+        base = self._base_rows(source)
+        result = dict(value=None, state='unavailable', known=0, total=None, as_of=None)
+        if base is None:
+            return result
+        candidates = set()
+        for row in base:
+            artifacts, ambiguous = _token_artifacts(row)
+            if ambiguous:
+                candidates.add(('ambiguous', row['launch_id']))
+            elif artifacts:
+                candidates.add((row['chain_id'], next(iter(artifacts))))
+        result['total'] = len(candidates)
+        pools = {}
+        for token in self._tokens(source, now, include_inactive=True) or []:
+            value, stamp = _number(token['volume_24h']), _number(token['market_read_at'])
+            if (value is None or value < 0 or stamp is None or not 0 <= now-stamp <= self.MARKET_TTL or not token['market_pool']
+                    or token['market_state'] != 'ok'):
+                continue
+            key = (token['chain'], token['market_pool'])
+            if key in pools:
+                previous, ids, clock = pools[key]
+                pools[key] = (previous if previous == value else None,
+                              ids + [token['id']], min(clock, stamp))
+            else:
+                pools[key] = (value, [token['id']], stamp)
+        quotes = [point for point in pools.values() if point[0] is not None]
+        result['known'] = sum(len(ids) for _, ids, _ in quotes)
+        complete = result['known'] == result['total'] and catalogue['state'] == 'ok'
+        if quotes or complete:
+            value = sum(point[0] for point in quotes)
+            if math.isfinite(value):
+                result.update(value=value, state='ok' if complete else 'partial',
+                              as_of=min(point[2] for point in quotes) if quotes else catalogue['as_of'])
+        return result
 
     def _ranking_summary(self, source, now, catalogue):
         """Rank canonical launches; retain independent successful source clocks."""

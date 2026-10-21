@@ -204,6 +204,30 @@ async def test_nested_mouse_space_and_arrows_keep_expander_actions(depth):
         assert branch.is_expanded
 
 
+async def test_answer_text_click_selects_without_popup_and_panels_are_borderless():
+    async with Harness(payload()).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app, tree = pilot.app, pilot.app.query_one(Tree)
+        branch = tree.root.children[0].children[0]
+        leaf = branch.children[0]
+        tree.move_cursor(leaf)
+        await pilot.pause()
+        label = ' '.join(leaf.label.plain.split())
+        for y, strip in enumerate(app.screen._compositor.render_strips()):
+            if label in strip.text:
+                await pilot.click(offset=(strip.text.index(label) + 2, y))
+                break
+        else:
+            pytest.fail('visible answer text required: ' + painted(app, '#oracle-answers'))
+        await pilot.pause()
+        assert tree.cursor_node is leaf and branch.is_expanded
+        assert app.answers == []
+        await pilot.press('enter')
+        assert app.answers == [leaf.data]
+        for selector in ('#oracle-request-panel', '#oracle-detail-panel'):
+            assert all(edge[0] == '' for edge in app.query_one(selector).styles.border)
+
+
 async def test_answer_leaf_posts_exact_record_and_unknown_seat_is_not_guessed():
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:

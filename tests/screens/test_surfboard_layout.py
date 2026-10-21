@@ -30,7 +30,7 @@ class HubHarness(App):
 
 
 @pytest.mark.parametrize('themed', [False, True])
-async def test_boardroom_heading_moves_into_gap_without_resizing_content(monkeypatch, themed):
+async def test_boardroom_heading_and_navigation_gap_preserve_content_geometry(monkeypatch, themed):
     if not themed:
         monkeypatch.setattr(HubHarness, 'CSS_PATH', [])
     app = HubHarness(hub_payload())
@@ -45,13 +45,15 @@ async def test_boardroom_heading_moves_into_gap_without_resizing_content(monkeyp
             cards = list(app.hub.query(SurfboardCard))
             assert {card.region.height for card in cards} == {card_height}
             assert (terminal.region.y, terminal.region.height) == (terminal_y, terminal_height)
-            assert heading.region.y == terminal_y - 1
-            assert heading.region.x == terminal.region.x
-            assert heading.region.width == terminal.region.width
+            assert heading.region.y == 0
+            hint = app.hub.query_one('#surfboard-navigation')
+            assert hint.region.y == terminal_y - 1
+            assert hint.region.x == terminal.region.x
+            assert hint.region.width == terminal.region.width
             rows = app.hub._compositor.render_strips()
-            assert not rows[0].text.strip()
-            assert 'IMD BOARDROOM' in rows[terminal_y - 1].text
-            assert 'WORKFLOWS [g]' in rows[terminal_y - 1].text
+            assert 'IMD BOARDROOM' in rows[0].text
+            assert '↑ ↓ ← → arrow keys to navigate cards · ↵ to open selected dashboard' in rows[terminal_y - 1].text
+            assert all('WORKFLOWS [g]' not in row.text for row in rows)
             assert sum('IMD BOARDROOM' in row.text for row in rows) == 1
 
 
@@ -66,7 +68,7 @@ async def test_fleet_stats_acceptance_and_duration_survive_refresh(size):
             return '\n'.join(strip.crop(card.region.x, card.region.right).text for strip in
                              app.hub._compositor.render_strips()[card.region.y:card.region.bottom])
         output = painted()
-        assert all(text in output for text in ('STATS', 'tokens', '189.1B', 'jobs', '9',
+        assert all(text in output for text in ('STATS', 'tokens', '189.1B', 'jobs', '14,206',
                                               'capacity', '1,500', '95.84%', 'worked 1y 32w 3d'))
         assert 'top model' not in output and 'TOP AGENTS' not in output
         bottom = next(line for line in output.splitlines() if '└' in line)

@@ -484,6 +484,7 @@ async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads(
     try:
         assert manager.catalogue_summary() == {
             'count': None, 'state': 'unavailable', 'as_of': None, 'latest_launches': None,
+            'turnover': dict(value=None, state='unavailable', known=0, total=None, as_of=None),
             'volume': {'points': None, 'state': 'unavailable', 'known': 0, 'total': 0,
                        'as_of': None, 'until': 0},
             'ranking': {'rows': None, 'newest': None, 'state': 'unavailable',
@@ -996,5 +997,64 @@ async def test_hub_volume_conflicting_same_pool_snapshots_are_not_added_or_selec
         volume = manager.catalogue_summary()['volume']
         assert volume['points'] == [3]*8  # conflicting ETH pool dropped; RH observed
         assert volume['known'] == 1 and volume['state'] == 'partial'
+    finally:
+        await manager.close()
+
+
+async def test_hub_turnover_all_statuses_deduplicates_pools_and_preserves_unknowns():
+    now = 1791676810.
+    raw = rows()[:3]
+    raw[2]['status'] = 'retired'
+    manager = SwarmTokensManager(Source(), client=Pages(raw), market=Market(), clock=lambda: now)
+    try:
+        assert manager.catalogue_summary()['turnover']['value'] is None
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        tokens = cache_volume(manager, now, [[1]*24]*3, pools=['0x'+'a'*40]*3)
+        for token in tokens:
+            manager._market[token['id']][0]['volume_24h'] = 25
+        # Same pool on ETH counted once; same address on RH is independent.
+        assert manager.catalogue_summary()['turnover'] == dict(
+            value=50, state='ok', known=3, total=3, as_of=now)
+        manager._failed['markets'].add(tokens[0]['id'])
+        summary = manager.catalogue_summary()['turnover']
+        assert summary['state'] == 'partial' and summary['known'] == 2
+        manager._failed['markets'].clear()
+        # Conflicting observations for the same pool must not double-count.
+        manager._market[tokens[0]['id']][0]['volume_24h'] = 99
+        summary = manager.catalogue_summary()['turnover']
+        assert summary['value'] == 25 and summary['known'] == 1 and summary['state'] == 'partial'
+        for token in tokens:
+            manager._market[token['id']][0]['volume_24h'] = None
+        assert manager.catalogue_summary()['turnover']['value'] is None
+        for token in tokens:
+            manager._market[token['id']][0]['volume_24h'] = 0
+        assert manager.catalogue_summary()['turnover']['value'] == 0
+        manager._catalogue = []
+        assert manager.catalogue_summary()['turnover'] == dict(
+            value=0, state='ok', known=0, total=0, as_of=now)
+    finally:
+        await manager.close()
+
+
+@pytest.mark.parametrize('invalid', ['negative', 'bool', 'nan', 'infinite', 'stale', 'future', 'failed', 'pool'])
+async def test_hub_turnover_excludes_invalid_or_unobserved_quotes(invalid):
+    now = 1791676810.
+    manager = SwarmTokensManager(Source(), client=Pages(rows()[:1]), market=Market(), clock=lambda: now)
+    try:
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        token = cache_volume(manager, now, [[1]*24])[0]
+        quote, stamp = manager._market[token['id']]
+        quote['volume_24h'] = 123
+        if invalid in ('negative', 'bool', 'nan', 'infinite'):
+            quote['volume_24h'] = {'negative': -1, 'bool': True, 'nan': float('nan'), 'infinite': float('inf')}[invalid]
+        elif invalid == 'stale': stamp = now-manager.MARKET_TTL-1
+        elif invalid == 'future': stamp = now+1
+        elif invalid == 'failed': manager._failed['markets'].add(token['id'])
+        elif invalid == 'pool': quote['_expected_pool'] = '0x'+'f'*40
+        manager._market[token['id']] = quote, stamp
+        summary = manager.catalogue_summary()['turnover']
+        assert summary['value'] is None and summary['known'] == 0 and summary['total'] == 1
     finally:
         await manager.close()

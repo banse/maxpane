@@ -16,11 +16,15 @@ PAGE_LIMIT = 100
 DETAIL_LIMIT = 24  # Optional background enrichment only.
 SCAN_PAGE_LIMIT = 500
 SCAN_PAGES = 100
+HISTORY_SECONDS = 86400
+HISTORY_JOB_LIMIT = PAGE_LIMIT + (SCAN_PAGES - 1) * SCAN_PAGE_LIMIT
+WORKFLOW_PAGES_PER_READ = 4
+WORKFLOW_LIMIT = 10000
 CONTEXT_DETAIL_LIMIT = 512
 WORKFLOW_DETAIL_LIMIT = 128
 VERSION_LIMIT = 256
 CONTEXT_JOB_LIMIT = 4096
-JOB_LIMIT = PAGE_LIMIT * 3 + CONTEXT_JOB_LIMIT + CONTEXT_DETAIL_LIMIT
+JOB_LIMIT = HISTORY_JOB_LIMIT + CONTEXT_JOB_LIMIT + CONTEXT_DETAIL_LIMIT
 NODE_LIMIT = 200
 TERMINAL = frozenset({'completed', 'cancelled', 'superseded', 'failed'})
 
@@ -159,7 +163,7 @@ def snapshot(jobs, workflows, details, *, read_ts, now=None, projects=None, meta
     """Current evidence and historical context share rows, but never count scopes."""
     now = read_ts if now is None else now
     job_rows, job_partial = _page(jobs, _job, now, JOB_LIMIT)
-    workflow_rows, flow_partial = _page(workflows, _workflow, now, PAGE_LIMIT + WORKFLOW_DETAIL_LIMIT)
+    workflow_rows, flow_partial = _page(workflows, _workflow, now, WORKFLOW_LIMIT + WORKFLOW_DETAIL_LIMIT)
     # Legacy callers still describe a single recent page.
     partial = coverage_partial or job_partial or flow_partial
     if expected_ids is None: partial |= len(jobs) >= PAGE_LIMIT or len(workflows) >= PAGE_LIMIT
@@ -234,12 +238,12 @@ def coerce_snapshot(raw, *, now):
     legacy = 'projects' not in raw
     if any(integer(raw.get(k)) is None for k in ('jobs_loaded', 'details_expected', 'details_loaded')):
         return None
-    for name, fields, cap in (('jobs', JOB_FIELDS, JOB_LIMIT), ('workflows', WORKFLOW_FIELDS, PAGE_LIMIT + WORKFLOW_DETAIL_LIMIT)):
+    for name, fields, cap in (('jobs', JOB_FIELDS, JOB_LIMIT), ('workflows', WORKFLOW_FIELDS, WORKFLOW_LIMIT + WORKFLOW_DETAIL_LIMIT)):
         rows = raw.get(name)
         if not isinstance(rows, list) or len(rows) > cap or any(not _valid_row(row, fields, now) for row in rows): return None
         if len({row['id'] for row in rows}) != len(rows): return None
     jobs, flows = {j['id']: j for j in raw['jobs']}, {w['id']: w for w in raw['workflows']}
-    if not 0 <= raw['jobs_loaded'] <= min(len(jobs), PAGE_LIMIT + CONTEXT_DETAIL_LIMIT): return None
+    if not 0 <= raw['jobs_loaded'] <= min(len(jobs), HISTORY_JOB_LIMIT + CONTEXT_DETAIL_LIMIT): return None
     for job in jobs.values():
         if not job['state'] or job['detail_state'] not in ('ok', 'unavailable', 'not_loaded'): return None
         if (job['detail_state'] == 'ok') != isinstance(job['nodes'], list): return None
