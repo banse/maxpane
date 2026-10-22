@@ -6,17 +6,19 @@ from maxpane_dashboard.data.surf_pool4 import ERC20_SELECTORS
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient, jsonrpc_payload, ENDPOINT_DEAD_CODES
 from maxpane_dashboard.data.rpc_classify import BASE_ENDPOINT_LIMITATION_FRAGMENTS, looks_like_endpoint_limitation
 from maxpane_dashboard.analytics.surf_launch_checks import evidence_calls, evidence_results
+from maxpane_dashboard.data.surf_transport import SurfTransport
 
 BASE_LAUNCH_RPCS = ('https://base-rpc.publicnode.com', 'https://mainnet.base.org')
 _ENDPOINT_LIMITATION_PATTERNS = BASE_ENDPOINT_LIMITATION_FRAGMENTS
 
-async def read_batch(client, urls, calls, fragments):
+async def read_batch(client, urls, calls, fragments, *, transport=None):
     """One attempt per public endpoint; keep independent failed items unknown."""
     if not calls: return []
+    transport = transport or SurfTransport()
     payload = [jsonrpc_payload(i + 1, method, params) for i, (method, params) in enumerate(calls)]
     for url in urls:
         try:
-            response = await client.post(url, json=payload)
+            response = await transport.post(client, url, payload)
             if response.status_code in ENDPOINT_DEAD_CODES: continue
             response.raise_for_status()
             body = response.json()
@@ -38,13 +40,15 @@ async def read_launch_receipts(read, tx_hashes):
 
 
 class SwarmBaseClient(OwnedHttpClient):
-    def __init__(self, *, http_client=None, rpcs=BASE_LAUNCH_RPCS):
+    def __init__(self, *, http_client=None, rpcs=BASE_LAUNCH_RPCS, transport=None):
         self._client = http_client or httpx.AsyncClient(timeout=10, follow_redirects=False)
         self._owns_client = http_client is None
         self._rpcs = tuple(rpcs)
+        self._transport = transport or SurfTransport()
 
     async def _rpc(self, calls):
-        return await read_batch(self._client, self._rpcs, calls, _ENDPOINT_LIMITATION_PATTERNS)
+        return await read_batch(self._client, self._rpcs, calls, _ENDPOINT_LIMITATION_PATTERNS,
+                                transport=self._transport)
 
     async def fetch_launch_pool_state(self, calls):
         """Read v4 storage and decimals through the existing state endpoint pool."""

@@ -1,0 +1,56 @@
+{
+  "synthetic": true,
+  "source": "Complete synthetic recent-log corpus from test_surf_client._standard_logs with unique log positions. No live recent-log capture exists.",
+  "head_block": 25709000,
+  "rows": [
+    {
+      "address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+      "topics": [
+        "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+        "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "0x000000000000000000000000e764da9bdea91d845aac2c7d53a8dfe59a369095"
+      ],
+      "data": "0x",
+      "blockNumber": "0x18849c3",
+      "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+      "logIndex": "0x0"
+    },
+    {
+      "address": "0x000000000004444c5dc75cb358380d2e3de08a90",
+      "topics": [
+        "0xdd466e674ea557f56295e2d0218a125ea4b4f0f6f3307b95f85e6110838d6438",
+        "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "0x000000000000000000000000c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"
+      ],
+      "data": "0x",
+      "blockNumber": "0x18849c3",
+      "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+      "logIndex": "0x1"
+    },
+    {
+      "address": "0x0000000000000068f116a894984e2db1123eb395",
+      "topics": [
+        "0x9d9af8e38d66c62e2c12f0225249fd9d721c54b83f48d9352c97c6cacdcb6f31",
+        "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "0x3333333333333333333333333333333333333333333333333333333333333333"
+      ],
+      "data": "0x00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000ec93127baa929e58e97dd0095a2bfb38ec1d",
+      "blockNumber": "0x18849c3",
+      "transactionHash": "0xabababababababababababababababababababababababababababababababab",
+      "logIndex": "0x2"
+    },
+    {
+      "address": "0x0000000000000068f116a894984e2db1123eb395",
+      "topics": [
+        "0x9d9af8e38d66c62e2c12f0225249fd9d721c54b83f48d9352c97c6cacdcb6f31",
+        "0x4444444444444444444444444444444444444444444444444444444444444444",
+        "0x5555555555555555555555555555555555555555555555555555555555555555"
+      ],
+      "data": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "blockNumber": "0x18849c3",
+      "transactionHash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+      "logIndex": "0x3"
+    }
+  ]
+}

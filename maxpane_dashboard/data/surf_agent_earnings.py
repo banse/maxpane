@@ -7,6 +7,7 @@ import json
 import re
 
 import httpx
+from maxpane_dashboard.data.surf_transport import SurfTransport
 
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient
 
@@ -215,13 +216,16 @@ class AgentEarningsClient(OwnedHttpClient):
     def __init__(self, *, transport: httpx.AsyncBaseTransport | None = None):
         self._client = httpx.AsyncClient(transport=transport, timeout=15.0, follow_redirects=False)
         self._owns_client = True
+        self._transport = SurfTransport()
 
     async def fetch(self, owner: str) -> list[dict] | None:
         if not _matches(_ADDRESS, owner):
             return None
         url = f'https://explorer.imd.fun/wallet/{owner.lower()}/earned'
         try:
+            await self._transport.acquire(url)
             async with self._client.stream('GET', url, timeout=15.0, follow_redirects=False) as response:
+                self._transport.observe(url, response)
                 response.raise_for_status()
                 length = response.headers.get('content-length')
                 if length is not None and (not length.isdecimal() or int(length) > MAX_BYTES):

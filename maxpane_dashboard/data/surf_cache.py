@@ -860,11 +860,26 @@ class SurfCache:
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 return None
             clean[key] = value
-        return {
+        result = {
             "genesis_block": genesis,
             "cursor_block": cursor,
             "sums": clean,
         }
+        rollback = raw.get('_rollback')
+        if isinstance(rollback, Mapping) and '_rollback' not in rollback:
+            if (rollback.get('genesis_block') is None and rollback.get('cursor_block') is None
+                    and isinstance(rollback.get('sums'), Mapping)
+                    and all(type(v) is int and v == 0 for v in rollback['sums'].values())
+                    and cursor - 12 < genesis):
+                result['_rollback'] = dict(rollback)
+            else:
+                saved = SurfCache._coerce_accumulator(rollback)
+                if (saved is not None and saved['genesis_block'] == genesis
+                        and saved['cursor_block'] == cursor - 12
+                        and saved['sums'].keys() == clean.keys()
+                        and all(saved['sums'][k] <= value for k, value in clean.items())):
+                    result['_rollback'] = saved
+        return result
 
     def get_pool4_reserve_series(self, network: Any) -> list[list[float]] | None:
         """``network``'s reserve history, or ``None`` when there is no network.

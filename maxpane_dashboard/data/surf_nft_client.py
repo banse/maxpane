@@ -6,7 +6,6 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from email.utils import parsedate_to_datetime
 import json
 import math
 import re
@@ -19,6 +18,7 @@ from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient, jsonrpc_payload
 from maxpane_dashboard.data.surf_swarm_client import SWARM_API_HOSTS
 from maxpane_dashboard.data.surf_nft_readme import decode_readme, repository_reference
+from maxpane_dashboard.data.surf_transport import HostCoordinator, SurfTransport
 
 
 class BudgetExhausted(RuntimeError):
@@ -173,20 +173,24 @@ def _source_url(reference) -> str:
 
 class SurfNftClient(OwnedHttpClient):
     def __init__(self, *, http_client=None, clock=time.time, monotonic=time.monotonic,
-                 inter_call_delay=.12, sleep=asyncio.sleep, max_response_bytes=5_000_000):
+                 inter_call_delay=.12, sleep=asyncio.sleep, max_response_bytes=5_000_000,
+                 transport=None):
         self._client = http_client or httpx.AsyncClient(follow_redirects=False)
         self._owns_client = http_client is None
         self.clock, self.monotonic = clock, monotonic
-        self._delay, self._sleep = inter_call_delay, sleep
+        custom_clock = clock is not time.time or monotonic is not time.monotonic or sleep is not asyncio.sleep
+        self._transport = transport or SurfTransport(delay=inter_call_delay, coordinator=(
+            HostCoordinator(clock=clock, monotonic=monotonic, sleep=sleep) if custom_clock else None))
         self._max_bytes = max_response_bytes
         self._global = asyncio.Semaphore(4)
         self._hosts: dict[str, asyncio.Semaphore] = {}
-        self._pace_locks: dict[str, asyncio.Lock] = {}
-        self._last: dict[str, float] = {}
-        self.cooldown: dict[str, float] = {}
         self.events: list[dict] = []
         self._request_id = 0
         self._verified_chains: dict[str, tuple[int, float]] = {}
+
+    @property
+    def cooldown(self):
+        return self._transport.coordinator.cooldown
 
     def can_read_shared_job(self):
         """Borrowed memo reads must not start through an owned host cooldown."""
@@ -207,15 +211,7 @@ class SurfNftClient(OwnedHttpClient):
         try:
             async with asyncio.timeout(deadline):
                 async with self._global, slots:
-                    async with self._pace_locks.setdefault(host, asyncio.Lock()):
-                        if self.cooldown.get(host, 0) > self.monotonic():
-                            raise SourceUnavailable('host cooldown')
-                        delay = self._delay - (self.monotonic() - self._last.get(host, -math.inf))
-                        if delay > 0:
-                            if delay >= budget.remaining_seconds:
-                                raise BudgetExhausted('pacing exceeds cycle deadline')
-                            await self._sleep(delay)
-                        self._last[host] = self.monotonic()
+                    await self._transport.acquire(url)
                     budget.consume(http=1)
                     event = {'host': host, 'method': method, 'started': self.monotonic(), 'status': None}
                     self.events.append(event)
@@ -224,20 +220,9 @@ class SurfNftClient(OwnedHttpClient):
                                                    timeout=min(15., budget.remaining_seconds),
                                                    follow_redirects=False) as response:
                         event['status'] = response.status_code
+                        self._transport.observe(url, response)
                         if missing_ok and response.status_code == 404:
                             return None
-                        if response.status_code == 429:
-                            retry = response.headers.get('Retry-After', '')
-                            try:
-                                seconds = float(retry)
-                            except ValueError:
-                                try:
-                                    seconds = parsedate_to_datetime(retry).timestamp() - self.clock()
-                                except (ValueError, TypeError, OverflowError):
-                                    seconds = 60.
-                            if not math.isfinite(seconds):
-                                seconds = 60.
-                            self.cooldown[host] = self.monotonic() + max(1., seconds)
                         if response.status_code != 200:
                             raise SourceUnavailable(f'HTTP {response.status_code}')
                         content = bytearray()
@@ -331,9 +316,13 @@ class SurfNftClient(OwnedHttpClient):
         return SourceRead(body, self.clock())
 
     async def rpc(self, chain_id, method, params, *, budget):
+        if method == 'eth_blockNumber':
+            async def read():
+                return (await self.rpc_batch(chain_id, [(method, params)], budget=budget))[0]
+            return await self._transport.head(chain_id, read)
         return (await self.rpc_batch(chain_id, [(method, params)], budget=budget))[0]
 
-    async def rpc_batch(self, chain_id, calls, *, budget):
+    async def rpc_batch(self, chain_id, calls, *, budget, return_exceptions=False):
         if type(chain_id) is not int or chain_id not in _STATE_URLS:
             raise ValueError('unsupported NFT chain')
         if (not isinstance(calls, (list, tuple)) or not 1 <= len(calls) <= 32
@@ -341,7 +330,15 @@ class SurfNftClient(OwnedHttpClient):
                        or not isinstance(c[1], list) for c in calls)):
             raise ValueError('invalid read-only RPC operations')
         if chain_id == 4663 and len(calls) > 1:
-            return [await self.rpc(chain_id, m, p, budget=budget) for m, p in calls]
+            values = []
+            for method, params in calls:
+                try:
+                    values.append(await self.rpc(chain_id, method, params, budget=budget))
+                except SourceUnavailable as error:
+                    if not return_exceptions:
+                        raise
+                    values.append(error)
+            return values
         budget.consume(rpc=len(calls))
         payload = []
         for method, params in calls:
@@ -363,6 +360,16 @@ class SurfNftClient(OwnedHttpClient):
                             or check.get('result') != hex(chain_id) or 'error' in check):
                         raise SourceUnavailable('endpoint chain identity mismatch')
                     self._verified_chains[url] = (chain_id, self.monotonic())
+                for method, params in calls:
+                    if method == 'eth_getLogs' and params and isinstance(params[0], dict):
+                        target = params[0].get('toBlock')
+                        if isinstance(target, str) and re.fullmatch(r'0x[0-9a-fA-F]+', target):
+                            async def header(request):
+                                budget.consume(rpc=1)
+                                return await self._request('POST', url, payload=request, budget=budget)
+                            if not await self._transport.prove_block(
+                                    self._client, url, int(target, 16), loader=header):
+                                raise SourceUnavailable('endpoint does not serve target block')
                 body = await self._request('POST', url, payload=payload[0] if len(payload) == 1 else payload, budget=budget)
                 responses = [body] if len(payload) == 1 else body
                 if not isinstance(responses, list) or len(responses) != len(payload):
@@ -378,10 +385,14 @@ class SurfNftClient(OwnedHttpClient):
                         message = error.get('message') if isinstance(error, dict) else None
                         if not isinstance(message, str):
                             message = 'RPC read failed'
-                        raise SourceUnavailable(re.sub(r'[\x00-\x20\x7f]+', ' ', message)[:200])
-                    if 'result' not in row:
+                        error = SourceUnavailable(re.sub(r'[\x00-\x20\x7f]+', ' ', message)[:200])
+                        if not return_exceptions:
+                            raise error
+                        by_id[row['id']] = error
+                    elif 'result' not in row:
                         raise SourceUnavailable('RPC read failed')
-                    by_id[row['id']] = row['result']
+                    else:
+                        by_id[row['id']] = row['result']
                 if set(by_id) != {r['id'] for r in payload}:
                     raise SourceUnavailable('RPC response identity mismatch')
                 for request in payload:

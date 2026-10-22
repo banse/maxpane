@@ -1,0 +1,49 @@
+[
+  {
+    "name": "pool4_r2_reread_full_window",
+    "file": "maxpane_dashboard/data/surf_pool4_client.py",
+    "old": "return await self._log_windows.read(",
+    "new": "return await self._history_reader.read(",
+    "expect": [
+      "tests/data/test_surf_pool4_rpc_round2.py::test_pool4_reads_only_twelve_block_overlap_and_new_tail_but_returns_full_window[hook]",
+      "tests/data/test_surf_pool4_rpc_round2.py::test_pool4_reads_only_twelve_block_overlap_and_new_tail_but_returns_full_window[swap]",
+      "tests/data/test_surf_pool4_rpc_round2.py::test_pool4_reads_only_twelve_block_overlap_and_new_tail_but_returns_full_window[drip]"
+    ]
+  },
+  {
+    "name": "pool4_r2_repeat_identical_subcalls",
+    "file": "maxpane_dashboard/data/surf_pool4_client.py",
+    "old": "if key not in positions:",
+    "new": "if True:",
+    "expect": [
+      "tests/data/test_surf_pool4_rpc_round2.py::test_one_atomic_bundle_executes_identical_contract_calldata_only_once"
+    ]
+  },
+  {
+    "name": "pool4_r2_bypass_shared_transport",
+    "file": "maxpane_dashboard/data/surf_pool4_client.py",
+    "old": "return await self._transport.post(self._client, url, payload)",
+    "new": "return await self._client.post(url, json=payload)",
+    "expect": [
+      "tests/data/test_surf_pool4_rpc_round2.py::test_rpc_and_docs_use_the_injected_shared_host_transport"
+    ]
+  },
+  {
+    "name": "pool4_r2_repeat_chain_head",
+    "file": "maxpane_dashboard/data/surf_pool4_client.py",
+    "old": "return _hex_int(await self._transport.head(chain, load))",
+    "new": "return _hex_int(await load())",
+    "expect": [
+      "tests/data/test_surf_pool4_rpc_round2.py::test_pool4_heads_share_only_within_one_read_cycle_and_one_chain"
+    ]
+  },
+  {
+    "name": "pool4_r2_trust_lagging_log_host",
+    "file": "maxpane_dashboard/data/surf_pool4_client.py",
+    "old": "prove_block=lambda url, block: self._transport.prove_block(self._client, url, block),",
+    "new": "prove_block=None,",
+    "expect": [
+      "tests/data/test_surf_pool4_rpc_round2.py::test_lagging_log_host_cannot_turn_unknown_history_into_empty"
+    ]
+  }
+]

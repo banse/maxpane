@@ -33,6 +33,7 @@ from typing import Any
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 
 import httpx
+from maxpane_dashboard.data.surf_transport import SurfTransport
 
 from maxpane_dashboard.data.rpc_common import OwnedHttpClient
 from maxpane_dashboard.data.surf_models import SWARM_WORKFLOW_PAGE_SIZE, SWARM_WORKFLOW_MAX_PAGES
@@ -185,6 +186,7 @@ class SwarmClient(OwnedHttpClient):
         sleep: Callable[[float], Awaitable[None]] | None = None,
         clock: Callable[[], float] = time.time,
         monotonic: Callable[[], float] = time.monotonic,
+        transport: SurfTransport | None = None,
     ) -> None:
         # ``follow_redirects=False`` (WP7): a redirect is a host this client
         # did not choose. The pool is an allowlist of two names that are one
@@ -204,6 +206,7 @@ class SwarmClient(OwnedHttpClient):
         if not self._hosts:
             raise ValueError("SwarmClient needs at least one host")
         self._delay = float(inter_call_delay)
+        self._transport = transport or SurfTransport(delay=self._delay)
         self._sleep = sleep or asyncio.sleep
         self._last_call: float = 0.0
         self._clock, self._monotonic = clock, monotonic
@@ -249,7 +252,9 @@ class SwarmClient(OwnedHttpClient):
         busy_hosts = 0
         for attempt, host in enumerate(self._hosts):
             try:
+                await self._transport.acquire(host + path)
                 response = await self._client.get(host + path, params=params)
+                self._transport.observe(host + path, response)
             except (httpx.HTTPError, OSError) as exc:
                 logger.debug("swarm GET %s%s failed: %s", host, path, exc)
                 continue

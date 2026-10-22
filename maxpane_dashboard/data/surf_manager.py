@@ -126,6 +126,8 @@ from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
 from maxpane_dashboard.data.surf_work import coerce_snapshot as coerce_work_snapshot
 from maxpane_dashboard.data.surf_work_reader import WorkReader
 from maxpane_dashboard.data.surf_card_reader import SurfCardReader
+from maxpane_dashboard.data.surf_transport import read_cycle
+from maxpane_dashboard.data.surf_counter_history import replay_counters
 from maxpane_dashboard.data.surf_launch_contribution import LaunchContributionReader
 from maxpane_dashboard.data.surf_cache import SLOT_SURF_WORK, SLOT_SURF_ORACLES
 from maxpane_dashboard.data.surf_oracles import coerce_snapshot as coerce_oracles_snapshot
@@ -4247,7 +4249,7 @@ class SurfManager:
         if prior is None and pool4_reserve_series_name(network) is None:
             return None
         folded = _safe_call(
-            P.accumulate_counters,
+            replay_counters,
             prior if prior is not None else P.empty_accumulator(),
             logs,
             from_block,
@@ -7948,6 +7950,7 @@ class SurfManager:
             result['market'].update(projected)
         return result
 
+    @read_cycle
     async def fetch_hub_snapshot(self) -> dict[str, Any]:
         """Offer eligible work and return cached data without waiting on I/O."""
         await self.drain_reads()
@@ -8041,6 +8044,7 @@ class SurfManager:
         self._force_view = False
         return self._project_hub()
 
+    @read_cycle
     async def _collect_visible_detail(self, view, now):
         tiers = set(self.cache.tiers_due(now))
         try:
@@ -8203,6 +8207,7 @@ class SurfManager:
 
     # -- the cycle -----------------------------------------------------------
 
+    @read_cycle
     async def _cycle(self) -> dict[str, Any]:
         now = float(self._clock())
         self._cycle_count += 1

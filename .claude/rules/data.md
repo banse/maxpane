@@ -144,6 +144,30 @@ while keeping their display payload; no cache version key is added. The old trai
 heuristic cannot prove lifetime coverage. Quiet incremental history needs two log requests
 for empty confirmation; this correctness cost is included in the round report.
 
+**SURF budget round 2 (2026-10-22, offline replay):** `surf_transport` shares host
+admission/cooldowns across Surf clients in the reader event loop; parked clients keep
+their existing transport. Numeric/date Retry-After is respected, malformed values use
+60 seconds, and a cooling host is skipped before dispatch. Explicit read-cycle contexts
+single-flight chain heads; Multicall block witnesses remain. Each log host must serve
+an exact upper-bound header before its history can count as complete. These witnesses
+and independent empty confirmation are counted requests, not hidden overhead.
+
+`surf_rpc_window` retains complete bounded windows and replaces twelve recent blocks
+plus the new tail. Failed tails stay unknown. Launchpad retains a process-local pre-tail
+checkpoint and rebuilds lifetime history after restart; POOL4 counter checkpoints live
+inside the existing accumulator cache without a version change. Its >24-hour gap still
+discards continuity. NFT BOARDROOM proofs retain their original observation time while
+their proof inputs are unchanged; factories and mutable detail reads remain eligible.
+Independent getters batch at their pinned block, with per-entry failures preserved.
+Never cache IMD name/symbol forever: they are owner-mutable. No permanent negative
+getter or decimals/pool-id memo is inferred from these response fixtures.
+
+The supplied captures support the existing Ethereum archive pair (Tenderly/Mevblocker).
+Base/RH launch clients remain state-only; no recorded pair of capable Base/RH archive
+hosts is available here. Do not convert that evidence gap into a new endpoint claim.
+Mainnet Publicnode stays outside default Surf history pools. This round did not probe
+endpoints live and does not update parked clients' `ENDPOINTS_VERIFIED_ON` records.
+
 **Verified dead, do not reintroduce:** `eth.llamarpc.com` (521), `rpc.ankr.com/eth` (now keyed),
 `cloudflare-eth.com` (`-32046` on Ethereum), `api.reservoir.tools` (DNS gone, API sunset),
 `rpc.sepolia.org` (404), `omniatech` (521), `ethereum.blockpi.network` (non-JSON),

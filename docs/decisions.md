@@ -4,6 +4,18 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-10-22** — Owner moved independent verification to after both RPC rounds.
+  R2 uses Surf-only shared host admission and explicit refresh contexts, preserving
+  parked transports and visible-view polling. Correct rolling rows also require
+  cumulative-counter rollback: launchpad rebuilds unprovable persisted cursors,
+  POOL4 stores a twelve-block rollback checkpoint without changing its gap policy.
+  IMD name/symbol are mutable; static responses and repeated `None` results do not
+  prove immutable metadata or permanent EVM reverts. Keep those reads live.
+  Base/RH launch adapters have no archive-log pools; the supplied captures cannot
+  certify two Base/RH archive providers. Retain the existing state pools, apply
+  cooldowns, and report the evidence gap. Exact-block host proofs add requests;
+  report their cost instead of weakening correctness to fit a blanket reduction.
+
 - **2026-10-22** — SURF RPC round 1 prioritizes complete history over unconditional
   request-count reductions: independent empty confirmation costs two log requests.
   Two requests for known POOL4 state means the healthy path; cold discovery and retries

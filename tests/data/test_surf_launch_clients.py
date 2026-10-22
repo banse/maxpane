@@ -57,8 +57,10 @@ async def test_pool_storage_batch_keeps_independent_missing_items(cls):
     def respond(request):
         batch=json.loads(request.content); posted.append(batch)
         return httpx.Response(200,json=list(reversed([
-            dict(jsonrpc='2.0',id=c['id'],**({'error':{'code':-32000,'message':'execution reverted'}} if i==1 else {'result':answers[i]}))
-            for i,c in enumerate(batch)])))
+            dict(jsonrpc='2.0',id=c['id'],**({'error':{'code':-32000,'message':'execution reverted'}}
+                 if calls.index((c['method'], c['params'])) == 1
+                 else {'result':answers[calls.index((c['method'], c['params']))]}))
+            for c in batch])))
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
         client=cls(http_client=http,inter_call_delay=0) if cls is SurfClient else cls(http_client=http)
         assert await client.fetch_launch_pool_state(calls)==[answers[0],None,answers[2]]
@@ -80,4 +82,10 @@ async def test_receipt_bootstrap_batches_only_valid_deduplicated_receipts(cls):
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
         client = cls(http_client=http, inter_call_delay=0) if cls is SurfClient else cls(http_client=http)
         assert await client.fetch_launch_receipts(hashes + hashes + [missing, 'bad']) == dict(rpc['receipts'], **{missing:None})
-        assert len(posted) == 1 and len(posted[0]) == 2
+        assert len(posted[0]) == 2
+        if cls is SurfClient:
+            # R1 retries unresolved entries only on each alternate provider.
+            assert len(posted) == len(client.state_endpoints)
+            assert all(len(batch) == 1 and batch[0]['params'] == [missing] for batch in posted[1:])
+        else:
+            assert len(posted) == 1

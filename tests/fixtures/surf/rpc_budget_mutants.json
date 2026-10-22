@@ -30,8 +30,8 @@
   {
     "name": "launchpad-publish-mismatched-count",
     "file": "maxpane_dashboard/data/surf_client.py",
-    "old": "            self._launchpad_rebuild = True\n            sweep = _failed_launchpad_sweep(resume)",
-    "new": "            self._launchpad_rebuild = True\n            sweep = sweep",
+    "old": "            self._launchpad_rebuild = True\n            self._launchpad_finalized = None\n            self._windows.clear('launchpad_curve_swap')\n            sweep = _failed_launchpad_sweep(resume)",
+    "new": "            self._launchpad_rebuild = True\n            self._launchpad_finalized = None\n            self._windows.clear('launchpad_curve_swap')\n            sweep = sweep",
     "expect": [
       "tests/data/test_surf_rpc_budget.py::test_launchpad_mismatch_is_unknown_then_rebuilds_without_restart"
     ]

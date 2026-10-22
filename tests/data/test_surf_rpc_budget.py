@@ -13,7 +13,7 @@ from maxpane_dashboard.data.surf_rpc_history import RpcHistoryReader
 from maxpane_dashboard.data.surf_rpc_batch import read_state_batch
 from tests.data.test_surf_client import (
     _client_on, _launchpad_fixture_handler, _load_launchpad, _rpc_ok,
-    RecordingTransport,
+    RecordingTransport, _target_header,
 )
 
 ENDPOINTS = ('https://primary.example', 'https://fallback.example')
@@ -239,7 +239,8 @@ async def test_launchpad_retry_keeps_completed_filter_pages_and_frozen_head():
     assert complete.launch_count == 146
     assert complete.swap_count == 165
     log_asks = [p for _, _, p in transport.requests if isinstance(p, dict) and p['method'] == 'eth_getLogs']
-    assert not any(p['params'][0]['topics'][0] == A.TOPIC_LAUNCHED for p in log_asks)
+    assert all(int(p['params'][0]['fromBlock'], 16) == HISTORY['head_block'] - 11
+               for p in log_asks if p['params'][0]['topics'][0] == A.TOPIC_LAUNCHED)
     assert min(int(p['params'][0]['fromBlock'], 16) for p in log_asks) >= A.LAUNCHPAD_FIRST_BLOCK + 2400
 
 
@@ -250,6 +251,8 @@ async def test_decoy_history_cap_never_discards_old_pools():
 
     def handler(request):
         payload = json.loads(request.content)
+        if payload['method'] == 'eth_getBlockByNumber':
+            return _target_header(payload, head)
         if payload['method'] == 'eth_blockNumber':
             return httpx.Response(200, json=_rpc_ok(payload, hex(head)))
         flt = payload['params'][0]
@@ -336,12 +339,14 @@ async def test_rebuild_failure_retains_pages_until_count_can_certify_history():
         transport.requests.clear()
         failing, missing_count = False, True
         assert (await client.fetch_launchpad()).launch_count is None
-        assert not any(isinstance(p, dict) and p['method'] == 'eth_getLogs' and
-                       p['params'][0]['topics'][0] == A.TOPIC_LAUNCHED for _, _, p in transport.requests)
+        assert all(int(p['params'][0]['fromBlock'],16) == HISTORY['head_block']-11
+                   for _,_,p in transport.requests if isinstance(p,dict) and p['method']=='eth_getLogs'
+                   and p['params'][0]['topics'][0] == A.TOPIC_LAUNCHED)
         transport.requests.clear()
         missing_count = False
         assert (await client.fetch_launchpad()).launch_count == 146
-        assert not any(isinstance(p, dict) and p['method'] == 'eth_getLogs' for _, _, p in transport.requests)
+        assert all(int(p['params'][0]['fromBlock'],16) == HISTORY['head_block']-11
+                   for _,_,p in transport.requests if isinstance(p,dict) and p['method']=='eth_getLogs')
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,12 @@
   "purpose": "Offline wiring scenario, not evidence of an actual announcement or an actual CoinGecko response",
   "channel_text": "pool4 mainnet: 0xc6c965bd164c483e87d0b550671798e9a3602840",
   "channel_source": "The first recorded announce_txs_page1 row is cloned with only raw_input replaced; the hook is from mainnet_hook_state",
-  "eth_quote": {"ethereum": {"usd": 1917.74}},
-  "eth_quote_source": "Existing test_surf_client market replay value, also the recorded Blockscout exchange_rate; no CoinGecko capture exists"
+  "eth_quote": {
+    "ethereum": {
+      "usd": 1917.74
+    }
+  },
+  "eth_quote_source": "Existing test_surf_client market replay value, also the recorded Blockscout exchange_rate; no CoinGecko capture exists",
+  "header_source": "Synthetic exact-height header oracle: requested number is returned only at or below replay head; timestamp is deterministic. This exercises target-block proof dispatch but does not prove any live provider capability.",
+  "nft_source": "Synthetic ERC-721 scenario from test_surf_nft_chain.FakeRPC: code 0x6000, successful receipt at 0x90, head 0x100, ERC165/ERC721 interfaces, totalSupply=1 and other getters zero. No live NFT capture exists."
 }

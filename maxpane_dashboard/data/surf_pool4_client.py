@@ -128,10 +128,11 @@ from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
     jsonrpc_payload,
-    pace,
 )
+from maxpane_dashboard.data.surf_transport import HostCoolingDown, SurfTransport, read_cycle
 from maxpane_dashboard.data.surf_rpc_batch import read_state_batch
 from maxpane_dashboard.data.surf_rpc_history import RpcHistoryReader
+from maxpane_dashboard.data.surf_rpc_window import RpcLogWindow
 from maxpane_dashboard.data.surf_models import (
     POOL4_DISCOVERY_STATES,
     POOL4_NETWORKS,
@@ -440,6 +441,7 @@ class Pool4Client(OwnedHttpClient):
         inter_call_delay: float = _INTER_CALL_DELAY,
         backoff_seconds: tuple[float, ...] = _BACKOFF_SECONDS,
         log_window_blocks: int = LOG_WINDOW_BLOCKS,
+        transport: SurfTransport | None = None,
     ) -> None:
         self._pools: dict[tuple[str, str], list[str]] = {
             (NETWORK_SEPOLIA, "state"): list(
@@ -469,9 +471,13 @@ class Pool4Client(OwnedHttpClient):
         self._backoff_seconds = backoff_seconds
         self._log_window_blocks = log_window_blocks
         self._request_id = 0
-        self._last_rpc_at: float = 0.0
+        self._transport = transport or SurfTransport(delay=inter_call_delay)
         self._known_paths: dict[tuple[str, str], dict] = {}
-        self._history_reader = RpcHistoryReader(self._post_rpc, min_page=_LOG_MIN_WINDOW, max_shrinks=_LOG_MAX_SHRINKS)
+        self._history_reader = RpcHistoryReader(
+            self._post_rpc, min_page=_LOG_MIN_WINDOW, max_shrinks=_LOG_MAX_SHRINKS,
+            prove_block=lambda url, block: self._transport.prove_block(self._client, url, block),
+        )
+        self._log_windows = RpcLogWindow(self._history_reader)
 
     # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
@@ -507,8 +513,7 @@ class Pool4Client(OwnedHttpClient):
     # ------------------------------------------------------------------
 
     async def _post_rpc(self, url: str, payload: Any) -> httpx.Response:
-        self._last_rpc_at = await pace(self._last_rpc_at, self._inter_call_delay)
-        return await self._client.post(url, json=payload)
+        return await self._transport.post(self._client, url, payload)
 
     async def _rpc_state_batch(
         self, network: str, calls: Sequence[tuple[str, list]]
@@ -556,6 +561,9 @@ class Pool4Client(OwnedHttpClient):
             for attempt in range(_MAX_RETRIES):
                 try:
                     resp = await self._post_rpc(url, payload)
+                    if resp.status_code == 429:
+                        last_err = RuntimeError(f"{url} -> 429")
+                        break
                     if resp.status_code in ENDPOINT_DEAD_CODES:
                         last_err = RuntimeError(f"{url} -> {resp.status_code}")
                         break
@@ -576,6 +584,9 @@ class Pool4Client(OwnedHttpClient):
                     return body.get("result") if isinstance(body, dict) else None
                 except Pool4LogRangeError:
                     raise
+                except HostCoolingDown as exc:
+                    last_err = exc
+                    break
                 except (httpx.HTTPError, ValueError) as exc:
                     last_err = exc
                     if attempt < _MAX_RETRIES - 1:
@@ -623,17 +634,17 @@ class Pool4Client(OwnedHttpClient):
     # ------------------------------------------------------------------
 
     async def fetch_block_number(self, *, network: str) -> int | None:
-        """The head block, or ``None``.  Never ``0`` — 0 would read as genesis."""
-        try:
-            results = await self._rpc_state_batch(
-                network, [("eth_blockNumber", [])]
-            )
-        except (RuntimeError, ValueError) as exc:
-            logger.warning("fetch_block_number: %s", exc)
+        """The refresh-local shared head, or None when no provider answered."""
+        if network not in POOL4_NETWORKS:
             return None
-        if not results:
-            return None
-        return _hex_int(results[0])
+        async def load():
+            try:
+                results = await self._rpc_state_batch(network, [("eth_blockNumber", [])])
+            except (RuntimeError, ValueError):
+                return None
+            return results[0] if results else None
+        chain = 1 if network == NETWORK_MAINNET else 11155111
+        return _hex_int(await self._transport.head(chain, load))
 
     async def fetch_block_timestamps(
         self, from_block: int, to_block: int, *, network: str
@@ -960,7 +971,13 @@ class Pool4Client(OwnedHttpClient):
         Rotate transport failures. A reverted subcall remains None so callers
         can retry only those fields, pinned to this call's actual block.
         """
-        entries = [(to, data, True) for _, to, data in calls]
+        entries, positions, aliases = [], {}, []
+        for name, to, data in calls:
+            key = (to.lower(), data.lower())
+            if key not in positions:
+                positions[key] = len(entries)
+                entries.append((to, data, True))
+            aliases.append((name, positions[key]))
         entries.append((_MULTICALL3, _GET_BLOCK_NUMBER, True))
         data = encode_aggregate3(entries)
         urls = self._pool(network, 'state')
@@ -984,8 +1001,8 @@ class Pool4Client(OwnedHttpClient):
                 block = _uint_or_none(raw_block) if good else None
                 if block is None or (block_tag != 'latest' and block != int(block_tag, 16)):
                     continue
-                return ({name: raw if good and P.answered(raw) else None
-                         for (name, _, _), (good, raw) in zip(calls, decoded)}, block, url)
+                values = [raw if good and P.answered(raw) else None for good, raw in decoded]
+                return ({name: values[index] for name, index in aliases}, block, url)
             except (httpx.HTTPError, ValueError, TypeError):
                 continue
         return None
@@ -1727,9 +1744,7 @@ class Pool4Client(OwnedHttpClient):
 
         for attempt in range(_MAX_RETRIES):
             try:
-                self._last_rpc_at = await pace(
-                    self._last_rpc_at, self._inter_call_delay
-                )
+                await self._transport.acquire(url)
                 resp = await self._client.get(
                     url,
                     # Not followed at ALL, rather than "not followed to another
@@ -1741,6 +1756,9 @@ class Pool4Client(OwnedHttpClient):
                     timeout=httpx.Timeout(_DOCS_TIMEOUT),
                     headers={"Accept": "text/html"},
                 )
+                self._transport.observe(url, resp)
+                if resp.status_code == 429:
+                    return None
                 if resp.status_code in ENDPOINT_DEAD_CODES:
                     logger.warning("fetch_docs_page: %s -> %s", url, resp.status_code)
                     return None
@@ -1777,6 +1795,8 @@ class Pool4Client(OwnedHttpClient):
                     logger.warning("fetch_docs_page: %s served an empty body", url)
                     return None
                 return raw.decode("utf-8", errors="replace")
+            except HostCoolingDown:
+                return None
             except (httpx.HTTPError, ValueError) as exc:
                 if attempt < _MAX_RETRIES - 1:
                     await asyncio.sleep(self._backoff_seconds[attempt])
@@ -1869,6 +1889,7 @@ class Pool4Client(OwnedHttpClient):
             label="fetch_swap_logs",
         )
 
+    @read_cycle
     async def _fetch_logs(
         self,
         address: str,
@@ -1879,10 +1900,10 @@ class Pool4Client(OwnedHttpClient):
         topics: list[str | list[str]] | None = None,
         label: str,
     ) -> list[dict] | None:
-        """Resume lossless, budget-sized pages via Surf's shared history policy.
+        """Retain the full window and re-read its twelve-block mutable tail.
 
-        A quiet page costs two requests for independent confirmation; the
-        eight-page target counts page ranges, not those confirmation calls.
+        Each host must serve the requested upper block. Quiet pages need
+        independent confirmation; those checks are additional RPC entries.
         """
         if to_block < from_block:
             return []
@@ -1896,7 +1917,7 @@ class Pool4Client(OwnedHttpClient):
         if topics is not None:
             base_filter['topics'] = list(topics)
         try:
-            return await self._history_reader.read(
+            return await self._log_windows.read(
                 self._pool(network, 'logs'), base_filter, from_block, to_block,
                 group=f'{network}:{label}', page_size=window,
             )

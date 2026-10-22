@@ -67,12 +67,13 @@ from maxpane_dashboard.data.rpc_classify import (
 from maxpane_dashboard.data import ens, surf_launchpad_volume
 from maxpane_dashboard.data.surf_rpc_batch import read_state_batch
 from maxpane_dashboard.data.surf_rpc_history import RpcHistoryReader
+from maxpane_dashboard.data.surf_rpc_window import RpcLogWindow
+from maxpane_dashboard.data.surf_transport import HostCoolingDown, SurfTransport, read_cycle
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
     jsonrpc_payload,
     multicall_chunks,
-    pace,
 )
 from maxpane_dashboard.data.surf_models import (
     Burnkeeper,
@@ -1348,9 +1349,14 @@ class SurfClient(OwnedHttpClient):
         self._now_fn = now_fn
         self._log_window_blocks = log_window_blocks
         self._request_id = 0
-        self._last_rpc_at: float = 0.0
+        self._transport = SurfTransport(delay=inter_call_delay)
         self._history = RpcHistoryReader(self._post_rpc, min_page=_LOG_MIN_WINDOW,
-                                         max_shrinks=_LOG_MAX_SHRINKS)
+                                         max_shrinks=_LOG_MAX_SHRINKS,
+                                         prove_block=lambda url, block: self._transport.prove_block(self._client, url, block))
+        self._windows = RpcLogWindow(self._history)
+        self._launchpad_finalized: dict | None = None
+        self._launchpad_candidate: dict | None = None
+        self._launchpad_published_head: int | None = None
         self._launchpad_pending: tuple[int, int] | None = None
         self._launchpad_rebuild = False
         #: True only when the most recent ``fetch_channel_txs()`` hit
@@ -1418,8 +1424,11 @@ class SurfClient(OwnedHttpClient):
     # ------------------------------------------------------------------
 
     async def _post_rpc(self, url: str, payload: Any) -> httpx.Response:
-        self._last_rpc_at = await pace(self._last_rpc_at, self._inter_call_delay)
-        return await self._client.post(url, json=payload)
+        return await self._transport.post(self._client, url, payload)
+
+    async def _head(self, *, state: bool = False):
+        rpc = self._rpc_state if state else self._rpc_logs
+        return await self._transport.head(1, lambda: rpc('eth_blockNumber', []))
 
     async def _rpc_state(self, method: str, params: list) -> Any:
         """One JSON-RPC call on the state pool, retry + rotation.
@@ -1436,7 +1445,7 @@ class SurfClient(OwnedHttpClient):
             for attempt in range(_MAX_RETRIES):
                 try:
                     resp = await self._post_rpc(url, payload)
-                    if resp.status_code in ENDPOINT_DEAD_CODES:
+                    if resp.status_code in ENDPOINT_DEAD_CODES or resp.status_code == 429:
                         last_err = RuntimeError(f"{url} -> {resp.status_code}")
                         break  # rotate, do not retry a dead host
                     resp.raise_for_status()
@@ -1448,6 +1457,9 @@ class SurfClient(OwnedHttpClient):
                             break  # rotate
                         raise RuntimeError(f"malformed request: {err}")
                     return body.get("result")
+                except HostCoolingDown as exc:
+                    last_err = exc
+                    break
                 except (httpx.HTTPError, ValueError) as exc:
                     last_err = exc
                     if attempt < _MAX_RETRIES - 1:
@@ -1497,7 +1509,7 @@ class SurfClient(OwnedHttpClient):
             for attempt in range(_MAX_RETRIES):
                 try:
                     resp = await self._post_rpc(url, payload)
-                    if resp.status_code in ENDPOINT_DEAD_CODES:
+                    if resp.status_code in ENDPOINT_DEAD_CODES or resp.status_code == 429:
                         last_err = RuntimeError(f"{url} -> {resp.status_code}")
                         break
                     # drpc wraps its shrinkable range cap in an HTTP 400 —
@@ -1520,6 +1532,9 @@ class SurfClient(OwnedHttpClient):
                     return body.get("result") if isinstance(body, dict) else None
                 except _LogRangeError:
                     raise
+                except HostCoolingDown as exc:
+                    last_err = exc
+                    break
                 except (httpx.HTTPError, ValueError) as exc:
                     last_err = exc
                     if attempt < _MAX_RETRIES - 1:
@@ -1534,15 +1549,16 @@ class SurfClient(OwnedHttpClient):
         """GET with retries. Returns parsed JSON, or ``None`` on any failure."""
         for attempt in range(_MAX_RETRIES):
             try:
-                self._last_rpc_at = await pace(
-                    self._last_rpc_at, self._inter_call_delay
-                )
+                await self._transport.acquire(url)
                 resp = await self._client.get(url, params=params)
-                if resp.status_code in ENDPOINT_DEAD_CODES:
+                self._transport.observe(url, resp)
+                if resp.status_code in ENDPOINT_DEAD_CODES or resp.status_code == 429:
                     logger.warning("GET %s -> %s", url, resp.status_code)
                     return None
                 resp.raise_for_status()
                 return resp.json()
+            except HostCoolingDown:
+                return None
             except (httpx.HTTPError, ValueError) as exc:
                 if attempt < _MAX_RETRIES - 1:
                     await asyncio.sleep(self._backoff_seconds[attempt])
@@ -1554,32 +1570,30 @@ class SurfClient(OwnedHttpClient):
     # Public API — fast tier
     # ------------------------------------------------------------------
 
+    @read_cycle
     async def fetch_nonces(self) -> NonceSet | None:
-        """The three account nonces **and the height they were read at**, one
-        batched POST (PRD §3 signals 1/2/4).
+        """Three account nonces plus the refresh-shared observed chain head.
 
-        The announce channel emits NO logs — this poll IS the new-post
-        detector. A failed leg is ``None``: turning it into 0 would read as
-        "fresh EOA" and un-fire / re-fire every nonce-derived signal, and a
-        ``block_number`` of 0 would read as genesis.
-
-        ``eth_blockNumber`` is the fourth entry of the same batch array, not a
-        second round trip: a height fetched separately can describe a different
-        block from the counts, which is worse than no height at all for a
-        detector that diffs nonces between refreshes. It is also why the fast
-        tier is still ONE request.
+        Nonces remain one aligned-ID batch. The head is a separate single-flight
+        read shared by Surf clients in this reader cycle; neither JSON-RPC
+        batching nor this observed height implies an atomic block snapshot.
+        Failed individual fields remain None.
         """
         addrs = [A.ANNOUNCE, A.DEV_WALLET, A.OPS_WALLET]
         try:
             results = await self._rpc_state_batch(
                 [("eth_getTransactionCount", [a, "latest"]) for a in addrs]
-                + [("eth_blockNumber", [])]
             )
         except RuntimeError as exc:  # malformed-request short-circuit
             logger.warning("fetch_nonces: %s", exc)
             return None
         if results is None:
             return None
+        try:
+            head_hex = await self._head(state=True)
+        except RuntimeError:
+            head_hex = None
+        results.append(head_hex)
 
         def to_int(hex_or_none: Any) -> int | None:
             if not isinstance(hex_or_none, str):
@@ -1849,6 +1863,7 @@ class SurfClient(OwnedHttpClient):
     # State + logs RPC — the launchpad tier
     # ------------------------------------------------------------------
 
+    @read_cycle
     async def fetch_launchpad(self, resume: dict | None = None) -> LaunchpadState:
         """The launchpad tier: one getter multicall, four log sweeps, then
         ``rank_coins`` off the swap logs alone.
@@ -1949,6 +1964,8 @@ class SurfClient(OwnedHttpClient):
             )
 
             self._launchpad_rebuild = True
+            self._launchpad_finalized = None
+            self._windows.clear('launchpad_curve_swap')
             sweep = _failed_launchpad_sweep(resume)
         elif self._launchpad_rebuild and coin_count is None:
             # An unavailable count cannot certify a previously bad history.
@@ -1956,6 +1973,8 @@ class SurfClient(OwnedHttpClient):
             completed = False
         elif completed:
             self._launchpad_rebuild = False
+            self._launchpad_finalized = self._launchpad_candidate
+            self._launchpad_published_head = sweep.cursor['last_block']
         if completed:
             self._launchpad_pending = None
             for group in ('launchpad_launched', 'launchpad_curve_swap',
@@ -2062,119 +2081,45 @@ class SurfClient(OwnedHttpClient):
         )
 
     async def _launchpad_logs(self, resume: dict | None) -> _LaunchpadSweep:
-        """Sweep ``Launched`` / ``CurveSwap`` / ``ImdBurned`` /
-        ``TokensBridgedForBurn`` on the LOGS pool from the launchpad's first
-        block, resuming through *resume*.
+        """Fold complete history and replay twelve potentially revisable blocks.
 
-        The fourth sweep is the odd one out and starts later on purpose:
-        ``BURN_EXECUTOR_V2`` is ~7k blocks younger than the launchpad, so its
-        floor is its own creation block. Its rows are *revisable records*
-        keyed by tx hash, not accumulators, and the caller they name is not
-        in the event at all -- the signature on the enclosing transaction is
-        read separately -- on the STATE pool, while these four sweeps are on
-        the LOGS pool, so it can fail on its own. A burn whose signer could
-        not be read is **kept unattributed and re-asked for next sweep**,
-        never credited to a placeholder and never dropped: this cursor
-        advances to the head regardless, so a dropped row would be a burn
-        nothing could ever read again.
+        A process-local snapshot contains lifetime maps, trader identities and
+        burn totals through head−12. The next sweep starts immediately after
+        that snapshot, replacing the entire tail instead of adding it twice.
+        CurveSwap also retains the complete day window for ranking and sales.
+        Persisted aggregate-only cursors have no reversible suffix, so a new
+        process rebuilds conservatively before resuming incremental reads.
 
-        **Why a cursor and not a window.** The launch history only ever grows
-        and its start never moves, so any window measured back from the chain
-        head walks off the far end of it one block per block. The 33,000-block
-        window this replaced was already 702 blocks short on the day it was
-        measured (2026-08-23: 146 launches, the earliest 33,702 blocks back)
-        and it showed 66 of them -- with the launchpad's two busiest pools
-        among the 80 it could not see, so they had no ticker, no name and no
-        creator and could not reach the table at any sort order. An
-        append-only log deserves an append-only read.
-
-        **Cost.** A cold sweep (``resume is None``) covers everything from
-        ``A.LAUNCHPAD_FIRST_BLOCK`` to the head -- ~34k blocks today, once.
-        After that ``Launched`` and ``ImdBurned`` resume from
-        ``last_block + 1``, so at the 600 s launchpad tier they are a few
-        hundred blocks each. ``CurveSwap`` is the exception and never starts
-        later than ``head - LAUNCHPAD_DAY_BLOCKS``: it feeds *windowed*
-        statistics (``swaps_24h``, ``swaps_by_coin``, ``change_24h_pct``)
-        which cannot be accumulated forward the way a lifetime total can --
-        yesterday's swap has to *leave* the day. Re-reading a fixed 7,200
-        blocks beats persisting a day of raw swap rows in the cache file and
-        then having to trust them back: a re-read is self-healing, a
-        persisted buffer is one more third-party structure to validate per
-        point. The two ranges do not double count -- the accumulators only
-        ever consume rows at or above ``from_block``, the day slice only ever
-        rows at or above the day floor.
-
-        **Resume is strictly greater than.** ``from_block = last_block + 1``.
-        The boundary block was fully swept last time, so re-including it
-        would add its swaps to ``swaps_all`` a second time -- and an
-        off-by-one into a *persisted counter* corrupts it permanently and
-        invisibly, because no later sweep can tell an inflated total from a
-        real one.
-
-        **A partial sweep is an outage.** If any of the four sweeps returns
-        ``None``, nothing merges, nothing advances and nothing zeroes: the
-        untouched *resume* goes back out as the cursor and every aggregate
-        reads ``None``. Completed pages stay in a bounded process-local
-        buffer and the target head is frozen until this pass completes. There is no honest way to advance ``last_block`` past
-        blocks whose ``CurveSwap`` rows were never read -- doing so would
-        drop them from ``swaps_all`` forever while presenting the total as
-        complete. Serving last-good behind an ``as of`` marker is the
-        manager's job (``SLOT_LAUNCHPAD``), not this method's.
-
-        ``launches`` is the merged population -- the cursor's history plus
-        this pass -- keyed by ``pool_id``, so a re-seen ``Launched`` (a reorg
-        replay, or a boundary block swept twice) overwrites its row rather
-        than duplicating it. ``launch_count`` is its size, ``creator_count``
-        the distinct ``creator`` over it, and ``new_24h`` the subset launched
-        within ``LAUNCHPAD_DAY_BLOCKS`` of the head -- all three over the
-        *full* history, never the ``LAUNCHPAD_RENDER_LIMIT``-capped slice
-        ``coins`` carries.
-
-        ``swaps_by_coin`` is the **full** per-coin day distribution -- every
-        coin with a swap today, not the render-capped slice -- because
-        ``surf_launchpad.hot_coin_threshold`` takes a *median* over it and a
-        median of only the busiest 20 runs several times too high. It is
-        keyed by ``pool_id``, the coin's identity, and never by ticker
-        (``launch(string,string)`` is permissionless, so two coins can share
-        one); ``coin_tickers`` is the companion ``{pool_id: ticker}`` map that
-        exists only so a row can be *labelled*, carrying the ticker raw
-        because escaping belongs to the render layer.
+        Failed pages preserve acknowledged prefixes but publish no partial
+        counters. The target head stays frozen during a pending sweep and its
+        unfinalized suffix is replayed after cancellation or retry. Publication
+        commits the candidate checkpoint only after population verification.
         """
-        prior = None if self._launchpad_rebuild else _coerce_launchpad_resume(resume)
+        # Persisted aggregate-only cursors lack a reversible reorg suffix.
+        # Trust only the process-local finalized snapshot paired with our own
+        # last publication. A restart or a different caller cursor rebuilds.
+        supplied = _coerce_launchpad_resume(resume)
+        prior = (self._launchpad_finalized if supplied is not None
+                 and supplied['last_block'] == self._launchpad_published_head
+                 and not self._launchpad_rebuild else None)
         resume_from = A.LAUNCHPAD_FIRST_BLOCK if prior is None else prior['last_block'] + 1
         if self._launchpad_pending is not None and self._launchpad_pending[0] == resume_from:
             head = self._launchpad_pending[1]
+            # Retained history may contain a fork in the unfinalized suffix.
+            for group in ('launchpad_launched', 'launchpad_imd_burned', 'launchpad_burnkeepers'):
+                self._history.rewind(group, head - 11)
         else:
             try:
-                head_hex = await self._rpc_logs("eth_blockNumber", [])
-                head = int(head_hex, 16)
+                head = int(await self._head(), 16)
             except (RuntimeError, TypeError, ValueError) as exc:
                 logger.warning("fetch_launchpad logs head: %s", exc)
                 return _failed_launchpad_sweep(resume)
             self._launchpad_pending = (resume_from, head)
-
-        # **A cursor ahead of the chain is corrupt, not merely stale.**  The
-        # `max(head, prior["last_block"])` below is right -- a lagging
-        # endpoint must not drag `last_block` backwards and re-count blocks
-        # into a persisted accumulator -- but on its own it is also a trap
-        # with no exit: one bad `eth_blockNumber`, or a hand-edited cache,
-        # pins `last_block` above the head and `max()` then guarantees it
-        # stays there for every sweep that follows.  Every lifetime
-        # aggregate freezes and nothing but deleting the cache file recovers
-        # it.  A day of blocks is the tolerance, not zero, because a
-        # genuinely lagging endpoint answering a block or two behind the one
-        # that wrote the cursor is ordinary and must still resume.
-        if prior is not None and prior["last_block"] > head + LAUNCHPAD_DAY_BLOCKS:
-            logger.warning(
-                "launchpad cursor rejected: last_block %d is %d blocks ahead "
-                "of head %d -- sweeping cold rather than never resuming",
-                prior["last_block"], prior["last_block"] - head, head,
-            )
+        cutoff = head - 12
+        if prior is not None and prior['last_block'] > cutoff:
             prior = None
-
-        from_block = (
-            A.LAUNCHPAD_FIRST_BLOCK if prior is None else prior["last_block"] + 1
-        )
+            self._launchpad_pending = (A.LAUNCHPAD_FIRST_BLOCK, head)
+        from_block = A.LAUNCHPAD_FIRST_BLOCK if prior is None else prior['last_block'] + 1
         day_from = max(A.LAUNCHPAD_FIRST_BLOCK, head - LAUNCHPAD_DAY_BLOCKS)
         # The swap sweep has to cover both the unread tail AND the whole day;
         # clamped to the head so a cursor that is somehow ahead of the chain
@@ -2190,7 +2135,7 @@ class SurfClient(OwnedHttpClient):
             {"address": A.LAUNCHPAD_FACTORY, "topics": [A.TOPIC_LAUNCHED]},
             min(from_block, head), head, group="launchpad_launched",
         )
-        swap_rows = await self._get_logs_paged(
+        swap_rows = await self._get_logs_window(
             {"address": A.LAUNCHPAD_HOOK, "topics": [A.TOPIC_CURVE_SWAP]},
             swap_from, head, group="launchpad_curve_swap",
         )
@@ -2240,6 +2185,10 @@ class SurfClient(OwnedHttpClient):
         traders: set[str] = set(prior["traders"]) if prior else set()
         burned_total_wei: int = prior["burned_total_wei"] if prior else 0
 
+        finalized_swaps = dict(swaps_all)
+        finalized_burns = dict(burn_by_coin)
+        finalized_traders = set(traders)
+        finalized_burned = burned_total_wei
         day_swaps: list[dict] = []
         day_priced: dict[str, list[dict]] = {}
         swaps_by_coin: dict[str, int] = {}
@@ -2260,6 +2209,12 @@ class SurfClient(OwnedHttpClient):
                     burn_by_coin[pool_id] = (
                         burn_by_coin.get(pool_id, 0) + parsed["burn_fee_imd_wei"]
                     )
+                if block <= cutoff:
+                    finalized_swaps[pool_id] = finalized_swaps.get(pool_id, 0) + 1
+                    if parsed['trader']:
+                        finalized_traders.add(parsed['trader'].lower())
+                    if pool_id in merged:
+                        finalized_burns[pool_id] = finalized_burns.get(pool_id, 0) + parsed['burn_fee_imd_wei']
             if block >= day_from:
                 day_swaps.append({
                     "pool_id": pool_id,
@@ -2283,6 +2238,8 @@ class SurfClient(OwnedHttpClient):
             amount = _decode_imd_burned_amount(row)
             if amount is not None:
                 burned_total_wei += amount
+                if block <= cutoff:
+                    finalized_burned += amount
 
         # ---- who fired each bridge-and-burn -------------------------------
         # The event names the OFT, the destination and the amount and says
@@ -2362,10 +2319,8 @@ class SurfClient(OwnedHttpClient):
         ]
 
         cursor = {
-            # Never backwards: `swaps_all` and the trader set are
-            # accumulators, and a cursor that retreated would re-count the
-            # blocks it gave back.
-            "last_block": head if prior is None else max(head, prior["last_block"]),
+            # Reversible-tail replay also permits a genuine head rollback.
+            "last_block": head,
             "launches": {
                 pool_id: dict(rec) for pool_id, rec in merged.items()
             },
@@ -2385,6 +2340,13 @@ class SurfClient(OwnedHttpClient):
             "burns": burns,
         }
 
+        self._launchpad_candidate = {
+            'last_block': cutoff,
+            'launches': {pool: dict(rec) for pool, rec in merged.items() if rec['block'] <= cutoff},
+            'swaps_all': finalized_swaps, 'burn_by_coin': finalized_burns,
+            'traders': sorted(finalized_traders), 'burned_total_wei': finalized_burned,
+            'burns': {tx: dict(rec) for tx, rec in burns.items() if rec['block'] <= cutoff},
+        }
         activity = _launchpad_feed_from_logs(day_swaps, merged, head, now_ts)
 
         return _LaunchpadSweep(
@@ -2463,6 +2425,7 @@ class SurfClient(OwnedHttpClient):
                 }
         return priced
 
+    @read_cycle
     async def fetch_decoy_pool_count(
         self, real_pool_id: str | None
     ) -> tuple[int | None, dict | None]:
@@ -2480,7 +2443,7 @@ class SurfClient(OwnedHttpClient):
         representable ``(0, None)``: we looked, and there were none.
         """
         try:
-            head_hex = await self._rpc_logs("eth_blockNumber", [])
+            head_hex = await self._head()
             head = int(head_hex, 16)
         except (RuntimeError, TypeError, ValueError) as exc:
             logger.warning("fetch_decoy_pool_count head: %s", exc)
@@ -3283,6 +3246,7 @@ class SurfClient(OwnedHttpClient):
         )
         return None
 
+    @read_cycle
     async def _get_logs_paged(
         self, base_filter: dict, from_block: int, to_block: int, *, group: str,
         page_size: int = LOG_WINDOW_BLOCKS,
@@ -3298,6 +3262,12 @@ class SurfClient(OwnedHttpClient):
             page_size=page_size, keep_complete=group.startswith('launchpad_'),
         )
 
+    @read_cycle
+    async def _get_logs_window(self, base_filter, from_block, to_block, *, group):
+        return await self._windows.read(self._log_rpcs, base_filter, from_block, to_block,
+                                        group=group, page_size=max(2401, (to_block-from_block+8)//8))
+
+    @read_cycle
     async def fetch_recent_logs(self) -> LogWindow | None:
         """The recent-window log sweep for signals 2/3/5 and NFT sales.
 
@@ -3319,7 +3289,7 @@ class SurfClient(OwnedHttpClient):
             "seaport_sales": False,
         }
         try:
-            head_hex = await self._rpc_logs("eth_blockNumber", [])
+            head_hex = await self._head()
             head = int(head_hex, 16)
         except (RuntimeError, TypeError, ValueError) as exc:
             logger.warning("fetch_recent_logs head: %s", exc)
@@ -3327,9 +3297,9 @@ class SurfClient(OwnedHttpClient):
             # unread as the head itself, so every group is failed too.
             self.log_group_failed = {k: True for k in self.log_group_failed}
             return None
-        from_block = head - self._log_window_blocks
+        from_block = max(0, head - self._log_window_blocks)
 
-        bridge = await self._get_logs_shrinking(
+        bridge = await self._get_logs_window(
             {
                 "address": A.IMD_TOKEN,
                 "topics": [
@@ -3341,19 +3311,19 @@ class SurfClient(OwnedHttpClient):
             from_block, head, group="bridge_mints",
         )
         self.log_group_failed["bridge_mints"] = bridge is None
-        identity = await self._get_logs_shrinking(
+        identity = await self._get_logs_window(
             {"address": A.IDENTITY_REGISTRY,
              "topics": [A.TOPIC_IDENTITY_HASH_UPDATED]},
             from_block, head, group="identity_updates",
         )
         self.log_group_failed["identity_updates"] = identity is None
         # v4 Initialize: IMD may be currency0 (topic2) or currency1 (topic3).
-        init0 = await self._get_logs_shrinking(
+        init0 = await self._get_logs_window(
             {"address": A.POOL_MANAGER_V4,
              "topics": [A.TOPIC_V4_INITIALIZE, None, _addr_topic(A.IMD_TOKEN)]},
             from_block, head, group="v4_initializes[currency0]",
         )
-        init1 = await self._get_logs_shrinking(
+        init1 = await self._get_logs_window(
             {"address": A.POOL_MANAGER_V4,
              "topics": [A.TOPIC_V4_INITIALIZE, None, None,
                         _addr_topic(A.IMD_TOKEN)]},
@@ -3367,7 +3337,7 @@ class SurfClient(OwnedHttpClient):
         # Failed if EITHER side failed: a row missing from the failed side is
         # invisible even when the other side's query came back clean.
         self.log_group_failed["v4_initializes"] = init0 is None or init1 is None
-        seaport_raw = await self._get_logs_shrinking(
+        seaport_raw = await self._get_logs_window(
             {"address": _SEAPORT,
              "topics": [A.TOPIC_SEAPORT_ORDER_FULFILLED]},
             from_block, head, group="seaport_sales",
@@ -3386,8 +3356,8 @@ class SurfClient(OwnedHttpClient):
         if bridge is None and identity is None and v4_inits is None \
                 and seaport is None:
             return None
-        # Raw rows, verbatim from the endpoint.  WP4 decodes them; this module
-        # must not normalise, prune or re-key them.
+        # Canonical, deduplicated in-window rows retain every raw field.
+        # Downstream detectors own ABI decoding and the NFT sales join.
         return LogWindow(
             from_block=from_block,
             to_block=head,

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from .keccak import keccak256 as _keccak256
 from .evm_abi import decode_uint, decode_address
+from .surf_transport import read_cycle
 
 CHAINS = {
     1: {"rpc": "https://ethereum-rpc.publicnode.com", "explorer": "https://etherscan.io", "api": "https://eth.blockscout.com/api/v2"},
@@ -82,8 +83,10 @@ def _decode(raw, kind):
 
 
 class Inspector:
-    def __init__(self, *, rpc, fetch_json=_missing_source, observed_at=None, proof_checkpoint=None):
+    def __init__(self, *, rpc, fetch_json=_missing_source, observed_at=None, proof_checkpoint=None,
+                 rpc_batch=None):
         self.rpc = rpc
+        self.rpc_batch = rpc_batch
         self.fetch_json = fetch_json
         self.snapshots = {}
         self.snapshot_headers = {}
@@ -286,9 +289,15 @@ class Inspector:
                 getters[name] = outputs[0]["type"]
         if len(getters) > MAX_GETTERS:
             warnings.append(f"zero-argument getters limited to {MAX_GETTERS}")
-        for name, kind in list(getters.items())[:MAX_GETTERS]:
+        getters = list(getters.items())[:MAX_GETTERS]
+        values = (self.rpc_batch(chain_id, [('eth_call', [{'to': address, 'data': selector(name + '()')}, block])
+                                           for name, _ in getters]) if self.rpc_batch else None)
+        for index, (name, kind) in enumerate(getters):
             try:
-                result["reads"][name] = _decode(call(selector(name + "()")), kind)
+                raw = values[index] if values is not None else call(selector(name + "()"))
+                if isinstance(raw, Exception):
+                    raise raw
+                result["reads"][name] = _decode(raw, kind)
             except (RuntimeError, ValueError, OSError) as error:
                 result["readErrors"][name] = str(error)[:120]
         result["name"], result["symbol"] = result["reads"].get("name"), result["reads"].get("symbol")
@@ -332,6 +341,22 @@ class _ReadNeeded(BaseException):
         self.kind, self.args, self.key = kind, args, key
 
 
+class _ReadBatchNeeded(BaseException):
+    def __init__(self, requests):
+        self.requests = requests
+
+
+def inspection_revision(candidate):
+    """Only proof inputs invalidate retained observations, not discovery clocks."""
+    inputs = {name: candidate.get(name) for name in (
+        "chainId", "address", "abi", "factoryAddress", "factoryProof", "constructorProof")}
+    inputs["artifact"] = {name: (candidate.get("artifact") or {}).get(name) for name in (
+        "name", "txHash", "blockNumber")}
+    inputs["launch"] = {name: (candidate.get("launch") or {}).get(name) for name in (
+        "chainId", "sourceRepoUrl", "sourceCommit", "attestation")}
+    return hashlib.sha256(json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 class _Replay:
     def __init__(self, progress):
         self.progress = progress
@@ -356,6 +381,19 @@ class _Replay:
 
     def rpc(self, chain, method, params):
         return self.read("rpc", [chain, method, params])
+
+    def rpc_batch(self, chain, calls):
+        values, missing = [], []
+        for method, params in calls:
+            try:
+                values.append(self.rpc(chain, method, params))
+            except _ReadNeeded as request:
+                missing.append(request)
+            except RuntimeError as error:
+                values.append(error)
+        if missing:
+            raise _ReadBatchNeeded(missing)
+        return values
 
     def source(self, url):
         return self.read("json", [url])
@@ -405,7 +443,7 @@ class SurfNftInspector:
 
         replay = _Replay(progress)
         reader = Inspector(rpc=replay.rpc, fetch_json=replay.source,
-                           observed_at=progress["observed_at"])
+                           observed_at=progress["observed_at"], rpc_batch=replay.rpc_batch)
         reader.record_child = lambda child: progress.setdefault("children", {}).update({child["key"]: copy.deepcopy(child)})
         reader.defer_children = True
         reader.factory_cursors = progress.setdefault("factory_cursors", {})
@@ -527,6 +565,7 @@ class SurfNftInspector:
         except (RuntimeError, ValueError, TypeError, KeyError) as error:
             evidence.setdefault("warnings", []).append(str(error)[:180])
 
+    @read_cycle
     async def advance(self, candidate, progress=None, *, budget, proof_only=False):
         from .surf_nft_client import BudgetExhausted, SourceUnavailable
 
@@ -544,13 +583,7 @@ class SurfNftInspector:
         # Discovery clocks, related jobs and sites change independently of a
         # pinned chain read. Only inputs used to inspect/prove this deployment
         # may invalidate it; otherwise head refreshes restart it indefinitely.
-        inputs = {name: candidate.get(name) for name in (
-            "chainId", "address", "abi", "factoryAddress", "factoryProof", "constructorProof")}
-        inputs["artifact"] = {name: candidate["artifact"].get(name) for name in (
-            "name", "txHash", "blockNumber")}
-        inputs["launch"] = {name: candidate["launch"].get(name) for name in (
-            "chainId", "sourceRepoUrl", "sourceCommit", "attestation")}
-        revision = hashlib.sha256(json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        revision = inspection_revision(candidate)
         now = self.clock()
         valid_progress = self._valid_progress(progress)
         if (not valid_progress or progress.get("candidate_key") != key
@@ -572,19 +605,29 @@ class SurfNftInspector:
                 evidence, children = self._evaluate(candidate, progress, proof_only=proof_only)
             except _ProofReady:
                 return InspectionResult(progress, progress.get('provisional'), [], False)
-            except _ReadNeeded as request:
+            except (_ReadNeeded, _ReadBatchNeeded) as needed:
+                requests = needed.requests if isinstance(needed, _ReadBatchNeeded) else [needed]
+                batch = getattr(self.client, 'rpc_batch', None)
+                batching = isinstance(needed, _ReadBatchNeeded) and callable(batch) and chain != 4663
+                requests = requests[:min(32, budget.rpc_limit - budget.rpc_calls)] if batching else requests[:1]
                 try:
-                    if request.kind == "rpc":
-                        value = await self.client.rpc(*request.args, budget=budget)
+                    if not requests:
+                        raise BudgetExhausted('NFT RPC slice reached')
+                    request = requests[0]
+                    if batching:
+                        values = await batch(chain, [(item.args[1], item.args[2]) for item in requests],
+                                             budget=budget, return_exceptions=True)
+                    elif request.kind == "rpc":
+                        values = [await self.client.rpc(*request.args, budget=budget)]
                     elif request.kind == "text":
-                        value = await self.client.source_text(*request.args, budget=budget)
+                        values = [await self.client.source_text(*request.args, budget=budget)]
                     else:
-                        value = await self.client.source_json(*request.args, budget=budget)
-                    encoded = json.dumps(value, separators=(",", ":")).encode()
-                    saved = {"compressed": base64.b64encode(zlib.compress(encoded)).decode()} if len(encoded) > 512 else {"value": value}
+                        values = [await self.client.source_json(*request.args, budget=budget)]
                 except BudgetExhausted:
                     return InspectionResult(progress, progress.get("provisional"), list(progress.get("children", {}).values()), False)
                 except SourceUnavailable as error:
+                    values = [error] * len(requests)
+                for request, value in zip(requests, values):
                     # Only an unavailable pinned context abandons the stage.
                     # Older optional construction probes retain their own errors.
                     requested_block = None
@@ -595,17 +638,21 @@ class SurfNftInspector:
                         elif method == "eth_getBlockByNumber":
                             requested_block = params[0]
                     pinned = progress.get("block_number")
-                    if (pinned is not None and requested_block == hex(pinned)
-                            and any(term in str(error).lower() for term in
+                    if (isinstance(value, SourceUnavailable) and pinned is not None and requested_block == hex(pinned)
+                            and any(term in str(value).lower() for term in
                                     ("header not found", "unknown block", "missing trie", "historical state unavailable"))):
-                        progress["restart_reason"] = str(error)[:180]
+                        progress["restart_reason"] = str(value)[:180]
                         progress["started_at"] = now - 601
                         return InspectionResult(progress, None, [], False)
-                    saved = {"error": str(error)[:200]}
-                progress["responses"][request.key] = saved
-                progress["completed_operations"] += 1
-                if request.kind == "rpc" and request.args[1] == "eth_blockNumber" and "value" in saved:
-                    progress["block_number"] = _number(saved["value"])
+                    if isinstance(value, SourceUnavailable):
+                        saved = {"error": str(value)[:200]}
+                    else:
+                        encoded = json.dumps(value, separators=(",", ":")).encode()
+                        saved = {"compressed": base64.b64encode(zlib.compress(encoded)).decode()} if len(encoded) > 512 else {"value": value}
+                    progress["responses"][request.key] = saved
+                    progress["completed_operations"] += 1
+                    if request.kind == "rpc" and request.args[1] == "eth_blockNumber" and "value" in saved:
+                        progress["block_number"] = _number(saved["value"])
                 # Cache contract bounds one unfinished stage to 256 KiB.
                 if len(json.dumps(progress, separators=(",", ":")).encode()) > 256 * 1024:
                     evidence = progress.get("provisional") or {"chainId": chain, "address": candidate["address"]}

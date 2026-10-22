@@ -16,6 +16,7 @@ from maxpane_dashboard.data.rpc_classify import (
     ETH_ENDPOINT_LIMITATION_FRAGMENTS, looks_like_endpoint_limitation,
 )
 from maxpane_dashboard.data.rpc_common import ENDPOINT_DEAD_CODES
+from maxpane_dashboard.data.surf_transport import HostCoolingDown
 
 
 async def read_state_batch(
@@ -48,7 +49,7 @@ async def read_state_batch(
             for attempt in range(max(1, retries)):
                 try:
                     response = await post_rpc(url, chunk)
-                    if response.status_code in ENDPOINT_DEAD_CODES:
+                    if response.status_code in ENDPOINT_DEAD_CODES or response.status_code == 429:
                         host_failed = True
                         break
                     try:
@@ -83,6 +84,9 @@ async def read_state_batch(
                     for ident, entry in entries.items():
                         if ident not in duplicates and not entry.get('error'):
                             results[positions[ident]] = entry.get('result')
+                    break
+                except HostCoolingDown:
+                    host_failed = True
                     break
                 except (httpx.HTTPError, ValueError):
                     if attempt + 1 < max(1, retries):

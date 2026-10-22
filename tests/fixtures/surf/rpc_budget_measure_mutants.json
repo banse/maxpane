@@ -1,0 +1,29 @@
+[
+  {
+    "name": "measurement-counts-batch-entries-as-http",
+    "old": "requests += 1",
+    "new": "requests += len(body) if isinstance(body, list) else 1",
+    "file": "scripts/measure_surf_rpc_budget.py",
+    "expect": [
+      "tests/data/test_surf_rpc_budget_measure.py::test_wire_counts_distinguish_requests_entries_and_rest"
+    ]
+  },
+  {
+    "name": "measurement-drops-inclusive-range-block",
+    "old": "requested_blocks += int(flt['toBlock'], 16) - int(flt['fromBlock'], 16) + 1",
+    "new": "requested_blocks += int(flt['toBlock'], 16) - int(flt['fromBlock'], 16)",
+    "file": "scripts/measure_surf_rpc_budget.py",
+    "expect": [
+      "tests/data/test_surf_rpc_budget_measure.py::test_wire_log_counts_include_repeated_ranges_and_match_response_ids"
+    ]
+  },
+  {
+    "name": "measurement-trusts-future-proof",
+    "old": "if not 0 <= block <= head:",
+    "new": "if block < 0:",
+    "file": "scripts/measure_surf_rpc_budget.py",
+    "expect": [
+      "tests/data/test_surf_rpc_budget_measure.py::test_synthetic_header_never_proves_a_future_block"
+    ]
+  }
+]

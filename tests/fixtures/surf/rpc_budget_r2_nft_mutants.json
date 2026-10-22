@@ -1,0 +1,56 @@
+[
+  {
+    "name": "nft redundant proven deployment work",
+    "file": "maxpane_dashboard/data/surf_nft_manager.py",
+    "old": "return (identity not in _DISCOVERY_PARENTS",
+    "new": "return (False and identity not in _DISCOVERY_PARENTS",
+    "expect": [
+      "tests/data/test_surf_rpc_budget_r2_nft.py::test_retained_complete_proof_survives_cache_and_revision_refresh_keeps_detail_clock"
+    ]
+  },
+  {
+    "name": "nft serial getter regression",
+    "file": "maxpane_dashboard/data/surf_nft_chain.py",
+    "old": "batching = isinstance(needed, _ReadBatchNeeded) and callable(batch) and chain != 4663",
+    "new": "batching = False",
+    "expect": [
+      "tests/data/test_surf_rpc_budget_r2_nft.py::test_independent_getters_batch_at_one_block_and_reduce_physical_posts"
+    ]
+  },
+  {
+    "name": "nft one field poisons whole batch",
+    "file": "maxpane_dashboard/data/surf_nft_client.py",
+    "old": "if not return_exceptions:\n                            raise error",
+    "new": "if True:\n                            raise error",
+    "expect": [
+      "tests/data/test_surf_rpc_budget_r2_nft.py::test_batch_field_revert_keeps_other_getters_and_progress_resumes_without_duplicates"
+    ]
+  },
+  {
+    "name": "nft host admission bypass",
+    "file": "maxpane_dashboard/data/surf_nft_client.py",
+    "old": "await self._transport.acquire(url)",
+    "new": "pass  # mutant skips shared admission",
+    "expect": [
+      "tests/data/test_surf_rpc_budget_r2_nft.py::test_nft_transport_shares_host_pacing_and_cooldown_without_spending_skipped_budget"
+    ]
+  },
+  {
+    "name": "nft duplicate refresh head",
+    "file": "maxpane_dashboard/data/surf_nft_client.py",
+    "old": "return await self._transport.head(chain_id, read)",
+    "new": "return await read()",
+    "expect": [
+      "tests/data/test_surf_rpc_budget_r2_nft.py::test_nft_head_shares_parent_refresh_and_next_refresh_reads_again"
+    ]
+  },
+  {
+    "name": "nft lagging log host accepted",
+    "file": "maxpane_dashboard/data/surf_nft_client.py",
+    "old": "if not await self._transport.prove_block(",
+    "new": "if False and not await self._transport.prove_block(",
+    "expect": [
+      "tests/data/test_surf_rpc_budget_r2_nft.py::test_nft_logs_reject_lagging_host_and_budget_every_exact_header"
+    ]
+  }
+]

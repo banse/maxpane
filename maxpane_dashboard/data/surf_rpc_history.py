@@ -43,8 +43,10 @@ class RpcHistoryReader:
     def __init__(self, post_rpc: Callable[[str, Any], Awaitable[httpx.Response]], *,
                  min_page: int = 300, max_shrinks: int = 3,
                  max_pending: int = 16, max_rows: int = 200_000,
-                 max_pages: int = 256) -> None:
+                 max_pages: int = 256,
+                 prove_block: Callable[[str, int], Awaitable[bool]] | None = None) -> None:
         self._post = post_rpc
+        self._prove_block = prove_block
         self._min_page = min_page
         self._max_shrinks = max_shrinks
         self._max_pending = max_pending
@@ -58,6 +60,20 @@ class RpcHistoryReader:
         for key in list(self._pending):
             if group is None or key[1] == group:
                 del self._pending[key]
+
+    def rewind(self, group: str, first_block: int) -> None:
+        """Discard only a pending reorg-sensitive suffix, never claim it read."""
+        for key, progress in list(self._pending.items()):
+            if key[1] != group or progress.next_block <= first_block:
+                continue
+            cutoff = max(key[3], first_block)
+            try:
+                rows = [row for row in progress.rows
+                        if int(row['blockNumber'], 16) < cutoff]
+            except (KeyError, TypeError, ValueError):
+                del self._pending[key]
+                continue
+            self._pending[key] = _Progress(cutoff, rows)
 
     async def read(self, endpoints: Sequence[str], base_filter: dict,
                    from_block: int, to_block: int, *, group: str,
@@ -128,6 +144,9 @@ class RpcHistoryReader:
                 self._request_id += 1
                 payload = jsonrpc_payload(self._request_id, 'eth_getLogs', [flt])
                 try:
+                    if self._prove_block is not None and not await self._prove_block(url, to_block):
+                        exhausted.add(url)
+                        continue
                     response = await self._post(url, payload)
                     try:
                         body = response.json()

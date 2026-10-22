@@ -8,7 +8,7 @@ import pytest
 
 from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data.surf_pool4_client import Pool4Client
-from tests.data.test_surf_pool4_client import answers_by_calldata, load, replay_handler
+from tests.data.test_surf_pool4_client import answers_by_calldata, load, replay_handler, target_header_response
 
 MULTICALL = '0xca11bde05977b3631167028862be2a173976ca11'
 GET_BLOCK = '0x42cbb15c'
@@ -174,6 +174,8 @@ async def test_pool4_pager_resumes_the_first_unread_page_without_replaying_prefi
     seen, failing = [], True
     def handler(request):
         payload = json.loads(request.content)
+        if header := target_header_response(payload):
+            return header
         flt = payload['params'][0]
         lo, hi = int(flt['fromBlock'], 16), int(flt['toBlock'], 16)
         seen.append((lo, hi))

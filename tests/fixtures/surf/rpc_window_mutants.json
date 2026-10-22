@@ -1,0 +1,56 @@
+[
+  {
+    "name": "window-skip-reorg-tail",
+    "file": "maxpane_dashboard/data/surf_rpc_window.py",
+    "old": "start = max(from_block, prior.end - self.replay_blocks + 1)",
+    "new": "start = max(from_block, prior.end + 1)",
+    "expect": [
+      "tests/data/test_surf_rpc_window.py::test_reorg_replaces_old_tail_including_removed_logs_without_duplicates"
+    ]
+  },
+  {
+    "name": "window-keep-cancelled-fork-prefix",
+    "file": "maxpane_dashboard/data/surf_rpc_window.py",
+    "old": "self._history.rewind(pending_group, self._attempts[key] - self.replay_blocks + 1)",
+    "new": "pass",
+    "expect": [
+      "tests/data/test_surf_rpc_window.py::test_pending_tail_replays_reorg_after_cancellation"
+    ]
+  },
+  {
+    "name": "history-accept-unproven-host-head",
+    "file": "maxpane_dashboard/data/surf_rpc_history.py",
+    "old": "if self._prove_block is not None and not await self._prove_block(url, to_block):",
+    "new": "if False:",
+    "expect": [
+      "tests/data/test_surf_rpc_window.py::test_history_proves_global_upper_bound_before_accepting_any_page"
+    ]
+  },
+  {
+    "name": "launchpad-trust-unreplayable-disk-cursor",
+    "file": "maxpane_dashboard/data/surf_client.py",
+    "old": "prior = (self._launchpad_finalized if supplied is not None\n                 and supplied['last_block'] == self._launchpad_published_head\n                 and not self._launchpad_rebuild else None)",
+    "new": "prior = supplied",
+    "expect": [
+      "tests/data/test_surf_rpc_round2.py::test_restart_rebuilds_lifetime_history_without_trusting_unreplayable_cursor"
+    ]
+  },
+  {
+    "name": "launchpad-finalize-revisable-tail-twice",
+    "file": "maxpane_dashboard/data/surf_client.py",
+    "old": "if block <= cutoff:\n                    finalized_swaps[pool_id]",
+    "new": "if True:\n                    finalized_swaps[pool_id]",
+    "expect": [
+      "tests/data/test_surf_rpc_round2.py::test_launchpad_reorg_rebuilds_lifetime_counters_from_pre_tail_snapshot"
+    ]
+  },
+  {
+    "name": "window-retain-expired-history",
+    "file": "maxpane_dashboard/data/surf_rpc_window.py",
+    "old": "rows = self._merge(prefix + fresh, from_block, to_block)",
+    "new": "rows = self._merge((prior.rows if prior else []) + fresh, 0, to_block)",
+    "expect": [
+      "tests/data/test_surf_rpc_window.py::test_window_reads_only_new_blocks_plus_twelve_replay_and_prunes_expired_rows"
+    ]
+  }
+]

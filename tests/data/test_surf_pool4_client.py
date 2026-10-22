@@ -316,12 +316,27 @@ def replay_handler(
     return handler
 
 
+def target_header_response(payload: dict) -> httpx.Response | None:
+    """Synthetic log fixtures explicitly model a host at the requested head.
+
+    Actual lagging/mismatched target headers are exercised without this helper
+    in test_surf_pool4_rpc_round2. This does not bypass the production proof.
+    """
+    if payload.get('method') == 'eth_getBlockByNumber':
+        assert payload['params'][1] is False
+        return httpx.Response(200, json={'jsonrpc': '2.0', 'id': payload['id'],
+                                      'result': {'number': payload['params'][0]}})
+    return None
+
+
 def log_handler(fixture: str) -> Callable[[httpx.Request], httpx.Response]:
     """Serve one captured ``eth_getLogs`` window for any range asked."""
     result = load(fixture)["response"]["result"]
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if header := target_header_response(payload):
+            return header
         return httpx.Response(
             200, json={"jsonrpc": "2.0", "id": payload.get("id"), "result": result}
         )
@@ -1304,6 +1319,8 @@ def flow_and_swap_handler(
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if header := target_header_response(payload):
+            return header
         flt = payload["params"][0]
         result = swaps if str(flt["address"]).lower() == POOL_MANAGER.lower() else hook_logs
         return httpx.Response(
@@ -1381,7 +1398,8 @@ async def test_the_swap_read_asks_the_pool_manager_for_one_pools_swaps():
     assert len(swaps) == load("flow_swaps_full")["log_count"] == 32
     assert len(hook_logs) == 90
 
-    filters = [(u, p["params"][0]) for (u, _m, p) in transport.requests]
+    filters = [(u, p["params"][0]) for (u, _m, p) in transport.requests
+               if p["method"] == "eth_getLogs"]
     assert all(u in client.log_endpoints(SEPOLIA) for u, _f in filters)
     swap_filters = [f for _u, f in filters if f["address"] == POOL_MANAGER]
     hook_filters = [f for _u, f in filters if f["address"] == HOOK]
@@ -1402,7 +1420,7 @@ async def test_flow_events_survive_a_fee_on_a_liquidity_operation():
         pool_manager=POOL_MANAGER, pool_id=POOL_ID)
     assert rows is not None and len(rows) == 5
     swap_filters = [p["params"][0] for (_u, _m, p) in transport.requests
-                    if p["params"][0]["address"] == POOL_MANAGER]
+                    if p["method"] == "eth_getLogs" and p["params"][0]["address"] == POOL_MANAGER]
     assert swap_filters and all(
         f["topics"] == SWAP_FILTER_TOPICS for f in swap_filters)
 
@@ -1414,6 +1432,8 @@ async def test_the_swap_read_pages_on_the_hook_reads_halving_ladder():
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if header := target_header_response(payload):
+            return header
         flt = payload["params"][0]
         assert flt["topics"] == SWAP_FILTER_TOPICS
         span = int(flt["toBlock"], 16) - int(flt["fromBlock"], 16) + 1
@@ -2532,6 +2552,8 @@ class _SuggestingProvider:
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if header := target_header_response(payload):
+            return header
         flt = payload["params"][0]
         self.asked.append((int(flt["fromBlock"], 16), int(flt["toBlock"], 16)))
         self.suggested -= 1
@@ -2573,6 +2595,8 @@ async def test_the_window_halves_and_then_succeeds():
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if header := target_header_response(payload):
+            return header
         flt = payload["params"][0]
         lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
         span = hi - lo + 1
@@ -2607,6 +2631,8 @@ async def test_the_shrink_ladder_stops_at_the_floor():
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if header := target_header_response(payload):
+            return header
         flt = payload["params"][0]
         asked.append(int(flt["toBlock"], 16) - int(flt["fromBlock"], 16) + 1)
         return httpx.Response(200, json={
@@ -2708,6 +2734,8 @@ def _two_endpoint_log_transport(first, second):
 def _rate_limited(request: httpx.Request) -> httpx.Response:
     """Tenderly's measured burst refusal: HTTP 429 carrying a JSON-RPC error."""
     payload = json.loads(request.content)
+    if header := target_header_response(payload):
+        return header
     return httpx.Response(429, json={
         "jsonrpc": "2.0", "id": payload.get("id"),
         "error": {"code": -32005, "message": "rate limit exceeded"},
@@ -2717,6 +2745,8 @@ def _rate_limited(request: httpx.Request) -> httpx.Response:
 def _canned_range_complaint(request: httpx.Request) -> httpx.Response:
     """drpc, verbatim: the same sentence whatever span it is handed."""
     payload = json.loads(request.content)
+    if header := target_header_response(payload):
+        return header
     return httpx.Response(400, json={
         "jsonrpc": "2.0", "id": payload.get("id"),
         "error": dict(_range_probe("drpc", 300)["response"]["error"]),
@@ -2761,7 +2791,7 @@ async def test_a_complaint_that_cannot_be_about_this_request_rotates_to_the_next
     client = _client_on(transport)
 
     logs = await client.fetch_flow_logs(
-        HOOK, 11_000_000, 11_002_399, network=MAINNET)
+        HOOK, 11_609_000, 11_611_399, network=MAINNET)
     assert logs is not None, "rotated nowhere; halved to the floor instead"
     assert len(logs) == load("flow_logs_full")["log_count"]
 
@@ -2785,6 +2815,8 @@ async def test_a_genuine_cap_is_reached_by_halving_rather_than_returning_none():
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if header := target_header_response(payload):
+            return header
         flt = payload["params"][0]
         lo, hi = int(flt["fromBlock"], 16), int(flt["toBlock"], 16)
         if hi - lo + 1 > cap:

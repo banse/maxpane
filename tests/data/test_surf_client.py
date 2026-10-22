@@ -139,6 +139,13 @@ def _rpc_ok(payload: dict, result: Any) -> dict:
     return {"jsonrpc": "2.0", "id": payload.get("id"), "result": result}
 
 
+def _target_header(payload, head):
+    """Explicit deterministic fixture header only for blocks served by its head."""
+    number = int(payload['params'][0], 16)
+    result = {'number': hex(number), 'hash': '0x' + format(number, '064x')} if number <= head else None
+    return httpx.Response(200, json=_rpc_ok(payload, result))
+
+
 # ---------------------------------------------------------------------------
 # WP1.1 — configuration and classification
 # ---------------------------------------------------------------------------
@@ -446,7 +453,10 @@ def _nonce_handler(
 
     def handler(request: httpx.Request) -> httpx.Response:
         batch = json.loads(request.content)
-        assert isinstance(batch, list), "fetch_nonces must POST one batch array"
+        if isinstance(batch, dict):
+            assert batch['method'] == 'eth_blockNumber'
+            return httpx.Response(200, json=_rpc_ok(batch, block))
+        assert isinstance(batch, list), "nonce entries must use one batch array"
         out = []
         for entry in batch:
             if entry["method"] == "eth_blockNumber":
@@ -488,7 +498,7 @@ async def test_fetch_nonces_one_batched_post_real_values():
     # the SAME batch array, so it can never describe a different block from the
     # counts beside it.
     assert nonces.block_number == HEAD_BLOCK
-    assert len(transport.requests) == 1  # ONE round trip for the fast tier
+    assert len(transport.requests) == 2  # nonce batch + refresh-shared head
 
 
 @pytest.mark.asyncio
@@ -502,6 +512,9 @@ async def test_fetch_nonces_pairs_by_id_when_responses_arrive_shuffled():
     """
     def handler(request: httpx.Request) -> httpx.Response:
         batch = json.loads(request.content)
+        if isinstance(batch, dict):
+            assert batch['method'] == 'eth_blockNumber'
+            return httpx.Response(200, json=_rpc_ok(batch, HEAD_BLOCK_HEX))
         assert isinstance(batch, list)
         out = []
         for entry in batch:
@@ -515,7 +528,7 @@ async def test_fetch_nonces_pairs_by_id_when_responses_arrive_shuffled():
         # Same ids, SHUFFLED array positions — legal JSON-RPC batch behaviour
         # (nothing requires a server to answer in request order) and exactly
         # the case a position-based pairing bug would get wrong.
-        shuffled = [out[2], out[0], out[3], out[1]]
+        shuffled = [out[2], out[0], out[1]]
         assert {e["id"] for e in shuffled} == {e["id"] for e in out}
         return httpx.Response(200, json=shuffled)
 
@@ -532,6 +545,9 @@ async def test_fetch_nonces_pairs_by_id_when_responses_arrive_shuffled():
 async def test_fetch_nonces_partial_batch_error_is_field_none_never_zero():
     def handler(request: httpx.Request) -> httpx.Response:
         batch = json.loads(request.content)
+        if isinstance(batch, dict):
+            assert batch['method'] == 'eth_blockNumber'
+            return httpx.Response(200, json=_rpc_ok(batch, HEAD_BLOCK_HEX))
         out = []
         for entry in batch:
             if entry["method"] == "eth_blockNumber":
@@ -2202,6 +2218,8 @@ def _logs_handler(
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if payload["method"] == "eth_getBlockByNumber":
+            return _target_header(payload, LOG_HEAD_BLOCK)
         if payload["method"] == "eth_blockNumber":
             return httpx.Response(200, json=_rpc_ok(payload, hex(LOG_HEAD_BLOCK)))
         assert payload["method"] == "eth_getLogs", payload["method"]
@@ -2222,6 +2240,7 @@ def _logs_handler(
         rows = [
             log for log in logs_by_topic0.get(topic0, [])
             if _topics_match(log["topics"], flt["topics"])
+            and int(flt["fromBlock"],16) <= int(log["blockNumber"],16) <= int(flt["toBlock"],16)
         ]
         return httpx.Response(200, json=_rpc_ok(payload, rows))
 
@@ -2254,7 +2273,7 @@ def _standard_logs() -> dict[str, list[dict]]:
             # by the IDMD pre-filter.
             _fake_log(A.TOPIC_SEAPORT_ORDER_FULFILLED, surf_client._SEAPORT,
                       topics=["0x" + "44" * 32, "0x" + "55" * 32],
-                      data="0x" + "ee" * 96),
+                      tx="0x" + "cd" * 32, data="0x" + "ee" * 96),
         ],
     }
 
@@ -2298,7 +2317,7 @@ async def test_fetch_recent_logs_filters_and_pools():
     # calls or one per position — assert both positions were queried).
     init_calls = [p for p in getlogs
                   if p["params"][0]["topics"][0] == A.TOPIC_V4_INITIALIZE]
-    assert len(init_calls) == 2
+    assert len(init_calls) == 3  # empty currency1 needs independent confirmation
     positions = set()
     for p in init_calls:
         topics = p["params"][0]["topics"]
@@ -2309,14 +2328,14 @@ async def test_fetch_recent_logs_filters_and_pools():
 
 
 @pytest.mark.asyncio
-async def test_fetch_recent_logs_halves_window_never_follows_suggestion():
+async def test_fetch_recent_logs_rotates_before_shrinking_and_keeps_full_window():
     handler = _logs_handler(_standard_logs(), range_errors_before_success=1)
     async with _client_on(RecordingTransport(handler)) as client:
         window = await client.fetch_recent_logs()
     assert window is not None
     seen = handler.state["windows_seen"]
     assert seen[0] == surf_client.LOG_WINDOW_BLOCKS
-    assert seen[1] == surf_client.LOG_WINDOW_BLOCKS // 2  # halved…
+    assert seen[1] == surf_client.LOG_WINDOW_BLOCKS  # capable alternate keeps full width
     assert 1 not in seen  # …and the endpoint's 1-block suggestion was IGNORED
 
 
@@ -2350,6 +2369,8 @@ def _logs_handler_single_group_dies(
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if payload["method"] == "eth_getBlockByNumber":
+            return _target_header(payload, LOG_HEAD_BLOCK)
         if payload["method"] == "eth_blockNumber":
             return httpx.Response(200, json=_rpc_ok(payload, hex(LOG_HEAD_BLOCK)))
         assert payload["method"] == "eth_getLogs", payload["method"]
@@ -2367,6 +2388,7 @@ def _logs_handler_single_group_dies(
         rows = [
             log for log in logs_by_topic0.get(topic0, [])
             if _topics_match(log["topics"], flt["topics"])
+            and int(flt["fromBlock"],16) <= int(log["blockNumber"],16) <= int(flt["toBlock"],16)
         ]
         return httpx.Response(200, json=_rpc_ok(payload, rows))
 
@@ -3009,6 +3031,8 @@ def _client_with_canned_calls(
     """
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if payload["method"] == "eth_getBlockByNumber":
+            return _target_header(payload, head_block)
         if payload["method"] == "eth_blockNumber":
             return httpx.Response(200, json=_rpc_ok(payload, hex(head_block)))
         if payload["method"] == "eth_getLogs":
@@ -3044,6 +3068,8 @@ def _client_with_canned_logs(
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if payload["method"] == "eth_getBlockByNumber":
+            return _target_header(payload, head_block)
         if payload["method"] == "eth_blockNumber":
             return httpx.Response(200, json=_rpc_ok(payload, hex(head_block)))
         assert payload["method"] == "eth_getLogs", payload["method"]
@@ -3099,6 +3125,8 @@ def _launchpad_fixture_handler(
             assert all(p['method'] == 'eth_getBlockByNumber' for p in payload)
             return httpx.Response(200, json=[_rpc_ok(p, headers.get(str(int(p['params'][0], 16)))) for p in payload])
         method = payload["method"]
+        if method == "eth_getBlockByNumber":
+            return _target_header(payload, logs_data['head_block'])
         if method == "eth_blockNumber":
             return httpx.Response(
                 200, json=_rpc_ok(payload, hex(logs_data["head_block"]))
@@ -3426,6 +3454,8 @@ async def test_fetch_decoy_pool_count_filters_currency1_equals_imd() -> None:
 
     def _handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if payload["method"] == "eth_getBlockByNumber":
+            return _target_header(payload, 26_100_000)
         if payload["method"] == "eth_blockNumber":
             return httpx.Response(200, json=_rpc_ok(payload, hex(26_100_000)))
         assert payload["method"] == "eth_getLogs"
@@ -3705,6 +3735,8 @@ def _client_recording_getlogs(
 
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if payload["method"] == "eth_getBlockByNumber":
+            return _target_header(payload, head_block)
         if payload["method"] == "eth_blockNumber":
             return httpx.Response(200, json=_rpc_ok(payload, hex(head_block)))
         if payload["method"] == "eth_getLogs":
@@ -3737,6 +3769,8 @@ def _client_whose_getlogs_fails(
     """
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if payload["method"] == "eth_getBlockByNumber":
+            return _target_header(payload, head_block)
         if payload["method"] == "eth_blockNumber":
             return httpx.Response(200, json=_rpc_ok(payload, hex(head_block)))
         if payload["method"] == "eth_getLogs":
@@ -3863,55 +3897,29 @@ async def test_a_cold_sweep_starts_at_the_launchpads_first_block() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_warm_sweep_starts_one_block_after_the_cursor() -> None:
-    """Strictly greater than, so a re-swept boundary block cannot double-count."""
+async def test_a_warm_sweep_replays_twelve_blocks_after_its_finalized_snapshot() -> None:
     client, calls = _client_recording_getlogs()
     async with client:
-        await client.fetch_launchpad(
-            resume=_cursor(25_800_000)
-        )
+        first = await client.fetch_launchpad()
+        calls.clear()
+        await client.fetch_launchpad(resume=first.cursor)
     launched = _launched_filters(calls)
-    assert launched, "no Launched sweep was issued"
-    assert min(int(c["fromBlock"], 16) for c in launched) == 25_800_001
+    assert launched
+    assert min(int(c['fromBlock'], 16) for c in launched) == FIXTURE_HEAD_BLOCK - 11
 
 
 @pytest.mark.asyncio
-async def test_the_swap_sweep_never_starts_later_than_the_day_it_has_to_serve() -> None:
-    """`swaps_24h` / `swaps_by_coin` / `change_24h_pct` are WINDOWED, and a
-    window cannot be accumulated forward the way a lifetime total can --
-    yesterday's swap has to leave the day. So CurveSwap is read from
-    `min(cursor + 1, head - LAUNCHPAD_DAY_BLOCKS)` even when the cursor is
-    minutes old, while `Launched` (append-only, merged into the cursor) stays
-    purely incremental. A sweep that took the cursor literally for both would
-    report a 10-minute slice under a 24-hour label.
-    """
+async def test_restart_cursor_rebuilds_the_complete_day_and_lifetime_history() -> None:
     client, calls = _client_recording_getlogs()
     async with client:
-        await client.fetch_launchpad(
-            resume=_cursor(25_819_000)
-        )
-    day_floor = FIXTURE_HEAD_BLOCK - surf_client.LAUNCHPAD_DAY_BLOCKS
-    assert min(int(c["fromBlock"], 16) for c in _launched_filters(calls)) == 25_819_001
-    assert min(int(c["fromBlock"], 16) for c in _swap_filters(calls)) == day_floor
+        await client.fetch_launchpad(resume=_cursor(25_819_000))
+    assert min(int(c['fromBlock'], 16) for c in _launched_filters(calls)) == A.LAUNCHPAD_FIRST_BLOCK
+    assert min(int(c['fromBlock'], 16) for c in _swap_filters(calls)) == A.LAUNCHPAD_FIRST_BLOCK
 
 
 @pytest.mark.asyncio
 async def test_resuming_does_not_double_count_a_launch_or_a_swap_on_the_boundary() -> None:
-    """The fixture replays the cursor's own boundary block: one `Launched`
-    and one `CurveSwap` at exactly `last_block`, plus two swaps above it.
-
-    Both halves matter and they fail differently. The launch re-merges by
-    `pool_id`, so a re-seen launch OVERWRITES and `launch_count` stays 1
-    whether or not the `+ 1` is there -- that assertion alone cannot catch an
-    off-by-one. The swap is what catches it: `swaps_all` is a persisted
-    accumulator, so a boundary block counted twice inflates it permanently
-    and no later sweep can tell.
-
-    The day slice is the deliberate exception: it re-reads the boundary swap
-    because that swap is still inside the day, and reading it there costs
-    nothing (it is not accumulated). 3 swaps in the day, 2 added to the
-    lifetime total.
-    """
+    """Unproven persisted counts rebuild; repeated canonical reads count once."""
     pool = "0x" + "aa" * 32
     resume = _cursor(
         25_790_000,
@@ -3921,13 +3929,15 @@ async def test_resuming_does_not_double_count_a_launch_or_a_swap_on_the_boundary
     )
     async with _client_serving("cursor_resume.json", check_population=False) as client:
         state = await client.fetch_launchpad(resume=resume)
+        repeated = await client.fetch_launchpad(resume=state.cursor)
+        assert repeated.cursor == state.cursor
 
     assert state.launch_count == 1               # the same launch, not two
-    assert state.cursor["swaps_all"][pool] == 5 + 2   # only the 2 new swaps
-    assert state.swap_count == 7
+    assert state.cursor["swaps_all"][pool] == 3   # rebuild all actual rows, ignore unproven five
+    assert state.swap_count == 3
     assert state.swaps_by_coin[pool] == 3        # the day re-reads the boundary
     assert state.coins[0].swaps_24h == 3
-    assert state.coins[0].swaps_all == 7
+    assert state.coins[0].swaps_all == 3
 
 
 @pytest.mark.asyncio
@@ -4054,18 +4064,11 @@ async def test_an_unusable_persisted_cursor_degrades_to_a_cold_sweep() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_cursor_never_moves_backwards() -> None:
-    """`swaps_all` and the trader set are accumulators, so a cursor that
-    retreated would re-count every block it gave back. A head BELOW the
-    stored `last_block` (a lagging endpoint, a reorg) therefore leaves
-    `last_block` where it was rather than adopting the smaller number.
-    """
+async def test_restart_cursor_does_not_pin_a_height_ahead_of_the_chain() -> None:
     client, _calls = _client_recording_getlogs(head_block=25_800_000)
     async with client:
-        state = await client.fetch_launchpad(
-            resume=_cursor(25_805_000)
-        )
-    assert state.cursor["last_block"] == 25_805_000
+        state = await client.fetch_launchpad(resume=_cursor(25_805_000))
+    assert state.cursor['last_block'] == 25_800_000
 
 
 @pytest.mark.asyncio
@@ -4129,6 +4132,8 @@ def _client_with_one_failing_sweep(
     """
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        if payload["method"] == "eth_getBlockByNumber":
+            return _target_header(payload, head_block)
         if payload["method"] == "eth_blockNumber":
             return httpx.Response(200, json=_rpc_ok(payload, hex(head_block)))
         if payload["method"] == "eth_getLogs":
@@ -4370,9 +4375,9 @@ async def test_a_hand_edited_cursor_cannot_crash_or_inflate_the_sweep() -> None:
         "a cursor with no `traders` key at all is as corrupt as a mistyped "
         "one -- `last_block` would survive either way"
     )
-    assert from_list.trader_count == warm.trader_count + 2
+    assert from_list.trader_count == warm.trader_count  # unproven identities are rebuilt
     # A duplicate that differs only in case is one trader, not two.
-    assert cased.trader_count == warm.trader_count + 1
+    assert cased.trader_count == warm.trader_count
 
 
 @pytest.mark.asyncio
@@ -4458,41 +4463,15 @@ async def test_a_cursor_far_ahead_of_the_chain_recovers_instead_of_sticking() ->
 
 
 @pytest.mark.asyncio
-async def test_a_cursor_a_little_ahead_still_resumes() -> None:
-    """The other half of the same rule, and the reason the tolerance is a day
-    rather than zero.
-
-    An endpoint answering a few blocks behind the one that wrote the cursor
-    is ordinary, not corruption, and rejecting it would turn every such tick
-    into a full cold sweep of the whole launchpad history. Anything inside
-    `LAUNCHPAD_DAY_BLOCKS` of the head still resumes -- and `max()` still
-    keeps the higher number, which is the double-count guard the paragraph
-    above must not undo.
-
-    Swept from both sides of the boundary so the constant itself is pinned:
-    one block under the day still resumes, one block over it does not.
-    """
+async def test_any_restart_cursor_ahead_of_chain_rebuilds_without_freezing() -> None:
     head = 25_800_000
-    day = surf_client.LAUNCHPAD_DAY_BLOCKS
-
-    client, calls = _client_recording_getlogs(head_block=head)
-    async with client:
-        state = await client.fetch_launchpad(resume=_cursor(head + day - 1))
-    assert state.cursor["last_block"] == head + day - 1
-    # It resumed: the `Launched` sweep never reaches back to the launchpad's
-    # first block. (It does not start at `last_block + 1` either -- the paged
-    # reader clamps a from-block past the tip to the head, which is the
-    # degenerate range a cursor slightly ahead of a lagging endpoint asks
-    # for, and is exactly what makes this case harmless.)
-    assert (min(int(c["fromBlock"], 16) for c in _launched_filters(calls))
-            > A.LAUNCHPAD_FIRST_BLOCK)
-
-    client, calls = _client_recording_getlogs(head_block=head)
-    async with client:
-        state = await client.fetch_launchpad(resume=_cursor(head + day + 1))
-    assert state.cursor["last_block"] == head
-    assert (min(int(c["fromBlock"], 16) for c in _launched_filters(calls))
-            == A.LAUNCHPAD_FIRST_BLOCK)
+    for ahead in (head + surf_client.LAUNCHPAD_DAY_BLOCKS - 1,
+                  head + surf_client.LAUNCHPAD_DAY_BLOCKS + 1):
+        client, calls = _client_recording_getlogs(head_block=head)
+        async with client:
+            state = await client.fetch_launchpad(resume=_cursor(ahead))
+        assert state.cursor['last_block'] == head
+        assert min(int(c['fromBlock'],16) for c in _launched_filters(calls)) == A.LAUNCHPAD_FIRST_BLOCK
 
 
 @pytest.mark.asyncio
@@ -4552,7 +4531,8 @@ async def test_an_attacker_chosen_name_cannot_grow_the_persisted_cursor() -> Non
                              "creator": "0x" + "9" * 9_000, "block": head - 100}},
         ))
     rec2 = second.cursor["launches"][pool]
-    assert len(rec2["name"]) == len(rec2["ticker"]) == len(rec2["creator"]) == cap
+    assert len(rec2["name"]) == len(rec2["ticker"]) == cap
+    assert rec2["creator"] == A.DEV_WALLET.lower()  # rebuilt from canonical event
 
 
 @pytest.mark.asyncio
@@ -5370,6 +5350,8 @@ def _client_serving_the_real_burns(
                 out.append({"jsonrpc": "2.0", "id": call["id"],
                             "result": senders.get(tx) if attribute else None})
             return httpx.Response(200, json=out)
+        if body["method"] == "eth_getBlockByNumber":
+            return _target_header(body, head_block)
         if body["method"] == "eth_blockNumber":
             return httpx.Response(200, json=_rpc_ok(body, hex(head_block)))
         if body["method"] == "eth_getLogs":

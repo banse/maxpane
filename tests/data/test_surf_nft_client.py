@@ -326,12 +326,15 @@ async def test_optional_source_timeout_allows_resumed_and_fresh_chain_observatio
             sources.append(str(request.url))
             raise TimeoutError('injected optional source deadline')
         body = json.loads(request.content)
-        response = {'jsonrpc': '2.0', 'id': body['id']}
-        try:
-            response['result'] = rpc(1, body['method'], body['params'])
-        except RuntimeError as error:
-            response['error'] = {'code': -32000, 'message': str(error)}
-        return httpx.Response(200, json=response)
+        responses = []
+        for item in body if isinstance(body, list) else [body]:
+            response = {'jsonrpc': '2.0', 'id': item['id']}
+            try:
+                response['result'] = rpc(1, item['method'], item['params'])
+            except RuntimeError as error:
+                response['error'] = {'code': -32000, 'message': str(error)}
+            responses.append(response)
+        return httpx.Response(200, json=responses if isinstance(body, list) else responses[0])
     c = client(handler)
     inspector = SurfNftInspector(c, clock=lambda: now[0])
     candidate = {'chainId': 1, 'address': ADDRESS, 'artifact': {'txHash': TX}}

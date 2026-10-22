@@ -1,0 +1,65 @@
+[
+  {
+    "name": "r2-do-not-share-host-admission",
+    "file": "maxpane_dashboard/data/surf_transport.py",
+    "old": "state = self.hosts.setdefault(host, _Host())",
+    "new": "state = _Host()",
+    "expect": [
+      "tests/data/test_surf_transport.py::test_parallel_clients_share_host_admission"
+    ]
+  },
+  {
+    "name": "r2-ignore-retry-after",
+    "file": "maxpane_dashboard/data/surf_transport.py",
+    "old": "seconds = float(retry)",
+    "new": "seconds = 60.",
+    "expect": [
+      "tests/data/test_surf_transport.py::test_429_cools_all_clients_but_not_alternatives[7-7]"
+    ]
+  },
+  {
+    "name": "r2-forget-host-cooldown",
+    "file": "maxpane_dashboard/data/surf_transport.py",
+    "old": "if response.status_code != 429:",
+    "new": "if True:",
+    "expect": [
+      "tests/data/test_surf_transport.py::test_real_surf_and_launch_clients_share_429_without_retry_wait"
+    ]
+  },
+  {
+    "name": "r2-client-local-head",
+    "file": "maxpane_dashboard/data/surf_transport.py",
+    "old": "key = ('head', chain)",
+    "new": "key = ('head', chain, id(self))",
+    "expect": [
+      "tests/data/test_surf_transport.py::test_head_singleflight_is_per_chain_and_per_explicit_refresh"
+    ]
+  },
+  {
+    "name": "r2-stale-head-next-refresh",
+    "file": "maxpane_dashboard/data/surf_transport.py",
+    "old": "_cycle.reset(token)",
+    "new": "pass",
+    "expect": [
+      "tests/data/test_surf_transport.py::test_head_singleflight_is_per_chain_and_per_explicit_refresh"
+    ]
+  },
+  {
+    "name": "r2-add-orphan-counter-again",
+    "file": "maxpane_dashboard/data/surf_counter_history.py",
+    "old": "P.accumulate_counters(checkpoint, logs, start, head)",
+    "new": "P.accumulate_counters(prior, logs, start, head)",
+    "expect": [
+      "tests/data/test_surf_counter_replay.py::test_reorg_removes_old_counter_contribution_and_survives_cache_reload"
+    ]
+  },
+  {
+    "name": "r2-drop-durable-counter-checkpoint",
+    "file": "maxpane_dashboard/data/surf_cache.py",
+    "old": "rollback = raw.get('_rollback')",
+    "new": "rollback = None",
+    "expect": [
+      "tests/data/test_surf_counter_replay.py::test_reorg_removes_old_counter_contribution_and_survives_cache_reload"
+    ]
+  }
+]

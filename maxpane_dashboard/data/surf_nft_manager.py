@@ -12,12 +12,13 @@ from maxpane_dashboard.analytics.surf_nft import normalize_record, project_snaps
 from maxpane_dashboard.data.surf_nft_cache import SurfNftCache, _stamp
 from maxpane_dashboard.data.surf_nft_client import Budget, BudgetExhausted, SurfNftClient
 from maxpane_dashboard.data.surf_nft_discovery import SurfNftDiscovery, discovery_candidates
-from maxpane_dashboard.data.surf_nft_chain import SurfNftInspector
+from maxpane_dashboard.data.surf_nft_chain import SurfNftInspector, inspection_revision
 from maxpane_dashboard.data.surf_nft_rules.catalog import NFT_WORDS, project_catalog
 from maxpane_dashboard.data.surf_nft_rules.children import FACTORIES
 from maxpane_dashboard.data.surf_nft_rules.references import SEASONS
 from maxpane_dashboard.data.surf_nft_rules.rules import RULES
 from maxpane_dashboard.data.surf_nft_readme import repository_reference
+from maxpane_dashboard.data.surf_transport import read_cycle
 
 log = logging.getLogger(__name__)
 _DISCOVERY_PARENTS = {f"{item['chainId']}:{item['factory']}" for item in FACTORIES} | {f"4663:{SEASONS['hook']}"}
@@ -34,11 +35,11 @@ class SurfNftManager:
     README_DEADLINE = 6
 
     def __init__(self, *, swarm, client=None, cache=None, cache_path=None,
-                 clock=time.time, monotonic=time.monotonic):
+                 clock=time.time, monotonic=time.monotonic, transport=None):
         self.swarm = swarm
         self._clock, self._monotonic = clock, monotonic
         self._owns_client = client is None
-        self.client = client if client is not None else SurfNftClient(clock=clock, monotonic=monotonic)
+        self.client = client if client is not None else SurfNftClient(clock=clock, monotonic=monotonic, transport=transport)
         self.cache = cache if cache is not None else SurfNftCache(path=cache_path, clock=clock)
         self.state = self.cache.load()
         self.discovery = SurfNftDiscovery(client=self.client, swarm=swarm, clock=clock, monotonic=monotonic)
@@ -256,9 +257,28 @@ class SurfNftManager:
         number = launch.get('launchNumber')
         return not relevant, -(number if type(number) is int else 0)
 
-    def _pending(self, candidates):
+    def _proof_current(self, identity, candidate):
+        evidence = self.state.get('evidence', {}).get(identity, {})
+        return (identity not in _DISCOVERY_PARENTS
+                and evidence.get('deploymentConfirmed') is True
+                and evidence.get('codePresent') is True and evidence.get('codeHash')
+                and evidence.get('standard') in ('ERC-721', 'ERC-1155', 'ERC-721 + ERC-1155')
+                and evidence.get('_proof_revision') == self._proof_revision(candidate, evidence))
+
+    @staticmethod
+    def _proof_revision(candidate, evidence):
+        return inspection_revision(candidate) + ':' + str(evidence.get('codeHash'))
+
+    def _proof_changed(self, identity, candidate):
+        evidence = self.state.get('evidence', {}).get(identity, {})
+        return (evidence.get('_proof_revision') is not None
+                and evidence['_proof_revision'] != self._proof_revision(candidate, evidence))
+
+    def _pending(self, candidates, *, proof_only=False):
         """Prove reviewed candidates before enriching already observed collections."""
-        due = [(key, value) for key, value in candidates.items() if self._due(key)]
+        due = [(key, value) for key, value in candidates.items()
+               if (self._due(key) or proof_only and self._proof_changed(key, value))
+               and not (proof_only and self._proof_current(key, value))]
         due.sort(key=lambda item: (item[0] != self._selected,
                                   item[0] not in RULES,
                                   item[0] in self.state.get('evidence', {}),
@@ -312,6 +332,13 @@ class SurfNftManager:
         stages = self.state.setdefault('progress', {})
         if identity not in stages and len(stages) >= SurfNftCache.MAX_STAGES:
             return
+        provisional = stages.get(identity, {}).get('provisional') or {}
+        staged_hash = provisional.get('codeHash')
+        retained_hash = self.state.get('evidence', {}).get(identity, {}).get('codeHash')
+        changed_proof = (provisional.get('_proof_revision') is not None
+                         and provisional['_proof_revision'] != self._proof_revision(candidate, provisional))
+        if changed_proof or staged_hash and retained_hash and staged_hash != retained_hash:
+            stages.pop(identity, None)
         options = dict(proof_only=True) if proof_only else {}
         result = await self.inspector.advance(candidate, stages.get(identity), budget=budget, **options)
         self._inspection_attempts[identity] = self._clock()
@@ -320,7 +347,15 @@ class SurfNftManager:
         elif result.progress:
             stages[identity] = result.progress
         if result.evidence is not None:
+            if result.evidence.get('deploymentConfirmed') is True and result.evidence.get('codePresent') is True:
+                result.evidence['_proof_revision'] = self._proof_revision(candidate, result.evidence)
             self._retain_evidence(identity, result.evidence)
+            retained = self.state.get('evidence', {}).get(identity, {})
+            if (result.evidence.get('_proof_revision') and retained.get('codeHash') == result.evidence.get('codeHash')
+                    and retained.get('deploymentConfirmed') is True):
+                # A refreshed identity proof need not replace older detail facts
+                # or claim those facts were observed at its newer block/time.
+                retained['_proof_revision'] = result.evidence['_proof_revision']
         for child in result.children:
             key = child['key']
             self.state.setdefault('child_candidates', {})[key] = child['candidate']
@@ -390,6 +425,7 @@ class SurfNftManager:
         self.state['discovery']['raw']['coverage'] = catalog['coverage']
         self._offer_readme()
 
+    @read_cycle
     async def _cycle(self, *, proof_only=False):
         budget = (Budget(http_limit=12, rpc_limit=96, deadline_seconds=8, monotonic=self._monotonic)
                   if proof_only else Budget(monotonic=self._monotonic))
@@ -404,16 +440,19 @@ class SurfNftManager:
             except BudgetExhausted:
                 pass  # A slow discovery page must leave time for retained rows.
             candidates = self._candidates()
-            pending = self._pending(candidates)
+            pending = self._pending(candidates, proof_only=proof_only)
             if proof_only:
                 # Keep discovery/proof separate from mint/getter/source history.
                 # Recent proofs need no detail work to render collection counts.
                 for identity, candidate in pending:
                     evidence = self.state.get('evidence', {}).get(identity, {})
                     checked = _stamp(evidence.get('checkedAt'))
-                    if checked is not None and self._clock() - checked < self.CHAIN_TTL:
+                    changed = self._proof_changed(identity, candidate)
+                    if not changed and checked is not None and self._clock() - checked < self.CHAIN_TTL:
                         continue
-                    await self._inspect(identity, candidate, budget, proof_only=True)
+                    await self._inspect(identity, candidate, budget, proof_only=identity not in _DISCOVERY_PARENTS)
+                    if self._proof_current(identity, candidate):
+                        self.state['progress'].pop(identity, None)
                     if not budget.can_admit():
                         break
                 return

@@ -2,12 +2,18 @@
 
 ## Unreleased
 
+- SURF RPC budget round 2: rolling log windows replay twelve recent blocks, including
+  cumulative launchpad/POOL4 rollback; Surf readers share host pacing, Retry-After cooldowns
+  and refresh-local chain heads. Log hosts must serve the requested upper block. NFT reads
+  batch independent getters and retain unchanged BOARDROOM deployment proofs. Mutable
+  metadata remains live; no unverified endpoint or permanent negative cache is introduced.
+
 - SURF RPC budget round 1: lighter BOARDROOM POOL4 quotes and independent medium-source
   TTL/backoff; block-pinned POOL4 state bundles; capped batches with failed-entry retry;
   resumable history with confirmed empty pages; Launchpad count reconciliation and full
   decoy history. STAKERS keeps lifetime balances with a persisted checkpoint and replay
   tail instead of aging old mints out of an eight-week window. Includes an offline
-  before/after request-count command; round 2 remains deferred.
+  before/after request-count command.
 
 - Surfboard SWARM: keep liquidity visible at every width from 91 columns, prioritize it
   over kind/repository/site, and identify non-factory liquidity owners with cached contract
