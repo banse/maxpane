@@ -101,7 +101,7 @@ async def test_window_timestamps_validate_both_requested_headers(broken):
         return httpx.Response(200, json=response)
     client = _client_on(httpx.MockTransport(handler))
     result = await client.fetch_block_timestamps(fixture['from_block'], fixture['to_block'], network=MAINNET)
-    assert [(r['method'], r['params']) for r in sent] == [
+    assert [(r['method'], r['params']) for r in sent[:2]] == [
         ('eth_getBlockByNumber', [hex(fixture['from_block']), False]),
         ('eth_getBlockByNumber', [hex(fixture['to_block']), False]),
     ]
@@ -177,9 +177,42 @@ def _entries(payload: Any) -> list[dict]:
     return [payload] if isinstance(payload, dict) else []
 
 
+class AtomicReplayTransport(httpx.AsyncBaseTransport):
+    """Replay captured storage words inside a real aggregate3 wire envelope."""
+    def __init__(self, transport):
+        self.transport = transport
+
+    async def handle_async_request(self, request):
+        from tests.data.test_surf_pool4_rpc_budget import unpack_calls, pack_results, GET_BLOCK
+        if not request.content:
+            return self.transport.handle_request(request)
+        payload = json.loads(request.content)
+        if not isinstance(payload, dict) or payload.get('method') != 'eth_call':
+            return self.transport.handle_request(request)
+        calls = unpack_calls(payload['params'][0]['data'])
+        entries = []
+        for index, (target, data) in enumerate(calls):
+            entries.append({'jsonrpc': '2.0', 'id': index + 1,
+                            'method': 'eth_blockNumber' if data == GET_BLOCK else 'eth_call',
+                            'params': [] if data == GET_BLOCK else [{'to': target, 'data': data}, payload['params'][1]]})
+        replay = self.transport.handle_request(httpx.Request('POST', request.url, json=entries))
+        body = replay.json()
+        if replay.status_code >= 400 or not isinstance(body, list):
+            return replay
+        by_id = {entry['id']: entry for entry in body}
+        values = []
+        for entry in entries:
+            answer = by_id.get(entry['id'], {})
+            raw = answer.get('result') or '0x'
+            if entry['method'] == 'eth_blockNumber' and raw != '0x':
+                raw = '0x' + format(int(raw, 16), '064x')
+            values.append((not answer.get('error') and raw != '0x', raw))
+        return httpx.Response(200, json={'id': payload['id'], 'result': pack_results(values)})
+
+
 def _client_on(transport: httpx.BaseTransport, **kw: Any) -> Pool4Client:
     return Pool4Client(
-        http_client=httpx.AsyncClient(transport=transport),
+        http_client=httpx.AsyncClient(transport=AtomicReplayTransport(transport)),
         inter_call_delay=0.0,
         backoff_seconds=(0.0, 0.0),
         **kw,
@@ -565,21 +598,9 @@ def test_the_two_minus_32602s_mean_different_things_and_are_classified_apart():
     assert C._looks_like_endpoint_limitation(malformed) is False
 
 
-async def test_a_reverting_getter_degrades_its_entry_without_rotating_the_pool():
-    """``execution reverted`` is the *contract's* answer, not the host's.
+async def test_a_reverting_getter_retries_only_its_entry_elsewhere_before_none():
+    """An individual failure retries elsewhere while successful fields stay put."""
 
-    The transcribed classifier would rotate on it — ``code 3`` matches no
-    message pattern and is not in ``_MALFORMED_REQUEST_CODES``, so it errs
-    toward "try the next endpoint". That is right for a single call and wrong
-    for a batch, and the batch path never asks: a **per-entry** error becomes
-    that entry's ``None`` and the round returns. Rotating instead would ask
-    every endpoint in the pool for the same getter a differently-built mainnet
-    hook simply does not implement (plan R1), turning one dark field into three
-    wasted round trips per refresh.
-
-    Pinned on the URL count rather than on the classifier, because the
-    classifier is not what decides it.
-    """
     err = _probe("unknown_selector_revert")["response"]["error"]
     assert err["code"] == 3 and err["message"] == "execution reverted"
 
@@ -590,9 +611,10 @@ async def test_a_reverting_getter_degrades_its_entry_without_rotating_the_pool()
     client = _client_on(transport)
     state = await client.fetch_hook_state(HOOK, network=SEPOLIA)
     assert state.cap_floor_wei is None
-    assert len(transport.urls()) == 1, (
+    assert len(transport.urls()) == len(C.SEPOLIA_STATE_RPCS), (
         "a reverted getter rotated the pool: " + repr(transport.urls())
     )
+    assert len(transport.requests[-1][2]) == 1
 
 
 def test_the_measured_sepolia_drpc_and_tenderly_errors_rotate():
@@ -1408,8 +1430,8 @@ async def test_the_swap_read_pages_on_the_hook_reads_halving_ladder():
     client = _client_on(httpx.MockTransport(handler))
     assert await client.fetch_swap_logs(
         POOL_MANAGER, POOL_ID, 11_000_000, 11_002_399, network=SEPOLIA) == []
-    assert spans[:3] == [C.LOG_WINDOW_BLOCKS, C.LOG_WINDOW_BLOCKS // 2,
-                         C.LOG_WINDOW_BLOCKS // 4]
+    assert spans[:2] == [C.LOG_WINDOW_BLOCKS] * 2
+    assert all(span <= cap for span in spans[2:])
 
 
 def test_the_swap_read_has_no_retry_loop_of_its_own():
@@ -1798,6 +1820,9 @@ def walk_handler(
         payload = json.loads(request.content)
         out = []
         for entry in _entries(payload):
+            if entry.get('method') == 'eth_blockNumber':
+                out.append({'jsonrpc': '2.0', 'id': entry['id'], 'result': hex(load('mainnet_hook_state')['block_number'])})
+                continue
             params = entry["params"][0]
             node = graph.get(str(params["to"]).lower(), {})
             data = str(params["data"]).lower()
@@ -1881,7 +1906,7 @@ async def test_each_hop_asks_both_questions_in_one_batch():
         DRIPPER_MAINNET.lower(): {"vault": VAULT_MAINNET, "dripper": None}}))
     await _client_on(transport).resolve_vault_path(DISTRIBUTOR, network=MAINNET)
     for (_u, _m, payload) in transport.requests:
-        datas = [str(e["params"][0]["data"]).lower() for e in _entries(payload)]
+        datas = [str(e["params"][0]["data"]).lower() for e in _entries(payload) if e["method"] == "eth_call"]
         assert sorted(datas) == sorted([
             P.encode_getter(P.selector("vault()")).lower(),
             P.encode_getter(P.selector("dripper()")).lower()])
@@ -2428,7 +2453,7 @@ async def test_the_candidate_sweep_is_capped_because_both_sources_are_writable()
 
     transport = RecordingTransport(replay_handler("hook_state_healthy"))
     await _client_on(transport).fetch_candidate_answers(many, network=MAINNET)
-    assert len(transport.requests) == C._MAX_CANDIDATE_ROUNDS
+    assert len(transport.requests) == 2 * C._MAX_CANDIDATE_ROUNDS
 
 
 async def test_nothing_worth_asking_is_empty_and_a_dead_pool_is_none():
@@ -2537,7 +2562,7 @@ async def test_a_suggested_retry_range_is_never_followed():
     # And no request followed a suggestion: every toBlock the client asked for
     # is one it computed itself.
     suggested = {0xB12790 - i for i in range(len(provider.asked) + 2)}
-    followed = [pair for pair in provider.asked[1:] if pair[1] in suggested]
+    followed = [pair for pair in provider.asked[1:] if pair != provider.asked[0] and pair[1] in suggested]
     assert not followed, f"followed a provider's suggested range: {followed}"
 
 
@@ -2566,20 +2591,17 @@ async def test_the_window_halves_and_then_succeeds():
         HOOK, 11_000_000, 11_002_399, network=SEPOLIA)
 
     assert result == []
-    # 2400 -> 1200 -> 600: halvings of our own window, never the provider's
-    # numbers, and each attempt starts the sweep over.
-    assert spans[0] == C.LOG_WINDOW_BLOCKS
-    assert spans[1] == C.LOG_WINDOW_BLOCKS // 2
-    assert spans[2] == C.LOG_WINDOW_BLOCKS // 4
+    # Each endpoint first receives the full page; its own truthful cap then
+    # narrows only that endpoint. Suggested block endpoints remain ignored.
+    assert spans[:2] == [C.LOG_WINDOW_BLOCKS] * 2
     assert all(s <= cap for s in spans[2:])
 
 
 async def test_the_shrink_ladder_stops_at_the_floor():
-    """A provider capping below ``_LOG_MIN_WINDOW`` is abandoned, not chased.
+    """Blind result-size halving stops at the floor; explicit caps are separate.
 
-    1rpc's live 50-block cap is exactly this shape. It is why 1rpc is not in
-    the log pool at all — and why, if it ever were, the client would give up
-    rather than issue thousands of 50-block pages.
+    A named 50-block cap can now be followed within the per-invocation page
+    budget. A response without a usable width must not shrink indefinitely.
     """
     asked: list[int] = []
 
@@ -2590,7 +2612,7 @@ async def test_the_shrink_ladder_stops_at_the_floor():
         return httpx.Response(200, json={
             "jsonrpc": "2.0", "id": payload.get("id"),
             "error": {"code": -32602,
-                      "message": "eth_getLogs is limited to 0 - 50 blocks range"},
+                      "message": "query returned more than 10000 results"},
         })
 
     # 600 rather than the default 2400 on purpose: from 2400 the three
@@ -2816,7 +2838,11 @@ async def test_a_long_sweep_widens_its_window_to_fit_the_page_budget():
     assert await client.fetch_flow_logs(
         VAULT, start, head, network=MAINNET) == []
 
-    pages = transport.log_ranges()
+    requests = transport.log_ranges()
+    # A quiet page needs two independent hosts. The page budget remains8,
+    # while safety adds one confirmation request per quiet page.
+    assert len(requests) == 2 * len(set(requests))
+    pages = list(dict.fromkeys(requests))
     assert len(pages) <= C._LOG_MAX_PAGES, (
         f"the staker sweep still costs {len(pages)} round trips"
     )
@@ -2853,6 +2879,9 @@ def _hook_answer_handler(
         payload = json.loads(request.content)
         out = []
         for entry in _entries(payload):
+            if entry.get('method') == 'eth_blockNumber':
+                out.append({'jsonrpc': '2.0', 'id': entry['id'], 'result': hex(load('mainnet_hook_state')['block_number'])})
+                continue
             data = str(entry["params"][0]["data"]).lower()
             raw = by_calldata.get(data)
             out.append({

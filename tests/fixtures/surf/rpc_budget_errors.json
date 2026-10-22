@@ -1,0 +1,58 @@
+{
+  "source": "docs/codex_surf_rpc_budget_captures-2026-10-22.json",
+  "capturedAt": "2026-10-22T18:47:33.904Z",
+  "cases": {
+    "mevblocker_range": {
+      "host": "rpc.mevblocker.io",
+      "case": "archive50k",
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32602,
+          "message": "Log response size exceeded. You can make eth_getLogs requests with up to a 10,000 block range and no limit on the response size, or you can request any block range with a cap of 10K logs in the response. Based on your parameters and the response size limit, this block range should work: [0x189378e, 0x1895e9d]"
+        }
+      }
+    },
+    "drpc_archive": {
+      "host": "eth.drpc.org",
+      "case": "archive2k",
+      "status": 400,
+      "body": {
+        "id": 1,
+        "jsonrpc": "2.0",
+        "error": {
+          "message": "ranges over 10000 blocks are not supported on free plan",
+          "code": 35
+        }
+      }
+    },
+    "thirdweb_range": {
+      "host": "1.rpc.thirdweb.com",
+      "case": "recent10k",
+      "status": 200,
+      "body": {
+        "error": {
+          "code": -32005,
+          "message": "Log response size exceeded. Maximum allowed number of requested blocks is 1000"
+        },
+        "id": 1,
+        "jsonrpc": "2.0"
+      }
+    },
+    "nodies_range": {
+      "host": "eth-pokt.nodies.app",
+      "case": "recent10k",
+      "status": 200,
+      "body": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {
+          "code": -32001,
+          "message": "Block range too large: maximum allowed is 50 blocks on your current plan. Upgrade your subscription at https://nodies.app/pricing for larger ranges."
+        }
+      }
+    }
+  }
+}

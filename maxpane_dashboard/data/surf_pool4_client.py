@@ -115,7 +115,7 @@ import httpx
 
 from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data import surf_v4
-from maxpane_dashboard.data.evm_abi import decode_uint, strip0x
+from maxpane_dashboard.data.evm_abi import decode_uint, strip0x, encode_aggregate3, decode_aggregate3_result
 from maxpane_dashboard.data.rpc_classify import (
     ETH_ENDPOINT_LIMITATION_FRAGMENTS,
     MALFORMED_REQUEST_CODES,
@@ -130,6 +130,8 @@ from maxpane_dashboard.data.rpc_common import (
     jsonrpc_payload,
     pace,
 )
+from maxpane_dashboard.data.surf_rpc_batch import read_state_batch
+from maxpane_dashboard.data.surf_rpc_history import RpcHistoryReader
 from maxpane_dashboard.data.surf_models import (
     POOL4_DISCOVERY_STATES,
     POOL4_NETWORKS,
@@ -142,6 +144,9 @@ from maxpane_dashboard.data.surf_models import (
 )
 
 logger = logging.getLogger(__name__)
+
+_MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11"
+_GET_BLOCK_NUMBER = "0x42cbb15c"
 
 #: The closed vocabularies are unpacked from the contract, never retyped (A5).
 NETWORK_SEPOLIA, NETWORK_MAINNET = POOL4_NETWORKS
@@ -465,6 +470,8 @@ class Pool4Client(OwnedHttpClient):
         self._log_window_blocks = log_window_blocks
         self._request_id = 0
         self._last_rpc_at: float = 0.0
+        self._known_paths: dict[tuple[str, str], dict] = {}
+        self._history_reader = RpcHistoryReader(self._post_rpc, min_page=_LOG_MIN_WINDOW, max_shrinks=_LOG_MAX_SHRINKS)
 
     # Lifecycle (close / __aenter__ / __aexit__) comes from OwnedHttpClient.
 
@@ -508,68 +515,18 @@ class Pool4Client(OwnedHttpClient):
     ) -> list[Any] | None:
         """One JSON-RPC *batch array* POST on this network's state pool.
 
-        Returns per-entry results aligned with *calls*; an entry that came back
-        as an error is ``None`` (**never** ``0`` — a zeroed counter persists
-        and outlives the outage that produced it).  Returns ``None`` only when
-        every endpoint failed to serve the batch at all.
+        Chunk to the receiving host's cap and retain successful IDs while
+        failed entries rotate. Unresolved entries are None, never zero;
+        return None overall only when no endpoint served an array.
         """
         payloads = []
         for method, params in calls:
             self._request_id += 1
             payloads.append(jsonrpc_payload(self._request_id, method, params))
-        id_to_idx = {p["id"]: i for i, p in enumerate(payloads)}
-        last_err: BaseException | None = None
-        for url in self._pool(network, "state"):
-            for attempt in range(_MAX_RETRIES):
-                try:
-                    resp = await self._post_rpc(url, payloads)
-                    if resp.status_code in ENDPOINT_DEAD_CODES:
-                        last_err = RuntimeError(f"{url} -> {resp.status_code}")
-                        break  # rotate, do not retry a dead host
-                    body: Any = None
-                    try:
-                        body = resp.json()
-                    except ValueError:
-                        pass
-                    # Tenderly Sepolia answers an over-large batch with a
-                    # single -32005 object and HTTP 429, so the JSON error body
-                    # is classified BEFORE raise_for_status — drpc taught
-                    # talismans_client the same lesson with an HTTP 400.
-                    if isinstance(body, dict) and body.get("error"):
-                        err = body["error"]
-                        if _looks_like_endpoint_limitation(err):
-                            last_err = RuntimeError(f"{url}: {err}")
-                            break  # rotate
-                        raise RuntimeError(f"malformed request: {err}")
-                    resp.raise_for_status()
-                    if not isinstance(body, list):
-                        # An endpoint that answers a batch with a scalar is not
-                        # speaking the protocol; rotate rather than guess.
-                        last_err = RuntimeError(f"{url}: non-batch reply")
-                        break
-                    results: list[Any] = [None] * len(payloads)
-                    for entry in body:
-                        if not isinstance(entry, Mapping):
-                            continue
-                        idx = id_to_idx.get(entry.get("id"))
-                        if idx is None:
-                            continue
-                        if entry.get("error"):
-                            logger.warning(
-                                "pool4 batch entry %s failed: %s",
-                                calls[idx][0], entry["error"],
-                            )
-                            continue  # stays None — never 0
-                        results[idx] = entry.get("result")
-                    return results
-                except (httpx.HTTPError, ValueError) as exc:
-                    last_err = exc
-                    if attempt < _MAX_RETRIES - 1:
-                        await asyncio.sleep(self._backoff_seconds[attempt])
-        logger.warning(
-            "pool4 %s state batch failed on every endpoint: %s", network, last_err
+        return await read_state_batch(
+            payloads, self._pool(network, 'state'), self._post_rpc,
+            retries=_MAX_RETRIES, backoff_seconds=self._backoff_seconds,
         )
-        return None
 
     async def _rpc_logs(
         self,
@@ -638,10 +595,10 @@ class Pool4Client(OwnedHttpClient):
     ) -> tuple[dict[str, Any], int | None] | None:
         """``({name: raw_return_or_None}, block_number)`` for one batch.
 
-        *calls* are ``(name, to, calldata)``.  ``eth_blockNumber`` rides the
-        **same batch array** rather than a second round trip: a height fetched
-        separately can describe a different block from the getters, which is
-        ``surf_client.fetch_nonces``'s reasoning and this module's too.
+        *calls* are ``(name, to, calldata)``. This compatibility read keeps
+        discovery and standalone getter interfaces; a batch's sampled head is
+        not an atomic-state guarantee. Tier bundles and cross-venue reads use
+        Multicall3 with its own block number and pinned retries instead.
 
         ``None`` only when the whole batch failed everywhere.  A single dead
         getter is one ``None`` inside an otherwise-healthy answer map.
@@ -909,11 +866,10 @@ class Pool4Client(OwnedHttpClient):
     ) -> dict[str, Any] | None:
         """One getter round for one candidate, shaped for ``fingerprint_verdict``."""
         try:
-            round_ = await self._getter_round(
+            round_ = await self._atomic_getter_round(
                 network,
                 [(name, addr, P.encode_getter(P.HOOK_SELECTORS[name]))
                  for name in self._FINGERPRINT_GETTERS],
-                with_block_number=False,
             )
         except (RuntimeError, ValueError) as exc:
             logger.warning("fingerprint round: %s", exc)
@@ -997,6 +953,245 @@ class Pool4Client(OwnedHttpClient):
         if not out:
             return None
         return out
+
+    async def _aggregate_once(self, network, calls, block_tag='latest', *, prefer=None):
+        """One atomic EVM read; the block number is part of the same call.
+
+        Rotate transport failures. A reverted subcall remains None so callers
+        can retry only those fields, pinned to this call's actual block.
+        """
+        entries = [(to, data, True) for _, to, data in calls]
+        entries.append((_MULTICALL3, _GET_BLOCK_NUMBER, True))
+        data = encode_aggregate3(entries)
+        urls = self._pool(network, 'state')
+        if prefer:
+            urls = [url for url in urls if url != prefer] + [url for url in urls if url == prefer]
+        for url in urls:
+            self._request_id += 1
+            payload = jsonrpc_payload(self._request_id, 'eth_call',
+                                      [{'to': _MULTICALL3, 'data': data}, block_tag])
+            try:
+                response = await self._post_rpc(url, payload)
+                response.raise_for_status()
+                body = response.json()
+                if not isinstance(body, dict) or body.get('error'):
+                    continue
+                raw = body.get('result')
+                decoded = decode_aggregate3_result(raw) if isinstance(raw, str) else []
+                if len(decoded) != len(entries):
+                    continue
+                good, raw_block = decoded[-1]
+                block = _uint_or_none(raw_block) if good else None
+                if block is None or (block_tag != 'latest' and block != int(block_tag, 16)):
+                    continue
+                return ({name: raw if good and P.answered(raw) else None
+                         for (name, _, _), (good, raw) in zip(calls, decoded)}, block, url)
+            except (httpx.HTTPError, ValueError, TypeError):
+                continue
+        return None
+
+    async def _atomic_getter_round(self, network, calls):
+        first = await self._aggregate_once(network, calls)
+        if first is None:
+            return None
+        answers, block, endpoint = first
+        failed = [call for call in calls if answers.get(call[0]) is None]
+        if failed:
+            retry = await self._aggregate_once(network, failed, hex(block), prefer=endpoint)
+            if retry:
+                answers.update(retry[0])
+        return answers, block
+
+    @staticmethod
+    def _path_metadata(path, pool_id, pool_manager):
+        if not isinstance(path, dict):
+            return None
+        nodes = path.get('path')
+        if not isinstance(nodes, list) or not 1 <= len(nodes) <= _MAX_VAULT_HOPS:
+            return None
+        nodes = [P.checksum_address(node) for node in nodes]
+        vault, dripper = P.checksum_address(path.get('vault')), P.checksum_address(path.get('dripper'))
+        manager = P.checksum_address(pool_manager)
+        if not all(nodes) or len(set(nodes)) != len(nodes) or not vault or dripper != nodes[-1] or not manager:
+            return None
+        try:
+            P.pool_state_calls(pool_id)
+        except (ValueError, TypeError):
+            return None
+        return {'path': {'path': nodes, 'vault': vault, 'dripper': dripper},
+                'pool_id': pool_id, 'pool_manager': manager}
+
+    async def _known_metadata(self, hook_addr, network, token_addr, path, pool_id, pool_manager):
+        key = (network, str(hook_addr).lower())
+        metadata = self._path_metadata(path, pool_id, pool_manager) or self._known_paths.get(key)
+        if metadata is not None:
+            return metadata
+        hook = await self.fetch_hook_state(hook_addr, network=network, token_addr=token_addr)
+        if hook is None or not hook.rewards_recipient:
+            return None
+        path = await self.resolve_vault_path(hook.rewards_recipient, network=network)
+        return self._path_metadata(path, hook.pool_id, hook.pool_manager)
+
+    @staticmethod
+    def _identity_calls(hook_addr, token_addr, metadata):
+        path = metadata['path']
+        calls = [('identity.recipient', hook_addr, P.HOOK_SELECTORS['rewardsRecipient']),
+                 ('identity.pool', hook_addr, P.HOOK_SELECTORS['poolId']),
+                 ('identity.manager', hook_addr, P.HOOK_SELECTORS['poolManager']),
+                 ('identity.asset', path['vault'], P.VAULT_SELECTORS['asset'])]
+        for index, node in enumerate(path['path']):
+            signature = SEL_VAULT if index == len(path['path']) - 1 else SEL_DRIPPER
+            calls.append((f'identity.link.{index}', node, P.selector(signature)))
+        return calls
+
+    @staticmethod
+    def _identity_matches(answers, metadata, token_addr):
+        nodes = metadata['path']['path']
+        expected = {'identity.recipient': nodes[0], 'identity.manager': metadata['pool_manager'],
+                    'identity.asset': token_addr}
+        for index, target in enumerate(nodes[1:] + [metadata['path']['vault']]):
+            expected[f'identity.link.{index}'] = target
+        return (all(_addr_or_none(answers.get(name)) == P.checksum_address(value)
+                    for name, value in expected.items())
+                and str(answers.get('identity.pool') or '').lower() == metadata['pool_id'].lower())
+
+    async def _known_rounds(self, network, calls, vault_addr):
+        """Live decimals then share price; failed first-round fields share round two."""
+        first = await self._aggregate_once(network, calls)
+        if first is None:
+            return None
+        answers, block, endpoint = first
+        retry = [call for call in calls if answers[call[0]] is None]
+        units = P.whole_share_units(_uint_or_none(answers.get('vault.decimals')))
+        if units is not None:
+            retry.append(('vault.convertToAssets', vault_addr, P.encode_convert_to_assets(units)))
+        if retry:
+            second = await self._aggregate_once(network, retry, hex(block), prefer=endpoint)
+            if second:
+                answers.update(second[0])
+            # The first decimals read can fail independently. Resolve the
+            # correct whole-share argument only after its successful retry.
+            if units is None:
+                units = P.whole_share_units(_uint_or_none(answers.get('vault.decimals')))
+                if units is not None:
+                    third = await self._aggregate_once(network, [
+                        ('vault.convertToAssets', vault_addr, P.encode_convert_to_assets(units))
+                    ], hex(block), prefer=second[2] if second else endpoint)
+                    if third:
+                        answers.update(third[0])
+            elif second and answers.get('vault.convertToAssets') is None:
+                third = await self._aggregate_once(network, [retry[-1]], hex(block), prefer=second[2])
+                if third:
+                    answers.update(third[0])
+        return answers, block
+
+    async def fetch_state_bundle(self, hook_addr, *, network, token_addr, path=None,
+                                 pool_id=None, pool_manager=None):
+        """Known POOL4 contracts and both venues in two atomic, same-block reads.
+
+        Cold address discovery and failed reads may cost more. Cached addresses
+        are only lookup hints: every link and the traded pool are revalidated.
+        """
+        try:
+            metadata = await self._known_metadata(hook_addr, network, token_addr, path, pool_id, pool_manager)
+            if metadata is None:
+                return None
+            path = metadata['path']
+            dripper, vault = path['dripper'], path['vault']
+            distributor = path['path'][0] if len(path['path']) > 1 else None
+            calls = self._identity_calls(hook_addr, token_addr, metadata)
+            for prefix, address, selectors in (
+                ('hook', hook_addr, P.HOOK_SELECTORS), ('dripper', dripper, P.DRIPPER_SELECTORS),
+                ('vault', vault, {key: value for key, value in P.VAULT_SELECTORS.items() if key != P.SHARE_PRICE_CALL}),
+            ):
+                calls.extend((f'{prefix}.{name}', address, selector) for name, selector in selectors.items())
+            if distributor:
+                calls.extend((f'distributor.{name}', distributor, P.selector(signature))
+                             for name, signature in DISTRIBUTOR_SIGNATURES.items())
+            calls += [('supply', token_addr, P.ERC20_SELECTORS['totalSupply']),
+                      ('balance', token_addr, P.encode_balance_of(dripper))]
+            for prefix, pid in (('hook_pool', metadata['pool_id']), ('reference', POOL4_REFERENCE_POOL_ID)):
+                slot0, liquidity = P.pool_state_calls(pid)
+                calls.extend([(f'{prefix}.slot0', metadata['pool_manager'], slot0),
+                              (f'{prefix}.liquidity', metadata['pool_manager'], liquidity)])
+            result = await self._known_rounds(network, calls, vault)
+            if result is None:
+                return None
+            answers, block = result
+            if not self._identity_matches(answers, metadata, token_addr):
+                self._known_paths.pop((network, str(hook_addr).lower()), None)
+                return {'identity_valid': False, 'hook': None, 'vault': None, 'dripper': None,
+                        'distributor': None, 'reference': None, 'path': None, 'block_number': block}
+            self._known_paths[(network, str(hook_addr).lower())] = metadata
+            subset = lambda prefix: {key.split('.', 1)[1]: value for key, value in answers.items()
+                                     if key.startswith(prefix + '.')}
+            distributor_state = None
+            if distributor:
+                distributor_state = {'block_number': block}
+                for name in DISTRIBUTOR_SIGNATURES:
+                    raw = answers.get(f'distributor.{name}')
+                    distributor_state[name] = _addr_or_none(raw) if name in ('dripper', 'asset', 'owner') else _uint_or_none(raw)
+            return {
+                'identity_valid': True, 'path': path, 'block_number': block,
+                'hook': P.decode_hook_state(subset('hook'), _uint_or_none(answers.get('supply')), block),
+                'dripper': P.decode_dripper_state(subset('dripper'), _uint_or_none(answers.get('balance')), block),
+                'vault': P.decode_vault_state(subset('vault'), block), 'distributor': distributor_state,
+                'reference': {'hook': _pool_state(subset('hook_pool'), metadata['pool_id'], 'hook'),
+                              'reference': _pool_state(subset('reference'), POOL4_REFERENCE_POOL_ID, 'pinned'),
+                              'block_number': block},
+            }
+        except (RuntimeError, ValueError, TypeError) as exc:
+            logger.warning('fetch_state_bundle: %s', exc)
+            return None
+
+    async def fetch_card_quote(self, hook_addr, *, network, token_addr, path=None,
+                               pool_id=None, pool_manager=None):
+        """BOARDROOM reads only live path checks, decimals, share price and tick."""
+        try:
+            metadata = await self._known_metadata(hook_addr, network, token_addr, path, pool_id, pool_manager)
+            if metadata is None:
+                return None
+            vault = metadata['path']['vault']
+            calls = self._identity_calls(hook_addr, token_addr, metadata)
+            calls += [('vault.decimals', vault, P.VAULT_SELECTORS['decimals']),
+                      ('slot0', metadata['pool_manager'], P.pool_state_calls(metadata['pool_id'])[0])]
+            result = await self._known_rounds(network, calls, vault)
+            if result is None:
+                return None
+            answers, block = result
+            if not self._identity_matches(answers, metadata, token_addr):
+                self._known_paths.pop((network, str(hook_addr).lower()), None)
+                return None
+            self._known_paths[(network, str(hook_addr).lower())] = metadata
+            raw_slot = answers.get('slot0')
+            return {'share_price_wei': _uint_or_none(answers.get('vault.convertToAssets')),
+                    'tick': surf_v4.decode_slot0(raw_slot)[1] if P.answered(raw_slot) else None,
+                    'block_number': block, 'path': metadata['path']}
+        except (RuntimeError, ValueError, TypeError) as exc:
+            logger.warning('fetch_card_quote: %s', exc)
+            return None
+
+    async def fetch_zero_supply(self, vault_addr, block_number, *, network):
+        """Historical zero balances anchor: zero totalSupply or absent code.
+
+        Both reads use the exact preceding block. An error is not zero, and
+        this proves an empty balance sheet, not the deployment's birth date.
+        """
+        if not P.checksum_address(vault_addr) or type(block_number) is not int or block_number < 0:
+            return None
+        try:
+            result = await self._rpc_state_batch(network, [
+                ('eth_call', [{'to': vault_addr, 'data': P.VAULT_SELECTORS['totalSupply']}, hex(block_number)]),
+                ('eth_getCode', [vault_addr, hex(block_number)]),
+            ])
+        except (RuntimeError, ValueError):
+            return None
+        if result is None:
+            return None
+        supply = _uint_or_none(result[0])
+        if supply is not None:
+            return supply == 0
+        return True if result[1] == '0x' else None
 
     async def fetch_hook_state(
         self,
@@ -1126,11 +1321,10 @@ class Pool4Client(OwnedHttpClient):
             seen.add(node.lower())
             path.append(node)
             try:
-                round_ = await self._getter_round(
+                round_ = await self._aggregate_once(
                     network,
                     [(SEL_VAULT, node, P.encode_getter(P.selector(SEL_VAULT))),
                      (SEL_DRIPPER, node, P.encode_getter(P.selector(SEL_DRIPPER)))],
-                    with_block_number=False,
                 )
             except (RuntimeError, ValueError) as exc:
                 logger.warning("resolve_vault_path: %s", exc)
@@ -1139,6 +1333,13 @@ class Pool4Client(OwnedHttpClient):
                 break
             read_anything = True
             answers = round_[0]
+            if not any(P.answered(value) for value in answers.values()):
+                retry = await self._aggregate_once(network,
+                    [(SEL_VAULT, node, P.selector(SEL_VAULT)),
+                     (SEL_DRIPPER, node, P.selector(SEL_DRIPPER))],
+                    hex(round_[1]), prefer=round_[2])
+                if retry:
+                    answers = retry[0]
 
             found = _addr_or_none(answers.get(SEL_VAULT))
             if found is not None:
@@ -1376,7 +1577,7 @@ class Pool4Client(OwnedHttpClient):
         network: str,
         pool_manager: str,
     ) -> dict | None:
-        """Both venues' ``slot0``, from **one** batch, so from one block.
+        """Both venues' ``slot0``, from one atomic Multicall3 state, at one block.
 
         ``{"hook": PoolV4State | None, "reference": PoolV4State | None,
         "block_number": int | None}``.
@@ -1386,9 +1587,8 @@ class Pool4Client(OwnedHttpClient):
         reported it three ways that did not agree — +1.5%, +0.2% twenty-eight
         blocks later, ~1.45% from a third command. Two ticks read a block apart
         in a thin pool manufacture a disagreement out of nothing, so both
-        ``extsload`` pairs and ``eth_blockNumber`` ride the same batch array,
-        which is :meth:`_getter_round`'s existing shape and
-        ``surf_client.fetch_nonces``'s reasoning.  ``block_number`` comes back
+        ``extsload`` pairs and Multicall3's ``getBlockNumber()`` run inside one
+        EVM call. Failed fields retry at that exact block on another endpoint.  ``block_number`` comes back
         so the caller can say *which* block the gap describes rather than
         implying it is now.
 
@@ -1437,7 +1637,7 @@ class Pool4Client(OwnedHttpClient):
                 ("reference_liquidity", pool_manager, reference_calls[1]),
             ]
         try:
-            round_ = await self._getter_round(network, calls)
+            round_ = await self._atomic_getter_round(network, calls)
         except (RuntimeError, ValueError) as exc:
             logger.warning("fetch_reference_slot0: %s", exc)
             return None
@@ -1607,13 +1807,11 @@ class Pool4Client(OwnedHttpClient):
         than merely absent.  Per-field degradation is right for getters, where
         each field stands alone; it is wrong for a sum.
 
-        A "your range is too wide" error halves this client's own window and
-        pages, at most ``_LOG_MAX_SHRINKS`` times.  The provider's suggested
-        range is never read: one of them decrements a single block per round
-        trip, so a client that follows it verbatim livelocks.  A range
-        complaint that is **not about this request** — one naming a limit the
-        request already satisfies — is not halved at all; it rotates, in
-        :meth:`_rpc_logs`.
+        Completed prefixes survive failed pages for the next attempt.
+        Truthful span caps narrow only the endpoint that reported them; an
+        alternate first gets its own full-width attempt. Suggested block
+        endpoints are never followed. Empty pages need a second host before
+        progress advances. Complaints about a limit already met rotate.
 
         **The starting window widens to fit the page budget**, which is the
         other half of the same defect.  ``_LOG_WINDOW_BLOCKS`` is a recent-
@@ -1681,10 +1879,10 @@ class Pool4Client(OwnedHttpClient):
         topics: list[str | list[str]] | None = None,
         label: str,
     ) -> list[dict] | None:
-        """The one log-sweep loop: budgeted window, bounded halving, ``None``.
+        """Resume lossless, budget-sized pages via Surf's shared history policy.
 
-        Shared by :meth:`fetch_flow_logs` and :meth:`fetch_swap_logs`; the
-        docstring of the former carries the reasoning for every rule here.
+        A quiet page costs two requests for independent confirmation; the
+        eight-page target counts page ranges, not those confirmation calls.
         """
         if to_block < from_block:
             return []
@@ -1694,77 +1892,17 @@ class Pool4Client(OwnedHttpClient):
         # recent-window size, so a short sweep pages exactly as it always did.
         budgeted = max(self._log_window_blocks, -(-span // _LOG_MAX_PAGES))
         window = max(min(span, budgeted), 1)
-        for _shrink in range(_LOG_MAX_SHRINKS + 1):
-            try:
-                return await self._sweep(
-                    network, address, from_block, to_block, window, topics
-                )
-            except Pool4LogRangeError as exc:
-                narrower = max(_LOG_MIN_WINDOW, window // 2)
-                if narrower >= window:
-                    logger.warning(
-                        "%s: window %s is already minimal: %s",
-                        label, window, exc,
-                    )
-                    return None
-                logger.info(
-                    "%s: halving window %s -> %s (%s)",
-                    label, window, narrower, exc,
-                )
-                window = narrower
-            except RuntimeError as exc:
-                logger.warning("%s: %s", label, exc)
-                return None
-            except ValueError as exc:  # unknown network
-                logger.warning("%s: %s", label, exc)
-                return None
-        logger.warning("%s: gave up after %s shrinks", label, _LOG_MAX_SHRINKS)
-        return None
-
-    async def _sweep(
-        self,
-        network: str,
-        address: str,
-        from_block: int,
-        to_block: int,
-        window: int,
-        topics: list[str | list[str]] | None = None,
-    ) -> list[dict]:
-        """Page ``[from_block, to_block]`` in *window*-sized chunks.
-
-        Raises :class:`Pool4LogRangeError` straight up so the caller can halve
-        and start over; a half-collected page set is thrown away rather than
-        returned, for the reason :meth:`fetch_flow_logs` gives.
-
-        ``topics`` is added to the filter only when given, so a hook sweep
-        sends byte-for-byte the filter it always has.
-        """
-        out: list[dict] = []
-        start = from_block
-        while start <= to_block:
-            end = min(start + window - 1, to_block)
-            flt: dict[str, Any] = {
-                "address": address,
-                "fromBlock": hex(start),
-                "toBlock": hex(end),
-            }
-            if topics is not None:
-                flt["topics"] = list(topics)
-            result = await self._rpc_logs(
-                network,
-                "eth_getLogs",
-                [flt],
-                # The span of THIS page, not of the whole sweep: it is what a
-                # provider's range complaint has to be measured against.
-                requested_span=end - start + 1,
+        base_filter: dict[str, Any] = {'address': address}
+        if topics is not None:
+            base_filter['topics'] = list(topics)
+        try:
+            return await self._history_reader.read(
+                self._pool(network, 'logs'), base_filter, from_block, to_block,
+                group=f'{network}:{label}', page_size=window,
             )
-            if result is None:
-                raise RuntimeError("eth_getLogs returned no result")
-            if not isinstance(result, list):
-                raise RuntimeError(f"eth_getLogs returned {type(result).__name__}")
-            out.extend(r for r in result if isinstance(r, dict))
-            start = end + 1
-        return out
+        except (RuntimeError, ValueError) as exc:
+            logger.warning('%s: %s', label, exc)
+            return None
 
     async def fetch_flow_events(
         self,
@@ -1815,6 +1953,15 @@ _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 #: that merely *starts* with a real hash is a different string, and truncating
 #: it to fit would be this module inventing a hash nobody asked for.
 _TX_HASH_NIBBLES = 64
+
+
+def _pool_state(answers, pool_id, source):
+    raw = answers.get('slot0')
+    sqrt_price, tick, fee = surf_v4.decode_slot0(raw) if P.answered(raw) else (None, None, None)
+    raw_liquidity = answers.get('liquidity')
+    return PoolV4State(pool_id=pool_id, sqrt_price_x96=sqrt_price, tick=tick, lp_fee=fee,
+                       liquidity=surf_v4.decode_liquidity(raw_liquidity) if P.answered(raw_liquidity) else None,
+                       pool_id_source=source)
 
 
 def _tx_hash_body(tx_hash: Any) -> str | None:

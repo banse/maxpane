@@ -203,9 +203,12 @@ def _pair_handler(*, hook_tick: int, reference_tick: int, block: int, pool_id: s
     return handler
 
 
+from tests.data.test_surf_pool4_client import AtomicReplayTransport
+
+
 def _client_on(transport: httpx.BaseTransport) -> Pool4Client:
     return Pool4Client(
-        http_client=httpx.AsyncClient(transport=transport),
+        http_client=httpx.AsyncClient(transport=AtomicReplayTransport(transport)),
         inter_call_delay=0.0,
         backoff_seconds=(0.0, 0.0),
     )

@@ -62,8 +62,11 @@ from maxpane_dashboard.data.rpc_classify import (
     RANGE_CAP_FRAGMENTS,
     is_range_limitation,
     looks_like_endpoint_limitation,
+    requested_block_span,
 )
 from maxpane_dashboard.data import ens, surf_launchpad_volume
+from maxpane_dashboard.data.surf_rpc_batch import read_state_batch
+from maxpane_dashboard.data.surf_rpc_history import RpcHistoryReader
 from maxpane_dashboard.data.rpc_common import (
     ENDPOINT_DEAD_CODES,
     OwnedHttpClient,
@@ -1164,14 +1167,10 @@ def _looks_like_endpoint_limitation(err: Any) -> bool:
     )
 
 
-def _is_range_limitation(err: Any) -> bool:
-    """True only for "your block range is too wide" — the shrinkable class.
-
-    No *requested_span* is passed: ``eth.drpc.org`` was removed from this
-    module's mainnet log pool on 2026-09-12 rather than guarded against, so no
-    endpoint here is known to name a limit it is not reading.
-    """
-    return is_range_limitation(err, fragments=_RANGE_LIMITATION_PATTERNS)
+def _is_range_limitation(err: Any, requested_span: int | None = None) -> bool:
+    """Shrink only when the error can describe this request's actual span."""
+    return is_range_limitation(err, fragments=_RANGE_LIMITATION_PATTERNS,
+                               requested_span=requested_span)
 
 
 class _LogRangeError(RuntimeError):
@@ -1350,6 +1349,10 @@ class SurfClient(OwnedHttpClient):
         self._log_window_blocks = log_window_blocks
         self._request_id = 0
         self._last_rpc_at: float = 0.0
+        self._history = RpcHistoryReader(self._post_rpc, min_page=_LOG_MIN_WINDOW,
+                                         max_shrinks=_LOG_MAX_SHRINKS)
+        self._launchpad_pending: tuple[int, int] | None = None
+        self._launchpad_rebuild = False
         #: True only when the most recent ``fetch_channel_txs()`` hit
         #: ``MAX_CHANNEL_PAGES`` while Blockscout was still reporting a
         #: ``next_page_params`` cursor — i.e. more rows existed than that
@@ -1468,51 +1471,15 @@ class SurfClient(OwnedHttpClient):
     async def _rpc_state_batch(
         self, calls: list[tuple[str, list]]
     ) -> list[Any] | None:
-        """One JSON-RPC *batch array* POST on the state pool.
-
-        Returns per-entry results aligned with *calls*; an entry that came
-        back as an error is ``None`` (NEVER 0). Returns ``None`` only when
-        every endpoint failed to serve the batch at all.
-        """
+        """Bounded arrays; preserve successes and retry unresolved entries elsewhere."""
         payloads = []
         for method, params in calls:
             self._request_id += 1
             payloads.append(jsonrpc_payload(self._request_id, method, params))
-        id_to_idx = {p["id"]: i for i, p in enumerate(payloads)}
-        last_err: BaseException | None = None
-        for url in self._state_rpcs:
-            for attempt in range(_MAX_RETRIES):
-                try:
-                    resp = await self._post_rpc(url, payloads)
-                    if resp.status_code in ENDPOINT_DEAD_CODES:
-                        last_err = RuntimeError(f"{url} -> {resp.status_code}")
-                        break
-                    resp.raise_for_status()
-                    body = resp.json()
-                    if not isinstance(body, list):
-                        # An endpoint that answers a batch with a scalar is
-                        # not speaking the protocol; rotate.
-                        last_err = RuntimeError(f"{url}: non-batch reply")
-                        break
-                    results: list[Any] = [None] * len(payloads)
-                    for entry in body:
-                        idx = id_to_idx.get(entry.get("id"))
-                        if idx is None:
-                            continue
-                        if entry.get("error"):
-                            logger.warning(
-                                "batch entry %s failed: %s",
-                                calls[idx][0], entry["error"],
-                            )
-                            continue  # stays None — never 0
-                        results[idx] = entry.get("result")
-                    return results
-                except (httpx.HTTPError, ValueError) as exc:
-                    last_err = exc
-                    if attempt < _MAX_RETRIES - 1:
-                        await asyncio.sleep(self._backoff_seconds[attempt])
-        logger.warning("state batch failed on every endpoint: %s", last_err)
-        return None
+        return await read_state_batch(
+            payloads, self._state_rpcs, self._post_rpc,
+            retries=_MAX_RETRIES, backoff_seconds=self._backoff_seconds,
+        )
 
     async def _rpc_logs(self, method: str, params: list) -> Any:
         """One JSON-RPC call on the LOGS pool.
@@ -1543,7 +1510,7 @@ class SurfClient(OwnedHttpClient):
                         pass
                     if isinstance(body, dict) and body.get("error"):
                         err = body["error"]
-                        if _is_range_limitation(err):
+                        if _is_range_limitation(err, requested_block_span(method, params)):
                             raise _LogRangeError(str(err))
                         if _looks_like_endpoint_limitation(err):
                             last_err = RuntimeError(f"{url}: {err}")
@@ -1956,13 +1923,45 @@ class SurfClient(OwnedHttpClient):
             # `minBridgeAmount` alone would be a guess at the other two.
             (A.BURN_EXECUTOR_V2, A.SEL_PREVIEW_BRIDGE),
         ]
+        sweep = await self._launchpad_logs(resume)
+        block = hex(self._launchpad_pending[1]) if self._launchpad_pending else "latest"
         (
             imd_to_burn_wei, total_real_imd_wei, burn_fee_bps, creator_fee_bps,
             creator_eth_owed_wei, coin_count, executor_balance_wei, min_bridge_wei,
             bridge_amount_wei,
-        ) = await self._launchpad_getters(getters)
+        ) = await self._launchpad_getters(getters, block=block)
 
-        sweep = await self._launchpad_logs(resume)
+        # A population mismatch is evidence that the accumulated history is
+        # incomplete. Preserve the committed cursor and rebuild next tick.
+        completed = sweep.launch_count is not None
+        if (
+            coin_count is not None
+            and sweep.launch_count is not None
+            and sweep.launch_count != coin_count
+        ):
+            logger.warning(
+                "launchpad population mismatch: the sweep found %d Launched "
+                "event(s) but coinCount() says %d -- the sweep is %s the "
+                "factory (cursor at %s)",
+                sweep.launch_count, coin_count,
+                "behind" if sweep.launch_count < coin_count else "ahead of",
+                None if sweep.cursor is None else sweep.cursor.get("last_block"),
+            )
+
+            self._launchpad_rebuild = True
+            sweep = _failed_launchpad_sweep(resume)
+        elif self._launchpad_rebuild and coin_count is None:
+            # An unavailable count cannot certify a previously bad history.
+            sweep = _failed_launchpad_sweep(resume)
+            completed = False
+        elif completed:
+            self._launchpad_rebuild = False
+        if completed:
+            self._launchpad_pending = None
+            for group in ('launchpad_launched', 'launchpad_curve_swap',
+                          'launchpad_imd_burned', 'launchpad_burnkeepers'):
+                self._history.clear(group)
+
         volume_2h = None
         if sweep.volume_inputs is not None:
             volume_2h = await surf_launchpad_volume.fetch_snapshot(
@@ -2005,30 +2004,6 @@ class SurfClient(OwnedHttpClient):
         )
         keepers = None if sweep.burns is None else _rank_burnkeepers(sweep.burns)
 
-        # The two population reads, compared -- deliberately here and not
-        # reconciled into one number. `coinCount()` is what the factory says
-        # it minted; `launch_count` is what the log sweep actually found. They
-        # agree on a healthy full sweep, and every way of NOT agreeing is
-        # worth saying out loud: a cursor mid-catch-up (fine, transient), a
-        # provider that truncated a page (was silent until this task paged the
-        # reads), or a first block that is too late (permanent, and invisible
-        # in the panel, which would just show fewer coins). This is the check
-        # that would have caught the 33,000-block window reporting 66 of 146
-        # as if it were the whole launchpad.
-        if (
-            coin_count is not None
-            and sweep.launch_count is not None
-            and sweep.launch_count != coin_count
-        ):
-            logger.warning(
-                "launchpad population mismatch: the sweep found %d Launched "
-                "event(s) but coinCount() says %d -- the sweep is %s the "
-                "factory (cursor at %s)",
-                sweep.launch_count, coin_count,
-                "behind" if sweep.launch_count < coin_count else "ahead of",
-                None if sweep.cursor is None else sweep.cursor.get("last_block"),
-            )
-
         return LaunchpadState(
             coin_count=coin_count,
             imd_to_burn_wei=imd_to_burn_wei,
@@ -2055,7 +2030,7 @@ class SurfClient(OwnedHttpClient):
         )
 
     async def _launchpad_getters(
-        self, getters: list[tuple[str, str]]
+        self, getters: list[tuple[str, str]], *, block: str = "latest"
     ) -> tuple[int | None, ...]:
         """One ``aggregate3`` over the hook / factory / executor getters.
 
@@ -2067,7 +2042,7 @@ class SurfClient(OwnedHttpClient):
         data = encode_aggregate3([(target, sel, True) for target, sel in getters])
         try:
             raw = await self._rpc_state(
-                "eth_call", [{"to": MULTICALL3, "data": data}, "latest"]
+                "eth_call", [{"to": MULTICALL3, "data": data}, block]
             )
         except RuntimeError as exc:
             logger.warning("fetch_launchpad getters: %s", exc)
@@ -2139,7 +2114,8 @@ class SurfClient(OwnedHttpClient):
         **A partial sweep is an outage.** If any of the four sweeps returns
         ``None``, nothing merges, nothing advances and nothing zeroes: the
         untouched *resume* goes back out as the cursor and every aggregate
-        reads ``None``. There is no honest way to advance ``last_block`` past
+        reads ``None``. Completed pages stay in a bounded process-local
+        buffer and the target head is frozen until this pass completes. There is no honest way to advance ``last_block`` past
         blocks whose ``CurveSwap`` rows were never read -- doing so would
         drop them from ``swaps_all`` forever while presenting the total as
         complete. Serving last-good behind an ``as of`` marker is the
@@ -2164,13 +2140,18 @@ class SurfClient(OwnedHttpClient):
         exists only so a row can be *labelled*, carrying the ticker raw
         because escaping belongs to the render layer.
         """
-        prior = _coerce_launchpad_resume(resume)
-        try:
-            head_hex = await self._rpc_logs("eth_blockNumber", [])
-            head = int(head_hex, 16)
-        except (RuntimeError, TypeError, ValueError) as exc:
-            logger.warning("fetch_launchpad logs head: %s", exc)
-            return _failed_launchpad_sweep(resume)
+        prior = None if self._launchpad_rebuild else _coerce_launchpad_resume(resume)
+        resume_from = A.LAUNCHPAD_FIRST_BLOCK if prior is None else prior['last_block'] + 1
+        if self._launchpad_pending is not None and self._launchpad_pending[0] == resume_from:
+            head = self._launchpad_pending[1]
+        else:
+            try:
+                head_hex = await self._rpc_logs("eth_blockNumber", [])
+                head = int(head_hex, 16)
+            except (RuntimeError, TypeError, ValueError) as exc:
+                logger.warning("fetch_launchpad logs head: %s", exc)
+                return _failed_launchpad_sweep(resume)
+            self._launchpad_pending = (resume_from, head)
 
         # **A cursor ahead of the chain is corrupt, not merely stale.**  The
         # `max(head, prior["last_block"])` below is right -- a lagging
@@ -2504,23 +2485,24 @@ class SurfClient(OwnedHttpClient):
         except (RuntimeError, TypeError, ValueError) as exc:
             logger.warning("fetch_decoy_pool_count head: %s", exc)
             return None, None
-        rows = await self._get_logs_shrinking(
+        rows = await self._get_logs_paged(
             {
                 "address": A.POOL_MANAGER_V4,
                 "topics": [A.TOPIC_V4_INITIALIZE, None, None,
                            _addr_topic(A.IMD_TOKEN)],
             },
             V4_INITIALIZE_SEARCH_FROM_BLOCK, head, group="v4_decoy_pools",
+            page_size=head - V4_INITIALIZE_SEARCH_FROM_BLOCK + 1,
         )
         if rows is None:
             return None, None
 
         real = (real_pool_id or "").lower()
-        decoys = [
-            row for row in rows
+        decoys = list({
+            str(row["topics"][1]).lower(): row for row in rows
             if len(row.get("topics") or []) > 1
             and str(row["topics"][1]).lower() != real
-        ]
+        }.values())
         if not decoys:
             return 0, None
 
@@ -3302,67 +3284,19 @@ class SurfClient(OwnedHttpClient):
         return None
 
     async def _get_logs_paged(
-        self, base_filter: dict, from_block: int, to_block: int, *, group: str
+        self, base_filter: dict, from_block: int, to_block: int, *, group: str,
+        page_size: int = LOG_WINDOW_BLOCKS,
     ) -> list[dict] | None:
-        """eth_getLogs over an arbitrarily wide range, in complete pages.
+        """Read all history, retaining completed pages when a later page fails.
 
-        The reader for anything that sweeps *history*.
-        ``_get_logs_shrinking`` cannot do this job: it answers a too-wide ask
-        by pulling ``fromBlock`` toward the head and returning the short
-        result as a success, so a range-capped endpoint hands back the newest
-        slice and drops the oldest blocks with no trace. For the launchpad
-        that is not a degraded read, it is a *silent* one -- and the cursor
-        then advances past the blocks that were never read, which turns a
-        transient provider limit into permanent data loss. Measured on the
-        committed 146-launch fixture with a 10,000-block cap: the shrinking
-        reader returned 2 launches and 45 swaps as a clean success.
-
-        So the range is tiled into ``LOG_WINDOW_BLOCKS``-sized pages (2,400 --
-        this client's working window everywhere else) and **any page that
-        cannot be read fails the whole call**, ``None``. A range error halves
-        the page size and retries *the same start*: the cursor never moves
-        over a block whose logs were not seen. Bounded by ``_LOG_MAX_SHRINKS``
-        halvings and the ``_LOG_MIN_WINDOW`` floor, then honest failure --
-        never a livelock, and never a suggested range followed verbatim.
-
-        Cost is one request per 2,400 blocks: ~15 per event type for today's
-        ~34k-block cold sweep, 3 for the 7,200-block day re-read. An empty
-        page is data; ``[]`` overall means "swept, and nothing happened".
+        Empty pages require independent confirmation. Endpoint caps never
+        narrow another host. Launchpad keeps completed sibling filters until
+        the combined cursor is committed; other reads release upon completion.
         """
-        if from_block > to_block:
-            return []
-        rows: list[dict] = []
-        page = LOG_WINDOW_BLOCKS
-        shrinks = 0
-        start = from_block
-        while start <= to_block:
-            end = min(start + page - 1, to_block)
-            flt = dict(base_filter)
-            flt["fromBlock"] = hex(start)
-            flt["toBlock"] = hex(end)
-            try:
-                result = await self._rpc_logs("eth_getLogs", [flt])
-            except _LogRangeError as exc:
-                if page <= _LOG_MIN_WINDOW or shrinks >= _LOG_MAX_SHRINKS:
-                    logger.warning(
-                        "getLogs paged: %s still range-limited at a %d-block "
-                        "page after %d halving(s) -- failing rather than "
-                        "skipping blocks %d..%d: %s",
-                        group, page, shrinks, start, end, exc,
-                    )
-                    return None
-                page = max(page // 2, _LOG_MIN_WINDOW)
-                shrinks += 1
-                continue          # the SAME start -- never skip forward
-            except RuntimeError as exc:
-                logger.warning("getLogs paged failed for %s: %s", group, exc)
-                return None
-            if not isinstance(result, list):
-                logger.warning("getLogs paged: %s returned a non-list", group)
-                return None
-            rows.extend(result)
-            start = end + 1
-        return rows
+        return await self._history.read(
+            self._log_rpcs, base_filter, from_block, to_block, group=group,
+            page_size=page_size, keep_complete=group.startswith('launchpad_'),
+        )
 
     async def fetch_recent_logs(self) -> LogWindow | None:
         """The recent-window log sweep for signals 2/3/5 and NFT sales.

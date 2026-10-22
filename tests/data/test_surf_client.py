@@ -3258,6 +3258,8 @@ async def test_fetch_launchpad_ranks_and_decodes_the_real_fixture() -> None:
     # exercised end to end and not just left at None.
     prices = {l["pool_id"]: 5_000_000_000_000 + i for i, l in enumerate(launches)}
 
+    # This fixture is a population slice, so model its matching factory count.
+    reads['coin_count'] = len(logs_data['launched'])
     handler = _launchpad_fixture_handler(reads, logs_data, prices)
     transport = RecordingTransport(handler)
     async with _client_on(transport, now_fn=lambda: 2_000_000_000.0) as client:
@@ -3509,7 +3511,7 @@ async def test_a_curve_swap_is_attributed_by_pool_id_and_an_unknown_pool_id_is_s
     crashes the rank -- and still counts toward the lifetime swap total.
     """
     reads = _load_launchpad("launchpad_reads.json")
-    head = 30_000_000
+    head = A.LAUNCHPAD_FIRST_BLOCK + 34_000  # A bounded cold sweep; ages stay relative.
     pid_foo = "0x" + "11" * 32
     pid_unknown = "0x" + "99" * 32
 
@@ -3531,6 +3533,7 @@ async def test_a_curve_swap_is_attributed_by_pool_id_and_an_unknown_pool_id_is_s
         ],
         "imd_burned": [],
     }
+    reads["coin_count"] = len(logs_data["launched"])
     handler = _launchpad_fixture_handler(reads, logs_data, {})
     async with _client_on(RecordingTransport(handler)) as client:
         state = await client.fetch_launchpad()  # must not raise
@@ -3575,7 +3578,7 @@ async def test_swaps_by_coin_is_the_full_population_not_the_rendered_cap() -> No
     from maxpane_dashboard.analytics.surf_launchpad import hot_coin_threshold
 
     reads = _load_launchpad("launchpad_reads.json")
-    head = 30_000_000
+    head = A.LAUNCHPAD_FIRST_BLOCK + 34_000  # A bounded cold sweep; ages stay relative.
     launched_block = head - 1000     # inside the day window, which is what
                                       # `new_24h` counts over
     swap_block = head - 10           # comfortably inside LAUNCHPAD_DAY_BLOCKS
@@ -3619,6 +3622,8 @@ async def test_swaps_by_coin_is_the_full_population_not_the_rendered_cap() -> No
         "curve_swap": curve_swap_rows,
         "imd_burned": [],
     }
+    # This fixture is a population slice, so model its matching factory count.
+    reads['coin_count'] = len(logs_data['launched'])
     handler = _launchpad_fixture_handler(reads, logs_data, {})
     async with _client_on(RecordingTransport(handler)) as client:
         state = await client.fetch_launchpad()
@@ -3711,11 +3716,12 @@ def _client_recording_getlogs(
     return _client_on(httpx.MockTransport(handler)), calls
 
 
-def _client_serving(fixture_name: str, **kw: Any) -> SurfClient:
+def _client_serving(fixture_name: str, *, check_population: bool = True, **kw: Any) -> SurfClient:
     """A client serving one committed launchpad log fixture end to end."""
-    handler = _launchpad_fixture_handler(
-        _load_launchpad("launchpad_reads.json"), _load_launchpad(fixture_name), {}
-    )
+    reads = _load_launchpad("launchpad_reads.json")
+    if not check_population:
+        reads['coin_count'] = None  # Isolate cursor coercion from the count witness.
+    handler = _launchpad_fixture_handler(reads, _load_launchpad(fixture_name), {})
     kw.setdefault("now_fn", lambda: 2_000_000_000.0)
     return _client_on(RecordingTransport(handler), **kw)
 
@@ -3913,7 +3919,7 @@ async def test_resuming_does_not_double_count_a_launch_or_a_swap_on_the_boundary
                          "creator": "0x" + "1" * 40, "block": 25_790_000}},
         swaps_all={pool: 5},
     )
-    async with _client_serving("cursor_resume.json") as client:
+    async with _client_serving("cursor_resume.json", check_population=False) as client:
         state = await client.fetch_launchpad(resume=resume)
 
     assert state.launch_count == 1               # the same launch, not two
@@ -4198,12 +4204,13 @@ async def test_the_paged_read_tiles_its_range_with_no_gap_and_no_overlap() -> No
     async with client:
         await client.fetch_launchpad(resume=None)
 
-    pages = sorted(
+    # A second host independently confirms empty pages; unique ranges tile.
+    pages = sorted({
         (int(p["params"][0]["fromBlock"], 16), int(p["params"][0]["toBlock"], 16))
         for (_u, _m, p) in transport.requests
         if p and p.get("method") == "eth_getLogs"
         and p["params"][0]["topics"][0] == A.TOPIC_LAUNCHED
-    )
+    })
     assert len(pages) > 1, "the range was not paged at all"
     assert pages[0][0] == A.LAUNCHPAD_FIRST_BLOCK
     assert pages[-1][1] == FIXTURE_HEAD_BLOCK
@@ -4249,15 +4256,15 @@ async def test_the_sweep_reports_when_its_population_disagrees_with_coincount(
 
     It is what C1 needed and did not have: a truncating endpoint reported 2
     launches beside a `coinCount()` of 146 and nothing said a word. The two
-    are still published separately rather than reconciled -- a cursor
-    mid-catch-up disagrees legitimately -- but the disagreement is no longer
-    silent.
+    remain separate observations; a disagreement prevents the incomplete
+    log-derived history from being published and triggers a later rebuild.
     """
     with caplog.at_level(logging.WARNING, logger="maxpane_dashboard.data.surf_client"):
         async with _client_serving("launchpad_logs.json") as client:
             state = await client.fetch_launchpad(resume=None)
 
-    assert state.launch_count == 13 and state.coin_count == 146
+    assert state.launch_count is None and state.coin_count == 146
+    assert state.cursor is None and state.coins == ()
     mismatch = [r for r in caplog.records if "population mismatch" in r.message]
     assert len(mismatch) == 1
     assert mismatch[0].args[:2] == (13, 146)
@@ -4329,7 +4336,7 @@ async def test_a_hand_edited_cursor_cannot_crash_or_inflate_the_sweep() -> None:
     which is the state that can recover.
     """
     for traders in (5, "abc", {"a": 1}, None, [], [1, 2, None], ["0xAA", "0xaa"]):
-        async with _client_serving("full_history.json") as client:
+        async with _client_serving("full_history.json", check_population=False) as client:
             state = await client.fetch_launchpad(
                 resume=_cursor(25_800_000, traders=traders))
         assert isinstance(state, LaunchpadState), traders
@@ -4342,7 +4349,7 @@ async def test_a_hand_edited_cursor_cannot_crash_or_inflate_the_sweep() -> None:
     # A well-formed cursor still resumes and still adds its own traders on
     # top of the swept ones, which is what keeps this from passing against a
     # function that rejected every cursor it was handed.
-    async with _client_serving("full_history.json") as client:
+    async with _client_serving("full_history.json", check_population=False) as client:
         cold = await client.fetch_launchpad(resume=None)
         from_typo = await client.fetch_launchpad(
             resume=_cursor(25_800_000, traders="abc"))
@@ -4527,7 +4534,7 @@ async def test_an_attacker_chosen_name_cannot_grow_the_persisted_cursor() -> Non
         "curve_swap": [], "imd_burned": [],
     }
     handler = _launchpad_fixture_handler(
-        _load_launchpad("launchpad_reads.json"), logs_data, {})
+        dict(_load_launchpad("launchpad_reads.json"), coin_count=1), logs_data, {})
     async with _client_on(RecordingTransport(handler)) as client:
         state = await client.fetch_launchpad(resume=None)
 

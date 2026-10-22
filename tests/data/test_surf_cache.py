@@ -868,6 +868,8 @@ async def test_the_launchpad_cursors_real_shape_round_trips_through_the_cache_fi
     launches = [surf_client._decode_launched_log(r) for r in logs_data["launched"]]
     assert all(launch is not None for launch in launches)
     prices = {launch["pool_id"]: 5_000_000_000_000 + i for i, launch in enumerate(launches)}
+    # This cursor round-trip uses a 13-launch slice, not the full 146 corpus.
+    reads["coin_count"] = len(logs_data["launched"])
 
     handler = _launchpad_fixture_handler(reads, logs_data, prices)
     transport = RecordingTransport(handler)

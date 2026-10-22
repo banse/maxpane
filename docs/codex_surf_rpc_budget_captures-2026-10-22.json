@@ -1,0 +1,544 @@
+{
+ "capturedAt": "2026-10-22T18:47:33.904Z",
+ "note": "one call per case from aidude (macOS, residential IP); bodies truncated to 600 chars",
+ "ethHead": "26250043",
+ "baseHead": "52952749",
+ "capture": {
+  "rpc.mevblocker.io": {
+   "recent10k": {
+    "status": 200,
+    "ms": 1253,
+    "headers": {
+     "cf-ray": "a4eaab22bc675bc8-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":[{\"removed\":false,\"logIndex\":\"0xee\",\"transactionIndex\":\"0x78\",\"transactionHash\":\"0xd91b67eccafb9187fc2efcca1cc598ee5d9608a1a9334f93a01fe3bb99baef31\",\"blockHash\":\"0xf76b692a380a787d90fc7bfaa36ba9f0e51e4a15e08b9c72f74cd5110c40125b\",\"blockNumber\":\"0x19064fe\",\"blockTimestamp\":\"0x6ad88e0f\",\"address\":\"0x0000ec93127baa929e58e97dd0095a2bfb38ec1d\",\"data\":\"0x\",\"topics\":[\"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef\",\"0x0000000000000000000000008894b74f999bbd4e97dff02fc9f82b4b07983d9d\",\"0x000000000000000000000000d16ae9f436f22ab938937dc4e83885e8ef4417e"
+   },
+   "archive2k": {
+    "status": 200,
+    "ms": 647,
+    "headers": {
+     "cf-ray": "a4eaab2a3ba85bc8-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":[{\"removed\":false,\"logIndex\":\"0x1cd\",\"transactionIndex\":\"0x71\",\"transactionHash\":\"0x98f7241e5eadc80ccf9dae3f458d1acb3156301f4cbdca452cb12582162079cb\",\"blockHash\":\"0xadee381395fe353d67661d49bf51563d72bc849cd1b9d0722cdf4d04900665bd\",\"blockNumber\":\"0x1894f80\",\"blockTimestamp\":\"0x6a8336b3\",\"address\":\"0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91\",\"data\":\"0x000000000000000000000000000000000000000000000000000000006a8336b3\",\"topics\":[\"0xe5a1ae9630942d7510b794ac6b487f13176cf55b27415ad75303dd3109242918\",\"0x000000000000000000000000bc268662231c8f5634ef813c116c027da2faf7ca\",\""
+   },
+   "archive50k": {
+    "status": 200,
+    "ms": 1438,
+    "headers": {
+     "cf-ray": "a4eaab2e48165bc8-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Log response size exceeded. You can make eth_getLogs requests with up to a 10,000 block range and no limit on the response size, or you can request any block range with a cap of 10K logs in the response. Based on your parameters and the response size limit, this block range should work: [0x189378e, 0x1895e9d]\"}}"
+   },
+   "fullFiltered": {
+    "status": 200,
+    "ms": 568,
+    "headers": {
+     "cf-ray": "a4eaab374bde5bc8-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":[{\"removed\":false,\"logIndex\":\"0x2c1\",\"transactionIndex\":\"0x139\",\"transactionHash\":\"0x011c6303d11c676975e685f3a903671a959b74fc9e94381482a53154450de170\",\"blockHash\":\"0xafdb754c8cc644727d4f6a2b10a07bf3951b16647aab976843f4861395aebe91\",\"blockNumber\":\"0x17ed85a\",\"blockTimestamp\":\"0x6a0527b3\",\"address\":\"0x0000ec93127baa929e58e97dd0095a2bfb38ec1d\",\"data\":\"0x\",\"topics\":[\"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef\",\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"0x00000000000000000000000084f4b7424e1b0464f9c749725c1f34bed9aa8"
+   },
+   "archiveState": {
+    "status": 200,
+    "ms": 143,
+    "headers": {
+     "cf-ray": "a4eaab3ade715bc8-FRA",
+     "content-type": "application/json; charset=utf-8",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x35\"}"
+   },
+   "oldBlock": {
+    "status": 200,
+    "ms": 144,
+    "headers": {
+     "cf-ray": "a4eaab3bb9a95bc8-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"hash\":\"0x43d1311915416f419b5420c2925a904b94db3f8760cc858deaf83bc43b8c5def\",\"parentHash\":\"0x1449c5f5d31d41483a38dd91b41204316a19dc090bf01573956abad075e48458\",\"sha3Uncles\":\"0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347\",\"miner\":\"0x4838b106fce9647bdf1e7877bf73ce8b0bad5f97\",\"stateRoot\":\"0xee5e751b347a31c08013e445a8595c9b9951a08579bc0b02baf143a5ec5af008\",\"transactionsRoot\":\"0xa0a35b8fd15ae23a0aba2903a10670a5f82b96a379faad319f4407cfb7620cb3\",\"receiptsRoot\":\"0x6595775ecb6054e29584ce3e52d20aa56a1abd7d52def7df762dd06b9ead7dd2\",\"logsBloom\":\"0x92aae"
+   },
+   "batch5": {
+    "status": 200,
+    "body": "[{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x1908b3b\"},{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":\"0x1908b3b\"},{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":\"0x1908b3b\"},{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":\"0x1908b3b\"},{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":\"0x1908b3b\"}]"
+   }
+  },
+  "rpc.mevblocker.io/fast": {
+   "recent10k": {
+    "status": 200,
+    "ms": 1129,
+    "headers": {
+     "cf-ray": "a4eaab466c095bc8-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":[{\"removed\":false,\"logIndex\":\"0xee\",\"transactionIndex\":\"0x78\",\"transactionHash\":\"0xd91b67eccafb9187fc2efcca1cc598ee5d9608a1a9334f93a01fe3bb99baef31\",\"blockHash\":\"0xf76b692a380a787d90fc7bfaa36ba9f0e51e4a15e08b9c72f74cd5110c40125b\",\"blockNumber\":\"0x19064fe\",\"blockTimestamp\":\"0x6ad88e0f\",\"address\":\"0x0000ec93127baa929e58e97dd0095a2bfb38ec1d\",\"data\":\"0x\",\"topics\":[\"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef\",\"0x0000000000000000000000008894b74f999bbd4e97dff02fc9f82b4b07983d9d\",\"0x000000000000000000000000d16ae9f436f22ab938937dc4e83885e8ef4417e"
+   },
+   "archive2k": {
+    "status": 200,
+    "ms": 712,
+    "headers": {
+     "cf-ray": "a4eaab4d69785bc8-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":[{\"removed\":false,\"logIndex\":\"0x1cd\",\"transactionIndex\":\"0x71\",\"transactionHash\":\"0x98f7241e5eadc80ccf9dae3f458d1acb3156301f4cbdca452cb12582162079cb\",\"blockHash\":\"0xadee381395fe353d67661d49bf51563d72bc849cd1b9d0722cdf4d04900665bd\",\"blockNumber\":\"0x1894f80\",\"blockTimestamp\":\"0x6a8336b3\",\"address\":\"0xcb0b0531e86a9ac36fa865ca8e3dbccf047fda91\",\"data\":\"0x000000000000000000000000000000000000000000000000000000006a8336b3\",\"topics\":[\"0xe5a1ae9630942d7510b794ac6b487f13176cf55b27415ad75303dd3109242918\",\"0x000000000000000000000000bc268662231c8f5634ef813c116c027da2faf7ca\",\""
+   },
+   "archive50k": {
+    "status": 200,
+    "ms": 802,
+    "headers": {
+     "cf-ray": "a4eaab51de385bc8-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"Log response size exceeded. You can make eth_getLogs requests with up to a 10,000 block range and no limit on the response size, or you can request any block range with a cap of 10K logs in the response. Based on your parameters and the response size limit, this block range should work: [0x189378e, 0x1895e9d]\"}}"
+   },
+   "fullFiltered": {
+    "status": 200,
+    "ms": 221,
+    "headers": {
+     "cf-ray": "a4eaab56dcfc5bc8-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":[{\"removed\":false,\"logIndex\":\"0x2c1\",\"transactionIndex\":\"0x139\",\"transactionHash\":\"0x011c6303d11c676975e685f3a903671a959b74fc9e94381482a53154450de170\",\"blockHash\":\"0xafdb754c8cc644727d4f6a2b10a07bf3951b16647aab976843f4861395aebe91\",\"blockNumber\":\"0x17ed85a\",\"blockTimestamp\":\"0x6a0527b3\",\"address\":\"0x0000ec93127baa929e58e97dd0095a2bfb38ec1d\",\"data\":\"0x\",\"topics\":[\"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef\",\"0x0000000000000000000000000000000000000000000000000000000000000000\",\"0x00000000000000000000000084f4b7424e1b0464f9c749725c1f34bed9aa8"
+   },
+   "archiveState": {
+    "status": 200,
+    "ms": 136,
+    "headers": {
+     "cf-ray": "a4eaab5839065bc8-FRA",
+     "content-type": "application/json; charset=utf-8",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x35\"}"
+   },
+   "oldBlock": {
+    "status": 200,
+    "ms": 166,
+    "headers": {
+     "cf-ray": "a4eaab591c0f5bc8-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"hash\":\"0x43d1311915416f419b5420c2925a904b94db3f8760cc858deaf83bc43b8c5def\",\"parentHash\":\"0x1449c5f5d31d41483a38dd91b41204316a19dc090bf01573956abad075e48458\",\"sha3Uncles\":\"0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347\",\"miner\":\"0x4838b106fce9647bdf1e7877bf73ce8b0bad5f97\",\"stateRoot\":\"0xee5e751b347a31c08013e445a8595c9b9951a08579bc0b02baf143a5ec5af008\",\"transactionsRoot\":\"0xa0a35b8fd15ae23a0aba2903a10670a5f82b96a379faad319f4407cfb7620cb3\",\"receiptsRoot\":\"0x6595775ecb6054e29584ce3e52d20aa56a1abd7d52def7df762dd06b9ead7dd2\",\"logsBloom\":\"0x92aae"
+   },
+   "batch5": {
+    "status": 200,
+    "body": "[{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":\"0x1908b3c\"}]"
+   }
+  },
+  "eth-pokt.nodies.app": {
+   "recent10k": {
+    "status": 200,
+    "ms": 121,
+    "headers": {
+     "cf-ray": "a4eaab6459dad370-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Block range too large: maximum allowed is 50 blocks on your current plan. Upgrade your subscription at https://nodies.app/pricing for larger ranges.\"}}"
+   },
+   "archive2k": {
+    "status": 200,
+    "ms": 91,
+    "headers": {
+     "cf-ray": "a4eaab648a65d370-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Block range too large: maximum allowed is 50 blocks on your current plan. Upgrade your subscription at https://nodies.app/pricing for larger ranges.\"}}"
+   },
+   "archive50k": {
+    "status": 200,
+    "ms": 31,
+    "headers": {
+     "cf-ray": "a4eaab651c39d370-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Block range too large: maximum allowed is 50 blocks on your current plan. Upgrade your subscription at https://nodies.app/pricing for larger ranges.\"}}"
+   },
+   "fullFiltered": {
+    "status": 200,
+    "ms": 28,
+    "headers": {
+     "cf-ray": "a4eaab654cb4d370-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,\"message\":\"Block range too large: maximum allowed is 50 blocks on your current plan. Upgrade your subscription at https://nodies.app/pricing for larger ranges.\"}}"
+   },
+   "archiveState": {
+    "status": 200,
+    "ms": 130,
+    "headers": {
+     "cf-ray": "a4eaab657d7cd370-FRA",
+     "content-type": "application/json; charset=utf-8",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x35\"}"
+   },
+   "oldBlock": {
+    "status": 200,
+    "ms": 144,
+    "headers": {
+     "cf-ray": "a4eaab664fbbd370-FRA",
+     "content-type": "application/json; charset=utf-8",
+     "server": "cloudflare"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"hash\":\"0x43d1311915416f419b5420c2925a904b94db3f8760cc858deaf83bc43b8c5def\",\"parentHash\":\"0x1449c5f5d31d41483a38dd91b41204316a19dc090bf01573956abad075e48458\",\"sha3Uncles\":\"0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347\",\"miner\":\"0x4838b106fce9647bdf1e7877bf73ce8b0bad5f97\",\"stateRoot\":\"0xee5e751b347a31c08013e445a8595c9b9951a08579bc0b02baf143a5ec5af008\",\"transactionsRoot\":\"0xa0a35b8fd15ae23a0aba2903a10670a5f82b96a379faad319f4407cfb7620cb3\",\"receiptsRoot\":\"0x6595775ecb6054e29584ce3e52d20aa56a1abd7d52def7df762dd06b9ead7dd2\",\"logsBloom\":\"0x92aae"
+   },
+   "batch5": {
+    "status": 200,
+    "body": "[{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":\"0x1908b3c\"}]"
+   }
+  },
+  "eth.drpc.org": {
+   "recent10k": {
+    "status": 400,
+    "ms": 159,
+    "headers": {
+     "cf-ray": "a4eaab728d5b9f1a-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"ranges over 10000 blocks are not supported on free plan\",\"code\":35}}"
+   },
+   "archive2k": {
+    "status": 400,
+    "ms": 39,
+    "headers": {
+     "cf-ray": "a4eaab72cd859f1a-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"ranges over 10000 blocks are not supported on free plan\",\"code\":35}}"
+   },
+   "archive50k": {
+    "status": 400,
+    "ms": 32,
+    "headers": {
+     "cf-ray": "a4eaab72fdb69f1a-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"ranges over 10000 blocks are not supported on free plan\",\"code\":35}}"
+   },
+   "fullFiltered": {
+    "status": 400,
+    "ms": 45,
+    "headers": {
+     "cf-ray": "a4eaab733de39f1a-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"ranges over 10000 blocks are not supported on free plan\",\"code\":35}}"
+   },
+   "archiveState": {
+    "status": 200,
+    "ms": 133,
+    "headers": {
+     "cf-ray": "a4eaab737e279f1a-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":\"0x35\"}"
+   },
+   "oldBlock": {
+    "status": 200,
+    "ms": 102,
+    "headers": {
+     "cf-ray": "a4eaab744eef9f1a-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":{\"baseFeePerGas\":\"0x650590d\",\"blobGasUsed\":\"0x160000\",\"difficulty\":\"0x0\",\"excessBlobGas\":\"0xae63201\",\"extraData\":\"0x546974616e2028746974616e6275696c6465722e78797a29\",\"gasLimit\":\"0x3938700\",\"gasUsed\":\"0x22a3515\",\"hash\":\"0x43d1311915416f419b5420c2925a904b94db3f8760cc858deaf83bc43b8c5def\",\"logsBloom\":\"0x92aae9e3bbf51df767de7533b9ea73eb37ffa9efe636fdf4e6357bf7f85d9eafdd3df55ebedecb3dccffef8dbc3edfef7fddcceecffef74ff5df67cae7bf8fb6d772f75dd9fd15b8ef275f6fadffffe3daff7efdf5dde4adbfff7ff7ce3ffffdfebcaf6af3ffef6ed75abadf7f362bf3bfa74e7b37f176ce0bb152d7388ff67fb4b79eded"
+   },
+   "batch5": {
+    "status": 500,
+    "body": "[{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"Batch of more than 3 requests are not allowed on free plan, to use this feature register paid account at drpc.org\",\"code\":31}},{\"id\":2,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"Batch of more than 3 requests are not allowed on free plan, to use this feature regi"
+   }
+  },
+  "1.rpc.thirdweb.com": {
+   "recent10k": {
+    "status": 200,
+    "ms": 363,
+    "headers": {
+     "cf-ray": "a4eaab7fbc659f16-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"error\":{\"code\":-32005,\"message\":\"Log response size exceeded. Maximum allowed number of requested blocks is 1000\"},\"id\":1,\"jsonrpc\":\"2.0\"}\n"
+   },
+   "archive2k": {
+    "status": 200,
+    "ms": 197,
+    "headers": {
+     "cf-ray": "a4eaab817e979f16-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"error\":{\"code\":-32005,\"message\":\"Log response size exceeded. Maximum allowed number of requested blocks is 1000\"},\"id\":1,\"jsonrpc\":\"2.0\"}\n"
+   },
+   "archive50k": {
+    "status": 200,
+    "ms": 194,
+    "headers": {
+     "cf-ray": "a4eaab82a83c9f16-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"error\":{\"code\":-32005,\"message\":\"Log response size exceeded. Maximum allowed number of requested blocks is 1000\"},\"id\":1,\"jsonrpc\":\"2.0\"}\n"
+   },
+   "fullFiltered": {
+    "status": 200,
+    "ms": 187,
+    "headers": {
+     "cf-ray": "a4eaab83d9b99f16-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"error\":{\"code\":-32005,\"message\":\"Log response size exceeded. Maximum allowed number of requested blocks is 1000\"},\"id\":1,\"jsonrpc\":\"2.0\"}\n"
+   },
+   "archiveState": {
+    "status": 200,
+    "ms": 294,
+    "headers": {
+     "cf-ray": "a4eaab850b279f16-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":\"0x35\"}\n"
+   },
+   "oldBlock": {
+    "status": 200,
+    "ms": 384,
+    "headers": {
+     "cf-ray": "a4eaab86dd399f16-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":{\"baseFeePerGas\":\"0x650590d\",\"blobGasUsed\":\"0x160000\",\"difficulty\":\"0x0\",\"excessBlobGas\":\"0xae63201\",\"extraData\":\"0x546974616e2028746974616e6275696c6465722e78797a29\",\"gasLimit\":\"0x3938700\",\"gasUsed\":\"0x22a3515\",\"hash\":\"0x43d1311915416f419b5420c2925a904b94db3f8760cc858deaf83bc43b8c5def\",\"logsBloom\":\"0x92aae9e3bbf51df767de7533b9ea73eb37ffa9efe636fdf4e6357bf7f85d9eafdd3df55ebedecb3dccffef8dbc3edfef7fddcceecffef74ff5df67cae7bf8fb6d772f75dd9fd15b8ef275f6fadffffe3daff7efdf5dde4adbfff7ff7ce3ffffdfebcaf6af3ffef6ed75abadf7f362bf3bfa74e7b37f176ce0bb152d7388ff67fb4b79eded"
+   },
+   "batch5": {
+    "status": 200,
+    "body": "[{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":\"0x1908b3c\"},{\"id\":2,\"jsonrpc\":\"2.0\",\"result\":\"0x1908b3c\"},{\"id\":3,\"jsonrpc\":\"2.0\",\"result\":\"0x1908b3c\"},{\"id\":4,\"jsonrpc\":\"2.0\",\"result\":\"0x1908b3c\"},{\"id\":5,\"jsonrpc\":\"2.0\",\"result\":\"0x1908b3c\"}]\n"
+   }
+  },
+  "ethereum-rpc.publicnode.com": {
+   "recent10k": {
+    "status": 200,
+    "ms": 92,
+    "headers": {
+     "cf-ray": "a4eaab943e02f721-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":[{\"address\":\"0x0000ec93127baa929e58e97dd0095a2bfb38ec1d\",\"topics\":[\"0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef\",\"0x0000000000000000000000008894b74f999bbd4e97dff02fc9f82b4b07983d9d\",\"0x000000000000000000000000d16ae9f436f22ab938937dc4e83885e8ef4417e5\",\"0x0000000000000000000000000000000000000000000000000000000000000398\"],\"data\":\"0x\",\"blockNumber\":\"0x19064fe\",\"transactionHash\":\"0xd91b67eccafb9187fc2efcca1cc598ee5d9608a1a9334f93a01fe3bb99baef31\",\"transactionIndex\":\"0x78\",\"blockHash\":\"0xf76b692a380a787d90fc7bfaa36ba9f0e51e4a15e08b9c72f74cd5110"
+   },
+   "archive2k": {
+    "status": 403,
+    "ms": 100,
+    "headers": {
+     "cf-ray": "a4eaab947eadf721-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32602,\"message\":\"Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode\"},\"id\":1}\n"
+   },
+   "archive50k": {
+    "status": 403,
+    "ms": 39,
+    "headers": {
+     "cf-ray": "a4eaab951853f721-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32602,\"message\":\"Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode\"},\"id\":1}\n"
+   },
+   "fullFiltered": {
+    "status": 403,
+    "ms": 31,
+    "headers": {
+     "cf-ray": "a4eaab95593cf721-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32602,\"message\":\"Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode\"},\"id\":1}\n"
+   },
+   "archiveState": {
+    "status": 403,
+    "ms": 33,
+    "headers": {
+     "cf-ray": "a4eaab9589def721-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32602,\"message\":\"Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode\"},\"id\":1}\n"
+   },
+   "oldBlock": {
+    "status": 200,
+    "ms": 129,
+    "headers": {
+     "cf-ray": "a4eaab963bbdf721-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"hash\":\"0x43d1311915416f419b5420c2925a904b94db3f8760cc858deaf83bc43b8c5def\",\"parentHash\":\"0x1449c5f5d31d41483a38dd91b41204316a19dc090bf01573956abad075e48458\",\"sha3Uncles\":\"0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347\",\"miner\":\"0x4838b106fce9647bdf1e7877bf73ce8b0bad5f97\",\"stateRoot\":\"0xee5e751b347a31c08013e445a8595c9b9951a08579bc0b02baf143a5ec5af008\",\"transactionsRoot\":\"0xa0a35b8fd15ae23a0aba2903a10670a5f82b96a379faad319f4407cfb7620cb3\",\"receiptsRoot\":\"0x6595775ecb6054e29584ce3e52d20aa56a1abd7d52def7df762dd06b9ead7dd2\",\"logsBloom\":\"0x92aae"
+   },
+   "batch5": {
+    "status": 200,
+    "body": "[{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":4,\"result\":\"0x1908b3c\"},{\"jsonrpc\":\"2.0\",\"id\":5,\"result\":\"0x1908b3c\"}]"
+   }
+  },
+  "base-rpc.publicnode.com": {
+   "recent1k": {
+    "status": 200,
+    "ms": 163,
+    "headers": {
+     "cf-ray": "a4eaaba2ba4cdc82-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":[{\"address\":\"0x4200000000000000000000000000000000000006\",\"topics\":[\"0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c\",\"0x0000000000000000000000006ff5693b99212da76ad316178a184ab56d299b43\"],\"data\":\"0x00000000000000000000000000000000000000000000000000009e55dbf9f400\",\"blockHash\":\"0xdb5301a9cb0b9a06bbc16f582f4d5a1d1033330174a5decdffec271bae801604\",\"blockNumber\":\"0x327fac6\",\"blockTimestamp\":\"0x6ada526f\",\"transactionHash\":\"0xad30c5fdad53a9017e9f6e4d220aa4609dff93b8c94f860688fc2931dc8fa32e\",\"transactionIndex\":\"0xf\",\"logIndex\":\"0x15\",\"removed\":false},{"
+   },
+   "recent5k": {
+    "status": 200,
+    "ms": 915,
+    "headers": {
+     "cf-ray": "a4eaaba34bbddc82-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"query exceeds max results 20000, retry with the range 52947750-52949822\"}}"
+   },
+   "archive200k": {
+    "status": 403,
+    "ms": 33,
+    "headers": {
+     "cf-ray": "a4eaaba8fe6adc82-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32602,\"message\":\"Archive requests require a personal token. Get one at: https://www.allnodes.com/publicnode\"},\"id\":1}\n"
+   }
+  },
+  "mainnet.base.org": {
+   "recent1k": {
+    "status": 429,
+    "ms": 104,
+    "headers": {
+     "cf-ray": "a4eaabb28fb9d389-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32011,\"message\":\"request limit reached\"}}"
+   },
+   "recent5k": {
+    "status": 429,
+    "ms": 190,
+    "headers": {
+     "cf-ray": "a4eaabb3bb9bd389-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32011,\"message\":\"request limit reached\"}}"
+   },
+   "archive200k": {
+    "status": 429,
+    "ms": 101,
+    "headers": {
+     "cf-ray": "a4eaabb46ddbd389-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare",
+     "x-content-type-options": "nosniff"
+    },
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32011,\"message\":\"request limit reached\"}}"
+   }
+  },
+  "base.llamarpc.com": {
+   "recent1k": {
+    "status": 525,
+    "ms": 202,
+    "headers": {
+     "cf-ray": "a4eaabbee9f41976-FRA",
+     "content-type": "text/html; charset=UTF-8",
+     "server": "cloudflare"
+    },
+    "body": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n\n<title>llamarpc.com | 525: SSL handshake failed</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" />\n<meta name=\"robots\" content=\"noindex, nofollow\" />\n<meta name=\"viewpor"
+   },
+   "recent5k": {
+    "status": 525,
+    "ms": 52,
+    "headers": {
+     "cf-ray": "a4eaabbfaaa41976-FRA",
+     "content-type": "text/html; charset=UTF-8",
+     "server": "cloudflare"
+    },
+    "body": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n\n<title>llamarpc.com | 525: SSL handshake failed</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" />\n<meta name=\"robots\" content=\"noindex, nofollow\" />\n<meta name=\"viewpor"
+   },
+   "archive200k": {
+    "status": 525,
+    "ms": 50,
+    "headers": {
+     "cf-ray": "a4eaabbffae21976-FRA",
+     "content-type": "text/html; charset=UTF-8",
+     "server": "cloudflare"
+    },
+    "body": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!--<![endif]-->\n<head>\n\n<title>llamarpc.com | 525: SSL handshake failed</title>\n<meta charset=\"UTF-8\" />\n<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\" />\n<meta http-equiv=\"X-UA-Compatible\" content=\"IE=Edge\" />\n<meta name=\"robots\" content=\"noindex, nofollow\" />\n<meta name=\"viewpor"
+   }
+  },
+  "base.drpc.org": {
+   "recent1k": {
+    "status": 200,
+    "ms": 256,
+    "headers": {
+     "cf-ray": "a4eaabcabb88dcc9-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"result\":[{\"address\":\"0x4200000000000000000000000000000000000006\",\"topics\":[\"0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c\",\"0x0000000000000000000000006ff5693b99212da76ad316178a184ab56d299b43\"],\"data\":\"0x00000000000000000000000000000000000000000000000000009e55dbf9f400\",\"blockHash\":\"0xdb5301a9cb0b9a06bbc16f582f4d5a1d1033330174a5decdffec271bae801604\",\"blockNumber\":\"0x327fac6\",\"blockTimestamp\":\"0x6ada526f\",\"transactionHash\":\"0xad30c5fdad53a9017e9f6e4d220aa4609dff93b8c94f860688fc2931dc8fa32e\",\"transactionIndex\":\"0xf\",\"logIndex\":\"0x15\",\"removed\":false},{"
+   },
+   "recent5k": {
+    "status": 400,
+    "ms": 37,
+    "headers": {
+     "cf-ray": "a4eaabcb4d41dcc9-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"ranges over 10000 blocks are not supported on free plan\",\"code\":35}}"
+   },
+   "archive200k": {
+    "status": 400,
+    "ms": 51,
+    "headers": {
+     "cf-ray": "a4eaabcb8e22dcc9-FRA",
+     "content-type": "application/json",
+     "server": "cloudflare"
+    },
+    "body": "{\"id\":1,\"jsonrpc\":\"2.0\",\"error\":{\"message\":\"ranges over 10000 blocks are not supported on free plan\",\"code\":35}}"
+   }
+  }
+ }
+}
