@@ -36,6 +36,7 @@ module computed.
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import json
 import tempfile
 from pathlib import Path
@@ -203,6 +204,8 @@ class MarketPool4Client(FakePool4Client):
         self.log_reads: list[tuple[str, int, int]] = []
         by_addr = overrides.pop("logs_by_addr", None)
         super().__init__(**overrides)
+        if "fetch_block_number" not in overrides:
+            self._returns["fetch_block_number"] = TRANSFERS_FULL["head_block"]
         # F9. This was ``self._returns.setdefault(...)`` and was correct when
         # written: the parent had no ``fetch_reference_slot0`` key, so the
         # setdefault installed the real answer. WP7 then seeded the parent with
@@ -230,6 +233,10 @@ class MarketPool4Client(FakePool4Client):
         self.reference_calls.append((pool_id, pool_manager))
         return self._answer("fetch_reference_slot0", network)
 
+    async def fetch_zero_supply(self, addr, before, *, network):
+        # Scenario anchor: old full fixture predates every captured mint.
+        return before < TRANSFERS_FULL["first_log_block"]
+
     async def fetch_flow_logs(self, addr, from_block, to_block, *, network):
         self.log_windows.append((from_block, to_block))
         self.log_reads.append((str(addr).lower(), from_block, to_block))
@@ -243,10 +250,14 @@ class MarketPool4Client(FakePool4Client):
             override = self._returns[key]
             if isinstance(override, BaseException):
                 raise override
-            return override
-        if str(addr).lower() in self._logs_by_addr:
-            return self._logs_by_addr[str(addr).lower()]
-        return self._answer("fetch_flow_logs", network)
+            rows = override
+        elif str(addr).lower() in self._logs_by_addr:
+            rows = self._logs_by_addr[str(addr).lower()]
+        else:
+            rows = self._answer("fetch_flow_logs", network)
+        if rows is not None and str(addr).lower() == str(VAULT_ADDR).lower():
+            return [row for row in rows if from_block <= int(row['blockNumber'], 16) <= to_block]
+        return rows
 
 
 def _market_manager(tmp_path, *, pool4_client=None, clock=None) -> SurfManager:
@@ -1163,9 +1174,12 @@ async def test_the_stakers_marker_does_advance_when_the_fold_actually_moves(
     first = await _sweep_stakers(manager)
     first_ts = manager.cache.get_last_good(SLOT_POOL4_STAKERS).ts
 
-    client._returns["fetch_flow_logs_" + str(VAULT_ADDR).lower()] = (
-        TRANSFER_LOGS_PARTIAL
-    )
+    # A new mint moves balances. Replacing lifetime logs with a truncated
+    # prefix is now an integrity failure, not a legitimate balance update.
+    mint = deepcopy(TRANSFER_LOGS[0])
+    mint.update(blockNumber=hex(TRANSFERS_FULL["head_block"] + 1), logIndex='0x0')
+    client._returns["fetch_block_number"] = TRANSFERS_FULL["head_block"] + 1
+    client._returns["fetch_flow_logs_" + str(VAULT_ADDR).lower()] = TRANSFER_LOGS + [mint]
     manager._clock_double.advance(TIER_TTL_SECONDS[TIER_POOL4_STAKERS] + 1)
     await manager.fetch_and_compute()
     if manager._pool4_stakers_task is not None:

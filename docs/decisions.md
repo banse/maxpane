@@ -4,6 +4,17 @@ Dated one-liners for things `CLAUDE.md` used to say and no longer does, and for 
 reasoning would otherwise be re-argued. Newest first. A plan, PRD or work-package file that still
 asserts a withdrawn statement is historical — do not review code against it.
 
+- **2026-10-22** — SURF RPC round 1 prioritizes complete history over unconditional
+  request-count reductions: independent empty confirmation costs two log requests.
+  Two requests for known POOL4 state means the healthy path; cold discovery and retries
+  are separately counted. JSON arrays using `latest` were not same-block snapshots;
+  Multicall3 now supplies the block identity and dependent calls use that exact block.
+  A nonnegative trailing staker fold never proved lifetime coverage; historical zero
+  supply/absent code or genesis now anchors a persisted balance checkpoint. Twelve
+  recent blocks are replayed; deeper reorg detection and R2 coordination remain out
+  of scope. Evidence comes from supplied captures and complete offline fixtures,
+  not a new network probe; see `codex_surf_rpc_budget_r1_report.md`.
+
 - **2026-09-24** — AGENT RUNTIME uses npm latest for Claude Code/Codex and the unique fleet
   plurality for daemon equality; yellow `↑` reserves its own cells and the tooltip names the
   basis. Checks are hourly per package, only in AGENT, with no extra workers request.

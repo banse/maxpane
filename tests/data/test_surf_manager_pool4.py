@@ -343,6 +343,20 @@ class FakePool4Client:
             raise value
         return value
 
+    async def fetch_state_bundle(self, hook_addr, *, network, token_addr):
+        # Preserve existing fixture failures/answers through the new public seam.
+        hook = await self.fetch_hook_state(hook_addr, network=network, token_addr=token_addr)
+        recipient = getattr(hook, "rewards_recipient", None)
+        path = await self.resolve_vault_path(recipient, network=network) if recipient else None
+        path = path or {}
+        dripper = await self.fetch_dripper_state(path["dripper"], network=network, token_addr=token_addr) if path.get("dripper") else None
+        vault = await self.fetch_vault_state(path["vault"], network=network) if path.get("vault") else None
+        distributor_addr = SurfManager._pool4_distributor_addr(path)
+        distributor = await self.fetch_distributor_state(distributor_addr, network=network) if distributor_addr else None
+        reference = await self.fetch_reference_slot0(hook.pool_id, network=network, pool_manager=hook.pool_manager) if hook and hook.pool_id and hook.pool_manager else None
+        return dict(hook=hook, path=path, dripper=dripper, vault=vault,
+                    distributor=distributor, reference=reference, identity_valid=True)
+
     async def fetch_candidate_answers(self, addrs, *, network):
         """The real client's contract, including its gate ORDER.
 

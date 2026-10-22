@@ -1,0 +1,8 @@
+{
+  "synthetic": true,
+  "purpose": "Offline wiring scenario, not evidence of an actual announcement or an actual CoinGecko response",
+  "channel_text": "pool4 mainnet: 0xc6c965bd164c483e87d0b550671798e9a3602840",
+  "channel_source": "The first recorded announce_txs_page1 row is cloned with only raw_input replaced; the hook is from mainnet_hook_state",
+  "eth_quote": {"ethereum": {"usd": 1917.74}},
+  "eth_quote_source": "Existing test_surf_client market replay value, also the recorded Blockscout exchange_rate; no CoinGecko capture exists"
+}

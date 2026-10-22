@@ -118,6 +118,32 @@ pointing at a chain where the getter exists with a different value.
 
 ## RPC endpoints
 
+**SURF budget round 1 (2026-10-22, offline replay):** endpoint evidence is the owner's
+`docs/codex_surf_rpc_budget_captures-2026-10-22.json`, not a fresh probe. Success bodies
+are truncated; use the complete repository corpora for value assertions. Mevblocker's
+current error offers a 10,000-block window OR a sparse wide query below 10,000 results;
+it does not establish a universal 10,000-block cap. Thirdweb names 1,000 blocks, Nodies
+50, and drpc rejects arrays over three entries. A misleading drpc archive refusal is
+still not evidence to narrow a window already below its named width.
+
+SURF-only policy lives in `surf_rpc_history.py` / `surf_rpc_batch.py`; parked clients
+and shared classifier tables are unchanged. History retries retain acknowledged pages,
+confirm empties with distinct hosts, learn caps per endpoint, and yield incomplete after
+256 accepted pages per invocation. A requested range is never replaced with its tail.
+Incomplete buffers are process-local; public cursors advance only on completed reads.
+Launchpad's `coinCount()` witness is pinned to the sweep head; disagreement forces a
+rebuild. Known-address POOL4 getters use Multicall3 plus a dependent conversion at the
+same block; two HTTP requests is the healthy budget, not a cap on outage recovery.
+
+BOARDROOM's medium sources have independent 90-second success / 60-second failure
+clocks; they never mark hidden detail tiers fetched. Its POOL4 card reads only path
+checks, live decimals, share conversion and tick. STAKERS proves a zero-balance starting
+point (historical zero supply/absent code, or genesis), persists balances plus a validated
+private checkpoint in the existing slot, and replays 12 recent blocks. Old slots rebuild
+while keeping their display payload; no cache version key is added. The old trailing-window
+heuristic cannot prove lifetime coverage. Quiet incremental history needs two log requests
+for empty confirmation; this correctness cost is included in the round report.
+
 **Verified dead, do not reintroduce:** `eth.llamarpc.com` (521), `rpc.ankr.com/eth` (now keyed),
 `cloudflare-eth.com` (`-32046` on Ethereum), `api.reservoir.tools` (DNS gone, API sunset),
 `rpc.sepolia.org` (404), `omniatech` (521), `ethereum.blockpi.network` (non-JSON),

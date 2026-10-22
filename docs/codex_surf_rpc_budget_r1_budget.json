@@ -1,0 +1,772 @@
+{
+  "after": {
+    "fixture_sha256": {
+      "client/announce_txs_page1.json": "f950cad94c098a0c0e99422bbe4f0ea03fae87eeaa7164cc24ba608529c6e0c0",
+      "client/dexscreener_fp.json": "005d36aec49f652a764c771e745fd6203b971dec1d3836bb8dc76b0a11e58de0",
+      "client/dexscreener_imd.json": "2e71121cdb67831e2a8e03eed0649551fe36229db20fa212b76174923e29cfc5",
+      "launchpad/full_history.json": "b98e023decca5f5c8718457e3aabbe2ec2ff0fc753bc41c825a9f685a66e409d",
+      "launchpad/launchpad_reads.json": "4f05f53276463ae27ef48f7d28cc42c76d7db082a35dfa95eca2fbce1ec18b72",
+      "launchpad/v4_initializes.json": "098a76b1ecb20244e9cbeed6c958f8fc59890f849a183e6e7c4f38aa09843f61",
+      "launchpad/volume_headers.json": "42ea728a41e04043b2ab3890581854369a1d807088dd34693d95a6631660e97e",
+      "market_loading/gecko_pool.json": "6766f35643261d7749bdcdc97593b63ef3115729e263f83535138ca46a76cdee",
+      "pool4/mainnet_distributor_state.json": "fc90cdab70d24b5a1bb02da442b6e470209615b1978f7ab42e2d018caa55494f",
+      "pool4/mainnet_distributor_state.request.json": "d2ad218f4bb7cfac6d8dc5de0c73ea26f12ce914e466693dfad67121e28d9c36",
+      "pool4/mainnet_dripper_state.json": "d28f86172b75152d47a6e8baa418c594676a615ee476275f40a154a1afb1ca30",
+      "pool4/mainnet_dripper_state.request.json": "83753396c351818667cf81bddaf948822390f370cbc0468c8414bcb18038b7eb",
+      "pool4/mainnet_hook_state.json": "88ef473fde76eb533f08cf626b1fa7b4e77c76214c6e117674f7fae5ae95f569",
+      "pool4/mainnet_hook_state.request.json": "26b642a0810ad674f0a2d24293a1d5d4c0c611a30d9543fa7b88e907e0b5dbf1",
+      "pool4/mainnet_pool_slot0.json": "3a647c99816fbbc2c36015b2e55bc12b73d342d5a1027f8509600df3126c1a17",
+      "pool4/mainnet_pool_slot0.request.json": "0d8f13bf1aa96498afb902018ec2dc31d25fc0b033aed128d928ac31b895d8f0",
+      "pool4/mainnet_vault_path.json": "f16780869fe99c45fd9050d3786016ecb22b74eee96949f5b983dfc424a4ac82",
+      "pool4/mainnet_vault_path.request.json": "a421e61fa027af4bfffea5e211a5aedfafe07ff759e68cb197ad2afa47292137",
+      "pool4/mainnet_vault_state.json": "e83a3df7a26147a4395a6174ba89e463f162aeb4a8bd358991cead3b017e230f",
+      "pool4/mainnet_vault_state.request.json": "a6fdaf113498a8384abc1c195684735e38da4e9b164f53c6c55587130159c3f3",
+      "pool4/simd_transfers_full.json": "3827c3c9783f8a5172b0e5cd622776afacac99b563a114a8e3464d464832db70",
+      "rpc_budget_errors.json": "147e5438781fb6175c10a0834c52df459bd2768b9ef24f2beca341d7237ec2cb",
+      "rpc_budget_measure.json": "a040597a0a41bf854db09ae903c77110c3729619e392c869c5b331694297aa36"
+    },
+    "import_root": "/Users/banse/codex/maxpane",
+    "limitations": [
+      "Deterministic counts only, not measured latency, statistical confidence, current log density or IP-rate-limit behavior.",
+      "Recorded full POOL4 getters/1116 Transfer logs; launchpad and decoy corpora are pre-existing generated fixtures.",
+      "Catch-up extends the fixture head at 7200 blocks/day without inventing later events: quiet-range correctness premiums are included.",
+      "Historical zero supply/code is a synthetic oracle derived from the complete Transfer corpus; not a new endpoint capture.",
+      "BOARDROOM runs actual discovery on a synthetic self-post naming the captured mainnet hook; no claim of live announcement provenance.",
+      "Work/current swarm, NFT, Base and Robinhood paths are not covered by this command.",
+      "Pool4 known-state row excludes history. POOL4/launchpad/stakers use production manager projections, not complete all-view flat dicts.",
+      "Recorded CoinGecko response is unavailable: rpc_budget_measure.json labels the synthetic ETH quote; REST counts remain actual dispatches.",
+      "No arbitrary Tenderly span cap is invented: the supplied 403200-block success does not prove a maximum."
+    ],
+    "production_sha256": {
+      "surf_card_reader.py": "c2c8f89099871802bd969bbd65eec4b3ae696f9edaffbdb5bdecd4b4b02ea2fd",
+      "surf_client.py": "2df6c4e88696d8e2dd23c64817973e1145cd3c880af07a8d388cafb5cf25a422",
+      "surf_manager.py": "6732c6ccbd26c68e83243a68220039b10dc115443bb18bb4f836d1dbf2cde358",
+      "surf_pool4_client.py": "8b248c4f1aa631854a7787bba0d37439c26332b6aa4e2ee8ef550f6d1d00117b",
+      "surf_rpc_batch.py": "eae4d6caa648a6ab2650ffe23601b9a58afd338e41b48f43c0130a0956d3fe43",
+      "surf_rpc_history.py": "ed542de82ba3c89d9ebe50d38e359d9e82106ba09aa8c6da1a55d79ca93bd9e4",
+      "surf_staker_history.py": "84b6e748f66e274938dc7e0473306cf59466b608ff3ff75efb0e7a1026132727"
+    },
+    "rows": [
+      {
+        "counts": {
+          "entries": 2,
+          "methods": {
+            "eth_call": 2
+          },
+          "multicall_subcalls": 79,
+          "requests": 2,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "projection_digest": "b0b0ed6b173aa851c292c1d53306c655d02855045a00541bba49f7e0da85b912",
+        "scenario": "pool4-known-state",
+        "scope": "Known-address state getters only; discovery and history measured separately or excluded."
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 101,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 2,
+            "eth_getLogs": 98
+          },
+          "multicall_subcalls": 29,
+          "requests": 101,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25820000,
+        "projection_digest": "42b1747797e89fcab7d09680d0f74259f9dbefa0df9632c401a74034a6ca3397",
+        "scenario": "launchpad/cold"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 16,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 2,
+            "eth_getLogs": 13
+          },
+          "multicall_subcalls": 29,
+          "requests": 16,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25820002,
+        "projection_digest": "fc95a36f8d1ace4c49598aa996ca9b6b7befe90000d49a17a1fe19bf1713f043",
+        "scenario": "launchpad/steady"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 35,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 2,
+            "eth_getBlockByNumber": 6,
+            "eth_getLogs": 26
+          },
+          "multicall_subcalls": 29,
+          "requests": 32,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25827202,
+        "projection_digest": "834599c49b0aaf3c372845bce63ee273bdc91c06f4d9d8797bdc6b07c870c2cf",
+        "scenario": "launchpad/day"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 177,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 2,
+            "eth_getBlockByNumber": 6,
+            "eth_getLogs": 168
+          },
+          "multicall_subcalls": 29,
+          "requests": 174,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25877602,
+        "projection_digest": "ffa86552571ccb47cb638f0c9a124c722be8de0d5fb783eeedc03e3a45ac4385",
+        "scenario": "launchpad/week"
+      },
+      {
+        "counts": {
+          "entries": 2,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 1
+          },
+          "multicall_subcalls": 0,
+          "requests": 2,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25920001,
+        "projection_digest": "b87c025248b6e89b202af1e76499fc2e960732a3bb6bbe835558cf3199909ca6",
+        "scenario": "decoy/cold"
+      },
+      {
+        "counts": {
+          "entries": 2,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 1
+          },
+          "multicall_subcalls": 0,
+          "requests": 2,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25920003,
+        "projection_digest": "b87c025248b6e89b202af1e76499fc2e960732a3bb6bbe835558cf3199909ca6",
+        "scenario": "decoy/steady"
+      },
+      {
+        "counts": {
+          "entries": 2,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 1
+          },
+          "multicall_subcalls": 0,
+          "requests": 2,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25927203,
+        "projection_digest": "b87c025248b6e89b202af1e76499fc2e960732a3bb6bbe835558cf3199909ca6",
+        "scenario": "decoy/day"
+      },
+      {
+        "counts": {
+          "entries": 2,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 1
+          },
+          "multicall_subcalls": 0,
+          "requests": 2,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25977603,
+        "projection_digest": "b87c025248b6e89b202af1e76499fc2e960732a3bb6bbe835558cf3199909ca6",
+        "scenario": "decoy/week"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 17,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 1,
+            "eth_getCode": 1,
+            "eth_getLogs": 14
+          },
+          "multicall_subcalls": 0,
+          "requests": 16,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25955468,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/cold"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 3,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 2
+          },
+          "multicall_subcalls": 0,
+          "requests": 3,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25955618,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/steady"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 9,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 8
+          },
+          "multicall_subcalls": 0,
+          "requests": 9,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25962818,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/day"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 17,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 16
+          },
+          "multicall_subcalls": 0,
+          "requests": 17,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 26013218,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/week"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 3,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 2
+          },
+          "multicall_subcalls": 0,
+          "requests": 3,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 26013368,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/reloaded"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 19,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 2,
+            "eth_getCode": 2,
+            "eth_getLogs": 14
+          },
+          "multicall_subcalls": 0,
+          "requests": 17,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 26290217,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/lifetime-late"
+      },
+      {
+        "counts": {
+          "entries": 39,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 38
+          },
+          "multicall_subcalls": 24,
+          "requests": 6,
+          "rest": 3,
+          "rest_paths": {
+            "api.coingecko.com/api/v3/simple/price": 1,
+            "api.dexscreener.com/latest/dex/pairs/ethereum/0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3": 1,
+            "api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105": 1
+          }
+        },
+        "projection_digest": "545a073f2a23575ba407eb531de29dc07a9e36f877804beb86f6c833f8078a14",
+        "scenario": "boardroom/cold",
+        "scope": "POOL4 card, actual discovery and medium REST sources; no swarm/NFT collectors."
+      },
+      {
+        "counts": {
+          "entries": 4,
+          "methods": {
+            "eth_call": 4
+          },
+          "multicall_subcalls": 22,
+          "requests": 4,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "projection_digest": "545a073f2a23575ba407eb531de29dc07a9e36f877804beb86f6c833f8078a14",
+        "scenario": "boardroom/steady-minute"
+      },
+      {
+        "counts": {
+          "entries": 5,
+          "methods": {
+            "eth_call": 5
+          },
+          "multicall_subcalls": 29,
+          "requests": 5,
+          "rest": 4,
+          "rest_paths": {
+            "api.coingecko.com/api/v3/simple/price": 1,
+            "api.dexscreener.com/latest/dex/pairs/ethereum/0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3": 1,
+            "api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105": 1,
+            "eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions": 1
+          }
+        },
+        "projection_digest": "545a073f2a23575ba407eb531de29dc07a9e36f877804beb86f6c833f8078a14",
+        "scenario": "boardroom/revalidation-minute"
+      },
+      {
+        "counts": {
+          "entries": 50,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 49
+          },
+          "multicall_subcalls": 86,
+          "requests": 17,
+          "rest": 7,
+          "rest_paths": {
+            "api.coingecko.com/api/v3/simple/price": 2,
+            "api.dexscreener.com/latest/dex/pairs/ethereum/0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3": 2,
+            "api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105": 2,
+            "eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions": 1
+          }
+        },
+        "projection_digest": "545a073f2a23575ba407eb531de29dc07a9e36f877804beb86f6c833f8078a14",
+        "scenario": "boardroom/180s",
+        "scope": "Six polls t=0,30,60,90,120,150; half-open 180 second interval."
+      }
+    ]
+  },
+  "baseline": "/private/tmp/maxpane-rpc-budget-base-adfe652e",
+  "before": {
+    "fixture_sha256": {
+      "client/announce_txs_page1.json": "f950cad94c098a0c0e99422bbe4f0ea03fae87eeaa7164cc24ba608529c6e0c0",
+      "client/dexscreener_fp.json": "005d36aec49f652a764c771e745fd6203b971dec1d3836bb8dc76b0a11e58de0",
+      "client/dexscreener_imd.json": "2e71121cdb67831e2a8e03eed0649551fe36229db20fa212b76174923e29cfc5",
+      "launchpad/full_history.json": "b98e023decca5f5c8718457e3aabbe2ec2ff0fc753bc41c825a9f685a66e409d",
+      "launchpad/launchpad_reads.json": "4f05f53276463ae27ef48f7d28cc42c76d7db082a35dfa95eca2fbce1ec18b72",
+      "launchpad/v4_initializes.json": "098a76b1ecb20244e9cbeed6c958f8fc59890f849a183e6e7c4f38aa09843f61",
+      "launchpad/volume_headers.json": "42ea728a41e04043b2ab3890581854369a1d807088dd34693d95a6631660e97e",
+      "market_loading/gecko_pool.json": "6766f35643261d7749bdcdc97593b63ef3115729e263f83535138ca46a76cdee",
+      "pool4/mainnet_distributor_state.json": "fc90cdab70d24b5a1bb02da442b6e470209615b1978f7ab42e2d018caa55494f",
+      "pool4/mainnet_distributor_state.request.json": "d2ad218f4bb7cfac6d8dc5de0c73ea26f12ce914e466693dfad67121e28d9c36",
+      "pool4/mainnet_dripper_state.json": "d28f86172b75152d47a6e8baa418c594676a615ee476275f40a154a1afb1ca30",
+      "pool4/mainnet_dripper_state.request.json": "83753396c351818667cf81bddaf948822390f370cbc0468c8414bcb18038b7eb",
+      "pool4/mainnet_hook_state.json": "88ef473fde76eb533f08cf626b1fa7b4e77c76214c6e117674f7fae5ae95f569",
+      "pool4/mainnet_hook_state.request.json": "26b642a0810ad674f0a2d24293a1d5d4c0c611a30d9543fa7b88e907e0b5dbf1",
+      "pool4/mainnet_pool_slot0.json": "3a647c99816fbbc2c36015b2e55bc12b73d342d5a1027f8509600df3126c1a17",
+      "pool4/mainnet_pool_slot0.request.json": "0d8f13bf1aa96498afb902018ec2dc31d25fc0b033aed128d928ac31b895d8f0",
+      "pool4/mainnet_vault_path.json": "f16780869fe99c45fd9050d3786016ecb22b74eee96949f5b983dfc424a4ac82",
+      "pool4/mainnet_vault_path.request.json": "a421e61fa027af4bfffea5e211a5aedfafe07ff759e68cb197ad2afa47292137",
+      "pool4/mainnet_vault_state.json": "e83a3df7a26147a4395a6174ba89e463f162aeb4a8bd358991cead3b017e230f",
+      "pool4/mainnet_vault_state.request.json": "a6fdaf113498a8384abc1c195684735e38da4e9b164f53c6c55587130159c3f3",
+      "pool4/simd_transfers_full.json": "3827c3c9783f8a5172b0e5cd622776afacac99b563a114a8e3464d464832db70",
+      "rpc_budget_errors.json": "147e5438781fb6175c10a0834c52df459bd2768b9ef24f2beca341d7237ec2cb",
+      "rpc_budget_measure.json": "a040597a0a41bf854db09ae903c77110c3729619e392c869c5b331694297aa36"
+    },
+    "import_root": "/private/tmp/maxpane-rpc-budget-base-adfe652e",
+    "limitations": [
+      "Deterministic counts only, not measured latency, statistical confidence, current log density or IP-rate-limit behavior.",
+      "Recorded full POOL4 getters/1116 Transfer logs; launchpad and decoy corpora are pre-existing generated fixtures.",
+      "Catch-up extends the fixture head at 7200 blocks/day without inventing later events: quiet-range correctness premiums are included.",
+      "Historical zero supply/code is a synthetic oracle derived from the complete Transfer corpus; not a new endpoint capture.",
+      "BOARDROOM runs actual discovery on a synthetic self-post naming the captured mainnet hook; no claim of live announcement provenance.",
+      "Work/current swarm, NFT, Base and Robinhood paths are not covered by this command.",
+      "Pool4 known-state row excludes history. POOL4/launchpad/stakers use production manager projections, not complete all-view flat dicts.",
+      "Recorded CoinGecko response is unavailable: rpc_budget_measure.json labels the synthetic ETH quote; REST counts remain actual dispatches.",
+      "No arbitrary Tenderly span cap is invented: the supplied 403200-block success does not prove a maximum."
+    ],
+    "production_sha256": {
+      "surf_card_reader.py": "4b84a76ba95a51e41d6b19a4d22e43325f530bd31d21fcb920f89b8760d64e51",
+      "surf_client.py": "8a5a639b7189d6de79394bdb2fbd9ecf94ef46c678ba9c753faeea4014b1486a",
+      "surf_manager.py": "185eef050b1c19708f2a0fed8bf2270d114fcc530bcfc9c6dcee6437a8ced9cb",
+      "surf_pool4_client.py": "b342424f2c3ad0ecd450e5a07e2f283fb2fa1710c099b343b8e025d9c919a38d"
+    },
+    "rows": [
+      {
+        "counts": {
+          "entries": 73,
+          "methods": {
+            "eth_blockNumber": 5,
+            "eth_call": 68
+          },
+          "multicall_subcalls": 0,
+          "requests": 6,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "projection_digest": "b0b0ed6b173aa851c292c1d53306c655d02855045a00541bba49f7e0da85b912",
+        "scenario": "pool4-known-state",
+        "scope": "Known-address state getters only; discovery and history measured separately or excluded."
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 60,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 2,
+            "eth_getLogs": 57
+          },
+          "multicall_subcalls": 29,
+          "requests": 60,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25820000,
+        "projection_digest": "42b1747797e89fcab7d09680d0f74259f9dbefa0df9632c401a74034a6ca3397",
+        "scenario": "launchpad/cold"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 10,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 2,
+            "eth_getLogs": 7
+          },
+          "multicall_subcalls": 29,
+          "requests": 10,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25820002,
+        "projection_digest": "fc95a36f8d1ace4c49598aa996ca9b6b7befe90000d49a17a1fe19bf1713f043",
+        "scenario": "launchpad/steady"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 18,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 2,
+            "eth_getBlockByNumber": 2,
+            "eth_getLogs": 13
+          },
+          "multicall_subcalls": 29,
+          "requests": 17,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25827202,
+        "projection_digest": "834599c49b0aaf3c372845bce63ee273bdc91c06f4d9d8797bdc6b07c870c2cf",
+        "scenario": "launchpad/day"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 89,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_call": 2,
+            "eth_getBlockByNumber": 2,
+            "eth_getLogs": 84
+          },
+          "multicall_subcalls": 29,
+          "requests": 88,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25877602,
+        "projection_digest": "ffa86552571ccb47cb638f0c9a124c722be8de0d5fb783eeedc03e3a45ac4385",
+        "scenario": "launchpad/week"
+      },
+      {
+        "counts": {
+          "entries": 2,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 1
+          },
+          "multicall_subcalls": 0,
+          "requests": 2,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25920001,
+        "projection_digest": "b87c025248b6e89b202af1e76499fc2e960732a3bb6bbe835558cf3199909ca6",
+        "scenario": "decoy/cold"
+      },
+      {
+        "counts": {
+          "entries": 2,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 1
+          },
+          "multicall_subcalls": 0,
+          "requests": 2,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25920003,
+        "projection_digest": "b87c025248b6e89b202af1e76499fc2e960732a3bb6bbe835558cf3199909ca6",
+        "scenario": "decoy/steady"
+      },
+      {
+        "counts": {
+          "entries": 2,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 1
+          },
+          "multicall_subcalls": 0,
+          "requests": 2,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25927203,
+        "projection_digest": "b87c025248b6e89b202af1e76499fc2e960732a3bb6bbe835558cf3199909ca6",
+        "scenario": "decoy/day"
+      },
+      {
+        "counts": {
+          "entries": 2,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 1
+          },
+          "multicall_subcalls": 0,
+          "requests": 2,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25977603,
+        "projection_digest": "b87c025248b6e89b202af1e76499fc2e960732a3bb6bbe835558cf3199909ca6",
+        "scenario": "decoy/week"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 9,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 8
+          },
+          "multicall_subcalls": 0,
+          "requests": 9,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25955468,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/cold"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 9,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 8
+          },
+          "multicall_subcalls": 0,
+          "requests": 9,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25955618,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/steady"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 9,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 8
+          },
+          "multicall_subcalls": 0,
+          "requests": 9,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 25962818,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/day"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 9,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 8
+          },
+          "multicall_subcalls": 0,
+          "requests": 9,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 26013218,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/week"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 9,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 8
+          },
+          "multicall_subcalls": 0,
+          "requests": 9,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 26013368,
+        "projection_digest": "76ba572278f96c270c0ddc40254b61ae6de4a09955f5870b7759bd9af2fdc27a",
+        "scenario": "stakers/reloaded"
+      },
+      {
+        "complete": true,
+        "counts": {
+          "entries": 9,
+          "methods": {
+            "eth_blockNumber": 1,
+            "eth_getLogs": 8
+          },
+          "multicall_subcalls": 0,
+          "requests": 9,
+          "rest": 0,
+          "rest_paths": {}
+        },
+        "head": 26290217,
+        "projection_digest": "7faf0dde657fcdd55a2c9fb8ba41159e2dff5dcb19af0e335d530176d2dc78a9",
+        "scenario": "stakers/lifetime-late"
+      },
+      {
+        "counts": {
+          "entries": 57,
+          "methods": {
+            "eth_blockNumber": 2,
+            "eth_call": 55
+          },
+          "multicall_subcalls": 0,
+          "requests": 7,
+          "rest": 4,
+          "rest_paths": {
+            "api.coingecko.com/api/v3/simple/price": 1,
+            "api.dexscreener.com/latest/dex/pairs/ethereum/0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3": 1,
+            "api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105": 1,
+            "eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions": 1
+          }
+        },
+        "projection_digest": "545a073f2a23575ba407eb531de29dc07a9e36f877804beb86f6c833f8078a14",
+        "scenario": "boardroom/cold",
+        "scope": "POOL4 card, actual discovery and medium REST sources; no swarm/NFT collectors."
+      },
+      {
+        "counts": {
+          "entries": 114,
+          "methods": {
+            "eth_blockNumber": 4,
+            "eth_call": 110
+          },
+          "multicall_subcalls": 0,
+          "requests": 14,
+          "rest": 8,
+          "rest_paths": {
+            "api.coingecko.com/api/v3/simple/price": 2,
+            "api.dexscreener.com/latest/dex/pairs/ethereum/0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3": 2,
+            "api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105": 2,
+            "eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions": 2
+          }
+        },
+        "projection_digest": "545a073f2a23575ba407eb531de29dc07a9e36f877804beb86f6c833f8078a14",
+        "scenario": "boardroom/steady-minute"
+      },
+      {
+        "counts": {
+          "entries": 114,
+          "methods": {
+            "eth_blockNumber": 4,
+            "eth_call": 110
+          },
+          "multicall_subcalls": 0,
+          "requests": 14,
+          "rest": 8,
+          "rest_paths": {
+            "api.coingecko.com/api/v3/simple/price": 2,
+            "api.dexscreener.com/latest/dex/pairs/ethereum/0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3": 2,
+            "api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105": 2,
+            "eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions": 2
+          }
+        },
+        "projection_digest": "545a073f2a23575ba407eb531de29dc07a9e36f877804beb86f6c833f8078a14",
+        "scenario": "boardroom/revalidation-minute"
+      },
+      {
+        "counts": {
+          "entries": 342,
+          "methods": {
+            "eth_blockNumber": 12,
+            "eth_call": 330
+          },
+          "multicall_subcalls": 0,
+          "requests": 42,
+          "rest": 24,
+          "rest_paths": {
+            "api.coingecko.com/api/v3/simple/price": 6,
+            "api.dexscreener.com/latest/dex/pairs/ethereum/0xb07d640fd9e2eb9dc81b953c8e4fd006bdfeaf276010fb5418eb763ca15abfb3": 6,
+            "api.dexscreener.com/latest/dex/tokens/0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105": 6,
+            "eth.blockscout.com/api/v2/addresses/0x200E710aCAA6A93bbc77146026328C40F1d60fB1/transactions": 6
+          }
+        },
+        "projection_digest": "545a073f2a23575ba407eb531de29dc07a9e36f877804beb86f6c833f8078a14",
+        "scenario": "boardroom/180s",
+        "scope": "Six polls t=0,30,60,90,120,150; half-open 180 second interval."
+      }
+    ]
+  },
+  "repo": "/Users/banse/codex/maxpane"
+}

@@ -1,0 +1,129 @@
+[
+  {
+    "name": "history-unconfirmed-empty",
+    "file": "maxpane_dashboard/data/surf_rpc_history.py",
+    "old": "                    if len(empty) >= 2:\n                        # Both hosts covered this shared prefix completely.\n                        return [], sorted(empty.values(), reverse=True)[1]",
+    "new": "                    if empty:\n                        return [], end",
+    "expect": [
+      "tests/data/test_surf_rpc_budget.py::test_an_empty_page_requires_two_independent_hosts[outage]",
+      "tests/data/test_surf_rpc_budget.py::test_an_empty_page_requires_two_independent_hosts[same_host]"
+    ]
+  },
+  {
+    "name": "history-forget-acknowledged-prefix",
+    "file": "maxpane_dashboard/data/surf_rpc_history.py",
+    "old": "        progress = self._pending.get(key)",
+    "new": "        self._pending.clear()\n        progress = self._pending.get(key)",
+    "expect": [
+      "tests/data/test_surf_rpc_budget.py::test_failed_history_resumes_first_unread_page_as_head_grows"
+    ]
+  },
+  {
+    "name": "state-retry-already-successful-entries",
+    "file": "maxpane_dashboard/data/surf_rpc_batch.py",
+    "old": "        pending = [p for p in payloads if results[positions[p['id']]] is None]",
+    "new": "        pending = list(payloads)",
+    "expect": [
+      "tests/data/test_surf_rpc_budget.py::test_state_batch_retries_only_failed_ids_and_keeps_order"
+    ]
+  },
+  {
+    "name": "launchpad-publish-mismatched-count",
+    "file": "maxpane_dashboard/data/surf_client.py",
+    "old": "            self._launchpad_rebuild = True\n            sweep = _failed_launchpad_sweep(resume)",
+    "new": "            self._launchpad_rebuild = True\n            sweep = sweep",
+    "expect": [
+      "tests/data/test_surf_rpc_budget.py::test_launchpad_mismatch_is_unknown_then_rebuilds_without_restart"
+    ]
+  },
+  {
+    "name": "launchpad-unpin-count-witness",
+    "file": "maxpane_dashboard/data/surf_client.py",
+    "old": "\"data\": data}, block]",
+    "new": "\"data\": data}, \"latest\"]",
+    "expect": [
+      "tests/data/test_surf_rpc_budget.py::test_launchpad_population_witness_uses_the_same_block_as_history"
+    ]
+  },
+  {
+    "name": "pool4_drop_failed_entry_retry",
+    "file": "maxpane_dashboard/data/surf_pool4_client.py",
+    "old": "retry = [call for call in calls if answers[call[0]] is None]",
+    "new": "retry = []",
+    "expect": [
+      "tests/data/test_surf_pool4_rpc_budget.py::test_failed_bundle_entry_retries_elsewhere_at_the_same_block"
+    ]
+  },
+  {
+    "name": "pool4_trust_cached_path",
+    "file": "maxpane_dashboard/data/surf_pool4_client.py",
+    "old": "            if not self._identity_matches(answers, metadata, token_addr):\n                self._known_paths.pop((network, str(hook_addr).lower()), None)\n                return {'identity_valid': False",
+    "new": "            if False:\n                self._known_paths.pop((network, str(hook_addr).lower()), None)\n                return {'identity_valid': False",
+    "expect": [
+      "tests/data/test_surf_pool4_rpc_budget.py::test_changed_path_never_serves_previous_vault"
+    ]
+  },
+  {
+    "name": "pool4_discard_page_progress",
+    "file": "maxpane_dashboard/data/surf_pool4_client.py",
+    "old": "        base_filter: dict[str, Any] = {'address': address}",
+    "new": "        self._history_reader.clear()\n        base_filter: dict[str, Any] = {'address': address}",
+    "expect": [
+      "tests/data/test_surf_pool4_rpc_budget.py::test_pool4_pager_resumes_the_first_unread_page_without_replaying_prefix"
+    ]
+  },
+  {
+    "name": "pool4_accept_wrong_pinned_block",
+    "file": "maxpane_dashboard/data/surf_pool4_client.py",
+    "old": "if block is None or (block_tag != 'latest' and block != int(block_tag, 16)):",
+    "new": "if block is None:",
+    "expect": [
+      "tests/data/test_surf_pool4_rpc_budget.py::test_a_provider_ignoring_the_pinned_block_cannot_supply_the_share_price"
+    ]
+  },
+  {
+    "name": "boardroom_bypass_medium_ttl",
+    "file": "maxpane_dashboard/data/surf_card_reader.py",
+    "old": "ttl = TIER_TTL_SECONDS[TIER_MEDIUM]",
+    "new": "ttl = 0",
+    "expect": [
+      "tests/data/test_surf_card_rpc_budget.py::test_medium_cards_respect_90_second_ttl_even_on_forced_entry"
+    ]
+  },
+  {
+    "name": "stakers_trust_unproven_window",
+    "file": "maxpane_dashboard/data/surf_manager.py",
+    "old": "if zero is True:",
+    "new": "if True:",
+    "expect": [
+      "tests/data/test_surf_staker_checkpoint.py::test_old_unmoved_mints_survive_window_age_and_incremental_resume"
+    ]
+  },
+  {
+    "name": "stakers_discard_checkpoint",
+    "file": "maxpane_dashboard/data/surf_manager.py",
+    "old": "history = staker_history.checkpoint(prior.get(\"_history\"), network, vault_addr, head)",
+    "new": "history = None",
+    "expect": [
+      "tests/data/test_surf_staker_checkpoint.py::test_old_unmoved_mints_survive_window_age_and_incremental_resume"
+    ]
+  },
+  {
+    "name": "history-ignore-per-invocation-page-budget",
+    "file": "maxpane_dashboard/data/surf_rpc_history.py",
+    "old": "if pages >= self._max_pages:",
+    "new": "if False:",
+    "expect": [
+      "tests/data/test_surf_rpc_budget.py::test_history_page_budget_defers_unread_tail_without_discarding_prefix"
+    ]
+  },
+  {
+    "name": "rpc-measure-confuses-http-requests-with-entries",
+    "file": "scripts/measure_surf_rpc_budget.py",
+    "old": "requests += 1",
+    "new": "requests += len(body) if isinstance(body, list) else 1",
+    "expect": [
+      "tests/data/test_surf_rpc_budget_measure.py::test_wire_counts_distinguish_requests_entries_and_rest"
+    ]
+  }
+]

@@ -2,11 +2,15 @@
 import asyncio
 import logging
 from collections import Counter
+from copy import deepcopy
 
 from maxpane_dashboard.analytics import surf_pool4_depth
 from maxpane_dashboard.analytics.surfboard import count
 from maxpane_dashboard.data import surf_work as work
-from maxpane_dashboard.data.surf_cache import SLOT_CHANNEL, SLOT_ETH_USD, SLOT_POOL4
+from maxpane_dashboard.data.surf_cache import (
+    SLOT_CHANNEL, SLOT_ETH_USD, SLOT_MARKET, SLOT_POOL4, TIER_MEDIUM,
+    TIER_TTL_SECONDS, TIER_FAILURE_BACKOFF_SECONDS,
+)
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +33,8 @@ class SurfCardReader:
         self.pool = {}
         self.pool_ts = None
         self.pool_failed = False
+        self.medium_due = {}
+        self.discovery = None
 
     def offer(self, *, force=False):
         now = self.manager._clock()
@@ -151,16 +157,34 @@ class SurfCardReader:
                       partial=True, details_loaded=None, details_expected=None)
         return result
 
+    async def _medium(self, slot, read):
+        """Per-source clocks: card reads cannot satisfy a hidden detail tier."""
+        now = self.manager._clock()
+        entry = self.manager.cache.get_last_good(slot)
+        ttl = TIER_TTL_SECONDS[TIER_MEDIUM]
+        if entry is not None and 0 <= now - entry.ts < ttl:
+            return
+        if now < self.medium_due.get(slot, -1e20):
+            return
+        # Set before awaiting, so cancellation/timeout also respects backoff.
+        self.medium_due[slot] = now + TIER_FAILURE_BACKOFF_SECONDS[TIER_MEDIUM]
+        result = await read()
+        if result is not None:
+            self.medium_due[slot] = self.manager._clock() + ttl
+
     async def _feed(self):
-        from maxpane_dashboard.data.surf_cache import TIER_MEDIUM
-        await self.manager._pool_channel({TIER_MEDIUM}, self.manager._clock(), None)
+        await self._medium(SLOT_CHANNEL, lambda: self.manager._pool_channel(
+            {TIER_MEDIUM}, self.manager._clock(), None))
 
     async def _market(self):
         from maxpane_dashboard.data.surf_cache import TIER_MEDIUM, SLOT_LAUNCHPAD
         manager = self.manager
         launch = getattr(manager.cache.get_last_good(SLOT_LAUNCHPAD), 'payload', None) or {}
-        await asyncio.gather(manager._pool_market({TIER_MEDIUM}, manager._clock(), launch.get('pool_id')),
-                             manager._pool_eth_usd({TIER_MEDIUM}, manager._clock()))
+        await asyncio.gather(
+            self._medium(SLOT_MARKET, lambda: manager._pool_market(
+                {TIER_MEDIUM}, manager._clock(), launch.get('pool_id'))),
+            self._medium(SLOT_ETH_USD, lambda: manager._pool_eth_usd(
+                {TIER_MEDIUM}, manager._clock())))
 
     async def _pool(self):
         from maxpane_dashboard.data.surf_manager import (
@@ -170,23 +194,23 @@ class SurfCardReader:
         manager = self.manager
         prior = getattr(manager.cache.get_last_good(SLOT_POOL4), 'payload', None) or {}
         channel = getattr(manager.cache.get_last_good(SLOT_CHANNEL), 'payload', None) or {}
-        discovery, _source = await manager._pool4_discovery(channel.get('items'), prior)
+        items = channel.get('items')
+        now = manager._clock()
+        if (self.discovery is None or self.discovery[0] != items
+                or not 0 <= now - self.discovery[1] < TIER_TTL_SECONDS[TIER_MEDIUM]):
+            discovery, _source = await manager._pool4_discovery(items, prior)
+            # Cache only an established adoption; unknown never becomes a fact.
+            self.discovery = ((deepcopy(items), now, discovery)
+                              if _field(discovery, 'state') == POOL4_ADOPTED else None)
+        else:
+            discovery = self.discovery[2]
         adopted = _field(discovery, 'state') == POOL4_ADOPTED and _field(discovery, 'hook_addr')
         network = POOL4_NETWORK_MAINNET if adopted else POOL4_NETWORK_SEPOLIA
         hook_addr = _field(discovery, 'hook_addr') if adopted else POOL4_SEPOLIA_HOOK
         token = IMD_TOKEN if adopted else POOL4_SEPOLIA_TOKEN
         client = manager.pool4_client
-        hook = await client.fetch_hook_state(hook_addr, network=network, token_addr=token)
-        recipient = _field(hook, 'rewards_recipient')
-        pool_id, pool_manager = _field(hook, 'pool_id'), _field(hook, 'pool_manager')
-        async def vault():
-            path = await client.resolve_vault_path(recipient, network=network) if recipient else None
-            address = (path or {}).get('vault')
-            return await client.fetch_vault_state(address, network=network) if address else None
-        async def price():
-            return await client.fetch_pool_slot0(pool_id, network=network, pool_manager=pool_manager) if pool_id and pool_manager else None
-        vault_state, pool_state = await asyncio.gather(vault(), price())
-        share, tick = _field(vault_state, 'share_price_wei'), _field(pool_state, 'tick')
+        quote = await client.fetch_card_quote(hook_addr, network=network, token_addr=token)
+        share, tick = _field(quote, 'share_price_wei'), _field(quote, 'tick')
         self.pool_failed = type(share) is not int or type(tick) is not int
         if type(share) is not int and type(tick) is not int:
             return

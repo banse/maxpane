@@ -120,6 +120,7 @@ import re
 import time
 from typing import Any
 
+from maxpane_dashboard.data import surf_staker_history as staker_history
 from maxpane_dashboard.data.npm_registry_client import NpmRegistryClient, RUNTIME_PACKAGES, npm_version
 from maxpane_dashboard.data.surf_runtime import coerce_runtime_slot
 from maxpane_dashboard.data.surf_work import coerce_snapshot as coerce_work_snapshot
@@ -3278,15 +3279,11 @@ class SurfManager:
             logger.debug("SURF pool4 sweep stopped on close: %s", exc)
 
     async def _pool_pool4(self, tiers: set[str], now: float, rows: Any) -> Any:
-        """One pool4 sweep: adjudicate, read three contracts, sweep the logs.
+        """Adjudicate, read known contracts atomically, then sweep their logs.
 
-        The order is forced by the chain, not chosen: the vault address is two
-        hops out (``hook.rewardsRecipient()`` -> RewardDripper ->
-        ``dripper.vault()`` — amendment A3, there is no ``vault()`` on the
-        hook), so the dripper round cannot start before the hook round has
-        answered and the vault round cannot start before the dripper's has.
-        The log sweep needs only the head block, so it runs alongside the
-        dripper round rather than after it.
+        The client discovers the variable-length vault path on first use and
+        revalidates its links in every bundle. Known paths need two Multicall3
+        reads: the dependent whole-share conversion uses the same exact block.
 
         Every read degrades on its own. A dead vault costs the four VAULT keys
         and nothing else; a dead log pool costs FLOW and the unsettled legs and
@@ -3315,70 +3312,24 @@ class SurfManager:
             token_addr = POOL4_SEPOLIA_TOKEN
 
         client = self.pool4_client
-        hook = await self._guard(
-            lambda: client.fetch_hook_state(
-                hook_addr, network=network, token_addr=token_addr
-            ),
-            "pool4 fetch_hook_state",
-        )
-
-        # ---- the walk to the vault, whose LENGTH IS DISCOVERED --------------
-        #
-        # A3 forbade looking for ``vault()`` on the hook and that still stands:
-        # the vault is reached by following the chain, never scraped. What
-        # changed on 2026-09-02 is the number of links. Sepolia answers
-        # ``vault()`` at the first hop; mainnet inserted a Distributor, so it
-        # is hook -> Distributor -> Dripper -> vault. Both shapes are live
-        # **simultaneously**, so a hardcoded three would break Sepolia exactly
-        # as the hardcoded two broke mainnet -- vault and dripper reads failed
-        # outright there until this landed. Nothing here counts hops:
-        # ``resolve_vault_path`` asks each node what it is and follows the
-        # answer, and this method reads the addresses out of its result.
-        recipient = _field(hook, "rewards_recipient")
+        bundle = await self._guard(
+            lambda: client.fetch_state_bundle(hook_addr, network=network, token_addr=token_addr),
+            "pool4 fetch_state_bundle",
+        ) or {}
+        hook, path = bundle.get("hook"), bundle.get("path")
         head_block = _field(hook, "block_number")
-        # The cross-venue read rides here rather than in the hook round above
-        # because it needs the hook's own ``poolId()`` and ``poolManager()``,
-        # which that round is what answers. It is ONE batch internally and that
-        # is the whole point (PRD 8.3): both ticks come back from one block, so
-        # the gap is a difference rather than a disagreement manufactured by
-        # reading a thin pool twice a block apart.
-        path, log_read, reference = await asyncio.gather(
-            self._guard(
-                lambda: client.resolve_vault_path(recipient, network=network),
-                "pool4 resolve_vault_path",
-            ) if recipient else _none(),
-            self._pool4_logs(hook_addr, head_block, network, hook),
-            self._pool4_reference(hook, network),
-        )
-        logs, from_block, to_block, swaps = log_read
-
         dripper_addr = (path or {}).get("dripper")
         vault_addr = (path or {}).get("vault")
         distributor_addr = self._pool4_distributor_addr(path)
-
-        # Three independent contracts, three independent reads: a dead
-        # Distributor costs the nine distributor keys and nothing else. The
-        # delivery window rides along as a fourth: it is the dripper's own log
-        # history and needs the same address the dripper round does.
-        dripper, vault, distributor, drip = await asyncio.gather(
-            self._guard(
-                lambda: client.fetch_dripper_state(
-                    dripper_addr, network=network, token_addr=token_addr
-                ),
-                "pool4 fetch_dripper_state",
-            ) if dripper_addr else _none(),
-            self._guard(
-                lambda: client.fetch_vault_state(vault_addr, network=network),
-                "pool4 fetch_vault_state",
-            ) if vault_addr else _none(),
-            self._guard(
-                lambda: client.fetch_distributor_state(
-                    distributor_addr, network=network
-                ),
-                "pool4 fetch_distributor_state",
-            ) if distributor_addr else _none(),
+        dripper, vault = bundle.get("dripper"), bundle.get("vault")
+        distributor, reference = bundle.get("distributor"), bundle.get("reference")
+        # The bundle pins all getter values and both venues to one block.
+        # History remains independent: failed logs cannot erase good getters.
+        log_read, drip = await asyncio.gather(
+            self._pool4_logs(hook_addr, head_block, network, hook),
             self._pool4_drip_read(dripper_addr, head_block, network, prior),
         )
+        logs, from_block, to_block, swaps = log_read
 
         # The running counter total, folded before the payload is built so the
         # control can be reconciled against it. Held in the cache rather than
@@ -5305,7 +5256,7 @@ class SurfManager:
         )
         vault_addr = pool4_slot.get("vault_addr")
         network = pool4_slot.get("network")
-        if not vault_addr or network not in POOL4_NETWORKS:
+        if not isinstance(vault_addr, str) or not vault_addr or network not in POOL4_NETWORKS:
             # **Not a failure, and the distinction is load-bearing.** The pool4
             # sweep has not named a vault yet — a cold cache, or a first cycle
             # — so there was nothing to read and nothing failed. Setting the
@@ -5336,24 +5287,51 @@ class SurfManager:
             self._pool4_stakers_failed = True
             self.cache.mark_failed(TIER_POOL4_STAKERS, now)
             return None
-        start = max(0, head - POOL4_STAKERS_WINDOW_BLOCKS + 1)
+        prior_entry = self.cache.get_last_good(SLOT_POOL4_STAKERS)
+        prior = getattr(prior_entry, "payload", None)
+        prior = prior if isinstance(prior, dict) else {}
+        history = staker_history.checkpoint(prior.get("_history"), network, vault_addr, head)
+        if history is None:
+            # A zero historical balance sheet is a proof; a quiet trailing
+            # window is not. Expand back on nonzero/unknown, ultimately genesis.
+            identity = (network, vault_addr.lower())
+            pending = getattr(self, "_staker_anchor", None)
+            if pending is not None and pending[:2] == identity and pending[2] <= head:
+                anchor = pending[2]
+            else:
+                anchor = max(0, head - POOL4_STAKERS_WINDOW_BLOCKS + 1)
+                for attempt in range(4):
+                    if anchor == 0:
+                        break
+                    zero = await self._guard(
+                        lambda: client.fetch_zero_supply(vault_addr, anchor - 1, network=network),
+                        "pool4 stakers historical zero supply",
+                    )
+                    if zero is True:
+                        break
+                    anchor = max(0, head - POOL4_STAKERS_WINDOW_BLOCKS * 2 ** (attempt + 1) + 1)
+                else:
+                    anchor = 0
+                self._staker_anchor = (*identity, anchor)
+            start = anchor
+        else:
+            anchor, start = history["anchor"], history["block"] + 1
         logs = await self._guard(
             lambda: client.fetch_flow_logs(vault_addr, start, head, network=network),
             "pool4 stakers fetch_flow_logs",
         )
-        if logs is None:
-            # ``None`` is the client's contract for a failed **or partial**
-            # sweep, and a partial one matters more here than almost anywhere:
-            # a fold missing part of its history ranks a subset and understates
-            # concentration, which is the direction that makes a risk look
-            # smaller than it is.
+        transfers = staker_history.transfers(logs, start, head)
+        if transfers is None:
             self._pool4_stakers_failed = True
             self.cache.mark_failed(TIER_POOL4_STAKERS, now)
             return None
-
-        rows_in = self._pool4_share_transfers(logs)
-        complete = self._pool4_sweep_is_complete(rows_in, logs, start)
-        balances = mk.fold_share_transfers(rows_in, complete=complete)
+        balances, next_history = staker_history.fold(
+            history, transfers, network=network, vault=vault_addr, anchor=anchor, head=head)
+        complete = next_history is not None
+        if not complete and prior.get("complete") is True:
+            self._pool4_stakers_failed = True
+            self.cache.mark_failed(TIER_POOL4_STAKERS, now)
+            return None
         rows = mk.staker_rows(
             balances,
             share_price=self._pool4_share_price_per_unit(
@@ -5370,12 +5348,12 @@ class SurfManager:
             "top3_pct": mk.top_n_pct(rows, 3, complete=complete),
             "complete": complete,
         }
-        prior = getattr(self.cache.get_last_good(SLOT_POOL4_STAKERS), "payload", None)
-        changed = payload != prior
-        if changed:
-            self.cache.store_last_good(SLOT_POOL4_STAKERS, payload, ts=now)
-        else:
-            logger.debug("SURF staker sweep found nothing new; marker left alone")
+        changed = payload != {key: value for key, value in prior.items() if key != "_history"}
+        if next_history is not None:
+            payload["_history"] = next_history
+        # Progress advances even when visible balances have not changed.
+        self.cache.store_last_good(SLOT_POOL4_STAKERS, payload,
+                                   ts=now if changed or prior_entry is None else prior_entry.ts)
         self._pool4_stakers_failed = False
         self.cache.mark_fetched(TIER_POOL4_STAKERS, now)
         return payload
