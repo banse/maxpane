@@ -1,6 +1,7 @@
 """Six source-aware LAUNCHES cards sharing the approved rack renderer."""
 from __future__ import annotations
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid
 
@@ -97,8 +98,9 @@ class TokensHeroCard(LocalSourceHeroCard):
     def _text_rows(self, label_style, value_style):
         rows = super()._text_rows(label_style, value_style)
         if self.data.key == "liquidity":
-            for row in rows:
-                row.stylize(value_style, 0, len(row.plain.rpartition(" ")[0]))
+            for index, row in enumerate(rows):
+                amount, _, asset = row.plain.rpartition(' ')
+                rows[index] = self.loading_value(Text(amount, style=value_style)).append(' ' + asset, style=label_style)
         return rows
 
 

@@ -1,5 +1,14 @@
 # Surf data loading — execution and follow-ups
 
+## 2026-10-23 card loading presentation
+
+The [card loading plan](card_loading_diamond_plan.md) adds a pulsing IMD outline
+diamond for missing card values during reads. It reuses the UI's existing local
+clock and does not alter acquisition, cache state, polling or source timestamps.
+BOARDROOM uses its existing per-card loading state; the other rack heroes use
+visible-view loading because they do not expose field-specific pending states.
+Finer pending-state attribution would require a separate data-contract change.
+
 ## 2026-10-23 loading review
 
 The [cross-view review](surf_loading_review_2026_10_23_report.md) fixes persisted

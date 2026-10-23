@@ -15,11 +15,10 @@ from textual.widgets import Input, Static
 
 from maxpane_dashboard.analytics.surfboard import SURFBOARD_AGENT_KEYS as AGENT_KEYS
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
-from maxpane_dashboard.widgets.card_inner import inner_styles, padded_inner_row
+from maxpane_dashboard.widgets.card_inner import LoadingCard, inner_styles, padded_inner_row
 from maxpane_dashboard.widgets.explorer import for_network
 from maxpane_dashboard.widgets.fmt import fmt_age, worked_duration
 from maxpane_dashboard.widgets.markup_safety import flatten
-from maxpane_dashboard.widgets.panels import HeroBoxBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
 from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_compact
 
@@ -62,11 +61,13 @@ def _price_indicator(direction):
     return {'up': ('↑', GREEN), 'down': ('↓', RED)}.get(direction, ('', ''))
 
 
-def _token_preview(rows, width, style, value_style):
+def _token_preview(rows, width, style, value_style, render_value=None):
     """Three ranked rows; the data layer owns ordering and price comparison."""
     lines = [(Text('', style=style), False) for _ in range(3)]
     if not rows:
         line, lost = fit_prose('—' if rows is None else 'no launches', max(0, width-2), style=style)
+        if render_value is not None:
+            line = render_value(line)
         lines[1] = padded_inner_row(line, width), lost
         return lines
     for index, row in enumerate(rows[:3]):
@@ -78,7 +79,7 @@ def _token_preview(rows, width, style, value_style):
     return lines
 
 
-def _fleet_preview(summary, width, style, value_style):
+def _fleet_preview(summary, width, style, value_style, render_value=None):
     """Three fixed rows, with only observed values in the leaderboard ink."""
     values = []
     for key in ('tokens', 'jobs', 'capacity'):
@@ -94,6 +95,8 @@ def _fleet_preview(summary, width, style, value_style):
         prefix = label + ' '
         available = max(0, width - 2 - cell_len(prefix))
         fitted, lost = fit_prose(value, available, style=value_style if value != '—' else style)
+        if render_value is not None:
+            fitted = render_value(fitted)
         fitted.align('right', available)
         line = Text(clip(prefix, max(0, width-2)), style=style).append_text(fitted)
         lines.append((padded_inner_row(line, width), lost or cell_len(prefix) + 3 > width))
@@ -227,7 +230,7 @@ def signal_meter_text(card: dict, width: int) -> Text:
 from .terminal import SurfboardTerminal, fit_prose
 
 
-class SurfboardCard(HeroBoxBase, can_focus=True):
+class SurfboardCard(LoadingCard, can_focus=True):
     """A focusable faceplate with an inset readout."""
     DEFAULT_CSS = "SurfboardCard { link-color: $foreground; }"
     BINDINGS = [Binding("enter", "activate", "Open", show=False)]
@@ -255,6 +258,9 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
     @property
     def empty_seat(self):
         return self.seat_slot is not None and self.data.get("token_id") is None
+
+    def _can_load_card(self):
+        return not self.empty_seat and self.data.get('status') in (None, 'loading')
 
     def compose(self):
         if self.seat_slot is not None:
@@ -353,6 +359,7 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         self.border_title = title
 
     def render(self):
+        self._has_missing_value = False
         width = max(4, self.content_size.width)
         inside = width - 2
         status = flatten(self.data.get("status")) or "unavailable"
@@ -451,6 +458,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 line = Text(clip(row, available), style=label_style)
                 if amount != '—':
                     line.stylize(value_style, row.index(amount, len(name)))
+                else:
+                    rendered = self.loading_value(Text(amount, style=label_style))
+                    offset = line.plain.find(amount, len(name))
+                    if offset >= 0:
+                        line = line[:offset] + rendered + line[offset + len(amount):]
                 preview.append((padded_inner_row(line, inside), cell_len(row) > available))
         elif self.key == "announce":
             from maxpane_dashboard.widgets.surf._icons import post_preview as _post_preview
@@ -461,11 +473,11 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         elif self.key == "board":
             summary = self.data.get("fleet_summary") or {}
             label, secondary = " STATS ", _fleet_accept_rate(summary)
-            preview = _fleet_preview(summary, inside, label_style, value_style)
+            preview = _fleet_preview(summary, inside, label_style, value_style, self.loading_value)
         elif self.key == "swarm-tokens":
             label = " LATEST "
             preview = _token_preview(ranking.get("latest"), inside,
-                                     label_style, value_style)
+                                     label_style, value_style, self.loading_value)
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
@@ -500,6 +512,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
                 line.append(' ').append(marker if index == 1 else ' ', style=marker_ink)
             clipped |= lost
             if preview is None and not native_digits:
+                if not self.empty_seat:
+                    line = self.loading_value(line)
                 line = padded_inner_row(line, inside, align='center')
             line.align("left" if preview is not None else "center", inside)
             if marker_width and index == 1:
@@ -512,6 +526,12 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
         fitted_bottom = clip(bottom, inside)
         footer = Text("└" + fitted_bottom.center(inside + len(fitted_bottom) - cell_len(fitted_bottom), "─") + "┘",
                       style=border_inset + Style(bold=False))
+        if not self.empty_seat:
+            rendered = self.loading_value(Text(fitted_bottom, style=border_inset))
+            if rendered.plain == '◇' and fitted_bottom.strip() != '◇':
+                offset = footer.plain.index(fitted_bottom.strip())
+                count = len(fitted_bottom.strip())
+                footer = footer[:offset] + rendered + Text(' ' * (count - 1), style=border_inset) + footer[offset + count:]
         if self.empty_seat and self._seat_error:
             footer.stylize(Style(color=RED, dim=False), 1, len(footer) - 1)
         return body.append_text(footer)

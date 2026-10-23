@@ -265,12 +265,17 @@ class AgentRackCard(Pool4HeroCard):
     def _inner_footer(self, subtitle, inside, frame, value_ink):
         if self.data.key != "runtime":
             return super()._inner_footer(subtitle, inside, frame, value_ink)
-        footer = Text("└" + "─" * max(0, inside - cell_len(subtitle)), style=frame)
         ink = value_ink if subtitle.strip() not in ("", "--") else frame
-        return footer.append(subtitle, style=ink).append("┘", style=frame)
+        caption = Text(subtitle, style=ink)
+        rendered = self.loading_value(caption)
+        if rendered is not caption:
+            rendered = Text(' ').append_text(rendered).append(' ')
+        footer = Text("└" + "─" * max(0, inside - rendered.cell_len), style=frame)
+        return footer.append_text(rendered).append("┘", style=frame)
 
     def _status_content(self):
         """One tall readout with an independently muted 0F separator."""
+        self._has_missing_value = False
         data = self.data
         inside = max(4, self.content_size.width) - 2
         palette = self.app.get_css_variables()
@@ -291,7 +296,9 @@ class AgentRackCard(Pool4HeroCard):
             for n in range(3):
                 rows.append(Text(groups[0][n] + " ", style=digits).append(groups[1][n], style=separator).append(" " + groups[2][n], style=digits))
         else:
-            row = Text(values[0] + " ", style=digits).append("0F", style=separator).append(" " + values[-1], style=digits)
+            row = self.loading_value(Text(values[0], style=digits)).append(' ', style=digits)
+            row.append("0F", style=separator).append(' ', style=digits)
+            row.append_text(self.loading_value(Text(values[-1], style=digits)))
             rows = [Text(""), padded_inner_row(row, inside, align="center"), Text("")]
         heading = " " + clip(data.heading, inside - 2) + " "
         content = Text("┌" + heading.center(inside, "─") + "┐\n", style=frame)

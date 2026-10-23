@@ -69,6 +69,7 @@ from textual.widget import Widget
 from maxpane_dashboard.data.reader import ReaderHandle
 from maxpane_dashboard.screens.refresh_guard import RefreshGuard, _join
 from maxpane_dashboard.widgets.status_bar import StatusBar
+from maxpane_dashboard.widgets.card_inner import LoadingCard
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,7 @@ class DashboardScreen(RefreshGuard, Screen):
         self._poll_interval = poll_interval
         self._refresh_timer = None
         self._loading_timer = None
+        self._card_loading_frame = 0
         self._background_loading = False
         self._loading_projection = False
         self._projection_due = False
@@ -269,6 +271,10 @@ class DashboardScreen(RefreshGuard, Screen):
     def _set_loading(self, busy):
         for bar in self.query(StatusBar):
             bar.set_loading(busy)
+        self._card_loading_frame = (self._card_loading_frame + 1) % 8 if busy else 0
+        for card in self.query(LoadingCard):
+            card.set_card_loading(busy and self.is_current and card.is_on_screen and card.visible,
+                                  self._card_loading_frame)
 
     def _reads_pending(self):
         loading = getattr(self._data_manager, 'is_loading', None)

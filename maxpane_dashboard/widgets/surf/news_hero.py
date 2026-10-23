@@ -11,10 +11,9 @@ from textual.app import ComposeResult
 from textual.containers import Grid
 from textual.renderables.digits import Digits
 
-from maxpane_dashboard.widgets.card_inner import inner_styles, padded_inner_row
+from maxpane_dashboard.widgets.card_inner import LoadingCard, inner_styles, padded_inner_row
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
-from maxpane_dashboard.widgets.panels import HeroBoxBase
 from maxpane_dashboard.widgets.rowfit import cell_len, clip
 from maxpane_dashboard.widgets.sparkline_common import build_sparkline, fmt_compact
 from ._fmt import as_float, fmt_age, fmt_price
@@ -132,7 +131,7 @@ def news_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     return tuple(result)
 
 
-class NewsHeroCard(HeroBoxBase):
+class NewsHeroCard(LoadingCard):
     """The rack's five-line inset with a source-aware outer footer."""
 
     STAT_PADDING = 1
@@ -181,6 +180,7 @@ class NewsHeroCard(HeroBoxBase):
         return rows
 
     def render(self) -> Text:
+        self._has_missing_value = False
         data = self.data
         inside = max(4, self.content_size.width) - 2
         palette = self.app.get_css_variables()
@@ -195,22 +195,29 @@ class NewsHeroCard(HeroBoxBase):
         centered = False
         prose_ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
         if data.preview:
-            rows = [padded_inner_row(row, inside) for row in post_preview(data.preview, room, prose_ink)]
+            preview = Text(data.preview, style=prose_ink)
+            if data.state in ('unavailable', 'pending', 'loading', 'busy'):
+                preview = self.loading_value(preview)
+            if preview.plain == '◇' and data.preview != '◇':
+                rows = [Text(''), padded_inner_row(preview, inside, align='center'), Text('')]
+            else:
+                rows = [padded_inner_row(row, inside) for row in post_preview(data.preview, room, prose_ink)]
         elif data.digits:
             digit_ink = digit_ink if data.digits != "--" else ink
             digits = [Text(segment.text, style=digit_ink) for segment in Digits(data.digits).render(Style()) if segment.text != "\n"]
             if data.digits != "--" and all(character in "0123456789.," for character in data.digits) and all(row.cell_len <= inside for row in digits):
                 rows = digits
             else:
-                rows = [Text(""), padded_inner_row(Text(data.digits, style=digit_ink), inside, align="center"), Text("")]
+                rows = [Text(""), padded_inner_row(self.loading_value(Text(data.digits, style=digit_ink)), inside, align="center"), Text("")]
             centered = True
         elif data.stats:
             rows = []
             for label, value in data.stats[:3]:
                 label, value = flatten(label), clip(flatten(value), room)
-                fitted_label = clip(label, max(0, room - cell_len(value) - 1))
-                gap = max(0, room - cell_len(fitted_label) - cell_len(value))
-                row = Text(fitted_label + " " * gap, style=ink).append(value, style=value_ink if value != "--" else ink)
+                rendered = self.loading_value(Text(value, style=value_ink if value != "--" else ink))
+                fitted_label = clip(label, max(0, room - rendered.cell_len - 1))
+                gap = max(0, room - cell_len(fitted_label) - rendered.cell_len)
+                row = Text(fitted_label + " " * gap, style=ink).append_text(rendered)
                 rows.append(padded_inner_row(row, inside))
         else:
             text_rows = self._text_rows(ink, value_ink)
@@ -231,6 +238,12 @@ class NewsHeroCard(HeroBoxBase):
         return result
 
     def _inner_footer(self, subtitle, inside, frame, value_ink):
+        value = self.loading_value(Text(subtitle, style=frame))
+        if value.plain == '◇' and subtitle.strip() != '◇':
+            value = Text(' ').append_text(value).append(' ')
+            left = max(0, (inside - value.cell_len) // 2)
+            return (Text('└' + '─' * left, style=frame).append_text(value)
+                    .append('─' * max(0, inside - left - value.cell_len) + '┘', style=frame))
         return Text("└" + subtitle.center(inside, "─") + "┘", style=frame)
 
 

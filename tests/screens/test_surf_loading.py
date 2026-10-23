@@ -61,6 +61,76 @@ class LoadingApp(App):
         self.push_screen(LoadingScreen(self.provider, poll_interval=3600))
 
 
+@pytest.mark.parametrize('failure', [False, True])
+async def test_card_pulse_tracks_visible_reads_without_fetches_or_own_timers(failure, monkeypatch):
+    from textual.containers import Vertical
+    from maxpane_dashboard.widgets.surf.news_hero import NewsHeroCard, HeroRecord
+
+    def forbidden_timer(*args, **kwargs):
+        raise AssertionError('card must reuse the screen clock')
+
+    monkeypatch.setattr(NewsHeroCard, 'set_interval', forbidden_timer)
+
+    class CardScreen(LoadingScreen):
+        def compose(self):
+            yield from super().compose()
+            with Vertical(id='card-body'):
+                yield NewsHeroCard(HeroRecord('pulse', 'COUNT', 'VALUE', '', digits='--'))
+
+    class CardApp(App):
+        def on_mount(self):
+            self.push_screen(CardScreen(provider, poll_interval=3600))
+
+    provider = Provider()
+    provider.fail = failure
+    app = CardApp()
+    async with app.run_test(size=(149, 45)) as pilot:
+        await provider.started.wait()
+        screen = app.screen
+        await pilot.pause()
+        screen._tick_loading()
+        await pilot.pause()
+        assert '◇' in painted(screen)
+        reads, projections = provider.reads, provider.projections
+        for _ in range(16):
+            screen._tick_loading()
+        await pilot.pause()
+        assert (provider.reads, provider.projections) == (reads, projections)
+        body = screen.query_one('#card-body')
+        card = screen.query_one(NewsHeroCard)
+        body.display = False
+        await pilot.pause()
+        screen._tick_loading()
+        assert card._card_loading is False
+        body.display = True
+        await pilot.pause()
+        screen._tick_loading()
+        await pilot.pause()
+        assert '◇' in painted(screen)
+        provider.release.set()
+        await app.workers.wait_for_complete()
+        screen._tick_loading()
+        await pilot.pause()
+        assert '◇' not in painted(screen)
+        provider.release.clear()
+        provider.started.clear()
+        screen.start_refresh()
+        await provider.started.wait()
+        screen._tick_loading()
+        await pilot.pause()
+        assert '◇' in painted(screen)
+        await app.push_screen(Screen())
+        assert card._card_loading is False
+        assert screen._loading_timer is None
+        provider.started.clear()
+        app.pop_screen()
+        await provider.started.wait()
+        screen._tick_loading()
+        await pilot.pause()
+        assert '◇' in painted(screen)
+        provider.release.set()
+
+
 def painted(screen):
     return '\n'.join(strip.text for strip in screen._compositor.render_strips())
 
