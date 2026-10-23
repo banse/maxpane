@@ -54,6 +54,7 @@ from maxpane_dashboard.screens.surfboard import (
     SurfboardScreen, SURFBOARD_FULL_LAYOUT_COLUMNS, SURFBOARD_FULL_LAYOUT_ROWS,
 )
 from maxpane_dashboard.screens.ttt import TTTScreen
+from maxpane_dashboard.screens.sworn_screen import SwornScreen
 from maxpane_dashboard.screens.surf_nft import (
     SurfNftScreen, SURF_NFT_FULL_LAYOUT_COLUMNS, SURF_NFT_FULL_LAYOUT_ROWS,
 )
@@ -869,7 +870,29 @@ def _workflow_source_app():
     return _CopyHarness(WorkflowSourceScreen(catalogue['source'], topic, topic['nodes'][0]))
 
 
+def _sworn_payload():
+    from tests.widgets.test_sworn_explorer import payload
+    data = payload()
+    data['sworn_selected']['metadata']['oracle'] = [{
+        'traitId': 601, 'name': 'Swarmed', 'template': 'T5', 'evidence': 'panel',
+        'fromBlock': 100, 'toBlock': 123, 'minPanelSize': 11, 'minQuorum': 7,
+        'requestId': '0x' + 'ab' * 32, 'oracleRequestId': '0x' + 'cd' * 32,
+        'target': '0x' + '3' * 40,
+    }]
+    return data
+
+
+def _sworn_app():
+    return _CopyHarness(SwornScreen(_PayloadManager(_sworn_payload())))
+
+
 CASES: tuple[SweepCase, ...] = (
+    SweepCase(
+        name='sworn', screen_class=SwornScreen, build=_sworn_app,
+        payload=_sworn_payload, views=((), ('enter',)),
+        seeded=('0x' + '1' * 40, '0x' + '2' * 40, '0x' + '3' * 40),
+        explorer=ETHEREUM,
+    ),
     SweepCase(
         name='workflow_guide', screen_class=WorkflowGuideScreen,
         build=_workflow_guide_app, payload=lambda: WorkflowGuideManager().get_snapshot(),

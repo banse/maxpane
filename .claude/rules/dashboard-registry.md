@@ -12,7 +12,7 @@ paths:
 
 # Adding, hiding or reordering a dashboard
 
-## The nine visible dashboards
+## The ten visible dashboards
 
 | # | `--game` | Chain | Subject |
 |---|---|---|---|
@@ -25,11 +25,12 @@ paths:
 | 7 | `ttt` | Ethereum | Ten Thousand Tokens, NFT + UniV4 burn-to-launch |
 | 8 | `talismans` | Ethereum | core-conservation NFT collection |
 | 9 | `surfboard` | Ethereum / IMD | SURFBOARD HUB: four-row rack, seven existing views and a read-only command terminal; shares `_surf_manager` |
+| 10 | `sworn` | Ethereum | Original Sworn artwork and claimant fact explorer; menu shortcut 0 |
 
 `surf` is position 1 and the `--game` default. The splash starts no dashboard
 reads; acquisition begins when a dashboard becomes visible. Hidden from the selection pane, code and tests intact: `bakery`, `ocm`, `dota`
 (backend is NXDOMAIN; 77 client tests still pass), `frenpet_full`, `frenpet_wallet`,
-`frenpet_perf`. Ten themes are registered. Dashboard 9 aliases `_surf_manager` for compatibility lookup and shutdown; it adds no manager attribute. `ALL_GAMES` includes `surfboard`, while the four `MANAGER_ATTRS` lists stay unchanged.
+`frenpet_perf`. Ten themes are registered. Dashboard 9 aliases `_surf_manager` for compatibility lookup and shutdown; it adds no manager attribute. Dashboard 10 adds `_sworn_manager`; all four `MANAGER_ATTRS` lists include it. `ALL_GAMES` includes both `surfboard` and `sworn`.
 
 **Hiding, adding or reordering a dashboard touches six surfaces and they must agree:**
 

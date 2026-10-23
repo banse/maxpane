@@ -20,6 +20,20 @@ kind, no wallet, no signing, no transactions.
 | **Ten Thousand Tokens** | Ethereum | NFT burn-to-launch on UniV4, fee engines, holder claims |
 | **Talismans** | Ethereum | Core-conservation NFT collection, materials, essence × tier |
 | **SURFBOARD HUB** | Ethereum / IMD | Dashboard 9: native SURF views, IMD terminal, SWARM TOKENS markets and the NFT Explorer |
+| **SWORN** | Ethereum | Original onchain card artwork, claimant facts and evidence inspector |
+
+### SWORN — dashboard 10
+
+Run `.venv/bin/python -m maxpane_dashboard --game sworn`, then press **0** in
+the selection menu. Browse cards or search by token ID/original claimant
+address. Open a row's `»` for the larger artwork and fact inspector. Claimant
+facts stay attached to the wallet that minted the card; the current holder is
+shown separately.
+
+Artwork comes from the Registry's actual SVG. Kitty/Ghostty graphics support is
+detected before startup; other terminals use a colored character rendering of
+the same image. The reader prepares artwork and caches selected cards locally;
+only the visible dashboard refreshes every 30 seconds.
 
 ### SURFBOARD HUB — dashboard 9
 

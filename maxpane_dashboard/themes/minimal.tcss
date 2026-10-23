@@ -3174,6 +3174,10 @@ SwarmTokensScreen #st-best-body { height: 1fr; padding: 0 1; }
 SwarmTokensScreen SwarmTokensFilterEditor { display: none; }
 
 
+/* SWORN Explorer */
+SwornScreen {background: $background; color: $text;}
+SwornScreen > SwornExplorer {height: 1fr; padding: 0 1;}
+
 /* PORTFOLIO mock screen */
 PortfolioScreen #st-body { min-height: 34; }
 PortfolioScreen #pf-context { height: 2; padding: 0 1; color: $text-muted; text-wrap: nowrap; }

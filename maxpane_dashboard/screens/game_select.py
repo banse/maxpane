@@ -34,6 +34,7 @@ GAMES = [
     ("7", "ttt", "Ten Thousand Tokens", "NFT collection w/ UniV4 burn-to-launch on Ethereum"),
     ("8", "talismans", "Talismans", "Core-conservation NFT collection on Ethereum"),
     ("9", "surfboard", "SURFBOARD HUB", "Dashboard rack and interactive IMD terminal"),
+    ("10", "sworn", "SWORN", "Onchain wallet facts and original card artwork · press 0"),
 ]
 
 
@@ -104,7 +105,7 @@ class GameSelectScreen(Screen):
         quit paths run the same graceful shutdown (LOW-19).
         """
         for key, game_id, _name, _desc in GAMES:
-            if event.character == key:
+            if event.character == key or (key == "10" and event.character == "0"):
                 event.stop()
                 self.dismiss(game_id)
                 return

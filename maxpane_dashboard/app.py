@@ -26,6 +26,7 @@ from maxpane_dashboard.data.ocm_manager import OCMManager
 from maxpane_dashboard.data.surf_manager import SurfManager
 from maxpane_dashboard.data.talismans_manager import TalismansManager
 from maxpane_dashboard.data.ttt_manager import TTTManager
+from maxpane_dashboard.data.sworn_manager import SwornManager
 from maxpane_dashboard.screens.bakery import BakeryScreen
 from maxpane_dashboard.screens.base_terminal import BaseTerminalScreen
 from maxpane_dashboard.screens.cattown import CatTownScreen
@@ -44,6 +45,7 @@ from maxpane_dashboard.screens.surf import MODE_AGENT, SurfScreen
 from maxpane_dashboard.screens.surfboard import SurfboardScreen
 from maxpane_dashboard.screens.talismans import TalismansScreen
 from maxpane_dashboard.screens.ttt import TTTScreen
+from maxpane_dashboard.screens.sworn_screen import SwornScreen
 from maxpane_dashboard.themes import THEMES, THEME_NAMES
 from maxpane_dashboard.widgets.status_bar import StatusBar
 
@@ -82,10 +84,12 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         wallet_address: str | None = None,
         seat: int | None = None,
         surfboard_seats: tuple[int | None, ...] | None = None,
+        sworn_graphics: dict | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self.poll_interval = poll_interval
+        self.sworn_graphics = sworn_graphics or {}
         self._initial_theme = theme if theme in THEMES else "minimal"
         self._initial_game = initial_game
         # Factories run lazily on one reader loop. App construction never loads
@@ -146,6 +150,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
             {"wallet": wallet_address or None})
         self._fwa_manager = register(
             "fwa", lambda: FWAManager(poll_interval=poll_interval))
+        self._sworn_manager = register("sworn", SwornManager)
         self._current_game = initial_game
         self._launch_notifications = LaunchNotifications()
 
@@ -174,6 +179,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         may forget the error guard below.
         """
         return {
+            "sworn": self._sworn_manager,
             "bakery": self._bakery_manager,
             "frenpet": self._frenpet_manager,
             "frenpet_full": self._frenpet_full_manager,
@@ -229,6 +235,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
         "ttt",
         "talismans",
         "surfboard",
+        "sworn",
     ]
 
     def _launch_game(self, game_id: str, *, first: bool = False) -> None:
@@ -347,6 +354,11 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
                     ),
                     name="curator",
                 )
+        elif game_id == "sworn":
+            if not self.is_screen_installed("sworn"):
+                self.install_screen(SwornScreen(
+                    self._sworn_manager, self.poll_interval, name="sworn",
+                ), name="sworn")
         else:
             return
 

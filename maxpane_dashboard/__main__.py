@@ -258,7 +258,7 @@ def main() -> int:
     parser.add_argument(
         "--game",
         default="surf",
-        choices=["surf", "curator", "fwa", "base", "frenpet", "cattown", "ttt", "talismans", "surfboard"],
+        choices=["surf", "curator", "fwa", "base", "frenpet", "cattown", "ttt", "talismans", "surfboard", "sworn"],
         help=(
             "Which game dashboard to preload (default: surf). The game "
             "selection menu still appears at startup; this only warms that "
@@ -309,6 +309,8 @@ def main() -> int:
     intro_code = run_intro(force=args.intro)
     if intro_code:
         return intro_code
+    from maxpane_dashboard.terminal_graphics import probe_terminal_graphics
+    sworn_graphics = probe_terminal_graphics()
 
     # Wallet: CLI flag > env var > saved config
     from maxpane_dashboard.config import get_seat, get_surfboard_seats, get_wallet
@@ -322,6 +324,7 @@ def main() -> int:
         # Surf's AGENT seat: the saved config only (the `i` prompt writes it).
         seat=get_seat(),
         surfboard_seats=get_surfboard_seats(),
+        sworn_graphics=sworn_graphics,
     )
     app.run()
     return app.return_code

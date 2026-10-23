@@ -11,7 +11,7 @@ from tests.test_app_startup import MANAGER_ATTRS
 FACTORIES = (
     'DataManager', 'FrenPetManager', 'BaseManager', 'CatTownManager',
     'OCMManager', 'DOTAManager', 'TTTManager', 'TalismansManager',
-    'SurfManager', 'CuratorManager', 'FWAManager',
+    'SurfManager', 'CuratorManager', 'FWAManager', 'SwornManager',
 )
 
 

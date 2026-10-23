@@ -10,10 +10,10 @@ pytestmark = pytest.mark.guard
 
 def test_hub_is_ninth_entry_and_cycle_keeps_first_eight():
     expected = ["surf", "curator", "fwa", "base", "frenpet", "cattown", "ttt", "talismans", "surfboard"]
-    assert [row[1] for row in GAMES] == expected
-    assert [row[0] for row in GAMES] == [str(n) for n in range(1, 10)]
-    assert GAMES[-1][2] == "SURFBOARD HUB"
-    assert MaxPaneApp._GAME_CYCLE == expected
+    assert [row[1] for row in GAMES[:9]] == expected
+    assert [row[0] for row in GAMES[:9]] == [str(n) for n in range(1, 10)]
+    assert GAMES[8][2] == "SURFBOARD HUB"
+    assert MaxPaneApp._GAME_CYCLE[:9] == expected
 
 
 def test_prefetch_alias_and_manager_ownership_remain_shared():
@@ -25,12 +25,14 @@ def test_prefetch_alias_and_manager_ownership_remain_shared():
 
 @pytest.mark.asyncio
 @pytest.mark.mounts_app
-async def test_menu_nine_cycle_eight_nine_one_and_exact_once_close():
+async def test_menu_nine_cycle_eight_nine_ten_one_and_exact_once_close():
     app, managers = hub_app(initial_game="talismans")
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.press("tab")
         assert app.screen.name == "surfboard"
         assert app._current_game == "surfboard"
+        await pilot.press("tab")
+        assert app.screen.name == "sworn"
         await pilot.press("tab")
         assert app.screen.name == "surf"
         await pilot.press("m")

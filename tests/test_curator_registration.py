@@ -290,6 +290,7 @@ MANAGER_ATTRS = [
     "_fwa_manager",
     "_surf_manager",
     "_curator_manager",
+    "_sworn_manager",
 ]
 
 #: The three hero box headlines the GRACE payload renders (PRD §3's table:

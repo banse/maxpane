@@ -62,6 +62,7 @@ MANAGER_ATTRS = [
     "_fwa_manager",
     "_surf_manager",
     "_curator_manager",
+    "_sworn_manager",
 ]
 
 

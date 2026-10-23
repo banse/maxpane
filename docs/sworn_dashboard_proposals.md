@@ -1,8 +1,8 @@
 # Sworn dashboard — three layout proposals
 
-Design-only, 2026-10-23. Pending owner selection; see
+Design record, 2026-10-23. Owner selected proposal 1 with proposal 3 in a popup; see
 [research](sworn_game_mechanics.md). Reference website and catalog inspected
-with headless Playwright. No production dashboard changes.
+with headless Playwright. Implementation follows the approved PRD.
 
 The layouts below are schematic, not measured 149×45 terminal renders.
 Numbers are illustrative, not live readings. The ASCII hives stand in for the
@@ -126,5 +126,5 @@ q quit   m menu                         loading                         SWORN
 
 Recommend 1 as the main dashboard, with the large-art/fullscreen treatment from 3.
 A later gallery body can add 2 without forcing tiny previews into the default.
-The owner has not yet chosen a layout or answered whether graphics-capable
-terminals are acceptable; neither is an implementation approval.
+Owner approved proposal 1 as the main dashboard and proposal 3 as its detail popup.
+Graphics support is detected automatically, with the same-art character fallback.

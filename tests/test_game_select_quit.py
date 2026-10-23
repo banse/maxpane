@@ -57,6 +57,7 @@ MANAGER_ATTRS = [
     "_fwa_manager",
     "_surf_manager",
     "_curator_manager",
+    "_sworn_manager",
 ]
 
 #: A game whose screen mounts without a wallet or any network call.
@@ -261,7 +262,7 @@ def test_unbound_keys_on_the_menu_do_nothing() -> None:
             await pilot.press("space")
             await pilot.pause()
 
-            for key in ("z", "x", "0"):
+            for key in ("z", "x", "k"):
                 await pilot.press(key)
                 await pilot.pause()
 
