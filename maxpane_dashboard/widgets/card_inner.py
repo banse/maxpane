@@ -1,7 +1,7 @@
 """Shared body colors and rich text padding for Surf card insets."""
 import re
 
-from rich.color import Color, blend_rgb
+from rich.color import Color
 from rich.style import Style
 from rich.text import Text
 
@@ -33,10 +33,8 @@ class LoadingCard(HeroBoxBase):
         if not self._card_loading or not self._can_load_card():
             return value
         palette = self.app.get_css_variables()
-        background = Color.parse(palette['background']).get_truecolor()
-        accent = Color.parse(palette['accent']).get_truecolor()
-        strength = (.35, .5, .7, .9, 1, .9, .7, .5)[self._card_loading_frame % 8]
-        ink = Style(color=Color.from_triplet(blend_rgb(background, accent, strength)),
+        shade = (0, 64, 128, 191, 255, 191, 128, 64)[self._card_loading_frame % 8]
+        ink = Style(color=Color.from_rgb(shade, shade, shade),
                     bgcolor=palette['background'], dim=False, bold=False)
         return Text('⛋', style=ink)
 

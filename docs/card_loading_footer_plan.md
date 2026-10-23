@@ -1,5 +1,19 @@
 # Card loading captions and BOARDROOM WIP counts
 
+## Monochrome pulse follow-up
+
+Owner request (2026-10-23): keep `⛋`, but pulse from black through neutral gray
+to white and back. Tier 2 because this is the shared card renderer. The session
+owns this small follow-up; the existing plan and single-review boundary apply.
+Use eight grayscale frames on the existing clock, preserve the background and
+all loading gates. Strengthen existing composited body/footer color assertions,
+capture the live BOARDROOM at 149×45, then check the affected widget/lifecycle
+files, guards and doc pins before a scoped review and local commit.
+
+Validation: 54 card/lifecycle tests, 128 guards and 12 doc pins passed. A live
+149×45 BOARDROOM capture shows the white peak and subsequent loaded values
+(`/private/tmp/maxpane-card-monochrome/`). Scoped review: Approved, no findings.
+
 Owner request (2026-10-23): use WHITE DIAMOND IN SQUARE (`⛋`, U+26CB)
 for the animated card loading marker, including missing numeric inner/outer
 card captions. Investigate WIP showing a known jobs digit beside `— working`

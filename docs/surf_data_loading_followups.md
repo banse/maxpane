@@ -6,6 +6,8 @@ The [caption follow-up](card_loading_footer_plan.md) replaces the plain diamond
 with the requested `⛋` and includes explicit missing numeric captions. Loaded
 BOARDROOM primaries no longer suppress missing-caption pulses during visible
 reads. Known zero/cached values, dates and prose remain unchanged.
+The owner's subsequent color correction uses a black–gray–white pulse with the
+existing timing; 54 card/lifecycle checks, 128 guards and 12 doc pins passed.
 
 The WIP workflow reader now follows bounded cursor pages instead of rereading
 the same full first page forever. Live: 199 workflows, zero open, 1.35 seconds;

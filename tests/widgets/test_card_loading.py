@@ -55,7 +55,7 @@ async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, fiel
             positions.append((row, col))
             colors.append(pilot.app.screen.get_style_at(card.region.x+col, card.region.y+row).color)
         assert positions[0] == positions[1]
-        assert colors[0] != colors[1]
+        assert [color.get_truecolor() for color in colors] == [(0, 0, 0), (255, 255, 255)]
         card.set_card_loading(False, 0)
         await pilot.pause()
         assert face(pilot.app, card) == original
@@ -171,7 +171,7 @@ async def test_loaded_wip_primary_keeps_pulsing_missing_inner_and_outer_counts(m
             row, col = next((y, line.index('⛋')) for y, line in enumerate(painted.splitlines())
                             if '⛋ workflows' in line)
             colors.append(pilot.app.screen.get_style_at(card.region.x+col, card.region.y+row).color)
-        assert colors[0] != colors[1]
+        assert [color.get_truecolor() for color in colors] == [(0, 0, 0), (255, 255, 255)]
         card.set_card_loading(False, 0)
         await pilot.pause()
         assert face(pilot.app, card) == original
