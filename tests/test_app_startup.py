@@ -99,8 +99,8 @@ def _make_app(game: str) -> MaxPaneApp:
 
 
 @pytest.mark.parametrize("game", ALL_GAMES)
-def test_splash_does_not_fetch_hidden_dashboard(game: str) -> None:
-    """A visible dashboard, not the splash, owns the first request."""
+def test_menu_opens_directly_without_fetching_hidden_dashboard(game: str) -> None:
+    """The CLI owns the intro; the app starts at its idle selection menu."""
 
     async def _run() -> None:
         app = _make_app(game)
@@ -110,7 +110,7 @@ def test_splash_does_not_fetch_hidden_dashboard(game: str) -> None:
             assert isinstance(manager, BoomManager)
             assert manager.calls == 0, "hidden dashboard fetched for %s" % game
             assert app._exception is None, f"{game}: {app._exception!r}"
-            assert app.screen is not None
+            assert isinstance(app.screen, GameSelectScreen)
             assert app.is_running
         assert app.return_code != 1, f"{game}: exited with return code 1"
 

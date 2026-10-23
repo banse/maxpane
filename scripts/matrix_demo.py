@@ -6,76 +6,17 @@ Space pauses, R replays, Enter reveals the logo, Q/Escape exits.
 from __future__ import annotations
 
 from pathlib import Path
-import random
 import sys
 from time import monotonic
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from rich.cells import cell_len
-from rich.style import Style
 from rich.text import Text
 from textual.app import App, ComposeResult
-from textual.color import Color
 from textual.widgets import Static
 
-from maxpane_dashboard.screens.splash import LOGO
-from maxpane_dashboard.themes import THEMES
 
-CHARS = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜ012345789"
-TAGLINE = "キープビルディング"
-DURATION = 5.0
-THEME = THEMES["matrix"]
-BACKGROUND = Color.parse(THEME.background)
-GREEN = Color.parse(THEME.accent)
-INK = [Style(color=BACKGROUND.blend(GREEN, level / 15).rich_color) for level in range(16)]
-
-
-def frame(width: int, height: int, elapsed: float, *, logo: bool = True) -> Text:
-    """A deterministic frame, in terminal cells; no I/O or animation state."""
-    width, height = max(1, width), max(1, height)
-    cells = [[(" ", 0) for _ in range(width)] for _ in range(height)]
-    fade = min(1.0, max(0.0, (DURATION - elapsed) / 1.8))
-    for x in range(0, width, 2):
-        rng = random.Random(x + 42)
-        tail = rng.randint(6, max(6, min(20, height)))
-        speed = rng.uniform(7, 17)
-        head = int(elapsed * speed + rng.randrange(height + tail)) % (height + tail)
-        for distance in range(tail):
-            y = head - distance
-            if 0 <= y < height:
-                char = CHARS[(x * 13 + y * 7 + int(elapsed * 7)) % len(CHARS)]
-                level = round(15 * (1 - distance / tail) ** 1.6 * fade)
-                cells[y][x] = (char if level else " ", level)
-
-    lines = LOGO.splitlines() if width >= 64 and height >= 12 else ["MAXPANE"]
-    logo_rows, logo_width = len(lines), max(map(cell_len, lines))
-    lines = [*lines, "", TAGLINE] if logo else []
-    top = max(0, (height - len(lines)) // 2)
-    for row, line in enumerate(lines):
-        label = Text(line)
-        label.truncate(width)
-        line_width = logo_width if row < logo_rows else label.cell_len
-        x = max(0, (width - line_width) // 2)
-        y = top + row
-        if y >= height:
-            break
-        for char in label.plain:
-            size = cell_len(char)
-            reveal = min(1.0, max(0.0, (elapsed - 2.2 - ((x * 7 + row * 11) % 19) / 19) / .8))
-            if char != " " and reveal and x + size <= width:
-                cells[y][x] = (char, max(1, round(15 * reveal)))
-                for extra in range(1, size):
-                    cells[y][x + extra] = ("", 0)
-            x += size
-
-    result = Text()
-    for y, row in enumerate(cells):
-        for char, level in row:
-            result.append(char, style=INK[level])
-        if y < height - 1:
-            result.append("\n")
-    return result
+from maxpane_dashboard.intro.matrix import BACKGROUND, DURATION, GREEN, THEME, frame
 
 
 class Rain(Static):

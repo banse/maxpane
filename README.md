@@ -543,27 +543,39 @@ Requires Python 3.11+
 
 ### Full install (with Matrix intro sequence)
 
-The full experience includes a Rust-powered Matrix-inspired intro animation. This requires [Rust](https://rustup.rs/) in addition to Python.
+The Matrix intro runs natively in Python on first start. Later launches go straight
+to the pane menu; use `--intro` to replay it. No Rust installation is needed.
 
 ```bash
 git clone https://github.com/banse/maxpane.git
 cd maxpane
 
-# Build the intro binary
-cd maxpane && cargo build --release && cd ..
-
 # Install the Python dashboard
 pip install -e .
 
-# Run with intro
-./maxpane/target/release/maxpane && maxpane
+# Start (intro once per local profile)
+maxpane
+
+# Replay the intro explicitly
+maxpane --intro
 ```
 
-Or add an alias to your shell config (`~/.zshrc` or `~/.bashrc`):
+For this checkout, the local launcher supports the same option:
 
 ```bash
-alias maxpane='~/path/to/maxpane/maxpane/target/release/maxpane && command maxpane'
+./start-maxpane.sh --intro
 ```
+
+Completing the intro records `~/.maxpane/.intro_seen`; cancelling does not.
+`[intro] enabled = false` or `mode = "never"` in `~/.maxpane/config.toml`
+disables automatic playback, while `--intro` still replays it. Legacy `always`
+settings also play only once during normal startup. Standalone previews do not
+change the marker.
+
+Opening BOARDROOM (pane 9) plays the terminal Matrix fade on each new dashboard
+entry. Returning from a detail view preserves the terminal without replaying it.
+Data loads during the animation; `/` or a click on the effect reveals the command
+prompt immediately.
 
 ## Usage
 

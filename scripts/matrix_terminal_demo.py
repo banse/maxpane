@@ -8,14 +8,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from rich.cells import cell_len
-from rich.style import Style
 from rich.text import Text
 from textual._compositor import Compositor
-from textual.color import Color
 from textual.containers import Container, VerticalScroll
 from textual.widgets import Input, Static
 
+from maxpane_dashboard.intro.matrix import reveal_frame
 from maxpane_dashboard.widgets.surfboard.rack import SLOTS, SurfboardCard, SurfboardRack
 from maxpane_dashboard.widgets.surfboard.terminal import SurfboardTerminal
 from scripts.matrix_demo import BACKGROUND, DURATION, GREEN, MatrixDemo, Rain, frame
@@ -41,32 +39,9 @@ class TerminalRain(Rain):
             compositor.reflow(self.app.query_one(self.SNAPSHOT_TARGET), self.size)
             self._snapshot = compositor.render_strips()
             self._snapshot_size = self.size
-        chars = list(rain.plain)
-        styles = [None] * len(chars)
-        for span in rain.spans:
-            styles[span.start:span.end] = [span.style] * (span.end - span.start)
-        for y, source in enumerate(self._snapshot):
-            x = 0
-            for segment in source:
-                style = segment.style or Style()
-                ink = Color.from_rich_color(style.color or GREEN.rich_color, self.app.ansi_theme)
-                paper = (Color.from_rich_color(style.bgcolor, self.app.ansi_theme, foreground=False)
-                         if self.REVEAL_SPACES and style.bgcolor else None)
-                for char in segment.text:
-                    width = cell_len(char)
-                    reveal = min(1.0, max(0.0, (elapsed - self.reveal_start(x, y) - ((x * 7 + y * 11) % 19) / 19) / .8))
-                    if (self.REVEAL_SPACES or not char.isspace()) and reveal:
-                        offset = y * (self.size.width + 1) + x
-                        chars[offset] = char
-                        styles[offset] = style + Style(color=BACKGROUND.blend(ink, reveal).rich_color,
-                            bgcolor=BACKGROUND.blend(paper, reveal).rich_color if paper else None)
-                        for extra in range(1, width):
-                            chars[offset + extra] = ''
-                    x += width
-        result = Text()
-        for char, style in zip(chars, styles):
-            result.append(char, style)
-        return result
+        return reveal_frame(rain, self._snapshot, self.size.width, elapsed,
+                            self.app.ansi_theme, reveal_start=self.reveal_start,
+                            reveal_spaces=self.REVEAL_SPACES)
 
 
 class DemoRack(SurfboardRack):

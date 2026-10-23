@@ -40,7 +40,6 @@ from maxpane_dashboard.screens.game_select import GameSelectScreen
 from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 from maxpane_dashboard.config import get_wallet
 from maxpane_dashboard.screens.ocm import OCMScreen
-from maxpane_dashboard.screens.splash import SplashScreen
 from maxpane_dashboard.screens.surf import MODE_AGENT, SurfScreen
 from maxpane_dashboard.screens.surfboard import SurfboardScreen
 from maxpane_dashboard.screens.talismans import TalismansScreen
@@ -157,15 +156,14 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
             self.notify(launch_toast_message(launch), title="Token launched", timeout=10)
 
     def on_mount(self) -> None:
-        """Register themes, show splash, then start the first game screen."""
+        """Open the idle menu; the CLI owns the optional native intro."""
         # Register all themes and apply the initial one
         for t in THEMES.values():
             self.register_theme(t)
         self.theme = self._initial_theme
 
-        # The visible dashboard owns acquisition; splash/menu start no readers.
-        # Show splash screen → game select → dashboard
-        self.push_screen(SplashScreen(), callback=self._on_splash_dismissed)
+        # The visible dashboard owns acquisition; the menu starts no readers.
+        self.push_screen(GameSelectScreen(), callback=self._on_game_selected)
 
     def _prefetch_manager(self, game_id: str):
         """Return the manager that warms the cache for *game_id*, if any.
@@ -209,10 +207,6 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
             await manager.fetch_and_compute()
         except Exception as exc:
             logger.error("Startup prefetch for %s failed: %s", game_id, exc)
-
-    def _on_splash_dismissed(self, _result=None) -> None:
-        """After splash, show the game selection screen."""
-        self.push_screen(GameSelectScreen(), callback=self._on_game_selected)
 
     def _on_game_selected(self, game_id: str | None = None) -> None:
         """Launch the selected game dashboard."""
@@ -341,6 +335,7 @@ class MaxPaneApp(CopyAddressMixin, ExplorerLinkMixin, App):
                     self._surf_manager, self.poll_interval, name="surfboard",
                     wallet=self._surfboard_wallet_address,
                 ), name="surfboard")
+            self.get_screen("surfboard").prepare_entry_animation()
         elif game_id == "curator":
             if not self.is_screen_installed("curator"):
                 self.install_screen(

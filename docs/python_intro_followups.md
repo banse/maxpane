@@ -1,8 +1,8 @@
 # Native Python intro — completion and follow-ups
 
 2026-10-23: the standalone port is complete. Final bounded review: **Approved**,
-no findings. Production startup integration remains a separate, optional task;
-the current launcher and all three saved Matrix demos are unchanged.
+no findings. Production startup integration is now implemented in
+`native_startup_integration.md`; the three saved Matrix demos remain runnable.
 
 Validation:
 
@@ -31,5 +31,15 @@ Explicit custom background colors and the amber/C64 presets remain selectable.
 
 Only MAXPANE's per-character fade is slowed, from 0.8s to 2s. Its scattered start
 pattern, 3.5s default rain lead-in, rain movement, four-second transition window,
-typewriter delays and three-second final hold are unchanged. Earlier demo scripts
-and normal startup remain unchanged.
+typewriter delays and three-second final hold are unchanged. Earlier demo behavior
+is preserved; normal startup now uses this intro once per local profile.
+
+## Startup integration
+
+Normal CLI and launchers use the native intro, with `--intro` for replay. The
+legacy Rust binary remains available separately but is no longer invoked at
+startup. BOARDROOM uses the saved terminal-only effect on explicit dashboard
+entry, not on return from a detail view. Its absolute paint layer leaves the
+143×37 layout pin and 149×45 owner geometry unchanged. Production reader preview
+at 149×45 showed real cached/API-backed content under the fade, including all
+terminal chrome. Final validation and review are recorded in the integration plan.

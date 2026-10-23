@@ -10,6 +10,7 @@ warnings.filterwarnings("ignore")
 
 from maxpane_dashboard import __version__
 from maxpane_dashboard.app import MaxPaneApp
+from maxpane_dashboard.intro.startup import run_intro
 
 
 _DEFAULT_FONT_SIZE = 17
@@ -216,7 +217,7 @@ class _VersionAction(argparse.Action):
         parser.exit()
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description="MaxPane Dashboard")
     # Declared first, and deliberately an ``action="version"``: argparse prints
     # and exits from inside ``parse_args()``, which is *before* main() sets up
@@ -235,6 +236,10 @@ def main():
         type=_poll_interval,
         default=30,
         help=f"Poll interval in seconds (default: 30, minimum: {_MIN_POLL_INTERVAL})",
+    )
+    parser.add_argument(
+        "--intro", action="store_true",
+        help="Replay the native intro (otherwise shown only on first start)",
     )
     parser.add_argument(
         "--theme",
@@ -301,6 +306,10 @@ def main():
 
     _maximize_terminal(_resolve_font_size(args.font_size))
 
+    intro_code = run_intro(force=args.intro)
+    if intro_code:
+        return intro_code
+
     # Wallet: CLI flag > env var > saved config
     from maxpane_dashboard.config import get_seat, get_surfboard_seats, get_wallet
     wallet = args.wallet or get_wallet()
@@ -315,7 +324,8 @@ def main():
         surfboard_seats=get_surfboard_seats(),
     )
     app.run()
+    return app.return_code
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

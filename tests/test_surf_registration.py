@@ -265,6 +265,8 @@ def _run_cli(monkeypatch, argv: list[str]) -> dict:
     captured: dict = {}
 
     class _StubApp:
+        return_code = 0
+
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
@@ -272,6 +274,7 @@ def _run_cli(monkeypatch, argv: list[str]) -> dict:
             captured["ran"] = True
 
     monkeypatch.setattr(cli, "MaxPaneApp", _StubApp)
+    monkeypatch.setattr(cli, "run_intro", lambda **kwargs: 0)
     monkeypatch.setattr(cli, "_maximize_terminal", lambda *a, **k: None)
     monkeypatch.setattr(cli.logging, "basicConfig", lambda **kw: None)
     monkeypatch.setattr(cli.sys, "argv", ["maxpane", *argv])

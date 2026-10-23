@@ -718,6 +718,8 @@ def _game_argument(monkeypatch) -> dict:
         return real_add_argument(self, *args, **kwargs)
 
     class _StubApp:
+        return_code = 0
+
         def __init__(self, **kwargs):
             pass
 
@@ -726,6 +728,9 @@ def _game_argument(monkeypatch) -> dict:
 
     monkeypatch.setattr(argparse.ArgumentParser, "add_argument", spy)
     monkeypatch.setattr(cli, "MaxPaneApp", _StubApp)
+    monkeypatch.setattr(cli, "run_intro", lambda **kwargs: 0)
+    monkeypatch.setattr(cli, "_maximize_terminal", lambda *args: None)
+    monkeypatch.setattr(cli.logging, "basicConfig", lambda **kwargs: None)
     monkeypatch.setattr(cli.sys, "argv", ["maxpane"])
     cli.main()
     assert seen, "--game was never added to the parser"

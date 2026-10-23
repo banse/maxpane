@@ -20,6 +20,8 @@ from maxpane_dashboard.screens.surf import MODE_AGENT, MODE_WORK, MODE_ORACLES, 
 from maxpane_dashboard.widgets.explorer import IMD, is_job_id, job_url
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
+from maxpane_dashboard.widgets.surfboard.reveal import TerminalReveal
+from maxpane_dashboard.intro.matrix import DURATION
 
 #: Rechecked 2026-10-15 after removing the horizontal reserve, live at 149×45.
 #: Six equal fractional columns fill the viewport, matching the AGENT board.
@@ -88,7 +90,7 @@ class SurfboardScreen(SurfDashboardScreen):
         Binding("escape", "back", show=False),
     ]
     DEFAULT_CSS = """
-    SurfboardScreen { background: $background; color: $text; }
+    SurfboardScreen { background: $background; color: $text; layers: default terminal-reveal; }
     SurfboardScreen #surfboard-title { height: 1; color: $text-muted; content-align: center middle; }
     SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1 0; overflow: auto auto;
         scrollbar-gutter: auto; scrollbar-size-vertical: 1; scrollbar-size-horizontal: 1; }
@@ -112,12 +114,49 @@ class SurfboardScreen(SurfDashboardScreen):
         self._nft_view_state = {}
         self._workflow_guide_manager = None
         self._workflow_guide_view_state = {}
+        self._entry_pending = False
+        self._entry_started = None
+        self._entry_timer = None
+        self._terminal_reveal = TerminalReveal()
 
     def compose(self) -> ComposeResult:
         yield Static(Text("IMD BOARDROOM"), id="surfboard-title")
         with VerticalScroll(id="surfboard-viewport"):
             yield SurfboardRack(id="surfboard-rack")
         yield SurfStatusBar()
+        yield self._terminal_reveal
+
+    def prepare_entry_animation(self) -> None:
+        """Arm only an explicit dashboard entry, never a subview return."""
+        self._entry_pending = True
+
+    def _begin_entry_animation(self) -> None:
+        if not self._entry_pending or not self.is_current:
+            return
+        self._entry_pending = False
+        self._entry_started = self._age_clock()
+        self._terminal_reveal.display = True
+        self._entry_timer = self.set_interval(1 / 20, self._tick_entry_animation)
+        self._tick_entry_animation()
+
+    def _tick_entry_animation(self) -> None:
+        if self._entry_timer is None:
+            return
+        elapsed = max(0, self._age_clock() - self._entry_started)
+        if not self.is_current or elapsed >= DURATION:
+            self._stop_entry_animation()
+            return
+        self._terminal_reveal.elapsed = elapsed
+        self._terminal_reveal.align_to(self.query_one(SurfboardTerminal),
+                                       self.query_one('#surfboard-viewport'))
+        self._terminal_reveal.refresh()
+
+    def _stop_entry_animation(self) -> None:
+        self._entry_pending = False
+        if self._entry_timer is not None:
+            self._entry_timer.stop()
+            self._entry_timer = None
+        self._terminal_reveal.display = False
 
     @on(events.ScreenResume)
     def _resume_hub(self) -> None:
@@ -127,9 +166,11 @@ class SurfboardScreen(SurfDashboardScreen):
         if self._age_timer is None:
             self._age_timer = self.set_interval(1, self._tick_terminal_age)
         self.call_after_refresh(self.query_one(SurfboardRack).focus_card)
+        self.call_after_refresh(self._begin_entry_animation)
 
     @on(events.ScreenSuspend)
     def _suspend_hub(self) -> None:
+        self._stop_entry_animation()
         self._stop_age_timer()
         self._cache_only = False
         setter = getattr(self._data_manager, "set_hub_active", None)
@@ -142,6 +183,7 @@ class SurfboardScreen(SurfDashboardScreen):
             self._command_worker = None
 
     def on_unmount(self) -> None:
+        self._stop_entry_animation()
         self._stop_age_timer()
 
     def _stop_age_timer(self) -> None:
@@ -284,6 +326,7 @@ class SurfboardScreen(SurfDashboardScreen):
         self.start_refresh()
 
     def action_command_input(self) -> None:
+        self._stop_entry_animation()
         self.query_one(SurfboardTerminal).focus_input()
 
     def action_work(self) -> None:

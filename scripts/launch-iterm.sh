@@ -5,8 +5,5 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# iTerm2 proprietary escape sequence for fullscreen
-printf '\e]1337;SetFullscreen=true\a'
-sleep 0.5
-
+# Python owns terminal setup and the first-run native intro.
 exec ./scripts/start.sh "$@"

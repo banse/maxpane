@@ -145,7 +145,8 @@ def test_cli_seen_marker_only_on_normal_first_run_success(tmp_path, monkeypatch,
     path = tmp_path / 'config.toml'
     path.write_text(f'[intro]\nmode="{mode}"\n')
     calls = []
-    monkeypatch.setattr(cli.IntroApp, 'run', lambda self: calls.append(self) or result)
+    from maxpane_dashboard.intro.startup import IntroApp
+    monkeypatch.setattr(IntroApp, 'run', lambda self: calls.append(self) or result)
     code = cli.main(['--config', str(path)] + (['--preview'] if preview else []))
     assert len(calls) == 1
     assert code == {'dashboard': 0, 'exit': 1, 'interrupt': 130}[result]
@@ -160,6 +161,7 @@ def test_cli_already_seen_skips_and_bad_config_warns(tmp_path, monkeypatch, caps
     path = state / 'config.toml'
     path.write_text('[intro]\nenabled="wrong"\n')
     def fail(self): raise AssertionError('seen intro must not mount')
-    monkeypatch.setattr(cli.IntroApp, 'run', fail)
+    from maxpane_dashboard.intro.startup import IntroApp
+    monkeypatch.setattr(IntroApp, 'run', fail)
     assert cli.main([]) == 0
     assert 'config' in capsys.readouterr().err.lower()

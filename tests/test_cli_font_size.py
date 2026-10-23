@@ -35,6 +35,8 @@ def _run_cli(monkeypatch, argv: list[str], env: dict | None = None) -> dict:
     captured: dict = {}
 
     class _StubApp:
+        return_code = 0
+
         def __init__(self, **kwargs):
             captured.update(kwargs)
 
@@ -42,6 +44,7 @@ def _run_cli(monkeypatch, argv: list[str], env: dict | None = None) -> dict:
             captured["ran"] = True
 
     monkeypatch.setattr(cli, "MaxPaneApp", _StubApp)
+    monkeypatch.setattr(cli, "run_intro", lambda **kwargs: 0)
     monkeypatch.setattr(
         cli, "_maximize_terminal", lambda size=None: captured.update(font_size=size)
     )

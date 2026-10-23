@@ -96,7 +96,8 @@ tests/               analytics/ data/ screens/ widgets/ address_sweep/ fixtures/
 
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate && pip install -e .
-python -m maxpane_dashboard [--game surf --theme fwa]   # splash → game select, or straight in
+python -m maxpane_dashboard [--game surf --theme fwa]   # first-run intro → game select
+python -m maxpane_dashboard --intro                    # replay native Python intro
 python -m maxpane_dashboard --version                     # trust this over memory
 ```
 

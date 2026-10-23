@@ -5,13 +5,5 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Maximize current window
-if [[ "$TERM_PROGRAM" == "iTerm.app" ]]; then
-    printf '\e]1337;SetFullscreen=true\a'
-else
-    printf '\e[9;1t'
-fi
-
-sleep 0.5
-
+# Python owns terminal setup and the first-run native intro.
 exec ./scripts/start.sh "$@"
