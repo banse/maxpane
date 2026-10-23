@@ -31,7 +31,7 @@ GREEN = Color.parse(THEME.accent)
 INK = [Style(color=BACKGROUND.blend(GREEN, level / 15).rich_color) for level in range(16)]
 
 
-def frame(width: int, height: int, elapsed: float) -> Text:
+def frame(width: int, height: int, elapsed: float, *, logo: bool = True) -> Text:
     """A deterministic frame, in terminal cells; no I/O or animation state."""
     width, height = max(1, width), max(1, height)
     cells = [[(" ", 0) for _ in range(width)] for _ in range(height)]
@@ -50,7 +50,7 @@ def frame(width: int, height: int, elapsed: float) -> Text:
 
     lines = LOGO.splitlines() if width >= 64 and height >= 12 else ["MAXPANE"]
     logo_rows, logo_width = len(lines), max(map(cell_len, lines))
-    lines = [*lines, "", TAGLINE]
+    lines = [*lines, "", TAGLINE] if logo else []
     top = max(0, (height - len(lines)) // 2)
     for row, line in enumerate(lines):
         label = Text(line)
@@ -108,9 +108,13 @@ class MatrixDemo(App):
         yield Static("space pause · r replay · ↵ reveal · esc exit", id="keys")
 
     def on_mount(self):
+        self.prepare()
         self.last_tick = self.clock()
         self.timer = self.set_interval(1 / 20, self.tick)
         self.paint()
+
+    def prepare(self):
+        """Optional offline scene setup before starting the animation."""
 
     def paint(self):
         self.query_one(Rain).refresh()
