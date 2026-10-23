@@ -9,9 +9,11 @@ from rich.style import Style
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.color import Color
+from textual.constants import DIM_FACTOR
 from textual.widgets import Static
 
 from maxpane_dashboard.screens.splash import LOGO, TAGLINE, NOTICE, PROMPT
+from maxpane_dashboard.themes import THEMES
 from .sequence import IntroSequence
 from .settings import IntroConfig, palette
 
@@ -48,6 +50,9 @@ class IntroRenderer:
         bg = Color.parse(self.colors['background'])
         self.inks = {key: Style(color=value, bgcolor=self.colors['background'])
                      for key, value in self.colors.items()}
+        boardroom = THEMES['matrix']
+        subtext = Color.parse(boardroom.background).blend(Color.parse(boardroom.foreground), DIM_FACTOR)
+        self.inks['subtext'] = Style(color=subtext.rich_color, bgcolor=bg.rich_color)
         self.gradients = {}
         for key, value in self.colors.items():
             steps = 15 if key == 'logo' else 31
@@ -95,7 +100,7 @@ class IntroRenderer:
             put(visible, max(0, (width - cell_len(full)) // 2), height // 2, self.inks['text'])
         elif seq.stage == 'prompt':
             top = max(0, (height - (5 if seq.response is not None else 3)) // 2)
-            centered('> Do you want to enter the Ether?', top, self.inks['text'])
+            centered('> Are you ready to enter the Swarm?', top, self.inks['text'])
             cursor = '_' if seq.response is None and seq.blink else ' '
             marker = ' [max]' if len(seq.buffer) >= 64 else ''
             line = fit_tail('> [Y/N]: ' + seq.buffer, max(0, width - 1 - len(marker))) + marker + cursor
@@ -130,9 +135,9 @@ class IntroRenderer:
                             put(char, x, y, self.rain_inks[level])
                 for row, line in enumerate(lines):
                     for col, char in enumerate(line):
-                        # First Matrix demo: scattered starts and a soft 0.8s fade.
+                        # Keep the demo's scattered starts; only the logo fades more slowly.
                         delay = (((left + col) * 7 + row * 11) % 19) / 19
-                        opacity = min(1.0, max(0.0, (reveal - delay) / .8))
+                        opacity = min(1.0, max(0.0, (reveal - delay) / 2.0))
                         if char != ' ' and opacity > 0:
                             put(char, left + col, top + row,
                                 self.gradients['logo'][max(1, round(15 * opacity))])
@@ -148,7 +153,7 @@ class IntroRenderer:
                     put(line, left, top + row, self.inks['logo'])
                 tagline_y = top + len(lines) + 2
                 tagline = TAGLINE_EN if self.config.tagline == 'english' else TAGLINE
-                centered(tagline, tagline_y, self.inks['text'])
+                centered(tagline, tagline_y, self.inks['subtext'])
                 if elapsed >= 3:
                     if int((elapsed - 3) / .53) % 2 == 0:
                         centered(PROMPT, tagline_y + 3, self.inks['text'])

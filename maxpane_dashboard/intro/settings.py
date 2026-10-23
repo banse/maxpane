@@ -4,6 +4,8 @@ from pathlib import Path
 import re
 import tomllib
 
+from maxpane_dashboard.themes import THEMES
+
 
 @dataclass(frozen=True)
 class Egg:
@@ -57,11 +59,12 @@ def load_config(path: Path) -> IntroConfig:
 
 
 def palette(config: IntroConfig) -> dict[str, str]:
-    background, text, bright, dim = {
-        'phosphor': ('#000000', '#33ff33', '#c8ffc8', '#005500'),
+    presets = {
+        'phosphor': (THEMES['matrix'].background, '#33ff33', '#c8ffc8', '#005500'),
         'amber': ('#000000', '#ffb000', '#ffdc96', '#643c00'),
         'c64': ('#40318d', '#6c5eb5', '#a096dc', '#40318d'),
-    }.get(config.color_scheme, ('#000000', '#33ff33', '#c8ffc8', '#005500'))
+    }
+    background, text, bright, dim = presets.get(config.color_scheme, presets['phosphor'])
     result = dict(background=background, text=text, rain_bright=bright, rain_dim=dim, logo=text)
     if config.color_scheme == 'custom':
         for name in result:

@@ -1,11 +1,11 @@
 """Intro state machine: injected clock, no terminal or filesystem access."""
 from .settings import IntroConfig, Egg
 
-LINES = ('Wake up, Anon...', 'The Ether has you...', 'Follow the white frog.', 'Lock in, Anon.')
+LINES = ('Wake up, Pepe...', 'The Swarm has you...', 'Follow the white frog.', 'Lock in, Pepe.')
 DEFAULT_EGGS = (
     Egg('morpheus', "I can only show you the door. You're the one that has to walk through it.", 'retry'),
     Egg('vitalik', "The merge is complete. Are you ready to see what's next?", 'proceed'),
-    Egg('gm', "gm anon. Let's go.", 'proceed'),
+    Egg('gm', "gm Pepe. Let's go.", 'proceed'),
     Egg('wagmi', "We're all gonna make it. Starting up...", 'proceed'),
     Egg('ngmi', 'Not with that attitude. Try again.', 'retry'),
     Egg('satoshi', 'Chancellor on brink of second bailout for banks.', 'proceed'),
@@ -98,9 +98,9 @@ class IntroSequence:
                 self.buffer = self.buffer[:-1]
             elif key == 'enter':
                 if not self.buffer or self.buffer.lower() == 'y':
-                    self.respond('LOCKING IN...', 'proceed', .8)
+                    self.respond('locking in...', 'proceed', .8)
                 elif self.buffer.lower() == 'n':
-                    self.respond('Maybe next time, anon.', 'exit')
+                    self.respond('Maybe next time, Pepe.', 'exit')
                 else:
                     egg = next((e for e in (*self.config.easter_eggs, *DEFAULT_EGGS)
                                 if e.input.lower() == self.buffer.lower()), None)
@@ -108,6 +108,6 @@ class IntroSequence:
                                  egg.action if egg else 'retry')
             elif character and character.isprintable():
                 if character.lower() == 'y' and not self.buffer:
-                    self.respond('LOCKING IN...', 'proceed', .8)
+                    self.respond('locking in...', 'proceed', .8)
                 else:
                     self.buffer = (self.buffer + character)[:64]

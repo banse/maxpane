@@ -26,11 +26,11 @@ def test_typewriter_pacing_blanks_and_final_prompt():
     clock[0] = .1
     assert seq.typewriter_text() == ('W', LINES[0], True)
     clock[0] = 1.3
-    assert seq.typewriter_text()[0] == 'Wake up, Anon'
+    assert seq.typewriter_text()[0] == 'Wake up, Pepe'
     clock[0] = 1.4
-    assert seq.typewriter_text()[0] == 'Wake up, Anon'
+    assert seq.typewriter_text()[0] == 'Wake up, Pepe'
     clock[0] = 1.5
-    assert seq.typewriter_text()[0] == 'Wake up, Anon.'
+    assert seq.typewriter_text()[0] == 'Wake up, Pepe.'
     clock[0] = 2
     assert seq.typewriter_text()[0] == LINES[0]
     clock[0] = 3.2
@@ -40,11 +40,16 @@ def test_typewriter_pacing_blanks_and_final_prompt():
     assert seq.stage == 'prompt'
 
 
+def test_intro_greetings_use_pepe_and_swarm():
+    assert LINES == ('Wake up, Pepe...', 'The Swarm has you...',
+                     'Follow the white frog.', 'Lock in, Pepe.')
+
+
 def test_yes_rain_reveal_hold_and_final_key():
     seq, clock = model()
     seq.enter('prompt')
     seq.key('y', 'y')
-    assert seq.response == 'LOCKING IN...'
+    assert seq.response == 'locking in...'
     clock[0] = .79; seq.tick()
     assert seq.stage == 'prompt'
     clock[0] = .8; seq.tick()
@@ -59,9 +64,9 @@ def test_yes_rain_reveal_hold_and_final_key():
 
 
 @pytest.mark.parametrize('word,message,action', [
-    ('', 'LOCKING IN...', 'rain'), ('n', 'Maybe next time, anon.', 'exit'),
+    ('', 'locking in...', 'rain'), ('n', 'Maybe next time, Pepe.', 'exit'),
     ('ngmi', 'Not with that attitude. Try again.', 'prompt'),
-    ('gm', "gm anon. Let's go.", 'rain'),
+    ('gm', "gm Pepe. Let's go.", 'rain'),
     ('wat', 'There is no spoon. Try again.', 'prompt'),
 ])
 def test_prompt_choices(word, message, action):
@@ -112,7 +117,7 @@ def test_settings_and_color_fallback(tmp_path):
     path.write_text('[intro]\nmode="always"\ncolor_scheme="custom"\n[intro.colors]\ntext="#123456"\nbackground="#€€"\n')
     config = load_config(path)
     assert config.should_show(True)
-    assert palette(config)['text'] == '#123456' and palette(config)['background'] == '#000000'
+    assert palette(config)['text'] == '#123456' and palette(config)['background'] == '#1c1c1c'
     path.write_text('[intro]\nrain_duration_ms=-1\n')
     with pytest.raises(ValueError): load_config(path)
     path.write_text('[intro]\nenabled="yes"\n')

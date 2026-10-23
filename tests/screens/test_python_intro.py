@@ -35,11 +35,11 @@ async def test_actual_keys_and_complete_rendered_sequence():
     app, clock = make_app(skip_key='none', tagline='english', rain_duration_ms=100)
     async with app.run_test(size=(149, 45)) as pilot:
         clock[0] = 1.5
-        assert 'Wake up, Anon...' in '\n'.join(await rows(app, pilot))
+        assert 'Wake up, Pepe...' in '\n'.join(await rows(app, pilot))
         clock[0] = app.sequence.typewriter_duration
-        assert '> Do you want to enter the Ether?' in '\n'.join(await rows(app, pilot))
+        assert '> Are you ready to enter the Swarm?' in '\n'.join(await rows(app, pilot))
         await pilot.press('g', 'm', 'enter')
-        assert "gm anon. Let's go." in '\n'.join(await rows(app, pilot))
+        assert "gm Pepe. Let's go." in '\n'.join(await rows(app, pilot))
         clock[0] += 1
         await rows(app, pilot)
         clock[0] += .1
@@ -68,7 +68,7 @@ async def test_actual_no_edit_retry_and_interrupt():
         clock[0] += 1
         await rows(app, pilot)
         await pilot.press('n', 'enter')
-        assert 'Maybe next time, anon.' in '\n'.join(await rows(app, pilot))
+        assert 'Maybe next time, Pepe.' in '\n'.join(await rows(app, pilot))
         await pilot.press('ctrl+c')
     assert app.return_value == 'interrupt'
 
@@ -123,9 +123,9 @@ async def test_custom_colors_are_in_composited_logo_and_background():
         assert logo.style.bgcolor.get_truecolor() == (16, 32, 48)
 
 
-@pytest.mark.parametrize('fade_time', [.3, .7, 1.8])
+@pytest.mark.parametrize('fade_time', [.3, 1.8, 3.0])
 @pytest.mark.asyncio
-async def test_logo_uses_first_demo_staggered_fade(fade_time):
+async def test_logo_keeps_demo_stagger_but_fades_more_slowly(fade_time):
     from rich.console import Console
     from scripts.matrix_demo import frame, GREEN, BACKGROUND
 
@@ -140,6 +140,7 @@ async def test_logo_uses_first_demo_staggered_fade(fade_time):
         app.sequence.enter('rain')
         clock[0] = 3.5 + fade_time
         await rows(app, pilot)
+        assert app.sequence.stage == 'rain'
         strips = app.screen._compositor.render_strips()
         compared, fading = 0, 0
         left = (149 - max(map(cell_len, LOGO.splitlines()))) // 2
@@ -157,11 +158,38 @@ async def test_logo_uses_first_demo_staggered_fade(fade_time):
                 actual = next(iter(strips[19 + row].crop(x, x + 1)))
                 assert actual.text == char
                 color = actual.style.color.get_truecolor()
-                assert color == ref_color
+                assert BACKGROUND.g < color.green <= ref_color.green
+                if fade_time == 3:
+                    assert color == ref_color
                 compared += 1
-                fading += ref_color != GREEN.rich_color.get_truecolor()
+                fading += color != GREEN.rich_color.get_truecolor()
         assert compared > 10
-        assert (fading > 0) == (fade_time < 1.8)
+        assert fading == (compared if fade_time < 3 else 0)
+
+
+@pytest.mark.asyncio
+async def test_intro_background_and_subtext_match_idle_boardroom():
+    from scripts.matrix_terminal_demo import TerminalMatrixDemo
+
+    board = TerminalMatrixDemo(clock=lambda: 0)
+    async with board.run_test(size=(149, 45)) as pilot:
+        board.timer.pause()  # Inspect idle colors, without a demo timer during teardown.
+        await pilot.pause()
+        label = board.query_one('#surfboard-keep')
+        expected_ink = label.styles.color.rich_color.get_truecolor()
+        base, surface = label.background_colors
+        expected_paper = (base + surface).rich_color.get_truecolor()
+
+    app, _ = make_app(tagline='english')
+    async with app.run_test(size=(149, 45)) as pilot:
+        app.sequence.enter('logo')
+        rendered = await rows(app, pilot)
+        assert TAGLINE_EN in rendered[27]
+        strips = app.screen._compositor.render_strips()
+        text = next(seg for seg in strips[27] if TAGLINE_EN in seg.text)
+        assert text.style.color.get_truecolor() == expected_ink
+        assert text.style.bgcolor.get_truecolor() == expected_paper
+        assert next(iter(strips[10])).style.bgcolor.get_truecolor() == expected_paper
 
 
 @pytest.mark.asyncio
