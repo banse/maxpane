@@ -3589,8 +3589,35 @@ class SurfManager:
             "to_block": to_block,
         }
 
+    async def _pool4_proven_channel(self, rows: Any) -> Any:
+        """Cached channel text is a locator, never current provenance.
+
+        Re-read candidate transactions once per hash this cycle. Only their
+        actual calldata enters discovery; a forged cached body cannot borrow
+        a real self-post's identity. Wrong-flag addresses cost no RPC reads.
+        """
+        candidates = P.flagged_candidates(P.triaged_candidates(P.candidate_addresses(rows, ANNOUNCE)))
+        if not candidates:
+            return rows
+        sources = self._pool4_source_tx_by_addr(rows)
+        fetched, proven = {}, []
+        for candidate in candidates:
+            tx_hash = sources.get(candidate.lower())
+            if tx_hash is None:
+                continue
+            if tx_hash not in fetched:
+                fetched[tx_hash] = await self._guard(
+                    lambda: self.pool4_client.fetch_transaction(tx_hash, network=POOL4_NETWORK_MAINNET),
+                    "pool4 channel fetch_transaction",
+                )
+            tx = fetched[tx_hash]
+            if P.reestablish_provenance(tx, ANNOUNCE, candidate, tx_hash)[0]:
+                proven.append({"from_addr": ANNOUNCE, "to_addr": ANNOUNCE,
+                               "tx_hash": tx_hash, "text": decode_utf8_calldata(tx.get("input"))})
+        return proven
+
     async def _pool4_discovery(self, rows: Any, prior: dict[str, Any]) -> Any:
-        """Adjudicate mainnet from the announce channel, and **only** from it.
+        """Adjudicate proven channel transactions first, then official docs.
 
         **This is the security boundary, and the one thing to understand about
         it is that the fingerprint is FORGEABLE and provenance is not.**
@@ -3657,6 +3684,7 @@ class SurfManager:
         # self-post naming twenty decoys costs zero round trips. Which of them
         # gets adjudicated, and in what order, is ``ranked_discovery``'s call
         # from the rows -- not this list's.
+        rows = await self._pool4_proven_channel(rows)
         candidates = P.flagged_candidates(
             P.triaged_candidates(P.candidate_addresses(rows, ANNOUNCE))
         )
@@ -3761,8 +3789,10 @@ class SurfManager:
                 # chain just confirmed.
                 return reestablished, POOL4_SOURCE_SELF_POST
 
+        reason = ("candidate checks incomplete" if unread else
+                  "docs unreachable" if docs_text is None else "no verified mainnet hook")
         if lapsed is None:
-            return verdict, None
+            return dataclasses.replace(verdict, detail=f"{reason} — {_field(verdict, 'detail')}"), None
         # The lapsed case is a fact only this module can know, and WP3's "no
         # hook-shaped address" line would be true while hiding the thing the
         # reader most needs to be told.
@@ -3770,8 +3800,8 @@ class SurfManager:
             network=None,
             state=_field(verdict, "state"),
             detail=(
-                f"the adopted hook {lapsed} is no longer named by any "
-                "self-post — reading the vendored testnet deployment"
+                f"{reason} — the adopted hook {lapsed} could not be re-proved; "
+                "reading the vendored testnet deployment"
             ),
         ), None
 
@@ -3822,45 +3852,15 @@ class SurfManager:
     async def _pool4_reestablish(
         self, prior: dict[str, Any], lapsed: str
     ) -> Any:
-        """Re-prove a lapsed adoption from the chain, or let it go (S15).
+        """Use a cached transaction hash only as a locator for current proof.
 
-        The channel window keeps 25 rows against a channel running at ~2.55
-        days a post, so about **64 days** after a hook is announced its
-        self-post ages out and a genuine adoption lapses to Sepolia. Fetching
-        the remembered transaction is what lets provenance outlive the window.
-
-        **The trust boundary, and it is the whole of this method.** The cache
-        may supply **a transaction hash and nothing else**. Every question that
-        decides -- is this a self-post, does its calldata name this address --
-        is recomputed by WP3's predicate from the *fetched transaction*. The
-        stored address is passed as ``expected_addr``, which is the **claim
-        under test**, never a credential: nothing but the fetched object can
-        make that predicate return ``True``. A cache that supplied a hash *and*
-        an address, where the address was believed because the hash resolved,
-        would be A27's persisted-adoption bypass wearing a new hat.
-
-        **Could-not-read and answered-no are different, and only one lapses.**
-
-        * ``fetch_transaction`` -> ``None``: we could not look. A bad RPC
-          minute must not drop a good adoption, so the adoption is **held** and
-          the next cycle asks again. The client already collapses every
-          unreadable outcome -- an unknown hash, a pruned node, a wrong chain,
-          a hash-identity mismatch -- into that one ``None``, precisely so an
-          outage cannot be read as an attack.
-        * the predicate answers ``False``: that is a real finding about a real
-          transaction, and the adoption **lapses**.
-
-        Holding is not free and is deliberately bounded: it keeps serving
-        mainnet numbers on an adoption whose provenance could not be re-proved
-        *this cycle*. It is the correct trade against dropping a good adoption
-        on a transient failure, and it self-corrects on the first cycle that
-        gets an answer either way.
-
-        ``None`` is returned when there is nothing to try -- no remembered
-        hash, or one that is not a hash -- and the caller lapses.
+        The fetched mainnet transaction must be the claimed, mined self-post
+        naming this address. An unreadable transaction cannot establish that.
+        After proof, rerun the same current flag/token/getter gates as every
+        other candidate; a signed address alone does not prove a live hook.
         """
         source_tx = self._pool4_source_tx(prior.get("discovery_source_tx"))
-        hook_addr = prior.get("hook_addr")
+        hook_addr = P.checksum_address(prior.get("hook_addr"))
         if source_tx is None or not isinstance(hook_addr, str):
             return None
 
@@ -3871,22 +3871,8 @@ class SurfManager:
             "pool4 fetch_transaction",
         )
         if tx is None:
-            logger.info(
-                "SURF pool4: could not read the cited self-post %s — holding "
-                "the adoption of %s rather than dropping it on a failed read",
-                source_tx, lapsed,
-            )
-            return Pool4Discovery(
-                network=POOL4_NETWORK_MAINNET,
-                state=POOL4_ADOPTED,
-                detail=(
-                    "the cited self-post could not be read this cycle — the "
-                    "adoption is held, not re-proved"
-                ),
-                hook_addr=hook_addr,
-                token_addr=IMD_TOKEN,
-                source_tx_hash=source_tx,
-            )
+            logger.info("SURF pool4: cited self-post %s could not be re-proved", source_tx)
+            return None
 
         proved, why = _safe_call(
             P.reestablish_provenance,
@@ -3900,23 +3886,20 @@ class SurfManager:
                 source_tx, hook_addr, why,
             )
             return None
-        return Pool4Discovery(
-            network=POOL4_NETWORK_MAINNET,
-            state=POOL4_ADOPTED,
-            detail=why,
-            hook_addr=hook_addr,
-            token_addr=IMD_TOKEN,
-            source_tx_hash=source_tx,
+        answers = await self._pool4_candidate_answers([hook_addr])
+        verdict = P.adjudicate_candidates(
+            [hook_addr], IMD_TOKEN, answers, POOL4_NETWORK_MAINNET,
+            {hook_addr: source_tx}, origin="self-post",
         )
+        return verdict if verdict.state == POOL4_ADOPTED else None
 
     @staticmethod
     def _pool4_lapsed_adoption(prior: dict[str, Any], candidates: Any) -> str | None:
         """The stored mainnet hook the channel no longer names, or ``None``.
 
         The persisted slot's **only** remaining role. An adoption is not
-        permanent: ``feed_items`` holds the newest
-        :data:`FEED_ITEM_LIMIT` rows, so the self-post that named the hook can
-        age out of the window, and when it does there is no longer any
+        permanent: even the full fetched channel history is bounded, so the
+        self-post that named the hook can age out, leaving no current
         unforgeable evidence for the adoption. The honest outcome is to fall
         back to the vendored testnet deployment and say so on every panel
         title — not to keep serving mainnet numbers on the authority of a file.
@@ -4375,8 +4358,7 @@ class SurfManager:
         The hash it records is a **pointer to a credential, not a credential**.
         Nothing here, and nothing downstream, may treat a stored hash as
         evidence: re-establishing an adoption from one means re-reading that
-        transaction from the chain and re-checking the signer, which this
-        build does not do.
+        transaction from the chain and re-checking the signer and calldata.
         """
         out: dict[str, str] = {}
         for row in rows or ():
@@ -5503,7 +5485,7 @@ class SurfManager:
     def _pool4_stakers_keys(
         self, slot: dict[str, Any], entry: Any
     ) -> dict[str, Any]:
-        """The five :data:`POOL4_STAKERS_KEYS`, off the staker slot.
+        """The :data:`POOL4_STAKERS_KEYS`, off the staker slot.
 
         A separate method off a separate slot, deliberately: these run on a
         different clock from the rest of the pool4 payload, and folding them
@@ -5529,6 +5511,7 @@ class SurfManager:
                 entry.as_of_hhmm() if entry is not None else None
             ),
             "pool4_stakers_state": self._pool4_stakers_state(slot),
+            "pool4_stakers_network": slot.get("network") if slot.get("network") in POOL4_NETWORKS else None,
         }
 
     def _pool4_stakers_state(self, slot: dict[str, Any]) -> str | None:
@@ -8472,7 +8455,7 @@ class SurfManager:
         # awaited: pool4 discovery reads the announce channel this cycle has
         # already paid for. Spawning it earlier would mean either a second
         # request for that page or a sweep that adjudicates against nothing.
-        self._spawn_pool4(tiers, now, feed_items)
+        self._spawn_pool4(tiers, now, channel_items)
 
         # This cycle's market view: fresh when we fetched, last-good otherwise —
         # the same resolution `channel_payload` gets above and `nft_payload` /

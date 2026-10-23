@@ -111,7 +111,7 @@ _STAKERS_WIDTH = 80
 
 
 async def _stakers(size=(_STAKERS_WIDTH, 20), **kwargs) -> tuple[list[str], str]:
-    kwargs.setdefault("pool4_network", "MAINNET")
+    kwargs.setdefault("pool4_stakers_network", "MAINNET")
     lines = await _lines(SurfPool4UStakers, size, **kwargs)
     return lines, "\n".join(lines)
 
@@ -307,13 +307,13 @@ async def test_an_unread_sweep_paints_no_rows_at_all() -> None:
 
     async with _A().run_test(size=(60, 20)) as pilot:
         widget = pilot.app.query_one(SurfPool4UStakers)
-        widget.update_data(**STAKERS_KW, pool4_network="MAINNET")
+        widget.update_data(**STAKERS_KW, pool4_stakers_network="MAINNET")
         await pilot.pause()
         table = pilot.app.query_one(f"#{TABLE_ID}")
         assert table.row_count == 3
 
         widget.update_data(**dict(STAKERS_KW, pool4_stakers=None),
-                           pool4_network="MAINNET")
+                           pool4_stakers_network="MAINNET")
         await pilot.pause()
         assert table.row_count == 0
 
@@ -529,20 +529,20 @@ async def test_the_title_carries_the_network_word_from_the_shared_helper() -> No
     asserted here rather than only the one that changed -- an implementation
     that dropped the word unconditionally would pass a mainnet-only check.
     """
-    lines, mainnet = await _stakers(**STAKERS_KW, pool4_network="MAINNET")
+    lines, mainnet = await _stakers(**STAKERS_KW, pool4_stakers_network="MAINNET")
     assert _pool4.market_panel_title(STAKERS_TITLE, "MAINNET") in mainnet
     assert STAKERS_TITLE in mainnet
-    assert "MAINNET" not in mainnet
+    assert "MAINNET" in mainnet
     # The separator is asserted against the **title row** rather than the
     # panel: the footer's own `` · `` is a different line's punctuation, and
     # a panel-wide check would be green for a reason that is not the claim.
     title_row = next(ln for ln in lines if STAKERS_TITLE in ln)
-    assert _pool4.TITLE_SEP not in title_row
+    assert _pool4.TITLE_SEP in title_row
 
-    _, sepolia = await _stakers(**STAKERS_KW, pool4_network="SEPOLIA")
+    _, sepolia = await _stakers(**STAKERS_KW, pool4_stakers_network="SEPOLIA")
     assert _pool4.panel_title(STAKERS_TITLE, "SEPOLIA") in sepolia
 
-    _, unknown = await _stakers(**STAKERS_KW, pool4_network="BASE")
+    _, unknown = await _stakers(**STAKERS_KW, pool4_stakers_network="BASE")
     assert f"{STAKERS_TITLE}{_pool4.TITLE_SEP}{_pool4.NETWORK_UNKNOWN}" in unknown
     assert "BASE" not in unknown
 
@@ -609,7 +609,7 @@ async def test_the_stakers_width_pins_are_what_the_table_actually_reserves() -> 
 
         async with _A().run_test(size=size) as pilot:
             widget = pilot.app.query_one(SurfPool4UStakers)
-            widget.update_data(**STAKERS_KW, pool4_network="MAINNET")
+            widget.update_data(**STAKERS_KW, pool4_stakers_network="MAINNET")
             await pilot.pause()
             table = pilot.app.query_one(f"#{TABLE_ID}")
             assert table.virtual_size.width == pin, (size, table.virtual_size)
@@ -708,7 +708,7 @@ async def test_every_staker_lands_in_the_table_with_its_copy_icon() -> None:
     async with _stakers_app().run_test(size=(_STAKERS_WIDTH, 20)) as pilot:
         widget = pilot.app.query_one(SurfPool4UStakers)
         widget.update_data(pool4_stakers=_every_staker(), pool4_staker_count=353,
-                           pool4_staker_top3_pct=19.3, pool4_network="MAINNET")
+                           pool4_staker_top3_pct=19.3, pool4_stakers_network="MAINNET")
         await pilot.pause()
         table = pilot.app.query_one(f"#{TABLE_ID}", DataTable)
         assert table.row_count == 353
@@ -737,7 +737,7 @@ async def test_an_unchanged_poll_keeps_the_readers_place_in_the_table() -> None:
     from textual.widgets import DataTable
 
     kw = dict(pool4_staker_count=353, pool4_staker_top3_pct=19.3,
-              pool4_network="MAINNET")
+              pool4_stakers_network="MAINNET")
     async with _stakers_app().run_test(size=(_STAKERS_WIDTH, 20)) as pilot:
         widget = pilot.app.query_one(SurfPool4UStakers)
         widget.update_data(pool4_stakers=_every_staker(), **kw)
@@ -832,7 +832,7 @@ async def test_a_population_past_the_cap_is_named_on_the_footer() -> None:
         widget = pilot.app.query_one(SurfPool4UStakers)
         widget.update_data(pool4_stakers=_every_staker(n=1200),
                            pool4_staker_count=1200, pool4_staker_top3_pct=19.3,
-                           pool4_network="MAINNET")
+                           pool4_stakers_network="MAINNET")
         await pilot.pause()
         table = pilot.app.query_one(f"#{TABLE_ID}", DataTable)
         rows = table.row_count
@@ -865,7 +865,7 @@ async def test_a_real_change_keeps_the_readers_place_in_the_table() -> None:
     from textual.widgets import DataTable
 
     kw = dict(pool4_staker_count=353, pool4_staker_top3_pct=19.3,
-              pool4_network="MAINNET")
+              pool4_stakers_network="MAINNET")
     async with _stakers_app().run_test(size=(_STAKERS_WIDTH, 20)) as pilot:
         widget = pilot.app.query_one(SurfPool4UStakers)
         widget.update_data(pool4_stakers=_every_staker(), **kw)

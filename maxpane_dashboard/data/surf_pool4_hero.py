@@ -51,7 +51,8 @@ def project(*, data: dict, sources: dict, now: float) -> dict:
 
     assets = _facts(pool, imd=number(data.get('pool4_vault_assets')),
                     simd=number(data.get('pool4_vault_shares')))
-    holders = _facts(stakers, holders=count(data.get('pool4_staker_count')))
+    same_network = data.get('pool4_network') in ('MAINNET', 'SEPOLIA') and data.get('pool4_stakers_network') == data.get('pool4_network')
+    holders = _facts(stakers, holders=count(data.get('pool4_staker_count')) if same_network else None)
     contributing = [source for source in (assets, holders) if source['state'] != 'unavailable']
     vault = _facts(_joined(contributing), imd=assets['imd'], simd=assets['simd'], holders=holders['holders'])
     holder_source = sources.get('stakers')

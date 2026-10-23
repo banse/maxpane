@@ -65,12 +65,12 @@ async def test_captions_share_footer_phase_and_restore_idle_on_leave(monkeypatch
             assert caption_ink(screen, 'キープ') == ink
             assert caption_ink(screen, 'ビルディング') == ink
             shade = (28, 77, 127, 176, 226, 176, 127, 77)[phase]
-            assert caption_ink(screen, '⛋') == (shade, shade, shade)
+            assert caption_ink(screen, '◇') == (shade, shade, shade)
             rows = screen._compositor.render_strips()
             assert f"{'◐◓◑◒'[phase % 4]} loading" in rows[-1].text
             assert screen.query_one(StatusBar)._loading_timer is None
             if phase == 4:
-                assert any('⛋' in row.text for row in rows)
+                assert any('◇' in row.text for row in rows)
                 await pilot.resize_terminal(143, 37)
                 await pilot.pause()
                 assert caption_ink(screen, 'キープ') == ink

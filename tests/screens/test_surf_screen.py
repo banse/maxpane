@@ -525,7 +525,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         # above come off one slot and go `None` together; this is what lets
         # the footer say "not swept yet" instead of warning on tick 1.
         "pool4_stakers_state": "pool4_stakers_state",
-        "pool4_network": "pool4_network",
+        "pool4_stakers_network": "pool4_stakers_network",
         "pool4_as_of_hhmm": "pool4_as_of_hhmm",
     },
     "SurfPool4UBurn": {
@@ -1488,6 +1488,7 @@ def _sample_data() -> dict:
              "imd": 260.0, "pct": 0.95},
         ],
         "pool4_staker_count": 66,
+        "pool4_stakers_network": "SEPOLIA",
         "pool4_staker_top3_pct": 8.91,
         # The LONG tier's own marker, and deliberately NOT `pool4_as_of_hhmm`
         # (14:32 above): the staker fold runs on a slower clock, so a fixture
@@ -1788,6 +1789,7 @@ def _mainnet_pool4_payload(**overrides) -> dict:
     floor = 1_000.0
     payload = _frozen_payload(
         pool4_network="MAINNET",
+        pool4_stakers_network="MAINNET",
         pool4_discovery_state="adopted",
         pool4_discovery_detail=_ADOPTED_DISCOVERY_DETAIL,
         pool4_discovery_source_tx=_ADOPTED_SOURCE_TX,

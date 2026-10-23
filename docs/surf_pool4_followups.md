@@ -1140,3 +1140,32 @@ do not explicitly compare their mapping to it. A `wrong_kwarg` mutation in that
 constant survived four named contract/dispatch checks. Current production
 dispatch is correct; add direct agreement coverage when that test area next
 changes. Review used an isolated copy and left the shared working tree unchanged.
+
+## 2026-10-23 — imd.fun outage and independent STAKERS chain
+
+See `surf_imd_outage_report_2026_10_23.md` for scoped validation and deviations.
+The loading glyph is again a plain diamond. Independent STAKERS labels and
+explorer links now follow the staker slot; the review-found network-only link
+cache defect is fixed and verified by a composited transition test and mutation.
+Cached channel rows and saved adoption pointers require fresh transaction proof;
+re-established hooks also pass current fingerprint gates. Sepolia fallback is
+explicitly labeled, with a bounded reason. NFT/swarm Railway rotation was already
+implemented and is now covered by an offline DNS outage transport.
+
+**Open, Tier 2 / external source:** handover point 1 (automatic mainnet adoption
+during this DNS outage) and its successful recovery proof remain unachieved.
+The complete read-only announcement check found no candidate; no official
+alternate source is evidenced in captured plane routes. The owner confirms no
+alternate is known. Do not replace provenance with a cached address or an
+invented endpoint. Revisit when official docs return or a proven source appears.
+
+**Existing test maintenance, Tier 0 when those cases are next touched:** two
+`test_surf_pool4_market_screen.py` hero-presence cases still expect `SurfHero`
+for launchpad instead of `SurfLaunchpadHero`; the registration full-outage case
+still expects an old warning banner contrary to the owner's loading-display
+override. All three failures reproduce on base `f65236ea`; they are excluded
+by exact node ID from this round's final affected-file check, not silently fixed.
+
+The scoped review closes its Critical explorer-link finding. Its Important
+source-availability acceptance blocker remains explicitly open. Live dashboard
+render, Claude verification and full suite remain outside this round.

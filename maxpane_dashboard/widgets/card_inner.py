@@ -44,7 +44,7 @@ class LoadingCard(HeroBoxBase):
         shade = dark.blend(light, loading_fraction(self._card_loading_frame))
         ink = Style(color=shade.rich_color,
                     bgcolor=palette['background'], dim=False, bold=False)
-        return Text('⛋', style=ink)
+        return Text('◇', style=ink)
 
     def loading_caption(self, value: Text) -> Text:
         """Pulse missing numbers in a generated numeric caption, never prose/dates."""

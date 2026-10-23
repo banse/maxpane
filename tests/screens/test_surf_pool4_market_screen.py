@@ -116,6 +116,51 @@ def _mainnet_pool4_payload(**overrides):
 #: WP10 owns the measured pins and their own sweep.
 _SIZE = (150, 50)
 
+
+@pytest.mark.parametrize('market,stakers', [('SEPOLIA', 'MAINNET'), ('MAINNET', 'SEPOLIA'), ('MAINNET', None)])
+async def test_stakers_labels_and_links_follow_its_own_network(market, stakers):
+    payload = _frozen_payload(pool4_network=market, pool4_stakers_network=stakers)
+    async with _surf_app(payload).run_test(size=_SIZE) as pilot:
+        screen = await _open_market(pilot)
+        panel = screen.query_one(SurfPool4UStakers)
+        text = _region_text(pilot.app, panel)
+        assert f'STAKERS · {stakers or "—"}' in text
+        links = {segment.style.link for strip in screen._compositor.render_strips()[panel.region.y:panel.region.bottom]
+                 for segment in strip.crop(panel.region.x, panel.region.right)
+                 if segment.style and segment.style.link}
+        if stakers:
+            host = 'sepolia.etherscan.io' if stakers == 'SEPOLIA' else 'etherscan.io'
+            assert links and all(link.startswith(f'https://{host}/address/') for link in links)
+        else:
+            assert not links
+
+
+async def test_testnet_fallback_title_explains_failed_mainnet_proof():
+    payload = _frozen_payload(pool4_discovery_detail='docs unreachable — no self-post names a hook')
+    async with _surf_app(payload).run_test(size=_SIZE) as pilot:
+        screen = await _open_market(pilot)
+        title = _region_text(pilot.app, screen.query_one('#title-bar'))
+        assert 'mainnet hook not proven: docs unreachable' in title
+        assert 'SEPOLIA fallback' in title
+
+
+async def test_staker_chain_change_rebuilds_links_without_row_changes():
+    payload = _frozen_payload(pool4_network='SEPOLIA', pool4_stakers_network='MAINNET')
+    async with _surf_app(payload).run_test(size=_SIZE) as pilot:
+        screen = await _open_market(pilot)
+        panel = screen.query_one(SurfPool4UStakers)
+        for network, host in [('MAINNET', 'etherscan.io'), ('SEPOLIA', 'sepolia.etherscan.io'), (None, None)]:
+            panel.update_data(**dict(payload, pool4_stakers_network=network))
+            await pilot.pause()
+            assert f'STAKERS · {network or "—"}' in _region_text(pilot.app, panel)
+            links = {segment.style.link for strip in screen._compositor.render_strips()[panel.region.y:panel.region.bottom]
+                     for segment in strip.crop(panel.region.x, panel.region.right)
+                     if segment.style and segment.style.link}
+            if host:
+                assert links and all(link.startswith(f'https://{host}/address/') for link in links)
+            else:
+                assert not links
+
 #: The five panel classes that live in the `4` body, in compose order.
 #: `SurfPool4Flow` JOINED this tuple on 2026-09-12 -- it was deliberately
 #: absent while it was the one panel still printing `· MAINNET` here. It is
@@ -850,8 +895,11 @@ async def test_the_market_panels_leave_mainnet_unsaid_and_say_everything_else()\
         for cls in _MARKET_PANELS:
             panel = list(body.query(cls))[0]
             rows = _region_text(pilot.app, panel).split("\n")
-            assert "MAINNET" not in rows[0], (cls.__name__, rows[0])
-            assert "·" not in rows[0], (cls.__name__, rows[0])
+            if cls is SurfPool4UStakers:
+                assert "· MAINNET" in rows[0]
+            else:
+                assert "MAINNET" not in rows[0], (cls.__name__, rows[0])
+                assert "·" not in rows[0], (cls.__name__, rows[0])
 
     async with _surf_app(_frozen_payload()).run_test(size=_SIZE) as pilot:
         screen = await _open_market(pilot)

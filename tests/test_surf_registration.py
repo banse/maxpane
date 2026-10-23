@@ -1326,7 +1326,7 @@ _NON_NUMERIC_KEYS = frozenset(
         # at all.
         #
         # Four closed-vocabulary or free-text strings, four addresses:
-        "pool4_network", "pool4_as_of_hhmm",
+        "pool4_network", "pool4_stakers_network", "pool4_as_of_hhmm",
         "pool4_discovery_state", "pool4_discovery_detail",
         # S18: the citation, split back out of the detail. A transaction hash
         # is a string with no numeric zero to confuse with a failed read, so

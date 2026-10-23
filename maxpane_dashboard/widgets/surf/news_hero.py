@@ -198,7 +198,7 @@ class NewsHeroCard(LoadingCard):
             preview = Text(data.preview, style=prose_ink)
             if data.state in ('unavailable', 'pending', 'loading', 'busy'):
                 preview = self.loading_value(preview)
-            if preview.plain == '⛋' and data.preview != '⛋':
+            if preview.plain != data.preview:
                 rows = [Text(''), padded_inner_row(preview, inside, align='center'), Text('')]
             else:
                 rows = [padded_inner_row(row, inside) for row in post_preview(data.preview, room, prose_ink)]

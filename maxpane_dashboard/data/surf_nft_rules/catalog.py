@@ -3,11 +3,12 @@ from __future__ import annotations
 import copy
 import re
 from datetime import datetime, timezone
+from maxpane_dashboard.data.surf_swarm_client import SWARM_API
 from .rules import apply_rules, classify_template, reviewed_build
 from .utility import enrich_utility
 from .references import discover_references
 from .links import normalize_site
-API = "https://api.imd.fun"
+API = SWARM_API  # Evidence links only; SurfNftClient owns pooled HTTP reads.
 CHAINS = {1: "Ethereum", 4663: "Robinhood"}
 NFT_WORDS = re.compile(r"\bnfts?\b|erc[- ]?(?:721|1155)|non[- ]fungible|generative (?:art|collection)|\bcollectibles?\b", re.I)
 ADDRESS = re.compile(r"\b0x[0-9a-fA-F]{40}\b")

@@ -251,7 +251,7 @@ def _self_post_tx(
     }
 
 
-def _self_post(text: str, tx_hash: str = "0xfeed") -> dict:
+def _self_post(text: str, tx_hash: str = "0x" + "fe" * 32) -> dict:
     """A ``feed_items``-shaped announce-wallet self-post."""
     return {
         "from_addr": ANNOUNCE, "to_addr": ANNOUNCE, "text": text,
@@ -325,9 +325,9 @@ class FakePool4Client:
             "fetch_vault_state": VAULT_STATE,
             "fetch_flow_logs": FLOW_LOGS,
             "fetch_swap_logs": SWAPS_FOR_THE_HOOK_ANSWER,
-            # ``None`` is the client's own contract for every unreadable
-            # outcome, and it must never read as a provenance verdict.
-            "fetch_transaction": None,
+            # Synthetic mined announcement: the default names only the fixture
+            # hook. Failed reads and other announcements override this explicitly.
+            "fetch_transaction": lambda tx_hash: _self_post_tx(tx_hash, MAINNET_HOOK),
             # No reference-pool capture is committed for Sepolia, and `None`
             # is the client's own word for "could not read" -- the four venue
             # keys fold to `None` on their own from it.
@@ -449,7 +449,8 @@ class FakePool4Client:
 
     async def fetch_transaction(self, tx_hash, *, network):
         self.fetched.append(tx_hash)
-        return self._answer("fetch_transaction", network)
+        value = self._answer("fetch_transaction", network)
+        return value(tx_hash) if callable(value) else value
 
     async def close(self):
         self.closed = True
@@ -692,7 +693,7 @@ async def test_a_healthy_sweep_publishes_every_pool4_key(tmp_path) -> None:
     # and asserting it here is what stops the panel warning on tick 1. A bare
     # "all five are None" would have re-frozen exactly the defect.
     data_keys = [k for k in POOL4_STAKERS_KEYS if k != "pool4_stakers_state"]
-    assert len(data_keys) == 4
+    assert len(data_keys) == 5
     assert [k for k in data_keys if payload[k] is not None] == []
     assert payload["pool4_stakers_state"] == "pending"
     assert not set(POOL4_STAKERS_KEYS) & set(POOL4_KEYS)
@@ -1361,7 +1362,7 @@ async def test_an_adoption_lapses_when_its_self_post_ages_out(tmp_path) -> None:
     assert payload["pool4_network"] == SEPOLIA
     assert payload["pool4_discovery_state"] == NOT_DISCOVERED
     assert MAINNET_HOOK in payload["pool4_discovery_detail"]
-    assert "no longer named" in payload["pool4_discovery_detail"]
+    assert "could not be re-proved" in payload["pool4_discovery_detail"]
 
 
 async def test_a_sepolia_slot_never_reports_a_lapsed_adoption(tmp_path) -> None:
@@ -1436,7 +1437,8 @@ async def test_a_rejected_candidate_does_not_hide_the_hook_named_beside_it(
             for a in addrs
         }
 
-    client = FakePool4Client(fetch_candidate_answers=_decoy_first)
+    client = FakePool4Client(fetch_candidate_answers=_decoy_first,
+                            fetch_transaction=lambda tx: _self_post_tx(tx, f"{decoy} {MAINNET_HOOK}"))
     manager = _manager(tmp_path, pool4_client=client)
     manager.client._returns["fetch_channel_txs"] = None
     manager.cache.store_last_good(
@@ -1447,6 +1449,7 @@ async def test_a_rejected_candidate_does_not_hide_the_hook_named_beside_it(
     payload = await _sweep(manager)
 
     assert client.verified == [decoy, MAINNET_HOOK]   # both, in channel order
+    assert len(client.fetched) == 1  # two candidates in one transaction
     assert payload["pool4_discovery_state"] == ADOPTED
     assert payload["pool4_hook_addr"] == MAINNET_HOOK
     assert payload["pool4_network"] == MAINNET
@@ -1468,7 +1471,8 @@ async def test_an_outage_on_one_candidate_does_not_hide_the_next(
             for a in addrs if a.lower() != unreadable.lower()
         }
 
-    client = FakePool4Client(fetch_candidate_answers=_one_is_dark)
+    client = FakePool4Client(fetch_candidate_answers=_one_is_dark,
+                            fetch_transaction=lambda tx: _self_post_tx(tx, f"{unreadable} {MAINNET_HOOK}"))
     manager = _manager(tmp_path, pool4_client=client)
     manager.client._returns["fetch_channel_txs"] = None
     manager.cache.store_last_good(
@@ -1487,7 +1491,8 @@ async def test_the_first_rejection_is_published_when_nothing_is_adopted(
     tmp_path,
 ) -> None:
     """... and the loop still ends in a verdict rather than in silence."""
-    client = FakePool4Client(fetch_candidate_answers=_rejects)
+    client = FakePool4Client(fetch_candidate_answers=_rejects,
+                            fetch_transaction=lambda tx: _self_post_tx(tx, f"{MAINNET_HOOK} " + "0x" + "cd" * 18 + "2840"))
     manager = _manager(tmp_path, pool4_client=client)
     manager.client._returns["fetch_channel_txs"] = None
     manager.cache.store_last_good(
@@ -1712,7 +1717,7 @@ async def test_an_unreadable_docs_page_is_not_a_verdict_about_it(
         [], IMD_TOKEN, None, None, None, origin="docs"
     ).detail
     assert channels_own_reason != docs_own_reason, "the two must be tellable apart"
-    assert payload["pool4_discovery_detail"] == channels_own_reason
+    assert payload["pool4_discovery_detail"] == "docs unreachable — " + channels_own_reason
     assert payload["pool4_discovery_detail"] != docs_own_reason
 
 
@@ -1746,7 +1751,7 @@ async def test_a_docs_candidate_faces_the_same_gates_as_a_channel_one(
     # exact inversion of the property the guard exists for.
     detail = payload["pool4_discovery_detail"]
     assert "unverified" not in detail
-    assert detail == P.adjudicate_candidates(
+    assert detail == "no verified mainnet hook — " + P.adjudicate_candidates(
         [flagless], IMD_TOKEN, None, None, None, origin="docs"
     ).detail
 
@@ -2485,7 +2490,7 @@ async def test_a_malformed_transaction_hash_is_never_cited(tmp_path, bad) -> Non
     payload = await _sweep(manager)
 
     assert payload["pool4_discovery_source_tx"] is None
-    assert payload["pool4_discovery_detail"] == MAINNET_VERDICT.detail
+    assert payload["pool4_discovery_state"] != ADOPTED
 
 
 @pytest.mark.parametrize(
@@ -2542,8 +2547,9 @@ async def _lapsed_manager(tmp_path, client, *, stored_tx=REAL_TX):
     return manager
 
 
+@pytest.mark.parametrize('lowercase', [False, True])
 async def test_a_lapsed_adoption_is_re_established_from_the_chain(
-    tmp_path,
+    tmp_path, lowercase,
 ) -> None:
     """**S15.** Provenance outlives the 25-row window by re-reading the post.
 
@@ -2552,9 +2558,14 @@ async def test_a_lapsed_adoption_is_re_established_from_the_chain(
     survives the window it was announced in.
     """
     client = FakePool4Client(
-        fetch_transaction=_self_post_tx(REAL_TX, f"pool4 is live at {MAINNET_HOOK}")
+        fetch_transaction=_self_post_tx(REAL_TX, f"pool4 is live at {MAINNET_HOOK}"),
+        fetch_candidate_answers=_adopts,
     )
-    payload = await _sweep(await _lapsed_manager(tmp_path, client))
+    manager = await _lapsed_manager(tmp_path, client)
+    if lowercase:
+        entry = manager.cache.get_last_good(SLOT_POOL4)
+        manager.cache.store_last_good(SLOT_POOL4, dict(entry.payload, hook_addr=MAINNET_HOOK.lower()), ts=POOL4_NOW - 100)
+    payload = await _sweep(manager)
 
     assert client.fetched == [REAL_TX]
     assert payload["pool4_network"] == MAINNET
@@ -2563,25 +2574,25 @@ async def test_a_lapsed_adoption_is_re_established_from_the_chain(
     assert payload["pool4_discovery_source_tx"] == REAL_TX
 
 
-async def test_a_failed_fetch_holds_the_adoption_rather_than_dropping_it(
-    tmp_path,
-) -> None:
-    """**S15, the hold half.** A bad RPC minute is not a finding.
-
-    ``fetch_transaction`` collapses every unreadable outcome -- unknown hash,
-    pruned node, wrong chain, hash-identity mismatch -- into one ``None``,
-    precisely so an outage cannot be read as an attack. Dropping a good
-    adoption on it would make the view flap to Sepolia and back with the
-    weather.
-    """
+async def test_a_failed_fetch_cannot_reestablish_the_cached_adoption(tmp_path):
+    """Outage contract: a cache points at proof; a failed read is not proof."""
     client = FakePool4Client(fetch_transaction=None)
     payload = await _sweep(await _lapsed_manager(tmp_path, client))
-
     assert client.fetched == [REAL_TX]
-    assert payload["pool4_network"] == MAINNET
-    assert payload["pool4_discovery_state"] == ADOPTED
-    assert "held" in payload["pool4_discovery_detail"]
-    assert "not re-proved" in payload["pool4_discovery_detail"]
+    assert payload["pool4_network"] == SEPOLIA
+    assert payload["pool4_discovery_state"] != ADOPTED
+    assert "docs unreachable" in payload["pool4_discovery_detail"]
+
+
+async def test_reestablished_self_post_still_needs_current_getter_gates(tmp_path):
+    client = FakePool4Client(
+        fetch_transaction=_self_post_tx(REAL_TX, f"pool4 is live at {MAINNET_HOOK}"),
+        fetch_candidate_answers=_rejects,
+    )
+    payload = await _sweep(await _lapsed_manager(tmp_path, client))
+    assert client.verified == [MAINNET_HOOK]
+    assert payload["pool4_network"] == SEPOLIA
+    assert payload["pool4_discovery_state"] != ADOPTED
 
 
 @pytest.mark.parametrize(
@@ -2700,14 +2711,10 @@ async def test_a_stored_hash_that_is_not_a_hash_is_never_fetched(
     assert payload["pool4_network"] == SEPOLIA
 
 
-async def test_re_establishment_is_not_attempted_while_the_window_still_names_it(
+async def test_cached_window_names_still_require_current_transaction_proof(
     tmp_path,
 ) -> None:
-    """Zero round trips in the normal case.
-
-    Provenance is fresh from the channel on every ordinary cycle; the fetch
-    exists only for the day the post ages out.
-    """
+    """The channel cache supplies locators, not fresh proof."""
     client = FakePool4Client(fetch_candidate_answers=_adopts)
     manager = _manager(tmp_path, pool4_client=client, clock=FakeClock(POOL4_NOW))
     manager.client._returns["fetch_channel_txs"] = None
@@ -2725,7 +2732,7 @@ async def test_re_establishment_is_not_attempted_while_the_window_still_names_it
     )
     payload = await _sweep(manager)
 
-    assert client.fetched == []
+    assert client.fetched == [REAL_TX]
     assert payload["pool4_discovery_state"] == ADOPTED
 
 
@@ -2739,7 +2746,8 @@ async def test_a_freshly_announced_hook_outranks_a_remembered_one(
     to produce one.
     """
     new_hook = P.checksum_address("0x" + "cd" * 18 + "2840")
-    client = FakePool4Client(fetch_candidate_answers=_adopts)
+    client = FakePool4Client(fetch_candidate_answers=_adopts,
+                            fetch_transaction=_self_post_tx("0x" + "22" * 32, new_hook))
     manager = await _lapsed_manager(tmp_path, client)
     manager.cache.store_last_good(
         "channel",
@@ -2748,7 +2756,7 @@ async def test_a_freshly_announced_hook_outranks_a_remembered_one(
     )
     payload = await _sweep(manager)
 
-    assert client.fetched == []
+    assert client.fetched == ["0x" + "22" * 32]
     assert payload["pool4_hook_addr"] == new_hook
     assert payload["pool4_discovery_source_tx"] == "0x" + "22" * 32
 

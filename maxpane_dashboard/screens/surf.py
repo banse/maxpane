@@ -4559,6 +4559,13 @@ class SurfScreen(SurfDashboardScreen):
             network = safe_markup(flatten(data.get("pool4_network") or "—"))
             stamp = safe_markup(flatten(data.get("pool4_as_of_hhmm") or "—"))
             line = f"{label} · {network} · as of {stamp}"
+            if network == "SEPOLIA":
+                # Fixed reasons only: cached discovery prose can contain addresses
+                # or markup, and belongs in diagnostics rather than the title.
+                reason = str(data.get("pool4_discovery_detail") or "").partition(" — ")[0]
+                if reason not in ("docs unreachable", "candidate checks incomplete", "no verified mainnet hook"):
+                    reason = "no authoritative source adopted"
+                line = f"{label} · SEPOLIA fallback · mainnet hook not proven: {reason} · as of {stamp}"
             if cut:
                 line += f" · [yellow]{TALLER_HINT}[/]"
         elif self._title_data is None:
@@ -5171,7 +5178,7 @@ class SurfScreen(SurfDashboardScreen):
                 # detached -- from "the sweep failed". Only the second may
                 # render a warning.
                 pool4_stakers_state=data.get("pool4_stakers_state"),
-                pool4_network=data.get("pool4_network"),
+                pool4_stakers_network=data.get("pool4_stakers_network"),
                 pool4_as_of_hhmm=data.get("pool4_as_of_hhmm"),
             )
         except Exception as exc:

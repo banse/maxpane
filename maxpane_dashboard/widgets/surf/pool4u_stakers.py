@@ -118,7 +118,7 @@ from maxpane_dashboard.widgets.surf._pool4 import (
     join_lines,
     parse_line,
     strip_tags,
-    market_title_text,
+    title_text,
 )
 from maxpane_dashboard.widgets.rowfit import clip, pad
 
@@ -630,7 +630,7 @@ class SurfPool4UStakers(Vertical):
         pool4_staker_top3_pct=None,
         pool4_stakers_as_of_hhmm=None,
         pool4_stakers_state=None,
-        pool4_network=None,
+        pool4_stakers_network=None,
         pool4_as_of_hhmm=None,
         **_kwargs,
     ) -> None:
@@ -655,7 +655,7 @@ class SurfPool4UStakers(Vertical):
             "as_of": pool4_stakers_as_of_hhmm,
             "body_as_of": pool4_as_of_hhmm,
             "state": pool4_stakers_state,
-            "network": pool4_network,
+            "network": pool4_stakers_network,
             "seen": True,
         }
         self._render_view()
@@ -683,13 +683,11 @@ class SurfPool4UStakers(Vertical):
             title = self.query_one(f"#{_TITLE_ID}", Static)
         except Exception:  # not composed yet
             return
-        # ``market_title_text``, not ``title_text``: this is the ``4`` body,
-        # and it is the one that leaves ``MAINNET`` unsaid. The ``p`` body's
-        # four panels go on printing it -- see ``_pool4.QUIET_NETWORK`` for
-        # why silence is available for exactly one network and nothing else.
+        # This independent slot can outlive a market-network switch.
+        # Always identify its own chain, including MAINNET.
         title.update(
             Text(
-                market_title_text(
+                title_text(
                     TITLE,
                     self._payload.get("network"),
                     self._widen,
@@ -743,9 +741,9 @@ class SurfPool4UStakers(Vertical):
                     values.append(safe_markup(clip(pct, _PCT_COLS)))
                 batch.append(values)
 
-        # Unchanged rows at an unchanged tier: leave the table, and the
+        # Unchanged rows, chain and tier: leave the table, and the
         # reader's scroll position in it, alone (see ``_rows_key``).
-        key = (self._tier, tuple(tuple(str(v) for v in values) for values in batch))
+        key = (self._tier, explorer, tuple(tuple(str(v) for v in values) for values in batch))
         if key == self._rows_key:
             return
         try:

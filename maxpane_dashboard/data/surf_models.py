@@ -1459,7 +1459,7 @@ POOL4_KEYS: tuple[str, ...] = (
 #: shape: a separate tuple against a separate slot, where the fixed count is
 #: itself the tripwire.  PRD 7.2.
 #:
-#: It is deliberately *not* spliced into :data:`POOL4_KEYS`.  These five come
+#: It is deliberately *not* spliced into :data:`POOL4_KEYS`.  These keys come
 #: from a different tier on a different clock -- a full ``Transfer`` history
 #: fold, far too expensive for the 600 s pool4 sweep -- so folding them into
 #: that tuple would let a pool4-tier failure look like it had emptied them, and
@@ -1476,6 +1476,7 @@ POOL4_STAKERS_KEYS: tuple[str, ...] = (
     # warned on all three. See POOL4_STAKERS_STATES for why the split is
     # three-way and why none of it is inferred from the cache's clock.
     "pool4_stakers_state",      # str | None — POOL4_STAKERS_STATES; None = nothing to explain
+    "pool4_stakers_network",    # str | None — network of this independent slot
 )
 
 # Dashboard 9: all values are plain data. Unknown lists are None, empty reads [].

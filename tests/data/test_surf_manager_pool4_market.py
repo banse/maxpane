@@ -1299,12 +1299,12 @@ async def test_the_two_markers_run_on_two_clocks(tmp_path) -> None:
     assert TIER_TTL_SECONDS[TIER_POOL4_STAKERS] > TIER_TTL_SECONDS[TIER_POOL4]
 
 
-async def test_the_five_staker_keys_are_exactly_what_the_contract_froze(
+async def test_the_six_staker_keys_are_exactly_what_the_contract_froze(
     tmp_path,
 ) -> None:
     """A fixed count is itself the tripwire — ``CURATOR_ANALYSIS_KEYS``'s shape."""
     payload = await _sweep_stakers(_market_manager(tmp_path))
-    assert len(POOL4_STAKERS_KEYS) == 5
+    assert len(POOL4_STAKERS_KEYS) == 6
     for key in POOL4_STAKERS_KEYS:
         assert key in payload
 

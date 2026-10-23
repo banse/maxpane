@@ -14,6 +14,7 @@ def snapshot():
         'market': dict(state='ok', read_ts=980),
         'stakers': dict(state='ok', read_ts=900),
     }, data=dict(
+        pool4_network='MAINNET', pool4_stakers_network='MAINNET',
         pool4_price_usd=9.4, pool4_cheaper_venue='here', pool4_venue_gap_pct=-1.2,
         pool4_share_price=7.96, pool4_trailing_return_pct=13.4, pool4_implied_apr_pct=999,
         pool4_vault_assets=1200, pool4_vault_shares=200, pool4_staker_count=17,
@@ -22,6 +23,14 @@ def snapshot():
         pool4_backlog_imd=30, pool4_drip_per_day=7, pool4_backlog_days=4.2,
         imd_price_usd=888,
     ))
+
+
+@pytest.mark.parametrize('network', ['SEPOLIA', None, 'BASE'])
+def test_vault_does_not_merge_holders_from_another_or_unknown_chain(snapshot, network):
+    snapshot['data']['pool4_stakers_network'] = network
+    vault = hero.project(**snapshot)['vault']
+    assert vault['imd'] == 1200 and vault['simd'] == 200
+    assert vault['holders'] is None
 
 
 def test_contract_native_mappings_and_independent_source_clocks(snapshot):
