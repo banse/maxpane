@@ -74,3 +74,46 @@ file has nine failing tests both before this change (HEAD d67d83cb, isolated
 checkout) and after it; 15 tests pass in both runs. Track this separately from
 the replacement card. The old card-opening test now opens the retained Portfolio
 screen directly, preserving that screen's return-navigation coverage.
+
+## Incremental catalogue loading (2026-10-23)
+
+WIP now persists validated jobs/workflows catalogues, merges update deltas with a
+five-minute overlap, and reconciles the full catalogue every ten minutes. Current
+work publishes before historical scanning, old project versions/workflow details
+and optional detail enrichment; unchecked project grouping appears only after
+its context reads validate. The
+existing reader thread and view cancellation remain in charge; polling is 30s
+from read start, with no queued catch-up cycles. Optional work is capped at four
+concurrent reads, 24 admissions and eight seconds per cycle. Source checkpoints,
+observation clocks and failure states stay separate from display data.
+
+Measured with live api.imd.fun and isolated cache copies: regular jobs discovery
+fell from 31 pages to one delta call. The first adapted warm publication took
+3.450s; the production reader-thread/manager/screen integration painted cached
+content in 1.597s and refreshed content in 7.549s. These are different observed
+workloads, not a controlled same-payload benchmark. A legacy cache published a
+partial current snapshot at 5.811s while baseline reconstruction finished at
+45.833s. Full scans therefore remain an occasional cost. The live 149x45 render
+was shown before final review. See `surf_wip_incremental_plan.md` for evidence.
+
+Known upstream limitation: child changes may not bump parent updatedAt. Active
+job details are still revalidated; periodic full reconciliation remains necessary.
+An exceptionally slow full jobs scan exceeding the five-minute delta overlap
+retains the foreground and retries instead of promoting an unsafe checkpoint.
+Multi-cycle workflow baselines catch up updates since their scan start. Unknown
+counts remain unknown; an omitted executing bucket means zero only with a complete,
+validated state-total witness and complete discovery.
+
+Validation baseline: the unrelated SWARM TOKENS CSS agreement guard fails because
+its extraction includes the later SWORN CSS block. The identical failure was
+reproduced on untouched HEAD 5d17872c in a temporary git archive. The other 128
+fast guards passed. This task does not change either stylesheet or that guard.
+
+Final review raised four Important findings; the single fix wave added regressions
+for malformed reconciliation, hidden creation-time boundary ties, historical context
+blocking first publication, and mixed optional failure/timeout rollback.
+
+Scoped re-review: Approved; all four findings addressed, with 19 focused cases
+independently verified. Final isolated four-worker touched/composing run: 683
+passed in 14.77s. Seventeen implementer mutation checks and the reviewer's
+boundary mutation were killed and restored. The full suite was not run.

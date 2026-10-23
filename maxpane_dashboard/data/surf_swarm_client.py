@@ -3,8 +3,8 @@
 GET only, a two-host pool, no key of any kind.  Every fetch returns ``None``
 rather than raising: a failed read is not a zero and not an empty list.
 
-The /jobs route accepts validated ``limit`` (1..500), exclusive ISO ``before``
-and text ``q`` (up to 200 characters) through HTTP query parameters. Its returned
+The /jobs route accepts validated ``limit`` (1..500), exclusive ISO ``before``,
+updated-since ``since`` and text ``q`` (up to 200 characters) through HTTP query parameters. Its returned
 count is a page count, never a network total. The default read is a bounded
 recent page. Paths never contain queries. Overview, records and hourly getters
 preserve their envelopes for validation by the data projection layer.
@@ -358,16 +358,18 @@ class SwarmClient(OwnedHttpClient):
         return await self._dict("/steps/hourly")
 
     async def fetch_jobs(self, *, limit: int = 100, before: str | None = None,
-                         q: str | None = None) -> list[dict[str, Any]] | None:
-        """One bounded recent page; ``before`` is exclusive, not a total count."""
+                         q: str | None = None, since: str | None = None) -> list[dict[str, Any]] | None:
+        """One bounded page: ``before`` pages creation; ``since`` filters updates."""
         if type(limit) is not int or not 1 <= limit <= 500:
             return None
-        if before is not None:
-            if not isinstance(before, str) or re.fullmatch(
-                    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z", before) is None:
+        for cursor in (before, since):
+            if cursor is None:
+                continue
+            if not isinstance(cursor, str) or re.fullmatch(
+                    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?Z", cursor) is None:
                 return None
             try:
-                datetime.fromisoformat(before)
+                datetime.fromisoformat(cursor)
             except ValueError:
                 return None
         if q is not None and (not isinstance(q, str) or len(q) > 200):
@@ -377,6 +379,8 @@ class SwarmClient(OwnedHttpClient):
             params["before"] = before
         if q is not None:
             params["q"] = q
+        if since is not None:
+            params["since"] = since
         rows = await self._list("/jobs", "jobs", params=params)
         for row in rows or ():
             if not isinstance(row, dict):
@@ -421,22 +425,26 @@ class SwarmClient(OwnedHttpClient):
     async def fetch_skills(self) -> list[dict[str, Any]] | None:
         return await self._list("/skills", "skills")
 
-    async def fetch_workflows(self, *, limit: int = SWARM_WORKFLOW_PAGE_SIZE, before: str | None = None) -> list[dict[str, Any]] | None:
+    async def fetch_workflows(self, *, limit: int = SWARM_WORKFLOW_PAGE_SIZE,
+                              before: str | None = None, since: str | None = None) -> list[dict[str, Any]] | None:
         """``GET /workflows`` -- the newest ``limit`` workflows, newest ``createdAt`` first.
 
         ``limit`` must be a strict ``int`` (not a ``bool``) in 1..100, else ``None``
         before any request; it travels in ``params=``, never in the path. A body
         whose ``workflows`` is not a list is a failed read; ``[]`` is a real empty
         page. ``count`` is the page size, never a total, and is not read.
+        ``since`` filters updatedAt independently of the createdAt ``before`` cursor.
         """
         if type(limit) is not int or not 1 <= limit <= 100:
             logger.debug("swarm fetch_workflows refused a limit outside 1..100: %r", limit)
             return None
-        if before is not None and _workflow_cursor(before) is None:
+        if any(cursor is not None and _workflow_cursor(cursor) is None for cursor in (before, since)):
             return None
         params = {"limit": str(limit)}
         if before is not None:
             params["before"] = before
+        if since is not None:
+            params["since"] = since
         return await self._list("/workflows", "workflows", params=params)
 
     async def fetch_workflow_history(self) -> tuple[list[dict] | None, bool]:

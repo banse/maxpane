@@ -142,21 +142,26 @@ async def test_work_reader_stops_when_returning_to_boardroom(manager):
 
 
 async def test_work_reentry_restarts_cancelled_refresh_and_replaces_cached_data(manager):
+    from maxpane_dashboard.data.surf_work import _ts
     first = destination = 'work'
     m, clock = manager
     raw = json.loads(Path('tests/fixtures/surf/work/captured.json').read_text())
     clock.now = raw['read_ts']
     entered = asyncio.Event()
     calls = 0
-    async def jobs(*, limit):
+    async def jobs(*, limit, since=None, before=None):
         nonlocal calls
         calls += 1
         if calls == 2:
             entered.set()
             await asyncio.Event().wait()
-        return raw['jobs']
+        return [row for row in raw['jobs'] if since is None or _ts(row['updatedAt']) >= _ts(since)]
+    async def workflows(*, limit, since=None, before=None):
+        return [row for row in raw['workflows'] if since is None or _ts(row['updatedAt']) >= _ts(since)]
     m.swarm_client.fetch_jobs = AsyncMock(side_effect=jobs)
-    m.swarm_client.fetch_workflows = AsyncMock(return_value=raw['workflows'])
+    m.swarm_client.fetch_workflows = AsyncMock(side_effect=workflows)
+    m.swarm_client.fetch_overview = AsyncMock(side_effect=lambda: {'counts': {
+        'jobStates': {'executing': sum(row['state'] == 'executing' for row in raw['jobs'])}}})
     m.swarm_client.fetch_job = AsyncMock(side_effect=lambda identity: next(
         (d for d in raw['details'] if d['id'] == identity), None))
     fetch = m.fetch_hub_snapshot if first == 'hub' else m.fetch_and_compute

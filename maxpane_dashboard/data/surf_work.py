@@ -206,6 +206,7 @@ def snapshot(jobs, workflows, details, *, read_ts, now=None, projects=None, meta
                 workflows=workflow_rows, projects=projects, current_job_ids=[i for i in rows if i in current],
                 current_workflow_ids=current_flows, active_scan_complete=active_scan_complete,
                 workflow_scan_complete=workflow_scan_complete, optional_details={}, optional_cursor=None,
+                catalogue={'jobs': None, 'workflows': None},
                 context_job_ids=sorted(context_jobs), context_workflow_ids=sorted(context_flows),
                 details_expected=len(expected), details_loaded=sum(r['detail_state'] == 'ok' for r in rows.values()))
 
@@ -243,6 +244,7 @@ def _ids(value, cap):
 
 def coerce_snapshot(raw, *, now):
     """Validate persisted scopes and migrate pre-project snapshots without a reset."""
+    from maxpane_dashboard.data.surf_work_catalogue import coerce_catalogue
     if not isinstance(raw, dict) or _stamp(raw.get('read_ts'), now) is None or type(raw.get('partial')) is not bool:
         return None
     raw = dict(raw)
@@ -304,9 +306,11 @@ def coerce_snapshot(raw, *, now):
     if len(owned) > CONTEXT_JOB_LIMIT: return None
     if not raw['partial'] and (not raw['active_scan_complete'] or not raw['workflow_scan_complete'] or any(i not in jobs for i in owned)
                               or any(w not in flows for p in projects for w in p['workflow_ids'])): return None
+    # Private read state may be corrupt independently of a valid display snapshot.
+    raw['catalogue'] = coerce_catalogue(raw.get('catalogue'), now=now)
     keys = ('read_ts', 'partial', 'jobs_loaded', 'jobs', 'workflows', 'projects', 'details_expected', 'details_loaded',
             'current_job_ids', 'current_workflow_ids', 'context_job_ids', 'context_workflow_ids', 'active_scan_complete',
-            'workflow_scan_complete', 'optional_details', 'optional_cursor')
+            'workflow_scan_complete', 'optional_details', 'optional_cursor', 'catalogue')
     return {key: raw[key] for key in keys}
 
 

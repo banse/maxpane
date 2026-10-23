@@ -1111,17 +1111,27 @@ Native Tree handles nested click/Space folding. Width/height pins are documented
 
 The approved tree/detail body is `MODE_WORK`, reachable from Surf and the boardroom.
 It shares SurfScreen and SurfManager; no new top-level game registration. Six rack heroes
-and the body consume only `surf_work`. The work reader owns a separate 60s cache tier
-and 120s failure backoff. Start with fresh 100-job/100-workflow pages; discover older
+and the body consume only `surf_work`. The work reader owns a separate 30s cache tier, measured from read start,
+and 120s failure backoff. It persists independent jobs/workflows catalogues and
+merges `since=max(updatedAt)-300s` deltas by ID. Current work and required context
+publish before optional history. A missing baseline or ten-minute reconciliation
+uses fresh 100-job/100-workflow pages; discover older
 executing jobs through up to 100 total job pages (subsequent pages up to 500), using
 the overview count only as a stopping hint. Revalidate previously active IDs.
 Active details authorize project versions and formal workflow references, read directly
 regardless of age: at most 512 required job details, 128 workflow details and 256 versions
-per project; unrelated optional detail enrichment keeps its 24-read budget.
+per project; unrelated optional detail enrichment keeps its 24-read budget,
+four concurrent requests and an eight-second time budget. Cancellation drains the
+owned batch. Full reconciliation preserves an already committed foreground.
+Multi-cycle workflow scans catch up changes since their start before promotion.
+A jobs baseline taking over five minutes is not certified beyond its delta overlap.
 The boardroom card and visible Work body share that reader; it cancels when
 neither consumer is visible. No unrelated Surf collectors run on its refresh path.
-History is linked context, never a merge of cached executing states. Busy stops fanout and retains
-the previous snapshot; missing individual details remain explicit partial coverage.
+History is linked context; previously executing jobs are freshly revalidated.
+Required-source busy stops fanout and retains the last committed snapshot; optional
+backpressure ends enrichment without failing the foreground. Missing individual
+details remain explicit partial coverage. Catalogue metadata is private and strictly
+validated; malformed metadata cannot erase a good display snapshot.
 
 Counts apply to current loaded jobs/workflows and every working node of executing jobs.
 Historical blocked attempts and unfinished workflows added only for context cannot inflate

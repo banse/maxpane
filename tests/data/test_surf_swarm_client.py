@@ -1060,6 +1060,51 @@ async def test_jobs_validated_query_is_passed_separately():
         assert await client.fetch_jobs(limit=500,before='2026-10-08T22:00:00Z',q='A&B') == []
     assert dict(seen[0].url.params) == {'limit':'500','before':'2026-10-08T22:00:00Z','q':'A&B'}
 
+
+@pytest.mark.parametrize('method,key', [('fetch_jobs', 'jobs'), ('fetch_workflows', 'workflows')])
+async def test_delta_since_is_encoded_with_creation_cursor_and_keeps_all_served_rows(method, key):
+    # since tracks updates, while before pages by creation; since may be later.
+    since = '2026-10-23T19:46:13.508Z'
+    before = '2026-10-08T22:00:00.123Z'
+    payload = (swarm_capture_v2('jobs') if key == 'jobs'
+               else swarm_capture_v6('workflows_limit12'))
+    seen = []
+    kwargs = {'limit': 100, 'before': before, 'since': since}
+    if key == 'jobs':
+        kwargs['q'] = 'A&B'
+    async with _client(_recording(seen, lambda r: httpx.Response(200, json=payload)),
+                       inter_call_delay=0) as client:
+        assert await getattr(client, method)(**kwargs) == payload[key]
+        assert await getattr(client, method)(since=None) == payload[key]
+    assert [r.url.path for r in seen] == [f'/{key}', f'/{key}']
+    assert dict(seen[0].url.params) == {**kwargs, 'limit': '100'}
+    assert dict(seen[1].url.params) == {'limit': '100'}
+    assert 'since=2026-10-23T19%3A46%3A13.508Z' in str(seen[0].url)
+    assert all(r.method == 'GET' for r in seen)
+
+
+@pytest.mark.parametrize('method', ['fetch_jobs', 'fetch_workflows'])
+@pytest.mark.parametrize('since', [True, 0, '', 'today', '2026-10-23',
+                                   '2026-02-30T19:46:13.508Z',
+                                   '2026-10-23T25:46:13.508Z',
+                                   '2026-10-23T19:46:13.508+00:00',
+                                   '2026-10-23T19:46:13.508Z\n',
+                                   '2026-10-23T19:46:13.508Z&limit=500'])
+async def test_delta_since_invalid_timestamp_never_reaches_transport(method, since):
+    async with _client(_no_network, inter_call_delay=0) as client:
+        assert await getattr(client, method)(since=since) is None
+
+
+@pytest.mark.parametrize('since', ['2026-10-23T19:46:13Z', '2026-10-23T19:46:13.5Z',
+                                   '2026-10-23T19:46:13.508123Z'])
+async def test_jobs_since_accepts_same_utc_precision_as_before(since):
+    seen = []
+    payload = swarm_capture_v2('jobs')
+    async with _client(_recording(seen, lambda r: httpx.Response(200, json=payload)),
+                       inter_call_delay=0) as client:
+        assert await client.fetch_jobs(since=since) == payload['jobs']
+    assert dict(seen[0].url.params) == {'limit': '100', 'since': since}
+
 async def test_forward_ens_reuses_registry_and_state_pool():
     from maxpane_dashboard.data.surf_client import SurfClient
     from maxpane_dashboard.data import ens

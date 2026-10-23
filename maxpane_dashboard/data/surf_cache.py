@@ -137,7 +137,7 @@ TIERS: tuple[str, ...] = (
 )
 
 TIER_TTL_SECONDS: dict[str, float] = {
-    TIER_SURF_WORK: 60.0,
+    TIER_SURF_WORK: 30.0,
     TIER_SURF_ORACLES: 60.0,
     TIER_SWARM_LAUNCHES: 60.0,
     TIER_FAST: 0.0,       # every refresh — see the module docstring

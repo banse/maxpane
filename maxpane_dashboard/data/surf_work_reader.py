@@ -3,9 +3,11 @@ import asyncio
 import logging
 
 from maxpane_dashboard.data import surf_work as work
+from maxpane_dashboard.data import surf_work_catalogue as catalogue
 from maxpane_dashboard.data.surf_cache import SLOT_SURF_WORK, TIER_SURF_WORK
 
 logger = logging.getLogger(__name__)
+OPTIONAL_SECONDS = 8
 
 
 class WorkReader:
@@ -15,6 +17,7 @@ class WorkReader:
         self._workflow_before = None
         self._workflow_rows = {}
         self._workflow_started = None
+        self._workflow_boundary = None
 
     def offer(self):
         if self.task is not None and not self.task.done():
@@ -59,6 +62,7 @@ class WorkReader:
         if self._workflow_before is None:
             self._workflow_rows = {}
             self._workflow_started = started
+            self._workflow_boundary = None
         for _ in range(work.WORKFLOW_PAGES_PER_READ):
             kwargs = {'before': self._workflow_before} if self._workflow_before else {}
             page = await self._fetch('fetch_workflows', limit=work.PAGE_LIMIT, **kwargs)
@@ -69,7 +73,11 @@ class WorkReader:
             if page and not decoded and not self._workflow_rows:
                 raise ValueError('nonempty workflow page has no valid rows')
             valid = {row['id'] for row in decoded}
-            duplicate = any(identity in self._workflow_rows for identity in valid)
+            duplicate = any(row['id'] in self._workflow_rows and row['created_ts'] != self._workflow_boundary
+                            for row in decoded)
+            if self._workflow_boundary is not None:
+                duplicate |= any(row['created_ts'] is None or row['created_ts'] > self._workflow_boundary
+                                 for row in decoded)
             if duplicate:
                 self._workflow_before = None
                 break
@@ -84,24 +92,63 @@ class WorkReader:
             cursor = page[-1].get('createdAt')
             stamp = work._stamp(work._ts(cursor), self.clock())
             if (not isinstance(cursor, str) or not cursor.endswith('Z') or stamp is None
-                    or self._workflow_before is not None and stamp >= work._ts(self._workflow_before)
+                    or self._workflow_boundary is not None and stamp >= self._workflow_boundary
+                    or sum(row['created_ts'] == stamp for row in decoded) > 1
                     or len(self._workflow_rows) >= work.WORKFLOW_LIMIT):
                 self._workflow_before = None
                 break
-            self._workflow_before = cursor
+            self._workflow_boundary = stamp
+            self._workflow_before = catalogue.cursor_after(stamp)
         return list(self._workflow_rows.values()), False, self._workflow_started
 
-    async def _collect(self, started):
-        jobs = await self._fetch('fetch_jobs', limit=work.PAGE_LIMIT)
+    def _publish(self, snapshot, started):
+        validated = work.coerce_snapshot(snapshot, now=self.clock())
+        if validated is None:
+            raise ValueError('invalid assembled work snapshot')
+        self.cache.store_last_good(SLOT_SURF_WORK, validated, ts=started)
+        self.cache.save()
+
+    async def _collect(self, started, *, force_full=False, first_page_only=False):
+        entry = self.cache.get_last_good(SLOT_SURF_WORK)
+        previous = work.coerce_snapshot(getattr(entry, 'payload', None), now=self.clock())
+        catalogues = dict((previous or {}).get('catalogue') or {'jobs': None, 'workflows': None})
+        incremental = {kind: not force_full and point is not None
+                       for kind, point in catalogues.items()}
+        if incremental['jobs']:
+            catalogues['jobs'] = await catalogue.read_delta(
+                self._fetch, catalogues['jobs'], 'jobs', now=self.clock, start=started)
+            jobs = catalogue.source_rows(catalogues['jobs'], 'jobs')
+        else:
+            jobs = await self._fetch('fetch_jobs', limit=work.PAGE_LIMIT)
         if not isinstance(jobs, list): raise ValueError('jobs unavailable')
-        workflows, workflow_complete, workflow_started = await self._workflow_catalogue(started)
-        rows, _ = work._page(jobs, work._job, self.clock())
+        if incremental['workflows']:
+            catalogues['workflows'] = await catalogue.read_delta(
+                self._fetch, catalogues['workflows'], 'workflows', now=self.clock, start=started)
+            workflows = catalogue.source_rows(catalogues['workflows'], 'workflows')
+            workflow_complete, workflow_started = True, started
+        else:
+            workflows, workflow_complete, workflow_started = await self._workflow_catalogue(started)
+            if workflow_complete:
+                catalogues['workflows'] = catalogue.make_entry(
+                    workflows, 'workflows', now=self.clock(), read_ts=started, full_ts=workflow_started)
+                if (catalogues['workflows'] is not None and
+                        self.clock() - workflow_started >= catalogue.DELTA_OVERLAP_SECONDS):
+                    catalogues['workflows'] = await catalogue.read_delta(
+                        self._fetch, catalogues['workflows'], 'workflows', now=self.clock,
+                        start=started, since_ts=workflow_started)
+                    catalogues['workflows']['full_ts'] = started
+                    workflows = catalogue.source_rows(catalogues['workflows'], 'workflows')
+        rows, _ = work._page(jobs, work._job, self.clock(), work.HISTORY_JOB_LIMIT)
         flows, _ = work._page(workflows, work._workflow, self.clock(), work.WORKFLOW_LIMIT)
         if (jobs and not rows) or (workflows and not flows):
             raise ValueError('nonempty work page has no valid rows')
+        if previous and len(rows) != len(jobs):
+            raise ValueError('malformed job listing; retaining committed snapshot')
         partial = len(rows) != len(jobs) or len(flows) != len(workflows) or not workflow_complete
         discovery_ok = len(rows) == len(jobs)
-        first_page = [raw for raw in jobs[:work.PAGE_LIMIT] if isinstance(raw, dict) and raw.get('id') in {r['id'] for r in rows}]
+        valid_ids = {r['id'] for r in rows}
+        first_page = [raw for raw in jobs if isinstance(raw, dict) and raw.get('id') in valid_ids]
+        listing = list(first_page)
         cutoff = started - work.HISTORY_SECONDS
         jobs = [raw for raw in first_page if raw['state'] not in work.TERMINAL or
                 (work._stamp(work._ts(raw.get('createdAt')), self.clock()) or started) >= cutoff]
@@ -115,6 +162,10 @@ class WorkReader:
         if (total is not None and state_counts and all(isinstance(state, str) and state and value is not None
                 for state, value in state_counts.items()) and sum(state_counts.values()) == total):
             open_hint = sum(value for state, value in state_counts.items() if state not in work.TERMINAL)
+            # The API omits zero-valued states. Only a complete total witness
+            # makes an absent executing bucket evidence of zero.
+            if 'executing' not in state_counts:
+                hint = 0
         discovery_mono = self.client._monotonic()
         details, detail_bounds, detail_times, expected = {}, {}, {}, set()
         required_reads = 0
@@ -139,15 +190,13 @@ class WorkReader:
             if details[identity] is None: partial = True
             return details[identity]
 
-        entry = self.cache.get_last_good(SLOT_SURF_WORK)
-        previous = work.coerce_snapshot(getattr(entry, 'payload', None), now=self.clock())
         prior_ids = [j['id'] for j in previous['jobs'] if j['state'] == 'executing' and
                      j['id'] in previous['current_job_ids']] if previous else []
         observed = {j['id'] for j in rows if j['state'] == 'executing'}
         open_ids = {j['id'] for j in rows if j['state'] not in work.TERMINAL}
         stored_ids = {j['id'] for j in jobs}
-        page, seen, before = first_page, {j['id'] for j in rows}, None
-        reached_end = len(page) < work.PAGE_LIMIT
+        page, seen, before, boundary = first_page, {j['id'] for j in rows}, None, None
+        reached_end = incremental['jobs'] or len(page) < work.PAGE_LIMIT
         history_complete = reached_end or any(j['created_ts'] is not None and j['created_ts'] < cutoff for j in rows)
         for identity in dict.fromkeys([j['id'] for j in rows if j['state'] == 'executing'] + prior_ids):
             raw = await read_job(identity, fresh_after=discovery_mono)
@@ -165,22 +214,32 @@ class WorkReader:
                     open_ids.add(identity)
                     if identity not in stored_ids: jobs.append(raw); stored_ids.add(identity)
 
-        for _ in range(max(0, work.SCAN_PAGES - 1)):
+        # The list delta can lag child transitions. Fresh active details and the
+        # fleet witness must agree before trusting the retained open population.
+        if incremental['jobs'] and ((hint is not None and len(observed) != hint)
+                                   or (open_hint is not None and len(open_ids) != open_hint)):
+            return await self._collect(started, force_full=True, first_page_only=first_page_only)
+        for _ in range(0 if incremental['jobs'] or first_page_only else max(0, work.SCAN_PAGES - 1)):
             if (history_complete and hint is not None and len(observed) == hint
                     and (reached_end or open_hint is not None and len(open_ids) == open_hint)): break
             limit = work.PAGE_LIMIT if before is None else work.SCAN_PAGE_LIMIT
             if len(page) < limit: break
             cursor = page[-1].get('createdAt') if isinstance(page[-1], dict) else None
             stamp = work._stamp(work._ts(cursor), self.clock())
-            if not isinstance(cursor, str) or not cursor.endswith('Z') or stamp is None or (before is not None and stamp >= work._ts(before)):
+            if (not isinstance(cursor, str) or not cursor.endswith('Z') or stamp is None
+                    or boundary is not None and stamp >= boundary
+                    or sum(work._ts(row.get('createdAt')) == stamp for row in page) > 1):
                 discovery_ok = False; break
-            before = cursor
+            boundary = stamp
+            before = catalogue.cursor_after(stamp)
             page = await self._fetch('fetch_jobs', limit=work.SCAN_PAGE_LIMIT, before=before)
             if not isinstance(page, list): discovery_ok = False; break
             page_mono = self.client._monotonic()
             decoded, _ = work._page(page, work._job, self.clock(), work.SCAN_PAGE_LIMIT)
-            if len(decoded) != len(page) or any(j['id'] in seen for j in decoded):
+            if (len(decoded) != len(page) or any(j['id'] in seen and j['created_ts'] != boundary for j in decoded)
+                    or any(j['created_ts'] is None or j['created_ts'] > boundary for j in decoded)):
                 discovery_ok = False; break
+            listing.extend(row for row in page if row['id'] not in seen)
             seen.update(j['id'] for j in decoded)
             open_ids.update(j['id'] for j in decoded if j['state'] not in work.TERMINAL)
             reached_end = len(page) < work.SCAN_PAGE_LIMIT
@@ -201,8 +260,24 @@ class WorkReader:
         open_complete = reached_end or open_hint is not None and len(open_ids) == open_hint
         complete = discovery_ok and hint is not None and len(observed) == hint and open_complete
         partial |= not history_complete or not open_complete
-        if previous and (not history_complete or not open_complete):
+        if previous and not first_page_only and (not discovery_ok or not history_complete or not open_complete):
             raise ValueError('job history or open population incomplete; retaining previous snapshot')
+        if not incremental['jobs'] and discovery_ok and history_complete and open_complete:
+            if self.clock() - started >= catalogue.DELTA_OVERLAP_SECONDS:
+                raise ValueError('job baseline exceeded safe update overlap; retaining foreground')
+            catalogues['jobs'] = catalogue.make_entry(
+                listing, 'jobs', now=self.clock(), read_ts=started, full_ts=started)
+        reconcile = first_page_only and (
+            not incremental['jobs'] and not reached_end or
+            any(point is not None and started - point['full_ts'] >= catalogue.RECONCILE_SECONDS
+                for point in catalogues.values()))
+        retained_history = first_page_only and not incremental['jobs'] and not reached_end and previous
+        if retained_history:
+            # Legacy caches remain useful while the new catalogue is built. They
+            # are display evidence only and cannot certify the unseen population.
+            prior_rows = [row for row in previous['jobs'] if row['id'] in previous['current_job_ids']
+                          and row['id'] not in stored_ids]
+            jobs.extend(catalogue.source_rows({'rows': prior_rows}, 'jobs'))
         projects, metadata, anchors, owners = {}, {}, {}, {}
         active = {identity: raw for identity, raw in details.items() if raw and raw['state'] == 'executing'}
         for identity, raw in active.items():
@@ -234,8 +309,10 @@ class WorkReader:
                         projects[owners[identity]]['workflow_ids'].append(flow_id)
         workflow_rows = {raw['id']: raw for raw in workflows[:work.WORKFLOW_LIMIT]
                          if isinstance(raw, dict) and raw.get('id') in {f['id'] for f in flows}}
+        context_pending = first_page_only and bool(anchors or set(owners) - set(active))
+        partial |= context_pending
         peer_flows = {}
-        for index, (identity, members) in enumerate(anchors.items()):
+        for index, (identity, members) in enumerate(() if context_pending else anchors.items()):
             if index >= work.WORKFLOW_DETAIL_LIMIT: partial = True; break
             raw = await self._fetch('fetch_workflow', identity)
             normalized = work.workflow_context(raw, identity, members, now=self.clock())
@@ -256,7 +333,7 @@ class WorkReader:
                         if len(owners) >= work.CONTEXT_JOB_LIMIT: partial = True; continue
                         project['job_ids'].append(job_id); owners[job_id] = pid
                 expected.add(job_id)
-        for identity in list(dict.fromkeys(list(owners) + list(peer_flows))):
+        for identity in ([] if context_pending else list(dict.fromkeys(list(owners) + list(peer_flows)))):
             raw = await read_job(identity)
             if raw is None: continue
             project, workflow = raw.get('project'), raw.get('workflow')
@@ -285,48 +362,83 @@ class WorkReader:
         ordered = optional[offset:] + optional[:offset]
         due = [identity for identity in ordered if identity not in retained
                or started - retained[identity]['read_ts'] >= work.OPTIONAL_DETAIL_TTL]
-        for identity in due[:work.DETAIL_LIMIT]:
-            raw = await read_job(identity, required=False)
-            row = work._job(raw, self.clock(), detail=True)
-            if (row is not None and row['nodes'] is not None and identity in versions
-                    and detail_times[identity] is not None):
-                retained[identity] = dict(version=versions[identity], read_ts=detail_times[identity])
-            elif identity in retained:
-                # A failed refresh cannot retimestamp or erase same-version evidence.
-                details.pop(identity, None)
-            cursor = identity
-        retained = dict(sorted(retained.items(), key=lambda item: item[1]['read_ts'], reverse=True)[:work.OPTIONAL_CACHE_LIMIT])
-        prior_details = {identity: prior_jobs[identity] for identity in retained
-                         if identity not in details and identity in prior_jobs}
-        observed = [point['read_ts'] for point in retained.values()]
-        result = work.snapshot(jobs, list(workflow_rows.values()), details, read_ts=min(started, workflow_started, *observed), now=self.clock(),
-                             projects=list(projects.values()), metadata=metadata, expected_ids=expected,
-                             active_scan_complete=complete, coverage_partial=partial,
-                             workflow_scan_complete=workflow_complete,
-                             retained_details=prior_details,
-                             context_job_ids=list(dict.fromkeys(list(owners) + list(peer_flows))),
-                             context_workflow_ids=list(anchors))
-        result.update(optional_details=retained, optional_cursor=cursor)
-        if not workflow_complete and previous:
-            retained = {row['id']: row for row in result['workflows']}
-            for row in previous['workflows']:
-                retained.setdefault(row['id'], row)
-            result['workflows'] = list(retained.values())[:work.WORKFLOW_LIMIT + work.WORKFLOW_DETAIL_LIMIT]
-            retained_ids = {row['id'] for row in result['workflows']}
-            result['current_workflow_ids'] = list(dict.fromkeys(result['current_workflow_ids'] +
-                [identity for identity in previous['current_workflow_ids'] if identity in retained_ids and identity not in result['context_workflow_ids']]))
-            result['read_ts'] = min(result['read_ts'], previous['read_ts'])
-        return result
+        def assembled():
+            kept = dict(sorted(retained.items(), key=lambda item: item[1]['read_ts'], reverse=True)[:work.OPTIONAL_CACHE_LIMIT])
+            prior_details = {identity: prior_jobs[identity] for identity in kept
+                             if identity not in details and identity in prior_jobs}
+            observed_times = [point['read_ts'] for point in kept.values()]
+            result = work.snapshot(jobs, list(workflow_rows.values()), details,
+                                   read_ts=min(started, workflow_started,
+                                               previous['read_ts'] if retained_history else started,
+                                               *observed_times), now=self.clock(),
+                                   projects=[] if context_pending else list(projects.values()),
+                                   metadata={} if context_pending else metadata, expected_ids=expected,
+                                   active_scan_complete=complete, coverage_partial=partial,
+                                   workflow_scan_complete=workflow_complete, retained_details=prior_details,
+                                   context_job_ids=[] if context_pending else list(dict.fromkeys(list(owners) + list(peer_flows))),
+                                   context_workflow_ids=[] if context_pending else list(anchors))
+            result.update(optional_details=kept, optional_cursor=cursor, catalogue=catalogues)
+            if not workflow_complete and previous:
+                saved_flows = {row['id']: row for row in result['workflows']}
+                for row in previous['workflows']:
+                    saved_flows.setdefault(row['id'], row)
+                result['workflows'] = list(saved_flows.values())[:work.WORKFLOW_LIMIT + work.WORKFLOW_DETAIL_LIMIT]
+                retained_ids = {row['id'] for row in result['workflows']}
+                result['current_workflow_ids'] = list(dict.fromkeys(result['current_workflow_ids'] +
+                    [identity for identity in previous['current_workflow_ids'] if identity in retained_ids and identity not in result['context_workflow_ids']]))
+                result['read_ts'] = min(result['read_ts'], previous['read_ts'])
+            return result
+
+        if first_page_only:
+            self._reconcile_pending = reconcile
+            self._context_pending = context_pending
+        if reconcile or context_pending:
+            return assembled()
+        if due:
+            # Current work and its required context are ready; optional history
+            # must not hold the visible snapshot or its next poll hostage.
+            self._publish(assembled(), started)
+            self.cache.mark_fetched(TIER_SURF_WORK, started)
+        deadline = asyncio.get_running_loop().time() + OPTIONAL_SECONDS
+        for offset in range(0, min(len(due), work.DETAIL_LIMIT), 4):
+            batch = due[offset:min(offset + 4, work.DETAIL_LIMIT)]
+            tasks = [asyncio.create_task(read_job(identity, required=False)) for identity in batch]
+            try:
+                async with asyncio.timeout(max(0, deadline - asyncio.get_running_loop().time())):
+                    await asyncio.gather(*tasks)
+            except (asyncio.CancelledError, Exception) as exc:
+                for task in tasks: task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                if isinstance(exc, asyncio.CancelledError): raise
+                # A batch is committed as a unit. Failed/cancelled members must
+                # not invalidate retained same-revision optional evidence.
+                for identity in batch:
+                    details.pop(identity, None)
+                    detail_times.pop(identity, None)
+                    detail_bounds.pop(identity, None)
+                partial = True
+                break  # optional backpressure cannot fail the committed foreground
+            for identity in batch:
+                row = work._job(details.get(identity), self.clock(), detail=True)
+                if (row is not None and row['nodes'] is not None and identity in versions
+                        and detail_times[identity] is not None):
+                    retained[identity] = dict(version=versions[identity], read_ts=detail_times[identity])
+                elif identity in retained:
+                    # A failed refresh cannot retimestamp or erase same-version evidence.
+                    details.pop(identity, None)
+                cursor = identity
+        return assembled()
 
     async def _read(self):
         started = self.clock()
         try:
-            snapshot = await self._collect(started)
-            if work.coerce_snapshot(snapshot, now=self.clock()) is None:
-                raise ValueError('invalid assembled work snapshot')
-            self.cache.store_last_good(SLOT_SURF_WORK, snapshot, ts=started)
-            self.cache.mark_fetched(TIER_SURF_WORK, self.clock())
-            self.cache.save()
+            snapshot = await self._collect(started, first_page_only=True)
+            self._publish(snapshot, started)
+            self.cache.mark_fetched(TIER_SURF_WORK, started)
+            if self._reconcile_pending or self._context_pending:
+                snapshot = await self._collect(started, force_full=self._reconcile_pending)
+                self._publish(snapshot, started)
+                self.cache.mark_fetched(TIER_SURF_WORK, started)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
