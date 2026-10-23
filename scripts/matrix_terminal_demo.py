@@ -8,19 +8,55 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from rich.cells import cell_len
+from rich.style import Style
 from rich.text import Text
+from textual._compositor import Compositor
+from textual.color import Color
 from textual.containers import Container, VerticalScroll
 from textual.widgets import Input, Static
 
 from maxpane_dashboard.widgets.surfboard.rack import SLOTS, SurfboardCard, SurfboardRack
 from maxpane_dashboard.widgets.surfboard.terminal import SurfboardTerminal
-from scripts.matrix_demo import DURATION, MatrixDemo, Rain, frame
+from scripts.matrix_demo import BACKGROUND, DURATION, GREEN, MatrixDemo, Rain, frame
 from tests.surfboard_fixtures import hub_payload
 
 
 class TerminalRain(Rain):
     def render(self):
-        return frame(self.size.width, self.size.height, self.app.elapsed, logo=False)
+        elapsed = self.app.elapsed
+        rain = frame(self.size.width, self.size.height, elapsed, logo=False)
+        if elapsed <= 2.2:
+            return rain
+        if getattr(self, '_snapshot_size', None) != self.size:
+            # Snapshot the real terminal subtree, including its border and children.
+            compositor = Compositor()
+            compositor.reflow(self.app.query_one(SurfboardTerminal), self.size)
+            self._snapshot = compositor.render_strips()
+            self._snapshot_size = self.size
+        chars = list(rain.plain)
+        styles = [None] * len(chars)
+        for span in rain.spans:
+            styles[span.start:span.end] = [span.style] * (span.end - span.start)
+        for y, source in enumerate(self._snapshot):
+            x = 0
+            for segment in source:
+                style = segment.style or Style()
+                ink = Color.from_rich_color(style.color or GREEN.rich_color, self.app.ansi_theme)
+                for char in segment.text:
+                    width = cell_len(char)
+                    reveal = min(1.0, max(0.0, (elapsed - 2.2 - ((x * 7 + y * 11) % 19) / 19) / .8))
+                    if not char.isspace() and reveal:
+                        offset = y * (self.size.width + 1) + x
+                        chars[offset] = char
+                        styles[offset] = style + Style(color=BACKGROUND.blend(ink, reveal).rich_color)
+                        for extra in range(1, width):
+                            chars[offset + extra] = ''
+                    x += width
+        result = Text()
+        for char, style in zip(chars, styles):
+            result.append(char, style)
+        return result
 
 
 class DemoRack(SurfboardRack):
@@ -63,7 +99,10 @@ class TerminalMatrixDemo(MatrixDemo):
         self.query_one(SurfboardTerminal).update_data(**data)
 
     def paint(self):
-        self.query_one(TerminalRain).display = self.elapsed < DURATION
+        rain = self.query_one(TerminalRain)
+        if self.elapsed == 0:
+            rain._snapshot_size = None
+        rain.display = self.elapsed < DURATION
         super().paint()
 
 
