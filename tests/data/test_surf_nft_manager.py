@@ -120,7 +120,7 @@ async def test_boardroom_discovery_also_advances_one_launch_detail(setup):
         limits = manager.discovery.advance.await_args_list[0].kwargs
         assert limits['page_limit'] == 1
         assert limits['launch_limit'] == 1
-        assert limits['detail_limit'] == 0
+        assert limits['detail_limit'] == 1  # Bounded job-to-launch relationship needed for proof discovery.
         assert manager.last_budget.http_attempts <= 12
     finally:
         await manager.close()
@@ -245,6 +245,80 @@ async def test_new_head_collection_reaches_snapshot_through_real_discovery_and_c
         assert manager._error_count == 0
     finally:
         await manager.close()
+        await http.aclose()
+
+
+async def test_workflow_registry_crosses_large_backlog_and_cache_reopen_with_wire_budget(tmp_path):
+    """Captured public relationship graph; synthetic pinned chain wire, never live I/O."""
+    import httpx
+    from maxpane_dashboard.data.surf_nft_cache import SurfNftCache
+    from maxpane_dashboard.data.surf_nft_client import SurfNftClient
+    from maxpane_dashboard.data.surf_nft_discovery import empty_discovery_state
+    from maxpane_dashboard.data.surf_swarm_client import SwarmClient
+    from tests.data.test_surf_nft_discovery import SWORN
+    from tests.data.test_surf_rpc_budget_r2_nft import Wire
+    from tests.data.test_surf_nft_chain import word
+    now = [1792716000.]
+    launch = deepcopy(SWORN['launch'])
+    target = next(a for a in launch['artifacts'] if a['name']=='Registry')
+    identity = '1:'+target['address']
+    job = deepcopy(SWORN['job'])
+    for version in job['project']['versions']:
+        version['objective'] = 'Repeated earlier workflow requirements. ' * 180
+    generic = [dict(id=f'90000000-0000-4000-8000-{i:012d}', chainId=1,
+        launchNumber=3000+i, status='live', artifacts=[dict(name='Token', address='0x'+f'{i+1:040x}')])
+        for i in range(400)]
+    sources = {row['id']:row for row in generic+[launch]}
+    class RegistryWire(Wire):
+        def value(self, method, params):
+            if method=='eth_blockNumber': return hex(target['blockNumber']+100)
+            if method=='eth_getTransactionReceipt':
+                return dict(status='0x1', transactionHash=params[0], blockNumber=hex(target['blockNumber']),
+                            contractAddress=None, **{'from':'0x'+'ab'*20})
+            if method=='eth_call' and params[0]['to'] != target['address']:
+                return word(0)
+            return super().value(method, params)
+    wire = RegistryWire(); reads=[]
+    def handler(request):
+        reads.append(str(request.url))
+        if request.method=='POST': return wire(request)
+        path=request.url.path
+        if path.startswith('/launches/'): value=sources[path.rsplit('/',1)[-1]]
+        elif path==f"/jobs/{job['id']}": value=job
+        elif path.startswith('/jobs/'):
+            value=dict(id=path.rsplit('/',1)[-1], objective='Unrelated work')
+        else: raise AssertionError(f'Unexpected wire read: {request.url}')
+        return httpx.Response(200,json=value)
+    http=httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client=SurfNftClient(http_client=http,clock=lambda:now[0],monotonic=lambda:1.,inter_call_delay=0)
+    swarm=SwarmClient(http_client=http,clock=lambda:now[0],monotonic=lambda:1.,inter_call_delay=0)
+    state=empty_discovery_state(); state['observed_at']=now[0]
+    for source in state['sources'].values(): source.update(head_at=now[0],terminal=True)
+    state['raw'].update(launches=generic+[dict(launch,jobs=[])], workflows=[SWORN['workflow']])
+    state['pending_launches']={row['id']:dict(retry_at=0.,revision=None) for row in generic+[launch]}
+    state['pending_jobs']={row['id']:dict(retry_at=0.,revision=None) for row in generic}
+    state['pending_jobs'][job['id']]=dict(retry_at=0.,revision=None)
+    cache=SurfNftCache(path=tmp_path/'nft.json',clock=lambda:now[0]); cache.save(dict(discovery=state))
+    snapshots=[]
+    try:
+        for _ in range(6):
+            manager=SurfNftManager(client=client,swarm=swarm,cache=cache,
+                clock=lambda:now[0],monotonic=lambda:1.)
+            await manager._cycle(proof_only=True)
+            assert manager.last_budget.http_attempts<=12 and manager.last_budget.rpc_calls<=96
+            snapshots.append(manager.get_snapshot())
+            assert manager._error_count==0
+            await manager.close()  # Real atomic cache round-trip between every bounded cycle.
+            if any(row['id']==identity for row in snapshots[-1]['nft_rows'] or []): break
+            now[0]+=30
+        rows=snapshots[-1]['nft_rows'] or []
+        record=next(row for row in rows if row['id']==identity)
+        assert record['standard']=='ERC-721'
+        assert record['deployment']['receiptSuccess'] is True
+        assert any(f"/jobs/{job['id']}" in url for url in reads)
+        assert any(f"/launches/{launch['id']}" in url for url in reads)
+        assert any('90000000-' in url for url in reads)  # Generic lane also progresses.
+    finally:
         await http.aclose()
 
 
@@ -410,6 +484,89 @@ def test_unseen_nft_launches_precede_generic_contracts_without_excluding_them(se
     for key in (older, newer):
         manager.state['evidence'][key] = dict(checkedAt=now.value, detectionStatus='unsupported')
     assert manager._focus(candidates, probe=True) == generic
+
+
+def test_linked_nft_priority_and_generic_turn_survive_manager_reopen(tmp_path):
+    from maxpane_dashboard.data.surf_nft_cache import SurfNftCache
+    cache = SurfNftCache(path=tmp_path/'nft.json', clock=lambda:1000.)
+    generic = '1:0x'+'1'*40
+    priority = ['1:0x'+f'{i:040x}' for i in range(2, 8)]
+    candidates = {generic:dict(launch={'launchNumber':1}, artifact={'name':'Registry'})}
+    candidates.update({key:dict(launch={'launchNumber':100+i}, artifact={'name':'Registry'},
+                                nft_intent=True) for i,key in enumerate(priority)})
+    chosen = []
+    for _ in range(4):
+        manager = SurfNftManager(swarm=object(), client=object(), cache=cache, clock=lambda:1000.)
+        identity = manager._focus(candidates, probe=True)
+        chosen.append(identity)
+        manager.state['evidence'][identity] = dict(chainId=1, address=identity[2:],
+            detectionStatus='unsupported', checkedAt=1000.)
+        cache.save(manager.state)
+    assert chosen[0] == priority[-1]
+    assert chosen[3] == generic
+    assert len(set(chosen)) == 4
+
+
+def test_probe_resumes_unexpired_stage_after_reopen_before_newer_candidates(setup):
+    manager, now, *_ = setup
+    previous, newer = ['1:0x'+c*40 for c in 'ab']
+    candidates = {previous:dict(launch={'launchNumber':1}),
+                  newer:dict(launch={'launchNumber':2}, nft_intent=True)}
+    manager.state['progress'][previous] = dict(started_at=now.value-30, completed_operations=3)
+    assert manager._focus(candidates, probe=True) == previous
+
+
+async def test_new_verified_metadata_gets_bounded_slice_without_resetting_factory_focus(setup):
+    from maxpane_dashboard.data.surf_nft_rules.children import FACTORIES
+    manager, now, _, _, client, swarm, cache = setup
+    factory = f"{FACTORIES[0]['chainId']}:{FACTORIES[0]['factory']}"
+    address = '0x'+'9'*40; identity='1:'+address
+    launch=dict(id='20000000-0000-4000-8000-000000000001', chainId=1, launchNumber=2404,
+                status='live', artifacts=[dict(address=address, name='Registry')], jobs=[])
+    candidates={factory:dict(chainId=1,address=factory[2:],launch={},launchIds=[],jobIds=[],artifact={}), identity:dict(
+        chainId=1,address=address,artifact=launch['artifacts'][0],launch=launch,launchIds=[launch['id']],jobIds=[])}
+    manager._candidates=lambda:candidates
+    manager.state['discovery']=dict(observed_at=now.value,raw=dict(launches=[launch],coverage={'complete':False}))
+    manager._discover=AsyncMock()
+    manager._inspection_focus[False]=(factory,now.value-30)
+    manager.state['progress'][factory]=dict(started_at=now.value-30,completed_operations=10)
+    manager.state['evidence'][identity]=dict(chainId=1,address=address,standard='ERC-721',
+        proofOnly=True,deploymentConfirmed=True,codePresent=True,receiptSuccess=True,
+        checkedAt=now.value-10,deployment={},reads={})
+    manager.state['progress'][identity]=dict(started_at=now.value-10,completed_operations=10)
+    seen=[]
+    async def inspect(candidate,progress,*,budget,proof_only=False):
+        key=f"1:{candidate['address']}";seen.append((key,budget.remaining_http))
+        budget.consume(http=2,rpc=2)
+        if key==factory:
+            return SimpleNamespace(complete=False,children=[],evidence=None,
+                progress=dict(progress,completed_operations=progress['completed_operations']+2))
+        if progress['completed_operations']<12:
+            return SimpleNamespace(complete=False,children=[],evidence=None,
+                progress=dict(progress,completed_operations=12))
+        return SimpleNamespace(complete=True,children=[],progress={},evidence=dict(
+            manager.state['evidence'][identity],proofOnly=False,name='Sworn',symbol='SWORN',
+            reads={'name':'Sworn','symbol':'SWORN'},checkedAt=now.value))
+    manager.inspector.advance=inspect
+    await manager._cycle()
+    assert seen[0]==(identity,3)
+    assert factory in [key for key,_ in seen]
+    assert manager.state['progress'][factory]['started_at']==now.value-30
+    assert manager.state['progress'][factory]['completed_operations']>10
+    assert manager.state['progress'][identity]['completed_operations']==12
+    # Reopen using persisted evidence/stages; the factory still receives work.
+    now.value+=30
+    manager=SurfNftManager(client=client,swarm=swarm,cache=cache,
+        clock=lambda:now.value,monotonic=lambda:now.value)
+    manager._candidates=lambda:candidates
+    manager._discover=AsyncMock()
+    manager.inspector.advance=inspect
+    await manager._cycle()
+    assert manager.state['progress'][factory]['started_at']==now.value-60
+    assert manager.state['progress'][factory]['completed_operations']>=14
+    record=next(row for row in manager.get_snapshot()['nft_rows'] if row['id']==identity)
+    assert (record['name'],record['symbol'])==('Sworn','SWORN')
+    assert manager.last_budget.http_attempts<=24
 
 
 @pytest.mark.parametrize('kind', ['registry', 'constructor'])

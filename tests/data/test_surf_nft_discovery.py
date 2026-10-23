@@ -14,6 +14,64 @@ from maxpane_dashboard.data.surf_swarm_client import SwarmClient
 
 FIXTURE=json.loads((Path(__file__).parents[1]/'fixtures/surf/nft/discovery/public.json').read_text())
 JOB=FIXTURE['job']['id']
+SWORN=json.loads((Path(__file__).parents[1]/'fixtures/surf/nft/discovery/sworn_workflow.json').read_text())
+
+
+def test_large_project_history_keeps_current_job_and_explicit_links():
+    from maxpane_dashboard.data.surf_nft_discovery import _compact
+    job = deepcopy(SWORN['job'])
+    for version in job['project']['versions']:
+        version['objective'] = 'Previous workflow requirements. ' * 180
+    fact = _compact(job, 'jobDetails', 100.)
+    assert fact is not None
+    assert len(json.dumps(fact).encode()) < 32 * 1024
+    assert fact['objective'] == job['objective']
+    assert fact['launch']['id'] == SWORN['launch']['id']
+    assert fact['workflow']['id'] == SWORN['workflow']['id']
+    assert [v['jobId'] for v in fact['project']['versions']] == [v['jobId'] for v in job['project']['versions']]
+    assert fact['_truncated'] is True
+
+
+def test_empty_project_has_no_invented_truncation():
+    from maxpane_dashboard.data.surf_nft_discovery import _compact
+    fact = _compact(dict(id=JOB, objective='Current body', project={}), 'jobDetails', 100.)
+    assert fact['project']=={}
+    assert not fact.get('_truncated')
+
+
+def test_exact_workflow_job_launch_link_prioritizes_generic_registry_only():
+    state = empty_discovery_state()
+    launch = deepcopy(SWORN['launch']); launch.pop('jobs')
+    unrelated = dict(launch, id='10000000-0000-4000-8000-000000000099',
+                     artifacts=[dict(launch['artifacts'][1], address='0x'+'9'*40)])
+    state['raw'].update(launches=[launch, unrelated], workflows=[SWORN['workflow']],
+                        jobDetails={SWORN['job']['id']:SWORN['job']})
+    candidates = discovery_candidates(state)
+    assert candidates['1:0x0da2679000ea5380d1361cc3cca7d4e8c881f766']['nft_intent'] is True
+    assert not candidates['1:0x'+'9'*40].get('nft_intent')
+
+
+async def test_relevant_job_precedes_fifo_backlog_but_background_gets_a_turn():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    state = empty_discovery_state()
+    generic = '10000000-0000-4000-8000-000000000099'
+    relevant = [f'20000000-0000-4000-8000-{i:012d}' for i in range(5)]
+    state['raw']['workflows'] = [dict(SWORN['workflow'], id=identity,
+        contractsJobId=identity, frontendJobId=None) for identity in relevant]
+    state['pending_jobs'] = {identity:dict(retry_at=0., revision=None) for identity in [generic]+relevant}
+    async def read(identity, **_kw):
+        return SimpleNamespace(payload=dict(id=identity, objective='generic'), observed_at=100., revision=None, from_cache=False)
+    swarm = SimpleNamespace(known_job_revision=lambda _id:None, read_job_detail=AsyncMock(side_effect=read))
+    client = SimpleNamespace(can_read_shared_job=lambda:True)
+    for _ in range(4):
+        discovery = SurfNftDiscovery(client=client, swarm=swarm, clock=lambda:100.)
+        result = await discovery.advance(state, budget=budget(), page_limit=0, launch_limit=0, detail_limit=1)
+        state = json.loads(json.dumps(result.state))  # Fresh manager / persisted queue every turn.
+    ids = [call.args[0] for call in swarm.read_job_detail.await_args_list]
+    assert ids[0] in relevant
+    assert generic in ids
+    assert len(set(ids)) == 4
 
 
 def setup(handler=None, monotonic=lambda: 1.):

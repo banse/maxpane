@@ -1,0 +1,141 @@
+{
+  "capture": {
+    "observed_at": "2026-10-23T00:37:57Z",
+    "sources": [
+      "https://api.imd.fun/launches/1377d17c-3f09-49e8-87e7-20a07ad45ea9",
+      "https://api.imd.fun/jobs/4f2565af-3ba6-4fde-9444-473ed6b1ee68",
+      "https://api.imd.fun/workflows"
+    ],
+    "projection": "Exact public identity/link fields; workflow objective is a verbatim excerpt; unrelated prose, reviews and node bodies omitted. Full source job measured 48594 bytes; project 35283 bytes."
+  },
+  "launch": {
+    "id": "1377d17c-3f09-49e8-87e7-20a07ad45ea9",
+    "launchNumber": 2404,
+    "chainId": 1,
+    "status": "live",
+    "createdAt": "2026-10-21T18:49:40.094Z",
+    "updatedAt": "2026-10-21T18:51:16.808Z",
+    "sourceRepoUrl": "https://github.com/identity-md-launches/launch-2404-renderer-composer-registry",
+    "sourceCommit": "c4ff3238390fc51962fb67e86affc20cf418126e",
+    "artifacts": [
+      {
+        "name": "Composer",
+        "address": "0xf564dd76bd081554170c5e0b78144abfb39f7061",
+        "txHash": "0x2f65613f267fc2a5eb38efc3c1534fe47b184bd5f63f7bda975f6a17136016cf",
+        "blockNumber": 26242885
+      },
+      {
+        "name": "Registry",
+        "address": "0x0da2679000ea5380d1361cc3cca7d4e8c881f766",
+        "txHash": "0x2f65613f267fc2a5eb38efc3c1534fe47b184bd5f63f7bda975f6a17136016cf",
+        "blockNumber": 26242885
+      },
+      {
+        "name": "Renderer",
+        "address": "0x3039eaf3b979759c77a2a3fc62850f9534162c3b",
+        "txHash": "0x2f65613f267fc2a5eb38efc3c1534fe47b184bd5f63f7bda975f6a17136016cf",
+        "blockNumber": 26242885
+      }
+    ],
+    "jobs": [
+      {
+        "id": "4f2565af-3ba6-4fde-9444-473ed6b1ee68",
+        "objective": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch.json. Each assignment contributes only within its own role and write scope. Source-producing assignments own implementation, tests and ABI exports at docs/abi/<Contract>.json where their scope permits. The generated manifest assignment writes only launch.json. Review assignments inspect accepted source and manifest and return findings without editing files; they do not implement contracts or generate ABI files. Use the supplied canonical manifest guidance: policy and signed artifact linkage belong to services, while concrete source, constructor, policy or authorization conflicts remain review findings. Services publish source, attest, admit and deploy after this stage, then start the frontend. Read .imd/reads/workflow.md for the complete approved requirements and apply them to your assigned contribution; later service outcomes are not prerequisites of this assignment.",
+        "state": "completed"
+      }
+    ]
+  },
+  "job": {
+    "id": "4f2565af-3ba6-4fde-9444-473ed6b1ee68",
+    "objective": "WORKFLOW CONTRACT STAGE CONTEXT: the stage produces implemented and tested contracts, ABI documentation and an independently reviewed launch.json. Each assignment contributes only within its own role and write scope. Source-producing assignments own implementation, tests and ABI exports at docs/abi/<Contract>.json where their scope permits. The generated manifest assignment writes only launch.json. Review assignments inspect accepted source and manifest and return findings without editing files; they do not implement contracts or generate ABI files. Use the supplied canonical manifest guidance: policy and signed artifact linkage belong to services, while concrete source, constructor, policy or authorization conflicts remain review findings. Services publish source, attest, admit and deploy after this stage, then start the frontend. Read .imd/reads/workflow.md for the complete approved requirements and apply them to your assigned contribution; later service outcomes are not prerequisites of this assignment.",
+    "state": "completed",
+    "template": "shape:chain",
+    "createdAt": "2026-10-21T17:12:20.728Z",
+    "updatedAt": "2026-10-21T18:49:06.856Z",
+    "launch": {
+      "requested": true,
+      "kind": "evm_contracts",
+      "id": "1377d17c-3f09-49e8-87e7-20a07ad45ea9",
+      "status": "live",
+      "chainId": 1
+    },
+    "delivery": {
+      "repoUrl": "https://github.com/identity-md-launches/launch-2404-renderer-composer-registry",
+      "pullRequestUrl": "https://github.com/identity-md-launches/launch-2404-renderer-composer-registry/pull/1",
+      "commit": "c4ff3238390fc51962fb67e86affc20cf418126e",
+      "deliveredAt": "2026-10-21T18:49:40.094Z",
+      "media": null
+    },
+    "project": {
+      "id": "4f2565af-3ba6-4fde-9444-473ed6b1ee68",
+      "head": "ba64e70a-158b-4558-837d-a29fb55e1ef4",
+      "running": null,
+      "versions": [
+        {
+          "jobId": "4f2565af-3ba6-4fde-9444-473ed6b1ee68",
+          "workflowId": "2759fb3d-89a9-4c2f-a5e3-6472208fac0e",
+          "baseCommit": "60b0ec0b54780399eabfbfeafe1fd72835b85e57"
+        },
+        {
+          "jobId": "70b3f40a-65a9-4b1e-ba2d-1ca94224be08",
+          "workflowId": null,
+          "baseCommit": "b8c9d5453fe84f49db430f434ddb6866165f5e57"
+        },
+        {
+          "jobId": "0fcb87d2-f680-4c66-a44c-67a2e876bc67",
+          "workflowId": null,
+          "baseCommit": "6100cc611a07cdaabc7ad627c99bd6d88fe5c6e3"
+        },
+        {
+          "jobId": "27f78bb1-1809-42c2-8d7b-6bb1d26947fe",
+          "workflowId": null,
+          "baseCommit": "1ec1a01dea6843733b2ba94618264bb756578924"
+        },
+        {
+          "jobId": "74206482-15fa-45b9-b6af-455571dcc1f1",
+          "workflowId": null,
+          "baseCommit": "9aa3cbbf179190c34bc3884fa4970e6d92122855"
+        },
+        {
+          "jobId": "4cbe7e1e-42a1-4521-a34d-e4b6c14c4282",
+          "workflowId": null,
+          "baseCommit": "10edf530c13d182001cbd477eebd3d9db4960d33"
+        },
+        {
+          "jobId": "5d9d3fa0-dc53-476e-8fae-c04c8012c6cc",
+          "workflowId": null,
+          "baseCommit": "47fc49ac333a2dcaca5e3cf320cccc4afa617cae"
+        },
+        {
+          "jobId": "342c6c14-3978-4781-8db1-82ec85f3a75e",
+          "workflowId": null,
+          "baseCommit": "967ea75ebf9bcd6931ea437ba4b56a1326835a0e"
+        },
+        {
+          "jobId": "ecce04a1-96c0-400f-bcc2-d141e6fc7175",
+          "workflowId": null,
+          "baseCommit": "7f5370b3f2f2425bfd406034f2598e4b49c01f23"
+        },
+        {
+          "jobId": "ba64e70a-158b-4558-837d-a29fb55e1ef4",
+          "workflowId": null,
+          "baseCommit": "eb76ff0b958c513d839c98fc3124b10ec399c4bc"
+        }
+      ]
+    },
+    "workflow": {
+      "id": "2759fb3d-89a9-4c2f-a5e3-6472208fac0e",
+      "objective": "TOKEN FACTS of the only token, the ERC-721 card: token name Sworn; token symbol SWORN; total supply 0 at launch, one card per wallet that mints, uncapped.",
+      "status": "completed"
+    }
+  },
+  "workflow": {
+    "id": "2759fb3d-89a9-4c2f-a5e3-6472208fac0e",
+    "contractsJobId": "4f2565af-3ba6-4fde-9444-473ed6b1ee68",
+    "frontendJobId": "45cf2dd9-57bc-4f94-beda-7c63c8c67457",
+    "status": "completed",
+    "createdAt": "2026-10-21T17:12:20.728Z",
+    "updatedAt": "2026-10-21T21:13:47.694Z",
+    "objective": "TOKEN FACTS of the only token, the ERC-721 card: token name Sworn; token symbol SWORN; total supply 0 at launch, one card per wallet that mints, uncapped."
+  }
+}

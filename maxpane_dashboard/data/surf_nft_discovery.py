@@ -16,7 +16,7 @@ import time
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.data.surf_nft_client import BudgetExhausted, SourceUnavailable, valid_page_cursor
 from maxpane_dashboard.data.surf_nft_rules.catalog import (
-    JOB_ID, NFT_WORDS, NON_BUILD_TEMPLATES, deployment_candidates, job_references, related_records,
+    JOB_ID, NFT_WORDS, NON_BUILD_TEMPLATES, deployment_candidates, job_references, related_records, timestamp,
 )
 
 SEARCHES = ('NFT', '721', '1155', 'non-fungible', 'generative', 'mint', 'collection')
@@ -46,7 +46,7 @@ def empty_discovery_state():
                     for source in SOURCES},
         'raw': {'launches': [], 'launchDetails': {}, 'jobDetails': {}, 'workflows': [],
                 'publications': [], 'sites': {'sites': []}, 'coverage': {}, 'finishedAt': None},
-        'pending_launches': {}, 'pending_jobs': {},
+        'pending_launches': {}, 'pending_jobs': {}, 'queue_turns': {},
     }
 
 
@@ -76,7 +76,7 @@ _FIELDS = {
     'launches': ('id', 'launchNumber', 'chainId', 'status', 'artifacts', 'jobs', 'sourceRepoUrl',
                  'sourceCommit', 'attestation', 'createdAt', 'updatedAt', 'deployedAt', 'title'),
     'jobDetails': ('id', 'objective', 'title', 'state', 'status', 'template', 'chainId',
-                   'createdAt', 'updatedAt', 'project', 'delivery', 'result', 'nodes', 'launch', 'site'),
+                   'createdAt', 'updatedAt', 'project', 'delivery', 'result', 'nodes', 'launch', 'site', 'workflow'),
     'workflows': ('id', 'objective', 'status', 'state', 'contractsJobId', 'frontendJobId',
                   'createdAt', 'updatedAt', 'projectId', 'chainId'),
     'publications': ('id', 'title', 'versions', 'contracts', 'sites', 'createdAt', 'updatedAt', 'code'),
@@ -95,7 +95,7 @@ def _compact(row, kind, observed_at=None, revision=None):
         selected['code'] = bool(selected['code'])  # Presence is the only discovery fact.
     out = _clean(selected)
     # Wrong-shaped nested evidence is rejected before entering shared interpreters.
-    for key in ('project', 'delivery', 'result', 'launch', 'site', 'attestation'):
+    for key in ('project', 'delivery', 'result', 'launch', 'site', 'attestation', 'workflow'):
         if key in out and not isinstance(out[key], dict):
             out[key] = {}
     for key in ('nodes', 'jobs', 'artifacts', 'versions', 'contracts', 'sites'):
@@ -105,6 +105,20 @@ def _compact(row, kind, observed_at=None, revision=None):
         if parent in out and key in out[parent]:
             items = out[parent][key]
             out[parent][key] = [v for v in items if isinstance(v, dict)] if isinstance(items, list) else []
+    if 'project' in out:
+        # A project embeds every previous objective again. Keep the graph/source
+        # fields consumed by this reader, not repeated bodies that reject the job.
+        project = out['project']
+        out['project'] = {k: project[k] for k in ('id', 'head', 'running') if k in project}
+        if 'versions' in project:
+            out['project']['versions'] = [{k: v[k] for k in ('jobId', 'workflowId', 'baseCommit', 'repoUrl', 'commit') if k in v}
+                                          for v in project['versions']]
+    if 'workflow' in out:
+        out['workflow'] = {k: out['workflow'][k] for k in ('id', 'objective') if k in out['workflow']}
+        if parse_job_id(out['workflow'].get('id')) is None:
+            out['workflow'] = {}
+        elif not isinstance(out['workflow'].get('objective'), str):
+            out['workflow']['objective'] = ''
     if 'id' in out.get('project', {}) and not isinstance(out['project']['id'], str):
         out['project'].pop('id')
     if 'manifest' in out.get('attestation', {}):
@@ -252,6 +266,10 @@ def _restore(value):
                 if parse_job_id(identity) and isinstance(pending, dict):
                     state[key][identity] = {'retry_at': pending.get('retry_at') if _number(pending.get('retry_at')) else 0.,
                                             'revision': pending.get('revision') if isinstance(pending.get('revision'), str) else None}
+    turns = value.get('queue_turns')
+    if isinstance(turns, dict):
+        state['queue_turns'] = {key: turns[key] % 4 for key in ('launches', 'jobs')
+                                if type(turns.get(key)) is int and turns[key] >= 0}
     # Upgrade older cursors without rereading the entire already retained launch history.
     launch_source = state['sources']['launches']
     if not launch_source['head_ids'] and launch_source['refresh_cursor'] is None:
@@ -302,15 +320,49 @@ def validate_discovery_state(value, now):
     return state
 
 
+def priority_references(raw):
+    """Scheduling hints from explicit source links; never deployment proof."""
+    jobs, launches = {}, {}
+    def add(target, identity, stamp):
+        if parse_job_id(identity):
+            target[identity] = max(target.get(identity, 0), stamp)
+    for workflow in raw.get('workflows', []):
+        if NFT_WORDS.search(workflow.get('objective') or ''):
+            for key in ('contractsJobId', 'frontendJobId'):
+                add(jobs, workflow.get(key), timestamp(workflow.get('updatedAt')) or 0)
+    for publication in raw.get('publications', []):
+        if NFT_WORDS.search(publication.get('title') or ''):
+            stamp = timestamp(publication.get('updatedAt')) or 0
+            for version in publication.get('versions', []):
+                add(jobs, version.get('jobId'), stamp)
+            for contract in publication.get('contracts', []):
+                add(launches, contract.get('id'), stamp)
+    for job in raw.get('jobDetails', {}).values():
+        if any(NFT_WORDS.search(text or '') for text in
+               (job.get('objective'), (job.get('workflow') or {}).get('objective'))):
+            add(jobs, job.get('id'), timestamp(job.get('updatedAt')) or 0)
+    for job in raw.get('jobDetails', {}).values():
+        if job.get('id') in jobs:
+            add(launches, (job.get('launch') or {}).get('id'), jobs[job['id']])
+    for launch in [*raw.get('launches', []), *raw.get('launchDetails', {}).values()]:
+        for job in launch.get('jobs', []):
+            if job.get('id') in jobs:
+                add(launches, launch.get('id'), jobs[job['id']])
+    return jobs, launches
+
+
 def discovery_candidates(state):
     """Project accepted explicit deployment facts without fetching or clock reads."""
     raw = state.get('raw', {}) if isinstance(state, dict) else {}
     found = deployment_candidates(raw)
     references = job_references(raw.get('jobDetails', {}))
+    priority_jobs, priority_launches = priority_references(raw)
     for identity, candidate in found.items():
         jobs, sites, repos = related_records(raw, candidate['jobIds'], candidate['address'],
                                            candidate['launchIds'], references=references)
         candidate['jobIds'] = [j['id'] for j in jobs]
+        candidate['nft_intent'] = (any(v in priority_launches for v in candidate['launchIds'])
+                                   or any(v in priority_jobs for v in candidate['jobIds']))
         candidate.update(id=identity, chain_id=candidate['chainId'], contract=candidate['address'],
                          tx_hash=candidate['artifact'].get('txHash'), block_number=candidate['artifact'].get('blockNumber'),
                          provenance={'launch_ids': list(candidate['launchIds']), 'job_ids': list(candidate['jobIds']),
@@ -327,6 +379,14 @@ class SurfNftDiscovery:
     def __init__(self, *, client, swarm, clock=time.time, monotonic=time.monotonic):
         self.client, self.swarm = client, swarm
         self.clock, self.monotonic = clock, monotonic
+
+    @staticmethod
+    def _queue_order(state, family, priority):
+        """Three priority admissions, one FIFO admission; survives cache reload."""
+        turns = state.setdefault('queue_turns', {})
+        turn = turns.get(family, 0)
+        turns[family] = (turn + 1) % 4
+        return priority if turn != 3 else lambda _item: 0
 
     def _queue(self, state, identity, *, launch=False, revision=None):
         if parse_job_id(identity) is None:
@@ -468,13 +528,20 @@ class SurfNftDiscovery:
             except (SourceUnavailable, ValueError):
                 source['retry_at'] = self.clock() + RETRY_TTL
                 # Failed refresh never destroys previously observed tail completeness.
+        priority_jobs, priority_launches = priority_references(state['raw'])
         launch_numbers = {row['id']: row.get('launchNumber') for row in state['raw']['launches']}
         launches = [(identity, p) for identity, p in state['pending_launches'].items()
                     if p['retry_at'] <= self.clock()]
-        launches.sort(key=lambda item: (item[0] in state['raw']['launchDetails'],
-            -(launch_numbers[item[0]] if type(launch_numbers.get(item[0])) is int else 0)))
-        launches = launches[:min(launch_limit, 4)]
-        for identity, pending in launches:
+        launch_priority = lambda item: (item[0] not in priority_launches,
+            item[0] in state['raw']['launchDetails'], -priority_launches.get(item[0], 0),
+            -(launch_numbers[item[0]] if type(launch_numbers.get(item[0])) is int else 0))
+        for _ in range(min(launch_limit, 4, len(launches))):
+            if not budget.can_admit():
+                break
+            item = min(launches, key=self._queue_order(state, 'launches', launch_priority))
+            launches.remove(item)
+            identity, pending = item
+            state['pending_launches'][identity] = state['pending_launches'].pop(identity)
             try:
                 read = await self.client.detail('launches', identity, budget=budget)
             except BudgetExhausted:
@@ -497,16 +564,19 @@ class SurfNftDiscovery:
         while admitted < min(detail_limit, 8):
             if not self.client.can_read_shared_job():
                 break
-            next_job = next(((identity, p) for identity, p in state['pending_jobs'].items()
-                             if identity not in tried and p['retry_at'] <= self.clock()), None)
-            if next_job is None:
+            pending_jobs = [(identity, p) for identity, p in state['pending_jobs'].items()
+                            if identity not in tried and p['retry_at'] <= self.clock()]
+            if not pending_jobs:
                 break
-            identity, pending = next_job
-            tried.add(identity)
             try:
                 budget.reserve_shared_job()
             except BudgetExhausted:
                 break
+            priority = self._queue_order(state, 'jobs', lambda item:
+                (item[0] not in priority_jobs, -priority_jobs.get(item[0], 0)))
+            identity, pending = min(pending_jobs, key=priority)
+            state['pending_jobs'][identity] = state['pending_jobs'].pop(identity)
+            tried.add(identity)
             admitted += 1
             try:
                 # Existing shared memo owns flight cancellation; do not shield this waiter.
@@ -531,6 +601,7 @@ class SurfNftDiscovery:
                 state['truncated'] = True
             state['raw']['jobDetails'][identity] = fact
             state['pending_jobs'].pop(identity)
+            self._queue(state, fact.get('launch', {}).get('id'), launch=True)
             for version in fact.get('project', {}).get('versions', []):
                 self._queue(state, version.get('jobId'))
             for linked in JOB_ID.findall(fact.get('objective') or ''):

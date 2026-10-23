@@ -117,6 +117,145 @@ async def test_detail_budget_deduplicates_and_marks_missing(setup):
     assert data['partial'] and data['summary']['build'] is None
 
 
+def optional_jobs(raw, count=25):
+    prototype = raw['details'][0]
+    raw['details'] = [dict(copy.deepcopy(prototype), id=f'00000000-0000-0000-0000-{n:012d}',
+                          state='blocked', project=None, workflow=None) for n in range(1, count + 1)]
+    raw['jobs'] = [dict(row, nodes=None) for row in raw['details']]
+    raw['workflows'] = []
+    raw['executing_count'] = 0
+    return [row['id'] for row in raw['jobs']]
+
+
+async def test_optional_detail_round_robin_retains_nodes_and_clocks_after_restart(setup):
+    from maxpane_dashboard.data.surf_work import coerce_snapshot
+    reader, client, cache, clock, raw = setup
+    identities = optional_jobs(raw)
+    await reader.offer()
+    assert reader.project()['details_loaded'] == 24
+    initial = clock.now
+    clock.now += 61
+    restored = SurfCache(path=cache.path, clock=lambda: clock.now)
+    restored.load(slot_coercers={SLOT_SURF_WORK: lambda value: coerce_snapshot(value, now=clock.now)})
+    reader = WorkReader(client, restored, clock=lambda: clock.now)
+    await reader.offer()
+    reads = [identity for route, identity in client.calls if route == 'detail']
+    assert reads == identities
+    result = reader.project()
+    assert result['details_loaded'] == result['details_expected'] == 25
+    assert all(row['nodes'] for row in result['jobs'])
+    assert result['read_ts'] == initial  # reused observations keep their clocks
+
+
+async def test_optional_revision_change_discards_old_nodes_on_failed_refresh(setup):
+    reader, client, cache, clock, raw = setup
+    identities = optional_jobs(raw)
+    await reader.offer()
+    clock.now += 61
+    raw['jobs'][0]['updatedAt'] = datetime.fromtimestamp(clock.now, timezone.utc).isoformat().replace('+00:00', 'Z')
+    raw['details'] = raw['details'][1:]
+    await reader.offer()
+    result = reader.project()
+    assert next(row for row in result['jobs'] if row['id'] == identities[0])['nodes'] is None
+    assert next(row for row in result['jobs'] if row['id'] == identities[-1])['nodes']
+    assert result['partial'] and result['details_loaded'] == 24
+
+
+async def test_optional_failed_prefix_cannot_starve_later_jobs(setup):
+    reader, client, cache, clock, raw = setup
+    identities = optional_jobs(raw)
+    raw['details'] = raw['details'][-1:]
+    await reader.offer()
+    assert reader.project()['details_loaded'] == 0
+    clock.now += 61
+    client.calls.clear()
+    await reader.offer()
+    reads = [identity for route, identity in client.calls if route == 'detail']
+    assert reads[0] == identities[-1] and len(reads) <= 24
+    assert reader.project()['details_loaded'] == 1
+
+
+async def test_optional_detail_uses_original_shared_memo_observation(setup):
+    reader, client, cache, clock, raw = setup
+    optional_jobs(raw, 1)
+    read = client.read_job_detail
+    observed_at = clock.now - 30
+    async def memo(identity, *, fresh_after=None):
+        result = await read(identity, fresh_after=fresh_after)
+        return JobDetailRead(result.payload, observed_at, result.started_mono, None, True)
+    client.read_job_detail = memo
+    await reader.offer()
+    assert reader.project()['details_loaded'] == 1
+    assert reader.project()['read_ts'] == observed_at
+
+
+async def test_optional_same_revision_failure_retains_observation_and_nodes(setup):
+    reader, client, cache, clock, raw = setup
+    optional_jobs(raw, 1)
+    await reader.offer()
+    first = reader.project()
+    clock.now += 121
+    raw['details'] = []
+    await reader.offer()
+    result = reader.project()
+    assert result['jobs'][0]['nodes'] == first['jobs'][0]['nodes']
+    assert result['read_ts'] == first['read_ts']
+    assert result['partial'] and result['details_loaded'] == 1
+
+
+async def test_optional_cache_bound_does_not_restart_the_cursor(setup, monkeypatch):
+    from maxpane_dashboard.data import surf_work as work
+    reader, client, cache, clock, raw = setup
+    identities = optional_jobs(raw, 65)
+    monkeypatch.setattr(work, 'OPTIONAL_CACHE_LIMIT', 32)
+    for _ in range(3):
+        await reader.offer()
+        assert len(cache.get_last_good(SLOT_SURF_WORK).payload['optional_details']) <= 32
+        clock.now += 61
+    reads = [identity for route, identity in client.calls if route == 'detail']
+    assert set(reads) == set(identities)
+
+
+async def test_optional_cancellation_preserves_persisted_cursor_and_nodes(setup):
+    reader, client, cache, clock, raw = setup
+    identities = optional_jobs(raw)
+    await reader.offer()
+    before = copy.deepcopy(cache.get_last_good(SLOT_SURF_WORK))
+    clock.now += 61
+    entered = asyncio.Event()
+    async def hanging(identity, *, fresh_after=None):
+        assert identity == identities[-1]
+        entered.set()
+        await asyncio.Event().wait()
+    client.read_job_detail = hanging
+    task = reader.offer()
+    await asyncio.wait_for(entered.wait(), 1)
+    reader.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    assert cache.get_last_good(SLOT_SURF_WORK) == before
+    assert cache.last_failure_ts(TIER_SURF_WORK) is None
+
+
+@pytest.mark.parametrize('corrupt', ['future', 'foreign', 'unknown_row', 'bad_cursor'])
+async def test_optional_persisted_metadata_is_validated(setup, corrupt):
+    from maxpane_dashboard.data.surf_work import coerce_snapshot
+    reader, client, cache, clock, raw = setup
+    identities = optional_jobs(raw, 1)
+    await reader.offer()
+    stored = copy.deepcopy(cache.get_last_good(SLOT_SURF_WORK).payload)
+    point = stored['optional_details'][identities[0]]
+    if corrupt == 'future':
+        point['read_ts'] = clock.now + 1
+    elif corrupt == 'foreign':
+        stored['optional_details']['00000000-0000-0000-0000-000000000999'] = point
+    elif corrupt == 'unknown_row':
+        stored['jobs'][0].update(nodes=None, detail_state='not_loaded')
+        stored['details_loaded'] = 0
+    else:
+        stored['optional_cursor'] = 'not-a-job'
+    assert coerce_snapshot(stored, now=clock.now) is None
+
+
 @pytest.mark.asyncio
 async def test_cancellation_does_not_publish_partial_or_failure(setup):
     reader, client, cache, clock, raw = setup

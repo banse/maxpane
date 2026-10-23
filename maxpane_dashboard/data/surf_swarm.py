@@ -2450,6 +2450,9 @@ def coerce_rank_slot(payload: object) -> dict | None:
 
 # Production launches: bounded extracted slots, never launch-detail bodies.
 LAUNCH_CACHE_CAP = 500
+# Finite evidence capacity matches the existing discovery scale. Retention uses
+# successful observations, so an explicitly inspected older launch can survive.
+LAUNCH_FACT_CAP = 2000
 _LAUNCH_ROW_FIELDS = ('id', 'launchNumber', 'kind', 'status', 'chainId', 'sourceRepoUrl',
                       'sourceCommit', 'parkedReason', 'artifactCount', 'createdAt', 'updatedAt')
 _SITE_FIELDS = ('id', 'jobId', 'label', 'ensName', 'cid', 'bytes', 'status', 'txHash',
@@ -2541,7 +2544,7 @@ def coerce_launch_facts_slot(value):
         if row is None or row['id'] != key or not is_production(row):
             continue
         clean = {'row': row}
-        for field in ('detail_failed_ts', 'detail_attempt_ts', 'k3_retry_ts', 'pool_attempt_ts', 'liquidity_attempt_ts'):
+        for field in ('detail_failed_ts', 'detail_attempt_ts', 'evidence_read_ts', 'k3_retry_ts', 'pool_attempt_ts', 'liquidity_attempt_ts'):
             stamp = point.get(field)
             if type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0:
                 clean[field] = stamp
@@ -2631,8 +2634,30 @@ def coerce_launch_facts_slot(value):
         paid = address(point.get('paid_by'))
         if point.get('paid_by') is not None and paid is None: continue
         sites[key] = {'paid_by': paid, 'project_jobs': ids[:100], 'addresses': [a.lower() for a in addresses[:100]]}
-    launches = dict(sorted(launches.items(), key=lambda item: item[1]['row']['launchNumber'], reverse=True)[:LAUNCH_CACHE_CAP])
-    return {'launches': launches, 'sites': dict(list(sites.items())[-LAUNCH_CACHE_CAP:])}
+    launches = dict(sorted(launches.items(), key=lambda item: (
+        item[1].get('detail_version') == [item[1]['row']['status'], item[1]['row'].get('updatedAt')],
+        item[1].get('evidence_read_ts', 0), item[1]['row']['launchNumber']), reverse=True)[:LAUNCH_FACT_CAP])
+    out = {'launches': launches, 'sites': dict(list(sites.items())[-LAUNCH_CACHE_CAP:])}
+    reads = {}
+    for key, point in (value.get('_site_reads', {}).items() if isinstance(value.get('_site_reads'), dict) else ()):
+        if not isinstance(key, str) or parse_job_id(key) != key or not isinstance(point, dict):
+            continue
+        identity = point.get('identity')
+        if (not isinstance(identity, list) or len(identity) != 3
+                or not isinstance(identity[0], str) or parse_job_id(identity[0]) != identity[0]
+                or any(v is not None and (not isinstance(v, str) or len(v) > 100) for v in identity[1:])):
+            continue
+        clean = {'identity': list(identity)}
+        for field in ('attempt_ts', 'read_ts'):
+            stamp = point.get(field)
+            if type(stamp) in (int, float) and math.isfinite(stamp) and stamp > 0:
+                clean[field] = stamp
+        if type(point.get('failed')) is bool:
+            clean['failed'] = point['failed']
+        reads[key] = clean
+    if reads:
+        out['_site_reads'] = dict(list(reads.items())[-LAUNCH_CACHE_CAP:])
+    return out
 
 
 def _coerce_launch_checks(checks):

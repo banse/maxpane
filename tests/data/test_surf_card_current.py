@@ -12,6 +12,20 @@ from maxpane_dashboard.data.surf_card_reader import SurfCardReader
 from maxpane_dashboard.data.surf_swarm_client import JobDetailRead
 
 
+@pytest.mark.parametrize('status,expected', [
+    ('executing', 1), ('completed', 0), ('paused', 0), ('blocked', 0),
+    ('future-state', None),
+])
+async def test_workflow_summary_uses_same_lifecycle_as_detail_board(status, expected):
+    captured = json.loads(Path('tests/fixtures/surf/work/captured.json').read_text())
+    row = dict(captured['workflows'][0], status=status)
+    client = SimpleNamespace(fetch_workflows=AsyncMock(return_value=[row]))
+    reader = SurfCardReader(SimpleNamespace(_clock=lambda: captured['read_ts'], swarm_client=client))
+    await reader._work()
+    assert reader.workflows == expected
+    client.fetch_workflows.assert_awaited_once_with(limit=100)
+
+
 @pytest.fixture
 def setup():
     raw = json.loads(Path('tests/fixtures/surf/work/boardroom_current.json').read_text())

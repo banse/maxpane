@@ -5764,20 +5764,7 @@ class SurfManager:
             receipt_attempts={chain: set(request['hashes']) for chain, request in requests.items()})
         production_times = [sw._ts(p['row'].get('createdAt')) for p in points]
         earliest = min((ts for ts in production_times if ts is not None), default=None)
-        site_budget = 3
-        for site in sorted(slot.get('sites') or [], key=lambda s: s.get('createdAt') or '', reverse=True):
-            if not site_budget:
-                break
-            created = sw._ts(site.get('createdAt'))
-            if site['id'] in facts['sites'] or earliest is None or created is None or created < earliest:
-                continue
-            site_budget -= 1
-            read = await self._guard(lambda site=site: self.swarm_client.read_job_detail(site['jobId']), 'swarm site job')
-            job = read.payload if read is not None else None
-            if isinstance(job, dict) and job.get('id') == site['jobId']:
-                facts['sites'][site['id']] = ls.site_job_facts(job)
-                if read.observed_at is not None:
-                    fact_observations.append(read.observed_at)
+        fact_observations.extend(await self._refresh_site_facts(slot, facts, earliest, now))
         facts = sw.coerce_launch_facts_slot(facts)
         facts_entry = self.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS)
         if facts_entry is not None and previous_facts.get('sites'):
@@ -5804,6 +5791,48 @@ class SurfManager:
         if facts['launches'] or facts['sites'] or self._swarm_launch_read_ok or facts != previous_facts:
             self.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS, sw.coerce_launch_facts_slot(facts), ts=facts_ts)
         (self.cache.mark_failed if failed else self.cache.mark_fetched)(TIER_SWARM_LAUNCHES, now)
+
+    async def _refresh_site_facts(self, slot, facts, earliest, now):
+        """Fair bounded revalidation of mutable job/project joins, with real clocks."""
+        reads = facts.setdefault('_site_reads', {})
+        due, observations = [], []
+        known_revision = getattr(self.swarm_client, 'known_job_revision', lambda _: None)
+        for site in slot.get('sites') or []:
+            created = sw._ts(site.get('createdAt'))
+            if earliest is None or created is None or created < earliest:
+                continue
+            key, job_id = site['id'], site['jobId']
+            point = reads.get(key, {})
+            identity = [job_id, site.get('updatedAt'), known_revision(job_id)]
+            changed = point.get('identity') != identity
+            if changed and point.get('identity'):
+                facts['sites'].pop(key, None)  # Old membership cannot authorize a new revision.
+                point.clear()
+            observed, attempted = point.get('read_ts'), point.get('attempt_ts')
+            if not changed and attempted is not None and 0 <= now - attempted < 60:
+                continue
+            if not changed and not point.get('failed') and observed is not None and 0 <= now - observed < 600:
+                continue
+            due.append((attempted if attempted is not None else -1, -created, key, site, identity))
+        for _, _, key, site, identity in sorted(due)[:3]:
+            point = reads.setdefault(key, {})
+            if point.get('identity') != identity:
+                point.clear()
+            point.update(identity=identity, attempt_ts=now)
+            read = await self._guard(lambda site=site: self.swarm_client.read_job_detail(site['jobId']), 'swarm site job')
+            job = read.payload if read is not None else None
+            extracted = ls.site_job_facts(job) if isinstance(job, dict) and job.get('id') == site['jobId'] else None
+            if extracted is not None and read.observed_at is not None:
+                facts['sites'][key] = extracted
+                point['read_ts'] = read.observed_at
+                point['identity'][2] = known_revision(site['jobId'])
+                point['failed'] = False
+                observations.append(read.observed_at)
+            else:
+                point['failed'] = True
+                if key not in facts['sites']:
+                    facts['sites'][key] = None
+        return observations
 
     async def _enrich_swarm_launch_evidence(self, slot, points, now, *,
                                             refreshed_policy=False, policy_read_ok=True,
@@ -5837,6 +5866,7 @@ class SurfManager:
             point.pop('detail_failed_ts', None)
             point.update(extracted)
             point['detail_version'] = version
+            point['evidence_read_ts'] = now
         # One state batch per chain, across all pending checks on that chain.
         pending, requests = [], {}
         for point in points:
@@ -6282,6 +6312,9 @@ class SurfManager:
         An attribute write, no I/O and no await. Persisting the choice is
         the caller's job. Mark the seat tier due so the next cycle reads it.
         """
+        changed = (sw.parse_seat_token(token) != sw.parse_seat_token(self._seat_saved)
+                   or self.record_cap != sw.SWARM_ANSWER_ROW_CAP
+                   or self.record_launches_only or self.record_spec is not None)
         self.record_cap = sw.SWARM_ANSWER_ROW_CAP
         self.record_launches_only = False
         self.record_spec = None
@@ -6289,6 +6322,8 @@ class SurfManager:
         self._seat_failed_token = None
         self._seat_busy_token = None
         self.cache.mark_due(TIER_SWARM_SEAT)
+        if changed:
+            self._invalidate_seat_collection()
 
     def set_record_view(self, cap: int, launches_only: bool, spec: RecordFilter | None = None) -> None:
         """Update eligibility without I/O; the next seat cycle fills this window.
@@ -6298,10 +6333,27 @@ class SurfManager:
         """
         if not isinstance(cap, int) or isinstance(cap, bool) or not isinstance(launches_only, bool):
             return
+        before = self.record_cap, self.record_launches_only, self.record_spec
         self.record_cap = max(sw.SWARM_ANSWER_ROW_CAP, min(SWARM_ANSWER_CACHE_CAP, cap))
         self.record_launches_only = launches_only
         self.record_spec = spec if isinstance(spec, RecordFilter) and spec.active else None
         self.cache.mark_due(TIER_SWARM_SEAT)
+        if before != (self.record_cap, self.record_launches_only, self.record_spec):
+            self._invalidate_seat_collection()
+
+    def _invalidate_seat_collection(self):
+        """A new selection is due immediately; retire only its owned collectors."""
+        if self._active_view != 'agent':
+            return
+        for name in ('_full_task', '_swarm_seat_task'):
+            task = getattr(self, name, None)
+            if task is not None and not task.done():
+                task.cancel()
+                self._retired_reads.add(task)
+            setattr(self, name, None)
+        self._swarm_seat_task_token = None
+        self._full_started = None
+        self._force_view = True
 
     def _spawn_swarm_scores(self, tiers: set[str], now: float) -> Any:
         """:meth:`_spawn_swarm`'s shape, one tier further out.

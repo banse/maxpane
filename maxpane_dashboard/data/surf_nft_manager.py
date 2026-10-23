@@ -257,7 +257,8 @@ class SurfNftManager:
         notes = ((launch.get('attestation') or {}).get('manifest') or {}).get('notes')
         texts = [notes, (candidate.get('artifact') or {}).get('name')]
         texts.extend(job.get('objective') for job in launch.get('jobs') or [])
-        relevant = any(isinstance(text, str) and NFT_WORDS.search(text) for text in texts)
+        relevant = candidate.get('nft_intent') is True or any(
+            isinstance(text, str) and NFT_WORDS.search(text) for text in texts)
         number = launch.get('launchNumber')
         return not relevant, -(number if type(number) is int else 0)
 
@@ -298,7 +299,8 @@ class SurfNftManager:
         now = self._clock()
         current, started = self._inspection_focus.get(probe, (None, now))
         if current is not None and now - started >= 600:
-            self._inspection_deferred[current] = now + self.FAILURE_BACKOFF
+            if current in self.state.get('progress', {}):
+                self._inspection_deferred[current] = now + self.FAILURE_BACKOFF
             current = None
         evidence = self.state.get('evidence', {})
         stages = self.state.get('progress', {})
@@ -310,8 +312,29 @@ class SurfNftManager:
         known.update(row['id'] for row in self.state.get('records') or [] if row['category'] == 'launched')
         due = [key for key in candidates if (key not in known) == probe and self._due(key)
                and (key in stages or len(stages) < SurfNftCache.MAX_STAGES)]
+        if probe and self._selected in self._inspection_attempts:
+            # Selection already owns a slice; its partial stage cannot take the
+            # independent discovery lane away from unselected candidates.
+            due = [key for key in due if key != self._selected] or due
         if current in due:
             return current
+        if probe and due:
+            # Resume admitted proof across restarts. Every fourth new admission
+            # uses oldest launch order so newer traffic cannot starve the tail.
+            staged = [key for key in due if 0 <= now - stages.get(key, {}).get('started_at', 0) <= 600]
+            if staged:
+                identity = min(staged, key=lambda key: stages[key]['started_at'])
+            else:
+                turn = self.state.get('probe_turn', 0)
+                self.state['probe_turn'] = (turn + 1) % 4
+                def probe_rank(key):
+                    number = (candidates[key].get('launch') or {}).get('launchNumber')
+                    number = number if type(number) is int else 0
+                    priority = (number,) if turn == 3 else self._discovery_priority(candidates[key])
+                    return key in evidence, priority, self._inspection_attempts.get(key, 0), key
+                identity = min(due, key=probe_rank)
+            self._inspection_focus[probe] = identity, now
+            return identity
         # Unknown details beat periodic refreshes; attempts break ties so a
         # reviewed or recently selected collection cannot monopolize admission.
         due.sort(key=lambda key: (not (key in _DISCOVERY_PARENTS or self._uninspected_child(key) or
@@ -448,16 +471,24 @@ class SurfNftManager:
         try:
             # One discovery page always precedes the selection's reserved slice.
             try:
-                with budget.limit(http=2, rpc=0, seconds=2):
-                    await self._discover(budget, page_limit=1, detail_limit=0, launch_limit=1)
+                with budget.limit(http=4 if proof_only else 2, rpc=0, seconds=2):
+                    await self._discover(budget, page_limit=1, detail_limit=1 if proof_only else 0, launch_limit=1)
             except BudgetExhausted:
                 pass  # A slow discovery page must leave time for retained rows.
             candidates = self._candidates()
-            pending = self._pending(candidates, proof_only=proof_only)
             if proof_only:
+                # New proofs have a reserved lane even while old rule-backed
+                # collections need refreshed metadata. Card budgets stay fixed.
+                probe = self._focus(candidates, probe=True)
+                if probe is not None:
+                    await self._slice(probe, candidates[probe], budget, http=6, rpc=64, proof_only=True)
+                    if self._proof_current(probe, candidates[probe]):
+                        self.state['progress'].pop(probe, None)
                 # Keep discovery/proof separate from mint/getter/source history.
                 # Recent proofs need no detail work to render collection counts.
-                for identity, candidate in pending:
+                for identity, candidate in self._pending(candidates, proof_only=True):
+                    if identity == probe:
+                        continue
                     evidence = self.state.get('evidence', {}).get(identity, {})
                     checked = _stamp(evidence.get('checkedAt'))
                     changed = self._proof_changed(identity, candidate)
@@ -468,6 +499,10 @@ class SurfNftManager:
                         self.state['progress'].pop(identity, None)
                     if not budget.can_admit():
                         break
+                if probe in self.state.get('progress', {}) and budget.can_admit():
+                    await self._inspect(probe, candidates[probe], budget, proof_only=True)
+                    if self._proof_current(probe, candidates[probe]):
+                        self.state['progress'].pop(probe, None)
                 return
             priority = self._selected if self._selected in candidates and self._due(self._selected) else None
             if priority is not None:
@@ -477,6 +512,19 @@ class SurfNftManager:
                 await self._slice(probe, candidates[probe], budget,
                                   http=3 if priority is not None else 6, rpc=32,
                                   seconds=3, proof_only=True)
+            # A fresh proof is visible before its name/getters are loaded. Give
+            # the oldest verified newcomer a small slice without replacing a
+            # pinned factory/collection focus; background work keeps its turn.
+            newcomers = [key for key, fact in self.state.get('evidence', {}).items()
+                         if key in candidates and key != priority and key not in _DISCOVERY_PARENTS
+                         and fact.get('proofOnly') and fact.get('deploymentConfirmed') is True
+                         and fact.get('codePresent') is True and fact.get('standard') and self._due(key)]
+            if newcomers and budget.remaining_http > 5 and budget.remaining_seconds > 2:
+                identity = min(newcomers, key=lambda key:
+                    (_stamp(self.state['evidence'][key].get('checkedAt')) or 0, key))
+                await self._slice(identity, candidates[identity], budget,
+                    http=min(3, budget.remaining_http - 5), rpc=64,
+                    seconds=min(3, budget.remaining_seconds - 2))
             # Finish an admitted collection within its ten-minute pinned context.
             # A small separate proof lane keeps new discoveries moving. When no
             # collection needs enrichment, lend its budget to that proof lane.

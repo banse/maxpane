@@ -33,11 +33,11 @@ def test_persisted_launch_facts_and_baselines_reload_bounded(tmp_path):
     row, facts, checks=checked()
     facts.update(row=row, checks=checks, detail_version=[row['status'], row['updatedAt']])
     points={}
-    for i in range(600):
+    for i in range(2100):
         point=copy.deepcopy(facts); key=str(uuid.UUID(int=i+1)); point['row'].update(id=key,launchNumber=i)
         points[key]=point
     clean=sw.coerce_launch_facts_slot({'launches':points,'sites':{}})
-    assert len(clean['launches'])==500
+    assert len(clean['launches'])==2000
     assert min(p['row']['launchNumber'] for p in clean['launches'].values())==100
     from maxpane_dashboard.data.surf_cache import SLOT_SWARM_LAUNCH_FACTS
     path=str(tmp_path/'cache.json'); cache=SurfCache(path=path,clock=lambda:101)

@@ -80,7 +80,7 @@ class SurfNftCache:
     @staticmethod
     def empty():
         return {'discovery': {}, 'evidence': {}, 'progress': {}, 'child_candidates': {}, 'records': None,
-                'cache_partial': False, 'last_attempt': None}
+                'cache_partial': False, 'last_attempt': None, 'probe_turn': 0}
 
     def _coerce(self, raw, *, selected_id=None):
         out = self.empty()
@@ -88,6 +88,9 @@ class SurfNftCache:
             return out
         now = self.clock()
         partial = raw.get('cache_partial') is True
+        turn = raw.get('probe_turn')
+        if type(turn) is int and turn >= 0:
+            out['probe_turn'] = turn % 4
         discovery = raw.get('discovery', {})
         if isinstance(discovery, dict):
             from maxpane_dashboard.data.surf_nft_discovery import validate_discovery_state

@@ -96,6 +96,71 @@ async def test_blocking_constructor_does_not_block_local_reads_or_commands():
         await runtime.close()
 
 
+async def test_first_fetch_publishes_persisted_snapshot_before_network_completes():
+    started, release = threading.Event(), threading.Event()
+    calls = []
+    class Persisted(Manager):
+        async def fetch_and_compute(self):
+            self.record('fetch')
+            started.set()
+            while not release.is_set():
+                await asyncio.sleep(.001)
+            self.value = {'rows': [{'value': 2}], 'observed_at': 200}
+            return self.value
+    runtime = ReaderRuntime()
+    handle = runtime.register('one', lambda: Persisted(calls))
+    try:
+        handle.set_active_view('dashboard')
+        await eventually(started.is_set)
+        assert handle.get_snapshot() == {'rows': [{'value': 1}]}
+        assert handle.is_loading()
+        release.set()
+        await eventually(lambda: not handle.is_loading())
+        assert handle.get_snapshot()['observed_at'] == 200
+        assert sum(name == 'fetch' for name, _ in calls) == 1
+    finally:
+        release.set()
+        await runtime.close()
+
+
+async def test_detached_completion_during_fetch_is_published_without_next_poll():
+    calls = []
+    class Completed(Manager):
+        async def fetch_and_compute(self):
+            self.record('fetch')
+            captured = self.value
+            async def enrichment():
+                self.value = {'rows': [{'value': 2}], 'observed_at': 100}
+            await asyncio.create_task(enrichment())
+            return captured
+    runtime = ReaderRuntime()
+    handle = runtime.register('one', lambda: Completed(calls))
+    try:
+        handle.set_active_view('dashboard')
+        await eventually(lambda: not handle.is_loading())
+        assert handle.get_snapshot() == {'rows': [{'value': 2}], 'observed_at': 100}
+        assert sum(name == 'fetch' for name, _ in calls) == 1
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.parametrize('projection', ['raises', 'empty'])
+async def test_snapshot_failure_does_not_prevent_fetch_or_discard_fetched_value(projection):
+    class BrokenProjection(Manager):
+        def get_snapshot(self):
+            if projection == 'raises':
+                raise ValueError('invalid persisted slot')
+            return None
+    runtime = ReaderRuntime()
+    handle = runtime.register('one', lambda: BrokenProjection([]))
+    try:
+        handle.set_active_view('dashboard')
+        await eventually(lambda: not handle.is_loading())
+        assert handle.get_snapshot() == {'rows': [{'value': 1}]}
+    finally:
+        await runtime.close()
+
+
 async def test_reader_polls_without_ui_requests_and_stops_when_hidden():
     calls = []
     runtime = ReaderRuntime(poll_interval=.03)
@@ -329,6 +394,8 @@ async def test_new_handle_waits_for_previous_handle_cancellation_cleanup():
         await eventually(cleaning.is_set)
         await b.invoke('barrier')
         assert not second.is_set()
+        assert b.get_snapshot() == {'rows': [{'value': 1}]}
+        assert b.is_loading()
         release.set()
         await eventually(second.is_set)
     finally:

@@ -15,6 +15,8 @@ from maxpane_dashboard.data.surf_models import (
 
 PAGE_LIMIT = 100
 DETAIL_LIMIT = 24  # Optional background enrichment only.
+OPTIONAL_CACHE_LIMIT = 128
+OPTIONAL_DETAIL_TTL = 120
 SCAN_PAGE_LIMIT = 500
 SCAN_PAGES = 100
 HISTORY_SECONDS = 86400
@@ -161,7 +163,8 @@ def workflow_context(raw, identity, members, *, now):
 
 def snapshot(jobs, workflows, details, *, read_ts, now=None, projects=None, metadata=None,
              expected_ids=None, active_scan_complete=True, coverage_partial=False,
-             context_job_ids=(), context_workflow_ids=(), workflow_scan_complete=True):
+             context_job_ids=(), context_workflow_ids=(), workflow_scan_complete=True,
+             retained_details=None):
     """Current evidence and historical context share rows, but never count scopes."""
     now = read_ts if now is None else now
     job_rows, job_partial = _page(jobs, _job, now, JOB_LIMIT)
@@ -179,6 +182,9 @@ def snapshot(jobs, workflows, details, *, read_ts, now=None, projects=None, meta
         row = _job(dict(raw, id=identity), now)
         if row is not None and identity not in rows:
             row['detail_state'] = 'unavailable'; rows[identity] = row
+    for identity, row in (retained_details or {}).items():
+        if identity in current:
+            rows[identity] = row
     for identity, raw in list(details.items())[:CONTEXT_DETAIL_LIMIT + DETAIL_LIMIT]:
         row = _job(raw, now, detail=True)
         if row is not None and row['id'] == identity:
@@ -199,7 +205,7 @@ def snapshot(jobs, workflows, details, *, read_ts, now=None, projects=None, meta
     return dict(read_ts=read_ts, partial=bool(partial), jobs_loaded=len(job_rows), jobs=list(rows.values()),
                 workflows=workflow_rows, projects=projects, current_job_ids=[i for i in rows if i in current],
                 current_workflow_ids=current_flows, active_scan_complete=active_scan_complete,
-                workflow_scan_complete=workflow_scan_complete,
+                workflow_scan_complete=workflow_scan_complete, optional_details={}, optional_cursor=None,
                 context_job_ids=sorted(context_jobs), context_workflow_ids=sorted(context_flows),
                 details_expected=len(expected), details_loaded=sum(r['detail_state'] == 'ok' for r in rows.values()))
 
@@ -255,7 +261,18 @@ def coerce_snapshot(raw, *, now):
         if any(not node['state'] or not node['key'] for node in job['nodes'] or []): return None
     if any(not row['status'] for row in flows.values()): return None
     if raw['details_loaded'] != sum(row['detail_state'] == 'ok' for row in jobs.values()): return None
-    if raw['details_loaded'] > min(CONTEXT_DETAIL_LIMIT + DETAIL_LIMIT, raw['details_expected']) or raw['details_expected'] > JOB_LIMIT: return None
+    if raw['details_loaded'] > min(CONTEXT_DETAIL_LIMIT + OPTIONAL_CACHE_LIMIT, raw['details_expected']) or raw['details_expected'] > JOB_LIMIT: return None
+    optional = raw.setdefault('optional_details', {})
+    raw.setdefault('optional_cursor', None)
+    if raw['optional_cursor'] is not None and parse_job_id(raw['optional_cursor']) is None: return None
+    if not isinstance(optional, dict) or len(optional) > OPTIONAL_CACHE_LIMIT: return None
+    for identity, point in optional.items():
+        if identity not in jobs or jobs[identity]['detail_state'] != 'ok' or not isinstance(point, dict): return None
+        if set(point) != {'version', 'read_ts'} or _stamp(point['read_ts'], now) is None: return None
+        version = point['version']
+        if (not isinstance(version, list) or len(version) != 2 or not isinstance(version[0], str)
+                or not version[0] or _text(version[0], 80) != version[0]
+                or version[1] is not None and _stamp(version[1], now) is None): return None
     if legacy:
         raw.update(projects=[], current_job_ids=list(jobs), current_workflow_ids=list(flows),
                    context_job_ids=[], context_workflow_ids=[], active_scan_complete=False, partial=True)
@@ -289,7 +306,7 @@ def coerce_snapshot(raw, *, now):
                               or any(w not in flows for p in projects for w in p['workflow_ids'])): return None
     keys = ('read_ts', 'partial', 'jobs_loaded', 'jobs', 'workflows', 'projects', 'details_expected', 'details_loaded',
             'current_job_ids', 'current_workflow_ids', 'context_job_ids', 'context_workflow_ids', 'active_scan_complete',
-            'workflow_scan_complete')
+            'workflow_scan_complete', 'optional_details', 'optional_cursor')
     return {key: raw[key] for key in keys}
 
 

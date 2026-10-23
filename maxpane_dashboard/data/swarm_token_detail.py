@@ -5,6 +5,7 @@ launch/job/workflow/site task; successful section clocks survive failed reads.
 """
 import asyncio
 from copy import deepcopy
+import math
 import time
 
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
@@ -64,9 +65,10 @@ class SwarmTokenDetailManager:
         self._sources[name]['state'] = ('stale' if self._sources[name]['read_ts'] is not None
                                         else 'unavailable')
 
-    def _publish(self, name, value, state='ok'):
+    def _publish(self, name, value, state='ok', *, read_ts=None):
         setattr(self, '_' + name, value)
-        self._sources[name] = dict(state=state, read_ts=self._clock(), partial=state == 'partial')
+        self._sources[name] = dict(state=state, read_ts=self._clock() if read_ts is None else read_ts,
+                                   partial=state == 'partial')
 
     async def _read(self, method, identity=None):
         epoch = self._view_epoch
@@ -135,40 +137,49 @@ class SwarmTokenDetailManager:
                 rows.append(dict(seat=seat, role=role, job_id=identity, state='accepted', stage=stage))
         return rows, partial
 
+    async def _job_read(self, identity):
+        if callable(getattr(self.client, 'read_job_detail', None)):
+            read = await self._read('read_job_detail', identity)
+            stamp = getattr(read, 'observed_at', None)
+            if type(stamp) not in (int, float) or not math.isfinite(stamp) or not 0 <= stamp <= self._clock():
+                return None, None
+            return getattr(read, 'payload', None), stamp
+        return await self._read('fetch_job', identity), self._clock()
+
     async def _job(self, identity):
-        raw = await self._read('fetch_job', identity)
+        raw, stamp = await self._job_read(identity)
         decoded = self._decode_job(raw, identity, 'contracts')
         if decoded is None:
-            return None, set(), True
+            return None, set(), True, None
         rows, partial = decoded
         proven = {identity}
         workflow = raw.get('workflow')
         if 'workflow' not in raw:
-            return rows, proven, True
+            return rows, proven, True, stamp
         if workflow is None:
-            return rows, proven, partial
+            return rows, proven, partial, stamp
         workflow_id = parse_job_id(workflow.get('id')) if isinstance(workflow, dict) else None
         linked = await self._read('fetch_workflow', workflow_id) if workflow_id else None
         if (not isinstance(linked, dict) or linked.get('id') != workflow_id
                 or not isinstance(linked.get('contracts'), dict) or linked['contracts'].get('id') != identity
                 or not isinstance(linked.get('launch'), dict) or linked['launch'].get('id') != self._launch_id
                 or 'frontend' not in linked):
-            return rows, proven, True
+            return rows, proven, True, stamp
         frontend = linked['frontend']
         if frontend is None:
-            return rows, proven, partial
+            return rows, proven, partial, stamp
         frontend_id = parse_job_id(frontend.get('id')) if isinstance(frontend, dict) else None
         if frontend_id is None:
-            return rows, proven, True
-        detail = await self._read('fetch_job', frontend_id)
+            return rows, proven, True, stamp
+        detail, frontend_stamp = await self._job_read(frontend_id)
         decoded = self._decode_job(detail, frontend_id, 'frontend')
         if decoded is None:
-            return rows, proven, True
+            return rows, proven, True, stamp
         frontend_workflow = detail.get('workflow')
         if not isinstance(frontend_workflow, dict) or frontend_workflow.get('id') != workflow_id:
-            return rows, proven, True
+            return rows, proven, True, stamp
         proven.add(frontend_id)
-        return rows + decoded[0], proven, partial or decoded[1]
+        return rows + decoded[0], proven, partial or decoded[1], min(stamp, frontend_stamp)
 
     async def _refresh(self):
         raw = await self._read('fetch_launch_jobs', self._launch_id)
@@ -189,15 +200,18 @@ class SwarmTokenDetailManager:
                                        self._read('fetch_sites'))
         sites = results.pop()
         contributors, proven, known = {}, set(), False
-        for rows, job_ids, incomplete in results:
+        stamps = []
+        for rows, job_ids, incomplete, stamp in results:
             partial |= incomplete
             proven.update(job_ids)
             if rows is not None:
                 known = True
+                stamps.append(stamp)
                 for row in rows:
                     contributors[row['seat'], row['role'], row['job_id']] = row
         if known or not partial:
-            self._publish('contributors', list(contributors.values()), 'partial' if partial else 'ok')
+            self._publish('contributors', list(contributors.values()), 'partial' if partial else 'ok',
+                          read_ts=min(stamps, default=self._clock()))
         else:
             self._fail('contributors')
         if not isinstance(sites, list) or any(not isinstance(site, dict) for site in sites):

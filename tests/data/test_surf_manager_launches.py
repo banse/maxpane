@@ -242,6 +242,9 @@ async def test_site_match_is_detached_memoized_and_refresh_reuses_launch_rows(tm
     from maxpane_dashboard.analytics import surf_launch_sites as ls
     from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SCORES
     m = manager(tmp_path)
+    async def one_site():
+        return [s for s in fixture('sites')['sites'] if s['label'] == 'zto']
+    monkeypatch.setattr(m.swarm_client, 'fetch_sites', one_site)
     original = ls.match_sites
     matches = []
     loop_thread = threading.get_ident()
@@ -402,7 +405,7 @@ async def test_other_route_failure_does_not_back_off_launches(tmp_path, failed_r
 
 
 @pytest.mark.asyncio
-async def test_malformed_site_project_is_read_once_and_none_persisted(tmp_path):
+async def test_malformed_site_project_retries_and_none_persists(tmp_path):
     swarm = LaunchSwarm(); swarm.rows = [fixture('launch_737')]
     sites = fixture('sites')['sites']; site = next(s for s in sites if s['label'] == 'zto')
     async def fetch_sites(): return [site]
@@ -413,7 +416,7 @@ async def test_malformed_site_project_is_read_once_and_none_persisted(tmp_path):
     m = manager(tmp_path, swarm)
     try:
         for i in range(2): await m._pool_swarm_launches({TIER_SWARM_LAUNCHES}, NOW+61*i)
-        assert swarm.calls.count(('site_job', site['jobId'])) == 1
+        assert swarm.calls.count(('site_job', site['jobId'])) == 2
         assert m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['sites'][site['id']] is None
         m.cache.save(); m.cache.load()
         assert m.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS).payload['sites'][site['id']] is None

@@ -1,5 +1,26 @@
 # Surf data loading — execution and follow-ups
 
+## 2026-10-23 loading review
+
+The [cross-view review](surf_loading_review_2026_10_23_report.md) fixes persisted
+publication, selection refresh, stale source clocks, retained site/launch facts,
+WORK fairness and NFT discovery/metadata starvation. The user's SWORN Registry
+now loads through normal discovery and chain inspection from the old cache.
+
+- Keep measuring larger historical workloads: SWARM, AGENT, WORK and LAUNCHPAD
+  did not become idle within the35second live samples. They did not queue a new
+  poll or dispatch after cancellation. This is not a full-history timing claim.
+- The no-wallet portfolio live sample does not exercise wallet balances/claims;
+  existing offline lifecycle/identity checks remain the evidence for that path.
+- Fix the old `test_board_keys_are_exact_before_finalization_and_survive_cold_start`
+  expected-key set when its contract surface is next touched. Its omission of
+  `swarm_launch_read_ts` reproduces on exact baseline9511bb26.
+- Prior R2 provider/full-density and Python-version verification follow-ups in
+  [the RPC budget list](codex_surf_rpc_budget_followups.md) remain separate from
+  this task's focused transport/window compatibility checks.
+
+## Earlier implementation
+
 Implementation of [the approved specification](surf_data_loading_spec.md) and
 [plan](surf_data_loading_plan.md), starting at `888a1dd4` on
 `feature/surfboard-hub-9`. The application remains keyless and read-only.

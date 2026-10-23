@@ -196,6 +196,13 @@ class ReaderRuntime:
     async def _refresh(self, entry, generation):
         try:
             manager = self.get_manager(entry.handle.key)
+            if generation != entry.generation or entry.view is None:
+                return
+            if callable(getattr(manager, 'get_snapshot', None)):
+                try:
+                    self._publish(entry, generation, busy=True)
+                except Exception:
+                    logger.exception('Reader initial projection %s failed', entry.handle.key)
             # UI navigation never waits for this barrier. Only acquisition in
             # the newly visible scope waits for all earlier readers to drain.
             await self._drain_retirements()
@@ -211,7 +218,14 @@ class ReaderRuntime:
             if generation != entry.generation or entry.view is None:
                 return
             entry.value = result
-            self._publish(entry, generation, busy=self._manager_loading(entry), payload=result)
+            busy = self._manager_loading(entry)
+            try:
+                # A detached read may have finished during fetch, after its
+                # return value was captured. Reconcile the passive cache once.
+                self._publish(entry, generation, busy=busy)
+            except Exception:
+                logger.exception('Reader completed projection %s failed', entry.handle.key)
+                self._publish(entry, generation, busy=busy, payload=result)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -253,6 +267,8 @@ class ReaderRuntime:
         if payload is _UNSET:
             getter = getattr(manager, 'get_snapshot', None)
             payload = getter() if callable(getter) else entry.value
+            if payload is None:
+                payload = entry.value
         extras = {}
         if isinstance(payload, dict):
             extras['get_oracles_snapshot'] = payload.get('surf_oracles')

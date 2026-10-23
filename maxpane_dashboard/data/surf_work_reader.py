@@ -47,13 +47,13 @@ class WorkReader:
 
     async def _fetch(self, method, *args, **kwargs):
         try:
-            raw = await getattr(self.client, method)(*args, **kwargs)
-            if method == 'read_job_detail': raw = raw.payload
+            result = await getattr(self.client, method)(*args, **kwargs)
+            raw = result.payload if method == 'read_job_detail' else result
         except Exception:
             return None
         if isinstance(raw, dict) and raw.get('error') == 'busy':
             raise ValueError('swarm busy')
-        return raw
+        return result
 
     async def _workflow_catalogue(self, started):
         if self._workflow_before is None:
@@ -116,7 +116,7 @@ class WorkReader:
                 for state, value in state_counts.items()) and sum(state_counts.values()) == total):
             open_hint = sum(value for state, value in state_counts.items() if state not in work.TERMINAL)
         discovery_mono = self.client._monotonic()
-        details, detail_bounds, expected = {}, {}, set()
+        details, detail_bounds, detail_times, expected = {}, {}, {}, set()
         required_reads = 0
 
         async def read_job(identity, *, required=True, fresh_after=None):
@@ -130,10 +130,12 @@ class WorkReader:
                 if identity in details: details[identity] = None
                 return None
             if required: required_reads += 1
-            raw = await self._fetch('read_job_detail', identity, fresh_after=fresh_after)
+            read = await self._fetch('read_job_detail', identity, fresh_after=fresh_after)
+            raw = read.payload if read is not None else None
             row = work._job(raw, self.clock(), detail=True)
             details[identity] = raw if row is not None and row['id'] == identity else None
             detail_bounds[identity] = fresh_after
+            detail_times[identity] = work._stamp(read.observed_at, self.clock()) if read is not None else None
             if details[identity] is None: partial = True
             return details[identity]
 
@@ -273,13 +275,38 @@ class WorkReader:
         enrichment_rows = [row for row in current_rows if row['state'] == 'executing' or (row['created_ts'] or started) >= cutoff]
         optional = [i for i in work.detail_ids(enrichment_rows, flows) if i not in details and i not in expected]
         expected.update(optional)
-        for identity in optional[:work.DETAIL_LIMIT]: await read_job(identity, required=False)
-        result = work.snapshot(jobs, list(workflow_rows.values()), details, read_ts=min(started, workflow_started), now=self.clock(),
+        versions = {row['id']: [row['state'], row['updated_ts']] for row in current_rows}
+        prior_jobs = {row['id']: row for row in previous['jobs']} if previous else {}
+        retained = {identity: point for identity, point in (previous or {}).get('optional_details', {}).items()
+                    if identity in optional and point['version'] == versions.get(identity)
+                    and started - point['read_ts'] < work.HISTORY_SECONDS}
+        cursor = (previous or {}).get('optional_cursor')
+        offset = optional.index(cursor) + 1 if cursor in optional else 0
+        ordered = optional[offset:] + optional[:offset]
+        due = [identity for identity in ordered if identity not in retained
+               or started - retained[identity]['read_ts'] >= work.OPTIONAL_DETAIL_TTL]
+        for identity in due[:work.DETAIL_LIMIT]:
+            raw = await read_job(identity, required=False)
+            row = work._job(raw, self.clock(), detail=True)
+            if (row is not None and row['nodes'] is not None and identity in versions
+                    and detail_times[identity] is not None):
+                retained[identity] = dict(version=versions[identity], read_ts=detail_times[identity])
+            elif identity in retained:
+                # A failed refresh cannot retimestamp or erase same-version evidence.
+                details.pop(identity, None)
+            cursor = identity
+        retained = dict(sorted(retained.items(), key=lambda item: item[1]['read_ts'], reverse=True)[:work.OPTIONAL_CACHE_LIMIT])
+        prior_details = {identity: prior_jobs[identity] for identity in retained
+                         if identity not in details and identity in prior_jobs}
+        observed = [point['read_ts'] for point in retained.values()]
+        result = work.snapshot(jobs, list(workflow_rows.values()), details, read_ts=min(started, workflow_started, *observed), now=self.clock(),
                              projects=list(projects.values()), metadata=metadata, expected_ids=expected,
                              active_scan_complete=complete, coverage_partial=partial,
                              workflow_scan_complete=workflow_complete,
+                             retained_details=prior_details,
                              context_job_ids=list(dict.fromkeys(list(owners) + list(peer_flows))),
                              context_workflow_ids=list(anchors))
+        result.update(optional_details=retained, optional_cursor=cursor)
         if not workflow_complete and previous:
             retained = {row['id']: row for row in result['workflows']}
             for row in previous['workflows']:

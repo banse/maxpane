@@ -90,6 +90,59 @@ async def ready(manager):
     return await manager.fetch_and_compute()
 
 
+@pytest.mark.parametrize('stamp', [None, True, -1, float('nan'), 1001])
+async def test_unobserved_job_envelope_cannot_publish_contributors(stamp):
+    client = Client()
+    async def read(identity):
+        return SimpleNamespace(payload=deepcopy(client.jobs[identity]), observed_at=stamp)
+    client.read_job_detail = read
+    overview = Overview(client)
+    manager = SwarmTokenDetailManager(overview, overview.token, clock=lambda: 1000)
+    try:
+        snapshot = await ready(manager)
+        assert snapshot['contributors'] is None
+        assert snapshot['sources']['contributors']['read_ts'] is None
+    finally:
+        await manager.close()
+
+
+async def test_contributor_clock_follows_shared_job_observation_not_poll_time():
+    import httpx
+    from maxpane_dashboard.data.surf_swarm_client import SwarmClient
+    now, requests = [1000.], []
+    client = Client()
+    def serve(request):
+        requests.append(request.url.path)
+        row = deepcopy(client.jobs[request.url.path.rsplit('/', 1)[-1]])
+        row['state'] = 'completed'
+        return httpx.Response(200, json=row)
+    http = httpx.AsyncClient(transport=httpx.MockTransport(serve))
+    memo = SwarmClient(http_client=http, hosts=('https://offline.invalid',),
+                       clock=lambda: now[0], monotonic=lambda: now[0], inter_call_delay=0)
+    client.fetch_job, client.read_job_detail = memo.fetch_job, memo.read_job_detail
+    overview = Overview(client)
+    manager = SwarmTokenDetailManager(overview, overview.token, clock=lambda: now[0])
+    try:
+        first = await ready(manager)
+        assert first['sources']['contributors']['read_ts'] == 1000
+        assert len(requests) == 2
+        now[0] = 1301
+        cached = await ready(manager)
+        assert len(requests) == 2
+        assert cached['contributors'] == first['contributors']
+        assert cached['sources']['contributors']['read_ts'] == 1000
+        assert cached['sources']['contributors']['state'] == 'stale'
+        now[0] = 1602
+        refreshed = await ready(manager)
+        assert len(requests) == 4
+        assert refreshed['sources']['contributors']['read_ts'] == 1602
+        assert refreshed['sources']['contributors']['state'] == 'ok'
+    finally:
+        await manager.close()
+        await memo.close()
+        await http.aclose()
+
+
 async def test_seed_is_immediate_then_authoritative_jobs_sites_and_contract():
     overview = Overview()
     manager = SwarmTokenDetailManager(overview, overview.token, clock=lambda: 1000)

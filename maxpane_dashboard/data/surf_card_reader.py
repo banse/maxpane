@@ -5,6 +5,7 @@ from collections import Counter
 from copy import deepcopy
 
 from maxpane_dashboard.analytics import surf_pool4_depth
+from maxpane_dashboard.analytics.surf_work import workflow_is_open
 from maxpane_dashboard.analytics.surfboard import count
 from maxpane_dashboard.data import surf_work as work
 from maxpane_dashboard.data.surf_cache import (
@@ -72,7 +73,8 @@ class SurfCardReader:
         rows, partial = work._page(raw, work._workflow, self.manager._clock())
         if len(rows) != len(raw):
             return
-        self.workflows = None if partial else sum(row['status'] not in work.TERMINAL | {'blocked'} for row in rows)
+        states = [workflow_is_open(row['status']) for row in rows]
+        self.workflows = None if partial or None in states else sum(states)
         self.workflows_ts = self.manager._clock()
 
     async def _current(self):
