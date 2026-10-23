@@ -22,19 +22,22 @@ tabs, network calls, paid jobs, writes to aidude, or normal-dashboard bindings.
 
 ## Rendering decision
 
-One pure palette-index framebuffer feeds two adapters:
+One pure palette-index framebuffer feeds text and graphics adapters:
 
-1. **Half-block, always available.** Each character contains two vertical pixels
-   using foreground/background colours. Start with a reduced whole-house overview
-   to show the owner's requested original arrangement; `Z` toggles an actor-following
-   crop at native pixel resolution. The full house is native when at least
-   320×100 cells are available. At 149×45 terminal size, the existing
-   inner region is roughly 99×31 cells, therefore about 99×62 source pixels.
+1. **Solid cells, default after owner feedback.** Two background-painted spaces
+   represent each source pixel. This avoids font-dependent half-block seams.
+   Start with an actor-following close-up without resampling; `Z` toggles the
+   reduced whole house. At 149×45, the 99×31 inner region fits 49×30 source pixels
+   (the shared camera keeps an even height); fullscreen fits 74×44. Seeing the
+   whole native house this way requires 640×200 cells plus the footer.
+   The old half-block renderer remains available with `--renderer halfblock`:
+   it fits two vertical pixels per cell and requires 320×100 cells for the
+   full native house, but glyph seams depend on the terminal/font.
 2. **Optional real graphics.** Kitty TGP through `textual-image` is the preferred
-   experiment, selected explicitly with `--renderer tgp`; half-block is default.
-   Preserve the entire 320×200 scene, integer nearest-neighbour scaling and
+   experiment, selected explicitly with `--renderer tgp`.
+   In overview, preserve the entire 320×200 scene, integer nearest-neighbour scaling and
    letterboxing within the available pixel rectangle. Unknown/unsupported
-   terminals, missing extras and headless runs keep the half-block path usable.
+   terminals, missing extras and headless runs fall back to solid cells.
 
 Raw ANSI drawing inside a Textual widget would fight its compositor, so it is
 excluded. `TerminalReveal` is a temporary snapshot effect and is not the house
@@ -43,7 +46,7 @@ the pure scene remains suitable for later snapshots from the existing reader.
 
 `textual-image` 0.14.2 currently requires Python ≥3.12; MaxPane remains ≥3.11.
 Keep graphics dependencies demo-only and optional. Existing `.venv` is Python
-3.13; `.venv311` retains the normal fallback. The optional packages were installed
+3.13; `.venv311` retains the solid-cell fallback. The optional packages were installed
 only in `.venv` (textual-image 0.14.2 and Pillow 13.0.0) using
 `uv pip install --python .venv/bin/python 'textual-image==0.14.2'`. Do not raise the core
 project minimum or add this as a mandatory dependency.
@@ -52,7 +55,7 @@ project minimum or add this as a mandatory dependency.
 
 The public widget API is `textual_image.widget.TGPImage(image)` with subsequent
 `.image = PIL.Image` updates. Import it and probe before `App.run()`: Textual owns
-stdin after startup. Do not import/probe for half-block or headless execution.
+stdin after startup. Do not import/probe for solid-cell, half-block or headless execution.
 Keep terminal capability/protocol code outside the pure scene module.
 
 The image should be palette-mode, expanded with nearest-neighbour into an exact
@@ -134,6 +137,9 @@ From `/Users/banse/codex/maxpane`:
 ```sh
 .venv/bin/python scripts/seat_house_demo.py
 .venv/bin/python scripts/seat_house_demo.py --fullscreen
+.venv/bin/python scripts/seat_house_demo.py --overview
+# Previous two-pixels-per-cell mode, for comparison:
+.venv/bin/python scripts/seat_house_demo.py --renderer halfblock --overview
 # Optional: a terminal with Kitty graphics AND Unicode-placeholder support.
 .venv/bin/python scripts/seat_house_demo.py --renderer tgp
 ```

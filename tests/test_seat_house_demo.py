@@ -15,6 +15,40 @@ async def until(pilot, predicate):
     assert predicate(), 'layout did not settle'
 
 
+def test_solid_pixels_use_only_backgrounds_without_font_glyph_edges():
+    from scripts.seat_house_demo import solid_strips
+    rgb = ((0, 0, 0), (255, 255, 255), (100, 0, 0))
+    rows = solid_strips([bytearray([1, 2]), bytearray([2, 1])], 6, 3, rgb=rgb)
+    assert len(rows) == 3 and all(row.cell_length == 6 for row in rows)
+    assert all(part.text.strip() == '' for row in rows for part in row)
+    first = list(rows[0])
+    assert first[1].text == '  ' and first[1].style.bgcolor.get_truecolor() == rgb[1]
+    assert first[2].text == '  ' and first[2].style.bgcolor.get_truecolor() == rgb[2]
+    assert solid_strips([bytearray([1])], 1, 1, rgb=rgb)[0].cell_length == 1
+
+
+@pytest.mark.asyncio
+async def test_default_is_a_native_closeup_with_solid_composited_pixels():
+    from scripts.seat_house_demo import RGB
+    app = HouseDemo(clock=lambda: 0)
+    async with app.run_test(size=(149, 45)) as pilot:
+        def painted_at_final_size():
+            region = app.query_one('#house-layer').region
+            rows = app.query_one('#house-pixels').rows
+            return (region.size == (99, 31) and region == app.query_one(SurfboardTerminal).region
+                    and len(rows) == 31 and all(row.cell_length == 99 for row in rows))
+        await until(pilot, painted_at_final_size)
+        assert app.closeup and app.pixel_mode == 'cells'
+        layer = app.query_one('#house-layer').region
+        strips = app.screen._compositor.render_strips()
+        painted = [strips[y].crop(layer.x, layer.right) for y in range(layer.y, layer.bottom)]
+        assert all(part.text.strip() == '' for row in painted for part in row)
+        colors = {part.style.bgcolor.get_truecolor() for row in painted for part in row if part.style.bgcolor}
+        assert len(colors) >= 5 and colors <= set(RGB) | {(29, 29, 29)}
+        await pilot.press('z')
+        assert not app.closeup
+
+
 @pytest.fixture(autouse=True)
 def no_network(monkeypatch):
     def forbidden(*args, **kwargs):
@@ -45,14 +79,14 @@ def test_graphics_probe_only_on_explicit_tty_request():
     assert select_graphics('tgp', tty=False, loader=loader)[0] is None
     assert calls == []
     backend, note = select_graphics('tgp', tty=True, loader=loader)
-    assert backend is None and 'half-block' in note
+    assert backend is None and 'solid-pixel' in note
     assert calls == [True]
 
 
 @pytest.mark.parametrize('size', [(1, 1), (80, 24), (320, 101)])
 @pytest.mark.asyncio
 async def test_fullscreen_fits_tiny_and_native_sized_terminals(size):
-    app = HouseDemo(clock=lambda: 0, fullscreen=True)
+    app = HouseDemo(clock=lambda: 0, fullscreen=True, pixel_mode='halfblock', closeup=False)
     async with app.run_test(size=size) as pilot:
         await pilot.pause()
         visible = app.screen._compositor.render_strips()
@@ -76,7 +110,7 @@ def test_image_cleanup_targets_and_frees_only_owned_id():
 @pytest.mark.asyncio
 async def test_panel_fullscreen_resize_pause_and_reveal():
     clock = [0.0]
-    app = HouseDemo(clock=lambda: clock[0])
+    app = HouseDemo(clock=lambda: clock[0], pixel_mode='halfblock', closeup=False)
     async with app.run_test(size=(149, 45)) as pilot:
         layer = app.query_one('#house-layer')
         terminal = app.query_one(SurfboardTerminal)
@@ -150,7 +184,7 @@ async def test_installed_graphics_palette_placement_and_owned_cleanup(monkeypatc
     assert canvas.size == (990, 620)
     data = canvas.convert('RGB').tobytes()
     assert set(zip(data[::3], data[1::3], data[2::3])) <= set(RGB) | {(29, 29, 29)}
-    app = HouseDemo(graphics=backend, clock=lambda: 0)
+    app = HouseDemo(graphics=backend, clock=lambda: 0, closeup=False)
     async with app.run_test(size=(149, 45)) as pilot:
         await until(pilot, lambda: any(cmd.get('U') == 1 and cmd['c'] == 99 for cmd in sent))
         app.screen._compositor.render_strips()

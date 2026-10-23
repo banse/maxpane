@@ -61,6 +61,27 @@ def halfblock_strips(pixels, width, height, *, rgb=RGB):
     return result
 
 
+def solid_strips(pixels, width, height, *, rgb=RGB):
+    """One source pixel per two background-painted cells: no font-shaped edges."""
+    ph = min(len(pixels), height)
+    pw = min(len(pixels[0]) if ph else 0, max(1, width // 2))
+    xpad, ypad = max(0, (width - pw * 2) // 2), (height - ph) // 2
+    blank = Strip.blank(width, Style(bgcolor=BACKGROUND))
+    result = [blank] * height
+    for y in range(ph):
+        parts = [Segment(' ' * xpad, Style(bgcolor=BACKGROUND))]
+        start = 0
+        while start < pw:
+            color, end = pixels[y][start], start + 1
+            while end < pw and pixels[y][end] == color:
+                end += 1
+            parts.append(Segment(' ' * ((end - start) * 2), pixel_style(rgb[color], rgb[color])))
+            start = end
+        parts.append(Segment(' ' * max(0, width - pw * 2 - xpad), Style(bgcolor=BACKGROUND)))
+        result[ypad + y] = Strip(parts).crop(0, width)
+    return result
+
+
 def overview(pixels, width, height):
     """Nearest-neighbor overview, never claim a reduced image is native resolution."""
     if width <= 0 or height <= 0:
@@ -130,14 +151,14 @@ def load_graphics():
 
 
 def select_graphics(renderer, *, tty, loader=load_graphics):
-    if renderer == 'halfblock':
-        return None, 'half-block'
+    if renderer in ('halfblock', 'cells'):
+        return None, 'half-block' if renderer == 'halfblock' else 'solid pixels'
     if not tty:
-        return None, 'half-block · graphics needs a TTY'
+        return None, 'solid pixels · graphics needs a TTY'
     try:
         return loader(), 'Kitty graphics · native 320×200'
     except (ImportError, OSError, RuntimeError, ValueError) as error:
-        return None, f'half-block fallback: {error}'
+        return None, f'solid-pixel fallback: {error}'
 
 
 class HousePixels(Widget):
@@ -186,12 +207,13 @@ class HouseDemo(App):
     '''
 
     def __init__(self, *, clock=monotonic, graphics=None, fullscreen=False,
-                 note='half-block'):
+                 note='solid pixels', pixel_mode='cells', closeup=True):
         super().__init__()
         self.register_theme(THEME)
         self.theme = 'matrix'
         self.clock, self.graphics, self.note = clock, graphics, note
-        self.fullscreen, self.closeup, self.visible, self.paused = fullscreen, False, True, False
+        self.fullscreen, self.closeup, self.visible, self.paused = fullscreen, closeup, True, False
+        self.pixel_mode = pixel_mode
         self.elapsed, self.last_tick = 0.0, clock()
         self.base = base_house()
         self._paint_key = None
@@ -258,11 +280,12 @@ class HouseDemo(App):
         self._paint_key = key
         frame, actor, label = frame_at(self.base, self.elapsed)
         cols, rows = layer.size
+        pw, ph = (max(1, cols // 2), rows) if self.pixel_mode == 'cells' else (cols, rows * 2)
         if not self.visible:
             self.clear_image()
         elif cols and rows:
             if self.closeup:
-                x, y, w, h = camera(actor, min(cols, W), min(rows * 2, H))
+                x, y, w, h = camera(actor, min(pw, W), min(ph, H))
                 frame = [row[x:x+w] for row in frame[y:y+h]]
             use_graphics = image is not None
             if image:
@@ -278,11 +301,12 @@ class HouseDemo(App):
                 image.styles.position = 'absolute'
                 image.styles.visibility = 'visible' if use_graphics else 'hidden'
             if not use_graphics:
-                pixels = frame if self.closeup else overview(frame, cols, rows * 2)
+                pixels = frame if self.closeup else overview(frame, pw, ph)
                 widget = self.query_one(HousePixels)
-                widget.rows = halfblock_strips(pixels, cols, rows)
+                render = solid_strips if self.pixel_mode == 'cells' else halfblock_strips
+                widget.rows = render(pixels, cols, rows)
                 widget.refresh()
-        native = (image is not None and image.image is not None) or (cols >= W and rows * 2 >= H)
+        native = (image is not None and image.image is not None) or (pw >= W and ph >= H)
         mode = 'close-up 1:1' if self.closeup else ('native 320×200' if native else 'overview · reduced')
         self.query_one('#keys', Static).update(Text(
             f'DEMO · {label} · {mode}' + (' · PAUSED' if self.paused else '') +
@@ -321,11 +345,14 @@ class HouseDemo(App):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--renderer', choices=('halfblock', 'tgp'), default='halfblock')
+    parser.add_argument('--renderer', choices=('cells', 'halfblock', 'tgp'), default='cells')
     parser.add_argument('--fullscreen', action='store_true')
+    parser.add_argument('--overview', action='store_true', help='start with the reduced whole house')
     args = parser.parse_args(argv)
     graphics, note = select_graphics(args.renderer, tty=sys.stdin.isatty() and sys.stdout.isatty())
-    HouseDemo(graphics=graphics, fullscreen=args.fullscreen, note=note).run()
+    HouseDemo(graphics=graphics, fullscreen=args.fullscreen, note=note,
+              pixel_mode='halfblock' if args.renderer == 'halfblock' else 'cells',
+              closeup=not args.overview).run()
 
 
 if __name__ == '__main__':
