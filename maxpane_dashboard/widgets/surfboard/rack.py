@@ -528,7 +528,7 @@ class SurfboardCard(LoadingCard, can_focus=True):
             clipped |= lost
             if preview is None and not native_digits:
                 if not self.empty_seat:
-                    line = self.loading_value(line)
+                    line = self.loading_value(line, padded=True)
                 line = padded_inner_row(line, inside, align='center')
             line.align("left" if preview is not None else "center", inside)
             if marker_width and index == 1:

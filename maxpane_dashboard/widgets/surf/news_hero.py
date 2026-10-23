@@ -197,7 +197,7 @@ class NewsHeroCard(LoadingCard):
         if data.preview:
             preview = Text(data.preview, style=prose_ink)
             if data.state in ('unavailable', 'pending', 'loading', 'busy'):
-                preview = self.loading_value(preview)
+                preview = self.loading_value(preview, padded=True)
             if preview.plain != data.preview:
                 rows = [Text(''), padded_inner_row(preview, inside, align='center'), Text('')]
             else:
@@ -208,7 +208,7 @@ class NewsHeroCard(LoadingCard):
             if data.digits != "--" and all(character in "0123456789.," for character in data.digits) and all(row.cell_len <= inside for row in digits):
                 rows = digits
             else:
-                rows = [Text(""), padded_inner_row(self.loading_value(Text(data.digits, style=digit_ink)), inside, align="center"), Text("")]
+                rows = [Text(""), padded_inner_row(self.loading_value(Text(data.digits, style=digit_ink), padded=True), inside, align="center"), Text("")]
             centered = True
         elif data.stats:
             rows = []

@@ -301,9 +301,9 @@ class AgentRackCard(Pool4HeroCard):
             for n in range(3):
                 rows.append(Text(groups[0][n] + " ", style=digits).append(groups[1][n], style=separator).append(" " + groups[2][n], style=digits))
         else:
-            row = self.loading_value(Text(values[0], style=digits)).append(' ', style=digits)
+            row = self.loading_value(Text(values[0], style=digits), padded=True).append(' ', style=digits)
             row.append("0F", style=separator).append(' ', style=digits)
-            row.append_text(self.loading_value(Text(values[-1], style=digits)))
+            row.append_text(self.loading_value(Text(values[-1], style=digits), padded=True))
             rows = [Text(""), padded_inner_row(row, inside, align="center"), Text("")]
         heading = " " + clip(data.heading, inside - 2) + " "
         content = Text("┌" + heading.center(inside, "─") + "┐\n", style=frame)

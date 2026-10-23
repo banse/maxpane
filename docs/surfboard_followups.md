@@ -777,3 +777,9 @@ renderer in the test process:
 - `tests/screens/test_swarm_tokens.py:24`: the stylesheet comparison includes
   the subsequent SWORN block in its TOKENS slice. Correct the extraction boundary
   when that guard is next touched.
+
+Follow-up display adjustment, 2026-10-24: centered loading indicators now include
+one blank on either side, sharing their inverse background. Footer and tabular
+indicators retain one cell. Live rendering and 11 focused checks verify the
+three-cell strip. Affected/composing/layout checks: 354 passed; guards: 128 passed;
+doc pins: 12 passed. Only the two already documented baseline checks fail.

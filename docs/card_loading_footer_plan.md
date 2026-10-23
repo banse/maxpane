@@ -323,3 +323,29 @@ Implementation evidence:
 - Independent final review: Approved, no findings. Replacing the inverse
   fraction with the foreground fraction failed all eight new cases; the
   mutation was restored byte for byte. No full suite was run.
+
+## Centered indicator side cells — 2026-10-24
+
+The owner requests one animated blank on each side of the loading diamond only
+in the middle of card boxes. Centered primary/preview indicators become ` ◇ `,
+with all three cells sharing the inverse background; the diamond retains its
+foreground pulse. Footer/caption and tabular indicators remain single-cell.
+
+Tier 2, one root-owned package, fewer than 20 production lines expected: add an
+opt-in padding argument in the shared renderer and use it at the centered body
+call sites in NewsHeroCard, SurfboardCard and AgentRackCard's status readout.
+Update composited tests first for
+both themes/all eight phases, unchanged footer/stat widths, and confinement to
+three cells. Show live 149×45 BOARDROOM, check affected/composing tests and
+existing layout cases, then one final review. No timers, source changes or pins.
+
+Evidence: the 11 focused cases passed after first failing for missing side-cell
+backgrounds. Live keyless 149×45 rendering is in
+`/private/tmp/maxpane-card-side-cells/dim-preserved.png`; the SVG export was given
+`xml:space="preserve"` for PNG conversion so whitespace matches terminal cells.
+Affected/composing/layout tests: 354 passed; the known token-fetch call-count
+failure remains. Guards: 128 passed with the known CSS-boundary failure; doc pins:
+12 passed. Those two baseline failures remain tracked in `surfboard_followups.md`.
+Final review approved without findings. Its glyph-only background mutation failed
+all seven padded-indicator cases while four caption/stat cases remained green;
+the mutation was restored byte for byte.

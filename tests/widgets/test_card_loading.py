@@ -74,8 +74,8 @@ async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, fiel
 
 
 @pytest.mark.parametrize('theme', ['matrix', 'minimal'])
-@pytest.mark.parametrize('field', ['digits', 'stats', 'subtitle', 'boardroom'])
-async def test_loading_background_is_inverse_and_confined_to_glyph(monkeypatch, theme, field):
+@pytest.mark.parametrize('field', ['digits', 'preview', 'stats', 'subtitle', 'boardroom'])
+async def test_loading_background_is_inverse_and_confined_to_indicator(monkeypatch, theme, field):
     monkeypatch.delenv('NO_COLOR', raising=False)
     if field == 'boardroom':
         card = SurfboardCard('work', 'WIP', 0, 0)
@@ -94,6 +94,7 @@ async def test_loading_background_is_inverse_and_confined_to_glyph(monkeypatch, 
         light = Color.from_rich_color(card.rich_style.color, app.ansi_theme).monochrome
         backgrounds = []
         positions = []
+        padded = field in ('digits', 'preview', 'boardroom')
         for fraction, frame in zip((0, .25, .5, .75, 1, .75, .5, .25), range(8)):
             card.set_card_loading(True, frame)
             await pilot.pause()
@@ -105,11 +106,15 @@ async def test_loading_background_is_inverse_and_confined_to_glyph(monkeypatch, 
             style = app.screen.get_style_at(x, y)
             assert style.color.get_truecolor() == dark.blend(light, fraction).rgb
             assert style.bgcolor.get_truecolor() == dark.blend(light, 1 - fraction).rgb
+            if padded:
+                assert painted.splitlines()[row][col-1:col+2] == ' ◇ '
+                for offset in (-1, 1):
+                    assert app.screen.get_style_at(x + offset, y).bgcolor == style.bgcolor
             # The pulse must not leak through Text alignment into any other cell.
             backgrounds.append([
                 app.screen.get_style_at(card.region.x + cx, card.region.y + cy).bgcolor
                 for cy in range(card.region.height) for cx in range(card.region.width)
-                if (cy, cx) != (row, col)
+                if not (cy == row and abs(cx - col) <= int(padded))
             ])
         assert len(set(positions)) == 1
         assert all(frame == backgrounds[0] for frame in backgrounds[1:])
@@ -148,6 +153,13 @@ async def test_agent_status_counts_and_token_liquidity_use_same_indicator():
         await pilot.pause()
         assert face(pilot.app, status).count('◇') == 2
         assert '0F' in face(pilot.app, status)
+        for row, line in enumerate(face(pilot.app, status).splitlines()):
+            for col, char in enumerate(line):
+                if char == '◇':
+                    x, y = status.region.x + col, status.region.y + row
+                    ink = pilot.app.screen.get_style_at(x, y).bgcolor
+                    assert all(pilot.app.screen.get_style_at(x + offset, y).bgcolor == ink
+                               for offset in (-1, 1))
         assert face(pilot.app, liquidity).count('◇') == 4
         assert 'IMD' in face(pilot.app, liquidity) and 'ETH' in face(pilot.app, liquidity)
 
