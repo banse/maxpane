@@ -23,15 +23,22 @@ from tests.surfboard_fixtures import hub_payload
 
 
 class TerminalRain(Rain):
+    SNAPSHOT_TARGET = SurfboardTerminal
+    REVEAL_START = 2.2
+    REVEAL_SPACES = False
+
+    def reveal_start(self, x, y):
+        return self.REVEAL_START
+
     def render(self):
         elapsed = self.app.elapsed
         rain = frame(self.size.width, self.size.height, elapsed, logo=False)
-        if elapsed <= 2.2:
+        if elapsed <= self.REVEAL_START:
             return rain
         if getattr(self, '_snapshot_size', None) != self.size:
             # Snapshot the real terminal subtree, including its border and children.
             compositor = Compositor()
-            compositor.reflow(self.app.query_one(SurfboardTerminal), self.size)
+            compositor.reflow(self.app.query_one(self.SNAPSHOT_TARGET), self.size)
             self._snapshot = compositor.render_strips()
             self._snapshot_size = self.size
         chars = list(rain.plain)
@@ -43,13 +50,16 @@ class TerminalRain(Rain):
             for segment in source:
                 style = segment.style or Style()
                 ink = Color.from_rich_color(style.color or GREEN.rich_color, self.app.ansi_theme)
+                paper = (Color.from_rich_color(style.bgcolor, self.app.ansi_theme, foreground=False)
+                         if self.REVEAL_SPACES and style.bgcolor else None)
                 for char in segment.text:
                     width = cell_len(char)
-                    reveal = min(1.0, max(0.0, (elapsed - 2.2 - ((x * 7 + y * 11) % 19) / 19) / .8))
-                    if not char.isspace() and reveal:
+                    reveal = min(1.0, max(0.0, (elapsed - self.reveal_start(x, y) - ((x * 7 + y * 11) % 19) / 19) / .8))
+                    if (self.REVEAL_SPACES or not char.isspace()) and reveal:
                         offset = y * (self.size.width + 1) + x
                         chars[offset] = char
-                        styles[offset] = style + Style(color=BACKGROUND.blend(ink, reveal).rich_color)
+                        styles[offset] = style + Style(color=BACKGROUND.blend(ink, reveal).rich_color,
+                            bgcolor=BACKGROUND.blend(paper, reveal).rich_color if paper else None)
                         for extra in range(1, width):
                             chars[offset + extra] = ''
                     x += width
