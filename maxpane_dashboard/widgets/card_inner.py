@@ -48,10 +48,14 @@ class LoadingCard(HeroBoxBase):
         palette = self.app.get_css_variables()
         dark = TextualColor.parse(palette['background']).monochrome
         light = TextualColor.from_rich_color(self.rich_style.color, self.app.ansi_theme).monochrome
-        shade = dark.blend(light, loading_fraction(self._card_loading_frame))
+        fraction = loading_fraction(self._card_loading_frame)
+        shade = dark.blend(light, fraction)
         ink = Style(color=shade.rich_color,
                     bgcolor=palette['background'], dim=False, bold=False)
-        return Text('◇', style=ink)
+        indicator = Text('◇', style=ink)
+        # A span keeps the inverse background off alignment/padding cells.
+        indicator.stylize(Style(bgcolor=dark.blend(light, 1 - fraction).rich_color), 0, 1)
+        return indicator
 
     @staticmethod
     def count_caption(value: Text) -> Text:

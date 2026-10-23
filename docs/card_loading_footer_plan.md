@@ -289,3 +289,37 @@ Implementation evidence (2026-10-23):
   Logs and captures: `/private/tmp/maxpane-card-sync/`.
 - Final independent review: **Approved, no findings**. Four targeted tests
   passed; an additional external-phase mount mutation was killed/restored.
+
+## Inverse indicator background — 2026-10-24
+
+The owner requests the card loading character's background to animate exactly
+opposite its foreground. Keep the current `◇`, neutral dashboard endpoints and
+eight-frame screen clock. For phase fraction `f`, the foreground blends dark to
+light by `f`, and the background by `1 - f`. Apply the background to the glyph's
+single cell only; alignment padding, borders, captions and loaded values keep
+their existing backgrounds. No reader, timer, sizing or missing-data changes.
+
+This is Tier 2 because `widgets/card_inner.py` is shared, with fewer than 20
+production lines expected. Root owns the single implementation package:
+composited regression tests first, then the shared renderer. Verify all eight
+phases, two themes, digit/stat/caption/BOARDROOM uses, padding and idle restoration.
+Show a live keyless 149×45 rendering, then run affected/composing tests and guards,
+one final independent review and a bounded fix wave before committing.
+
+Implementation evidence:
+
+- The inverse background is a one-character Rich span, so alignment padding
+  retains its original background. No additional timer or data read was added.
+- Live keyless 149×45 cold BOARDROOM captures, shown before final review:
+  `/private/tmp/maxpane-card-inverse/dim.png` (1.00s), `bright.png` (1.90s),
+  with loaded WIP counts captured at 4.61s using an isolated temporary cache.
+- All eight new composited cases passed. Across affected/composing files,
+  163 cases passed; one existing token-fetch call-count check remains failing.
+  Initial color assertions required rerunning with inherited `NO_COLOR` unset.
+  Fast guards: 128 passed, one existing CSS boundary check failed. Documentation
+  pins: 12 passed. Both residual failures also reproduce with HEAD's original
+  `loading_value` loaded into the test process; no baseline files were modified.
+  Logs are in `/private/tmp/maxpane-card-inverse/`.
+- Independent final review: Approved, no findings. Replacing the inverse
+  fraction with the foreground fraction failed all eight new cases; the
+  mutation was restored byte for byte. No full suite was run.

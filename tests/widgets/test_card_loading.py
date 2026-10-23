@@ -73,6 +73,53 @@ async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, fiel
         assert '◇' not in face(pilot.app, card)
 
 
+@pytest.mark.parametrize('theme', ['matrix', 'minimal'])
+@pytest.mark.parametrize('field', ['digits', 'stats', 'subtitle', 'boardroom'])
+async def test_loading_background_is_inverse_and_confined_to_glyph(monkeypatch, theme, field):
+    monkeypatch.delenv('NO_COLOR', raising=False)
+    if field == 'boardroom':
+        card = SurfboardCard('work', 'WIP', 0, 0)
+        card.set_data(dict(status='loading', primary='—'))
+    else:
+        content = (('pending', '--'),) if field == 'stats' else '--'
+        card = NewsHeroCard(HeroRecord('test', 'TEST', 'VALUE', '',
+                                      state='unavailable', **{field: content}))
+    app = Cards(card)
+    app.register_theme(THEMES[theme])
+    app.theme = theme
+    async with app.run_test(size=(30, 12)) as pilot:
+        await pilot.pause()
+        original = face(app, card)
+        dark = Color.parse(app.get_css_variables()['background']).monochrome
+        light = Color.from_rich_color(card.rich_style.color, app.ansi_theme).monochrome
+        backgrounds = []
+        positions = []
+        for fraction, frame in zip((0, .25, .5, .75, 1, .75, .5, .25), range(8)):
+            card.set_card_loading(True, frame)
+            await pilot.pause()
+            painted = face(app, card)
+            row, col = next((y, line.index('◇')) for y, line in enumerate(painted.splitlines())
+                            if '◇' in line)
+            positions.append((row, col))
+            x, y = card.region.x + col, card.region.y + row
+            style = app.screen.get_style_at(x, y)
+            assert style.color.get_truecolor() == dark.blend(light, fraction).rgb
+            assert style.bgcolor.get_truecolor() == dark.blend(light, 1 - fraction).rgb
+            # The pulse must not leak through Text alignment into any other cell.
+            backgrounds.append([
+                app.screen.get_style_at(card.region.x + cx, card.region.y + cy).bgcolor
+                for cy in range(card.region.height) for cx in range(card.region.width)
+                if (cy, cx) != (row, col)
+            ])
+        assert len(set(positions)) == 1
+        assert all(frame == backgrounds[0] for frame in backgrounds[1:])
+        card.set_card_loading(False, 0)
+        await pilot.pause()
+        assert face(app, card) == original
+        assert app.screen.get_style_at(x, y).bgcolor.get_truecolor() == Color.parse(
+            app.get_css_variables()['background']).rgb
+
+
 async def test_cached_values_prose_and_fully_loaded_cards_do_not_animate(monkeypatch):
     cards = [NewsHeroCard(HeroRecord(str(i), 'TEST', 'VALUE', '', **fields)) for i, fields in enumerate([
         dict(digits='0'), dict(digits='42'), dict(preview='A — B --flag -7'),

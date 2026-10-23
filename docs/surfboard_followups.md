@@ -759,3 +759,21 @@ Affected/composing tests: 213 passed; guards: 128 passed; doc pins: 12 passed.
 Three synchronization/mount mutations were killed and restored, including the
 independent review's mutation. Final review: Approved, no findings. No remaining
 follow-up for this change; existing unrelated entries above remain open.
+
+## Inverse card loading background — 2026-10-24
+
+The loading diamond's single-cell background now uses the inverse of its
+foreground pulse, on the same eight-frame clock and within the same neutral
+palette bounds. Padding, loaded values and count captions retain their styling.
+Live 149×45 rendering was shown; the final review approved without findings.
+Evidence and test counts are in `card_loading_footer_plan.md`.
+
+Two unrelated checks remain open and were reproduced using the original HEAD
+renderer in the test process:
+
+- `tests/screens/test_surf_loading.py:262`: fast token enrichment expects one
+  market fetch but observes two. Investigate when the token loading path is next
+  touched; this renderer-only change adds no reads.
+- `tests/screens/test_swarm_tokens.py:24`: the stylesheet comparison includes
+  the subsequent SWORN block in its TOKENS slice. Correct the extraction boundary
+  when that guard is next touched.
