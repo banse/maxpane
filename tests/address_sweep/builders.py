@@ -73,7 +73,7 @@ from maxpane_dashboard.data.portfolio_demo import DemoPortfolioManager, demo_sna
 from maxpane_dashboard.screens.portfolio import (
     PortfolioScreen, PORTFOLIO_FULL_LAYOUT_COLUMNS, PORTFOLIO_FULL_LAYOUT_ROWS,
 )
-from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA, ROBINHOOD
+from maxpane_dashboard.widgets.explorer import BASE, ETHEREUM, SEPOLIA, ROBINHOOD, IMD
 from maxpane_dashboard.screens.surf import SURF_WORK_FULL_LAYOUT_COLUMNS, SURF_WORK_FULL_LAYOUT_ROWS
 from tests.address_sweep.case import SweepCase
 from tests.screens import test_curator_screen as _curator
@@ -152,8 +152,8 @@ _SWARM_BASE = "0x" + "ab" * 20
 _SWARM_RH = "0x" + "cd" * 20
 #: The selected seat's owner on the AGENT body's SEAT RECORD panel (``a``;
 #: ``docs/surf_agent_seats_spec.md`` D5). ``/seats`` serves no chain for the
-#: owner, so it links the package ``EXPLORER`` -- mainnet, the case's own
-#: ``explorer`` -- rather than a row's ``chain_id``. The panel's
+#: owner; the AGENT OWNER card links to the IMD wallet page by explicit owner
+#: request, rather than inferring a chain from a row's ``chain_id``. The panel's
 #: ``max-width: 46`` cannot hold 42 characters plus the label, so the cell
 #: renders the anti-poisoning window, never the whole address.
 _SEAT_OWNER = "0x7A11e2d9C4b3f8E6a5D1c0B9e8F7a6D5c4B3a2E1"
@@ -178,9 +178,9 @@ def _surf_payload() -> dict:
     payload["surf_oracles"] = oracle
     payload["surf_work"] = {
         "state": "ok", "read_ts": 1791856800., "now_ts": 1791856800.,
-        "partial": False, "jobs_loaded": 1, "workflows_loaded": 1,
-        "details_loaded": 1, "details_expected": 1,
-        "summary": dict(jobs=1, workflows=1, seats=0, build=0, review=0, blocked=0),
+        "partial": False, "jobs_loaded": 2, "workflows_loaded": 1,
+        "details_loaded": 2, "details_expected": 2,
+        "summary": dict(jobs=2, workflows=1, seats=0, build=0, review=0, blocked=0),
         "workflows": [{
             "id": "4f3f482c-13a0-44c8-bf44-bac397c1b0ac", "status": "executing",
             "objective": _WORK_OBJECTIVE,
@@ -193,6 +193,9 @@ def _surf_payload() -> dict:
             "blocked_reason": None, "detail_state": "ok", "nodes": [],
         }],
     }
+    # Exercise the ordinary JOBS tree independently of workflow-owned jobs.
+    payload["surf_work"]["jobs"].append(dict(payload["surf_work"]["jobs"][0],
+        id="f86155b0-3c89-4d48-82b7-9b9809ce7356", objective=_WORK_OBJECTIVE))
     feed = payload["feed_items"]
     feed[0] = {**feed[0], "text": f"new router live at {_SURF_PROSE} go look"}
     # FIRED, because an ``ok`` row folds into "N quiet" and paints no detail.
@@ -939,8 +942,8 @@ CASES: tuple[SweepCase, ...] = (
         # WORKFLOWS (``s``) prints an address out of a failure text with its
         # icon and no link: ``/workflows`` serves no chain (``unlinked``).
         explorer=ETHEREUM,
-        explorers=(ETHEREUM, SEPOLIA, BASE, ROBINHOOD),
-        explorer_for={_SWARM_CONTRACT.lower(): ETHEREUM, _SWARM_BASE: BASE, _SWARM_RH: ROBINHOOD},
+        explorers=(ETHEREUM, SEPOLIA, BASE, ROBINHOOD, IMD),
+        explorer_for={_SEAT_OWNER.lower(): IMD, _SWARM_CONTRACT.lower(): ETHEREUM, _SWARM_BASE: BASE, _SWARM_RH: ROBINHOOD},
         rows_pick_explorer=True,
         unlinked=SURF_UNLINKED,
         # Retain 170 beside the narrower measured SWARM seed-completeness pass.

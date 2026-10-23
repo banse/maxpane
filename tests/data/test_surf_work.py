@@ -46,6 +46,51 @@ def test_unavailable_is_not_empty():
     assert empty['jobs'] == [] and set(empty['summary'].values()) == {0}
 
 
+@pytest.mark.parametrize('status,expected', [
+    ('contracts', 1), ('deployment', 1), ('frontend', 1), ('publishing', 1),
+    ('validating', 1), ('executing', 1), ('completed', 0), ('paused', 0),
+    ('blocked', 0), ('cancelled', 0), ('superseded', 0), ('failed', 0),
+    ('future-state', None),
+])
+def test_workflow_count_uses_original_lifecycle_not_executing_followup(captured, status, expected):
+    raw = copy.deepcopy(captured)
+    original = dict(raw['workflows'][0], status=status,
+                    contractsJobId=raw['jobs'][0]['id'])
+    raw['workflows'] = [original]
+    data = work.project(snapshot(raw), now=raw['read_ts'])
+    assert data['summary']['jobs'] == 2
+    assert data['summary']['workflows'] == expected
+    assert data['workflows'][0]['status'] == status  # Historical context survives.
+
+
+@pytest.mark.parametrize('complete,expected', [(True, 0), (False, None)])
+def test_zero_workflows_requires_its_own_complete_scan(captured, complete, expected):
+    raw = copy.deepcopy(captured)
+    slot = work.snapshot(raw['jobs'], [], {}, read_ts=raw['read_ts'],
+                         workflow_scan_complete=complete)
+    data = work.project(slot, now=raw['read_ts'])
+    assert data['partial']  # Job detail is missing even when workflows are complete.
+    assert data['summary']['workflows'] == expected
+
+
+def test_legacy_partial_workflow_snapshot_does_not_invent_zero(captured):
+    slot = work.snapshot(captured['jobs'], [], {}, read_ts=captured['read_ts'])
+    slot.pop('workflow_scan_complete', None)
+    assert work.project(slot, now=captured['read_ts'])['summary']['workflows'] is None
+
+
+@pytest.mark.parametrize('invalid', [None, 'yes', 1, []])
+def test_workflow_completeness_flag_is_a_strict_boolean(invalid):
+    slot = work.snapshot([], [], {}, read_ts=1000)
+    slot['workflow_scan_complete'] = invalid
+    assert work.coerce_snapshot(slot, now=1000) is None
+
+
+def test_invalid_workflow_rows_cannot_certify_empty_catalogue():
+    slot = work.snapshot([], [{'id': False}], {}, read_ts=1000)
+    assert work.project(slot, now=1000)['summary']['workflows'] is None
+
+
 @pytest.mark.parametrize('change,expected', [
     ('missing_detail', (None, None, None)),
     ('missing_seat', (None, 2, 0)),

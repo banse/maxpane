@@ -139,6 +139,28 @@ def _stamp(value):
         return None
 
 
+def _representatives(rows):
+    """Choose a display representative only for the same evidenced deployment origin."""
+    groups = {}
+    for row in rows:
+        deployment = row['deployment']
+        sender, jobs = deployment.get('deployer'), deployment.get('request_job_ids')
+        name = (row.get('name') or '').strip().casefold()
+        proven = (row['category'] == 'launched' and name and isinstance(sender, str)
+                  and _ADDRESS.fullmatch(sender) and int(sender[2:], 16)
+                  and isinstance(jobs, list) and jobs
+                  and all(isinstance(job, str) and _PROJECT.fullmatch(job) for job in jobs))
+        key = ((row['chain_id'], name, sender.lower(), tuple(sorted({job.lower() for job in jobs})))
+               if proven else row['id'])
+        def rank(item):
+            minted = item['stats'].get('totalMinted')
+            minted = minted if type(minted) is int and minted >= 0 else -1
+            return minted, _stamp(item['deployment'].get('timestamp')) or 0, item['id']
+        if key not in groups or rank(row) > rank(groups[key]):
+            groups[key] = row
+    return groups.values()
+
+
 def select_rows(rows, *, filters=None):
     """Apply common filters; stage selects a table only in project_snapshot."""
     choice=_filters(filters)
@@ -146,10 +168,9 @@ def select_rows(rows, *, filters=None):
         return None
     selected=[]
     needle=choice['search'].strip().casefold()
-    for raw in rows:
-        row=normalize_record(raw)
-        if row is None:
-            continue
+    normalized = [row for raw in rows if (row := normalize_record(raw)) is not None]
+    exact = [row for row in normalized if needle and needle in (row['id'], row['contract'])]
+    for row in exact or _representatives(normalized):
         if choice['chain']!='all' and row['chain_id']!={'ethereum':1,'robinhood':4663}[choice['chain']]:
             continue
         if choice['idmd']!='all' and row['idmd_benefit']['status']!=choice['idmd']:
@@ -202,6 +223,12 @@ def project_snapshot(snapshot, *, filters=None, selected_id=None):
     )
     visible=rows if choice['stage']=='launched' else builds
     selected=next((row for row in visible or [] if row['id']==selected_id),None)
+    if selected is None and selected_id is not None:
+        inventory = snapshot.get('nft_rows' if choice['stage']=='launched' else 'nft_build_rows')
+        original = [row for raw in inventory or [] if (row := normalize_record(raw)) is not None
+                    and row['id'] == selected_id]
+        matching = select_rows(original, filters=choice)
+        selected = matching[0] if matching else None
     if selected is None and visible:
         selected=visible[0]
     readme=snapshot.get('nft_readme')

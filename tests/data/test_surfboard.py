@@ -161,7 +161,7 @@ def test_oracle_card_counts_distinct_known_chains(chain_ids, expected):
 
 
 @pytest.mark.parametrize('jobs,workflows,status,subtitle', [
-    (5, 1, 'active', '— working'), (0, 0, 'idle', '— working'),
+    (5, 1, 'active', '— working'), (0, 0, 'idle', '0 working'),
     (12, 3, 'active', '— working'),
 ])
 def test_work_card_projects_loaded_counts(jobs, workflows, status, subtitle):

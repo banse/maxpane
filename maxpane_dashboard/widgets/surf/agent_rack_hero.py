@@ -13,8 +13,9 @@ from textual.renderables.digits import Digits
 
 from maxpane_dashboard.analytics.surfboard import count, number
 from maxpane_dashboard.analytics.surf_swarm_signals import runtime_semver
-from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address
+from maxpane_dashboard.widgets.address import ICON_COLS, address_text, is_address, wallet_text
 from maxpane_dashboard.widgets.card_inner import inner_styles, padded_inner_row
+from maxpane_dashboard.widgets.explorer import IMD
 from maxpane_dashboard.widgets.fmt import hhmm, mmdd
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.rowfit import cell_len, clip, title_with_hint
@@ -63,8 +64,8 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
         ("seat", "AGENT", "SEAT", "ERC-8004 #--"),
         ("status", "STATUS", "WORKER", "UNKNOWN"),
         ("accepted", "ACCEPTED", "JOBS", ""),
-        ("nodes", "SHIPPED", "LAUNCHES", ""),
-        ("models", "RESEARCH", "ORACLE", ""),
+        ("nodes", "LAUNCHES", "JOBS", ""),
+        ("models", "ORACLE", "JOBS", ""),
         ("effort", "EFFORT", "HOURS", ""),
         ("runtime", "RUNTIME", "SOFTWARE", ""),
         ("owner", "OWNER", "WALLET", ""),
@@ -160,8 +161,11 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["subtitle"] = "collaborators"
             fields["accent"] = False
         elif key in ("nodes", "models"):
-            fields["digits"] = _digits(section.get("launches" if key == "nodes" else "oracle"))
-            fields["subtitle"] = "JOBS"
+            category = "launches" if key == "nodes" else "oracle"
+            accepted, total = count(section.get(category)), count(section.get(category + "_total"))
+            fields["digits"] = _digits(total)
+            valid = accepted is not None and total is not None and 0 <= accepted <= total and total > 0
+            fields["subtitle"] = f"{100 * accepted / total:.4g}%" if valid else "--%"
             fields["accent"] = False
         if state in ("unknown_seat", "stale_unknown_seat") and key not in ("models", "nodes", "runtime"):
             fields["subtitle"] = "never paired"
@@ -185,11 +189,11 @@ class AgentRackCard(Pool4HeroCard):
         if record.key == "owner":
             address = self.source.get("address")
             room = max(1, self.content_size.width - 4 - ICON_COLS)
-            self.owner_text = (address_text(address, label=self.source.get("name"), width=min(17, room), explorer=EXPLORER)
+            self.owner_text = (wallet_text(address, label=self.source.get("name"), width=min(17, room), explorer=IMD)
                                if record.state in _AVAILABLE and is_address(address) else Text("--"))
             # Below the safe address-window width keep the link, copy and full tooltip.
             if self.owner_text.cell_len > room + ICON_COLS:
-                self.owner_text = address_text(address, label="wallet", width=room, explorer=EXPLORER)
+                self.owner_text = wallet_text(address, label="wallet", width=room, explorer=IMD)
             record = replace(record, digits=self.owner_text.plain)
         elif record.key == "runtime" and record.stats:
             runtime, version = record.stats[0]
@@ -312,12 +316,13 @@ class AgentRackCard(Pool4HeroCard):
         tip = Text(f"{record.title}{coverage} · as of {hhmm(record.read_ts, unknown='--:--')} local")
         rows = _rows(source)
         if record.key in ("nodes", "models"):
-            tip.append("\nDistinct accepted jobs on production networks; testnets excluded.")
-            tip.append(f"\nLaunch jobs: {_count(count(source.get('launches')))}; oracle jobs: {_count(count(source.get('oracle')))}")
+            tip.append("\nDistinct jobs on production networks; testnets excluded.")
+            category = "launches" if record.key == "nodes" else "oracle"
+            tip.append(f"\nAccepted / total jobs: {_count(count(source.get(category)))} / {_count(count(source.get(category + '_total')))}")
             tip.append(f"\nlaunch evidence known for {_count(count(source.get('known_jobs')))} of {_count(count(source.get('total_jobs')))} accepted non-oracle jobs")
             tip.append(f"\nlaunch reads · as of {hhmm(number(source.get('launch_read_ts')), unknown='--:--')} local")
         if record.key == "owner" and record.state in _AVAILABLE and is_address(source.get("address")):
-            tip.append("\n").append_text(address_text(source["address"], explorer=EXPLORER))
+            tip.append("\n").append_text(wallet_text(source["address"], explorer=IMD))
             tip.append("\npaired " + mmdd_hhmm(number(source.get("paired_ts"))))
         elif record.key == "effort":
             premium, known, total = (_count(count(source.get(key))) for key in ("premium_jobs", "model_jobs", "work_jobs"))

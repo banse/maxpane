@@ -239,6 +239,10 @@ class Inspector:
                     created = receipt.get("contractAddress")
                     result["receiptAddressMatches"] = created.lower() == address if created else None
                     result["deploymentConfirmed"] = result["codePresent"] is True and result["receiptAddressMatches"] is not False
+                    sender = receipt.get("from")
+                    result["deployment"]["deployer"] = (sender.lower() if result["deploymentConfirmed"]
+                        and isinstance(sender, str) and re.fullmatch(r"0x[0-9a-fA-F]{40}", sender)
+                        and int(sender[2:], 16) else None)
                     if result["receiptAddressMatches"] is False:
                         warnings.append("supplied creation receipt created a different address")
                     elif result["receiptAddressMatches"] is None:

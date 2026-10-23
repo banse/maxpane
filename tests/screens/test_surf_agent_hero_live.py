@@ -25,7 +25,7 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         assert len(cards) == 12 and {card.region.height for card in cards} == {9}
         text = _region_text(pilot.app, hero)
         for expected in ("AGENT", "SEAT", "96%", "ERC-8004 #8127", "$120.82", "example.eth ⧉",
-                         "EARNINGS", "4 new", "RESEARCH", "ORACLE"):
+                         "EARNINGS", "4 new", "LAUNCHES", "ORACLE"):
             assert expected in text
         assert 'implementing' in _region_text(pilot.app, hero.query_one('#hero-status'))
         assert "paid " not in _region_text(pilot.app, hero.query_one('#hero-rewards'))

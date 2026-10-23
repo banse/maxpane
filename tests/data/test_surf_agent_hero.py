@@ -222,7 +222,7 @@ def test_unknown_lists_stay_unknown_and_empty_lists_are_real_negatives(snapshot)
     assert result['earnings']['earned'] is None
     summary.update(models=[], collaborators=0, review_status=dict(sent=0, submitted=0, queued=0))
     snapshot['data'].update(swarm_seat_teammates=[], swarm_seat_node_rows=[])
-    snapshot['data']['_agent_nodes'] = dict(oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0)
+    snapshot['data']['_agent_nodes'] = dict(oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0, launches_total=0, oracle_total=0)
     result = hero.project(**snapshot)
     assert result['models']['rows'] == result['collab']['rows'] == result['nodes']['rows'] == []
     assert result['models']['state'] == result['collab']['state'] == result['nodes']['state'] == 'ok'

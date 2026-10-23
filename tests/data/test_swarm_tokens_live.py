@@ -64,6 +64,21 @@ class Market:
         self.closed = True
 
 
+async def test_hub_latest_order_does_not_require_a_market_quote_or_last_day_age():
+    source = Source(launch_rows(rows()))
+    now = max(r["created_ts"] for r in source.data["rows"]) + 172800
+    manager = SwarmTokensManager(source, client=Pages(), market=Market(), clock=lambda: now)
+    try:
+        summary = manager.catalogue_summary(source.data)
+        latest = summary['ranking']['latest']
+        assert len(latest) == 3
+        assert all(row['price_direction'] is None for row in latest)
+        assert [row['age_s'] for row in latest] == sorted(row['age_s'] for row in latest)
+        assert any(row['age_s'] >= 86400 for row in latest)
+    finally:
+        await manager.close()
+
+
 async def settle(manager):
     await manager.wait_pending()
     return await manager.fetch_and_compute()
@@ -487,7 +502,7 @@ async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads(
             'turnover': dict(value=None, state='unavailable', known=0, total=None, as_of=None),
             'volume': {'points': None, 'state': 'unavailable', 'known': 0, 'total': 0,
                        'as_of': None, 'until': 0},
-            'ranking': {'rows': None, 'newest': None, 'state': 'unavailable',
+            'ranking': {'rows': None, 'newest': None, 'latest': None, 'state': 'unavailable',
                         'read_ts': None, 'known': 0, 'total': None}}
         manager.offer_catalogue()
         manager.offer_catalogue()

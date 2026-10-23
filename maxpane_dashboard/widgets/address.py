@@ -47,7 +47,7 @@ from maxpane_dashboard.widgets.explorer import (
 
 __all__ = [
     "ADDRESS_RE", "COPY_GLYPH", "ICON_COLS", "MIN_SHORT_COLS", "PROSE_ADDRESS_RE",
-    "address_prose", "address_text", "copy_action", "hash_text", "is_address", "job_text", "site_text", "token_text",
+    "address_prose", "address_text", "copy_action", "hash_text", "is_address", "job_text", "site_text", "token_text", "wallet_text",
     "is_copy_click", "is_explorer_click", "parse_copy_action", "short_address",
     "short_hex",
 ]
@@ -293,6 +293,22 @@ def token_text(
     out = address_text(address, width=width, style=style)
     if is_address(address) and explorer is not None:
         if (link := _link(explorer, "token", address)) is not None:
+            out.stylize(link, 0, len(out.plain) - ICON_COLS)
+    return out
+
+
+def wallet_text(
+    address: str | None,
+    *,
+    label: str | None = None,
+    width: int | None = None,
+    style: str | Style = "",
+    explorer: Explorer | None = None,
+) -> Text:
+    """A wallet or ENS label with its copy icon and IMD wallet-page link."""
+    out = address_text(address, label=label, width=width, style=style)
+    if is_address(address) and explorer is not None:
+        if (link := _link(explorer, "wallet", address)) is not None:
             out.stylize(link, 0, len(out.plain) - ICON_COLS)
     return out
 

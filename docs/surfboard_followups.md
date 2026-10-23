@@ -1,5 +1,17 @@
 # Surfboard follow-ups
 
+## CR800 cross-dashboard corrections — 2026-10-23
+
+See `cr_800d0be3_delivery.md` for all nine notes, live captures and validation.
+The known widget import allowlist, generic address-pin inventory, AGENT retained
+clock and old BOARDROOM activity-test failures were reproduced on 735f54c2 and
+remain separate maintenance work. NFT discovery remains bounded and partial:
+the reader advanced in live probes, but 24 observed collections is not a claim
+of complete swarm inventory. Preserve explicit unknown values while finishing
+the normal background scan; do not force zero to conceal missing evidence.
+Final independent review's two findings were fixed in one wave and both verified
+ADDRESSED in scoped re-review. No new feature findings remain open.
+
 ## POOL4 discovery segment removed — 2026-10-16
 
 HATCHES now starts with its contract addresses. The discovery verdict, detail,

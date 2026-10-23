@@ -277,6 +277,7 @@ class WorkReader:
         result = work.snapshot(jobs, list(workflow_rows.values()), details, read_ts=min(started, workflow_started), now=self.clock(),
                              projects=list(projects.values()), metadata=metadata, expected_ids=expected,
                              active_scan_complete=complete, coverage_partial=partial,
+                             workflow_scan_complete=workflow_complete,
                              context_job_ids=list(dict.fromkeys(list(owners) + list(peer_flows))),
                              context_workflow_ids=list(anchors))
         if not workflow_complete and previous:

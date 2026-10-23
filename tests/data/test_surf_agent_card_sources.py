@@ -46,7 +46,7 @@ async def test_success_clocks_distinct_assets_and_selected_seat_join(reader):
     await r.read(seat(), NOW)
     data, meta = sources.project(r.capture(NOW), seat(), now=NOW)
     assert data['_agent_earnings'] == dict(earned=1, worked_on=1, earned_24h=1, worked_on_24h=1, worked_recent=True)
-    assert data['_agent_nodes'] == dict(oracle=0, launches=1, other=0, known_jobs=1, total_jobs=1)
+    assert data['_agent_nodes'] == dict(oracle=0, launches=1, other=0, known_jobs=1, total_jobs=1, launches_total=1, oracle_total=0)
     assert meta['earnings']['read_ts'] == meta['agent_work']['read_ts'] == NOW
     await r.read(seat(), NOW+1)
     assert earnings.fetch.await_count == swarm.fetch_job.await_count == 1
@@ -180,7 +180,7 @@ async def test_first_read_completes_seat_420_sized_history_with_bounded_concurre
     swarm.fetch_job.side_effect = fetch
     await r.read(raw, NOW)
     data, meta = sources.project(r.capture(NOW), raw, now=NOW)
-    assert data['_agent_nodes'] == dict(oracle=0, launches=53, other=0, known_jobs=53, total_jobs=53)
+    assert data['_agent_nodes'] == dict(oracle=0, launches=53, other=0, known_jobs=53, total_jobs=53, launches_total=53, oracle_total=0)
     assert meta['agent_work'] == dict(state='ok', read_ts=NOW)
     assert peak == 4 and live == 0
     await r.read(raw, NOW+1)
@@ -403,3 +403,18 @@ def test_capture_uses_validated_frozen_oracle_chains_without_borrowing_seat_regi
     index['chains'][FRONTEND] = True
     r.cache.store_last_good(sources.SLOT_SWARM_ORACLE_INDEX, index, ts=NOW)
     assert sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']['oracle'] is None
+
+
+def test_total_job_membership_clock_includes_failed_only_launch_jobs():
+    other = '6a7439e9-e9aa-469b-bdb5-633bd6c7f423'
+    raw = dict(seat(), work=seat()['work'] + [dict(jobId=other, nodeKey='build', status='failed')])
+    points = {job: dict(read_ts=stamp, launched=True, shipped=True, chain_id=1)
+              for job, stamp in ((JOB, NOW), (other, NOW-601))}
+    capture = dict(work=points, work_failed=set(), oracle_chains={})
+    data, meta = sources.project(capture, raw, now=NOW)
+    assert data['_agent_nodes']['launches_total'] == 2
+    assert meta['agent_work'] == dict(state='stale', read_ts=NOW-601)
+    del points[other]
+    data, meta = sources.project(capture, raw, now=NOW)
+    assert data['_agent_nodes']['launches'] == 1 and data['_agent_nodes']['launches_total'] is None
+    assert meta['agent_work'] == dict(state='partial', read_ts=NOW)

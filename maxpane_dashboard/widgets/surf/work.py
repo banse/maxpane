@@ -9,6 +9,7 @@ from textual.binding import Binding
 from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Input, Static, Tree
 
+from maxpane_dashboard.analytics.surf_work import WORKFLOW_STOPPED, workflow_is_open
 from maxpane_dashboard.widgets.address import address_prose, job_text
 from maxpane_dashboard.widgets.fmt import fmt_age, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
@@ -21,7 +22,6 @@ from .news_hero import HeroRecord, NewsHeroCard, _count, _number
 from .pool4_hero import Pool4HeroCard
 
 _BUILD = {"implement", "integrate", "test", "tests"}
-_TERMINAL = {"completed", "cancelled", "failed", "superseded"}
 _FILTERS = ("open", "blocked", "build", "review")
 
 
@@ -29,8 +29,10 @@ def _tone(state, accent):
     if state in ("blocked", "failed", "rejected"):
         return "red"
     if state in ("accepted", "completed"):
+        return "green"
+    if state in ("working", "executing"):
         return accent
-    if state in ("working", "executing", "pass"):
+    if state == "pass":
         return "green"
     return "yellow" if state in ("queued", "waiting", "pending") else "grey62"
 
@@ -127,6 +129,10 @@ class _WorkTree(ClickSelectTree):
             label.append(right, style=node.label.style)
         else:
             label = fit_prose(node.label.plain, width, style=node.label.style)
+        if not label.plain and not prefix:
+            # Rich emits an unstyled empty Segment otherwise; Textual's
+            # monochrome filter cannot render it while the source is pending.
+            label = Text(" ", style=base_style)
         label.stylize(style)
         # Preserve Textual's expander action on the arrow at every tree depth.
         return Text.assemble((prefix, base_style + Style(meta={"toggle": True})), label)
@@ -317,9 +323,14 @@ class SurfWorkBody(Horizontal):
 
         def flow_view(workflow, parent_match=False):
             linked = list(dict.fromkeys(workflow[key] for key in ("contracts_job_id", "frontend_job_id") if workflow.get(key)))
-            blocked = workflow.get("status") == "blocked"
+            blocked = workflow.get("status") in WORKFLOW_STOPPED
+            history_search = bool(self._search) and self._filter == "open"
+            original_open = workflow_is_open(workflow.get("status")) is True
+            allowed = (blocked or original_open) if self._filter == "blocked" else original_open or history_search
+            if not allowed:
+                return [], False
             match = parent_match or matches_row(workflow)
-            state_match = self._filter == "open" and not blocked or self._filter == "blocked" and blocked
+            state_match = self._filter == "open" or self._filter == "blocked" and blocked
             visible = [jid for jid in linked if
                        (self._matches(by_id[jid], workflow_match=match, workflow_blocked=blocked) if jid in by_id
                         else state_match and (match or self._search in jid.casefold()))]
@@ -332,7 +343,7 @@ class SurfWorkBody(Horizontal):
                 branch = add(parent, key, "workflow", workflow, workflow.get("objective") or workflow["id"],
                              bool(children), suffix=workflow.get("status") or "unknown",
                              expanded=any(by_id.get(jid, {}).get("state") == "executing" for jid in children)
-                             or workflow.get("status") not in _TERMINAL | {"blocked"})
+                             or workflow_is_open(workflow.get("status")) is True)
                 for jid in children:
                     add_job(branch, jid)
 
@@ -344,7 +355,9 @@ class SurfWorkBody(Horizontal):
             missing_flows = [wid for wid in project.get("workflow_ids", []) if wid not in flow_by_id
                              and self._filter == "open" and (match or self._search in wid.casefold())]
             project_jobs = set(_project_job_ids(project, workflows))
-            if not flows and not missing_flows and not project_jobs & visible_jobs and not (match and self._filter == "open"):
+            if self._filter == "open" and match:
+                missing_jobs.update(project_jobs - by_id.keys() - linked_jobs)
+            if not flows:
                 continue
             parent = add(tree.root, "project:" + project["id"], "project", project,
                          project.get("objective") or project["id"], bool(flows or missing_flows), suffix="project")
@@ -353,15 +366,12 @@ class SurfWorkBody(Horizontal):
             for wid in missing_flows:
                 if "missing-workflow:" + wid not in self._entries:
                     add(parent, "missing-workflow:" + wid, "missing workflow", {"id": wid}, wid, suffix="workflow not loaded")
-            if self._filter == "open" and match:
-                missing_jobs.update(project_jobs - by_id.keys() - linked_jobs)
-
         for workflow in sorted(workflows or [], key=lambda w: (w.get("status") == "blocked", -(w.get("created_ts") or 0))):
             if workflow["id"] not in project_flows:
                 children, show = flow_view(workflow)
                 if children or show:
                     add_flow(tree.root, workflow, children)
-        for job in sorted((j for j in jobs or [] if j["id"] in visible_jobs and j["id"] not in linked_jobs),
+        for job in sorted((j for j in jobs or [] if j["id"] in visible_jobs and j["id"] not in added_jobs),
                           key=lambda j: (j.get("state") != "executing", -(j.get("updated_ts") or j.get("created_ts") or 0))):
             add_job(jobs_tree.root, job["id"])
         for jid in sorted(missing_jobs):
@@ -377,7 +387,7 @@ class SurfWorkBody(Horizontal):
                                                      row.get("created_ts") or 0, row["id"]), reverse=True)
             visible = newest(j for j in jobs or [] if "job:" + j["id"] in self._entries)
             active = [j for j in visible if j.get("state") == "executing"]
-            flows = newest(w for w in workflows or [] if "workflow:" + w["id"] in self._entries and w.get("status") not in _TERMINAL)
+            flows = newest(w for w in workflows or [] if "workflow:" + w["id"] in self._entries and workflow_is_open(w.get("status")) is True)
             if active:
                 selected = "job:" + active[0]["id"]
             elif flows:

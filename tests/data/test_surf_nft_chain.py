@@ -48,6 +48,20 @@ class ChainInspectionTests(unittest.TestCase):
     def inspector(self, rpc):
         return Inspector(rpc=rpc, fetch_json=lambda url: {})
 
+    def test_deployer_is_validated_from_confirmed_receipt(self):
+        for sender, status, expected in [('0x'+'AB'*20, '0x1', '0x'+'ab'*20),
+                                         ('invalid', '0x1', None),
+                                         ('0x'+'00'*20, '0x1', None),
+                                         ('0x'+'ab'*20, '0x0', None)]:
+            rpc = FakeRPC(receipt_status=status)
+            def source(chain, method, params):
+                value = rpc(chain, method, params)
+                if method == 'eth_getTransactionReceipt':
+                    value['from'] = sender
+                return value
+            result = self.inspector(source).inspect_contract(1, ADDRESS, TX)
+            self.assertEqual(result['deployment'].get('deployer'), expected)
+
     def test_selector_uses_ethereum_keccak(self):
         self.assertEqual(selector("totalSupply()"), "0x18160ddd")
         self.assertEqual(selector("supportsInterface(bytes4)"), "0x01ffc9a7")

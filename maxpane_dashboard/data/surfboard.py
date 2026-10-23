@@ -647,7 +647,8 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     result[-1].update(token_ranking=catalogue.get("ranking"), meter_kind="volume",
                      numerator=number(volume.get("value")), meter_state=volume.get("state", "unavailable"))
     volumes = [number(row.get("volume_usd")) for row in ranking.get("rows") or []]
-    result[-1]["detail"] += (f" · launched in last 24h · ranked by selected-pool 24h USD volume"
+    result[-1]["detail"] += (f" · inset: latest three launches, newest first, all ages"
+                            f" · market coverage: launched in last 24h · ranked by selected-pool 24h USD volume"
                             f" · {ranking.get('known', 0)}/{ranking.get('total') if ranking.get('total') is not None else '—'} tokens"
                             f" · {'partial · ' if ranking.get('state') == 'partial' else ''}read {hhmm(ranking.get('read_ts'))}"
                             f" · ranked USD volumes {', '.join(f'{v:,.2f}' for v in volumes if v is not None) or '—'}"
@@ -662,7 +663,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     state = work.get("state", "unavailable")
     node_counts = current_work.get('node_counts')
     top = min(node_counts, key=lambda key: (-node_counts[key], key)) if node_counts else None
-    subtitle = f'{node_counts[top]:,} {top}' if top else '0 working' if node_counts == {} else '— working'
+    subtitle = f'{node_counts[top]:,} {top}' if top else '0 working' if node_counts == {} or jobs == 0 else '— working'
     card("work", "WORK IN PROGRESS", f"{jobs:,}" if jobs is not None else "—", subtitle,
          "WORK IN PROGRESS · " + " · ".join(f"{_value(summary[key])} {key}" for key in SURF_WORK_SUMMARY_KEYS)
          + f" · loaded {_value(work.get('jobs_loaded'))} jobs · {_value(work.get('workflows_loaded'))} workflows"

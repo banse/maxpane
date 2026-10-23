@@ -46,7 +46,7 @@ from maxpane_dashboard.widgets.surfboard import SurfboardRack, SurfboardTerminal
 #: NFTS and TOKENS retain equal inset padding. NFTS shows native collection digits,
 #: building inset footer and build/open outer counts; token arrows stay right-aligned.
 #: WIP keeps bright job digits and the leading current node category. Its outer footer
-#: shows SWARM's 24H history; build/review counts stay under BUILT BY SWARM.
+#: shows the active original-workflow count; BUILT BY SWARM keeps its 24H history.
 #: FLEET shows STATS: tokens/jobs/capacity with an acceptance-rate footer.
 #: Rechecked 2026-10-21 after live preview: 143×37 is unchanged. The title occupies
 #: its original top row; navigation now flanks the title with symmetric spacing.

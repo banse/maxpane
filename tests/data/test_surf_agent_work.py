@@ -83,12 +83,12 @@ def test_summary_counts_distinct_jobs_oracle_precedes_launch_and_completeness_is
     assert work.candidates(seat) == [LIVE, BLOCKED]
     assert work.oracle_candidates(seat) == [PLAIN]
     partial = work.summarize(seat, {LIVE: point(True)}, NOW, oracle_chains={PLAIN: 1})
-    assert partial == dict(oracle=1, launches=None, other=None, known_jobs=1, total_jobs=2)
+    assert partial == dict(oracle=1, launches=None, other=None, known_jobs=1, total_jobs=2, launches_total=None, oracle_total=1)
     points = {LIVE: point(True), BLOCKED: point()}
     assert work.summarize(seat, points, NOW, oracle_chains={PLAIN: 1}) == dict(
-        oracle=1, launches=1, other=1, known_jobs=2, total_jobs=2)
+        oracle=1, launches=1, other=1, known_jobs=2, total_jobs=2, launches_total=1, oracle_total=1)
     assert work.summarize(seat, points, NOW) == dict(
-        oracle=None, launches=1, other=1, known_jobs=2, total_jobs=2)
+        oracle=None, launches=1, other=1, known_jobs=2, total_jobs=2, launches_total=1, oracle_total=None)
     assert work.summarize(seat, points, NOW, oracle_chains={PLAIN: 11155111})['oracle'] == 0
 
 
@@ -133,14 +133,14 @@ def test_legacy_cache_keeps_record_membership_but_shipped_requires_backfill(laun
 def test_missing_or_malformed_work_is_not_zero(seat):
     assert work.accepted_rows(seat) is None
     assert work.summarize(seat, {}, NOW) == dict(
-        oracle=None, launches=None, other=None, known_jobs=None, total_jobs=None)
+        oracle=None, launches=None, other=None, known_jobs=None, total_jobs=None, launches_total=None, oracle_total=None)
 
 
 def test_true_empty_work_and_invalid_job_coverage_are_distinct():
     assert work.summarize({'work': []}, {}, NOW) == dict(
-        oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0)
+        oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0, launches_total=0, oracle_total=0)
     assert work.summarize({'work': [row(None), row(LIVE)]}, {LIVE: point(True)}, NOW) == dict(
-        oracle=0, launches=None, other=None, known_jobs=1, total_jobs=2)
+        oracle=0, launches=None, other=None, known_jobs=1, total_jobs=2, launches_total=None, oracle_total=0)
 
 
 @pytest.mark.parametrize('bad', [None, {}, dict(read_ts=NOW),
@@ -218,3 +218,60 @@ def test_missing_workflow_evidence_does_not_prove_no_launch_contribution():
     raw = capture(PLAIN)
     del raw['workflow']
     assert work.membership_point(raw, PLAIN, NOW) is None
+
+
+def test_all_job_totals_include_unsuccessful_attempts_dedupe_and_exclude_testnets():
+    testnet, oracle_failed, oracle_testnet = (str(UUID(int=n)) for n in (901, 902, 903))
+    seat = {'work': [row(LIVE), row(LIVE, 'review'), row(BLOCKED, status='failed'),
+                     row(BLOCKED, status='rejected'), row(testnet),
+                     row(PLAIN, 'oracle_assess'), row(oracle_failed, 'oracle_assess', 'pending'),
+                     row(oracle_testnet, 'oracle_assess')]}
+    points = {LIVE: point(True), BLOCKED: point(True), testnet: point(True, chain_id=11155111)}
+    chains = {PLAIN: 1, oracle_failed: 8453, oracle_testnet: 11155111}
+    result = work.summarize(seat, points, NOW, oracle_chains=chains)
+    assert (result['launches'], result['launches_total']) == (1, 2)
+    assert (result['oracle'], result['oracle_total']) == (1, 2)
+    assert work.oracle_candidates(seat, include_attempts=True) == [PLAIN, oracle_failed, oracle_testnet]
+    assert work.oracle_candidates(seat) == [PLAIN, oracle_testnet]
+    del points[BLOCKED]
+    partial = work.summarize(seat, points, NOW, oracle_chains=chains)
+    assert partial['launches'] == 1 and partial['launches_total'] is None
+    assert partial['oracle_total'] == 2
+    del chains[oracle_failed]
+    assert work.summarize(seat, points, NOW, oracle_chains=chains)['oracle_total'] is None
+
+
+def test_totals_do_not_invent_legacy_or_malformed_attempt_coverage():
+    for bad in ({'jobId': LIVE, 'nodeKey': 'build'}, row(LIVE, status='new-status'),
+                row(LIVE, status=None), row(None, status='failed')):
+        result = work.summarize({'work': [bad]}, {LIVE: point(True)}, NOW)
+        assert result['launches_total'] is None
+    empty = work.summarize({'work': []}, {}, NOW)
+    assert empty['launches_total'] == empty['oracle_total'] == 0
+
+
+@pytest.mark.parametrize('rows', [None, True, {}, [None], [{'nodeKey': []}]])
+def test_oracle_total_discovery_skips_malformed_work_without_crashing(rows):
+    assert work.oracle_candidates({'work': rows}, include_attempts=True) == []
+
+
+@pytest.mark.parametrize('accepted_node', ['implement', 'oracle_assess'])
+@pytest.mark.parametrize('reverse', [False, True])
+def test_mixed_job_uses_one_category_and_any_accepted_contribution(accepted_node, reverse):
+    rejected_node = 'oracle_assess' if accepted_node == 'implement' else 'implement'
+    rows = [row(LIVE, accepted_node), row(LIVE, rejected_node, 'rejected'),
+            row(LIVE, accepted_node), row(PLAIN, 'oracle_assess', 'failed'),
+            row(BLOCKED, 'build', 'pending')]
+    if reverse:
+        rows.reverse()
+    seat = {'work': rows}
+    before = copy.deepcopy(seat)
+    points = {LIVE: point(True), BLOCKED: point(True)}
+    for chain, accepted, total in [(1, 1, 2), (11155111, 0, 0), (None, None, None)]:
+        result = work.summarize(seat, points, NOW, oracle_chains={LIVE: chain, PLAIN: chain})
+        assert (result['oracle'], result['oracle_total']) == (accepted, total)
+        assert (result['launches'], result['launches_total']) == (0, 1)
+    # Earnings and accepted-membership callers still receive accepted work only.
+    assert work.accepted_job_ids(seat) == {LIVE}
+    assert work.accepted_rows(seat) == [item for item in rows if item['status'] == 'accepted']
+    assert seat == before

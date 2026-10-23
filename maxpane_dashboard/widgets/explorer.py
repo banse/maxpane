@@ -14,7 +14,7 @@ Pure: ``re`` and ``dataclasses`` only. No Rich, no Textual, no I/O, no ``data/``
 An unknown chain gets **no** link, never a guessed one (:func:`for_network`).
 
 Two allowlisted explorers are not chains: :data:`IMD` opens swarm job and
-token pages on ``explorer.imd.fun``; :data:`SITES` opens a bare LDH label at
+token/wallet pages on ``explorer.imd.fun``; :data:`SITES` opens a bare LDH label at
 ``https://<label>.sites.imd.fun/``. Each explorer names the kinds it serves,
 so a job link on etherscan, or an address on IMD, is refused.
 
@@ -51,7 +51,7 @@ JOB_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 SITE_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
 
 #: The page kinds a link can open; each explorer serves a subset.
-KINDS = ("address", "tx", "job", "site", "token")
+KINDS = ("address", "tx", "job", "site", "token", "wallet")
 
 
 @dataclass(frozen=True)
@@ -67,8 +67,8 @@ ETHEREUM = Explorer("etherscan", "https://etherscan.io")
 BASE = Explorer("basescan", "https://basescan.org")
 SEPOLIA = Explorer("sepolia", "https://sepolia.etherscan.io")
 ROBINHOOD = Explorer("robinhood", "https://robinhoodchain.blockscout.com")
-#: The IMD swarm's own explorer: jobs and tokens, never a chain address or tx.
-IMD = Explorer("imd", "https://explorer.imd.fun", ("job", "token"))
+#: The IMD swarm's own explorer: jobs, tokens and wallets, never a chain address or tx.
+IMD = Explorer("imd", "https://explorer.imd.fun", ("job", "token", "wallet"))
 #: A swarm site's gateway: site pages only. The base URL is the
 #: suffix every link's host must end in; :func:`site_url` puts the label first.
 SITES = Explorer("sites", "https://sites.imd.fun", ("site",))
@@ -146,7 +146,7 @@ def for_chain_id(chain_id: object) -> Explorer | None:
 
 
 def _valid(kind: str, value: object) -> bool:
-    if kind in ("address", "token"):
+    if kind in ("address", "token", "wallet"):
         return is_address(value)
     if kind == "tx":
         return is_tx_hash(value)
@@ -228,6 +228,8 @@ def url_for(explorer: Explorer, kind: str, value: str) -> str:
         return site_url(explorer, value)
     if kind == "token":
         return token_url(explorer, value)
+    if kind == "wallet":
+        return f"{explorer.base_url}/wallet/{value}"
     return job_url(explorer, value)
 
 

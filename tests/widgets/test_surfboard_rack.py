@@ -191,8 +191,8 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         assert footer.style.color.get_truecolor() == Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
         chart = "▁▁▂▂▃▃▄▅▅▆▆▇▇█" if size[0] == 149 else "▁▁▂▂▃▄▄▅▅▆▇▇█"
         work = rack.query_one('#surfboard-card-work', SurfboardCard)
-        assert card_strips(pilot.app, work)[-1].text == f"╰─ 24H {chart} ─╯"
-        assert '— build' in strips[-1].text
+        assert strips[-1].text == f"╰─ 24H {chart} ─╯"
+        assert '— workflows' in card_strips(pilot.app, work)[-1].text
         header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
         assert not header.style.bold
         assert header.style.color == inset_border_color(strips[top])
@@ -457,7 +457,7 @@ async def test_chart_requires_all_eight_buckets_and_empty_seats_stay_unlit():
         assert "24H —" in painted(pilot.app)
 
 
-async def test_swarm_history_on_wip_footer_stretches_on_resize_and_keeps_unknown_left():
+async def test_swarm_history_footer_stretches_on_resize_and_keeps_unknown_left():
     from tests.screens.test_surfboard_layout import HubHarness
     from tests.surfboard_fixtures import hub_payload
 
@@ -466,14 +466,14 @@ async def test_swarm_history_on_wip_footer_stretches_on_resize_and_keeps_unknown
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        card = app.hub.query_one("#surfboard-card-work", SurfboardCard)
+        card = app.hub.query_one("#surfboard-card-swarm", SurfboardCard)
         for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
                              (140, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
             assert footer.text == f"╰─ 24H {chart} ─╯"
-            assert str(card.border_title) == "⊙ WIP"
+            assert str(card.border_title) == "⊙ BUILT BY SWARM"
         next(row for row in payload['surfboard_cards'] if row['key'] == 'swarm')['points'] = None
         app.hub.query_one(SurfboardRack).update_data(**payload)
         await pilot.pause()
@@ -483,7 +483,7 @@ async def test_swarm_history_on_wip_footer_stretches_on_resize_and_keeps_unknown
 
 
 @pytest.mark.parametrize('size', [(149, 45), (146, 37)])
-async def test_swarm_and_wip_swap_only_footers_with_independent_sources(size):
+async def test_swarm_and_wip_keep_their_footers_with_independent_sources(size):
     from copy import deepcopy
     from tests.screens.test_surfboard_layout import HubHarness
     from tests.surfboard_fixtures import hub_payload
@@ -502,47 +502,47 @@ async def test_swarm_and_wip_swap_only_footers_with_independent_sources(size):
         assert swarm.data['primary'] == '863 online' and swarm.data['destination'] == 'swarm'
         assert work.data['primary'] == '5' and work.data['destination'] == 'work'
         assert swarm.data['points'] == list(range(8)) and work.data['points'] is None
-        assert 'Footer: ' + sources['work']['detail'] in str(swarm.tooltip)
-        assert 'Footer: ' + sources['swarm']['detail'] in str(work.tooltip)
+        assert str(swarm.tooltip) == sources['swarm']['detail']
+        assert str(work.tooltip) == sources['work']['detail']
         swarm_footer = card_strips(app, swarm)[-1]
         work_footer = card_strips(app, work)[-1]
-        assert swarm_footer.text.strip('╰╯─ ') in ('5 build · 4 review', '5 build · 4 rev')
-        assert work_footer.text.strip('╰╯─ ').startswith('24H ▁')
+        assert work_footer.text.strip('╰╯─ ') == '1 workflows'
+        assert swarm_footer.text.strip('╰╯─ ').startswith('24H ▁')
         assert all(segment.style.color.get_truecolor() == app.ansi_theme.ansi_colors[2]
-                   for segment in work_footer if any(glyph in segment.text for glyph in '▁▂▃▄▅▆▇█'))
+                   for segment in swarm_footer if any(glyph in segment.text for glyph in '▁▂▃▄▅▆▇█'))
         before = {card.key: [line.text for line in card_strips(app, card)[1:-1]] for card in (swarm, work)}
         for work_state, swarm_state, counts, chart in (
             ('loading', 'active', '◌ loading', True),
-            ('active', 'loading', '5 build', False),
-            ('active', 'active', '5 build', True),
+            ('active', 'loading', '1 workflows', False),
+            ('active', 'active', '1 workflows', True),
         ):
             sources['work']['status'], sources['swarm']['status'] = work_state, swarm_state
             rack.update_data(**payload)
             await pilot.pause()
-            assert counts in card_strips(app, swarm)[-1].text
-            assert ('24H' in card_strips(app, work)[-1].text) == chart
-            assert ('◌ loading' in card_strips(app, work)[-1].text) == (not chart)
+            assert counts in card_strips(app, work)[-1].text
+            assert ('24H' in card_strips(app, swarm)[-1].text) == chart
+            assert ('◌ loading' in card_strips(app, swarm)[-1].text) == (not chart)
             for card in (swarm, work):
                 assert [line.text for line in card_strips(app, card)[1:-1]] == before[card.key]
-        sources['work']['work_summary'].update(build=0, review=0)
+        sources['work']['work_summary'].update(workflows=0)
         sources['swarm']['points'] = [0] * 8
         rack.update_data(**payload)
         await pilot.pause()
-        assert '0 build' in card_strips(app, swarm)[-1].text
-        assert '24H ▁' in card_strips(app, work)[-1].text
-        sources['work']['work_summary'].update(build=10**30, review=10**30)
+        assert '0 workflows' in card_strips(app, work)[-1].text
+        assert '24H ▁' in card_strips(app, swarm)[-1].text
+        sources['work']['work_summary'].update(workflows=10**30)
         rack.update_data(**payload)
         await pilot.pause()
-        assert '…' in card_strips(app, swarm)[-1].text
-        # The long SWARM title has room for its widen marker at this width.
+        assert '…' in card_strips(app, work)[-1].text
+        # The WIP title advertises its clipped workflow count.
         await pilot.resize_terminal(180, 45)
         await pilot.pause()
-        assert '‹' in card_strips(app, swarm)[0].text
-        assert '‹' not in card_strips(app, work)[0].text
+        assert '‹' in card_strips(app, work)[0].text
+        assert '‹' not in card_strips(app, swarm)[0].text
         rack.update_data(surfboard_cards=[])
         await pilot.pause()
-        assert '— build' in card_strips(app, swarm)[-1].text
-        assert card_strips(app, work)[-1].text.strip('╰╯─ ') == '24H —'
+        assert '— workflows' in card_strips(app, work)[-1].text
+        assert card_strips(app, swarm)[-1].text.strip('╰╯─ ') == '24H —'
 
 
 async def test_activity_card_footers_fill_width_on_resize():
@@ -599,7 +599,7 @@ def card_strips(app, card):
 
 
 @pytest.mark.parametrize('size', [(149, 45), (143, 36)])
-async def test_tokens_ranked_rows_direction_ink_volume_footer_and_activity(size):
+async def test_tokens_latest_rows_direction_ink_volume_footer_and_activity(size):
     data = token_card_data()
     async with RackApp().run_test(size=size) as pilot:
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
@@ -611,13 +611,13 @@ async def test_tokens_ranked_rows_direction_ink_volume_footer_and_activity(size)
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
             assert '⊙ TOKENS' in strips[0].text
             assert '‹' not in strips[0].text
-            header = next(s for s in strips[top] if 'LAST 24h' in s.text)
+            header = next(s for s in strips[top] if 'LATEST' in s.text)
             expected = (Color.parse(pilot.app.get_css_variables()['accent']).get_truecolor()
                         if status == 'active' else neutral_inset_color(pilot.app))
-            assert strips[top].text.strip('│┌┐─ ') == 'LAST 24h'
+            assert strips[top].text.strip('│┌┐─ ') == 'LATEST'
             assert not header.style.bold and header.style.color == inset_border_color(strips[top])
             for strip, words, icon in zip(strips[top+1:top+4],
-                    [('2h', 'SFPT'), ('5h', 'RAI'), ('4h', 'TDEMO')], ['↑', '↓', '']):
+                    [('2h', 'SFPT'), ('4h', 'TDEMO'), ('5h', 'RAI')], ['↑', '', '↓']):
                 assert strip.text.strip('│ ').split() == [*words, *([icon] if icon else [])]
                 left = strips[top].text.index('┌')
                 assert strip.crop(left+1, left+3).text == ' ' + words[0][0]
@@ -650,7 +650,7 @@ async def test_token_price_flat_or_missing_is_neutral_despite_legacy_liquidity()
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
         data = token_card_data()
         for direction, marker in [('up', '↑'), ('down', '↓'), ('flat', ''), (None, '')]:
-            data['token_ranking']['rows'] = [dict(data['token_ranking']['rows'][0],
+            data['token_ranking']['latest'] = [dict(data['token_ranking']['latest'][0],
                 price_direction=direction, lp_state='two-sided', liquidity_state='ok', paired_symbol='ETH')]
             card.set_data(data)
             await pilot.pause()
@@ -693,12 +693,12 @@ async def test_token_empty_unread_and_unavailable_keep_independent_volume_footer
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
         for envelope, body in [
             (None, '—'),
-            (dict(ranking, rows=None, newest=None, state='unavailable', known=0, total=None),
+            (dict(ranking, latest=None, newest=None, state='unavailable', known=0, total=None),
              '—'),
-            (dict(ranking, rows=[], newest=None, known=0, total=0), 'no launches'),
-            (dict(ranking, rows=[], newest=dict(ranking['newest'], age_s=172800), known=0, total=0),
+            (dict(ranking, latest=[], newest=None, known=0, total=0), 'no launches'),
+            (dict(ranking, latest=[], newest=dict(ranking['newest'], age_s=172800), known=0, total=0),
              'no launches'),
-            (dict(ranking, rows=None, state='unavailable', known=0, total=3),
+            (dict(ranking, latest=None, state='unavailable', known=0, total=3),
              '—'),
         ]:
             card.set_data(dict(data, token_ranking=envelope, status='idle', secondary='0 new'))
@@ -714,7 +714,7 @@ async def test_token_empty_unread_and_unavailable_keep_independent_volume_footer
 async def test_token_hostile_wide_tickers_preserve_age_marker_and_advertise_clipping():
     data = token_card_data()
     hostile = '[/x]\n' + '界' * 20 + '\x1b\u202e'
-    data['token_ranking']['rows'] = [dict(data['token_ranking']['rows'][0], age_s=None, symbol=hostile)]
+    data['token_ranking']['latest'] = [dict(data['token_ranking']['latest'][0], age_s=None, symbol=hostile)]
     data['token_ranking']['newest']['symbol'] = hostile
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
@@ -738,12 +738,12 @@ async def test_token_hostile_wide_tickers_preserve_age_marker_and_advertise_clip
 async def test_token_address_tickers_keep_copy_actions_and_known_chain_links(width):
     address = '0x1234567890abcdef1234567890abcdef12345678'
     data = token_card_data()
-    data['token_ranking']['rows'] = [dict(data['token_ranking']['rows'][0], symbol=address)]
+    data['token_ranking']['latest'] = [dict(data['token_ranking']['latest'][0], symbol=address)]
     data['token_ranking']['newest']['symbol'] = address
     async with RackApp().run_test(size=(width, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
         for chain, site in [('eth', 'etherscan.io'), ('base', 'basescan.org'), ('unknown', None)]:
-            data['token_ranking']['rows'][0]['chain'] = chain
+            data['token_ranking']['latest'][0]['chain'] = chain
             data['token_ranking']['newest']['chain'] = chain
             card.set_data(data)
             await pilot.pause()
@@ -1032,7 +1032,7 @@ async def test_work_card_approved_digits_build_caption_and_step_footer(size):
         app = pilot.app
         card = app.query_one('#surfboard-card-work', SurfboardCard)
         card.set_data(dict(primary='5', secondary='3 build', status='active',
-                           work_summary=dict(build=5, review=4)))
+                           work_summary=dict(build=5, review=4, workflows=3)))
         await pilot.pause()
         strips = card_strips(app, card)
         top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
@@ -1043,7 +1043,7 @@ async def test_work_card_approved_digits_build_caption_and_step_footer(size):
         assert [strip.text[left+1:right].strip() for strip in strips[top+1:top+4]] == ['╭─╴', '╰─╮', '╶─╯']
         assert '3 build' in strips[top+4].text
         footer = strips[-1].text
-        assert ('5 build · 4 review' if card.region.width >= 24 else '5 build · 4 rev') in footer
+        assert '3 workflows' in footer
         assert inset_border_color(strips[top]) == Color.parse(app.get_css_variables()['accent'])
         assert card.region.height == app.query_one('#surfboard-card-oracles').region.height
         assert len(app.query(SurfboardCard)) == 12
@@ -1058,8 +1058,8 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
         await pilot.pause()
         card = app.hub.query_one('#surfboard-card-work', SurfboardCard)
         for state, primary, secondary, counts in [
-            ('active', '5', '3 build', dict(build=5, review=4)),
-            ('idle', '0', '0 build', dict(build=0, review=0)),
+            ('active', '5', '3 build', dict(build=5, review=4, workflows=3)),
+            ('idle', '0', '0 build', dict(build=0, review=0, workflows=0)),
             ('stale', '5', '3 build', dict(build=5, review=4)),
             ('stale', '0', '0 build', dict(build=0, review=0)),
             ('active', '0', '0 build', dict(build=0, review=0)),
@@ -1090,12 +1090,12 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
                 assert not caption.style.bold
             assert secondary in '\n'.join(s.text for s in strips)
             if primary == '—':
-                assert ('— build · — review' if card.region.width >= 24 else '— build · — rev') in strips[-1].text
+                assert '— workflows' in strips[-1].text
             if state == 'idle':
-                assert ('0 build · 0 review' if card.region.width >= 24 else '0 build · 0 rev') in strips[-1].text
+                assert '0 workflows' in strips[-1].text
         card.set_data(None)
         await pilot.pause()
-        assert ('— build · — review' if card.region.width >= 24 else '— build · — rev') in card_strips(app, card)[-1].text
+        assert '— workflows' in card_strips(app, card)[-1].text
         assert card.data['destination'] == 'work'
 
 

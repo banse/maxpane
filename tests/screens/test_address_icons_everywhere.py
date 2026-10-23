@@ -1085,7 +1085,8 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
                     # the parametrised sweep size, read again below the loop.
                     explorer, link_kind, link_value = parsed
                     expected = _expected_explorer(case, address)
-                    if link_kind != "address" or link_value.lower() != address.lower():
+                    expected_kind = "wallet" if expected is not None and expected.name == "imd" else "address"
+                    if link_kind != expected_kind or link_value.lower() != address.lower():
                         problems.append((label, x, y, link_value, address, "link opens a different value than the icon copies"))
                     elif explorer.name not in allowed or (expected is not None and explorer != expected):
                         problems.append((label, x, y, explorer.name, "link on the wrong explorer"))

@@ -103,7 +103,7 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        for width, cells in [(149, 10), (180, 15), (140, 9), (149, 10)]:
+        for width in (149, 180, 140, 149):
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             card = app.hub.query_one("#surfboard-card-announce", SurfboardCard)
@@ -112,17 +112,16 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
             label = footer.text.strip('╰╯─ ')
             assert abs(footer.text.index(label) - (card.region.width - len(label)) / 2) <= .5
             if signals is None:
-                assert label == 'SIGNALS —'
+                assert label == '— SIGNALS'
                 assert "▰" not in footer.text and "▱" not in footer.text
                 continue
-            if signals > cells + 1:
-                assert label == f'SIGNALS {signals}'
+            cells = card.region.width - 6 - len(f'{signals} SIGNALS') - 1
+            if signals == 0 or signals > cells:
+                assert label == f'{signals} SIGNALS'
                 assert "▰" not in footer.text
                 continue
-            # Drop the gap if that lets the last signal fit beside the label.
-            gap = "" if signals > cells else " "
-            bar = "▰" * signals + "▱" * (cells + (not gap) - signals)
-            assert footer.text == f"╰─ SIGNALS{gap}{bar} ─╯"
+            bar = "▰" * signals + "▱" * (cells - signals)
+            assert footer.text == f"╰─ {signals} SIGNALS {bar} ─╯"
             assert "‹ widen" not in str(card.border_title)
             for segment in footer:
                 if "▰" in segment.text:
@@ -145,11 +144,11 @@ async def test_news_signal_footer_refresh_and_overflow_remain_exact():
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(
                 card.region.x, card.region.right).text
             if count == 24:
-                assert "SIGNALS 24" in footer and "▰" not in footer
+                assert "24 SIGNALS" in footer and "▰" not in footer
             else:
                 assert footer.count("▰") == (count or 0)
                 assert "‹ widen" not in str(card.border_title)
-                assert ("SIGNALS —" in footer) == (count is None)
+                assert ("— SIGNALS" in footer) == (count is None)
 
 
 async def test_terminal_uses_dashboard_background_and_native_text_colors():
@@ -451,7 +450,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
         for card in payload["surfboard_cards"][:8]:
             if card["key"] == "swarm-tokens":
                 text = r["card_text"]["swarm-tokens"]
-                assert "LAST 24h" in text
+                assert "LATEST" in text
                 if kind != "unavailable":
                     assert card["secondary"] in text and "24h" in text
                 expected = ('—',) if kind == 'unavailable' else ('SFPT', 'RAI', 'TDEMO', '↑', '↓')

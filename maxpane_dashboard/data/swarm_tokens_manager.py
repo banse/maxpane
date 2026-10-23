@@ -424,7 +424,7 @@ class SwarmTokensManager:
     def _ranking_summary(self, source, now, catalogue):
         """Rank canonical launches; retain independent successful source clocks."""
         tokens = self._tokens(source, now, include_inactive=True)
-        result = dict(rows=None, newest=None, state='unavailable',
+        result = dict(rows=None, newest=None, latest=None, state='unavailable',
                       read_ts=catalogue['as_of'], known=0, total=None)
         if tokens is None:
             return result
@@ -455,6 +455,10 @@ class SwarmTokensManager:
 
         if launched:
             result['newest'] = launch_fields(launched[0])
+        result['latest'] = [dict(launch_fields(token), price_direction=(
+            self._market.get(token['id'], ({},))[0].get('_price_direction')
+            if token['market_state'] == 'ok' and catalogue['state'] != 'stale' else None))
+            for token in launched[:3]]
         eligible = [t for t in launched if 0 <= now-t['launched_at'] < 86400]
         result['total'] = len(eligible)
         fresh, stale = [], []

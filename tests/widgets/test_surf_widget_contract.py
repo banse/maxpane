@@ -413,6 +413,7 @@ _PURE_ANALYTICS_ALLOWED = frozenset({
     "maxpane_dashboard.analytics.surfboard",  # rack seat keys and pure arithmetic
     "maxpane_dashboard.analytics.surf_launch_sites",  # shared current-site predicate
     "maxpane_dashboard.analytics.surf_swarm_signals",
+    "maxpane_dashboard.analytics.surf_work",
     "maxpane_dashboard.analytics.surf_feed",
     "maxpane_dashboard.analytics.surf_pool4_depth",
     # RECORD's ``f`` filter (2026-10-02): the window, the verdicts and the

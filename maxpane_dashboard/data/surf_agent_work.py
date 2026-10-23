@@ -44,10 +44,13 @@ def candidates(seat: object) -> list[str]:
     return [job for job in _candidate_jobs(rows) if job not in oracle]
 
 
-def oracle_candidates(seat: object) -> list[str]:
-    """Accepted oracle identities for the shared bulk request index."""
-    return list(dict.fromkeys(job for row in accepted_rows(seat) or []
-        if row['nodeKey'] in SWARM_ORACLE_NODE_KEYS
+def oracle_candidates(seat: object, *, include_attempts=False) -> list[str]:
+    """Oracle identities for the shared bulk request index."""
+    rows = seat.get("work") if include_attempts and isinstance(seat, Mapping) else accepted_rows(seat)
+    rows = rows if isinstance(rows, list) else []
+    return list(dict.fromkeys(job for row in rows
+        if isinstance(row, Mapping) and isinstance(row.get('nodeKey'), str)
+        and row['nodeKey'] in SWARM_ORACLE_NODE_KEYS
         and (job := parse_job_id(row.get('jobId'))) is not None))
 
 
@@ -185,20 +188,17 @@ def record_rows(rows, points, *, now, failed=()) -> list[dict]:
     return result
 
 
-def summarize(seat: object, points: object, now: float, *, oracle_chains=None) -> dict:
-    """Oracle work has precedence; never silently classify unread jobs as other."""
-    rows = accepted_rows(seat)
+def _summarize_rows(rows, points, chains):
+    """Oracle work has precedence; never classify unread jobs as other."""
     if rows is None:
         return dict(oracle=None, launches=None, other=None, known_jobs=None, total_jobs=None)
-    points = coerce_points(points, now)
-    chains = oracle_chains if isinstance(oracle_chains, Mapping) else {}
     oracle_jobs = {parse_job_id(row.get('jobId')) for row in rows
                    if row['nodeKey'] in SWARM_ORACLE_NODE_KEYS}
     oracle = (sum(chains[job] in _ORACLE_MAINNETS for job in oracle_jobs)
               if None not in oracle_jobs and all(type(chains.get(job)) is int
                   and chains[job] in _ORACLE_MAINNETS | _ORACLE_TESTNETS for job in oracle_jobs) else None)
     nonoracle = [row for row in rows if row['nodeKey'] not in SWARM_ORACLE_NODE_KEYS]
-    jobs = candidates(seat)
+    jobs = [job for job in _candidate_jobs(rows) if job not in oracle_jobs]
     # A missing job ID cannot be fetched, but must still make coverage incomplete.
     missing = sum(parse_job_id(row.get('jobId')) is None for row in nonoracle)
     known = sum(job in points and 'shipped' in points[job] for job in jobs)
@@ -208,3 +208,23 @@ def summarize(seat: object, points: object, now: float, *, oracle_chains=None) -
     return dict(oracle=oracle, launches=launched,
                 other=len(jobs)-launched if complete else None,
                 known_jobs=known, total_jobs=len(jobs)+missing)
+
+
+def summarize(seat: object, points: object, now: float, *, oracle_chains=None) -> dict:
+    """Accepted and all-attempt distinct jobs share production and membership rules."""
+    points = coerce_points(points, now)
+    chains = oracle_chains if isinstance(oracle_chains, Mapping) else {}
+    accepted = accepted_rows(seat)
+    rows = seat.get('work') if isinstance(seat, Mapping) else None
+    # Legacy work lists contain accepted attempts only, so their denominator is unknown.
+    if not isinstance(rows, list) or any(not isinstance(row, Mapping)
+            or not isinstance(row.get('nodeKey'), str) or not row['nodeKey'].strip()
+            or row.get('status') not in ('accepted', 'pending', 'rejected', 'failed') for row in rows):
+        rows = None
+    if rows is not None:
+        # Category is a job fact: unsuccessful nodes still establish oracle precedence.
+        accepted_ids = {parse_job_id(row.get('jobId')) for row in accepted or []}
+        accepted = [row for row in rows if parse_job_id(row.get('jobId')) in accepted_ids]
+    accepted = _summarize_rows(accepted, points, chains)
+    total = _summarize_rows(rows, points, chains)
+    return dict(accepted, launches_total=total['launches'], oracle_total=total['oracle'])

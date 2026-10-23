@@ -31,11 +31,11 @@ def test_the_six_explorers_their_origins_and_kinds():
     assert X.ETHEREUM == X.Explorer("etherscan", "https://etherscan.io", ("address", "tx"))
     assert X.BASE == X.Explorer("basescan", "https://basescan.org", ("address", "tx"))
     assert X.SEPOLIA == X.Explorer("sepolia", "https://sepolia.etherscan.io", ("address", "tx"))
-    assert X.IMD == X.Explorer("imd", "https://explorer.imd.fun", ("job", "token"))
+    assert X.IMD == X.Explorer("imd", "https://explorer.imd.fun", ("job", "token", "wallet"))
     assert X.SITES == X.Explorer("sites", "https://sites.imd.fun", ("site",))
     assert X.EXPLORERS == {"etherscan": X.ETHEREUM, "basescan": X.BASE, "sepolia": X.SEPOLIA,
                            "imd": X.IMD, "sites": X.SITES, "robinhood": X.ROBINHOOD}
-    assert X.KINDS == ("address", "tx", "job", "site", "token")
+    assert X.KINDS == ("address", "tx", "job", "site", "token", "wallet")
     assert all(set(e.kinds) <= set(X.KINDS) for e in X.EXPLORERS.values())
 
 

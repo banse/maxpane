@@ -123,11 +123,11 @@ def project(capture, seat, *, now):
         earned.update(earned=None, earned_24h=None, worked_on=None, worked_on_24h=None, worked_recent=None)
     points = capture.get('work', {})
     nodes = work.summarize(seat, points, now, oracle_chains=capture.get('oracle_chains'))
-    jobs = work.candidates(seat)
+    jobs = work.record_candidates(seat)
     stamps = [points[job]['read_ts'] for job in jobs if job in points]
     membership = source(min(stamps, default=None), now=now, ttl=TTL,
                         failed=bool(set(jobs) & capture.get('work_failed', set())))
-    if (nodes['total_jobs'] != nodes['known_jobs'] or nodes['oracle'] is None) and membership['state'] == 'ok':
+    if (nodes['launches_total'] is None or nodes['oracle_total'] is None) and membership['state'] == 'ok':
         membership['state'] = 'partial'
     return (dict(_agent_earnings=earned, _agent_nodes=nodes),
             dict(earnings=earned_source, agent_work=membership))

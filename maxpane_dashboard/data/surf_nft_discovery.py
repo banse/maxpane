@@ -40,6 +40,7 @@ def empty_discovery_state():
     return {
         'version': 1, 'rotation': 0, 'observed_at': None, 'truncated': False,
         'sources': {source: {'head_at': None, 'tail_cursor': None, 'terminal': False,
+                            'head_ids': [], 'refresh_ids': [], 'refresh_cursor': None,
                             'last_attempt': None, 'retry_at': 0., 'count': 0,
                             'provider_total': None, 'warnings': [], 'recent_ids': []}
                     for source in SOURCES},
@@ -206,6 +207,12 @@ def _restore(value):
             if _number(source.get(key)):
                 defaults[key] = source[key]
         defaults['tail_cursor'] = source.get('tail_cursor') if type(source.get('tail_cursor')) in (str, int) else None
+        if valid_page_cursor('jobs' if name.startswith('search:') else name, source.get('refresh_cursor')):
+            defaults['refresh_cursor'] = source.get('refresh_cursor')
+        else:
+            state['truncated'] = True
+        for key in ('head_ids', 'refresh_ids'):
+            defaults[key] = [v for v in source.get(key, [])[:100] if isinstance(v, str) and len(v) <= 200] if isinstance(source.get(key), list) else []
         defaults['terminal'] = source.get('terminal') is True
         for key in ('count', 'provider_total'):
             if type(source.get(key)) is int and source[key] >= 0:
@@ -245,6 +252,13 @@ def _restore(value):
                 if parse_job_id(identity) and isinstance(pending, dict):
                     state[key][identity] = {'retry_at': pending.get('retry_at') if _number(pending.get('retry_at')) else 0.,
                                             'revision': pending.get('revision') if isinstance(pending.get('revision'), str) else None}
+    # Upgrade older cursors without rereading the entire already retained launch history.
+    launch_source = state['sources']['launches']
+    if not launch_source['head_ids'] and launch_source['refresh_cursor'] is None:
+        launches = sorted(state['raw']['launches'],
+                          key=lambda row: row.get('launchNumber') if type(row.get('launchNumber')) is int else 0,
+                          reverse=True)
+        launch_source['head_ids'] = [row['id'] for row in launches[:100]]
     _bound(state)
     return state
 
@@ -338,6 +352,12 @@ class SurfNftDiscovery:
                     state['truncated'] = True
                     continue
                 _upsert(raw['launches'], fact)
+                previous = raw['launchDetails'].get(row['id'])
+                if (previous and isinstance(row.get('updatedAt'), str)
+                        and (not isinstance(previous.get('updatedAt'), str)
+                             or row['updatedAt'] > previous['updatedAt'])):
+                    # A rich but older detail must not shadow fresh deployment artifacts.
+                    raw['launchDetails'].pop(row['id'])
                 self._queue(state, row['id'], launch=True, revision=row.get('updatedAt'))
         elif source == 'jobs' or source.startswith('search:'):
             query = source.partition(':')[2]
@@ -369,10 +389,10 @@ class SurfNftDiscovery:
         if any(isinstance(row, dict) and row.get('_truncated') for rows in (raw['launches'], raw['workflows'], raw['publications'], raw['sites']['sites']) for row in rows):
             state['truncated'] = True
 
-    def _accept_page(self, source, page, *, head):
+    def _accept_page(self, source, page, *, head, refreshing=False):
         # An observed head never resets a cursor already traversing history.
         first = source['head_at'] is None
-        if not head and page.rows and all(r['id'] in source['recent_ids'] for r in page.rows):
+        if not head and not refreshing and page.rows and all(r['id'] in source['recent_ids'] for r in page.rows):
             _warn(source, 'repeated_page')
             return False
         if page.provider_total is not None:
@@ -381,7 +401,7 @@ class SurfNftDiscovery:
             source['provider_total'] = page.provider_total
         if page.warning:
             _warn(source, page.warning)
-        if not head or first:
+        if not refreshing and (not head or first):
             source['count'] += len([r for r in page.rows if r['id'] not in source['recent_ids']])
             source['tail_cursor'] = page.next_cursor
             source['terminal'] = page.terminal
@@ -390,6 +410,17 @@ class SurfNftDiscovery:
             source['recent_ids'] = (source['recent_ids'] + [r['id'] for r in page.rows])[-200:]
         if head:
             source['head_at'] = page.observed_at
+        if head or refreshing:
+            ids = [r['id'] for r in page.rows]
+            if head:
+                source['refresh_ids'] = ids
+            overlap = bool(set(ids) & set(source['head_ids']))
+            if not first and not overlap and not page.terminal:
+                source['refresh_cursor'] = page.next_cursor
+            else:
+                source['refresh_cursor'] = None
+                source['head_ids'] = source['refresh_ids']
+                source['refresh_ids'] = []
         return True
 
     async def advance(self, state=None, *, budget, page_limit=4, detail_limit=8, launch_limit=4):
@@ -407,8 +438,9 @@ class SurfNftDiscovery:
             now = self.clock()
             if source['retry_at'] > now:
                 continue
-            head = source['head_at'] is None or now - source['head_at'] >= HEAD_TTL
-            if not head and source['terminal']:
+            refreshing = source['refresh_cursor'] is not None
+            head = not refreshing and (source['head_at'] is None or now - source['head_at'] >= HEAD_TTL)
+            if not head and not refreshing and source['terminal']:
                 continue
             if not budget.can_admit():
                 state['rotation'] = index
@@ -422,10 +454,10 @@ class SurfNftDiscovery:
                     state['observed_at'] = read.observed_at
                     continue
                 page = await self.client.page('jobs' if name.startswith('search:') else name,
-                                              cursor=None if head else source['tail_cursor'],
+                                              cursor=None if head else source['refresh_cursor'] if refreshing else source['tail_cursor'],
                                               query=name.partition(':')[2] if name.startswith('search:') else None,
                                               budget=budget)
-                if self._accept_page(source, page, head=head):
+                if self._accept_page(source, page, head=head, refreshing=refreshing):
                     self._ingest(state, name, page.rows, page.observed_at)
                     state['observed_at'] = page.observed_at
                 else:
@@ -436,8 +468,12 @@ class SurfNftDiscovery:
             except (SourceUnavailable, ValueError):
                 source['retry_at'] = self.clock() + RETRY_TTL
                 # Failed refresh never destroys previously observed tail completeness.
+        launch_numbers = {row['id']: row.get('launchNumber') for row in state['raw']['launches']}
         launches = [(identity, p) for identity, p in state['pending_launches'].items()
-                    if p['retry_at'] <= self.clock()][:min(launch_limit, 4)]
+                    if p['retry_at'] <= self.clock()]
+        launches.sort(key=lambda item: (item[0] in state['raw']['launchDetails'],
+            -(launch_numbers[item[0]] if type(launch_numbers.get(item[0])) is int else 0)))
+        launches = launches[:min(launch_limit, 4)]
         for identity, pending in launches:
             try:
                 read = await self.client.detail('launches', identity, budget=budget)
@@ -512,7 +548,7 @@ class SurfNftDiscovery:
                 for identity in linked:
                     self._queue(state, identity)
         _bound(state)
-        coverage = {'complete': (all(v['terminal'] and not v['warnings'] for k, v in state['sources'].items()
+        coverage = {'complete': (all(v['terminal'] and v['refresh_cursor'] is None and not v['warnings'] for k, v in state['sources'].items()
                                      if k not in ('sites', 'capabilities'))
                                  and not state['pending_launches'] and not state['pending_jobs'] and not state['truncated']),
                     'truncated': state['truncated'], 'observed': state['observed_at'] is not None,

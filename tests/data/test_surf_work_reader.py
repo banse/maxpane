@@ -794,6 +794,7 @@ async def test_workflow_catalogue_pages_past_old_cap_and_resumes_budget(setup, m
         data = reader.project()
         assert data['workflows_loaded'] == expected
         assert data['partial'] == (expected < 250)
+        assert data['summary']['workflows'] == (None if expected < 250 else 0)
         clock.now += 60
     assert calls == [None, flows[99]['createdAt'], flows[199]['createdAt']]
     assert work.coerce_snapshot(cache.get_last_good(SLOT_SURF_WORK).payload, now=clock.now) is not None
@@ -808,6 +809,7 @@ async def test_mixed_workflow_page_retains_valid_rows_as_partial(setup):
     data = reader.project()
     assert data['state'] == 'ok' and data['partial']
     assert [row['id'] for row in data['workflows']] == [valid['id']]
+    assert data['summary']['workflows'] is None
 
 
 @pytest.mark.asyncio

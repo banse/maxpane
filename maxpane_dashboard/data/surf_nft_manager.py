@@ -9,6 +9,7 @@ import logging
 import time
 
 from maxpane_dashboard.analytics.surf_nft import normalize_record, project_snapshot
+from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.data.surf_nft_cache import SurfNftCache, _stamp
 from maxpane_dashboard.data.surf_nft_client import Budget, BudgetExhausted, SurfNftClient
 from maxpane_dashboard.data.surf_nft_discovery import SurfNftDiscovery, discovery_candidates
@@ -218,7 +219,10 @@ class SurfNftManager:
         snapshot = dict(nft_rows=deployed, nft_build_rows=builds,
                         nft_summary={'observed_at': observation}, nft_selected=None, nft_readme=self.get_readme(),
                         nft_sources=sources, nft_coverage=coverage, as_of=self._clock())
-        return project_snapshot(snapshot, selected_id=self._selected)
+        projected = project_snapshot(snapshot, selected_id=self._selected)
+        # The screen owns list projection; retained identities must remain searchable.
+        projected.update(nft_rows=deepcopy(deployed), nft_build_rows=deepcopy(builds))
+        return projected
 
     def catalogue_summary(self):
         return self.get_snapshot()['nft_summary']
@@ -262,6 +266,7 @@ class SurfNftManager:
         return (identity not in _DISCOVERY_PARENTS
                 and evidence.get('deploymentConfirmed') is True
                 and evidence.get('codePresent') is True and evidence.get('codeHash')
+                and 'deployer' in (evidence.get('deployment') or {})
                 and evidence.get('standard') in ('ERC-721', 'ERC-1155', 'ERC-721 + ERC-1155')
                 and evidence.get('_proof_revision') == self._proof_revision(candidate, evidence))
 
@@ -272,7 +277,8 @@ class SurfNftManager:
     def _proof_changed(self, identity, candidate):
         evidence = self.state.get('evidence', {}).get(identity, {})
         return (evidence.get('_proof_revision') is not None
-                and evidence['_proof_revision'] != self._proof_revision(candidate, evidence))
+                and (evidence['_proof_revision'] != self._proof_revision(candidate, evidence)
+                     or 'deployer' not in (evidence.get('deployment') or {})))
 
     def _pending(self, candidates, *, proof_only=False):
         """Prove reviewed candidates before enriching already observed collections."""
@@ -356,6 +362,8 @@ class SurfNftManager:
                 # A refreshed identity proof need not replace older detail facts
                 # or claim those facts were observed at its newer block/time.
                 retained['_proof_revision'] = result.evidence['_proof_revision']
+                if 'deployer' in (result.evidence.get('deployment') or {}):
+                    retained.setdefault('deployment', {})['deployer'] = result.evidence['deployment']['deployer']
         for child in result.children:
             key = child['key']
             self.state.setdefault('child_candidates', {})[key] = child['candidate']
@@ -401,6 +409,11 @@ class SurfNftManager:
         records = []
         for record in catalog['collections']:
             identity = record.get('id')
+            launch = candidates.get(identity, {}).get('launch') or {}
+            request_jobs = sorted({job['id'].lower() for job in launch.get('jobs') or []
+                                   if isinstance(job, dict) and parse_job_id(job.get('id'))})
+            if request_jobs:
+                record.setdefault('deployment', {})['request_job_ids'] = request_jobs
             provenance = candidates.get(identity, {}).get('provenance') or {}
             sources = {'discovery': self._source(identity, provenance.get('observed_at'), coverage=raw['coverage'])}
             for job in record.get('jobs', []):
@@ -436,7 +449,7 @@ class SurfNftManager:
             # One discovery page always precedes the selection's reserved slice.
             try:
                 with budget.limit(http=2, rpc=0, seconds=2):
-                    await self._discover(budget, page_limit=1, detail_limit=0, launch_limit=0)
+                    await self._discover(budget, page_limit=1, detail_limit=0, launch_limit=1)
             except BudgetExhausted:
                 pass  # A slow discovery page must leave time for retained rows.
             candidates = self._candidates()

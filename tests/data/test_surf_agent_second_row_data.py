@@ -70,3 +70,13 @@ def test_nodes_keep_oracle_when_launch_membership_is_incomplete(snapshot):
     assert nodes['known_jobs'] == 2 and nodes['total_jobs'] == 5
     assert nodes['read_ts'] == NOW-50 and nodes['launch_read_ts'] == NOW-15
     assert nodes['launch_state'] == 'partial'
+
+
+def test_nodes_project_total_job_counts_without_replacing_accepted_counts(snapshot):
+    snapshot['data']['_agent_nodes'] = dict(oracle=3, oracle_total=5, launches=2,
+        launches_total=4, other=0, known_jobs=2, total_jobs=2)
+    nodes = hero.project(**snapshot)['nodes']
+    assert (nodes['launches'], nodes['launches_total']) == (2, 4)
+    assert (nodes['oracle'], nodes['oracle_total']) == (3, 5)
+    snapshot['data']['_agent_nodes']['launches_total'] = True
+    assert hero.project(**snapshot)['nodes']['launches_total'] is None

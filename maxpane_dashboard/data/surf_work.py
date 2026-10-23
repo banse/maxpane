@@ -5,6 +5,7 @@ import math
 
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.analytics.surf_launch_checks import integer
+from maxpane_dashboard.analytics.surf_work import WORKFLOW_STOPPED, workflow_is_open
 from maxpane_dashboard.data.surf_swarm import _ts, clean_reply, parse_seat_token
 from maxpane_dashboard.data.surf_models import (
     SURF_WORK_JOB_FIELDS as JOB_FIELDS, SURF_WORK_NODE_FIELDS as NODE_FIELDS,
@@ -97,7 +98,8 @@ def detail_ids(jobs, workflows):
     ids = [j['id'] for j in jobs if j['state'] == 'executing']
     for blocked in (False, True):
         for row in workflows:
-            if row['status'] not in TERMINAL and (row['status'] == 'blocked') == blocked:
+            stopped = row['status'] in WORKFLOW_STOPPED
+            if (workflow_is_open(row['status']) is True or stopped) and stopped == blocked:
                 ids.extend(row[key] for key in ('contracts_job_id', 'frontend_job_id') if row[key])
     ids.extend(j['id'] for j in jobs if j['state'] == 'blocked')
     return list(dict.fromkeys(ids))
@@ -159,13 +161,15 @@ def workflow_context(raw, identity, members, *, now):
 
 def snapshot(jobs, workflows, details, *, read_ts, now=None, projects=None, metadata=None,
              expected_ids=None, active_scan_complete=True, coverage_partial=False,
-             context_job_ids=(), context_workflow_ids=()):
+             context_job_ids=(), context_workflow_ids=(), workflow_scan_complete=True):
     """Current evidence and historical context share rows, but never count scopes."""
     now = read_ts if now is None else now
     job_rows, job_partial = _page(jobs, _job, now, JOB_LIMIT)
     workflow_rows, flow_partial = _page(workflows, _workflow, now, WORKFLOW_LIMIT + WORKFLOW_DETAIL_LIMIT)
     # Legacy callers still describe a single recent page.
-    partial = coverage_partial or job_partial or flow_partial
+    if flow_partial or expected_ids is None and len(workflows) >= PAGE_LIMIT:
+        workflow_scan_complete = False
+    partial = coverage_partial or job_partial or flow_partial or not workflow_scan_complete
     if expected_ids is None: partial |= len(jobs) >= PAGE_LIMIT or len(workflows) >= PAGE_LIMIT
     projects = projects or []
     expected = list(dict.fromkeys(expected_ids if expected_ids is not None else detail_ids(job_rows, workflow_rows)))
@@ -195,6 +199,7 @@ def snapshot(jobs, workflows, details, *, read_ts, now=None, projects=None, meta
     return dict(read_ts=read_ts, partial=bool(partial), jobs_loaded=len(job_rows), jobs=list(rows.values()),
                 workflows=workflow_rows, projects=projects, current_job_ids=[i for i in rows if i in current],
                 current_workflow_ids=current_flows, active_scan_complete=active_scan_complete,
+                workflow_scan_complete=workflow_scan_complete,
                 context_job_ids=sorted(context_jobs), context_workflow_ids=sorted(context_flows),
                 details_expected=len(expected), details_loaded=sum(r['detail_state'] == 'ok' for r in rows.values()))
 
@@ -255,6 +260,10 @@ def coerce_snapshot(raw, *, now):
         raw.update(projects=[], current_job_ids=list(jobs), current_workflow_ids=list(flows),
                    context_job_ids=[], context_workflow_ids=[], active_scan_complete=False, partial=True)
     if type(raw.get('active_scan_complete')) is not bool: return None
+    # Pre-flag partial snapshots cannot distinguish a missing workflow tail from
+    # missing job detail. Preserve their data but do not certify an empty set.
+    raw.setdefault('workflow_scan_complete', not raw['partial'])
+    if type(raw['workflow_scan_complete']) is not bool: return None
     for name, values in (('current_job_ids', jobs), ('current_workflow_ids', flows)):
         if not _ids(raw.get(name), len(values)) or not set(raw[name]) <= values.keys(): return None
     if not _ids(raw.get('context_job_ids'), CONTEXT_JOB_LIMIT) or not _ids(raw.get('context_workflow_ids'), CONTEXT_JOB_LIMIT + CONTEXT_DETAIL_LIMIT): return None
@@ -276,10 +285,11 @@ def coerce_snapshot(raw, *, now):
         if any(w in flows and not {flows[w][k] for k in ('contracts_job_id', 'frontend_job_id') if flows[w][k]} <= set(p['job_ids']) for w in p['workflow_ids']): return None
         seen.add(p['id']); owned.update(p['job_ids'])
     if len(owned) > CONTEXT_JOB_LIMIT: return None
-    if not raw['partial'] and (not raw['active_scan_complete'] or any(i not in jobs for i in owned)
+    if not raw['partial'] and (not raw['active_scan_complete'] or not raw['workflow_scan_complete'] or any(i not in jobs for i in owned)
                               or any(w not in flows for p in projects for w in p['workflow_ids'])): return None
     keys = ('read_ts', 'partial', 'jobs_loaded', 'jobs', 'workflows', 'projects', 'details_expected', 'details_loaded',
-            'current_job_ids', 'current_workflow_ids', 'context_job_ids', 'context_workflow_ids', 'active_scan_complete')
+            'current_job_ids', 'current_workflow_ids', 'context_job_ids', 'context_workflow_ids', 'active_scan_complete',
+            'workflow_scan_complete')
     return {key: raw[key] for key in keys}
 
 
@@ -296,8 +306,12 @@ def project(raw, *, now, failed=False):
     nodes = [node for job in executing for node in job['nodes'] or [] if node['state'] == 'working']
     missing = not slot['active_scan_complete'] or any(job['nodes'] is None for job in executing)
     roles_unknown = any(node['role'] not in ('implement', 'integrate', 'test', 'tests', 'review') for node in nodes)
+    workflow_states = [workflow_is_open(row['status']) for row in workflows]
+    workflow_count = sum(workflow_states) if None not in workflow_states else None
+    if workflow_count == 0 and not slot['workflow_scan_complete']:
+        workflow_count = None
     summary = dict(jobs=len(executing) if executing or slot['active_scan_complete'] else None,
-                   workflows=sum(w['status'] not in TERMINAL | {'blocked'} for w in workflows),
+                   workflows=workflow_count,
                    seats=None if missing or any(n['seat'] is None for n in nodes) else len({n['seat'] for n in nodes}),
                    build=None if missing or roles_unknown else sum(n['role'] != 'review' for n in nodes),
                    review=None if missing or roles_unknown else sum(n['role'] == 'review' for n in nodes),

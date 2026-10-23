@@ -112,18 +112,9 @@ def _protocol_footer(card, width):
 
 
 def _work_footer(card, width):
-    summary = card.get("work_summary") or {}
-    values = [summary.get(key) for key in ("build", "review")]
-    counts = [str(int(value)) if _number(value) and value == int(value) else "—" for value in values]
-    for build_label, review_label in (("build", "review"), ("build", "rev"), ("bld", "rev")):
-        text = f"{counts[0]} {build_label} · {counts[1]} {review_label}"
-        if cell_len(text) <= width:
-            return Text(text, style=MUTED), False
-    compact = [fmt_compact(value) if count != "—" else count for value, count in zip(values, counts)]
-    text = f"{compact[0]} bld · {compact[1]} rev"
-    if cell_len(text) > width:
-        text = text.replace(" · ", "·")
-    return fit_prose(text, width, style=MUTED)
+    value = (card.get("work_summary") or {}).get("workflows")
+    count = f"{int(value):,}" if _number(value) and value == int(value) else "—"
+    return fit_prose(f"{count} workflows", width, style=MUTED)
 
 
 def _fleet_footer(card, width):
@@ -220,16 +211,15 @@ def meter_text(card: dict, width: int | None = None) -> Text:
 def signal_meter_text(card: dict, width: int) -> Text:
     """One lit cell per signal; the rest of the footer is an empty track."""
     count, total = card.get("numerator"), card.get("denominator")
-    label = "SIGNALS"
     if (not _number(count) or not _number(total) or total == 0
             or count > total or count != int(count) or total != int(total)):
-        return Text().append(label + " ", style=MUTED).append("—", style=AMBER)
+        return Text("— SIGNALS", style=MUTED)
     full = int(count)
-    gap = " " if full < width - len(label) else ""
-    cells = max(0, width - len(label) - len(gap))
-    if full > cells:
-        return Text(f"{label} {full}", style=MUTED)
-    return (Text().append(label + gap, style=MUTED).append("▰" * full, style=GREEN)
+    label = f"{full} SIGNALS"
+    cells = max(0, width - len(label) - 1)
+    if not full or full > cells:
+        return Text(label, style=MUTED)
+    return (Text().append(label + " ", style=MUTED).append("▰" * full, style=GREEN)
             .append("▱" * (cells - full), style=MUTED))
 
 
@@ -473,8 +463,8 @@ class SurfboardCard(HeroBoxBase, can_focus=True):
             label, secondary = " STATS ", _fleet_accept_rate(summary)
             preview = _fleet_preview(summary, inside, label_style, value_style)
         elif self.key == "swarm-tokens":
-            label = " LAST 24h "
-            preview = _token_preview(ranking.get("rows"), inside,
+            label = " LATEST "
+            preview = _token_preview(ranking.get("latest"), inside,
                                      label_style, value_style)
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
@@ -639,9 +629,7 @@ class SurfboardRack(Grid):
     def update_data(self, surfboard_cards=None, surfboard_sources=None, **_kwargs):
         cards = {card["key"]: card for card in surfboard_cards if isinstance(card, dict) and isinstance(card.get("key"), str)} if isinstance(surfboard_cards, list) else {}
         for card in self.query(SurfboardCard):
-            footer_key = {"swarm": "work", "work": "swarm"}.get(card.key)
-            footer = dict(cards.get(footer_key) or {}, key=footer_key) if footer_key else None
-            card.set_data(cards.get(card.key), footer_data=footer)
+            card.set_data(cards.get(card.key))
 
     def focus_card(self, key=None):
         key = key or self.focused_card

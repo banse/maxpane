@@ -75,12 +75,13 @@ async def test_rank_volume_includes_inactive_and_zero_with_deterministic_ties():
                      token_id(raw[3]): 2}
     try:
         ranking = await load(manager)
-        assert set(ranking) == {'rows', 'newest', 'state', 'read_ts', 'known', 'total'}
+        assert set(ranking) == {'rows', 'latest', 'newest', 'state', 'read_ts', 'known', 'total'}
         assert ranking['state'] == 'ok' and ranking['known'] == ranking['total'] == 4
         assert [r['id'] for r in ranking['rows']] == [token_id(raw[i]) for i in (1, 2, 3)]
         assert [r['volume_usd'] for r in ranking['rows']] == [9, 9, 2]
         assert set(ranking['rows'][0]) == {'id', 'age_s', 'symbol', 'chain', 'volume_usd', 'price_direction'}
         assert ranking['newest'] == dict(id=token_id(raw[3]), age_s=0, symbol='T4', chain='eth')
+        assert [r['id'] for r in ranking['latest']] == [token_id(raw[i]) for i in (3, 1, 2)]
         assert all(r['price_direction'] is None for r in ranking['rows'])
         assert ranking['read_ts'] == NOW
     finally:
@@ -149,7 +150,7 @@ async def test_unknown_empty_partial_and_stale_keep_successful_source_clock():
     manager, now, market = manager_for([launch(1)])
     try:
         assert manager.catalogue_summary()['ranking'] == dict(
-            rows=None, newest=None, state='unavailable', read_ts=None, known=0, total=None)
+            rows=None, latest=None, newest=None, state='unavailable', read_ts=None, known=0, total=None)
         first = await load(manager)
         manager._complete = False
         assert manager.catalogue_summary()['ranking']['state'] == 'partial'
@@ -164,7 +165,7 @@ async def test_unknown_empty_partial_and_stale_keep_successful_source_clock():
         assert manager.catalogue_summary()['ranking']['read_ts'] == first['read_ts']
         manager._catalogue = []
         empty = manager.catalogue_summary()['ranking']
-        assert empty == dict(rows=[], newest=None, state='ok', read_ts=NOW, known=0, total=0)
+        assert empty == dict(rows=[], latest=[], newest=None, state='ok', read_ts=NOW, known=0, total=0)
     finally:
         await manager.close()
 

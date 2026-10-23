@@ -412,6 +412,16 @@ box tooltip is a literal `Text`: npm latest/version/check time, fleet reference/
 no new degraded group. Cached AGENT refreshes also offer the existing guarded
 runtime check, using the same eligibility, TTL and endpoints.
 
+Owner CR round 800d0be3 (2026-10-23) overrides the older card names below:
+LAUNCHES/JOBS and ORACLE/JOBS show distinct attempted production jobs. Their
+inner percentage is accepted distinct jobs divided by that same category total;
+any accepted contribution accepts the job once. Testnets are excluded. Legacy
+accepted-only histories and incomplete chain/membership evidence cannot supply
+a denominator. Zero jobs has no acceptance percentage. Failed-only attempts
+participate in membership freshness. OWNER uses `wallet_text` with IMD's
+`/wallet/<address>` route, retaining ENS text and the full-address copy action.
+RUNTIME update colors retain their existing current/outdated/unknown transitions.
+
 Owner CR round 946ef8b5 (2026-10-21): AGENT uses `swarming` / `ready` / `offline`
 for working / idle / offline, retaining paused `ON`. ACCEPTED/JOBS are the outer
 and inner titles; SHIPPED retains LAUNCHES/JOBS. REWARDS has no outer paid caption;
@@ -454,7 +464,7 @@ The active mode is bold accent, the inactive mode dim. A dim, unclickable `SEAT_
 widen marker, only where it fits whole; it never adds a title line or moves a pin. `record_state` in pure analytics
 owns the displayed state. `launches` keeps attempts whose job is confirmed in a live launch,
 including failed or rejected attempts. The independently scheduled membership reader covers all
-nonoracle attempt jobs; NODES still counts accepted work only. Raw `launch` is intent, not proof.
+nonoracle attempt jobs; LAUNCHES/ORACLE now count all categorized attempts. Raw `launch` is intent, not proof.
 `launch_state` distinguishes confirmed membership, confirmed absence, unread and failed reads;
 a failed refresh remains unavailable even with a retained last-good point. `record_window` (`analytics/surf_record_filter.py`, with
 `record_selected` / `record_view`) filters first, then clamps the view to
@@ -958,16 +968,26 @@ BOARDROOM never offers that read. README prose is an excerpt, not verified mint
 evidence; addresses remain copyable without guessing their chain. Visible NFT
 selection changes cancel/drain the previous README task; cached text is immediate
 and a quick completion repaints independently of slower catalogue acquisition.
+NFT discovery catches up missing head pages independently of its historical
+cursor, and newer launch revisions invalidate older details. BOARDROOM advances
+one bounded launch detail alongside its proof work. Display duplicates require
+the same chain, name, direct launch-job IDs and verified deployment sender;
+most minted wins, then newest. Missing provenance stays separate. Raw cached
+identities remain available for explicit selection/address search; default
+tables and totals use representatives. No legitimacy judgment is inferred.
 The キープ and ビルディング captions stay over the left and right AGENT columns.
 The six equal fractional columns use the full viewport width: no horizontal padding
 or idle scrollbar gutter. All are 24 characters at 149×45; the one-cell gaps remain.
 A visible vertical scrollbar uses one column only on short screens. The terminal
 follows the grid, and captions recenter after resizing.
-BUILT BY SWARM and WIP exchange only their outer footers: build/review counts
-appear under BUILT BY SWARM, while the original SWARM `24H` history appears under
-WIP. The rack supplies each footer's original data and loading state separately;
-card bodies, destinations and data contracts are unchanged. Footer widths fit
-their receiving cards, and tooltips retain the footer source's detail.
+BUILT BY SWARM displays its own `24H` accepted-step history. WIP's outer
+footer displays `N workflows`, counting active original workflows; its inner
+working-node caption shows `0 working` when complete evidence establishes no
+jobs. Unavailable/incomplete counts remain unknown. Each footer keeps its own
+source and loading state; the former cross-card footer swap is removed.
+SIGNALS displays the fired detector count first (`0 SIGNALS`, `3 SIGNALS`),
+with one green cell per signal when that complete bar fits. Zero requires all
+detectors known; missing detector evidence stays `— SIGNALS`.
 Per the owner's 2026-10-14 display adjustment, the boardroom omits automatic stale
 and unavailable text. Cached figures remain visible, missing figures use `—`, and
 source states/clocks remain in internal snapshots and card tooltips. All boardroom card
@@ -979,16 +999,13 @@ the shared refresh guard; these repaints offer no network work. Success, failure
 and cancellation clear the indicator. Empty seat inputs and literal feed/reply prose
 are unchanged. Ordinary network polling remains 30 seconds.
 Seven launchers route to the native modes; Escape returns to the retained rack, while menu/Tab
-clear the return context. TOKENS opens the retained SWARM TOKENS dashboard. Its LAST 24h
-inset ranks the top three supported, unambiguous deployments by selected-pool 24h USD volume,
-with one leading blank in each token row and price arrows aligned at the right edge,
-including inactive deployments. Chain/address aliases share their earliest known launch time;
-only ages from zero through less than 24 hours qualify. Missing volume never means zero.
-Valid cached volumes stay in the ranking across rotating quote batches; retained stale inputs
-mark the ranking stale rather than temporarily replacing its leaders with fresh lower volumes.
-Green ↑ and red ↓ compare consecutive successful prices for the same token and expected/selected
-pool; first, unchanged or stale prices show no marker. Fresh rows retain their direction
-even when other ranked evidence is stale; a stale catalogue suppresses all directions.
+clear the return context. TOKENS opens the retained SWARM TOKENS dashboard. Its LATEST
+inset shows the three newest canonical production deployments, including older
+and inactive launches, independently of quote availability or volume. Alias
+launches retain their first known deployment time; ties use stable token identity.
+Green ↑ and red ↓ still compare consecutive successful prices for that token
+and pool; missing, stale or unchanged prices show no arrow. The separate 24h
+volume ranking remains data, but no longer chooses the card's displayed rows.
 The outer footer shows gray `24h` beside a green USD-volume history across all swarm tokens,
 including older and inactive launches. It reuses the bounded hourly-volume reader and eight
 three-hour buckets; missing intervals stay gaps. Tooltip coverage and clocks remain explicit.
@@ -1108,19 +1125,21 @@ legacy snapshots migrate with empty projects and partial coverage until refreshe
 Creation age never claims execution duration. Current node state controls activity,
 even when an older verdict says accepted. Job and workflow states have separate meanings.
 
-The boardroom replaces PORTFOLIO with WORK IN PROGRESS. Its ACTIVE JOBS digits
-and workflow subtitle share `surf_work.summary`; `work_summary` carries the
-build/review footer counts displayed under BUILT BY SWARM. WIP displays the original
-SWARM `24H` chart. Unknown values remain em dashes; retained counts keep
-the workflow subtitle. A positive displayed job count keeps the inset border/title/subtitle
-green, including retained counts during stale or pending reads. Zero and unknown counts
-use the default inset color. Coverage and read details remain in the card tooltip.
-Click/Enter opens Work and Escape returns to the retained boardroom.
+The boardroom replaces PORTFOLIO with WORK IN PROGRESS. WIP uses JOBS digits,
+a current working-node caption and an outer original-workflow count. BUILT BY
+SWARM keeps its own 24H chart. Missing current activity stays unknown; positive
+job counts retain the green inset. Click/Enter opens Work, Escape returns.
 
 The upper WORKFLOWS tree groups projects → workflows → their jobs → steps.
-The larger lower JOBS tree contains only jobs not linked to a loaded workflow, with their
-steps; its shown count excludes workflow jobs. Missing linked jobs stay under their workflow.
-Historical jobs start collapsed; active branches expand. Each job appears once across both trees.
+Default Open admits only original active lifecycles, never completed workflows
+because a follow-up is executing. Paused joins Blocked; explicit search can show
+historic workflows. Jobs whose workflow is not displayed stay in the lower JOBS
+tree. Membership is computed from displayed workflows, so a hidden parent cannot
+hide its jobs. Project headings require a visible workflow. Running jobs use
+the theme accent and completed jobs green. A separate
+persisted workflow-scan completeness flag prevents partial pagination from
+certifying zero active workflows. Legacy partial snapshots remain unknown until
+refreshed. Empty tree placeholders also render with NO_COLOR enabled.
 Selection and collapsed branches survive refreshes. Local `/` search and `f` filters preserve parents;
 heroes remain unfiltered. Enter focuses details, and Escape closes search before leaving.
 Addresses in objective/dependency/note prose use copy helpers without a guessed chain;

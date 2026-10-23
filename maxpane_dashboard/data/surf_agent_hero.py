@@ -279,7 +279,7 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
     work = _mapping(data.get('_agent_nodes'))
     nodes = _detail_facts(detail,
         rows=_rows(data.get('swarm_seat_node_rows'), dict(node_key=_text, accepted=count, attempts=count)),
-        **{key: count(work.get(key)) for key in ('oracle', 'launches', 'other', 'known_jobs', 'total_jobs')})
+        **{key: count(work.get(key)) for key in ('oracle', 'launches', 'other', 'known_jobs', 'total_jobs', 'launches_total', 'oracle_total')})
     launch_source = _source(sources, 'agent_work', now)
     nodes.update(launch_state=launch_source['state'], launch_read_ts=launch_source['read_ts'])
     return dict(seat=seat, accepted=acceptance, effort=effort, rewards=rewards, rank=rank,

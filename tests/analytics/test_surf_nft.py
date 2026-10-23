@@ -56,6 +56,91 @@ def test_same_name_never_joins_contracts_or_chains(nft, snapshot):
     assert len({row['id'] for row in selected}) == 3
 
 
+def test_same_request_and_deployer_select_most_minted_then_newest(nft, snapshot):
+    rows = deepcopy(snapshot['nft_rows'][:3])
+    for row, minted, stamp in zip(rows, (10, 20, 20), (300., 100., 200.)):
+        row.update(name='Same Collection', chain_id=1)
+        row['id'] = '1:'+row['contract']
+        row['deployment'].update(deployer='0x'+'ab'*20,
+            request_job_ids=['20000000-0000-4000-8000-000000000001'], timestamp=stamp)
+        row['stats']['totalMinted'] = minted
+    original = deepcopy(rows)
+    assert [r['id'] for r in nft.select_rows(rows)] == [rows[2]['id']]
+    assert rows == original
+    # Grouping precedes filters: an older mint mode cannot resurrect a duplicate.
+    rows[0]['mint']['state'] = 'open'
+    rows[1]['mint']['state'] = rows[2]['mint']['state'] = 'ended'
+    assert nft.select_rows(rows, filters={'mint':'open'}) == []
+
+
+@pytest.fixture
+def duplicate_snapshot(snapshot):
+    rows = deepcopy(snapshot['nft_rows'][:2])
+    for row, minted in zip(rows, (10,20)):
+        row.update(name='Same Collection', chain_id=1, id='1:'+row['contract'])
+        row['deployment'].update(deployer='0x'+'ab'*20,
+            request_job_ids=['20000000-0000-4000-8000-000000000001'])
+        row['stats']['totalMinted'] = minted
+        row['mint']['state'] = 'open'
+    return dict(snapshot, nft_rows=rows)
+
+
+def test_explicit_hidden_selection_retains_identity_and_matching_readme(nft, duplicate_snapshot):
+    hidden, representative = duplicate_snapshot['nft_rows']
+    duplicate_snapshot['nft_readme'] = dict(identity=hidden['id'], text='Old deployment README', observed_at=123.)
+    result = nft.project_snapshot(duplicate_snapshot, selected_id=hidden['id'])
+    assert result['nft_summary']['deployed'] == 1
+    assert [r['id'] for r in result['nft_rows']] == [representative['id']]
+    assert result['nft_selected']['id'] == hidden['id']
+    assert result['nft_readme'] == duplicate_snapshot['nft_readme']
+    other = nft.project_snapshot(duplicate_snapshot, selected_id=representative['id'])
+    assert other['nft_readme'] is None
+
+
+@pytest.mark.parametrize('field', ['id','contract'])
+def test_exact_hidden_identity_search_inspects_original_but_name_search_stays_grouped(nft, duplicate_snapshot, field):
+    hidden, representative = duplicate_snapshot['nft_rows']
+    original = deepcopy(duplicate_snapshot)
+    result = nft.project_snapshot(duplicate_snapshot, filters={'search':hidden[field].upper()})
+    assert [r['id'] for r in result['nft_rows']] == [hidden['id']]
+    assert result['nft_selected']['id'] == hidden['id']
+    by_name = nft.project_snapshot(duplicate_snapshot, filters={'search':'Same Collection'})
+    assert [r['id'] for r in by_name['nft_rows']] == [representative['id']]
+    assert duplicate_snapshot == original
+
+
+def test_hidden_identity_inspection_obeys_chain_stage_and_mint_filters(nft, duplicate_snapshot):
+    hidden, representative = duplicate_snapshot['nft_rows']
+    hidden['mint']['state'] = 'ended'
+    filtered = nft.project_snapshot(duplicate_snapshot, selected_id=hidden['id'], filters={'mint':'open'})
+    assert filtered['nft_selected']['id'] == representative['id']
+    for filters in ({'search':hidden['contract'],'mint':'open'},
+                    {'search':hidden['contract'],'chain':'robinhood'},
+                    {'search':hidden['contract'],'stage':'building'}):
+        assert nft.project_snapshot(duplicate_snapshot, selected_id=hidden['id'], filters=filters)['nft_selected'] is None
+
+
+@pytest.mark.parametrize('different', ['chain', 'request', 'deployer', 'missing', 'invalid'])
+def test_collection_representative_requires_same_proven_origin(nft, snapshot, different):
+    rows = deepcopy(snapshot['nft_rows'][:2])
+    for row in rows:
+        row.update(name='Same Collection', chain_id=1, id='1:'+row['contract'])
+        row['deployment'].update(deployer='0x'+'ab'*20,
+            request_job_ids=['20000000-0000-4000-8000-000000000001'])
+    if different == 'chain':
+        rows[1].update(chain_id=4663, id='4663:'+rows[1]['contract'])
+    elif different == 'request':
+        rows[1]['deployment']['request_job_ids'] = ['30000000-0000-4000-8000-000000000001']
+    elif different == 'deployer':
+        rows[1]['deployment']['deployer'] = '0x'+'cd'*20
+    elif different == 'missing':
+        rows[1]['deployment'].pop('deployer')
+    else:
+        for row in rows:
+            row['deployment']['request_job_ids'] = ['not-a-job']
+    assert len(nft.select_rows(rows)) == 2
+
+
 def test_identity_rejects_conflicting_top_level_fields_and_forged_id(nft, raw):
     record = deepcopy(raw['records'][0]); record['id'] = '1:0x'+'b'*40
     assert nft.normalize_record(record) is None

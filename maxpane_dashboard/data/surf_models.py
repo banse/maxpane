@@ -1557,7 +1557,7 @@ SURF_AGENT_HERO_FIELDS = {
     "earnings": ("state", "read_ts", "earned", "worked_on", "earned_24h", "worked_on_24h", "worked_recent", "owner"),
     "collab": ("state", "read_ts", "count", "rows"),
     "nodes": ("state", "read_ts", "rows", "oracle", "launches", "other", "known_jobs", "total_jobs",
-              "launch_state", "launch_read_ts"),
+              "launches_total", "oracle_total", "launch_state", "launch_read_ts"),
 }
 SURF_AGENT_HERO_MODEL_FIELDS = ("model", "effort")
 SURF_AGENT_HERO_COLLAB_FIELDS = ("token_id", "shared_jobs")
@@ -1604,7 +1604,7 @@ SURFBOARD_FLEET_FIELDS = ("codex_percent", "claude_percent", "daemon", "model", 
 # seat_slot/token_id identify the four saved AGENT cards; None on other cards.
 # meter_state: independent activity (busy/idle/offline/stale/unavailable/empty) or volume coverage;
 # share_price: IMD per whole sIMD from the existing protocol vault read, or None.
-# token_ranking: None on other cards; TOKENS uses {rows, newest, state, read_ts, known, total}.
+# token_ranking: None on other cards; TOKENS uses {rows, latest, newest, state, read_ts, known, total}.
 # rows: None (unknown), [] (known empty), or up to three rows with id, age_s, symbol,
 # chain, volume_usd, price_direction (up/down/flat/None). newest: None or a row with
 # id, age_s, symbol, chain. state: ok/partial/stale/unavailable; read_ts is source time.

@@ -45,6 +45,7 @@ def hub_payload(kind="normal"):
         dict(id='eth:tdemo', age_s=14400, symbol='TDEMO', chain='eth', volume_usd=0., price_direction=None),
     ], newest=dict(id='eth:new', age_s=300, symbol='FRESH', chain='eth'),
         state='ok', read_ts=STAMP, known=4, total=4)
+    cards[-1]['token_ranking']['latest'] = sorted(cards[-1]['token_ranking']['rows'], key=lambda row: row['age_s'])
     fleet_summary = dict(codex_percent=52.5, claude_percent=47.4, daemon='0.1.2',
                          model='gpt-6-astra', effort='xhigh', online=1000,
                          runtime_known=1000, state='ok', read_ts=STAMP,

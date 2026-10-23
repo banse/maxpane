@@ -6996,7 +6996,7 @@ class SurfManager:
         due = sw.oracle_rows_due(rows, oracle, now_ts=now, due_s=SWARM_ORACLE_DUE_S)
         index_prior = self.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX)
         index = sw.coerce_oracle_index(getattr(index_prior, "payload", None)) or sw.empty_oracle_index()
-        oracle_jobs = set(agent_work.oracle_candidates(seat)) if self._agent_active else set()
+        oracle_jobs = set(agent_work.oracle_candidates(seat, include_attempts=True)) if self._agent_active else set()
         missing_chains = oracle_jobs - index.get('chains', {}).keys()
         previous_jobs, previous_attempt = self._oracle_chain_attempt or (None, 0)
         chain_due = bool(missing_chains) and (not index['complete']

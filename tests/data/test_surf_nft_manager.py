@@ -112,6 +112,142 @@ async def test_owned_client_closed_after_tasks_drain(monkeypatch, tmp_path):
     client.close.assert_awaited_once()
 
 
+async def test_boardroom_discovery_also_advances_one_launch_detail(setup):
+    manager, now, entered, release, *_ = setup
+    release.set()
+    try:
+        await manager._cycle(proof_only=True)
+        limits = manager.discovery.advance.await_args_list[0].kwargs
+        assert limits['page_limit'] == 1
+        assert limits['launch_limit'] == 1
+        assert limits['detail_limit'] == 0
+        assert manager.last_budget.http_attempts <= 12
+    finally:
+        await manager.close()
+
+
+def test_manager_retains_hidden_identity_for_screen_projection_and_card_totals(setup):
+    import json
+    from pathlib import Path
+    from maxpane_dashboard.analytics.surf_nft import normalize_record, project_snapshot
+    manager, *_ = setup
+    source = json.loads((Path(__file__).parents[1]/'fixtures/surf/nft/projection.json').read_text())['records'][0]
+    hidden = normalize_record(source)
+    hidden.update(name='Same Collection')
+    hidden['stats']['totalMinted'] = 10
+    hidden['deployment'].update(deployer='0x'+'ab'*20,
+        request_job_ids=['20000000-0000-4000-8000-000000000001'])
+    representative = deepcopy(hidden)
+    representative.update(id='1:0x'+'f'*40, contract='0x'+'f'*40)
+    representative['stats']['totalMinted'] = 20
+    manager.state['records'] = [hidden,representative]
+    original = deepcopy(manager.state['records'])
+    delivered = manager.get_snapshot()
+    assert manager.catalogue_summary()['deployed'] == 1
+    assert len(delivered['nft_rows']) == 2  # Reader retains identities for local screen filters.
+    rendered = project_snapshot(delivered, filters={'search':hidden['contract']})
+    assert rendered['nft_selected']['id'] == hidden['id']
+    assert [row['id']for row in rendered['nft_rows']] == [hidden['id']]
+    manager.select(hidden['id'])
+    assert manager.get_snapshot()['nft_selected']['id'] == hidden['id']
+    delivered['nft_rows'][0]['stats']['totalMinted'] = 999
+    assert manager.state['records'] == original
+
+
+async def test_legacy_proof_refresh_adds_origin_without_renewing_detail_clock(setup):
+    manager, *_ = setup
+    identity = '1:0x'+'a'*40
+    candidate = {'chainId':1, 'address':identity[2:], 'artifact':{}, 'launch':{}}
+    previous = dict(chainId=1, address=identity[2:], checkedAt=900., codeHash='0x'+'b'*64,
+                    deploymentConfirmed=True, codePresent=True, standard='ERC-721',
+                    deployment={'timestamp':800.}, stats={'totalMinted':10})
+    previous['_proof_revision'] = manager._proof_revision(candidate, previous)
+    manager.state['evidence'][identity] = deepcopy(previous)
+    assert manager._proof_changed(identity, candidate)
+    assert not manager._proof_current(identity, candidate)
+    fresh = dict(previous, checkedAt=1000., proofOnly=True,
+                 deployment={'timestamp':800., 'deployer':'0x'+'c'*40})
+    manager.inspector.advance = AsyncMock(return_value=SimpleNamespace(
+        evidence=fresh, progress=None, complete=True, children=[]))
+    from maxpane_dashboard.data.surf_nft_client import Budget
+    try:
+        await manager._inspect(identity, candidate, Budget(), proof_only=True)
+        result = manager.state['evidence'][identity]
+        assert result['deployment']['deployer'] == '0x'+'c'*40
+        assert result['checkedAt'] == 900.
+        assert result['stats'] == {'totalMinted':10}
+        assert manager._proof_current(identity, candidate)
+    finally:
+        await manager.close()
+
+
+def test_projection_origin_uses_direct_launch_jobs_not_transitive_links(setup, monkeypatch):
+    import maxpane_dashboard.data.surf_nft_manager as module
+    manager, *_ = setup
+    import json
+    from pathlib import Path
+    row = json.loads((Path(__file__).parents[1]/'fixtures/surf/nft/projection.json').read_text())['records'][0]
+    identity = row['id']
+    direct = '20000000-0000-4000-8000-000000000001'
+    indirect = '30000000-0000-4000-8000-000000000001'
+    row['jobs'] = [{'id':direct},{'id':indirect}]
+    manager.state['discovery'] = dict(observed_at=900., raw={})
+    manager._candidates = lambda:{identity:{'launch':{'jobs':[{'id':direct}]}}}
+    monkeypatch.setattr(module, 'project_catalog', lambda *_a,**_k:{'collections':[row],'coverage':{'complete':False}})
+    manager._publish()
+    assert manager.state['records'][0]['deployment']['request_job_ids'] == [direct]
+
+
+async def test_new_head_collection_reaches_snapshot_through_real_discovery_and_chain_reader(tmp_path):
+    """Bounded offline wire replay covers API head -> receipt proof -> published row."""
+    import httpx
+    from maxpane_dashboard.data.surf_nft_client import SurfNftClient
+    from maxpane_dashboard.data.surf_swarm_client import SwarmClient
+    from tests.data.test_surf_nft_discovery import FIXTURE
+    from tests.data.test_surf_rpc_budget_r2_nft import Wire, ADDRESS, TX, NOW
+    launch = deepcopy(FIXTURE['launch'])
+    launch['artifacts'] = [dict(launch['artifacts'][0], name='NewCollectionNFT', address=ADDRESS, txHash=TX)]
+    launch['jobs'] = []
+    wire = Wire()
+    def handler(request):
+        if request.method == 'POST':
+            return wire(request)
+        path = request.url.path
+        if path == '/launches':
+            value = {'launches':[launch]}
+        elif path.startswith('/launches/'):
+            value = launch
+        elif path == '/publications':
+            value = {'items':[], 'count':0, 'totalPages':0}
+        elif path in ('/jobs','/workflows','/sites'):
+            value = {path[1:]:[]}
+        else:
+            value = {}
+        return httpx.Response(200, json=value)
+    now = [NOW]
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    client = SurfNftClient(http_client=http, inter_call_delay=0, clock=lambda:now[0], monotonic=lambda:1.)
+    swarm = SwarmClient(http_client=http, inter_call_delay=0, clock=lambda:now[0], monotonic=lambda:1.)
+    manager = SurfNftManager(client=client, swarm=swarm, cache_path=tmp_path/'nft.json',
+                             clock=lambda:now[0], monotonic=lambda:1.)
+    try:
+        assert manager.get_snapshot()['nft_rows'] is None
+        for _ in range(4):
+            await manager._cycle(proof_only=True)
+            assert manager.last_budget.http_attempts <= 12
+            if manager.get_snapshot()['nft_rows']:
+                break
+            now[0] += 30
+        rows = manager.get_snapshot()['nft_rows']
+        assert [(row['id'],row['name'])for row in rows] == [(f'1:{ADDRESS}', 'NewCollectionNFT')]
+        assert rows[0]['deployment']['receiptSuccess'] is True
+        assert rows[0]['sources']['chain']['observed_at'] >= NOW
+        assert manager._error_count == 0
+    finally:
+        await manager.close()
+        await http.aclose()
+
+
 async def test_bounded_cycles_resume_pinned_inspection_and_publish_real_catalog(tmp_path):
     from tests.data.test_surf_nft_chain import AsyncReads, ADDRESS, TX
     from maxpane_dashboard.data.surf_nft_cache import SurfNftCache

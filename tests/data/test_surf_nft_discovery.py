@@ -40,6 +40,62 @@ def setup(handler=None, monotonic=lambda: 1.):
 def budget(n=24):return Budget(http_limit=n,monotonic=lambda:1.)
 
 
+async def test_head_refresh_catches_up_missing_pages_without_rewinding_history():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from maxpane_dashboard.data.surf_nft_client import Page
+    old = dict(FIXTURE['launches']['launches'][0], launchNumber=100)
+    new = dict(old, id='10000000-0000-4000-8000-000000000099', launchNumber=300)
+    missed = dict(old, id='10000000-0000-4000-8000-000000000098', launchNumber=199)
+    state = empty_discovery_state()
+    state['sources']['launches'].update(head_at=1., tail_cursor=9, terminal=True,
+                                        head_ids=[old['id']])
+    client = SimpleNamespace(page=AsyncMock(side_effect=[
+        Page([new], 200, False, 1000.), Page([missed, old], 100, False, 1001.)]))
+    discovery = SurfNftDiscovery(client=client, swarm=SimpleNamespace(), clock=lambda:1001.)
+    first = await discovery.advance(state, budget=budget(), page_limit=1, detail_limit=0, launch_limit=0)
+    first.state['rotation'] = 0
+    second = await discovery.advance(first.state, budget=budget(), page_limit=1, detail_limit=0, launch_limit=0)
+    assert [call.kwargs['cursor'] for call in client.page.await_args_list] == [None, 200]
+    assert {new['id'], missed['id'], old['id']} <= {r['id'] for r in second.state['raw']['launches']}
+    source = second.state['sources']['launches']
+    assert source['tail_cursor'] == 9 and source['terminal'] is True
+    assert source['refresh_cursor'] is None
+    assert source['head_ids'] == [new['id']]
+
+
+def test_new_launch_summary_does_not_hide_behind_older_detail():
+    state = empty_discovery_state()
+    old = deepcopy(FIXTURE['launch'])
+    old['updatedAt'] = '2026-10-16T10:00:00Z'
+    state['raw']['launchDetails'][old['id']] = old
+    fresh = deepcopy(old)
+    fresh['updatedAt'] = '2026-10-16T11:00:00Z'
+    fresh['artifacts'] = [dict(old['artifacts'][0], address='0x'+'9'*40)]
+    discovery = SurfNftDiscovery(client=None, swarm=None, clock=lambda:1001.)
+    discovery._ingest(state, 'launches', [fresh], 1001.)
+    assert set(discovery_candidates(state)) == {'1:0x'+'9'*40}
+    assert old['id'] in state['pending_launches']
+
+
+async def test_unread_recent_launch_details_precede_periodic_old_refreshes():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from maxpane_dashboard.data.surf_nft_client import SourceRead
+    state = empty_discovery_state()
+    old = deepcopy(FIXTURE['launch'])
+    fresh = dict(old, id='10000000-0000-4000-8000-000000000099', launchNumber=99, jobs=[])
+    state['raw']['launches'] = [old, fresh]
+    state['raw']['launchDetails'][old['id']] = old
+    state['pending_launches'] = {row['id']:{'retry_at':0., 'revision':None} for row in (old, fresh)}
+    client = SimpleNamespace(detail=AsyncMock(return_value=SourceRead(fresh, 1000.)))
+    discovery = SurfNftDiscovery(client=client, swarm=SimpleNamespace(), clock=lambda:1001.)
+    result = await discovery.advance(state, budget=budget(), page_limit=0, detail_limit=0, launch_limit=1)
+    assert client.detail.await_args.args == ('launches', fresh['id'])
+    assert fresh['id'] in result.state['raw']['launchDetails']
+    assert old['id'] in result.state['pending_launches']
+
+
 def test_candidate_projection_parses_each_job_once_and_refreshes_references(monkeypatch):
     from unittest.mock import Mock
     import maxpane_dashboard.data.surf_nft_rules.catalog as catalog

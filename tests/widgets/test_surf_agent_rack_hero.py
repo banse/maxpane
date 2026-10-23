@@ -35,7 +35,7 @@ def payload():
         earnings=dict(source, earned=12, worked_on=7, earned_24h=4, worked_on_24h=2, worked_recent=True,
                       owner="0x0000000000000000000000000000000000000001"),
         collab=dict(source, count=12, rows=[dict(token_id=527, shared_jobs=84), dict(token_id=1, shared_jobs=52)]),
-        nodes=dict(source, oracle=120, launches=340, other=500, known_jobs=840, total_jobs=840,
+        nodes=dict(source, oracle=120, oracle_total=160, launches=340, launches_total=400, other=500, known_jobs=840, total_jobs=840,
                    rows=[dict(node_key="adversarial_review", accepted=500, attempts=510),
                                 dict(node_key="build_contract_project", accepted=340, attempts=360),
                                 dict(node_key="oracle_assess", accepted=120, attempts=130)]),
@@ -181,10 +181,10 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             "status": ("WORKER", "reviewing", "BUSY", "▰"),
             "owner": ("WALLET", "example.eth ⧉", "paired"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "model… +1", "high"),
-            "models": ("RESEARCH", "ORACLE", "JOBS"),
+            "models": ("ORACLE", "JOBS", "75%"),
             "earnings": ("EARNINGS", "TOKENS", "4 new"),
             "collab": ("SEATS", "collaborators"),
-            "nodes": ("SHIPPED", "LAUNCHES", "JOBS"),
+            "nodes": ("LAUNCHES", "JOBS", "85%"),
         }.items():
             text = painted(app, key)
             assert all(word in text for word in words), (key, text)
@@ -200,7 +200,7 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         assert "╶─╯╰─╯╰─╯" in painted(app, "accepted")
         assert strips(app, "accepted")[0].text.strip("╭─╮ ⊙") == "ACCEPTED"
         assert strips(app, "accepted")[2].text.split("┌")[1].split("┐")[0].strip("─ ") == "JOBS"
-        assert strips(app, "nodes")[0].text.strip("╭─╮ ⊙") == "SHIPPED"
+        assert strips(app, "nodes")[0].text.strip("╭─╮ ⊙") == "LAUNCHES"
 
 
 @pytest.mark.parametrize("width", [132, 149])
@@ -263,7 +263,7 @@ async def test_owner_keeps_copy_and_explorer_links_when_name_is_hostile_or_long(
         segments = [segment for strip in strips(pilot.app, "owner") for segment in strip]
         icons = [s for s in segments if "⧉" in s.text]
         assert icons and all("@click" in s.style.meta for s in icons)
-        assert any(s.style and s.style.link and "etherscan.io/address/" in s.style.link for s in segments)
+        assert any(s.style and s.style.link and "explorer.imd.fun/wallet/" in s.style.link for s in segments)
         assert "‹" in painted(pilot.app, "owner") and "\x1b" not in painted(pilot.app, "owner")
 
 
@@ -287,7 +287,7 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
     data = payload()
     data["accepted"].update(accepted=0, attempts=0, percent=None)
     data["models"]["rows"] = []
-    data["nodes"].update(rows=[], oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0)
+    data["nodes"].update(rows=[], oracle=0, oracle_total=0, launches=0, launches_total=0, other=0, known_jobs=0, total_jobs=0)
     data["collab"].update(count=0, rows=[])
     data["earnings"].update(earned=0, worked_on=0, earned_24h=0, worked_on_24h=0, worked_recent=False)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
@@ -465,7 +465,7 @@ async def test_malformed_numbers_dates_and_nested_values_clear_old_facts_safely(
     data['status'].update(live_state='[/x]', meter_state='[/x]', last_work_ts=1e300, paused_until_ts=-2)
     data['runtime'].update(runtime='[/x]\x1b suspicious', daemon=None, devices=True, checked_ts=1e300)
     data['models']['rows'] = [None]
-    data['nodes'].update(rows=[False], oracle=True, launches=-1, other=float('nan'))
+    data['nodes'].update(rows=[False], oracle=True, oracle_total=True, launches=-1, launches_total=-1, other=float('nan'))
     async with Harness(payload()).run_test(size=(170, 45)) as pilot:
         await pilot.pause()
         pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
@@ -729,15 +729,15 @@ async def test_researched_uses_production_oracle_count_independently_of_models()
             ("partial", None, ("--",)),
             ("pending", 999, ("--",)),
         ):
-            data["nodes"].update(state=state, oracle=oracle)
+            data["nodes"].update(state=state, oracle=oracle, oracle_total=oracle)
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             text = painted(app, "models")
-            assert strips(app, "models")[0].text.strip("╭─╮ ⊙") == "RESEARCH"
-            assert "ORACLE" in strips(app, "models")[2].text
+            assert strips(app, "models")[0].text.strip("╭─╮ ⊙") == "ORACLE"
+            assert "JOBS" in strips(app, "models")[2].text
             assert all(any(glyph in row.text for row in body_rows(app, "models")) for glyph in glyphs), text
-            assert strips(app, "models")[6].text.split("└")[1].split("┘")[0].strip("─ ") == "JOBS"
-            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == "JOBS"
+            assert strips(app, "models")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("100%" if state == "ok" else "--%")
+            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("--%" if state == "pending" else "85%")
             card = app.query_one("#hero-models")
             assert card.data.state == state and card.data.read_ts == data["nodes"]["read_ts"]
             assert "production networks; testnets excluded" in str(card.tooltip)
@@ -909,19 +909,64 @@ async def test_ship_counts_launch_jobs_and_labels_the_unit():
             (dict(state="ok", oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0),
              ("╭─╮", "│ │", "╰─╯")),
         ):
-            data["nodes"].update(values)
+            data["nodes"].update(values, launches_total=values["launches"])
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             text = painted(app, "nodes")
-            assert strips(app, "nodes")[0].text.strip("╭─╮ ⊙") == "SHIPPED"
+            assert strips(app, "nodes")[0].text.strip("╭─╮ ⊙") == "LAUNCHES"
             assert "LAUNCHES" in text
             assert "NODES" not in text and "work by type" not in text and "other" not in text
             for glyph in digits:
                 assert any(glyph in row.text for row in body_rows(app, "nodes")), text
-            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == "JOBS"
+            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("100%" if values["launches"] else "--%")
             assert not strips(app, "nodes")[-1].text.strip("╰─╯ ")
             assert border_color(app, "nodes") == border_color(app, "accepted")
             tooltip = str(app.query_one("#hero-nodes").tooltip)
-            assert "Distinct accepted jobs on production networks; testnets excluded." in tooltip
+            assert "Distinct jobs on production networks; testnets excluded." in tooltip
             assert f"launch evidence known for {values['known_jobs']} of {values['total_jobs']} accepted non-oracle jobs" in tooltip
             assert "attempts" not in tooltip
+
+
+async def test_job_cards_show_total_digits_and_acceptance_percentages_independently():
+    data = payload()
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        app = pilot.app
+        for accepted, total, caption in ((3, 4, '75%'), (0, 4, '0%'), (4, 4, '100%'),
+                                         (0, 0, '--%'), (None, 4, '--%'), (3, None, '--%'),
+                                         (5, 4, '--%'), (True, 4, '--%')):
+            data['nodes'].update(launches=accepted, launches_total=total, oracle=accepted, oracle_total=total)
+            app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+            await pilot.pause()
+            for key, title in (('nodes', 'LAUNCHES'), ('models', 'ORACLE')):
+                rendered = strips(app, key)
+                assert rendered[0].text.strip('╭─╮ ⊙') == title
+                assert rendered[2].text.split('┌')[1].split('┐')[0].strip('─ ') == 'JOBS'
+                assert rendered[6].text.split('└')[1].split('┘')[0].strip('─ ') == caption
+                body = '\n'.join(row.text for row in body_rows(app, key))
+                assert ('--' in body) == (total is None)
+                if total == 4:
+                    assert '╷ ╷' in body and '╰─┤' in body and '  ╵' in body, body
+                assert not rendered[-1].text.strip('╰─╯ ')
+        data['nodes'].update(state='pending', launches=3, launches_total=4)
+        app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+        await pilot.pause()
+        assert '--%' in painted(app, 'nodes') and '--' in body_rows(app, 'nodes')[1].text
+
+
+async def test_mixed_job_card_keeps_any_accepted_work_in_the_oracle_rate():
+    from maxpane_dashboard.data.surf_agent_work import summarize
+    from tests.data.test_surf_agent_work import LIVE, NOW, point, row
+    data = payload()
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        app = pilot.app
+        for accepted_node, rejected_node in [('implement', 'oracle_assess'), ('oracle_assess', 'implement')]:
+            rows = [row(LIVE, accepted_node), row(LIVE, rejected_node, 'rejected')]
+            for ordered in (rows, list(reversed(rows))):
+                facts = summarize({'work': ordered}, {LIVE: point(True)}, NOW, oracle_chains={LIVE: 1})
+                data['nodes'].update(facts)
+                app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+                await pilot.pause()
+                assert '100%' in strips(app, 'models')[6].text
+                assert 'Accepted / total jobs: 1 / 1' in str(app.query_one('#hero-models').tooltip)
+                assert 'Accepted / total jobs: 0 / 0' in str(app.query_one('#hero-nodes').tooltip)
+                assert '--%' in strips(app, 'nodes')[6].text

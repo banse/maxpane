@@ -74,7 +74,7 @@ window rule (8/6 at 17 cells) is surf's anti-poisoning form.
 landed 2026-09-20). `widgets/explorer.py` is the one module that
 names an explorer (`ETHEREUM`, `BASE`, `SEPOLIA`, `ROBINHOOD` for chain 4663 at
 `robinhoodchain.blockscout.com`, and `IMD` for canonical UUID `job` links and address-valued
-`token` links via `address.job_text` / `token_text`; `SITES` serves the `site` kind at
+`token` and `wallet` links via `address.job_text` / `token_text` / `wallet_text`; `SITES` serves the `site` kind at
 `https://<label>.sites.imd.fun/`). `address.site_text` prefers the bare API label and accepts the
 legacy `<label>.site.identitymd.eth` name as fallback; never use `site.url`. Each `Explorer`
 names its accepted `kinds`; `is_valid` checks kind and value together. `for_network(word)` serves per-row network
