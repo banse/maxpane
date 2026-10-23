@@ -1,15 +1,14 @@
 """Selected-first card browsing; all paints consume reader-published values."""
 from rich.style import Style
 from rich.text import Text
-from textual.containers import Grid, Horizontal, VerticalScroll
+from textual.containers import Horizontal, VerticalScroll
 from textual.message import Message
-from textual.widgets import DataTable, Input, Static
+from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import PanelBase
-from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, LocalSourceHeroCard, _count
 from .art import SwornArt
-from .details import SwornFacts, card_counts
+from .details import SwornFacts
 
 
 class _CardTable(DataTable):
@@ -41,14 +40,12 @@ class SwornExplorer(PanelBase):
     TITLE = 'SWORN / EXPLORER'
     # After the live 149x45 preview: at 105 terminal columns the fixed 24-cell
     # list, 46-cell facts rail and gutters leave the complete 26-cell art link.
-    # Below this, stack the body and use two hero columns; the outer scroll
-    # also keeps the fixed-height heroes/body reachable in short terminals.
+    # Below this, stack the body. The outer scroll keeps the body reachable
+    # in short terminals; the artwork fills all space below the one-line title.
     DEFAULT_CSS = '''
     SwornExplorer {height: 1fr; overflow-y: auto; scrollbar-gutter: stable; scrollbar-size: 1 1;}
     SwornExplorer > .panel-title {height: 1; margin-bottom: 0;}
-    SwornExplorer #sworn-search {height: 3; margin-bottom: 1;}
     SwornExplorer #sworn-message {height: auto; color: $text-muted;}
-    SwornExplorer #sworn-heroes {height: 9; grid-size: 4 1; grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1; margin-bottom: 1;}
     SwornExplorer #sworn-content {height: 1fr; min-height: 16;}
     SwornExplorer #sworn-body {height: 1fr; min-height: 16;}
     SwornExplorer _Cards {width: 24; height: 1fr; min-height: 16; margin-right: 1;}
@@ -61,7 +58,6 @@ class SwornExplorer(PanelBase):
     SwornExplorer.compact _Cards {width: 100%; height: 9; min-height: 9;}
     SwornExplorer.compact _Artwork {width: 100%; height: 24;}
     SwornExplorer.compact SwornFacts {width: 100%; height: 24;}
-    SwornExplorer.compact #sworn-heroes {height: 18; grid-size: 2 2;}
     '''
     class Select(Message):
         def __init__(self, value):
@@ -77,12 +73,7 @@ class SwornExplorer(PanelBase):
         self.requested = None; self._waiting_popup = False
 
     def compose_body(self):
-        yield Input(placeholder='Token ID or original claimant address · Enter to find', id='sworn-search')
         yield Static(Text(), id='sworn-message')
-        with Grid(id='sworn-heroes'):
-            for name in ('COLLECTION', 'FAMILIES', 'FACTS', 'COMMUNITY'):
-                yield LocalSourceHeroCard(HeroRecord(key='sworn-'+name.lower(), title=name,
-                    heading='MINTED' if name == 'COLLECTION' else 'SELECTED', footer='', digits='--', accent=False))
         with VerticalScroll(id='sworn-content'):
             with Horizontal(id='sworn-body'):
                 yield _Cards()
@@ -90,6 +81,9 @@ class SwornExplorer(PanelBase):
                 yield SwornFacts(id='sworn-facts')
 
     def on_mount(self):
+        title = Text(self.TITLE + '  ·  ')
+        title.append('w wallet', style=Style(meta={'@click': 'screen.search'}))
+        self.query_one('.panel-title', Static).update(title)
         table = self.query_one(DataTable)
         for label, width in (('ID', 5), ('FAMILIES', 8), ('', 1)):
             table.add_column(label, width=width)
@@ -109,12 +103,6 @@ class SwornExplorer(PanelBase):
         self.query_one(SwornArt).update_art(card.get('art') if card else None)
         self.query_one(_Artwork).query_one('.panel-title', Static).update(Text(f"SWORN #{card['token_id']}" if card else 'SWORN'))
         self.query_one(SwornFacts).show_card(card)
-        values = (self.supply, *card_counts(card))
-        for index, (hero, value) in enumerate(zip(self.query(LocalSourceHeroCard), values)):
-            old = hero.data
-            hero.set_record(HeroRecord(key=old.key, title=old.title, heading=old.heading, footer='',
-                subtitle={1: 'of 13 families', 2: 'of 25 facts'}.get(index, ''),
-                digits=_count(value), accent=False, read_ts=card.get('observed_at') if card else None))
 
     def update_data(self, *, sworn_supply=None, sworn_rows=None, sworn_selected=None,
                     sworn_selection=None, sworn_error=None, sworn_block=None, sworn_observed_at=None):

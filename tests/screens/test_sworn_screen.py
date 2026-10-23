@@ -7,6 +7,7 @@ from textual.app import App
 from textual.widgets import DataTable, Input
 
 from maxpane_dashboard.screens.sworn_screen import SwornScreen
+from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 from maxpane_dashboard.widgets.sworn.explorer import SwornExplorer
 from maxpane_dashboard.widgets.sworn.details import SwornDetailScreen
 from tests.widgets.test_sworn_explorer import payload, painted
@@ -42,7 +43,11 @@ async def settle(pilot, predicate):
     assert predicate()
 
 
-async def test_enter_popup_escape_returns_same_card_and_lookup_remains_editable():
+async def test_enter_popup_escape_returns_same_card_and_lookup_remains_editable(monkeypatch):
+    from maxpane_dashboard.screens import wallet_input
+    saved = []
+    monkeypatch.setattr(wallet_input, 'get_wallet', lambda: '')
+    monkeypatch.setattr(wallet_input, 'save_wallet', saved.append)
     app = Harness()
     async with app.run_test(size=(149, 45)) as pilot:
         screen = app.screen
@@ -55,8 +60,37 @@ async def test_enter_popup_escape_returns_same_card_and_lookup_remains_editable(
         assert app.screen is screen
         assert screen.query_one(SwornExplorer).selected['token_id'] == 10
         await pilot.press('/')
+        assert isinstance(app.screen, WalletInputScreen)
         await pilot.press('n', 'p', 'r', 'f')
-        assert screen.query_one(Input).value == 'nprf'
+        assert app.screen.query_one(Input).value.endswith('nprf')
+        await pilot.press('escape')
+        assert app.screen is screen
+        assert app.manager.selections == []
+        assert saved == []
+
+
+@pytest.mark.parametrize('trigger', ['w', 'click'])
+async def test_wallet_picker_matches_the_list_and_selects_on_submit(monkeypatch, trigger):
+    from maxpane_dashboard.screens import wallet_input
+    saved = []
+    monkeypatch.setattr(wallet_input, 'get_wallet', lambda: '')
+    monkeypatch.setattr(wallet_input, 'save_wallet', saved.append)
+    async with Harness().run_test(size=(149, 45)) as pilot:
+        screen = pilot.app.screen
+        await settle(pilot, lambda: screen.query_one(SwornExplorer).selected is not None)
+        if trigger == 'click':
+            rows = screen._compositor.render_strips()
+            y, x = next((y, row.text.index('w wallet')) for y, row in enumerate(rows) if 'w wallet' in row.text)
+            await pilot.click(offset=(x, y))
+        else:
+            await pilot.press(trigger)
+        assert isinstance(pilot.app.screen, WalletInputScreen)
+        value = '0x' + 'AbCd' * 10
+        pilot.app.screen.query_one(Input).value = value
+        await pilot.press('enter')
+        await settle(pilot, lambda: pilot.app.screen is screen)
+        assert saved == [value]
+        assert pilot.app.manager.selections == [value.lower()]
 
 
 async def test_row_selection_blanks_old_identity_until_matching_response_and_icon_opens():
@@ -143,10 +177,11 @@ async def test_short_terminal_can_scroll_to_all_body_content(width):
     async with Harness().run_test(size=(width, 20)) as pilot:
         panel = pilot.app.screen.query_one(SwornExplorer)
         await settle(pilot, lambda: panel.selected is not None)
-        assert panel.max_scroll_y > 0
+        assert panel.max_scroll_y == 0
         panel.scroll_end(animate=False)
         await pilot.pause()
         viewport = panel.query_one('#sworn-content')
+        assert (viewport.max_scroll_y > 0) == (width < 105)
         assert viewport.region.bottom <= 19
         facts = panel.query_one('#sworn-facts')
         viewport.scroll_to(y=facts.region.y - viewport.region.y + viewport.scroll_y, animate=False)

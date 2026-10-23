@@ -1,9 +1,10 @@
 """Sworn uses the shared reader lifecycle; UI handlers only send intent."""
 from textual import events, on
 from textual.binding import Binding
-from textual.widgets import DataTable, Input
+from textual.widgets import DataTable
 
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
+from maxpane_dashboard.screens.wallet_input import WalletInputScreen
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.sworn.explorer import SwornExplorer
 from maxpane_dashboard.widgets.sworn.details import SwornDetailScreen
@@ -15,7 +16,8 @@ class SwornScreen(DashboardScreen):
     REFRESH_WORKER_NAME = 'sworn-refresh'
     PANELS = ((SwornExplorer, keys('sworn_supply', 'sworn_rows', 'sworn_selected',
                 'sworn_selection', 'sworn_error', 'sworn_block', 'sworn_observed_at')),)
-    BINDINGS = [Binding('/', 'search', show=False), Binding('[', 'page(1)', show=False),
+    BINDINGS = [Binding('w', 'search', show=False), Binding('/', 'search', show=False),
+                Binding('[', 'page(1)', show=False),
                 Binding(']', 'page(-1)', show=False), Binding('escape', 'list', show=False)]
     DEFAULT_CSS = '''
     SwornScreen {background: $background; color: $text;}
@@ -38,7 +40,7 @@ class SwornScreen(DashboardScreen):
         self.query_one(SwornArt).resume()
 
     def _prime_status_bar(self, bar):
-        bar.set_key_hints('/ find · [ ] page · enter detail')
+        bar.set_key_hints('w wallet · [ ] page · enter detail')
 
     def on_sworn_explorer_select(self, event):
         event.stop(); self._select(event.value)
@@ -50,13 +52,13 @@ class SwornScreen(DashboardScreen):
         self._data_manager.select(value)
         self.start_refresh()
 
-    def on_input_submitted(self, event):
-        if event.input.id == 'sworn-search':
-            event.stop(); self._select(event.value.strip() or None)
+    def _wallet_entered(self, address):
+        if address is not None:
+            self._select(address)
             self.action_list()
 
     def action_search(self):
-        self.query_one(Input).focus()
+        self.app.push_screen(WalletInputScreen(), callback=self._wallet_entered)
 
     def action_list(self):
         self.query_one(DataTable).focus()

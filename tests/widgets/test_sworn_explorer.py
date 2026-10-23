@@ -4,7 +4,7 @@ import inspect
 from pathlib import Path
 
 from textual.app import App
-from textual.widgets import DataTable
+from textual.widgets import DataTable, Input
 
 from maxpane_dashboard.data.sworn_models import WIDGET_SIGNATURES
 from maxpane_dashboard.widgets.sworn.explorer import SwornExplorer
@@ -44,18 +44,20 @@ def test_named_signature_matches_frozen_contract_and_widgets_are_render_only():
         assert 'maxpane_dashboard.data' not in path.read_text()
 
 
-async def test_four_heroes_and_distinct_wallet_identities_are_visible():
+async def test_artwork_uses_hero_and_input_space_with_wallet_identities_visible():
     async with Harness().run_test(size=(149, 45)) as pilot:
         panel = pilot.app.query_one(SwornExplorer)
         panel.update_data(**payload())
         await pilot.pause()
         output = painted(pilot.app)
-        for word in ('COLLECTION', 'FAMILIES', 'FACTS', 'COMMUNITY', 'Claimant', 'Holder', 'SWORN #10'):
+        for word in ('CARDS', 'WALLET FACTS', 'Claimant', 'Holder', 'SWORN #10', 'w wallet'):
             assert word in output
+        assert not panel.query(Input)
+        assert not panel.query('LocalSourceHeroCard')
+        assert 'COLLECTION' not in output and 'SELECTED' not in output
+        assert panel.query_one('#sworn-art').size.height >= 37
         assert output.count('⧉') == 2
         assert '0x111' in output and '0x222' in output
-        records = [card.data for card in panel.query('LocalSourceHeroCard')]
-        assert [card.digits for card in records] == ['10', '2', '3', '40']
         table = panel.query_one(DataTable)
         assert table.get_row('9')[1].plain == '—'
         assert table.get_row('10')[-1].plain == '»'

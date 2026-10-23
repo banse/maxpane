@@ -11,6 +11,12 @@
   outage banner removed under the owner's display override. Reproduced at
   unchanged commit `611686e9` in an isolated archive and HOME on Python 3.11.
   Update its expectation when that existing SURF behavior is next touched.
+- The SWARM TOKENS stylesheet agreement guard also fails at unchanged commit
+  `bc51d933`, reproduced in an isolated archive and HOME on Python 3.11. Its
+  extraction runs through the following SWORN CSS block because its old
+  `PORTFOLIO` end marker is absent. Repair the guard's section boundary when
+  that test is next touched; the wallet-popup/layout change does not edit
+  either stylesheet or SWARM TOKENS screen.
 
 Collection-wide family scans, an owned-token index, ENS search and a gallery
 remain outside this first dashboard. Unvisited rows have unknown family counts;

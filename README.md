@@ -25,8 +25,10 @@ kind, no wallet, no signing, no transactions.
 ### SWORN — dashboard 10
 
 Run `.venv/bin/python -m maxpane_dashboard --game sworn`, then press **0** in
-the selection menu. Browse cards or search by token ID/original claimant
-address. Open a row's `»` for the larger artwork and fact inspector. Claimant
+the selection menu. Browse token IDs in the cards table. Press **w** (or click
+**w wallet**) to look up an original claimant through the same wallet popup as
+THE LIST. The artwork fills the main view without an input bar or hero cards.
+Open a row's `»` for the larger artwork and fact inspector. Claimant
 facts stay attached to the wallet that minted the card; the current holder is
 shown separately.
 
