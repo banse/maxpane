@@ -1,5 +1,38 @@
 # Surf data loading — execution and follow-ups
 
+## 2026-10-24 ONCHAIN continuous loading and feed flicker
+
+ONCHAIN's announcement widget rebuilt its entire row tree on age-only reader
+publications. It now updates the title in place when rows, signal targets and
+width are unchanged, retaining focus, scroll and expanded threads. Input rows
+are copied so an in-place source edit still triggers a genuine redraw.
+
+The live source trace attributed 58 of the first 100 HTTP requests to the
+Launchpad history sweep; the visible base sources finished by 9.14 seconds,
+while that sweep remained pending. ONCHAIN now publishes cheap current getters
+first and gives that optional source a 12-second read budget. Timeout drains
+the read and uses the existing failure backoff, retaining client checkpoints
+and previously certified history clocks. The dedicated Launchpad view keeps
+its full acquisition behavior. This bounds work; it does not certify incomplete
+history or hide a read that is still running.
+
+Actual 149×45 ReaderRuntime/Textual probes: before, 13 feed remounts in 19.06
+seconds and a 100-request cutoff; after, four remounts over 37.47 seconds,
+98 requests, two scheduled offers, idle completion and no cutoff. Both recorded
+zero sends after deactivation. Network observations are separate live samples,
+not paired latency claims. Local evidence: `/private/tmp/maxpane-onchain-trace-dashboard.json`,
+`/private/tmp/maxpane-onchain-after-dashboard.json` and the live render
+`/private/tmp/maxpane-onchain-native.png`.
+
+Focused regressions cover row identity/focus, real content and signal updates,
+budget expiry, backoff, retained progress, original observation clocks and the
+dedicated-view boundary. Four targeted mutations were killed and restored.
+The affected data/widget/screen run passed 370 checks; its single NFT matrix
+floor-contrast failure (3.65:1 versus 4.5:1) reproduced on unchanged `7ce8642b`.
+Fast guards passed 128 checks with the already documented TOKENS CSS failure;
+all 12 documentation pins passed. Independent scoped review: **Approved**;
+the reviewer separately killed mutable-input and unbounded-history mutations.
+
 ## 2026-10-23 cross-view implementation
 
 The owner authorized the full actionable order in the

@@ -265,6 +265,8 @@ SOURCE_MARKET = "market"
 SOURCE_LOGS = "logs"
 SOURCE_NFT = "nft"
 SOURCE_ACTIVITY = "activity"
+# ONCHAIN shares Launchpad signals, but its history must yield within a poll.
+ONCHAIN_LAUNCHPAD_BUDGET_S = 12.0
 #: The v4 pool / decoy scan / launchpad hook+factory+executor sweep (Task 6,
 #: curator ``TIER_ANALYSIS`` precedent). Unlike the other six groups this one
 #: is **never** noted through :meth:`SurfManager._note` on a per-attempt
@@ -2371,7 +2373,11 @@ class SurfManager:
         job and must propagate so the cancellation actually completes.
         """
         try:
-            await self._pool_launchpad(tiers, now, **({'refresh_current': True} if refresh_current else {}))
+            onchain = self._active_view == 'dashboard'
+            async with asyncio.timeout(ONCHAIN_LAUNCHPAD_BUDGET_S if onchain else None):
+                if onchain:
+                    await self._launchpad_current(self.cache.get_last_good(SLOT_LAUNCHPAD))
+                await self._pool_launchpad(tiers, now, **({'refresh_current': True} if refresh_current else {}))
         except asyncio.CancelledError:
             raise
         except Exception as exc:        # noqa: BLE001 — nobody awaits this task
@@ -2499,7 +2505,7 @@ class SurfManager:
             self._guard(self.client.fetch_pool_v4, 'fetch_pool_v4'),
             self._guard(lambda: self.client.fetch_launchpad_getters(), 'fetch_launchpad_getters'),
         )
-        prior = prior_entry.payload
+        prior = prior_entry.payload if prior_entry is not None else {}
         payload = dict(prior)
         getters = getters if isinstance(getters, dict) else {}
         for field in ('coin_count', 'imd_to_burn_wei', 'executor_balance_wei',
@@ -2517,7 +2523,8 @@ class SurfManager:
                            sqrt_price_x96=_opt_int(_field(pool, 'sqrt_price_x96')))
         changed = payload != prior
         if changed:
-            self.cache.store_last_good(SLOT_LAUNCHPAD, payload, ts=prior_entry.ts)
+            self.cache.store_last_good(SLOT_LAUNCHPAD, payload,
+                ts=prior_entry.ts if prior_entry is not None else self._clock())
         # Never mark the history tier fetched or failed for a getter-only read.
         return {'pool': pool, 'changed': changed}
 

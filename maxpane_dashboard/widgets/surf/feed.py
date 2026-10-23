@@ -114,6 +114,7 @@ from __future__ import annotations
 import math
 import re
 import textwrap
+from copy import deepcopy
 
 from rich.cells import cell_len, set_cell_size
 from rich.text import Text
@@ -665,6 +666,7 @@ class SurfFeed(Vertical):
         self._signal_tx_hashes: set[str] = set()
         self._forced_roots: set[str] = set()
         self._rendered_width: int | None = None
+        self._rendered_clipped = False
 
     def compose(self) -> ComposeResult:
         yield Static(FEED_TITLE, classes="surf-feed-title", id="surf-feed-title")
@@ -680,14 +682,22 @@ class SurfFeed(Vertical):
         **_kwargs,
     ) -> None:
         """Rewrite the feed.  Kwargs are exactly the PRD §5 feed keys."""
-        self._signal_tx_hashes = self._normalise_signal_hashes(
-            feed_signal_tx_hashes
-        )
+        targets = self._normalise_signal_hashes(feed_signal_tx_hashes)
+        unchanged_rows = (bool(self._payload)
+                          and self._payload['items'] == feed_items
+                          and self._signal_tx_hashes == targets
+                          and self._body_width() == self._rendered_width)
+        self._signal_tx_hashes = targets
+        if unchanged_rows:
+            self._payload.update(nonce=feed_nonce, age_s=feed_last_post_age_s)
+            self._set_title(feed_nonce, feed_last_post_age_s,
+                            clipped=self._rendered_clipped, unavailable=feed_items is None)
+            return
         self._forced_roots.clear()
         self._payload = {
             "nonce": feed_nonce,
             "age_s": feed_last_post_age_s,
-            "items": feed_items,
+            "items": deepcopy(feed_items),
         }
         # A repaint rebuilds every row, so a reader who has a thread open and
         # focused loses both their focus and their scroll position -- twice a
@@ -768,6 +778,7 @@ class SurfFeed(Vertical):
         return width
 
     def _set_title(self, nonce, age_s, clipped: bool, unavailable: bool) -> None:
+        self._rendered_clipped = clipped
         title = self.query_one("#surf-feed-title", Static)
         parts = [FEED_TITLE]
         try:
