@@ -1,5 +1,30 @@
 # Surf data loading — execution and follow-ups
 
+## 2026-10-23 boxed loading marker and WIP captions
+
+The [caption follow-up](card_loading_footer_plan.md) replaces the plain diamond
+with the requested `⛋` and includes explicit missing numeric captions. Loaded
+BOARDROOM primaries no longer suppress missing-caption pulses during visible
+reads. Known zero/cached values, dates and prose remain unchanged.
+
+The WIP workflow reader now follows bounded cursor pages instead of rereading
+the same full first page forever. Live: 199 workflows, zero open, 1.35 seconds;
+the full cold BOARDROOM showed `2` jobs / `1 build` / `0 workflows` after 8.22s.
+Working-node counts still require fresh agreement between overview and details.
+
+Remaining limits: individual card fields still lack per-source pending metadata;
+the pulse indicates visible-view activity. Workflow count provenance retains
+its own internal timestamp, while the aggregate WIP hover uses the overview
+timestamp. Older executing jobs outside the bounded recent page can leave node
+coverage unknown; deeper discovery is deferred until a measured case warrants it.
+
+Validation backlog: `test_surfboard_card_activity.py` still has 14 expectations
+for the removed PROTOCOL card, old volume/activity footers or old unavailable
+labels; `test_surf_loading_layers.py` has four old `fetch_hook_state` pool mocks.
+All 18 failures reproduce against unchanged HEAD and the caption change; update
+these fixtures/expectations when their area is next touched. The current affected
+run otherwise passes 574 tests, plus 128 guards and 12 doc pins.
+
 ## 2026-10-23 card loading presentation
 
 The [card loading plan](card_loading_diamond_plan.md) adds a pulsing IMD outline

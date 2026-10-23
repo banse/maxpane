@@ -27,6 +27,9 @@ class SurfCardReader:
         self.attempts = {}
         self.workflows = None
         self.workflows_ts = None
+        self._workflow_before = None
+        self._workflow_states = {}
+        self._workflow_started = None
         self.current_jobs = {}
         self.current_ts = None
         self.current_failed = False
@@ -67,15 +70,40 @@ class SurfCardReader:
             await asyncio.gather(*self.tasks.values(), return_exceptions=True)
 
     async def _work(self):
-        raw = await self.manager.swarm_client.fetch_workflows(limit=100)
-        if not isinstance(raw, list):
-            return
-        rows, partial = work._page(raw, work._workflow, self.manager._clock())
-        if len(rows) != len(raw):
-            return
-        states = [workflow_is_open(row['status']) for row in rows]
-        self.workflows = None if partial or None in states else sum(states)
-        self.workflows_ts = self.manager._clock()
+        """Count complete workflow lists, resuming bounded scans between polls."""
+        if self._workflow_before is None:
+            self._workflow_states = {}
+            self._workflow_started = self.manager._clock()
+        for _ in range(work.WORKFLOW_PAGES_PER_READ):
+            kwargs = {'before': self._workflow_before} if self._workflow_before else {}
+            raw = await self.manager.swarm_client.fetch_workflows(limit=work.PAGE_LIMIT, **kwargs)
+            if not isinstance(raw, list):
+                return
+            rows, _ = work._page(raw, work._workflow, self.manager._clock())
+            if len(rows) != len(raw) or any(row['id'] in self._workflow_states for row in rows):
+                self._workflow_before = None
+                return
+            if self._workflow_before is not None and any(
+                    row['created_ts'] is None or row['created_ts'] >= work._ts(self._workflow_before)
+                    for row in rows):
+                self._workflow_before = None
+                return
+            self._workflow_states.update((row['id'], workflow_is_open(row['status'])) for row in rows)
+            if len(raw) < work.PAGE_LIMIT:
+                states = self._workflow_states.values()
+                if None not in states:
+                    self.workflows = sum(states)
+                    self.workflows_ts = self._workflow_started
+                self._workflow_before = None
+                return
+            cursor = raw[-1].get('createdAt')
+            stamp = work._stamp(work._ts(cursor), self.manager._clock())
+            if (not isinstance(cursor, str) or not cursor.endswith('Z') or stamp is None
+                    or self._workflow_before is not None and stamp >= work._ts(self._workflow_before)
+                    or len(self._workflow_states) >= work.WORKFLOW_LIMIT):
+                self._workflow_before = None
+                return
+            self._workflow_before = cursor
 
     async def _current(self):
         """One recent page plus at most 24 active details; no history or hidden board."""

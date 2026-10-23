@@ -1,4 +1,6 @@
 """Shared body colors and rich text padding for Surf card insets."""
+import re
+
 from rich.color import Color, blend_rgb
 from rich.style import Style
 from rich.text import Text
@@ -36,7 +38,18 @@ class LoadingCard(HeroBoxBase):
         strength = (.35, .5, .7, .9, 1, .9, .7, .5)[self._card_loading_frame % 8]
         ink = Style(color=Color.from_triplet(blend_rgb(background, accent, strength)),
                     bgcolor=palette['background'], dim=False, bold=False)
-        return Text('◇', style=ink)
+        return Text('⛋', style=ink)
+
+    def loading_caption(self, value: Text) -> Text:
+        """Pulse missing numbers in a generated numeric caption, never prose/dates."""
+        matches = list(re.finditer(r'(?<![\w-])(?:--|—|-)(?![\w-])', value.plain))
+        if not matches:
+            return value
+        result = value.copy()
+        for match in reversed(matches):
+            start, end = match.span()
+            result = result[:start] + self.loading_value(result[start:end]) + result[end:]
+        return result
 
 
 def inner_styles(palette, *, active=False, frame_color=None, ansi_theme=None, text_color="white"):

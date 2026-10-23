@@ -198,7 +198,7 @@ class NewsHeroCard(LoadingCard):
             preview = Text(data.preview, style=prose_ink)
             if data.state in ('unavailable', 'pending', 'loading', 'busy'):
                 preview = self.loading_value(preview)
-            if preview.plain == '◇' and data.preview != '◇':
+            if preview.plain == '⛋' and data.preview != '⛋':
                 rows = [Text(''), padded_inner_row(preview, inside, align='center'), Text('')]
             else:
                 rows = [padded_inner_row(row, inside) for row in post_preview(data.preview, room, prose_ink)]
@@ -237,10 +237,13 @@ class NewsHeroCard(LoadingCard):
         result.append_text(self._inner_footer(subtitle, inside, frame, value_ink))
         return result
 
+    def _subtitle_value(self, value):
+        return self.loading_value(value)
+
     def _inner_footer(self, subtitle, inside, frame, value_ink):
-        value = self.loading_value(Text(subtitle, style=frame))
-        if value.plain == '◇' and subtitle.strip() != '◇':
-            value = Text(' ').append_text(value).append(' ')
+        value = self._subtitle_value(Text(subtitle.strip(), style=frame))
+        if value.plain != subtitle.strip():
+            value = Text(' ', style=frame).append_text(value).append(' ')
             left = max(0, (inside - value.cell_len) // 2)
             return (Text('└' + '─' * left, style=frame).append_text(value)
                     .append('─' * max(0, inside - left - value.cell_len) + '┘', style=frame))

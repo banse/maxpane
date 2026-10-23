@@ -260,7 +260,14 @@ class SurfboardCard(LoadingCard, can_focus=True):
         return self.seat_slot is not None and self.data.get("token_id") is None
 
     def _can_load_card(self):
-        return not self.empty_seat and self.data.get('status') in (None, 'loading')
+        return not self.empty_seat and self.data.get('status') in (
+            None, 'loading', 'active', 'idle', 'working', 'ready', 'assessing', 'falling')
+
+    def set_card_loading(self, busy, frame):
+        previous = self._card_loading, self._card_loading_frame
+        super().set_card_loading(busy, frame)
+        if previous != (self._card_loading, self._card_loading_frame) and self._footer_has_missing_value:
+            self._update_meter()
 
     def compose(self):
         if self.seat_slot is not None:
@@ -336,13 +343,18 @@ class SurfboardCard(LoadingCard, can_focus=True):
 
     def _update_meter(self):
         self.styles.border_subtitle_align = "center"
+        self._footer_has_missing_value = False
         if self.footer_data.get("status") == "loading":
             self.border_subtitle = Text("◌ loading", style=AMBER)
         elif self.key == "announce":
             # Textual reserves six cells for corners, border stubs and padding.
             self.border_subtitle = signal_meter_text(self.data, max(0, self.region.width - 6))
         else:
-            self.border_subtitle = meter_text(self.footer_data, max(0, self.region.width - 6))
+            footer = meter_text(self.footer_data, max(0, self.region.width - 6))
+            if self.footer_data.get('key') in ('work', 'oracles', 'surf-nft', 'pool4', 'swarm-tokens', 'board'):
+                self._footer_has_missing_value = '—' in footer.plain
+                footer = self.loading_caption(footer)
+            self.border_subtitle = footer
 
     def on_resize(self):
         self._update_meter()
@@ -527,11 +539,14 @@ class SurfboardCard(LoadingCard, can_focus=True):
         footer = Text("└" + fitted_bottom.center(inside + len(fitted_bottom) - cell_len(fitted_bottom), "─") + "┘",
                       style=border_inset + Style(bold=False))
         if not self.empty_seat:
-            rendered = self.loading_value(Text(fitted_bottom, style=border_inset))
-            if rendered.plain == '◇' and fitted_bottom.strip() != '◇':
+            caption = Text(fitted_bottom.strip(), style=border_inset)
+            rendered = (self.loading_caption(caption)
+                        if self.key in ('work', 'oracles', 'swarm', 'surf-nft', 'pool4', 'swarm-tokens', 'board', 'launchpad')
+                        else self.loading_value(caption))
+            if rendered.plain != caption.plain:
                 offset = footer.plain.index(fitted_bottom.strip())
                 count = len(fitted_bottom.strip())
-                footer = footer[:offset] + rendered + Text(' ' * (count - 1), style=border_inset) + footer[offset + count:]
+                footer = footer[:offset] + rendered + Text(' ' * (count - len(rendered)), style=border_inset) + footer[offset + count:]
         if self.empty_seat and self._seat_error:
             footer.stylize(Style(color=RED, dim=False), 1, len(footer) - 1)
         return body.append_text(footer)

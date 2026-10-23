@@ -13,7 +13,8 @@ from maxpane_dashboard.widgets.surfboard.rack import SurfboardCard
 
 
 class Cards(App):
-    CSS = 'Horizontal {height: 9;} NewsHeroCard, SurfboardCard {width: 24; height: 9;}'
+    CSS = ('Horizontal {height: 9;} NewsHeroCard, SurfboardCard {width: 24; height: 9;}'
+           'SurfboardCard {padding: 0 1; border: round $panel; background: $surface;}')
 
     def __init__(self, *cards):
         super().__init__()
@@ -41,16 +42,16 @@ async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, fiel
     async with Cards(card).run_test(size=(30, 12)) as pilot:
         await pilot.pause()
         original = face(pilot.app, card)
-        assert '◇' not in original
+        assert '⛋' not in original
         colors, positions = [], []
         for frame in (0, 4):
             card.set_card_loading(True, frame)
             await pilot.pause()
             painted = face(pilot.app, card)
-            assert '◇' in painted
+            assert '⛋' in painted
             if field == 'stats':
                 assert '0' in painted
-            row, col = next((y, line.index('◇')) for y, line in enumerate(painted.splitlines()) if '◇' in line)
+            row, col = next((y, line.index('⛋')) for y, line in enumerate(painted.splitlines()) if '⛋' in line)
             positions.append((row, col))
             colors.append(pilot.app.screen.get_style_at(card.region.x+col, card.region.y+row).color)
         assert positions[0] == positions[1]
@@ -61,7 +62,7 @@ async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, fiel
         card.set_card_loading(True, 0)
         card.set_record(replace(record, digits='42', preview='', stats=()))
         await pilot.pause()
-        assert '◇' not in face(pilot.app, card)
+        assert '⛋' not in face(pilot.app, card)
 
 
 async def test_cached_values_prose_and_fully_loaded_cards_do_not_animate(monkeypatch):
@@ -90,9 +91,9 @@ async def test_agent_status_counts_and_token_liquidity_use_same_indicator():
         status.set_card_loading(True, 0)
         liquidity.set_card_loading(True, 0)
         await pilot.pause()
-        assert face(pilot.app, status).count('◇') == 2
+        assert face(pilot.app, status).count('⛋') == 2
         assert '0F' in face(pilot.app, status)
-        assert face(pilot.app, liquidity).count('◇') == 2
+        assert face(pilot.app, liquidity).count('⛋') == 4
         assert 'IMD' in face(pilot.app, liquidity) and 'ETH' in face(pilot.app, liquidity)
 
 
@@ -121,8 +122,8 @@ async def test_runtime_unknown_inner_footer_pulses_with_missing_stats():
         card.set_card_loading(True, 0)
         await pilot.pause()
         text = face(pilot.app, card)
-        assert text.count('◇') == 4
-        assert '◇' in next(row for row in text.splitlines() if '└' in row)
+        assert text.count('⛋') == 4
+        assert '⛋' in next(row for row in text.splitlines() if '└' in row)
         card.set_card_loading(False, 0)
         await pilot.pause()
         assert face(pilot.app, card) == original
@@ -143,10 +144,74 @@ async def test_boardroom_obeys_card_state_and_keeps_empty_seats(key, extra, expe
     async with Cards(card).run_test(size=(30, 12)) as pilot:
         card.set_card_loading(True, 0)
         await pilot.pause()
-        assert face(pilot.app, card).count('◇') == expected
+        assert face(pilot.app, card).count('⛋') == expected
         if key == 'agent':
             assert card.query_one('Input').display
         card.set_data(dict(card.data, status='unavailable'))
         card.set_card_loading(True, 4)
         await pilot.pause()
-        assert '◇' not in face(pilot.app, card)
+        assert '⛋' not in face(pilot.app, card)
+
+
+async def test_loaded_wip_primary_keeps_pulsing_missing_inner_and_outer_counts(monkeypatch):
+    monkeypatch.delenv('NO_COLOR', raising=False)
+    card = SurfboardCard('work', 'WIP', 0, 0)
+    card.set_data(dict(status='active', primary='2', secondary='— working',
+                       work_summary={'workflows': None}, meter_state='ok'))
+    async with Cards(card).run_test(size=(30, 12)) as pilot:
+        await pilot.pause()
+        original = face(pilot.app, card)
+        assert '— working' in original and '— workflows' in original
+        colors = []
+        for frame in (0, 4):
+            card.set_card_loading(True, frame)
+            await pilot.pause()
+            painted = face(pilot.app, card)
+            assert '⛋ working' in painted and '⛋ workflows' in painted
+            row, col = next((y, line.index('⛋')) for y, line in enumerate(painted.splitlines())
+                            if '⛋ workflows' in line)
+            colors.append(pilot.app.screen.get_style_at(card.region.x+col, card.region.y+row).color)
+        assert colors[0] != colors[1]
+        card.set_card_loading(False, 0)
+        await pilot.pause()
+        assert face(pilot.app, card) == original
+        card.set_data(dict(card.data, secondary='0 working', work_summary={'workflows': 0}))
+        card.set_card_loading(True, 4)
+        await pilot.pause()
+        assert '0 working' in face(pilot.app, card) and '0 workflows' in face(pilot.app, card)
+        assert '⛋' not in face(pilot.app, card)
+
+
+@pytest.mark.parametrize('key,caption', [
+    ('accepted', '⛋%'), ('models', '⛋%'), ('effort', '⛋ tokens'), ('rewards', '$⛋'),
+    ('rank', 'of ⛋'), ('earnings', '⛋ new'),
+])
+async def test_agent_numeric_captions_keep_units_while_loading(key, caption):
+    card = AgentRackCard(next(r for r in agent_records(None) if r.key == key))
+    async with Cards(card).run_test(size=(30, 12)) as pilot:
+        card.set_card_loading(True, 0)
+        await pilot.pause()
+        footer = next(row for row in face(pilot.app, card).splitlines() if '└' in row)
+        assert caption in footer
+
+
+async def test_token_coverage_keeps_known_count_during_loading():
+    record = next(r for r in token_records({'volume': {'state': 'partial', 'amount': 42,
+                                                       'known': 3, 'total': None}}) if r.key == 'volume')
+    card = TokensHeroCard(record)
+    async with Cards(card).run_test(size=(30, 12)) as pilot:
+        card.set_card_loading(True, 0)
+        await pilot.pause()
+        assert '3/⛋ known' in face(pilot.app, card)
+
+
+async def test_literal_captions_and_dates_are_not_numeric_fields():
+    cards = [NewsHeroCard(HeroRecord('prose', 'TEST', 'VALUE', '', subtitle='A — B --flag -7')),
+             AgentRackCard(next(r for r in agent_records(None) if r.key == 'owner'))]
+    async with Cards(*cards).run_test(size=(60, 12)) as pilot:
+        await pilot.pause()
+        original = [next(row for row in face(pilot.app, c).splitlines() if '└' in row) for c in cards]
+        for card in cards:
+            card.set_card_loading(True, 0)
+        await pilot.pause()
+        assert [next(row for row in face(pilot.app, c).splitlines() if '└' in row) for c in cards] == original

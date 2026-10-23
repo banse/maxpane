@@ -1,6 +1,7 @@
 """Bounded BOARDROOM current-node reads; fixtures only, no hidden-board hydration."""
 import asyncio
 from copy import deepcopy
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,6 +25,82 @@ async def test_workflow_summary_uses_same_lifecycle_as_detail_board(status, expe
     await reader._work()
     assert reader.workflows == expected
     client.fetch_workflows.assert_awaited_once_with(limit=100)
+
+
+def workflow_pages(size):
+    captured = json.loads(Path('tests/fixtures/surf/work/captured.json').read_text())
+    now = captured['read_ts']
+    rows = [dict(captured['workflows'][0], id=f'aaaaaaaa-aaaa-4aaa-8aaa-{i:012d}',
+                 status='completed', createdAt=datetime.fromtimestamp(now - i - 1, timezone.utc)
+                 .isoformat().replace('+00:00', 'Z')) for i in range(size)]
+    client = SimpleNamespace(fetch_workflows=AsyncMock())
+    reader = SurfCardReader(SimpleNamespace(_clock=lambda: now, swarm_client=client))
+    return reader, client, rows, now
+
+
+@pytest.mark.parametrize('tail_status,expected', [('executing', 1), ('completed', 0)])
+async def test_workflow_count_includes_tail_beyond_full_first_page(tail_status, expected):
+    reader, client, rows, now = workflow_pages(101)
+    rows[-1]['status'] = tail_status
+    client.fetch_workflows.side_effect = [rows[:100], rows[100:]]
+    await reader._work()
+    assert reader.workflows == expected
+    assert reader.workflows_ts == now
+    assert client.fetch_workflows.await_args_list[1].kwargs == {'limit': 100, 'before': rows[99]['createdAt']}
+
+
+async def test_workflow_pagination_resumes_with_bounded_reads_and_keeps_last_complete_count():
+    reader, client, rows, now = workflow_pages(401)
+    rows[-1]['status'] = 'executing'
+    client.fetch_workflows.side_effect = [rows[i:i + 100] for i in range(0, len(rows), 100)]
+    reader.workflows, reader.workflows_ts = 7, now - 60
+    await reader._work()
+    assert client.fetch_workflows.await_count == 4
+    assert (reader.workflows, reader.workflows_ts) == (7, now - 60)
+    await reader._work()
+    assert client.fetch_workflows.await_count == 5
+    assert client.fetch_workflows.await_args.kwargs['before'] == rows[399]['createdAt']
+    assert (reader.workflows, reader.workflows_ts) == (1, now)
+    # A completed scan must refresh from the newest page on the next poll.
+    client.fetch_workflows.side_effect = [rows[:1]]
+    await reader._work()
+    assert client.fetch_workflows.await_args.kwargs == {'limit': 100}
+    assert reader.workflows == 0
+
+
+async def test_workflow_later_page_failure_retries_cursor_without_certifying_zero():
+    reader, client, rows, now = workflow_pages(101)
+    client.fetch_workflows.side_effect = [rows[:100], None, rows[100:]]
+    await reader._work()
+    assert reader.workflows is None
+    assert reader.workflows_ts is None
+    await reader._work()
+    assert client.fetch_workflows.await_args.kwargs['before'] == rows[99]['createdAt']
+    assert (reader.workflows, reader.workflows_ts) == (0, now)
+
+
+@pytest.mark.parametrize('bad_tail', ['duplicate', 'unknown', 'malformed', 'nonadvancing', 'newer_short_page'])
+async def test_workflow_tail_cannot_certify_incomplete_or_unknown_count(bad_tail):
+    reader, client, rows, now = workflow_pages(201)
+    if bad_tail == 'duplicate': rows[100] = rows[0]
+    if bad_tail == 'unknown': rows[100]['status'] = 'future-state'
+    if bad_tail == 'malformed': rows[100]['id'] = 'bad-id'
+    if bad_tail == 'nonadvancing': rows[199]['createdAt'] = rows[99]['createdAt']
+    if bad_tail == 'newer_short_page': rows[200]['createdAt'] = rows[0]['createdAt']
+    client.fetch_workflows.side_effect = [rows[:100], rows[100:200], rows[200:]]
+    await reader._work()
+    assert reader.workflows is None
+    assert reader.workflows_ts is None
+
+
+async def test_workflow_multi_poll_timestamp_describes_oldest_observation():
+    reader, client, rows, now = workflow_pages(401)
+    client.fetch_workflows.side_effect = [rows[i:i + 100] for i in range(0, len(rows), 100)]
+    await reader._work()
+    reader.manager._clock = lambda: now + 30
+    await reader._work()
+    assert reader.workflows == 0
+    assert reader.workflows_ts == now
 
 
 @pytest.fixture
@@ -177,3 +254,17 @@ async def test_current_refresh_retains_fresh_cached_counts_while_pending(setup):
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_unknown_workflow_lifecycle_keeps_last_proven_count_and_timestamp():
+    reader, client, rows, now = workflow_pages(101)
+    reader.workflows, reader.workflows_ts = 7, now - 60
+    rows[-1]['status'] = 'future-state'
+    client.fetch_workflows.side_effect = [rows[:100], rows[100:]]
+    await reader._work()
+    assert (reader.workflows, reader.workflows_ts) == (7, now - 60)
+    # An unprovable completed scan must not strand the next poll at its tail.
+    client.fetch_workflows.side_effect = [rows[:1]]
+    await reader._work()
+    assert client.fetch_workflows.await_args.kwargs == {'limit': 100}
+    assert (reader.workflows, reader.workflows_ts) == (0, now)

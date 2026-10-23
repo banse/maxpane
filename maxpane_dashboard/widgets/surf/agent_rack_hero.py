@@ -262,6 +262,11 @@ class AgentRackCard(Pool4HeroCard):
             return Style(color=color, bgcolor=palette["background"], dim=False)
         return Style.parse(color) + Style(bgcolor=palette["background"])
 
+    def _subtitle_value(self, value):
+        if self.data.key in ('accepted', 'effort', 'rewards', 'rank', 'earnings', 'nodes', 'models'):
+            return self.loading_caption(value)
+        return super()._subtitle_value(value)
+
     def _inner_footer(self, subtitle, inside, frame, value_ink):
         if self.data.key != "runtime":
             return super()._inner_footer(subtitle, inside, frame, value_ink)

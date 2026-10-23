@@ -95,6 +95,9 @@ class TokensHeroCard(LocalSourceHeroCard):
     def _footer(self):
         NewsHeroCard._footer(self)
 
+    def _subtitle_value(self, value):
+        return self.loading_caption(value)
+
     def _text_rows(self, label_style, value_style):
         rows = super()._text_rows(label_style, value_style)
         if self.data.key == "liquidity":
