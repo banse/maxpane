@@ -112,7 +112,7 @@ async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(sign
             label = footer.text.strip('╰╯─ ')
             assert abs(footer.text.index(label) - (card.region.width - len(label)) / 2) <= .5
             if signals is None:
-                assert label == '— SIGNALS'
+                assert label == '0 SIGNALS'
                 assert "▰" not in footer.text and "▱" not in footer.text
                 continue
             cells = card.region.width - 6 - len(f'{signals} SIGNALS') - 1
@@ -148,7 +148,7 @@ async def test_news_signal_footer_refresh_and_overflow_remain_exact():
             else:
                 assert footer.count("▰") == (count or 0)
                 assert "‹ widen" not in str(card.border_title)
-                assert ("— SIGNALS" in footer) == (count is None)
+                assert ("0 SIGNALS" in footer) == (count is None)
 
 
 async def test_terminal_uses_dashboard_background_and_native_text_colors():
@@ -485,7 +485,8 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                     assert "╶╮ ╭─╮╭─╮" in text
                 else:
                     assert "╶─┐" in text
-                assert (card['secondary'] if kind != 'unavailable' else '—') in text
+                caption = '0 agents' if card['secondary'] == '— agents' else card['secondary']
+                assert (caption if kind != 'unavailable' else '—') in text
                 continue
             if card["key"] == "surf-nft":
                 text = r["card_text"]["surf-nft"]

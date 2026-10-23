@@ -138,7 +138,7 @@ async def test_runtime_unknown_inner_footer_pulses_with_missing_stats():
 
 
 @pytest.mark.parametrize('key,extra,expected', [
-    ('work', {}, 2), ('surf-nft', {}, 1),
+    ('work', {}, 1), ('surf-nft', {}, 1),
     ('board', {'fleet_summary': {'tokens': 0, 'jobs': None, 'capacity': None}}, 3),
     ('swarm-tokens', {'token_ranking': {'latest': None}}, 1),
     ('announce', {'primary': 'A — B --flag'}, 0),
@@ -161,41 +161,27 @@ async def test_boardroom_obeys_card_state_and_keeps_empty_seats(key, extra, expe
         assert '◇' not in face(pilot.app, card)
 
 
-async def test_loaded_wip_primary_keeps_pulsing_missing_inner_and_outer_counts(monkeypatch):
-    monkeypatch.delenv('NO_COLOR', raising=False)
+async def test_loaded_wip_primary_keeps_static_zero_inner_and_outer_counts():
     card = SurfboardCard('work', 'WIP', 0, 0)
     card.set_data(dict(status='active', primary='2', secondary='— working',
                        work_summary={'workflows': None}, meter_state='ok'))
     async with Cards(card).run_test(size=(30, 12)) as pilot:
         await pilot.pause()
         original = face(pilot.app, card)
-        assert '— working' in original and '— workflows' in original
-        colors = []
+        assert '0 working' in original and '0 workflows' in original
         for frame in (0, 4):
             card.set_card_loading(True, frame)
             await pilot.pause()
-            painted = face(pilot.app, card)
-            assert '◇ working' in painted and '◇ workflows' in painted
-            row, col = next((y, line.index('◇')) for y, line in enumerate(painted.splitlines())
-                            if '◇ workflows' in line)
-            colors.append(pilot.app.screen.get_style_at(card.region.x+col, card.region.y+row).color)
-        assert [color.get_truecolor() for color in colors] == [
-            Color.parse(pilot.app.get_css_variables()['background']).monochrome.rgb,
-            Color.from_rich_color(card.rich_style.color).monochrome.rgb,
-        ]
-        card.set_card_loading(False, 0)
+            assert face(pilot.app, card) == original
+        card.set_data(dict(card.data, secondary='7 working', work_summary={'workflows': 3}))
         await pilot.pause()
-        assert face(pilot.app, card) == original
-        card.set_data(dict(card.data, secondary='0 working', work_summary={'workflows': 0}))
-        card.set_card_loading(True, 4)
-        await pilot.pause()
-        assert '0 working' in face(pilot.app, card) and '0 workflows' in face(pilot.app, card)
+        assert '7 working' in face(pilot.app, card) and '3 workflows' in face(pilot.app, card)
         assert '◇' not in face(pilot.app, card)
 
 
 @pytest.mark.parametrize('key,caption', [
-    ('accepted', '◇%'), ('models', '◇%'), ('effort', '◇ tokens'), ('rewards', '$◇'),
-    ('rank', 'of ◇'), ('earnings', '◇ new'),
+    ('accepted', '◇%'), ('models', '◇%'), ('effort', '0 tokens'), ('rewards', '$◇'),
+    ('rank', 'of ◇'), ('earnings', '0 new'),
 ])
 async def test_agent_numeric_captions_keep_units_while_loading(key, caption):
     card = AgentRackCard(next(r for r in agent_records(None) if r.key == key))

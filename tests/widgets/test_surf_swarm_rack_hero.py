@@ -91,13 +91,14 @@ async def test_empty_zero_and_unavailable_keep_different_meanings():
         assert any("online" in line and "0" in line for line in painted(app, "fleet").splitlines())
         assert any("enrolled" in line and "--" in line for line in painted(app, "fleet").splitlines())
         assert "0 cached" in painted(app, "workflows") and "No workflows" in painted(app, "workflows")
-        assert "—" in painted(app, "launches") and "0 cached" not in painted(app, "launches")
+        assert "—" in painted(app, "launches") and "0 cached" in painted(app, "launches")
+        assert data["launches"]["total"] is None
         assert "No workflows in" in painted(app, "workflow") and "cache" in painted(app, "workflow")
         assert "24H" in painted(app, "output")
         app.query_one(SurfSwarmRackHero).update_data(surf_swarm_hero=None)
         await pilot.pause()
         assert all("unavailable" not in painted(app, key) for key in payload())
-        assert all("0 cached" not in painted(app, key) for key in ("workflows", "launches"))
+        assert all("0 cached" in painted(app, key) for key in ("workflows", "launches"))
 
 
 @pytest.mark.parametrize("state,label", [("stale", "24H"), ("unavailable", "24H")])

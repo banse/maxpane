@@ -99,7 +99,7 @@ class BoardHeroCard(Pool4HeroCard):
 
     def _footer(self):
         data = self.data
-        self.border_subtitle = Text(data.footer, style="dim")
+        self.border_subtitle = self.count_caption(Text(data.footer, style="dim"))
 
 
 class SurfSwarmBoardHero(Grid):

@@ -1055,11 +1055,18 @@ not a full orange bar. The last green segment remains until the full 24h expires
 WIP and ORACLES use JOBS inner headings. WIP's inner footer shows the most frequent
 currently working node category from a bounded fresh job-detail sample. A fresh
 overview count match is required before asserting complete coverage. ORACLES shows
-`— agents` unless complete current evidence proves no Oracle work (`0 agents`);
+an internally unknown agent count unless complete current evidence proves no Oracle work;
 the public API does not establish a complete live competitor roster. Both preserve
 their primary job-count scopes. The card reader offers at most 24 fresh details
 from one recent 100-job page every 30 seconds, retaining and revalidating known
 active IDs, with a 12-second timeout and cancellation when leaving BOARDROOM.
+Owner display override (2026-10-23): generated count footers render missing
+counts as static `0`, including `working`, `agents`, `workflows`, `SIGNALS`,
+`building`, `build/open`, `new` and `tokens`, inside and below card frames.
+These fields neither show a loading glyph nor drive animation redraws. This
+supersedes earlier dash/loading display rules for count captions only: source
+values, coverage and tooltips remain unknown. Primary values, prices, percentages,
+coverage ratios, dates and prose keep their existing behavior.
 NFTS uses COLLECTIONS tall digits, an `N building` inner footer, and building/open counts in its outer footer.
 Card coverage notices are omitted; the Explorer header and source details retain
 the partial-catalogue state. Counts describe observed, verified deployments;

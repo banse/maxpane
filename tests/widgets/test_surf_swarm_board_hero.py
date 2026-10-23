@@ -198,7 +198,7 @@ async def test_known_zero_rate_and_counts_are_distinct_from_cold_and_recover():
         app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=None)
         await pilot.pause()
         assert all("unavailable" not in painted(app, key) for key in payload())
-        assert "╰─╯•╰─╯" not in painted(app, "rate") and "0 accepted" not in painted(app, "top")
+        assert "╰─╯•╰─╯" not in painted(app, "rate") and "0 accepted" in painted(app, "top")
         app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=payload())
         await pilot.pause()
         assert "4.188k accepted" in painted(app, "top") and "96k / 100k" in painted(app, "rate")
@@ -238,7 +238,7 @@ async def test_malformed_identifiers_counts_and_clocks_cannot_paint_old_values(b
         pilot.app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=data)
         await pilot.pause()
         text = painted(pilot.app, "top")
-        assert "4.188k" not in text and "-- accepted" in text and "stale" not in text
+        assert "4.188k" not in text and "0 accepted" in text and "stale" not in text
         assert "--:--" in pilot.app.query_one("#hero-top").tooltip.plain
         assert "[/x]" not in text and "PWNED" not in text
         assert any("claude" in line and "--" in line for line in painted(pilot.app, "launches").splitlines())
@@ -291,7 +291,7 @@ async def test_online_and_runtime_hover_keep_their_independent_sources(local_clo
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "-- online" in painted(app, "recorded")
+        assert "0 online" in painted(app, "recorded")
         assert "100k attempts" in painted(app, "recorded")
         online = app.query_one("#hero-recorded").tooltip.plain
         assert "online workers · as of" in online and "--:--" in online

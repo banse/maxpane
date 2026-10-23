@@ -34,6 +34,7 @@ async def test_captions_share_footer_phase_and_restore_idle_on_leave(monkeypatch
     payload = hub_payload()
     wip = next(card for card in payload['surfboard_cards'] if card['key'] == 'work')
     wip['work_summary'] = {'workflows': None}
+    wip['primary'] = '—'  # Footer counts are static zero; animate the main value.
     app = HubHarness(payload)
     manager = app.hub._data_manager
     reads = 0

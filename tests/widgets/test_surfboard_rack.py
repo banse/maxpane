@@ -137,15 +137,15 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
                     digit_ink = app.ansi_theme.ansi_colors[2] if status == 'assessing' else card.rich_style.color.get_truecolor()
                     assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                                for s in strip.crop(left+1, right) if s.text.strip())
-            assert subtitle in strips[top+4].text
-            expected_footer = f'{chains} chains' if chains is not None else '— chains'
+            assert ('0 agents' if subtitle == '— agents' else subtitle) in strips[top+4].text
+            expected_footer = f'{chains} chains' if chains is not None else '0 chains'
             assert expected_footer in strips[-1].text
             assert not any(glyph in strips[-1].text for glyph in '▰▱▁▂▃▄▅▆▇█')
             tone = Color.parse(app.get_css_variables()['accent']).get_truecolor() if status == 'assessing' else neutral_inset_color(app)
             for strip in strips[top:top+5]:
                 for x in (left, right):
                     assert next(iter(strip.crop(x, x+1))).style.color.get_truecolor() == tone
-            for label in ('JOBS', subtitle):
+            for label in ('JOBS', '0 agents' if subtitle == '— agents' else subtitle):
                 segment = next(s for row in strips for s in row if label in s.text)
                 assert segment.style.color.get_truecolor() == tone
             assert card.data['destination'] == 'oracles'
@@ -192,7 +192,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         chart = "▁▁▂▂▃▃▄▅▅▆▆▇▇█" if size[0] == 149 else "▁▁▂▂▃▄▄▅▅▆▇▇█"
         work = rack.query_one('#surfboard-card-work', SurfboardCard)
         assert strips[-1].text == f"╰─ 24H {chart} ─╯"
-        assert '— workflows' in card_strips(pilot.app, work)[-1].text
+        assert '0 workflows' in card_strips(pilot.app, work)[-1].text
         header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
         assert not header.style.bold
         assert header.style.color == inset_border_color(strips[top])
@@ -512,7 +512,7 @@ async def test_swarm_and_wip_keep_their_footers_with_independent_sources(size):
                    for segment in swarm_footer if any(glyph in segment.text for glyph in '▁▂▃▄▅▆▇█'))
         before = {card.key: [line.text for line in card_strips(app, card)[1:-1]] for card in (swarm, work)}
         for work_state, swarm_state, counts, chart in (
-            ('loading', 'active', '◌ loading', True),
+            ('loading', 'active', '1 workflows', True),
             ('active', 'loading', '1 workflows', False),
             ('active', 'active', '1 workflows', True),
         ):
@@ -541,7 +541,7 @@ async def test_swarm_and_wip_keep_their_footers_with_independent_sources(size):
         assert '‹' not in card_strips(app, swarm)[0].text
         rack.update_data(surfboard_cards=[])
         await pilot.pause()
-        assert '— workflows' in card_strips(app, work)[-1].text
+        assert '0 workflows' in card_strips(app, work)[-1].text
         assert card_strips(app, swarm)[-1].text.strip('╰╯─ ') == '24H —'
 
 
@@ -930,8 +930,8 @@ async def test_nft_card_unknown_counts_remain_neutral_without_coverage_footer():
         card.set_data(dict(primary='—',secondary='— building',nft_summary={}))
         await pilot.pause()
         text='\n'.join(strip.text for strip in card_strips(pilot.app,card))
-        assert '— build · — open' in text and '0 build' not in text
-        assert '— building' in next(strip.text for strip in card_strips(pilot.app, card) if '└' in strip.text)
+        assert '0 build · 0 open' in text and '— build' not in text
+        assert '0 building' in next(strip.text for strip in card_strips(pilot.app, card) if '└' in strip.text)
         card.set_data(dict(primary='0',secondary='0 building',nft_summary={
             'deployed':0,'building':0,'mint_open':0,'partial':True}))
         await pilot.pause()
@@ -1084,18 +1084,18 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
                              if primary in ('5', '1,000') else card.rich_style.color.get_truecolor())
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for row in strips[top+1:top+4] for s in row.crop(left+1, right) if s.text.strip())
-            for row, label in ((strips[top], 'JOBS'), (strips[top+4], secondary)):
+            for row, label in ((strips[top], 'JOBS'), (strips[top+4], '0 build' if secondary == '— build' else secondary)):
                 caption = next(s for s in row if label in s.text)
                 assert caption.style.color.get_truecolor() == expected
                 assert not caption.style.bold
-            assert secondary in '\n'.join(s.text for s in strips)
+            assert ('0 build' if secondary == '— build' else secondary) in '\n'.join(s.text for s in strips)
             if primary == '—':
-                assert '— workflows' in strips[-1].text
+                assert '0 workflows' in strips[-1].text
             if state == 'idle':
                 assert '0 workflows' in strips[-1].text
         card.set_data(None)
         await pilot.pause()
-        assert '— workflows' in card_strips(app, card)[-1].text
+        assert '0 workflows' in card_strips(app, card)[-1].text
         assert card.data['destination'] == 'work'
 
 
@@ -1117,7 +1117,10 @@ async def test_boardroom_loading_footers_keep_cached_content_and_clear(size):
             if card.empty_seat:
                 assert 'loading' not in '\n'.join(s.text for s in strips)
                 continue
-            assert '◌ loading' in strips[-1].text
+            if data['key'] in ('work', 'oracles', 'surf-nft', 'announce'):
+                assert 'loading' not in strips[-1].text
+            else:
+                assert '◌ loading' in strips[-1].text
             assert [s.text for s in strips[1:-1]] == before
             card.set_data(data)
             await pilot.pause()

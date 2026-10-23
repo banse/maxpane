@@ -241,7 +241,7 @@ async def test_fractional_counts_and_one_invalid_bucket_are_not_valid_data():
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "-- new /24h" in painted(app, "coins")
+        assert "0 new /24h" in painted(app, "coins")
         assert any("swaps" in row and "--" in row for row in painted(app, "flow").splitlines())
         assert not any(c in painted(app, "volume") for c in "▁▂▃▄▅▆▇█")
         assert "UNKNOWN" in painted(app, "queue") and "120" in painted(app, "queue")
@@ -258,7 +258,7 @@ async def test_invalid_values_and_dates_are_safe_unknowns(bad):
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert "-- new /24h" in painted(app, "coins")
+        assert "0 new /24h" in painted(app, "coins")
         assert "stale" not in painted(app, "fees") and "--:--" in str(app.query_one("#hero-fees").tooltip)
         assert "2h to --:--" in painted(app, "volume")
         assert "--" in painted(app, "fees")

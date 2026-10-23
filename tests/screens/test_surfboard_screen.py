@@ -572,7 +572,7 @@ async def test_loading_repaints_completed_cache_without_offering_more_reads():
     from tests.surfboard_fixtures import hub_payload, HubPayloadManager
     payload = hub_payload()
     loading = deepcopy(payload)
-    next(c for c in loading['surfboard_cards'] if c['key'] == 'work')['status'] = 'loading'
+    next(c for c in loading['surfboard_cards'] if c['key'] == 'pool4')['status'] = 'loading'
     manager = HubPayloadManager(loading)
     manager.fetch_hub_snapshot = AsyncMock(return_value=loading)
     manager.get_hub_snapshot = Mock(return_value=payload)

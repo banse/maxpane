@@ -117,7 +117,7 @@ def _protocol_footer(card, width):
 def _work_footer(card, width):
     value = (card.get("work_summary") or {}).get("workflows")
     count = f"{int(value):,}" if _number(value) and value == int(value) else "—"
-    return fit_prose(f"{count} workflows", width, style=MUTED)
+    return fit_prose(LoadingCard.count_caption(Text(f"{count} workflows")).plain, width, style=MUTED)
 
 
 def _fleet_footer(card, width):
@@ -134,16 +134,16 @@ def meter_text(card: dict, width: int | None = None) -> Text:
         shown = lambda value: str(int(value)) if _number(value) and value == int(value) else "—"
         building, opened = (shown(summary.get(name)) for name in ("building", "mint_open"))
         width = 24 if width is None else width
-        text = f"{building} build · {opened} open"
+        text = LoadingCard.count_caption(Text(f"{building} build · {opened} open")).plain
         if cell_len(text) > width:
-            text = f"{building}bld · {opened}open"
+            text = LoadingCard.count_caption(Text(f"{building}bld · {opened}open")).plain
         return fit_prose(text, width, style=MUTED)[0]
     if key == "protocol":
         return _protocol_footer(card, 24 if width is None else width)[0]
     if key == "oracles":
         count = card.get("numerator")
         value = f"{int(count):,}" if _number(count) and count == int(count) else "—"
-        return fit_prose(f"{value} chains", 24 if width is None else width, style=MUTED)[0]
+        return fit_prose(LoadingCard.count_caption(Text(f"{value} chains")).plain, 24 if width is None else width, style=MUTED)[0]
     if key == "work":
         return _work_footer(card, 24 if width is None else width)[0]
     if key == "board":
@@ -344,13 +344,13 @@ class SurfboardCard(LoadingCard, can_focus=True):
     def _update_meter(self):
         self.styles.border_subtitle_align = "center"
         self._footer_has_missing_value = False
-        if self.footer_data.get("status") == "loading":
+        if self.footer_data.get("status") == "loading" and self.footer_data.get("key") not in ('work', 'oracles', 'surf-nft', 'announce'):
             self.border_subtitle = Text("◌ loading", style=AMBER)
         elif self.key == "announce":
             # Textual reserves six cells for corners, border stubs and padding.
-            self.border_subtitle = signal_meter_text(self.data, max(0, self.region.width - 6))
+            self.border_subtitle = self.count_caption(signal_meter_text(self.data, max(0, self.region.width - 6)))
         else:
-            footer = meter_text(self.footer_data, max(0, self.region.width - 6))
+            footer = self.count_caption(meter_text(self.footer_data, max(0, self.region.width - 6)))
             if self.footer_data.get('key') in ('work', 'oracles', 'surf-nft', 'pool4', 'swarm-tokens', 'board'):
                 self._footer_has_missing_value = '—' in footer.plain
                 footer = self.loading_caption(footer)
@@ -494,7 +494,10 @@ class SurfboardCard(LoadingCard, can_focus=True):
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
             body.stylize(Style(bold=False), start, start + len(label.strip()))
-        bottom = f" {secondary} " if label else ""
+        count_label = {'work': 'working', 'oracles': 'agents', 'surf-nft': 'building'}.get(self.key)
+        if count_label and secondary.strip() in ('-', '--', '—'):
+            secondary += ' ' + count_label
+        bottom = f" {self.count_caption(Text(secondary)).plain} " if label else ""
         if self.key == "protocol":
             bottom = ""
         if self.key in ("announce", "swarm-tokens") and secondary == "0 new":

@@ -157,7 +157,7 @@ class NewsHeroCard(LoadingCard):
 
     def _footer(self):
         data = self.data
-        footer = Text(flatten(data.footer), style="dim")
+        footer = self.count_caption(Text(flatten(data.footer), style="dim"))
         available = max(0, self.size.width - cell_len(data.footer) - 7)
         if data.points and len(data.points) >= 2 and available:
             footer.append(" " + build_sparkline(list(data.points), width=available, pad=False), style=Style(color="green", dim=False))
@@ -233,12 +233,13 @@ class NewsHeroCard(LoadingCard):
             row.truncate(inside, overflow="ellipsis")
             row.align("center" if centered else "left", inside)
             result.append("│", style=frame).append_text(row).append("│\n", style=frame)
-        subtitle = " " + clip(flatten(data.subtitle), max(0, inside - 2)) + " " if data.subtitle else ""
+        caption = self.count_caption(Text(flatten(data.subtitle))).plain
+        subtitle = " " + clip(caption, max(0, inside - 2)) + " " if caption else ""
         result.append_text(self._inner_footer(subtitle, inside, frame, value_ink))
         return result
 
     def _subtitle_value(self, value):
-        return self.loading_value(value)
+        return self.loading_value(self.count_caption(value))
 
     def _inner_footer(self, subtitle, inside, frame, value_ink):
         value = self._subtitle_value(Text(subtitle.strip(), style=frame))

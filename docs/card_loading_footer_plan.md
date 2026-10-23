@@ -1,5 +1,42 @@
 # Card loading captions and BOARDROOM WIP counts
 
+## Count-footer display override — 2026-10-23
+
+Owner now requests static `0` instead of a dash/loading diamond in card-bottom
+count captions, including WIP `working`, ORACLES `agents` and outer `workflows`.
+This supersedes the earlier display rule below, not the unknown-data contract.
+Tier 2, under 1,000 production lines; root owns implementation and one final
+review. Agency architect recommends a shared count-caption formatter.
+
+Plan: recognize generated count labels (including compound/compact NFT counts)
+in `LoadingCard`; substitute before loading and clipping, preserving styles.
+Wire the generic inner/outer hero footer and BOARD's outer-footer override as
+well as BOARDROOM. Cold count footers bypass the generic `loading` text.
+Do not mark these fragments as animation demand. Keep primary values, currency,
+percentages, coverage ratios, dates and prose on their existing paths. Source
+records, clocks and `None` values are unchanged; no API or polling changes.
+
+Validation: composited cold/idle/busy count captions, three dash spellings,
+compound/compact counts, non-count exclusions, retained values, source immutability
+and footer-only no-redraw behavior. Show a live 149×45 BOARDROOM, verify existing
+card geometry at its boundary, run affected/composing files and guards/doc pins,
+kill a zero-fallback mutation, obtain one scoped review and commit locally.
+No full suite. Preserve unrelated files and the preceding outage source gap.
+
+Validation evidence: the affected/composing set covered 615 cases. Its first
+run passed 607; eight assertions still expected the former missing-count text.
+After updating those expectations, all three affected files passed (115 cases).
+Fast guards: 128 passed. Doc pins: 12 passed. Both deliberate regressions were
+killed and restored: `count-footer-keeps-missing-marker` and
+`cold-count-footer-shows-loader`. Logs are `/private/tmp/maxpane-count-final.log`,
+`maxpane-count-recheck.log`, `maxpane-count-guards.log`,
+`maxpane-count-docpins.log` and `maxpane-count-mutants.log` in the same directory.
+The actual keyless 149×45 BOARDROOM capture in
+`/private/tmp/maxpane-count-live/` showed static `0 working`, `0 agents`,
+`0 workflows` and `0 SIGNALS`; its cached source kept the unknown worker count.
+Independent final review: Approved, no findings; 42 additional focused checks
+passed and both mutation records were reviewed. No new follow-up was identified.
+
 ## Monochrome pulse follow-up
 
 Owner request (2026-10-23): keep `⛋`, but pulse from black through neutral gray

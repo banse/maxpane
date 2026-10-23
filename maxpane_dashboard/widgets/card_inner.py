@@ -8,6 +8,13 @@ from textual.color import Color as TextualColor
 
 from maxpane_dashboard.widgets.panels import HeroBoxBase
 
+_COUNT_CAPTION = re.compile(
+    r'(?:^|(?<=·))\s*(?P<number>--|—|-)(?=\s*(?:'
+    r'(?:agent|workflow|chain|token|job|seat|wallet|model|request|collection|collaborator|contributor|record|pool|signal)s?'
+    r'|working|building|build|bld|open|new|cached|online|accepted|attempts)\b)',
+    re.IGNORECASE,
+)
+
 
 def loading_fraction(frame: int) -> float:
     """One shared fade curve for the screen-driven loading animations."""
@@ -46,8 +53,20 @@ class LoadingCard(HeroBoxBase):
                     bgcolor=palette['background'], dim=False, bold=False)
         return Text('◇', style=ink)
 
+    @staticmethod
+    def count_caption(value: Text) -> Text:
+        """Owner display fallback for count footers; source facts stay unknown."""
+        result = value.copy()
+        for match in reversed(list(_COUNT_CAPTION.finditer(value.plain))):
+            start, end = match.span('number')
+            zero = result[start:start + 1]
+            zero.plain = '0'
+            result = result[:start] + zero + result[end:]
+        return result
+
     def loading_caption(self, value: Text) -> Text:
         """Pulse missing numbers in a generated numeric caption, never prose/dates."""
+        value = self.count_caption(value)
         matches = list(re.finditer(r'(?<![\w-])(?:--|—|-)(?![\w-])', value.plain))
         if not matches:
             return value

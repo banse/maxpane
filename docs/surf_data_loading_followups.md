@@ -421,3 +421,20 @@ publication identity mutation, and confirmed the restored test passed.
   and recovers on the first snapshot (under 0.6 seconds in the final live probe).
   Handle the empty reader snapshot on the next token-screen touch. No layout or
   screen code changed in this task.
+
+## Count-footer display override — 2026-10-23
+
+The owner requests static zero for missing generated count captions at card
+bottoms. The shared renderer now applies this to inner and outer count footers,
+including cold BOARDROOM reads and compact NFT captions. This is display-only:
+source `None`, coverage and timestamps remain unchanged. Missing primary values
+still animate; prices, ratios, percentages, dates and prose keep their existing
+behavior. There are no API or polling changes.
+
+Affected/composing verification: 607 of 615 cases passed initially; the eight
+old display expectations were updated and their three whole files passed all
+115 cases. Fast guards 128 passed, doc pins 12 passed; two targeted mutations
+were killed and restored. Live 149×45 BOARDROOM evidence and log paths are in
+`docs/card_loading_footer_plan.md`. No new data-loading follow-up was introduced;
+the previously documented outage source gap remains separate.
+Independent final review: Approved, no findings; 42 focused checks passed.

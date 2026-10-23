@@ -822,8 +822,8 @@ async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
         text = painted(app, "earnings")
-        assert "-- new" in text
-        assert "0 new" not in text
+        assert "0 new" in text
+        assert "-- new" not in text
 
 
 @pytest.mark.parametrize("new,worked", [(4, 2), (4, 0), (4, None), (0, 0), (None, None), (None, 2)])
@@ -840,7 +840,7 @@ async def test_earnings_inner_footer_shows_new_tokens_from_last_24h(new, worked)
         assert "CLAIMED" not in painted(app, "earnings")
         inner_footer = next(row.text for row in strips(app, "earnings") if "└" in row.text)
         caption = inner_footer.split("└", 1)[1].split("┘", 1)[0].strip("─ ")
-        assert caption == f"{new if new is not None else '--'} new"
+        assert caption == f"{new if new is not None else 0} new"
         assert "worked on" not in painted(app, "earnings")
         tooltip = str(app.query_one("#hero-earnings").tooltip)
         assert "this agent's accepted work" in tooltip
