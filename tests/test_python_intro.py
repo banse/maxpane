@@ -133,13 +133,13 @@ def test_visibility_policy(mode, enabled, seen, want):
     assert replace(IntroConfig(), mode=mode, enabled=enabled).should_show(seen) is want
 
 
-@pytest.mark.parametrize('preview,mode,result,expected', [
-    (True, 'first_run', 'dashboard', False), (True, 'never', 'dashboard', False),
-    (False, 'first_run', 'dashboard', True), (False, 'always', 'dashboard', False),
-    (False, 'unknown', 'dashboard', False), (False, 'first_run', 'exit', False),
-    (False, 'first_run', 'interrupt', False),
+@pytest.mark.parametrize('preview,mode,result', [
+    (True, 'first_run', 'dashboard'), (True, 'never', 'dashboard'),
+    (False, 'first_run', 'dashboard'), (False, 'always', 'dashboard'),
+    (False, 'unknown', 'dashboard'), (False, 'first_run', 'exit'),
+    (False, 'first_run', 'interrupt'),
 ])
-def test_cli_seen_marker_only_on_normal_first_run_success(tmp_path, monkeypatch, preview, mode, result, expected):
+def test_cli_completion_without_yes_never_confirms(tmp_path, monkeypatch, preview, mode, result):
     from maxpane_dashboard.intro import __main__ as cli
     monkeypatch.setattr(cli.Path, 'home', lambda: tmp_path)
     path = tmp_path / 'config.toml'
@@ -150,18 +150,20 @@ def test_cli_seen_marker_only_on_normal_first_run_success(tmp_path, monkeypatch,
     code = cli.main(['--config', str(path)] + (['--preview'] if preview else []))
     assert len(calls) == 1
     assert code == {'dashboard': 0, 'exit': 1, 'interrupt': 130}[result]
-    assert (tmp_path / '.maxpane/.intro_seen').exists() is expected
+    assert not (tmp_path / '.maxpane/.intro_accepted').exists()
 
 
-def test_cli_already_seen_skips_and_bad_config_warns(tmp_path, monkeypatch, capsys):
+def test_cli_legacy_seen_does_not_prove_yes_and_bad_config_warns(tmp_path, monkeypatch, capsys):
     from maxpane_dashboard.intro import __main__ as cli
     monkeypatch.setattr(cli.Path, 'home', lambda: tmp_path)
     state = tmp_path / '.maxpane'
     state.mkdir(); (state / '.intro_seen').touch()
     path = state / 'config.toml'
     path.write_text('[intro]\nenabled="wrong"\n')
-    def fail(self): raise AssertionError('seen intro must not mount')
+    calls = []
     from maxpane_dashboard.intro.startup import IntroApp
-    monkeypatch.setattr(IntroApp, 'run', fail)
+    monkeypatch.setattr(IntroApp, 'run', lambda self: calls.append(self) or 'dashboard')
     assert cli.main([]) == 0
+    assert len(calls) == 1 and calls[0].sequence.stage == 'typewriter'
+    assert not (state / '.intro_accepted').exists()
     assert 'config' in capsys.readouterr().err.lower()

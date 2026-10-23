@@ -7,11 +7,11 @@ from .view import IntroApp
 
 
 def run_intro(*, force: bool = False, preview: bool = False,
-              config_path: Path | None = None, first_run_only: bool = True) -> int:
+              config_path: Path | None = None) -> int:
     """Run before constructing dashboard readers; return a process exit code.
 
-    Normal MaxPane startup is once per profile, even with a legacy ``always``
-    config. The standalone runner retains its explicit configured policy.
+    Only a literal yes suppresses the greeting on later launches. Rain and logo
+    still run each time; previews never persist the confirmation.
     """
     state = Path.home() / '.maxpane'
     try:
@@ -19,16 +19,18 @@ def run_intro(*, force: bool = False, preview: bool = False,
     except (OSError, ValueError) as exc:
         print(f'Intro config could not be read; using defaults: {exc}', file=sys.stderr)
         config = IntroConfig()
-    marker = state / '.intro_seen'
-    seen = marker.exists()
-    automatic = config.should_show(seen) and (not first_run_only or not seen)
+    marker = state / '.intro_accepted'
+    automatic = config.enabled and config.mode != 'never'
     if not (force or preview or automatic):
         return 0
-    result = IntroApp(config).run()
-    if result == 'dashboard' and not preview and (first_run_only or config.mode == 'first_run'):
+
+    def accept():
         try:
             state.mkdir(parents=True, exist_ok=True)
             marker.touch()
         except OSError as exc:
-            print(f'Intro seen marker could not be saved: {exc}', file=sys.stderr)
+            print(f'Intro confirmation could not be saved: {exc}', file=sys.stderr)
+
+    start_at = 'typewriter' if force or preview or not marker.exists() else 'rain'
+    result = IntroApp(config, start_at=start_at, on_accept=None if preview else accept).run()
     return {'dashboard': 0, 'exit': 1, 'interrupt': 130}.get(result, 1)

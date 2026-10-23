@@ -32,12 +32,16 @@ Explicit custom background colors and the amber/C64 presets remain selectable.
 Only MAXPANE's per-character fade is slowed, from 0.8s to 2s. Its scattered start
 pattern, 3.5s default rain lead-in, rain movement, four-second transition window,
 typewriter delays and three-second final hold are unchanged. Earlier demo behavior
-is preserved; normal startup now uses this intro once per local profile.
+is preserved; normal startup uses the greeting until an explicit `y`, then begins
+with fullscreen rain and the logo reveal on each subsequent launch.
 
 ## Startup integration
 
-Normal CLI and launchers use the native intro, with `--intro` for replay. The
-legacy Rust binary remains available separately but is no longer invoked at
+Normal CLI and launchers use the native intro, with `--intro` for full replay.
+Only literal `y` records `.intro_accepted`, immediately before the animation.
+Early decline/skip/interruption leaves the greeting enabled; old `.intro_seen`
+markers are ignored because they also recorded skips. Preview stays marker-free.
+The legacy Rust binary remains available separately but is no longer invoked at
 startup. BOARDROOM uses the saved terminal-only effect on explicit dashboard
 entry, not on return from a detail view. Its absolute paint layer leaves the
 143×37 layout pin and 149×45 owner geometry unchanged. Production reader preview

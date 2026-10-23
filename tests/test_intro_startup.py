@@ -16,10 +16,13 @@ def intro_env(tmp_path, monkeypatch):
     calls = []
 
     class FakeIntro:
-        def __init__(self, config):
-            calls.append(config)
+        def __init__(self, config, *, start_at, on_accept):
+            calls.append((config, start_at))
+            self.start_at, self.on_accept = start_at, on_accept
 
         def run(self):
+            if self.start_at == 'typewriter' and self.on_accept:
+                self.on_accept()
             return 'dashboard'
 
     monkeypatch.setattr(startup, 'IntroApp', FakeIntro)
@@ -27,14 +30,14 @@ def intro_env(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('mode', ['first_run', 'always'])
-def test_normal_intro_runs_once_even_with_legacy_always(intro_env, mode):
+def test_yes_skips_only_greeting_on_next_start_even_with_legacy_always(intro_env, mode):
     state, calls = intro_env
     state.mkdir()
     (state / 'config.toml').write_text(f'[intro]\nmode = "{mode}"\n')
     assert startup.run_intro() == 0
-    assert (state / '.intro_seen').exists()
+    assert (state / '.intro_accepted').exists()
     assert startup.run_intro() == 0
-    assert len(calls) == 1
+    assert [stage for _, stage in calls] == ['typewriter', 'rain']
 
 
 @pytest.mark.parametrize('settings', ['enabled = false', 'mode = "never"'])
@@ -44,27 +47,55 @@ def test_disabled_normal_intro_can_be_forced(intro_env, settings):
     (state / 'config.toml').write_text(f'[intro]\n{settings}\n')
     assert startup.run_intro() == 0
     assert calls == []
-    assert not (state / '.intro_seen').exists()
+    assert not (state / '.intro_accepted').exists()
     assert startup.run_intro(force=True) == 0
-    assert (state / '.intro_seen').exists()
+    assert (state / '.intro_accepted').exists()
     assert startup.run_intro(force=True) == 0
     assert len(calls) == 2
 
 
-@pytest.mark.parametrize(('outcome', 'code'), [('exit', 1), ('interrupt', 130), (None, 1)])
-def test_decline_and_interrupt_do_not_mark_seen(intro_env, monkeypatch, outcome, code):
+@pytest.mark.parametrize(('outcome', 'code'), [('exit', 1), ('interrupt', 130), ('dashboard', 0), (None, 1)])
+def test_decline_interrupt_and_skip_do_not_confirm(intro_env, monkeypatch, outcome, code):
     state, _ = intro_env
     monkeypatch.setattr(startup.IntroApp, 'run', lambda self: outcome)
     assert startup.run_intro() == code
     assert not state.exists()
 
 
+def test_yes_is_saved_before_rain_even_if_later_interrupted(intro_env, monkeypatch):
+    state, calls = intro_env
+
+    def accept_then_interrupt(self):
+        self.on_accept()
+        assert (state / '.intro_accepted').exists()
+        return 'interrupt'
+
+    monkeypatch.setattr(startup.IntroApp, 'run', accept_then_interrupt)
+    assert startup.run_intro() == 130
+    monkeypatch.setattr(startup.IntroApp, 'run', lambda self: 'dashboard')
+    assert startup.run_intro() == 0
+    assert [stage for _, stage in calls] == ['typewriter', 'rain']
+
+
+@pytest.mark.parametrize('option', ['force', 'preview'])
+def test_explicit_replay_includes_greeting_after_confirmation(intro_env, option):
+    state, calls = intro_env
+    state.mkdir()
+    marker = state / '.intro_accepted'
+    marker.touch()
+    before = marker.stat().st_mtime_ns
+    assert startup.run_intro(**{option: True}) == 0
+    assert calls[0][1] == 'typewriter'
+    if option == 'preview':
+        assert marker.stat().st_mtime_ns == before
+
+
 def test_preview_never_changes_marker_and_honors_custom_config(intro_env, tmp_path):
     state, calls = intro_env
     config = tmp_path / 'preview.toml'
     config.write_text('[intro]\nenabled = false\ntypewriter_speed_ms = 80\n')
-    assert startup.run_intro(preview=True, config_path=config, first_run_only=False) == 0
-    assert calls[0].typewriter_speed_ms == 80
+    assert startup.run_intro(preview=True, config_path=config) == 0
+    assert calls[0][0].typewriter_speed_ms == 80
     assert not state.exists()
 
 
@@ -73,7 +104,7 @@ def test_invalid_config_falls_back_without_breaking_start(intro_env, capsys):
     state.mkdir()
     (state / 'config.toml').write_text('[broken')
     assert startup.run_intro() == 0
-    assert calls[0].typewriter_speed_ms == 45
+    assert calls[0][0].typewriter_speed_ms == 45
     assert 'using defaults' in capsys.readouterr().err
 
 

@@ -543,8 +543,10 @@ Requires Python 3.11+
 
 ### Full install (with Matrix intro sequence)
 
-The Matrix intro runs natively in Python on first start. Later launches go straight
-to the pane menu; use `--intro` to replay it. No Rust installation is needed.
+The Matrix intro runs natively in Python. Once you confirm the opening question
+with `y`, later launches start directly with fullscreen Matrix rain and the
+MAXPANE logo fade. Use `--intro` to replay the greeting and question too.
+No Rust installation is needed.
 
 ```bash
 git clone https://github.com/banse/maxpane.git
@@ -553,7 +555,7 @@ cd maxpane
 # Install the Python dashboard
 pip install -e .
 
-# Start (intro once per local profile)
+# Start (greeting until confirmed; Matrix rain on every launch)
 maxpane
 
 # Replay the intro explicitly
@@ -566,11 +568,15 @@ For this checkout, the local launcher supports the same option:
 ./start-maxpane.sh --intro
 ```
 
-Completing the intro records `~/.maxpane/.intro_seen`; cancelling does not.
+Entering `y` records `~/.maxpane/.intro_accepted` immediately, even if you interrupt
+the animation afterwards. `n`, Escape, Ctrl+C, or skipping before confirmation
+leaves the greeting enabled for the next launch. Only literal `y`/`Y` persists
+confirmation; default Enter and Easter eggs do not. The old `.intro_seen` marker
+does not prove confirmation and is ignored.
 `[intro] enabled = false` or `mode = "never"` in `~/.maxpane/config.toml`
 disables automatic playback, while `--intro` still replays it. Legacy `always`
-settings also play only once during normal startup. Standalone previews do not
-change the marker.
+settings follow the same confirmation rule. Standalone previews do not change
+the marker.
 
 Opening BOARDROOM (pane 9) plays the terminal Matrix fade on each new dashboard
 entry. Returning from a detail view preserves the terminal without replaying it.

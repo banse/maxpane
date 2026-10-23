@@ -239,7 +239,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--intro", action="store_true",
-        help="Replay the native intro (otherwise shown only on first start)",
+        help="Replay the greeting and question (normally rain-only after confirming y)",
     )
     parser.add_argument(
         "--theme",

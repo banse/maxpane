@@ -15,6 +15,7 @@ DEFAULT_EGGS = (
 class IntroSequence:
     def __init__(self, config: IntroConfig, *, clock):
         self.config, self.clock = config, clock
+        self.accepted = False
         self.delays = [[config.typewriter_speed_ms / 1000 *
                         (2 if line.endswith('...') and i >= len(line) - 3 else 1)
                         for i in range(len(line))] for line in LINES]
@@ -98,6 +99,7 @@ class IntroSequence:
                 self.buffer = self.buffer[:-1]
             elif key == 'enter':
                 if not self.buffer or self.buffer.lower() == 'y':
+                    self.accepted = self.buffer.lower() == 'y'
                     self.respond('locking in...', 'proceed', .8)
                 elif self.buffer.lower() == 'n':
                     self.respond('Maybe next time, Pepe.', 'exit')
@@ -108,6 +110,7 @@ class IntroSequence:
                                  egg.action if egg else 'retry')
             elif character and character.isprintable():
                 if character.lower() == 'y' and not self.buffer:
+                    self.accepted = True
                     self.respond('locking in...', 'proceed', .8)
                 else:
                     self.buffer = (self.buffer + character)[:64]

@@ -2,12 +2,14 @@
 
 ## Approved behavior
 
-The normal CLI uses the native Python intro once per local profile, recorded in
-`~/.maxpane/.intro_seen`. `--intro` explicitly replays it. Normal startup treats
-the historical `always` setting as first-run; disabled/never skips the automatic
-intro. An explicit replay overrides those settings. Completion records seen;
-decline/interruption does not. Standalone previews stay marker-free. Preserve
-the intro's current rain/typewriter tempo and slower MAXPANE fade.
+The normal CLI always plays the fullscreen Matrix rain and MAXPANE reveal.
+Only the preceding greeting/question is once per local profile: an explicit `y`
+saves `~/.maxpane/.intro_accepted` immediately. Before that confirmation, declining,
+skipping or interrupting never suppresses the greeting on the next start. An old
+`.intro_seen` marker is not proof of confirmation and is ignored. `--intro`
+explicitly replays the full greeting/question. Disabled/never still skips automatic
+intro playback; the explicit option overrides that setting. Standalone previews
+stay marker-free. Preserve all existing animation timing.
 
 MaxPaneApp opens the existing menu without the legacy static splash. Launchers
 delegate to Python and no longer build or run Rust. Help/version remain fast and
@@ -22,6 +24,13 @@ immediately. Loading and polling remain independent, and the actual latest
 terminal is exposed at completion. Demos remain usable offline.
 
 ## Work packages and ownership
+
+Owner correction after `0e931b80`: root alone updates the intro state machine,
+view callback and startup persistence, their tests, CLI help and user docs.
+There are no dashboard/lifecycle/layout changes. This bounded Tier 2 follow-up
+uses the existing architecture and one final review, with no package dispatch.
+Tests cover literal confirmation, early skip/decline/interruption, immediate
+persistence before animation exit, later rain-only entry and forced/preview entry.
 
 This Tier 2 change is sized below 1,000 production lines. There are no task
 reviews; one final whole-change review follows integration and scoped checks.
@@ -47,7 +56,7 @@ Use injected clocks and network-free managers. Show an actual-data BOARDROOM at
 149x45 before final review. Run affected/composing files, required registration
 and fast guards, doc pins, plus focused mutation checks; no full suite.
 
-## Implementation evidence (2026-10-23)
+## Initial integration evidence (0e931b80, before the confirmation correction)
 
 - 281 affected/composing tests passed (49.91s), including the full BOARDROOM
   geometry and navigation files, intro screens and startup/CLI tests.
@@ -75,3 +84,16 @@ and fast guards, doc pins, plus focused mutation checks; no full suite.
 - Final bounded review: Approved, no findings. Reviewer independently passed
   30 focused startup/lifecycle/Unicode tests and killed/restored the resume-replay
   mutation. `git diff --check` passed.
+
+## Confirmation correction evidence (2026-10-23)
+
+- 160 affected intro/model/composited-screen/CLI tests passed; 129 fast guards
+  and 12 documentation pins passed.
+- Python 3.13 PTY smoke with an isolated profile: early skip exited 0 without
+  confirming; `n` exited 1 without confirming; `y` immediately followed by
+  Ctrl+C exited 130 with confirmation already saved. The next launch rendered
+  rain without the greeting; `--intro` restored the greeting. Existing timing
+  and BOARDROOM entry animation remain unchanged.
+- Two mutations killed: confirmation failing to suppress the greeting and
+  literal `y` not notifying persistence. Final review Approved with 31 independent
+  cases and a third killed mutation removing immediate persistence; all restored.

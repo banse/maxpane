@@ -182,9 +182,12 @@ class IntroApp(App[str], inherit_bindings=False):
     ENABLE_COMMAND_PALETTE = False
     CSS = 'IntroCanvas { width: 1fr; height: 1fr; overflow: hidden; text-wrap: nowrap; }'
 
-    def __init__(self, config: IntroConfig, *, clock=monotonic, seed=None):
+    def __init__(self, config: IntroConfig, *, clock=monotonic, seed=None,
+                 start_at='typewriter', on_accept=None):
         super().__init__()
+        self._start_at, self._on_accept = start_at, on_accept
         self.sequence = IntroSequence(config, clock=clock)
+        self.sequence.enter(start_at)
         self.renderer = IntroRenderer(config, random.randrange(2**32) if seed is None else seed)
 
     def compose(self) -> ComposeResult:
@@ -192,7 +195,7 @@ class IntroApp(App[str], inherit_bindings=False):
 
     def on_mount(self):
         self.screen.styles.background = self.renderer.colors['background']
-        self.sequence.enter('typewriter')
+        self.sequence.enter(self._start_at)
         self.set_interval(1 / 30, self.tick)
 
     def tick(self):
@@ -204,5 +207,8 @@ class IntroApp(App[str], inherit_bindings=False):
 
     def on_key(self, event):
         event.stop()
+        accepted = self.sequence.accepted
         self.sequence.key(event.key, event.character)
+        if not accepted and self.sequence.accepted and self._on_accept is not None:
+            self._on_accept()
         self.tick()

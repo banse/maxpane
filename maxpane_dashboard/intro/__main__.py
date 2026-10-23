@@ -9,7 +9,7 @@ def main(argv=None) -> int:
     parser.add_argument('--preview', action='store_true', help='always show; never write the seen marker')
     parser.add_argument('--config', type=Path, help='TOML settings (default: ~/.maxpane/config.toml)')
     args = parser.parse_args(argv)
-    return run_intro(preview=args.preview, config_path=args.config, first_run_only=False)
+    return run_intro(preview=args.preview, config_path=args.config)
 
 
 if __name__ == '__main__':

@@ -30,6 +30,47 @@ async def rows(app, pilot):
     return [s.text for s in app.screen._compositor.render_strips()]
 
 
+@pytest.mark.parametrize('key', ['y', 'Y'])
+async def test_literal_yes_notifies_immediately_and_only_once(key):
+    accepted = []
+    app = IntroApp(IntroConfig(), clock=lambda: 0, on_accept=lambda: accepted.append(True))
+    async with app.run_test(size=(149, 45)) as pilot:
+        app.sequence.enter('prompt')
+        await pilot.press(key)
+        assert accepted == [True] and app.sequence.stage == 'prompt'
+        await pilot.press('enter', 'ctrl+c')
+        assert accepted == [True]
+    assert app.return_value == 'interrupt'
+
+
+@pytest.mark.parametrize('stage,keys', [
+    ('typewriter', ['escape']), ('typewriter', ['x']),
+    ('prompt', ['n', 'enter']), ('prompt', ['enter']),
+    ('prompt', ['g', 'm', 'enter']), ('prompt', ['ctrl+c']),
+])
+async def test_no_skip_default_enter_or_egg_never_counts_as_literal_yes(stage, keys):
+    accepted = []
+    app = IntroApp(IntroConfig(), clock=lambda: 0, on_accept=lambda: accepted.append(True))
+    async with app.run_test(size=(80, 24)) as pilot:
+        app.sequence.enter(stage)
+        await pilot.press(*keys)
+        assert not accepted
+
+
+async def test_accepted_start_mounts_rain_then_same_logo_without_greeting():
+    clock = [0.0]
+    app = IntroApp(IntroConfig(), clock=lambda: clock[0], seed=42, start_at='rain')
+    async with app.run_test(size=(149, 45)) as pilot:
+        assert app.sequence.stage == 'rain'
+        clock[0] = 1.5
+        shown = '\n'.join(await rows(app, pilot))
+        assert 'Pepe' not in shown and 'ready to enter' not in shown
+        assert any(char in shown for char in RAIN_CHARS)
+        clock[0] = 7.5
+        shown = '\n'.join(await rows(app, pilot))
+        assert app.sequence.stage == 'logo' and LOGO.splitlines()[0] in shown
+
+
 @pytest.mark.asyncio
 async def test_actual_keys_and_complete_rendered_sequence():
     app, clock = make_app(skip_key='none', tagline='english', rain_duration_ms=100)
