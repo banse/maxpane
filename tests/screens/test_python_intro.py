@@ -123,6 +123,47 @@ async def test_custom_colors_are_in_composited_logo_and_background():
         assert logo.style.bgcolor.get_truecolor() == (16, 32, 48)
 
 
+@pytest.mark.parametrize('fade_time', [.3, .7, 1.8])
+@pytest.mark.asyncio
+async def test_logo_uses_first_demo_staggered_fade(fade_time):
+    from rich.console import Console
+    from scripts.matrix_demo import frame, GREEN, BACKGROUND
+
+    app, clock = make_app(color_scheme='custom', colors={
+        'logo': GREEN.hex, 'background': BACKGROUND.hex,
+        'rain_bright': '#ff0000', 'rain_dim': '#ff0000',
+    })
+    console = Console()
+    reference = frame(149, 45, 2.2 + fade_time).split('\n')
+    rain_only = frame(149, 45, 2.2 + fade_time, logo=False).split('\n')
+    async with app.run_test(size=(149, 45)) as pilot:
+        app.sequence.enter('rain')
+        clock[0] = 3.5 + fade_time
+        await rows(app, pilot)
+        strips = app.screen._compositor.render_strips()
+        compared, fading = 0, 0
+        left = (149 - max(map(cell_len, LOGO.splitlines()))) // 2
+        for row, line in enumerate(LOGO.splitlines()):
+            for col, char in enumerate(line):
+                x = left + col
+                ref = reference[18 + row]
+                ref_color = ref.get_style_at_offset(console, x).color.get_truecolor()
+                if char == ' ' or ref.plain[x] != char:
+                    continue
+                # Only compare cells visibly overlaid by the reference logo.
+                before = rain_only[18 + row]
+                if before.plain[x] == char and before.get_style_at_offset(console, x).color.get_truecolor() == ref_color:
+                    continue
+                actual = next(iter(strips[19 + row].crop(x, x + 1)))
+                assert actual.text == char
+                color = actual.style.color.get_truecolor()
+                assert color == ref_color
+                compared += 1
+                fading += ref_color != GREEN.rich_color.get_truecolor()
+        assert compared > 10
+        assert (fading > 0) == (fade_time < 1.8)
+
+
 @pytest.mark.asyncio
 async def test_idle_frame_does_not_emit_an_ansi_style_for_every_blank_cell():
     app, _ = make_app()

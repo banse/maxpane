@@ -1,6 +1,6 @@
 """Native terminal rendering and input adapter for the intro sequence."""
 from itertools import groupby
-from math import exp, hypot, sin
+from math import exp, sin
 import random
 from time import monotonic
 
@@ -48,9 +48,11 @@ class IntroRenderer:
         bg = Color.parse(self.colors['background'])
         self.inks = {key: Style(color=value, bgcolor=self.colors['background'])
                      for key, value in self.colors.items()}
-        self.gradients = {key: [Style(color=bg.blend(Color.parse(value), i / 31).rich_color,
-                                     bgcolor=bg.rich_color) for i in range(32)]
-                          for key, value in self.colors.items()}
+        self.gradients = {}
+        for key, value in self.colors.items():
+            steps = 15 if key == 'logo' else 31
+            self.gradients[key] = [Style(color=bg.blend(Color.parse(value), i / steps).rich_color,
+                                        bgcolor=bg.rich_color) for i in range(steps + 1)]
         dim, bright = Color.parse(self.colors['rain_dim']), Color.parse(self.colors['rain_bright'])
         self.rain_inks = [Style(color=dim.blend(bright, i / 31).rich_color, bgcolor=bg.rich_color)
                           for i in range(32)]
@@ -111,8 +113,7 @@ class IntroRenderer:
             if seq.stage == 'rain':
                 duration = self.config.rain_duration_ms / 1000
                 reveal = min(4.0, max(0.0, elapsed - duration))
-                progress = 1 - (1 - reveal / 4) ** 2
-                # Smoothly decelerate during the four-second edge-in reveal.
+                # Smoothly decelerate during the four-second logo transition.
                 movement = min(elapsed, duration) + (1 - exp(-reveal))
                 fade = (1 - reveal / 4) ** 2
                 for x in range(0, width, 1 if compact else 2):
@@ -127,12 +128,14 @@ class IntroRenderer:
                         if 0 <= y < height and level >= 2:
                             char = RAIN_CHARS[(x * 13 + y * 7 + int(movement * 15)) % len(RAIN_CHARS)]
                             put(char, x, y, self.rain_inks[level])
-                radius = hypot(logo_width / 2, len(lines) / 2)
                 for row, line in enumerate(lines):
                     for col, char in enumerate(line):
-                        order = 1 - hypot(col - logo_width / 2, row - len(lines) / 2) / radius
-                        if char != ' ' and reveal > 0 and order <= progress:
-                            put(char, left + col, top + row, self.inks['logo'])
+                        # First Matrix demo: scattered starts and a soft 0.8s fade.
+                        delay = (((left + col) * 7 + row * 11) % 19) / 19
+                        opacity = min(1.0, max(0.0, (reveal - delay) / .8))
+                        if char != ' ' and opacity > 0:
+                            put(char, left + col, top + row,
+                                self.gradients['logo'][max(1, round(15 * opacity))])
             else:
                 if height >= 6:
                     rng = random.Random(self.seed)
