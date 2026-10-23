@@ -171,6 +171,7 @@ class DashboardScreen(RefreshGuard, Screen):
         self._refresh_timer = None
         self._loading_timer = None
         self._card_loading_frame = 0
+        self._loading_busy = False
         self._background_loading = False
         self._loading_projection = False
         self._projection_due = False
@@ -269,9 +270,10 @@ class DashboardScreen(RefreshGuard, Screen):
         return ''
 
     def _set_loading(self, busy):
+        self._card_loading_frame = (self._card_loading_frame + 1) % 8 if busy and self._loading_busy else 0
+        self._loading_busy = bool(busy)
         for bar in self.query(StatusBar):
-            bar.set_loading(busy)
-        self._card_loading_frame = (self._card_loading_frame + 1) % 8 if busy else 0
+            bar.set_loading(busy, frame=self._card_loading_frame)
         for card in self.query(LoadingCard):
             card.set_card_loading(busy and self.is_current and card.is_on_screen and card.visible,
                                   self._card_loading_frame)

@@ -58,6 +58,7 @@ class StatusBar(Horizontal):
         self._busy = False
         self._loading_frame = 0
         self._loading_timer = None
+        self._external_frame = None
 
     def compose(self) -> ComposeResult:
         yield Static(self._ordinary_status(0, 0, 0), classes="status-left", id="status-left")
@@ -69,7 +70,7 @@ class StatusBar(Horizontal):
 
     def _prime_footer(self) -> None:
         self._update_right()
-        self.set_loading(self._busy)
+        self.set_loading(self._busy, frame=self._external_frame)
         self._update_message()
 
     def on_unmount(self) -> None:
@@ -101,9 +102,19 @@ class StatusBar(Horizontal):
         self._message = flatten(message)
         self._update_message()
 
-    def set_loading(self, busy: bool) -> None:
-        """Animate only while a screen reports an active request."""
+    def set_loading(self, busy: bool, *, frame: int | None = None) -> None:
+        """Use a screen's shared phase, or our own clock for standalone callers."""
         busy = bool(busy)
+        if frame is not None:
+            self._external_frame = frame
+            self._stop_loading_timer()
+            changed = busy != self._busy or busy and frame % 4 != self._loading_frame
+            self._busy = busy
+            self._loading_frame = frame % 4
+            if changed:
+                self._update_message()
+            return
+        self._external_frame = None
         if busy == self._busy and (not busy or self._loading_timer is not None):
             return
         self._busy = busy
@@ -120,7 +131,7 @@ class StatusBar(Horizontal):
             self._loading_timer = None
 
     def _tick_loading(self) -> None:
-        if self._busy and self.is_mounted:
+        if self._busy and self.is_mounted and self._external_frame is None:
             self._loading_frame = (self._loading_frame + 1) % 4
             self._update_message()
 

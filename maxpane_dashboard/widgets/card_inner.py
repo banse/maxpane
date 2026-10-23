@@ -4,8 +4,14 @@ import re
 from rich.color import Color
 from rich.style import Style
 from rich.text import Text
+from textual.color import Color as TextualColor
 
 from maxpane_dashboard.widgets.panels import HeroBoxBase
+
+
+def loading_fraction(frame: int) -> float:
+    """One shared fade curve for the screen-driven loading animations."""
+    return (0, .25, .5, .75, 1, .75, .5, .25)[frame % 8]
 
 
 class LoadingCard(HeroBoxBase):
@@ -33,8 +39,10 @@ class LoadingCard(HeroBoxBase):
         if not self._card_loading or not self._can_load_card():
             return value
         palette = self.app.get_css_variables()
-        shade = (0, 64, 128, 191, 255, 191, 128, 64)[self._card_loading_frame % 8]
-        ink = Style(color=Color.from_rgb(shade, shade, shade),
+        dark = TextualColor.parse(palette['background']).monochrome
+        light = TextualColor.from_rich_color(self.rich_style.color, self.app.ansi_theme).monochrome
+        shade = dark.blend(light, loading_fraction(self._card_loading_frame))
+        ink = Style(color=shade.rich_color,
                     bgcolor=palette['background'], dim=False, bold=False)
         return Text('⛋', style=ink)
 

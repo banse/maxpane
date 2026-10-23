@@ -178,3 +178,77 @@ Root owns integration, live observation, final documentation and commit.
 - Scoped re-review: Approved; both findings addressed. Reverting either fix
   made its named regression fail, and all mutation bytes were restored. Review
   reports are `review.md` and `rereview.md` in the live-evidence directory.
+
+## Follow-up: bounded neutral pulse and synchronized side captions
+
+Owner request: keep the monochrome `⛋` pulse inside the dashboard's existing
+dark/bright neutral tones, and pulse BOARDROOM's `キープ` and `ビルディング`
+from their current green to the active inner-frame green in sync with the
+bottom loading indicator. Tier 2 because shared loading lifecycle/renderers
+change; one implementer (root), under 1,000 production lines, one final review.
+This follow-up changes presentation only; no data-reader work or layout pins.
+
+Verified palette: Matrix uses background `#1c1c1c`, surface `#262626`, green
+foreground `#00dd33` and accent `#00ff41`. Its `text` variable is the CSS expression
+`auto 87%`; the mounted card resolves that to neutral `#e2e2e2`. Thus neither
+the raw `foreground` variable nor parsing `text` as a Rich color is the right
+white endpoint. Resolve the current widget's neutral text ink, and bound the
+monochrome intensity between the dashboard background and that neutral ink.
+For colored themes, derive neutral intensities rather than tinting the marker.
+
+Plan, all owned by root:
+
+1. `widgets/card_inner.py`: retain the eight-frame pulse curve and single-cell
+   glyph; replace hardcoded 0/255 gray endpoints with resolved dashboard tones.
+   Keep zero, cached values and semantic placeholder rules unchanged.
+2. `widgets/status_bar.py` plus `screens/dashboard_screen.py`: make the existing
+   screen loading clock the shared phase source. Allow `StatusBar.set_loading`
+   to receive an optional external frame; when supplied, stop its private timer
+   and render from that frame. Keep the existing timer for standalone callers
+   that supply no frame. Preserve external ownership through `_prime_footer`
+   and pre-mount setup; stale timer callbacks must not advance an externally
+   driven bar. Map the shared phase modulo four to the spinner glyphs, preserving its
+   existing 200 ms cadence (two rotations per eight-frame fade). Cards, footer
+   and captions consume the same phase, with common reset on stop/resume.
+3. `widgets/surfboard/rack.py` plus `screens/surfboard.py`: add a small rack
+   caption setter accepting busy/frame, called from the screen's loading hook.
+   Reuse the existing idle endpoint from `_position_taglines`: effective label
+   background blended with theme foreground using `DIM_FACTOR`. Blend toward
+   theme accent, the active inner-frame ink, using the shared pulse fraction.
+   At idle/suspend restore the exact current idle green. Keep both caption
+   strings, geometry and Japanese character widths unchanged; no caption timer.
+   Resize/reposition and theme changes must preserve/recompute the active phase
+   instead of inadvertently resetting the caption color.
+
+Alternative considered: leave the footer timer independent and approximate its
+phase. Rejected because timer starts, suspend/resume and extra refresh callbacks
+would permit visible drift. One shared phase is simpler to verify; the optional
+footer frame keeps unrelated standalone callers compatible.
+
+Validation: offline composited tests for neutral endpoints (including a second
+theme), all eight caption/card phases and deterministic spinner mapping,
+external-mode timer cancellation, pre-mount priming, resize, cached known
+values, hidden/suspended views and idle restoration. Keep standalone-footer
+timer tests. Assert phase advances trigger no reader calls or new timers, and
+that an old timer callback cannot change the shared phase. Root then shows a
+live 149×45 BOARDROOM rendering before hardening/review, runs affected/composing
+tests and guards/doc pins, performs one final review with the usual bounded fix
+wave, and commits locally. No full suite or network calls in tests.
+
+Implementation evidence (2026-10-23):
+
+- Shared 200 ms screen clock; eight gray/green fade phases, footer glyph
+  selected modulo four. Standalone footer callers retain their original timer.
+- Matrix bounds: neutral `#1c1c1c`–`#e2e2e2`; captions
+  `#099b2b`–`#00ff41`. Idle restores the original caption color. Theme changes
+  and resize resolve/reapply the current phase without restarting it.
+- Live keyless 149×45 BOARDROOM capture shown before final verification:
+  `/private/tmp/maxpane-card-sync/bright.png`; dim/bright frames at 1.05/3.33s,
+  loaded WIP counts at 6.40s. Isolated temporary cache, no data-source changes.
+- Offline affected/composing tests: **213 passed**; non-mounted guards:
+  **128 passed**; documentation pins: **12 passed**. No full suite.
+- Both concurrency mutations killed and restored byte for byte: removing the
+  external footer clock, and allowing a late private-timer tick to advance it.
+  Logs and captures: `/private/tmp/maxpane-card-sync/`.
+- Final independent review: **Approved, no findings**. Four targeted tests
+  passed; an additional external-phase mount mutation was killed/restored.

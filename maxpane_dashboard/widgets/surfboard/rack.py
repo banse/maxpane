@@ -15,7 +15,7 @@ from textual.widgets import Input, Static
 
 from maxpane_dashboard.analytics.surfboard import SURFBOARD_AGENT_KEYS as AGENT_KEYS
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
-from maxpane_dashboard.widgets.card_inner import LoadingCard, inner_styles, padded_inner_row
+from maxpane_dashboard.widgets.card_inner import LoadingCard, inner_styles, loading_fraction, padded_inner_row
 from maxpane_dashboard.widgets.explorer import for_network
 from maxpane_dashboard.widgets.fmt import fmt_age, worked_duration
 from maxpane_dashboard.widgets.markup_safety import flatten
@@ -627,6 +627,8 @@ class SurfboardRack(Grid):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.focused_card = "announce"
+        self._loading_busy = False
+        self._loading_frame = 0
 
     def on_resize(self):
         # Fractional tracks distribute spare lines unevenly between cards.
@@ -645,13 +647,21 @@ class SurfboardRack(Grid):
         for key, label_id in (("surf-nft", "keep"), ("swarm-tokens", "building")):
             card = self.query_one(f"#surfboard-card-{key}", SurfboardCard)
             label = self.query_one(f"#surfboard-{label_id}", Static)
-            # Match dim activity timestamps using the dashboard foreground.
-            base, surface = label.background_colors
-            label.styles.auto_color = False
-            label.styles.color = (base + surface).blend(Color.parse(self.app.get_css_variables()['foreground']), DIM_FACTOR)
             label.styles.width = card.region.width
             label.styles.offset = (card.region.x - self.content_region.x,
                 card.region.bottom - self.content_region.y + 1)
+        self.set_loading_animation(self._loading_busy, self._loading_frame)
+
+    def set_loading_animation(self, busy: bool, frame: int):
+        """Fade both captions on the footer clock; restore their original idle ink."""
+        self._loading_busy, self._loading_frame = busy, frame
+        palette = self.app.get_css_variables()
+        for label in self.query('.rack-tagline'):
+            base, surface = label.background_colors
+            idle = (base + surface).blend(Color.parse(palette['foreground']), DIM_FACTOR)
+            label.styles.auto_color = False
+            label.styles.color = idle.blend(Color.parse(palette['accent']),
+                                            loading_fraction(frame) if busy else 0)
 
     def compose(self):
         for index, slot in enumerate(SLOTS):

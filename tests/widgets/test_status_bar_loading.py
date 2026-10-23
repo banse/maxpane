@@ -148,6 +148,43 @@ async def test_loading_and_message_can_be_set_before_mount(timers):
         assert "copied selection" in footer(app)
 
 
+async def test_external_frames_replace_private_timer_and_ignore_late_ticks(timers):
+    app = FooterApp()
+    async with app.run_test(size=(149, 45)) as pilot:
+        bar = app.query_one(StatusBar)
+        bar.set_loading(True)
+        old_timer = timers[0]
+        for phase in (0, 3, 4, 7, 1):
+            bar.set_loading(True, frame=phase)
+            old_timer.callback()
+            await pilot.pause()
+            assert f"{'◐◓◑◒'[phase % 4]} loading" in footer(app)
+            assert old_timer.stopped and bar._loading_timer is None
+            assert len(timers) == 1
+        bar.set_loading(False, frame=0)
+        old_timer.callback()
+        await pilot.pause()
+        assert 'loading' not in footer(app)
+        bar.set_loading(True)
+        await pilot.pause()
+        assert len(timers) == 2 and '◐ loading' in footer(app)
+
+
+async def test_external_phase_survives_mount_without_starting_a_timer(timers):
+    bar = StatusBar()
+    bar.set_loading(True, frame=7)
+
+    class PrimedFooter(FooterApp):
+        def compose(self):
+            yield bar
+
+    app = PrimedFooter()
+    async with app.run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        assert '◒ loading' in footer(app)
+        assert not timers
+
+
 @pytest.mark.parametrize("kind,game,is_mock,hints", [
     ("overview", "SWARM TOKENS", False, ""),
     ("overview", "SWARM TOKENS · MOCK DATA", True, ""),

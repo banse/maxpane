@@ -4,6 +4,7 @@ from dataclasses import replace
 import pytest
 from textual.app import App
 from textual.containers import Horizontal
+from textual.color import Color
 
 from maxpane_dashboard.themes import THEMES
 from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, NewsHeroCard, news_records
@@ -32,14 +33,18 @@ def face(app, card):
                      for s in app.screen._compositor.render_strips()[card.region.y:card.region.bottom])
 
 
+@pytest.mark.parametrize('theme', ['matrix', 'minimal'])
 @pytest.mark.parametrize('missing', ['-', '--', '—'])
 @pytest.mark.parametrize('field', ['digits', 'preview', 'stats'])
-async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, field):
+async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, field, theme):
     monkeypatch.delenv('NO_COLOR', raising=False)
     content = ((('known', '0'), ('pending', missing)) if field == 'stats' else missing)
     record = HeroRecord('test', 'TEST', 'VALUE', '', state='unavailable', **{field: content})
     card = NewsHeroCard(record)
-    async with Cards(card).run_test(size=(30, 12)) as pilot:
+    app = Cards(card)
+    app.register_theme(THEMES[theme])
+    app.theme = theme
+    async with app.run_test(size=(30, 12)) as pilot:
         await pilot.pause()
         original = face(pilot.app, card)
         assert '⛋' not in original
@@ -55,7 +60,10 @@ async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, fiel
             positions.append((row, col))
             colors.append(pilot.app.screen.get_style_at(card.region.x+col, card.region.y+row).color)
         assert positions[0] == positions[1]
-        assert [color.get_truecolor() for color in colors] == [(0, 0, 0), (255, 255, 255)]
+        assert [color.get_truecolor() for color in colors] == [
+            Color.parse(pilot.app.get_css_variables()['background']).monochrome.rgb,
+            Color.from_rich_color(card.rich_style.color).monochrome.rgb,
+        ]
         card.set_card_loading(False, 0)
         await pilot.pause()
         assert face(pilot.app, card) == original
@@ -171,7 +179,10 @@ async def test_loaded_wip_primary_keeps_pulsing_missing_inner_and_outer_counts(m
             row, col = next((y, line.index('⛋')) for y, line in enumerate(painted.splitlines())
                             if '⛋ workflows' in line)
             colors.append(pilot.app.screen.get_style_at(card.region.x+col, card.region.y+row).color)
-        assert [color.get_truecolor() for color in colors] == [(0, 0, 0), (255, 255, 255)]
+        assert [color.get_truecolor() for color in colors] == [
+            Color.parse(pilot.app.get_css_variables()['background']).monochrome.rgb,
+            Color.from_rich_color(card.rich_style.color).monochrome.rgb,
+        ]
         card.set_card_loading(False, 0)
         await pilot.pause()
         assert face(pilot.app, card) == original

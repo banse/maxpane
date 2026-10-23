@@ -178,6 +178,11 @@ class SurfboardScreen(SurfDashboardScreen):
     def _loading_view(self):
         return "surfboard"
 
+    def _set_loading(self, busy):
+        super()._set_loading(busy)
+        for rack in self.query(SurfboardRack):
+            rack.set_loading_animation(busy and self.is_current, self._card_loading_frame)
+
     def _prime_status_bar(self, bar: StatusBar) -> None:
         bar.set_key_hints("arrows · enter · n NFTs · p protocol · w work · / cmd · esc")
 

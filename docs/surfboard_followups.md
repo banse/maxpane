@@ -746,3 +746,16 @@ failure reproduces on baseline `d9074556`; update its display expectation when
 the registration test is next touched.
 The single review approved without findings; the missing-shortcut, unquoted
 label and independently checked wrong-slot mutations were caught and restored.
+
+
+## Synchronized loading colors — 2026-10-23
+
+Missing-value diamonds now fade within the dashboard's neutral tones. The
+BOARDROOM side captions fade from their original muted ink to the active-card
+accent on the same screen clock as the footer. Resize preserves the phase;
+leaving the view restores idle colors. No source, polling or geometry change.
+Live public-data rendering at 149×45 was shown before final verification.
+Affected/composing tests: 213 passed; guards: 128 passed; doc pins: 12 passed.
+Three synchronization/mount mutations were killed and restored, including the
+independent review's mutation. Final review: Approved, no findings. No remaining
+follow-up for this change; existing unrelated entries above remain open.
