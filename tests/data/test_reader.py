@@ -675,6 +675,52 @@ async def test_busy_cycles_discard_elapsed_ticks_and_publish_without_catchup(det
         await runtime.close()
 
 
+async def test_offer_only_manager_refreshes_independent_sources_while_busy():
+    now, calls = [100.0], []
+    class Offers(Manager):
+        def reader_offer_only(self, view):
+            return view == 'one'
+        def is_loading(self, view=None):
+            return True  # an optional source remains in flight
+    runtime = ReaderRuntime(clock=lambda: now[0])
+    handle = runtime.register('one', lambda: Offers(calls))
+    try:
+        handle.set_active_view('one')
+        await eventually(lambda: sum(n == 'fetch' for n, _ in calls) == 1)
+        await reader_turn(runtime, lambda: None)
+        now[0] = 165
+        await reader_turn(runtime, runtime._poll)
+        await eventually(lambda: sum(n == 'fetch' for n, _ in calls) == 2)
+        await reader_turn(runtime, runtime._poll)
+        assert sum(n == 'fetch' for n, _ in calls) == 2  # no catch-up burst
+        assert handle.is_loading()
+        handle.set_active_view(None)
+        now[0] = 225
+        await reader_turn(runtime, runtime._poll)
+        assert sum(n == 'fetch' for n, _ in calls) == 2
+    finally:
+        await runtime.close()
+
+
+async def test_offer_only_return_reuses_current_snapshot_after_initial_publication():
+    calls = []
+    class Offers(Manager):
+        def reader_offer_only(self, view):
+            return True
+        async def fetch_and_compute(self):
+            self.record('fetch')
+            self.value = {'rows': [{'value': 8}]}
+            return self.get_snapshot()
+    runtime = ReaderRuntime()
+    handle = runtime.register('one', lambda: Offers(calls))
+    try:
+        handle.set_active_view('one')
+        await eventually(lambda: handle.get_snapshot() == {'rows': [{'value': 8}]} and not handle.is_loading())
+        assert sum(n == 'project' for n, _ in calls) == 2
+    finally:
+        await runtime.close()
+
+
 @pytest.mark.parametrize('fails', [False, True])
 async def test_cpu_blocked_completion_or_error_skips_missed_poll_deadlines(fails):
     now, calls = [100.0], []

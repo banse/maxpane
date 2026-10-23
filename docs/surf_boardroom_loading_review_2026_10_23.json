@@ -1,0 +1,2897 @@
+{
+  "reviewed_commit": "21208b1a7207295fda51eb3d66975c93d9782161",
+  "capture_date_utc": "2026-10-23",
+  "methodology": {
+    "runtime": "Python 3.13, .venv/bin/python; manager probes, not terminal paint timing",
+    "cache": "Independent copies of persisted surf_cache.json and surf_nft_cache.json per run; active user cache untouched",
+    "limits": "Sequential views; 60 requests / 35 seconds except BOARDROOM 100 / 45 and SWARM 70 / 45. Deadline checked between synchronous projections.",
+    "rate_limit": "Stopped all further live probes on first HTTP 429, from 1rpc.io/sepolia in POOL4 user view",
+    "selection": "AGENT seat 420. NFT probe did not establish a selected collection or perform a network request; its total is not an NFT refresh latency.",
+    "clock": "utc is probe completion time. elapsed_seconds includes construction and initial cache projection.",
+    "polls": "Live script records the production busy rule at 30s; it is not a complete ReaderRuntime execution. Separate injected-clock offline probe calls production polling.",
+    "publication": "publishes records cache writes, not proof of fresh successful observations or UI paint. Failed reads may store retained envelopes.",
+    "cancellation": "requests_started_after_deactivate counts starts in a short 100ms drain observation; it is not a long-duration cancellation guarantee."
+  },
+  "live": {
+    "surfboard": {
+      "view": "surfboard",
+      "utc": "2026-10-23T21:05:06Z",
+      "boot_seconds": 0.902,
+      "cache_projection_seconds": 1.248,
+      "elapsed_seconds": 23.312,
+      "censored": false,
+      "reason": null,
+      "pending_at_end": false,
+      "requests": [
+        {
+          "at": 3.944,
+          "host": "api.dexscreener.com",
+          "route": "/tokens",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 4181,
+          "seconds": 2.693
+        },
+        {
+          "at": 5.457,
+          "host": "pool4.imd.fun",
+          "route": "/docs",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 72318,
+          "seconds": 1.08
+        },
+        {
+          "at": 5.457,
+          "host": "eth.blockscout.com",
+          "route": "/api",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 143412,
+          "seconds": 1.394
+        },
+        {
+          "at": 6.441,
+          "host": "api.imd.fun",
+          "route": "/launches",
+          "rpc": [],
+          "limit": "500",
+          "delta": false,
+          "status": 200,
+          "bytes": 619975,
+          "seconds": 0.391
+        },
+        {
+          "at": 6.543,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_call"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3239,
+          "seconds": 0.072
+        },
+        {
+          "at": 6.561,
+          "host": "api.imd.fun",
+          "route": "/swarm",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "error": "ReadTimeout",
+          "seconds": 15.074
+        },
+        {
+          "at": 6.637,
+          "host": "api.dexscreener.com",
+          "route": "/tokens",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2,
+          "seconds": 0.21
+        },
+        {
+          "at": 6.663,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_blockNumber"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 4688,
+          "seconds": 0.033
+        },
+        {
+          "at": 6.682,
+          "host": "api.imd.fun",
+          "route": "/seats/records",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "error": "ReadTimeout",
+          "seconds": 15.167
+        },
+        {
+          "at": 6.784,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_call"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 1064,
+          "seconds": 0.074
+        },
+        {
+          "at": 6.803,
+          "host": "api.imd.fun",
+          "route": "/steps/hourly",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 122,
+          "seconds": 0.236
+        },
+        {
+          "at": 6.852,
+          "host": "eth.blockscout.com",
+          "route": "/api",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 114913,
+          "seconds": 0.332
+        },
+        {
+          "at": 6.905,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_call"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 1064,
+          "seconds": 0.027
+        },
+        {
+          "at": 6.924,
+          "host": "api.imd.fun",
+          "route": "/workflows",
+          "rpc": [],
+          "limit": "100",
+          "delta": false,
+          "status": 200,
+          "bytes": 334508,
+          "seconds": 0.438
+        },
+        {
+          "at": 7.026,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_call"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3048,
+          "seconds": 0.031
+        },
+        {
+          "at": 7.045,
+          "host": "api.imd.fun",
+          "route": "/jobs",
+          "rpc": [],
+          "limit": "100",
+          "delta": false,
+          "status": 200,
+          "bytes": 61392,
+          "seconds": 0.146
+        },
+        {
+          "at": 7.057,
+          "host": "gateway.tenderly.co",
+          "route": "/public",
+          "rpc": [
+            "eth_call"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 807,
+          "seconds": 0.081
+        },
+        {
+          "at": 7.165,
+          "host": "api.imd.fun",
+          "route": "/oracle/requests",
+          "rpc": [],
+          "limit": "100",
+          "delta": false,
+          "status": 200,
+          "bytes": 103393,
+          "seconds": 1.854
+        },
+        {
+          "at": 7.184,
+          "host": "eth.blockscout.com",
+          "route": "/api",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 19774,
+          "seconds": 1.357
+        },
+        {
+          "at": 7.286,
+          "host": "api.imd.fun",
+          "route": "/contributors",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 416086,
+          "seconds": 1.258
+        },
+        {
+          "at": 8.54,
+          "host": "api.imd.fun",
+          "route": "/workers",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 1413948,
+          "seconds": 2.166
+        },
+        {
+          "at": 8.661,
+          "host": "api.imd.fun",
+          "route": "/launches",
+          "rpc": [],
+          "limit": "500",
+          "delta": false,
+          "status": 200,
+          "bytes": 485593,
+          "seconds": 2.036
+        },
+        {
+          "at": 8.782,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3607,
+          "seconds": 0.193
+        },
+        {
+          "at": 8.903,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3582,
+          "seconds": 1.793
+        },
+        {
+          "at": 9.707,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 7338,
+          "seconds": 1.559
+        },
+        {
+          "at": 10.713,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 22196,
+          "seconds": 0.553
+        },
+        {
+          "at": 10.84,
+          "host": "api.imd.fun",
+          "route": "/workflows",
+          "rpc": [],
+          "limit": "100",
+          "delta": false,
+          "status": 200,
+          "bytes": 319367,
+          "seconds": 0.285
+        },
+        {
+          "at": 21.636,
+          "host": "identitymdcontrol-plane-production.up.railway.app",
+          "route": "/swarm",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 404,
+          "bytes": 101,
+          "seconds": 0.219
+        },
+        {
+          "at": 21.85,
+          "host": "identitymdcontrol-plane-production.up.railway.app",
+          "route": "/seats/records",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 404,
+          "bytes": 101,
+          "seconds": 0.23
+        }
+      ],
+      "request_count": 29,
+      "peak_http": 7,
+      "publishes": [
+        {
+          "at": 7.039,
+          "slot": "surfboard_hourly"
+        },
+        {
+          "at": 8.543,
+          "slot": "channel"
+        },
+        {
+          "at": 9.039,
+          "slot": "surf_oracles"
+        },
+        {
+          "at": 10.832,
+          "slot": "surfboard_activity"
+        },
+        {
+          "at": 10.839,
+          "slot": "swarm_workers"
+        },
+        {
+          "at": 21.855,
+          "slot": "surfboard_overview"
+        },
+        {
+          "at": 22.08,
+          "slot": "surfboard_records"
+        }
+      ],
+      "projection_seconds": [
+        1.2482,
+        0.9799,
+        1.0434,
+        0.9863,
+        1.5001,
+        1.0617,
+        1.0366,
+        1.0031,
+        1.0508,
+        1.2199
+      ],
+      "events": [
+        {
+          "event": "offer",
+          "at": 2.384
+        },
+        {
+          "event": "deactivate",
+          "at": 23.312,
+          "busy_before": false
+        }
+      ],
+      "requests_started_after_deactivate": 0
+    },
+    "swarm": {
+      "view": "swarm",
+      "utc": "2026-10-23T21:06:21Z",
+      "boot_seconds": 0.889,
+      "cache_projection_seconds": 1.053,
+      "elapsed_seconds": 47.891,
+      "censored": true,
+      "reason": "deadline",
+      "pending_at_end": true,
+      "requests": [
+        {
+          "at": 4.722,
+          "host": "api.imd.fun",
+          "route": "/swarm",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 295425,
+          "seconds": 0.354
+        },
+        {
+          "at": 4.843,
+          "host": "api.imd.fun",
+          "route": "/steps/hourly",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 122,
+          "seconds": 0.217
+        },
+        {
+          "at": 4.964,
+          "host": "api.imd.fun",
+          "route": "/health",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 4085,
+          "seconds": 0.36
+        },
+        {
+          "at": 5.084,
+          "host": "api.imd.fun",
+          "route": "/jobs",
+          "rpc": [],
+          "limit": "100",
+          "delta": false,
+          "status": 200,
+          "bytes": 61392,
+          "seconds": 0.241
+        },
+        {
+          "at": 5.205,
+          "host": "api.imd.fun",
+          "route": "/launches",
+          "rpc": [],
+          "limit": "100",
+          "delta": false,
+          "status": 200,
+          "bytes": 126466,
+          "seconds": 0.176
+        },
+        {
+          "at": 5.446,
+          "host": "api.imd.fun",
+          "route": "/jobs",
+          "rpc": [],
+          "limit": "100",
+          "delta": false,
+          "status": 200,
+          "bytes": 61392,
+          "seconds": 0.157
+        },
+        {
+          "at": 5.567,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3607,
+          "seconds": 3.295
+        },
+        {
+          "at": 5.687,
+          "host": "api.imd.fun",
+          "route": "/sites",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 87536,
+          "seconds": 1.214
+        },
+        {
+          "at": 7.023,
+          "host": "api.imd.fun",
+          "route": "/launch/policies",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 39925,
+          "seconds": 0.176
+        },
+        {
+          "at": 7.322,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 375567,
+          "seconds": 1.541
+        },
+        {
+          "at": 8.985,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 377034,
+          "seconds": 3.809
+        },
+        {
+          "at": 9.107,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3607,
+          "seconds": 0.155
+        },
+        {
+          "at": 9.383,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3582,
+          "seconds": 0.139
+        },
+        {
+          "at": 9.644,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 7338,
+          "seconds": 0.151
+        },
+        {
+          "at": 10.808,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5631,
+          "seconds": 0.159
+        },
+        {
+          "at": 10.929,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 22533,
+          "seconds": 0.307
+        },
+        {
+          "at": 11.358,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5313,
+          "seconds": 0.147
+        },
+        {
+          "at": 11.626,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2255,
+          "seconds": 1.168
+        },
+        {
+          "at": 12.917,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 373109,
+          "seconds": 0.163
+        },
+        {
+          "at": 13.038,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2398,
+          "seconds": 1.795
+        },
+        {
+          "at": 13.091,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_getTransactionByHash",
+            "eth_getTransactionReceipt",
+            "eth_getTransactionByHash",
+            "eth_getTransactionReceipt",
+            "eth_getTransactionByHash",
+            "eth_getTransactionReceipt",
+            "eth_getCode",
+            "eth_getCode",
+            "eth_getCode"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 66874,
+          "seconds": 0.167
+        },
+        {
+          "at": 13.291,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_getTransactionReceipt",
+            "eth_getTransactionReceipt",
+            "eth_getTransactionReceipt",
+            "eth_getTransactionReceipt",
+            "eth_getTransactionReceipt",
+            "eth_getTransactionReceipt",
+            "eth_getTransactionReceipt"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 67488,
+          "seconds": 0.051
+        },
+        {
+          "at": 13.348,
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "route": "/",
+          "rpc": [
+            "eth_getTransactionReceipt",
+            "eth_getTransactionReceipt"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 18591,
+          "seconds": 0.17
+        },
+        {
+          "at": 13.539,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_getCode"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 38215,
+          "seconds": 0.032
+        },
+        {
+          "at": 13.574,
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "route": "/",
+          "rpc": [
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 929,
+          "seconds": 0.137
+        },
+        {
+          "at": 14.738,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3395,
+          "seconds": 2.135
+        },
+        {
+          "at": 14.955,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5952,
+          "seconds": 2.283
+        },
+        {
+          "at": 16.994,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 24686,
+          "seconds": 0.151
+        },
+        {
+          "at": 17.267,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5067,
+          "seconds": 0.147
+        },
+        {
+          "at": 17.387,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2234,
+          "seconds": 1.692
+        },
+        {
+          "at": 19.2,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 9071,
+          "seconds": 1.704
+        },
+        {
+          "at": 21.026,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 11873,
+          "seconds": 0.409
+        },
+        {
+          "at": 21.557,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 12007,
+          "seconds": 1.747
+        },
+        {
+          "at": 23.426,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 11767,
+          "seconds": 1.544
+        },
+        {
+          "at": 25.092,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 12014,
+          "seconds": 2.063
+        },
+        {
+          "at": 27.276,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5876,
+          "seconds": 2.529
+        },
+        {
+          "at": 29.928,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2255,
+          "seconds": 0.771
+        },
+        {
+          "at": 30.821,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6860,
+          "seconds": 0.988
+        },
+        {
+          "at": 31.929,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3323,
+          "seconds": 0.138
+        },
+        {
+          "at": 32.189,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5951,
+          "seconds": 1.881
+        },
+        {
+          "at": 34.193,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2212,
+          "seconds": 0.493
+        },
+        {
+          "at": 34.807,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5821,
+          "seconds": 1.51
+        },
+        {
+          "at": 36.439,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2683,
+          "seconds": 0.652
+        },
+        {
+          "at": 37.214,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2561,
+          "seconds": 1.513
+        },
+        {
+          "at": 38.849,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2213,
+          "seconds": 0.76
+        },
+        {
+          "at": 39.732,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 25077,
+          "seconds": 1.895
+        },
+        {
+          "at": 41.75,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2339,
+          "seconds": 2.143
+        },
+        {
+          "at": 44.016,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3465,
+          "seconds": 2.534
+        }
+      ],
+      "request_count": 48,
+      "peak_http": 3,
+      "publishes": [
+        {
+          "at": 5.06,
+          "slot": "surfboard_hourly"
+        },
+        {
+          "at": 5.081,
+          "slot": "surfboard_overview"
+        },
+        {
+          "at": 11.236,
+          "slot": "swarm"
+        },
+        {
+          "at": 11.237,
+          "slot": "swarm_jobs_seen"
+        },
+        {
+          "at": 17.483,
+          "slot": "swarm_launches"
+        },
+        {
+          "at": 17.534,
+          "slot": "swarm_launch_facts"
+        }
+      ],
+      "projection_seconds": [
+        1.0529,
+        0.9977,
+        1.1543,
+        0.9316,
+        0.9292,
+        0.9592,
+        0.9261,
+        1.1086,
+        0.9923,
+        0.9858,
+        0.988,
+        1.0166,
+        1.1584,
+        1.623,
+        0.9776,
+        1.2326,
+        1.2252,
+        1.3765,
+        1.8299,
+        1.2654,
+        1.6179,
+        1.295
+      ],
+      "events": [
+        {
+          "event": "offer",
+          "at": 2.044
+        },
+        {
+          "event": "poll30",
+          "at": 30.009,
+          "busy": true,
+          "offer_skipped": true
+        },
+        {
+          "event": "deactivate",
+          "at": 47.891,
+          "busy_before": true
+        }
+      ],
+      "requests_started_after_deactivate": 0
+    },
+    "board": {
+      "view": "board",
+      "utc": "2026-10-23T21:07:12Z",
+      "boot_seconds": 0.94,
+      "cache_projection_seconds": 0.972,
+      "elapsed_seconds": 7.809,
+      "censored": false,
+      "reason": null,
+      "pending_at_end": false,
+      "requests": [
+        {
+          "at": 4.855,
+          "host": "api.imd.fun",
+          "route": "/contributors",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 416086,
+          "seconds": 0.798
+        },
+        {
+          "at": 4.976,
+          "host": "api.imd.fun",
+          "route": "/workers",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 1478924,
+          "seconds": 0.684
+        }
+      ],
+      "request_count": 2,
+      "peak_http": 2,
+      "publishes": [
+        {
+          "at": 5.68,
+          "slot": "swarm_contributors"
+        },
+        {
+          "at": 5.768,
+          "slot": "surfboard_activity"
+        },
+        {
+          "at": 5.775,
+          "slot": "swarm_workers"
+        }
+      ],
+      "projection_seconds": [
+        0.9717,
+        0.949,
+        1.0214,
+        1.0084
+      ],
+      "events": [
+        {
+          "event": "offer",
+          "at": 2.214
+        },
+        {
+          "event": "deactivate",
+          "at": 7.809,
+          "busy_before": false
+        }
+      ],
+      "requests_started_after_deactivate": 0
+    },
+    "agent": {
+      "view": "agent",
+      "utc": "2026-10-23T21:07:46Z",
+      "boot_seconds": 1.55,
+      "cache_projection_seconds": 1.147,
+      "elapsed_seconds": 32.609,
+      "censored": true,
+      "reason": "request_budget",
+      "pending_at_end": false,
+      "requests": [
+        {
+          "at": 4.103,
+          "host": "registry.npmjs.org",
+          "route": "/@anthropic-ai",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3530,
+          "seconds": 2.014
+        },
+        {
+          "at": 5.802,
+          "host": "api.imd.fun",
+          "route": "/seats/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 4246215,
+          "seconds": 1.729
+        },
+        {
+          "at": 5.923,
+          "host": "api.imd.fun",
+          "route": "/contributors",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 416086,
+          "seconds": 1.213
+        },
+        {
+          "at": 6.044,
+          "host": "api.imd.fun",
+          "route": "/workers",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 1477219,
+          "seconds": 1.094
+        },
+        {
+          "at": 7.791,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 4683,
+          "seconds": 1.899
+        },
+        {
+          "at": 7.912,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 24432,
+          "seconds": 1.779
+        },
+        {
+          "at": 8.032,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5819,
+          "seconds": 1.66
+        },
+        {
+          "at": 8.154,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 15503,
+          "seconds": 1.83
+        },
+        {
+          "at": 10.107,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 9229,
+          "seconds": 0.254
+        },
+        {
+          "at": 10.227,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 14520,
+          "seconds": 0.282
+        },
+        {
+          "at": 10.348,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 19910,
+          "seconds": 0.342
+        },
+        {
+          "at": 10.469,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6151,
+          "seconds": 1.6
+        },
+        {
+          "at": 12.193,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6124,
+          "seconds": 0.41
+        },
+        {
+          "at": 12.314,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 9191,
+          "seconds": 0.456
+        },
+        {
+          "at": 12.434,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 18015,
+          "seconds": 0.421
+        },
+        {
+          "at": 12.555,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6137,
+          "seconds": 0.278
+        },
+        {
+          "at": 12.979,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 7520,
+          "seconds": 1.295
+        },
+        {
+          "at": 14.273,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 11199,
+          "seconds": 0.227
+        },
+        {
+          "at": 14.394,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 13467,
+          "seconds": 0.323
+        },
+        {
+          "at": 14.515,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 8376,
+          "seconds": 0.208
+        },
+        {
+          "at": 14.845,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 27961,
+          "seconds": 1.497
+        },
+        {
+          "at": 14.967,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 4350,
+          "seconds": 1.376
+        },
+        {
+          "at": 15.087,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 17916,
+          "seconds": 1.255
+        },
+        {
+          "at": 15.208,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6068,
+          "seconds": 1.134
+        },
+        {
+          "at": 16.47,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 24038,
+          "seconds": 0.222
+        },
+        {
+          "at": 16.587,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 37617,
+          "seconds": 0.27
+        },
+        {
+          "at": 16.708,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5148,
+          "seconds": 0.394
+        },
+        {
+          "at": 16.829,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 9822,
+          "seconds": 0.3
+        },
+        {
+          "at": 17.251,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6814,
+          "seconds": 1.264
+        },
+        {
+          "at": 18.514,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6819,
+          "seconds": 0.239
+        },
+        {
+          "at": 18.635,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 13544,
+          "seconds": 0.317
+        },
+        {
+          "at": 18.754,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 8777,
+          "seconds": 0.24
+        },
+        {
+          "at": 19.116,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6152,
+          "seconds": 0.305
+        },
+        {
+          "at": 19.237,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6082,
+          "seconds": 1.379
+        },
+        {
+          "at": 19.358,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2806,
+          "seconds": 1.258
+        },
+        {
+          "at": 19.479,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5281,
+          "seconds": 1.138
+        },
+        {
+          "at": 20.74,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 5702,
+          "seconds": 2.086
+        },
+        {
+          "at": 20.861,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 17895,
+          "seconds": 1.965
+        },
+        {
+          "at": 20.982,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 18847,
+          "seconds": 1.844
+        },
+        {
+          "at": 21.103,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 22195,
+          "seconds": 1.723
+        },
+        {
+          "at": 22.95,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 20370,
+          "seconds": 0.676
+        },
+        {
+          "at": 23.071,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 10714,
+          "seconds": 0.567
+        },
+        {
+          "at": 23.191,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 14950,
+          "seconds": 0.58
+        },
+        {
+          "at": 23.313,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 13219,
+          "seconds": 1.488
+        },
+        {
+          "at": 23.748,
+          "host": "api.imd.fun",
+          "route": "/workflows/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 13372,
+          "seconds": 1.053
+        },
+        {
+          "at": 24.923,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 9189,
+          "seconds": 0.263
+        },
+        {
+          "at": 25.044,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 8010,
+          "seconds": 0.401
+        },
+        {
+          "at": 25.165,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 7142,
+          "seconds": 0.314
+        },
+        {
+          "at": 25.298,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 13415,
+          "seconds": 0.414
+        },
+        {
+          "at": 26.908,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 9460,
+          "seconds": 2.013
+        },
+        {
+          "at": 27.029,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6770,
+          "seconds": 1.892
+        },
+        {
+          "at": 27.15,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 19844,
+          "seconds": 1.771
+        },
+        {
+          "at": 27.273,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 19689,
+          "seconds": 1.649
+        },
+        {
+          "at": 29.045,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 18586,
+          "seconds": 1.914
+        },
+        {
+          "at": 29.166,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 16698,
+          "seconds": 1.793
+        },
+        {
+          "at": 29.287,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 12399,
+          "seconds": 1.672
+        },
+        {
+          "at": 29.409,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 7585,
+          "seconds": 1.551
+        },
+        {
+          "at": 31.082,
+          "host": "api.imd.fun",
+          "route": "/workflows/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 9639,
+          "seconds": 0.16
+        },
+        {
+          "at": 31.363,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 8460,
+          "seconds": 1.252
+        },
+        {
+          "at": 31.484,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6880,
+          "seconds": 1.132
+        }
+      ],
+      "request_count": 60,
+      "peak_http": 4,
+      "publishes": [
+        {
+          "at": 6.117,
+          "slot": "swarm_runtime_latest"
+        },
+        {
+          "at": 7.153,
+          "slot": "swarm_contributors"
+        },
+        {
+          "at": 7.24,
+          "slot": "surfboard_activity"
+        },
+        {
+          "at": 7.247,
+          "slot": "swarm_workers"
+        },
+        {
+          "at": 7.568,
+          "slot": "swarm_seat"
+        },
+        {
+          "at": 9.694,
+          "slot": "agent_work"
+        },
+        {
+          "at": 9.694,
+          "slot": "agent_work"
+        },
+        {
+          "at": 9.695,
+          "slot": "agent_work"
+        },
+        {
+          "at": 9.985,
+          "slot": "agent_work"
+        },
+        {
+          "at": 10.362,
+          "slot": "agent_work"
+        },
+        {
+          "at": 10.511,
+          "slot": "agent_work"
+        },
+        {
+          "at": 10.691,
+          "slot": "agent_work"
+        },
+        {
+          "at": 12.071,
+          "slot": "agent_work"
+        },
+        {
+          "at": 12.604,
+          "slot": "agent_work"
+        },
+        {
+          "at": 12.771,
+          "slot": "agent_work"
+        },
+        {
+          "at": 12.836,
+          "slot": "agent_work"
+        },
+        {
+          "at": 12.857,
+          "slot": "agent_work"
+        },
+        {
+          "at": 14.274,
+          "slot": "agent_work"
+        },
+        {
+          "at": 14.5,
+          "slot": "agent_work"
+        },
+        {
+          "at": 14.718,
+          "slot": "agent_work"
+        },
+        {
+          "at": 14.724,
+          "slot": "agent_work"
+        },
+        {
+          "at": 16.343,
+          "slot": "agent_work"
+        },
+        {
+          "at": 16.344,
+          "slot": "agent_work"
+        },
+        {
+          "at": 16.344,
+          "slot": "agent_work"
+        },
+        {
+          "at": 16.345,
+          "slot": "agent_work"
+        },
+        {
+          "at": 16.694,
+          "slot": "agent_work"
+        },
+        {
+          "at": 16.858,
+          "slot": "agent_work"
+        },
+        {
+          "at": 17.103,
+          "slot": "agent_work"
+        },
+        {
+          "at": 17.129,
+          "slot": "agent_work"
+        },
+        {
+          "at": 18.516,
+          "slot": "agent_work"
+        },
+        {
+          "at": 18.754,
+          "slot": "agent_work"
+        },
+        {
+          "at": 18.953,
+          "slot": "agent_work"
+        },
+        {
+          "at": 18.995,
+          "slot": "agent_work"
+        },
+        {
+          "at": 19.422,
+          "slot": "agent_work"
+        },
+        {
+          "at": 20.618,
+          "slot": "agent_work"
+        },
+        {
+          "at": 20.618,
+          "slot": "agent_work"
+        },
+        {
+          "at": 20.618,
+          "slot": "agent_work"
+        },
+        {
+          "at": 22.828,
+          "slot": "agent_work"
+        },
+        {
+          "at": 22.828,
+          "slot": "agent_work"
+        },
+        {
+          "at": 22.828,
+          "slot": "agent_work"
+        },
+        {
+          "at": 22.829,
+          "slot": "agent_work"
+        },
+        {
+          "at": 23.639,
+          "slot": "agent_work"
+        },
+        {
+          "at": 23.772,
+          "slot": "agent_work"
+        },
+        {
+          "at": 24.801,
+          "slot": "agent_work"
+        },
+        {
+          "at": 24.802,
+          "slot": "agent_work"
+        },
+        {
+          "at": 25.187,
+          "slot": "agent_work"
+        },
+        {
+          "at": 25.447,
+          "slot": "agent_work"
+        },
+        {
+          "at": 25.481,
+          "slot": "agent_work"
+        },
+        {
+          "at": 25.714,
+          "slot": "agent_work"
+        },
+        {
+          "at": 28.922,
+          "slot": "agent_work"
+        },
+        {
+          "at": 28.923,
+          "slot": "agent_work"
+        },
+        {
+          "at": 28.923,
+          "slot": "agent_work"
+        },
+        {
+          "at": 28.924,
+          "slot": "agent_work"
+        },
+        {
+          "at": 30.961,
+          "slot": "agent_work"
+        },
+        {
+          "at": 30.961,
+          "slot": "agent_work"
+        },
+        {
+          "at": 30.962,
+          "slot": "agent_work"
+        },
+        {
+          "at": 31.242,
+          "slot": "agent_work"
+        },
+        {
+          "at": 32.617,
+          "slot": "agent_work"
+        },
+        {
+          "at": 32.617,
+          "slot": "agent_work"
+        }
+      ],
+      "projection_seconds": [
+        1.1467,
+        1.0143,
+        0.9679,
+        1.4848,
+        1.3621,
+        1.1788,
+        1.0448,
+        1.1503,
+        1.0781,
+        1.1553,
+        0.9533,
+        1.087,
+        0.9867,
+        1.0132,
+        0.9893
+      ],
+      "events": [
+        {
+          "event": "offer",
+          "at": 2.973
+        },
+        {
+          "event": "poll30",
+          "at": 31.008,
+          "busy": true,
+          "offer_skipped": true
+        },
+        {
+          "event": "deactivate",
+          "at": 32.609,
+          "busy_before": false
+        }
+      ],
+      "requests_started_after_deactivate": 0
+    },
+    "oracles": {
+      "view": "oracles",
+      "utc": "2026-10-23T21:07:55Z",
+      "boot_seconds": 0.804,
+      "cache_projection_seconds": 0.9,
+      "elapsed_seconds": 7.774,
+      "censored": false,
+      "reason": null,
+      "pending_at_end": false,
+      "requests": [
+        {
+          "at": 3.944,
+          "host": "api.imd.fun",
+          "route": "/oracle/requests",
+          "rpc": [],
+          "limit": "100",
+          "delta": false,
+          "status": 200,
+          "bytes": 103393,
+          "seconds": 0.248
+        },
+        {
+          "at": 5.945,
+          "host": "api.imd.fun",
+          "route": "/oracle/requests/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 15026,
+          "seconds": 0.157
+        }
+      ],
+      "request_count": 2,
+      "peak_http": 1,
+      "publishes": [
+        {
+          "at": 4.21,
+          "slot": "surf_oracles"
+        },
+        {
+          "at": 6.115,
+          "slot": "surf_oracles"
+        }
+      ],
+      "projection_seconds": [
+        0.9003,
+        0.9345,
+        0.9814,
+        1.0583
+      ],
+      "events": [
+        {
+          "event": "offer",
+          "at": 1.991
+        },
+        {
+          "event": "deactivate",
+          "at": 7.774,
+          "busy_before": false
+        }
+      ],
+      "requests_started_after_deactivate": 0
+    },
+    "nft": {
+      "view": "nft",
+      "utc": "2026-10-23T21:07:59Z",
+      "boot_seconds": 0.808,
+      "cache_projection_seconds": 0.045,
+      "elapsed_seconds": 2.623,
+      "censored": false,
+      "reason": null,
+      "pending_at_end": false,
+      "requests": [],
+      "request_count": 0,
+      "peak_http": 0,
+      "publishes": [],
+      "projection_seconds": [
+        0.0451,
+        0.0402,
+        0.0382
+      ],
+      "events": [
+        {
+          "event": "offer",
+          "at": 1.089
+        },
+        {
+          "event": "deactivate",
+          "at": 2.623,
+          "busy_before": false
+        }
+      ],
+      "requests_started_after_deactivate": 0
+    },
+    "tokens": {
+      "view": "tokens",
+      "utc": "2026-10-23T21:08:06Z",
+      "boot_seconds": 0.878,
+      "cache_projection_seconds": 0.115,
+      "elapsed_seconds": 5.758,
+      "censored": false,
+      "reason": null,
+      "pending_at_end": false,
+      "requests": [
+        {
+          "at": 1.259,
+          "host": "api.dexscreener.com",
+          "route": "/tokens",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 4181,
+          "seconds": 0.224
+        },
+        {
+          "at": 1.38,
+          "host": "api.imd.fun",
+          "route": "/launches",
+          "rpc": [],
+          "limit": "500",
+          "delta": false,
+          "status": 200,
+          "bytes": 619975,
+          "seconds": 0.366
+        },
+        {
+          "at": 1.483,
+          "host": "api.dexscreener.com",
+          "route": "/tokens",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 2,
+          "seconds": 0.166
+        },
+        {
+          "at": 1.905,
+          "host": "api.imd.fun",
+          "route": "/launches",
+          "rpc": [],
+          "limit": "500",
+          "delta": false,
+          "status": 200,
+          "bytes": 485593,
+          "seconds": 0.167
+        },
+        {
+          "at": 2.425,
+          "host": "api.imd.fun",
+          "route": "/launch/policies",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 39925,
+          "seconds": 0.338
+        },
+        {
+          "at": 2.884,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 375567,
+          "seconds": 0.223
+        },
+        {
+          "at": 3.228,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 377034,
+          "seconds": 0.595
+        },
+        {
+          "at": 3.947,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 373109,
+          "seconds": 0.169
+        },
+        {
+          "at": 4.119,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_getTransactionByHash",
+            "eth_getTransactionReceipt",
+            "eth_getTransactionByHash",
+            "eth_getTransactionReceipt",
+            "eth_getTransactionByHash",
+            "eth_getTransactionReceipt",
+            "eth_getCode",
+            "eth_getCode",
+            "eth_getCode"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 66874,
+          "seconds": 0.323
+        }
+      ],
+      "request_count": 9,
+      "peak_http": 2,
+      "publishes": [
+        {
+          "at": 4.562,
+          "slot": "swarm_launch_facts"
+        },
+        {
+          "at": 4.563,
+          "slot": "swarm_launches"
+        }
+      ],
+      "projection_seconds": [
+        0.115,
+        0.1503,
+        0.2504,
+        0.168,
+        0.2502
+      ],
+      "events": [
+        {
+          "event": "offer",
+          "at": 1.115
+        },
+        {
+          "event": "deactivate",
+          "at": 5.758,
+          "busy_before": false
+        }
+      ],
+      "requests_started_after_deactivate": 0
+    },
+    "pool4_user": {
+      "view": "pool4_user",
+      "utc": "2026-10-23T21:08:14Z",
+      "boot_seconds": 0.754,
+      "cache_projection_seconds": 0.911,
+      "elapsed_seconds": 7.816,
+      "censored": true,
+      "reason": "http_429",
+      "pending_at_end": true,
+      "requests": [
+        {
+          "at": 2.737,
+          "host": "eth.blockscout.com",
+          "route": "/api",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 143412,
+          "seconds": 1.344
+        },
+        {
+          "at": 3.759,
+          "host": "api.coingecko.com",
+          "route": "/api",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 28,
+          "seconds": 0.148
+        },
+        {
+          "at": 3.759,
+          "host": "api.dexscreener.com",
+          "route": "/latest",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3004,
+          "seconds": 0.092
+        },
+        {
+          "at": 3.88,
+          "host": "api.dexscreener.com",
+          "route": "/latest",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 6383,
+          "seconds": 0.201
+        },
+        {
+          "at": 4.082,
+          "host": "eth.blockscout.com",
+          "route": "/api",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 114913,
+          "seconds": 0.356
+        },
+        {
+          "at": 4.439,
+          "host": "eth.blockscout.com",
+          "route": "/api",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 19774,
+          "seconds": 0.21
+        },
+        {
+          "at": 5.405,
+          "host": "pool4.imd.fun",
+          "route": "/docs",
+          "rpc": [],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 72318,
+          "seconds": 1.173
+        },
+        {
+          "at": 5.406,
+          "host": "ethereum-sepolia-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_blockNumber"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 46,
+          "seconds": 1.116
+        },
+        {
+          "at": 6.522,
+          "host": "ethereum-sepolia-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_call",
+            "eth_getCode"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 271,
+          "seconds": 0.033
+        },
+        {
+          "at": 6.555,
+          "host": "1rpc.io",
+          "route": "/sepolia",
+          "rpc": [
+            "eth_call",
+            "eth_getCode"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 429,
+          "bytes": 159,
+          "error": "CancelledError",
+          "seconds": 0.278
+        },
+        {
+          "at": 6.583,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_call"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 3239,
+          "seconds": 0.15
+        },
+        {
+          "at": 6.744,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "rpc": [
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_call",
+            "eth_blockNumber"
+          ],
+          "limit": null,
+          "delta": false,
+          "status": 200,
+          "bytes": 4691,
+          "seconds": 0.053
+        }
+      ],
+      "request_count": 12,
+      "peak_http": 3,
+      "publishes": [
+        {
+          "at": 3.907,
+          "slot": "eth_usd"
+        },
+        {
+          "at": 4.083,
+          "slot": "market"
+        },
+        {
+          "at": 4.651,
+          "slot": "channel"
+        }
+      ],
+      "projection_seconds": [
+        0.9114,
+        1.0078,
+        0.9929,
+        0.9546
+      ],
+      "events": [
+        {
+          "event": "offer",
+          "at": 1.738
+        },
+        {
+          "event": "deactivate",
+          "at": 7.816,
+          "busy_before": true
+        }
+      ],
+      "requests_started_after_deactivate": 0
+    }
+  },
+  "not_live_benchmarked": [
+    "pool4 protocol",
+    "dashboard / ONCHAIN FEED",
+    "launchpad",
+    "workflow guide (local only)"
+  ],
+  "offline": {
+    "shared_cpu": {
+      "input_bytes": 22553444,
+      "load_ms": 612.0563340373337,
+      "load_cpu_ms": 550.113,
+      "slots": 33,
+      "projection": {
+        "median_ms": 695.4294170136563,
+        "max_ms": 803.6009579664096,
+        "median_cpu_ms": 660.3460000000001,
+        "n": 5
+      },
+      "projection_json_bytes": 4701103,
+      "deepcopy": {
+        "median_ms": 45.15133297536522,
+        "max_ms": 46.10020900145173,
+        "median_cpu_ms": 44.786000000000215,
+        "n": 5
+      },
+      "equality": {
+        "median_ms": 2.6826669927686453,
+        "max_ms": 2.882292028516531,
+        "median_cpu_ms": 2.5569999999994764,
+        "n": 5
+      },
+      "work_project": {
+        "median_ms": 272.6917499676347,
+        "max_ms": 282.7631249674596,
+        "median_cpu_ms": 266.9370000000004,
+        "n": 5
+      },
+      "oracles_project": {
+        "median_ms": 5.633499997202307,
+        "max_ms": 6.086084002163261,
+        "median_cpu_ms": 5.633999999999695,
+        "n": 5
+      },
+      "hub_source_project": {
+        "median_ms": 4.984916013199836,
+        "max_ms": 6.274875020608306,
+        "median_cpu_ms": 4.984999999999573,
+        "n": 5
+      },
+      "board_projection": {
+        "median_ms": 166.38333396986127,
+        "max_ms": 168.04841702105477,
+        "median_cpu_ms": 164.9529999999997,
+        "n": 5
+      },
+      "dirty_save": {
+        "median_ms": 685.5892079765908,
+        "max_ms": 811.0157090122811,
+        "median_cpu_ms": 587.7369999999988,
+        "n": 3
+      },
+      "saved_bytes": 22553527,
+      "clean_save": {
+        "median_ms": 0.0016669509932398796,
+        "max_ms": 0.06337498780339956,
+        "median_cpu_ms": 0.0029999999995311555,
+        "n": 3
+      }
+    },
+    "poll_cadence": {
+      "scenario": "One detached source is busy through second94; ordinary30-second polling; no real manager or thread/network",
+      "checkpoints": [
+        {
+          "at": 29,
+          "next_read": 30,
+          "busy": true,
+          "refreshes": []
+        },
+        {
+          "at": 30,
+          "next_read": 60,
+          "busy": true,
+          "refreshes": []
+        },
+        {
+          "at": 60,
+          "next_read": 90,
+          "busy": true,
+          "refreshes": []
+        },
+        {
+          "at": 90,
+          "next_read": 120,
+          "busy": true,
+          "refreshes": []
+        },
+        {
+          "at": 95,
+          "next_read": 120,
+          "busy": false,
+          "refreshes": []
+        },
+        {
+          "at": 119,
+          "next_read": 120,
+          "busy": false,
+          "refreshes": []
+        },
+        {
+          "at": 120,
+          "next_read": 150,
+          "busy": false,
+          "refreshes": [
+            120
+          ]
+        }
+      ],
+      "actual_refresh_offers": [
+        120
+      ],
+      "publications": 94
+    },
+    "catalogue_cpu": {
+      "nft_cache": {
+        "bytes": 13762276,
+        "records": 33,
+        "evidence": 917,
+        "progress": 6,
+        "fact_counts": {
+          "launches": 654,
+          "launchDetails": 572,
+          "jobDetails": 131,
+          "workflows": 199,
+          "publications": 444,
+          "sites": 1,
+          "coverage": 9
+        }
+      },
+      "nft_get_snapshot": {
+        "n": 7,
+        "mean_s": 0.05398285143642819,
+        "mean_95ci_s": [
+          0.04650680228095933,
+          0.06145890059189705
+        ],
+        "min_s": 0.04571274999761954,
+        "max_s": 0.06838320899987593,
+        "raw_s": [
+          0.050268584047444165,
+          0.060734416998457164,
+          0.06838320899987593,
+          0.05217208300018683,
+          0.04571274999761954,
+          0.05394804198294878,
+          0.04666087502846494
+        ]
+      },
+      "nft_publish": {
+        "n": 7,
+        "mean_s": 0.9265864224372697,
+        "mean_95ci_s": [
+          0.8245274755328025,
+          1.028645369341737
+        ],
+        "min_s": 0.8328611250035465,
+        "max_s": 1.1630493750562891,
+        "raw_s": [
+          1.1630493750562891,
+          0.8633766660350375,
+          0.9231552499695681,
+          0.8690918330103159,
+          0.8328611250035465,
+          0.9382089580176398,
+          0.8963617499684915
+        ]
+      },
+      "nft_prepare": {
+        "n": 7,
+        "mean_s": 0.19951826786356314,
+        "mean_95ci_s": [
+          0.18617202250817994,
+          0.21286451321894634
+        ],
+        "min_s": 0.18337779102148488,
+        "max_s": 0.21742975001689047,
+        "raw_s": [
+          0.18884575000265613,
+          0.2173849589889869,
+          0.21742975001689047,
+          0.199072832998354,
+          0.20521945803193375,
+          0.18529733398463577,
+          0.18337779102148488
+        ]
+      },
+      "nft_save": {
+        "n": 7,
+        "mean_s": 0.2676927081442305,
+        "mean_95ci_s": [
+          0.23892338680499117,
+          0.29646202948346984
+        ],
+        "min_s": 0.22877379198325798,
+        "max_s": 0.305166291014757,
+        "raw_s": [
+          0.2807992500020191,
+          0.305166291014757,
+          0.23241808300372213,
+          0.30243512499146163,
+          0.22877379198325798,
+          0.27216608298476785,
+          0.2520903330296278
+        ]
+      }
+    },
+    "catalogue_gates": {
+      "nft_staged_gate": {
+        "selected_read_finished": true,
+        "published_before_tail_release": false,
+        "published_after_tail_release": true
+      },
+      "tokens_market_gate": {
+        "source_finished": [
+          "ethereum"
+        ],
+        "cached_before_second_chain_release": [],
+        "cached_after_second_chain_release": [
+          "eth",
+          "base"
+        ]
+      },
+      "token_detail_sites_gate": {
+        "launch_published": true,
+        "contributors_before_sites_release": null,
+        "contributors_after_sites_release": []
+      },
+      "nft_old_row_refresh": {
+        "reads": [
+          {
+            "source": "launches",
+            "cursor": null
+          }
+        ],
+        "old_updatedAt": "2026-10-16T10:00:00Z",
+        "terminal": true,
+        "refresh_cursor": null
+      },
+      "tokens_projection_population": {
+        "catalogue_rows": 654,
+        "projected_tokens": 441
+      },
+      "token_get_snapshot": {
+        "n": 7,
+        "mean_s": 0.132902155006637,
+        "mean_95ci_s": [
+          0.11012197109388026,
+          0.15568233891939373
+        ],
+        "raw_s": [
+          0.1419542499934323,
+          0.11977145896526054,
+          0.1165129590081051,
+          0.10297587502282113,
+          0.1211109590367414,
+          0.1726224580197595,
+          0.155367125000339
+        ]
+      },
+      "token_get_selected": {
+        "n": 7,
+        "mean_s": 0.12674717856238463,
+        "mean_95ci_s": [
+          0.11311244424090253,
+          0.14038191288386673
+        ],
+        "raw_s": [
+          0.1412929170182906,
+          0.12669125001411885,
+          0.15115462499670684,
+          0.12363379198359326,
+          0.11638108297483996,
+          0.10872295795707032,
+          0.11935362499207258
+        ]
+      }
+    }
+  }
+}

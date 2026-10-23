@@ -161,47 +161,75 @@ def job_references(details):
     return references
 
 
-def related_records(raw, seed_jobs, address=None, launch_ids=(), *, references=None):
+def record_index(raw, references=None):
+    """Build explicit directed joins once for a discovery revision."""
+    details = raw.get("jobDetails", {})
+    references = job_references(details) if references is None else references
+    edges, publications, launches = {}, {}, {}
+    def link(left, right):
+        edges.setdefault(left, set()).add(right)
+    def group(ids):
+        if ids:
+            first = next(iter(ids))
+            for identity in ids:
+                link(first, identity)
+                link(identity, first)
+    for identity, linked in references.items():
+        group({identity, *linked})
+    for identity, job in details.items():
+        for version in (job.get("project") or {}).get("versions", []):
+            if version.get("jobId"):
+                link(identity, version["jobId"])
+    for workflow in raw.get("workflows", []):
+        group({v for v in (workflow.get("contractsJobId"), workflow.get("frontendJobId")) if v})
+    for number, publication in enumerate(raw.get("publications", [])):
+        linked = {v["jobId"] for v in publication.get("versions", []) if v.get("jobId")}
+        if publication.get("id", "").startswith("job:"):
+            linked.add(publication["id"][4:])
+        group(linked)
+        for identity in linked:
+            publications.setdefault(identity, set()).add(number)
+        for contract in publication.get("contracts", []):
+            if contract.get("id"):
+                launches.setdefault(contract["id"], set()).add(number)
+    return edges, publications, launches
+
+
+def related_records(raw, seed_jobs, address=None, launch_ids=(), *, references=None, index=None):
     """Explicit workflow/project/publication joins; name similarity is never a join."""
     details = raw.get("jobDetails", {})
+    edges, publications, launches = record_index(raw, references) if index is None else index
     ids, sites, repos = set(seed_jobs), {}, {}
-    references = job_references(details) if references is None else references
-    # A site job that explicitly names the deployed contract is a direct reference.
     if address:
-        for job in details.values():
-            if job.get("site") and address.lower() in str(job.get("objective", "")).lower():
-                ids.add(job["id"])
-    changed = True
-    while changed:
-        previous = len(ids)
-        for job_id, referenced in references.items():
-            if job_id in ids or referenced & ids:
-                ids.update(referenced)
-                ids.add(job_id)
-        for workflow in raw.get("workflows", []):
-            linked = {v for v in (workflow.get("contractsJobId"), workflow.get("frontendJobId")) if v}
-            if linked & ids:
-                ids.update(linked)
-        for job_id in list(ids):
-            job = details.get(job_id, {})
-            ids.update(v["jobId"] for v in (job.get("project") or {}).get("versions", []) if v.get("jobId"))
-        for publication in raw.get("publications", []):
-            linked = {v["jobId"] for v in publication.get("versions", []) if v.get("jobId")}
-            if publication.get("id", "").startswith("job:"):
-                linked.add(publication["id"][4:])
-            linked_launches = {c["id"] for c in publication.get("contracts", []) if c.get("id")}
-            if ids & linked or linked_launches & set(launch_ids):
-                ids.update(linked)
-                for site in publication.get("sites", []):
-                    if live_site(site):
-                        sites[site.get("id") or site["url"]] = site
-                for version in publication.get("versions", []):
-                    if live_site(version.get("site")):
-                        site = version["site"]
-                        sites[site.get("id") or site["url"]] = site
-                    if version.get("repoUrl"):
-                        repos[version["repoUrl"]] = {"url": version["repoUrl"], "commit": version.get("commit")}
-        changed = len(ids) != previous
+        ids.update(job["id"] for job in details.values()
+                   if job.get("site") and address.lower() in str(job.get("objective", "")).lower())
+    selected = set().union(*(launches.get(identity, set()) for identity in launch_ids))
+    rows = raw.get("publications", [])
+    for number in selected:
+        publication = rows[number]
+        ids.update(v["jobId"] for v in publication.get("versions", []) if v.get("jobId"))
+        if publication.get("id", "").startswith("job:"):
+            ids.add(publication["id"][4:])
+    pending = list(ids)
+    while pending:
+        identity = pending.pop()
+        selected.update(publications.get(identity, ()))
+        for linked in edges.get(identity, ()):
+            if linked not in ids:
+                ids.add(linked)
+                pending.append(linked)
+    # Source order determines overwrite precedence, independent of graph traversal.
+    for number in sorted(selected):
+        publication = rows[number]
+        for site in publication.get("sites", []):
+            if live_site(site):
+                sites[site.get("id") or site["url"]] = site
+        for version in publication.get("versions", []):
+            if live_site(version.get("site")):
+                site = version["site"]
+                sites[site.get("id") or site["url"]] = site
+            if version.get("repoUrl"):
+                repos[version["repoUrl"]] = {"url": version["repoUrl"], "commit": version.get("commit")}
     jobs = []
     for job_id in sorted(ids):
         job = details.get(job_id, {})
@@ -291,6 +319,7 @@ def project_catalog(raw, candidates, checked, *, now_iso, active_days=7):
     collections, excluded, deployed_jobs = [], [], set()
     details = raw.get("jobDetails", {})
     references = job_references(details)
+    index = record_index(raw, references)
     for key, candidate in candidates.items():
         chain, launch = checked.get(key, {}), candidate["launch"]
         if (not verified_nft(launch, chain) or chain.get("chainId") != candidate.get("chainId")
@@ -302,7 +331,7 @@ def project_catalog(raw, candidates, checked, *, now_iso, active_days=7):
             excluded.append({"id": key, "launchIds": candidate["launchIds"], "reason": template})
             continue
         jobs, sites, repos = related_records(raw, set(candidate["jobIds"]), candidate["address"],
-                                           candidate["launchIds"], references=references)
+                                           candidate["launchIds"], references=references, index=index)
         deployed_jobs.update(j["id"] for j in jobs)
         notes = ((launch.get("attestation") or {}).get("manifest") or {}).get("notes") or ""
         objectives = "\n".join(details.get(j["id"], {}).get("objective", "") for j in jobs)
@@ -365,7 +394,7 @@ def project_catalog(raw, candidates, checked, *, now_iso, active_days=7):
         if project not in grouped or (timestamp(evidence) or 0) > (timestamp(grouped[project][1]) or 0):
             grouped[project] = (job, evidence, review)
     for project, (job, stamp, review) in grouped.items():
-        jobs, sites, repos = related_records(raw, {job["id"]}, references=references)
+        jobs, sites, repos = related_records(raw, {job["id"]}, references=references, index=index)
         if any(j["id"] in deployed_jobs for j in jobs):
             continue
         for chain_id in ([review["chainId"]] if review else target_chains(job)):

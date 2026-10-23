@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from uuid import UUID
 from unittest.mock import AsyncMock
+from types import SimpleNamespace
 
 import pytest
 
@@ -158,7 +159,7 @@ async def test_initial_catalogue_pending_without_timestamp_is_loading(setup):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('failure', [None, {'error': 'busy'}, RuntimeError('read failed')])
-async def test_failed_read_stops_fanout_and_backoff_then_retries(setup, failure):
+async def test_failed_launch_isolated_with_its_own_backoff_then_retries(setup, failure):
     reader, client, raw, _, clock = setup
     identity = raw['catalogue'][0]['id']
     good = raw['launches'][identity]
@@ -166,14 +167,133 @@ async def test_failed_read_stops_fanout_and_backoff_then_retries(setup, failure)
     result = await batch(reader, raw)
     assert result['state'] == 'failed' and result['rows'] is None
     attempts = 1 if isinstance(failure, Exception) else 3
-    assert len(client.calls) == attempts
+    assert client.calls.count(('launches', identity)) == attempts
+    assert result['loaded'] == 1  # unrelated launch still makes progress
+    calls = len(client.calls)
     assert reader._sleep.await_count == attempts - 1
     raw['launches'][identity] = good
     clock[0] += 119
     await batch(reader, raw)
-    assert len(client.calls) == attempts
+    assert len(client.calls) == calls
     clock[0] += 1
     assert (await batch(reader, raw))['state'] == 'ok'
+
+
+async def test_job_memo_retains_original_http_observation_time(setup):
+    reader, client, raw, cache, clock = setup
+    observed = NOW - 100
+    async def detail(identity):
+        return SimpleNamespace(payload=await client.fetch_job(identity), observed_at=observed)
+    client.read_job_detail = detail
+    result = await batch(reader, raw)
+    assert result['read_ts'] == observed
+    assert {fact['read_ts'] for fact in reader._facts['jobs'].values()} == {observed}
+
+
+async def test_request_budget_resumes_large_launch_and_gives_other_launch_a_turn(setup, monkeypatch):
+    from maxpane_dashboard.data import surf_launch_contribution as source
+    reader, client, raw, cache, clock = setup
+    monkeypatch.setattr(source, 'REQUEST_BUDGET', 5)
+    first, second = raw['catalogue']
+    original = next(iter(raw['jobs'].values()))
+    jobs = [str(UUID(int=1000+i)) for i in range(12)]
+    raw['launches'][first['id']]['jobs'] = [{'id': job} for job in jobs]
+    raw['jobs'].update({job: dict(original, id=job, workflow=None) for job in jobs})
+    result = await batch(reader, raw)
+    assert len(client.calls) == 5
+    assert result['rows'] is None and result['state'] == 'pending'
+    first_reads = list(client.calls)
+    await batch(reader, raw)
+    assert client.calls[5] == ('launches', second['id'])
+    assert len(client.calls) <= 10
+    restored = LaunchContributionReader(client, cache, clock=lambda: clock[0])
+    restored._sleep = AsyncMock()
+    for _ in range(5):
+        result = await batch(restored, raw)
+        if result['state'] == 'ok':
+            break
+    assert result['state'] == 'ok'
+    assert all(client.calls.count(call) == 1 for call in first_reads)
+
+
+async def test_large_active_launch_reaches_tail_while_earlier_job_facts_expire(setup):
+    reader, client, raw, cache, clock = setup
+    retained = await batch(reader, raw)
+    row = raw['catalogue'][0]
+    raw['catalogue'] = [dict(row, updatedAt='2026-10-14T23:00:00.000Z')]
+    jobs = [str(UUID(int=2000 + index)) for index in range(60)]
+    original = next(iter(raw['jobs'].values()))
+    raw['jobs'].update({job: dict(original, id=job, state='executing', workflow=None)
+                        for job in jobs})
+    raw['launches'][row['id']] = dict(raw['catalogue'][0], jobs=[{'id': job} for job in jobs])
+    observed = {}
+
+    async def detail(identity):
+        observed[identity] = clock[0] - 1
+        return SimpleNamespace(payload=await client.fetch_job(identity), observed_at=observed[identity])
+
+    client.read_job_detail = detail
+    client.calls.clear()
+    for turn in range(12):
+        clock[0] = NOW + turn * 30
+        previous_calls = len(client.calls)
+        result = await batch(reader, raw)
+        assert len(client.calls) - previous_calls <= 24
+        assert result['rows'] == retained['rows']
+        assert result['read_ts'] == retained['read_ts']
+        assert result['state'] == 'pending'  # all 60 cannot be fresh within two batches
+        assert {job: fact['read_ts'] for job, fact in reader._facts['jobs'].items()
+                if job in observed} == observed
+        if turn == 2:
+            assert set(observed) == set(jobs)
+    assert all(client.calls.count(('jobs', job)) >= 2 for job in jobs)
+    assert cache.get_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION).payload['snapshot']['rows'] == retained['rows']
+
+
+async def test_time_budget_keeps_completed_launch_fact_and_drains_slow_job(setup, monkeypatch):
+    from maxpane_dashboard.data import surf_launch_contribution as source
+    reader, client, raw, cache, clock = setup
+    monkeypatch.setattr(source, 'READ_SECONDS', .02)
+    first, second = raw['catalogue']
+    first_job = raw['launches'][first['id']]['jobs'][0]['id']
+    fetch = client.read
+    cancelled = asyncio.Event()
+    async def hanging(kind, identity):
+        if kind == 'jobs' and identity == first_job:
+            client.calls.append((kind, identity))
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        return await fetch(kind, identity)
+    client.read = hanging
+    result = await asyncio.wait_for(batch(reader, raw), 1)
+    assert cancelled.is_set() and result['state'] == 'pending'
+    assert first['id'] in reader._facts['launches']
+    assert reader.project()['rows'] is None
+    client.read = fetch
+    assert (await batch(reader, raw))['state'] == 'ok'
+    assert client.calls[2] == ('launches', second['id'])
+    assert client.calls.count(('launches', first['id'])) == 1
+
+
+async def test_shared_job_recovered_by_later_launch_clears_failure_state(setup):
+    reader, client, raw, _, _ = setup
+    first, second = raw['catalogue']
+    job = raw['launches'][first['id']]['jobs'][0]['id']
+    raw['launches'][second['id']]['jobs'] = [{'id': job}]
+    fetch = client.fetch_job
+    failed = False
+    async def flaky(identity):
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError('temporary first launch read failure')
+        return await fetch(identity)
+    client.fetch_job = flaky
+    result = await batch(reader, raw)
+    assert result['state'] == 'ok'
+    assert result['loaded'] == 2 and result['rows']
 
 
 @pytest.mark.asyncio

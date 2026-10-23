@@ -1914,37 +1914,10 @@ class SurfClient(OwnedHttpClient):
         through ``_coerce_launchpad_resume``, because a cache file is
         third-party input.
         """
-        getters = [
-            (A.LAUNCHPAD_HOOK, A.SEL_IMD_TO_BURN),
-            (A.LAUNCHPAD_HOOK, A.SEL_TOTAL_REAL_IMD),
-            (A.LAUNCHPAD_HOOK, A.SEL_BURN_FEE_BPS),
-            (A.LAUNCHPAD_HOOK, A.SEL_CREATOR_FEE_BPS),
-            (A.LAUNCHPAD_HOOK, A.SEL_TOTAL_CREATOR_ETH_OWED),
-            (A.LAUNCHPAD_FACTORY, A.SEL_COIN_COUNT),
-            (A.BURN_EXECUTOR_V2, A.SEL_TOKEN_BALANCE),
-            (A.BURN_EXECUTOR_V2, A.SEL_MIN_BRIDGE_AMOUNT),
-            # `previewBridge()` -- the executor's own non-reverting answer to
-            # "would a bridge call work right now, and for how much". It
-            # returns three words and this batch decodes the first,
-            # `amountToSend`, which is zero whenever nothing is bridgeable.
-            #
-            # It is read rather than re-derived because the condition has
-            # four parts and only two of them are visible from the getters
-            # beside it: the executor's balance, the OFT's `maxAmountLD` cap,
-            # the shared-decimal dust the OFT strips (which can round a real
-            # balance to zero), and `minBridgeAmount`. `resolveSendParam`
-            # applies all four in order and `previewBridge` catches its
-            # revert; anything we computed here from `tokenBalance` and
-            # `minBridgeAmount` alone would be a guess at the other two.
-            (A.BURN_EXECUTOR_V2, A.SEL_PREVIEW_BRIDGE),
-        ]
         sweep = await self._launchpad_logs(resume)
         block = hex(self._launchpad_pending[1]) if self._launchpad_pending else "latest"
-        (
-            imd_to_burn_wei, total_real_imd_wei, burn_fee_bps, creator_fee_bps,
-            creator_eth_owed_wei, coin_count, executor_balance_wei, min_bridge_wei,
-            bridge_amount_wei,
-        ) = await self._launchpad_getters(getters, block=block)
+        getters = await self.fetch_launchpad_getters(block=block) or {}
+        coin_count = getters.get('coin_count')
 
         # A population mismatch is evidence that the accumulated history is
         # incomplete. Preserve the committed cursor and rebuild next tick.
@@ -2025,14 +1998,14 @@ class SurfClient(OwnedHttpClient):
 
         return LaunchpadState(
             coin_count=coin_count,
-            imd_to_burn_wei=imd_to_burn_wei,
-            total_real_imd_wei=total_real_imd_wei,
-            burn_fee_bps=burn_fee_bps,
-            creator_fee_bps=creator_fee_bps,
-            creator_eth_owed_wei=creator_eth_owed_wei,
-            executor_balance_wei=executor_balance_wei,
-            min_bridge_wei=min_bridge_wei,
-            bridge_amount_wei=bridge_amount_wei,
+            imd_to_burn_wei=getters.get('imd_to_burn_wei'),
+            total_real_imd_wei=getters.get('total_real_imd_wei'),
+            burn_fee_bps=getters.get('burn_fee_bps'),
+            creator_fee_bps=getters.get('creator_fee_bps'),
+            creator_eth_owed_wei=getters.get('creator_eth_owed_wei'),
+            executor_balance_wei=getters.get('executor_balance_wei'),
+            min_bridge_wei=getters.get('min_bridge_wei'),
+            bridge_amount_wei=getters.get('bridge_amount_wei'),
             coins=coins,
             swap_count=sweep.swap_count,
             trader_count=sweep.trader_count,
@@ -2047,6 +2020,32 @@ class SurfClient(OwnedHttpClient):
             burnkeepers=keepers,
             volume_2h=volume_2h,
         )
+
+    @read_cycle
+    async def fetch_launchpad_getters(self, *, block: str = "latest") -> dict[str, int | None] | None:
+        """Read current contract values without advancing any history cursor.
+
+        Entry refreshes use latest; complete history sweeps pass their pinned
+        target block so population verification retains its existing baseline.
+        Each failed leg is None, while an observed zero remains zero. A total
+        outage is None, matching the client's other optional fetchers.
+        """
+        calls = {
+            'imd_to_burn_wei': (A.LAUNCHPAD_HOOK, A.SEL_IMD_TO_BURN),
+            'total_real_imd_wei': (A.LAUNCHPAD_HOOK, A.SEL_TOTAL_REAL_IMD),
+            'burn_fee_bps': (A.LAUNCHPAD_HOOK, A.SEL_BURN_FEE_BPS),
+            'creator_fee_bps': (A.LAUNCHPAD_HOOK, A.SEL_CREATOR_FEE_BPS),
+            'creator_eth_owed_wei': (A.LAUNCHPAD_HOOK, A.SEL_TOTAL_CREATOR_ETH_OWED),
+            'coin_count': (A.LAUNCHPAD_FACTORY, A.SEL_COIN_COUNT),
+            'executor_balance_wei': (A.BURN_EXECUTOR_V2, A.SEL_TOKEN_BALANCE),
+            'min_bridge_wei': (A.BURN_EXECUTOR_V2, A.SEL_MIN_BRIDGE_AMOUNT),
+            # previewBridge returns amountToSend first. Its other constraints
+            # (OFT limit, shared-decimal dust and minimum) cannot be inferred
+            # from the balance alone; preserve the executor's own answer.
+            'bridge_amount_wei': (A.BURN_EXECUTOR_V2, A.SEL_PREVIEW_BRIDGE),
+        }
+        values = await self._launchpad_getters(list(calls.values()), block=block)
+        return dict(zip(calls, values)) if any(value is not None for value in values) else None
 
     async def _launchpad_getters(
         self, getters: list[tuple[str, str]], *, block: str = "latest"

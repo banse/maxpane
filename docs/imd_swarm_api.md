@@ -20,6 +20,17 @@ https://identitymdcontrol-plane-production.up.railway.app
 
 ## The control plane
 
+### Host pool recheck — 2026-10-23
+
+The current keyless pool is `https://api.imd.fun`, then
+`https://api-imd.up.railway.app`. Both `/version` reads returned commit
+`0a3c69e93b0f112cdf60b2bbfdd98e81bcecfb3c` in the loading audit follow-up.
+The former Railway address shown in the historical observations above now
+returns HTTP 404, `Application not found`. The replacement was named by the
+developer in the API recovery notes (`aidude/docs/imd-api-changelog.md`,
+2026-10-23 entries); it was verified before replacing the fallback.
+This changes the host alias, not the source identity or per-request rotation.
+
 ### Current hub reads — 2026-10-09
 
 Dashboard 9 uses the same keyless host pool and client as the existing SURF views:

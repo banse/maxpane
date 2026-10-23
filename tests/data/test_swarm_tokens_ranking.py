@@ -315,8 +315,6 @@ async def test_hub_market_offer_is_bounded_singleflight_and_excludes_all_details
     market.fetch_markets = blocked
     try:
         manager.offer_hub_markets()
-        await manager.wait_pending()
-        manager.offer_hub_markets()
         await started.wait()
         for _ in range(4):
             manager.offer_hub_markets()

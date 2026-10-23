@@ -417,6 +417,37 @@ async def test_record_view_80_enriches_answers_and_job_details_past_forty_with_b
         await manager.close()
 
 
+async def test_active_agent_card_refresh_keeps_one_record_read_budget(tmp_path, monkeypatch):
+    from unittest.mock import AsyncMock
+    from maxpane_dashboard.data.surf_cache import SLOT_SWARM_JOB_DETAIL
+    fake = Answers(work(8, 'completed'))
+    for row in fake.seat['work']:
+        row['nodeKey'] = 'hunt_d'
+    jobs = [row['jobId'] for row in fake.seat['work']]
+
+    async def fetch(job):
+        fake.detail_calls.append(job)
+        return dict(id=job, state='completed', nodes=[], blockedReason=None)
+
+    fake.fetch_job = fetch
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW))
+    manager.set_seat(420)
+    manager.set_agent_active(True)
+    # Isolate RECORD's reads from the independent membership budget.
+    cards = AsyncMock()
+    monkeypatch.setattr(manager._agent_card_sources, 'read', cards)
+    try:
+        await manager._pool_swarm_seat(420, NOW)
+        cards.assert_awaited_once()
+        assert fake.answer_calls == jobs[:4]
+        assert fake.detail_calls == jobs[:2]
+        points = manager.cache.get_last_good(SLOT_SWARM_JOB_DETAIL).payload
+        assert set(points) == set(jobs[:2])
+        assert all(point['state'] == 'completed' for point in points.values())
+    finally:
+        await manager.close()
+
+
 @pytest.mark.parametrize('filter_tab', [True, False])
 async def test_record_launches_enriches_old_confirmed_job_before_windowing(tmp_path, filter_tab):
     from maxpane_dashboard.analytics.surf_record_filter import RecordFilter
@@ -439,18 +470,19 @@ async def test_record_launches_enriches_old_confirmed_job_before_windowing(tmp_p
 
 
 @pytest.mark.parametrize('filter_tab', [True, False])
-async def test_new_membership_snapshot_shapes_current_cycle_reads(tmp_path, monkeypatch, filter_tab):
+async def test_bounded_membership_progress_shapes_current_cycle_reads(tmp_path, monkeypatch, filter_tab):
     from maxpane_dashboard.analytics.surf_record_filter import RecordFilter, record_view
     from tests.data.test_surf_agent_work import capture as work_capture, LIVE
     fake = Answers(work(41, 'completed'))
     for row in fake.seat['work']:
         row.update(nodeKey='hunt_d', status='accepted')
+    jobs = [row['jobId'] for row in fake.seat['work']]
     target = fake.seat['work'][-1]['jobId']
     clock = FakeClock(NOW)
     fixture = work_capture(LIVE)
 
     async def fetch(job):
-        clock.t = NOW + 1
+        clock.t = max(clock(), NOW + 1)
         fake.detail_calls.append(job)
         launch = (dict(fixture['launch']) if job == target else
                   dict(requested=False, kind=None, id=None, status=None, chainId=None))
@@ -464,12 +496,21 @@ async def test_new_membership_snapshot_shapes_current_cycle_reads(tmp_path, monk
     manager.set_record_view(40, filter_tab, spec)
     try:
         await manager._pool_swarm_seat(420, NOW)
+        assert len(manager._agent_card_sources.capture(clock())['work']) == 24
+        # Confirmed non-launches are skipped; unresolved rows may be enriched,
+        # but cannot be painted as confirmed launches.
+        assert fake.detail_calls == jobs[:24] + jobs[24:26]
+        assert fake.answer_calls == jobs[24:28]
+        visible = record_view(data(manager, now=clock())['swarm_seat_work_rows'], 40, filter_tab, spec)
+        assert not visible.rows  # unknown membership is not a confirmed launch
+        clock.t = NOW + 30
+        await manager._pool_swarm_seat(420, clock())
         visible = record_view(data(manager, now=clock())['swarm_seat_work_rows'], 40, filter_tab, spec)
         assert len(manager._agent_card_sources.capture(clock())['work']) == 41
         assert [row['job_id'] for row in visible.rows] == [target]
-        assert fake.answer_calls == [target]
-        # All membership reads, then only the visible launch's popup-detail read.
-        assert fake.detail_calls[41:] == [target]
+        assert fake.answer_calls == jobs[24:28] + [target]
+        # Remaining membership reads, then only the confirmed launch's detail.
+        assert fake.detail_calls[26:] == jobs[24:] + [target]
         assert visible.rows[0]['answer_state'] == 'read'
     finally:
         await manager.close()

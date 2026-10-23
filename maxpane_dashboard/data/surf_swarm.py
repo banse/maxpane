@@ -1499,11 +1499,11 @@ def fleet(workers: object) -> dict | None:
     return _fleet_from_slot(normalize_workers(workers))
 
 
-def _seat_live_from_slot(workers: dict | None, token: object) -> dict | None:
+def _seat_live_from_slot(workers: dict | None, token: object, *, groups=None) -> dict | None:
     wanted = _seat_id(token)
     if workers is None or wanted is None or wanted in workers["malformed_tokens"]:
         return None
-    return _live_for_workers(_worker_groups(workers).get(wanted, []))
+    return _live_for_workers((groups if groups is not None else _worker_groups(workers)).get(wanted, []))
 
 
 def seat_live(workers: object, token: object) -> dict | None:

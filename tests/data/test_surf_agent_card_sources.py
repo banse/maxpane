@@ -157,12 +157,13 @@ async def test_unread_failed_jobs_do_not_starve_later_membership_reads(reader):
     raw = dict(seat(), work=[dict(jobId=job, nodeKey='audit_math', status='accepted') for job in jobs])
     swarm.fetch_job.return_value = None
     await r.read(raw, NOW)
-    assert len(swarm.fetch_job.await_args_list) == 64
-    await r.read(raw, NOW+120)
+    assert len(swarm.fetch_job.await_args_list) == 24
+    for tick in (120, 240):
+        await r.read(raw, NOW+tick)
     assert jobs[-1] in [call.args[0] for call in swarm.fetch_job.await_args_list]
 
 
-async def test_first_read_completes_seat_420_sized_history_with_bounded_concurrency(reader):
+async def test_membership_resumes_seat_history_with_bounded_reads_and_concurrency(reader):
     r, _, swarm = reader
     jobs = [f'{index:08x}-034f-47b3-b204-318734811863' for index in range(53)]
     raw = dict(seat(), work=[dict(jobId=job, nodeKey='audit_math', status='accepted') for job in jobs])
@@ -179,12 +180,34 @@ async def test_first_read_completes_seat_420_sized_history_with_bounded_concurre
             live -= 1
     swarm.fetch_job.side_effect = fetch
     await r.read(raw, NOW)
+    assert swarm.fetch_job.await_count == 24
+    data, meta = sources.project(r.capture(NOW), raw, now=NOW)
+    assert data['_agent_nodes']['launches_total'] is None
+    await r.read(raw, NOW+1)
+    assert swarm.fetch_job.await_count == 48
+    await r.read(raw, NOW+2)
     data, meta = sources.project(r.capture(NOW), raw, now=NOW)
     assert data['_agent_nodes'] == dict(oracle=0, launches=53, other=0, known_jobs=53, total_jobs=53, launches_total=53, oracle_total=0)
     assert meta['agent_work'] == dict(state='ok', read_ts=NOW)
     assert peak == 4 and live == 0
     await r.read(raw, NOW+1)
     assert swarm.fetch_job.await_count == 53
+
+
+async def test_workflow_and_contract_followups_share_the_membership_read_budget(reader, monkeypatch):
+    r, _, swarm = reader
+    monkeypatch.setattr(sources, 'WORK_REQUEST_BUDGET', 3)
+    fixture = swarm.fetch_job.return_value
+    workflow = '11111111-1111-4111-8111-111111111111'
+    contract = '22222222-2222-4222-8222-222222222222'
+    monkeypatch.setattr(sources.work, 'membership_point', lambda *args: {'shipped': None})
+    monkeypatch.setattr(sources.work, 'workflow_contract', lambda *args: contract)
+    # No valid derived membership is needed: admission of nested reads is the invariant.
+    swarm.fetch_job.return_value = dict(fixture, workflow={'id': workflow})
+    raw = dict(seat(), work=[dict(jobId=f'{index:08x}-034f-47b3-b204-318734811863',
+                                  nodeKey='build', status='accepted') for index in range(10)])
+    await r.read(raw, NOW)
+    assert swarm.read_job_detail.await_count + swarm.fetch_workflow.await_count <= 3
 
 
 async def test_cancelled_membership_batch_stops_all_in_flight_reads(reader):
@@ -368,10 +391,44 @@ async def test_first_membership_batch_prioritizes_accepted_jobs_before_record_on
     swarm.fetch_job.side_effect = lambda job: dict(fixture, id=job)
     await r.read(raw, NOW)
     got = sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']
-    assert got['known_jobs'] == got['total_jobs'] == got['launches'] == 59
+    assert got['known_jobs'] == 24 and got['total_jobs'] == 59
+    assert got['launches'] is None  # incomplete membership cannot certify the total
     reads = [call.args[0] for call in swarm.fetch_job.await_args_list]
-    assert len(reads) == 64 and reads[:59] == jobs[10:]
-    assert set(reads[59:]) <= set(jobs[:10])
+    assert reads == jobs[10:34]
+
+
+async def test_visible_record_priority_is_bounded_and_other_jobs_keep_their_turn(reader, monkeypatch):
+    r, _, swarm = reader
+    monkeypatch.setattr(sources, 'WORK_REQUEST_BUDGET', 2)
+    jobs = [f'{index:08x}-034f-47b3-b204-318734811863' for index in range(6)]
+    raw = dict(seat(), work=[dict(jobId=job, nodeKey='build', status='accepted') for job in jobs])
+    swarm.fetch_job.return_value = None
+    await r.read(raw, NOW, priority_jobs=[jobs[-1]])
+    assert [call.args[0] for call in swarm.fetch_job.await_args_list] == [jobs[-1], jobs[0]]
+    await r.read(raw, NOW, priority_jobs=[jobs[-1]])
+    assert [call.args[0] for call in swarm.fetch_job.await_args_list][2:] == jobs[1:3]
+
+
+async def test_membership_deadline_cancels_pending_reads_but_keeps_completed_points(reader, monkeypatch):
+    r, _, swarm = reader
+    monkeypatch.setattr(sources, 'WORK_SECONDS', .02)
+    jobs = [f'{index:08x}-034f-47b3-b204-318734811863' for index in range(6)]
+    raw = dict(seat(), work=[dict(jobId=job, nodeKey='build', status='accepted') for job in jobs])
+    fixture = swarm.fetch_job.return_value
+    active = set()
+    async def fetch(job):
+        active.add(job)
+        try:
+            if job != jobs[0]:
+                await asyncio.Event().wait()
+            return dict(fixture, id=job)
+        finally:
+            active.remove(job)
+    swarm.fetch_job.side_effect = fetch
+    await asyncio.wait_for(r.read(raw, NOW), 1)
+    assert not active
+    assert list(r.capture(NOW)['work']) == [jobs[0]]
+    assert len(swarm.fetch_job.await_args_list) == 4
 
 
 async def test_frontend_membership_clock_never_refreshes_older_contract_evidence(reader):

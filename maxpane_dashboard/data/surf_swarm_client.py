@@ -69,21 +69,19 @@ __all__ = [
     "SwarmClient", "JobDetailRead", "UNKNOWN_SEAT", "SEAT_BUSY",
 ]
 
-#: The swarm's control plane, as a pool.  Measured 2026-09-21 (plan §0 R1):
-#: both names serve the same deployment — ``/version`` answered commit
-#: ``282e2b19…`` on both on 2026-09-21 and ``1308af71…`` on both the day
-#: before — so this is one source with two names, not two sources.
-#: ``api.imd.fun`` is the documented name and goes first; the Railway host is
-#: the one the explorer's own page source names and the one every fixture
-#: before the v2 corpus was captured from.  Neither sends a CORS header, which
-#: a TUI never needs.  A failure on one host rotates to the next for that
+#: The swarm's control plane, as a pool. Rechecked 2026-10-23: the former
+#: identitymdcontrol-plane-production Railway deployment returns HTTP 404.
+#: The replacement named by the developer (aidude/docs/imd-api-changelog.md)
+#: and api.imd.fun both returned /version commit 0a3c69e93b0f112cdf60b2bbfdd98e81bcecfb3c.
+#: This is one source with two names. The documented name stays first.
+#: A failure on one host rotates to the next for that
 #: request only; the pool is never shrunk or reordered at runtime — a
 #: provider's error is evidence only about the request it read
 #: (``rules/data.md``).  The write surface is authenticated; these reads are
 #: the public subset.
 SWARM_API_HOSTS: tuple[str, ...] = (
     "https://api.imd.fun",
-    "https://identitymdcontrol-plane-production.up.railway.app",
+    "https://api-imd.up.railway.app",
 )
 
 #: The first host of the pool, kept under its pre-v2 name for importers.

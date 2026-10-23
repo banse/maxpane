@@ -17,6 +17,7 @@ class OraclesReader:
         self._failed = {}
         self._details_active = True
         self._reading_detail = False
+        self._detail_task = None
 
     def _snapshot(self):
         entry = self.cache.get_last_good(SLOT_SURF_ORACLES)
@@ -27,6 +28,8 @@ class OraclesReader:
         if identity == self.selected_id:
             return
         self.selected_id = identity
+        if self._detail_task is not None and not self._detail_task.done():
+            self._detail_task.cancel()
         snapshot = self._snapshot()
         entry = snapshot['details'].get(identity)
         if entry is not None:
@@ -121,7 +124,7 @@ class OraclesReader:
                 snapshot = self._snapshot()
                 snapshot.update(rows=rows, partial=partial, read_ts=started)
                 self._store(snapshot)
-                self.cache.mark_fetched(TIER_SURF_ORACLES, self.clock())
+                self.cache.mark_fetched(TIER_SURF_ORACLES, started)
                 if self.selected_id is None and rows:
                     self.select(rows[0]['id'])
             except asyncio.CancelledError:
@@ -136,7 +139,8 @@ class OraclesReader:
             identity = row['id']
             try:
                 self._reading_detail = True
-                raw = await self.client.fetch_oracle_detail(identity)
+                self._detail_task = asyncio.create_task(self.client.fetch_oracle_detail(identity))
+                raw = await self._detail_task
                 entry = oracle.decode_detail(raw, row, read_ts=started, now=self.clock())
                 if entry is None:
                     raise ValueError('invalid oracle detail')
@@ -145,12 +149,17 @@ class OraclesReader:
                 self._store(snapshot)
                 self._failed.pop(identity, None)
             except asyncio.CancelledError:
-                raise
+                if asyncio.current_task().cancelling() or not self._details_active:
+                    raise
+                # Only the superseded detail was cancelled. Its list is still
+                # valid and the parent can immediately drain the new selection.
+                continue
             except Exception as exc:
                 logger.debug('Oracle detail unavailable: %s', exc)
                 self._failed[identity] = self.clock()
                 self._failed = dict(sorted(self._failed.items(), key=lambda item: item[1], reverse=True)[:100])
             finally:
                 self._reading_detail = False
+                self._detail_task = None
             if identity == self.selected_id:
                 break

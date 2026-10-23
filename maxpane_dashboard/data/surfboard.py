@@ -348,7 +348,7 @@ def canonical_board(records: dict | None, contributors: dict | None, workers: di
     for rank, item in enumerate(records["seats"], 1):
         row = dict.fromkeys(SURF_ROW_KEYS["swarm_board_rows"])
         token = item["token_id"]
-        live = sw._seat_live_from_slot(workers, token)
+        live = sw._seat_live_from_slot(workers, token, groups=groups)
         row.update(effort.get(token, {}))
         row.update({k:item[k] for k in OUTCOME_COUNTERS})
         live_rows = groups.get(token, [])

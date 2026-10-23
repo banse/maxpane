@@ -9,6 +9,18 @@ import pytest
 from tests.data.test_surf_manager_surfboard import manager
 
 
+async def test_boardroom_summary_does_not_project_hidden_work_history(manager):
+    m, _ = manager
+    m._work_reader.project = Mock(side_effect=AssertionError('hidden WORK projection'))
+    m.set_active_view('surfboard')
+    try:
+        snapshot = m.get_snapshot()
+        assert snapshot['surf_work']['jobs'] is None
+        assert snapshot['surf_work']['summary']['seats'] is None
+    finally:
+        await m.close()
+
+
 async def test_boardroom_never_offers_full_boards(manager):
     m, _ = manager
     m._offer_full = Mock(side_effect=AssertionError('full dashboard collection'))
@@ -181,7 +193,7 @@ async def test_native_detail_has_an_explicit_collector_boundary(manager, view, e
     for suffix, label in (('swarm', 'swarm'), ('swarm_scores', 'scores'),
                           ('swarm_launches', 'launches'), ('swarm_board', 'board'),
                           ('launchpad', 'launchpad'), ('pool4', 'pool4'), ('pool4_stakers', 'stakers')):
-        setattr(m, '_spawn_' + suffix, Mock(side_effect=lambda *a, name=label: calls.add(name)))
+        setattr(m, '_spawn_' + suffix, Mock(side_effect=lambda *a, name=label, **kw: calls.add(name)))
     m._offer_swarm_seat = AsyncMock(side_effect=lambda *a: calls.add('seat'))
     m._pool_channel = AsyncMock()
     m.set_active_view(view)

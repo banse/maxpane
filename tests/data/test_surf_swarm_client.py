@@ -183,6 +183,19 @@ from tests.surf_swarm_fixtures import swarm_capture_v2  # noqa: E402
 FIRST_HOST, SECOND_HOST = (httpx.URL(h).host for h in SWARM_API_HOSTS[:2])
 
 
+async def test_canonical_outage_uses_the_current_verified_railway_deployment():
+    seen = []
+    def handler(request):
+        seen.append(request.url.host)
+        if request.url.host == 'api.imd.fun':
+            raise httpx.ConnectError('offline', request=request)
+        assert request.url.host == 'api-imd.up.railway.app'
+        return httpx.Response(200, json=swarm_capture_v2('jobs'))
+    async with _client(handler) as client:
+        assert await client.fetch_jobs()
+    assert seen == ['api.imd.fun', 'api-imd.up.railway.app']
+
+
 def _hosts(seen: list[httpx.Request]) -> list[str]:
     return [request.url.host for request in seen]
 

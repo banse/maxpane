@@ -15,9 +15,14 @@ from maxpane_dashboard.data.surf_models import SWARM_ORACLE_NODE_KEYS
 from maxpane_dashboard.data.surf_swarm import parse_seat_token
 
 BATCH_SIZE, BACKOFF, TERMINAL_TTL, ACTIVE_TTL = 6, 120, 1800, 60
+REQUEST_BUDGET, READ_SECONDS = 24, 8
 MAX_LAUNCHES, MAX_FACTS, MAX_JOBS, MAX_NODES = 10000, 100000, 128, 512
 TERMINAL = {'completed', 'cancelled', 'blocked', 'failed', 'abandoned'}
 logger = logging.getLogger(__name__)
+
+
+class _BudgetExhausted(Exception):
+    pass
 
 
 def _stamp(value, now):
@@ -127,7 +132,10 @@ class LaunchContributionReader:
         self._target, self._complete, self._catalogue_ts = {}, False, None
         self._offered, self._catalogue_failed = False, False
         self._catalogue_pending = False
-        self._retry_at, self._failed = 0, False
+        self._failed = False
+        self._failures, self._attempts = {}, {}
+        self._job_cursors = {}
+        self._turn, self._remaining = 0, REQUEST_BUDGET
         self._facts = {kind: {} for kind in ('launches', 'jobs', 'workflows')}
         entry = cache.get_last_good(SLOT_SWARM_LAUNCH_CONTRIBUTION)
         payload = entry.payload if entry is not None and isinstance(entry.payload, dict) else {}
@@ -166,6 +174,12 @@ class LaunchContributionReader:
             seen.add(row['id'])
             if is_production(row) and row['status'] == 'live':
                 target[row['id']] = {key: row[key] for key in ('id', 'chainId', 'status', 'updatedAt')}
+        for key in tuple(self._failures):
+            if target.get(key) != self._target.get(key):
+                self._failures.pop(key, None)
+        self._attempts = {key: turn for key, turn in self._attempts.items() if key in target}
+        self._job_cursors = {key: job for key, job in self._job_cursors.items()
+                             if key in target and target[key] == self._target.get(key)}
         self._target, self._complete, self._catalogue_ts = target, complete, read_ts
         self._catalogue_failed = False
         if complete:
@@ -175,10 +189,10 @@ class LaunchContributionReader:
         self.task = None
         if self._publish(now):
             self._failed = False
+            self._failures.clear()
             return
-        if now < self._retry_at:
-            return
-        if any(self._jobs_for(row, now) is None for row in target.values()):
+        if any(self._jobs_for(row, now) is None and now >= self._failures.get(row['id'], 0)
+               for row in target.values()):
             self._failed = False
             self.task = asyncio.create_task(self._run())
 
@@ -210,7 +224,16 @@ class LaunchContributionReader:
     async def _get(self, kind, identity, decoder):
         method = {'launches': 'fetch_launch_jobs', 'jobs': 'fetch_job', 'workflows': 'fetch_workflow'}[kind]
         for attempt in range(3):
-            raw = await getattr(self.client, method)(identity)
+            if self._remaining <= 0:
+                raise _BudgetExhausted
+            self._remaining -= 1
+            observed = self.clock()
+            job_reader = getattr(self.client, 'read_job_detail', None) if kind == 'jobs' else None
+            if callable(job_reader):
+                read = await job_reader(identity)
+                raw, observed = read.payload, read.observed_at
+            else:
+                raw = await getattr(self.client, method)(identity)
             if raw is not None and raw != {'error': 'busy'}:
                 break
             if attempt < 2:
@@ -218,8 +241,8 @@ class LaunchContributionReader:
         if not isinstance(raw, dict) or raw.get('id') != identity:
             raise ValueError('source identity or response unavailable')
         fact = decoder(raw)
-        fact['read_ts'] = self.clock()
-        if not _valid_fact(kind, fact, fact['read_ts']):
+        fact['read_ts'] = observed
+        if not _valid_fact(kind, fact, self.clock()):
             raise ValueError('invalid contribution evidence')
         limit = MAX_LAUNCHES if kind == 'launches' else MAX_FACTS
         if identity not in self._facts[kind] and len(self._facts[kind]) >= limit:
@@ -284,7 +307,14 @@ class LaunchContributionReader:
         launch = self._fresh('launches', row['id'], now)
         if launch is None or launch['version'] != _version(row):
             launch = await self._get('launches', row['id'], lambda raw: self._launch(raw, row))
-        for identity in launch['jobs']:
+        jobs = launch['jobs']
+        cursor = self._job_cursors.get(row['id'])
+        if cursor in jobs:
+            offset = jobs.index(cursor)
+            jobs = jobs[offset:] + jobs[:offset]
+        for identity in jobs:
+            # Resume the unfinished job before revisiting an expired prefix.
+            self._job_cursors[row['id']] = identity
             job = self._fresh('jobs', identity, self.clock())
             if job is None:
                 job = await self._get('jobs', identity, self._job)
@@ -300,22 +330,43 @@ class LaunchContributionReader:
             frontend = workflow['frontend']
             if frontend is not None and self._fresh('jobs', frontend, self.clock()) is None:
                 await self._get('jobs', frontend, self._job)
+        self._job_cursors.pop(row['id'], None)
 
     async def _run(self):
         row = None
+        self._remaining = REQUEST_BUDGET
         try:
-            due = [row for row in self._target.values() if self._jobs_for(row, self.clock()) is None]
-            for row in due[:BATCH_SIZE]:
-                if self._catalogue_failed or self._target.get(row['id']) != row:
-                    break
-                await self._read_launch(row)
-            self._failed = False
-            self._publish(self.clock())
+            due = [row for row in self._target.values() if self._jobs_for(row, self.clock()) is None
+                   and self.clock() >= self._failures.get(row['id'], 0)]
+            due.sort(key=lambda row: self._attempts.get(row['id'], -1))
+            async with asyncio.timeout(READ_SECONDS):
+                for row in due[:BATCH_SIZE]:
+                    if self._catalogue_failed or self._target.get(row['id']) != row:
+                        break
+                    self._turn += 1
+                    self._attempts[row['id']] = self._turn
+                    try:
+                        await self._read_launch(row)
+                        self._failures.pop(row['id'], None)
+                    except _BudgetExhausted:
+                        break
+                    except Exception as exc:
+                        self._failures[row['id']] = self.clock() + BACKOFF
+                        logger.debug('launch contribution retained %s: %s', row['id'], exc)
+            self._failed = bool(self._failures)
+            if self._publish(self.clock()):
+                self._failed = False
+                self._failures.clear()
         except asyncio.CancelledError:
             raise
+        except TimeoutError:
+            # Completed facts already survive in the maps; rotate on the next
+            # offer rather than letting one large/slow launch own every batch.
+            pass
         except Exception as exc:
             self._failed = True
-            self._retry_at = self.clock() + BACKOFF
+            if row is not None:
+                self._failures[row['id']] = self.clock() + BACKOFF
             logger.warning('launch contribution read failed for %s: %s', row['id'] if row else None, exc)
         finally:
             self._store()

@@ -71,39 +71,12 @@ class SurfCardReader:
 
     async def _work(self):
         """Count complete workflow lists, resuming bounded scans between polls."""
-        if self._workflow_before is None:
-            self._workflow_states = {}
-            self._workflow_started = self.manager._clock()
-        for _ in range(work.WORKFLOW_PAGES_PER_READ):
-            kwargs = {'before': self._workflow_before} if self._workflow_before else {}
-            raw = await self.manager.swarm_client.fetch_workflows(limit=work.PAGE_LIMIT, **kwargs)
-            if not isinstance(raw, list):
-                return
-            rows, _ = work._page(raw, work._workflow, self.manager._clock())
-            if len(rows) != len(raw) or any(row['id'] in self._workflow_states for row in rows):
-                self._workflow_before = None
-                return
-            if self._workflow_before is not None and any(
-                    row['created_ts'] is None or row['created_ts'] >= work._ts(self._workflow_before)
-                    for row in rows):
-                self._workflow_before = None
-                return
-            self._workflow_states.update((row['id'], workflow_is_open(row['status'])) for row in rows)
-            if len(raw) < work.PAGE_LIMIT:
-                states = self._workflow_states.values()
-                if None not in states:
-                    self.workflows = sum(states)
-                    self.workflows_ts = self._workflow_started
-                self._workflow_before = None
-                return
-            cursor = raw[-1].get('createdAt')
-            stamp = work._stamp(work._ts(cursor), self.manager._clock())
-            if (not isinstance(cursor, str) or not cursor.endswith('Z') or stamp is None
-                    or self._workflow_before is not None and stamp >= work._ts(self._workflow_before)
-                    or len(self._workflow_states) >= work.WORKFLOW_LIMIT):
-                self._workflow_before = None
-                return
-            self._workflow_before = cursor
+        rows, complete, stamp = await self.manager._refresh_workflow_catalogue(self.manager._clock())
+        if complete:
+            states = [workflow_is_open(row.get('status')) for row in rows]
+            if None not in states:
+                self.workflows = sum(states)
+                self.workflows_ts = stamp
 
     async def _current(self):
         """One recent page plus at most 24 active details; no history or hidden board."""
@@ -180,8 +153,7 @@ class SurfCardReader:
         payload = source.get('payload') or {}
         overview = payload.get('overview') or {}
         jobs = (overview.get('job_states') or {}).get('executing')
-        result = self.manager._work_reader.project()
-        result = dict(result, summary=dict.fromkeys(result['summary']))
+        result = work.project(None, now=self.manager._clock())
         result['summary'].update(jobs=jobs, workflows=self.workflows)
         result.update(state=source.get('state', 'unavailable'), read_ts=source.get('read_ts'),
                       partial=True, details_loaded=None, details_expected=None)

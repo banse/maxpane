@@ -196,9 +196,19 @@ class SwarmTokenDetailManager:
         partial = (not isinstance(jobs, list) or len(ids) != len(jobs)
                    or None in ids or len(ids) > self.MAX_JOBS)
         ids = [identity for identity in ids if identity is not None][:self.MAX_JOBS]
-        results = await asyncio.gather(*(self._job(identity) for identity in ids),
-                                       self._read('fetch_sites'))
-        sites = results.pop()
+        # Sites are independent of contributor observations. Retain ownership
+        # of the sibling read so cancellation cannot leave an orphan request.
+        sites_task = asyncio.create_task(self._read('fetch_sites'))
+        try:
+            await self._publish_jobs_and_sites(ids, partial, launch, artifacts,
+                                               artifacts_partial, sites_task)
+        finally:
+            if not sites_task.done():
+                sites_task.cancel()
+            await asyncio.gather(sites_task, return_exceptions=True)
+
+    async def _publish_jobs_and_sites(self, ids, partial, launch, artifacts, artifacts_partial, sites_task):
+        results = await asyncio.gather(*(self._job(identity) for identity in ids))
         contributors, proven, known = {}, set(), False
         stamps = []
         for rows, job_ids, incomplete, stamp in results:
@@ -214,6 +224,7 @@ class SwarmTokenDetailManager:
                           read_ts=min(stamps, default=self._clock()))
         else:
             self._fail('contributors')
+        sites = await sites_task
         if not isinstance(sites, list) or any(not isinstance(site, dict) for site in sites):
             if self._sources['artifacts']['read_ts'] is not None:
                 self._fail('artifacts')

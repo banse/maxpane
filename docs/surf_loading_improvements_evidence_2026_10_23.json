@@ -1,0 +1,2162 @@
+{
+  "baseline": "21208b1a7207295fda51eb3d66975c93d9782161",
+  "date": "2026-10-23",
+  "methodology": {
+    "cpu": "Offline before/after on identical copied cache, frozen clock, five samples. Reader processing, not input latency.",
+    "live": "Real ReaderRuntime and Textual screens at149x45; isolated copies of user public-data caches; keyless GET/RPC;55 HTTP /36s cutoffs, stop on429. CustomF12 event measured through nextpaint. No wallet changes.",
+    "limits": "Live caches and upstream state can differ from earlier review; live totals are not paired speed comparisons. Censored probes are not completions.",
+    "rate_limit": "All further live probes stopped after TOKENS received HTTP429 from api.geckoterminal.com."
+  },
+  "projection": {
+    "before": {
+      "input_bytes": 22618335,
+      "load_ms": 604.7887500026263,
+      "load_cpu_ms": 569.5749999999999,
+      "slots": 33,
+      "projection": {
+        "median_ms": 992.3455000389367,
+        "max_ms": 1274.146583979018,
+        "median_cpu_ms": 858.1829999999999,
+        "n": 5
+      },
+      "projection_json_bytes": 4723363,
+      "deepcopy": {
+        "median_ms": 44.74158299854025,
+        "max_ms": 45.66987499129027,
+        "median_cpu_ms": 44.52200000000062,
+        "n": 5
+      },
+      "equality": {
+        "median_ms": 1.9667089800350368,
+        "max_ms": 2.3490419844165444,
+        "median_cpu_ms": 1.9660000000003564,
+        "n": 5
+      },
+      "work_project": {
+        "median_ms": 270.4962500138208,
+        "max_ms": 332.4163749930449,
+        "median_cpu_ms": 268.2099999999998,
+        "n": 5
+      },
+      "oracles_project": {
+        "median_ms": 8.958040969446301,
+        "max_ms": 12.321958027314395,
+        "median_cpu_ms": 7.245000000000168,
+        "n": 5
+      },
+      "hub_source_project": {
+        "median_ms": 6.043167028110474,
+        "max_ms": 57.95162497088313,
+        "median_cpu_ms": 5.779999999999674,
+        "n": 5
+      },
+      "board_projection": {
+        "median_ms": 178.08745801448822,
+        "max_ms": 219.31758301798254,
+        "median_cpu_ms": 175.51000000000096,
+        "n": 5
+      },
+      "dirty_save": {
+        "median_ms": 661.5285419975407,
+        "max_ms": 843.6955000506714,
+        "median_cpu_ms": 619.0040000000004,
+        "n": 3
+      },
+      "saved_bytes": 22618419,
+      "clean_save": {
+        "median_ms": 0.0023339525796473026,
+        "max_ms": 0.10945898247882724,
+        "median_cpu_ms": 0.002000000000279556,
+        "n": 3
+      },
+      "profile": "         11906814 function calls (11298286 primitive calls) in 2.930 seconds\n\n   Ordered by: cumulative time\n   List reduced from 515 to 25 due to restriction <25>\n\n   ncalls  tottime  percall  cumtime  percall filename:lineno(function)\n        1    0.002    0.002    2.931    2.931 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_manager.py:7926(get_hub_snapshot)\n        1    0.006    0.006    2.929    2.929 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_manager.py:7739(_project_hub)\n55061/54844    0.025    0.000    0.969    0.000 {built-in method builtins.any}\n        2    0.022    0.011    0.879    0.440 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_manager.py:6046(_swarm_launch_keys)\n        1    0.000    0.000    0.877    0.877 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_card_reader.py:179(work_snapshot)\n        1    0.000    0.000    0.877    0.877 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_work_reader.py:46(project)\n        1    0.001    0.001    0.877    0.877 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_work.py:317(project)\n        1    0.001    0.001    0.876    0.876 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_work.py:245(coerce_snapshot)\n      634    0.000    0.000    0.860    0.001 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_work.py:256(<genexpr>)\n  881/632    0.010    0.000    0.860    0.001 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_work.py:214(_valid_row)\n     3715    0.001    0.000    0.852    0.000 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_work.py:39(_text)\n     3715    0.007    0.000    0.851    0.000 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_swarm.py:1681(clean_reply)\n532817/1865    0.359    0.000    0.827    0.000 /Users/banse/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/copy.py:119(deepcopy)\n46700/1845    0.200    0.000    0.823    0.000 /Users/banse/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/copy.py:218(_deepcopy_dict)\n        1    0.001    0.001    0.808    0.808 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_manager.py:6569(_swarm_board_keys)\n31046/30880    0.170    0.000    0.594    0.000 {method 'join' of 'str' objects}\n        1    0.004    0.004    0.593    0.593 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surfboard.py:335(canonical_board)\n        5    0.001    0.000    0.591    0.118 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_manager.py:5692(_launch_slot)\n     1107    0.025    0.000    0.532    0.000 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_swarm.py:1502(_seat_live_from_slot)\n     1111    0.281    0.000    0.486    0.000 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_swarm.py:1308(_worker_groups)\n        1    0.001    0.001    0.449    0.449 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_manager.py:7930(_swarm_hero)\n20999/14189    0.028    0.000    0.403    0.000 /Users/banse/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/copy.py:192(_deepcopy_list)\n     3715    0.005    0.000    0.357    0.000 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_swarm.py:1579(_strip_answer_links)\n   808687    0.216    0.000    0.340    0.000 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_swarm.py:1685(<genexpr>)\n        7    0.039    0.006    0.285    0.041 /var/folders/cy/sv0yk8yj32b3n3y3m_zhp_5r0000gn/T/maxpane-loading-baseline-kbel2sex/maxpane_dashboard/data/surf_swarm.py:1253(_coerce_board_slot)\n\n\n"
+    },
+    "after": {
+      "input_bytes": 22618335,
+      "load_ms": 607.377375010401,
+      "load_cpu_ms": 559.8570000000001,
+      "slots": 33,
+      "projection": {
+        "median_ms": 217.00737497303635,
+        "max_ms": 290.3338340111077,
+        "median_cpu_ms": 200.16299999999998,
+        "n": 5
+      },
+      "projection_json_bytes": 3712907,
+      "deepcopy": {
+        "median_ms": 45.12758296914399,
+        "max_ms": 88.91541697084904,
+        "median_cpu_ms": 42.70299999999993,
+        "n": 5
+      },
+      "equality": {
+        "median_ms": 2.1570409880951047,
+        "max_ms": 2.3577079991810024,
+        "median_cpu_ms": 2.1569999999999645,
+        "n": 5
+      },
+      "work_project": {
+        "median_ms": 279.15412501897663,
+        "max_ms": 364.10716600948945,
+        "median_cpu_ms": 275.90799999999984,
+        "n": 5
+      },
+      "oracles_project": {
+        "median_ms": 10.262415977194905,
+        "max_ms": 13.616334006655961,
+        "median_cpu_ms": 8.329999999999949,
+        "n": 5
+      },
+      "hub_source_project": {
+        "median_ms": 6.65320799453184,
+        "max_ms": 10.317292006220669,
+        "median_cpu_ms": 5.895000000000206,
+        "n": 5
+      },
+      "board_projection": {
+        "median_ms": 87.24625001195818,
+        "max_ms": 109.14970800513402,
+        "median_cpu_ms": 86.43599999999995,
+        "n": 5
+      },
+      "dirty_save": {
+        "median_ms": 658.5812089615501,
+        "max_ms": 843.2197920046747,
+        "median_cpu_ms": 611.0190000000007,
+        "n": 3
+      },
+      "saved_bytes": 22618411,
+      "clean_save": {
+        "median_ms": 0.001167005393654108,
+        "max_ms": 0.05683297058567405,
+        "median_cpu_ms": 0.0009999999992515995,
+        "n": 3
+      },
+      "profile": "         3368612 function calls (3054587 primitive calls) in 0.792 seconds\n\n   Ordered by: cumulative time\n   List reduced from 403 to 25 due to restriction <25>\n\n   ncalls  tottime  percall  cumtime  percall filename:lineno(function)\n        1    0.000    0.000    0.792    0.792 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_manager.py:8009(get_hub_snapshot)\n        1    0.003    0.003    0.792    0.792 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_manager.py:7820(_project_hub)\n        1    0.003    0.003    0.357    0.357 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_manager.py:6052(_swarm_launch_keys)\n271099/933    0.166    0.000    0.346    0.000 /Users/banse/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/copy.py:119(deepcopy)\n23660/923    0.061    0.000    0.344    0.000 /Users/banse/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/copy.py:218(_deepcopy_dict)\n        1    0.002    0.002    0.258    0.258 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_manager.py:6575(_swarm_board_keys)\n        3    0.000    0.000    0.257    0.086 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_manager.py:5698(_launch_slot)\n        5    0.025    0.005    0.184    0.037 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_swarm.py:1253(_coerce_board_slot)\n        4    0.001    0.000    0.155    0.039 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_swarm.py:1281(coerce_workers_slot)\n36326/18825    0.038    0.000    0.155    0.000 {built-in method builtins.all}\n10551/7096    0.011    0.000    0.155    0.000 /Users/banse/.local/share/uv/python/cpython-3.13.12-macos-aarch64-none/lib/python3.13/copy.py:192(_deepcopy_list)\n    85476    0.023    0.000    0.137    0.000 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_swarm.py:1264(<genexpr>)\n     5252    0.020    0.000    0.091    0.000 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_swarm.py:1330(_live_for_workers)\n        2    0.014    0.007    0.090    0.045 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_swarm.py:1381(_board_rows_from_slots)\n        1    0.003    0.003    0.081    0.081 /Users/banse/codex/maxpane/maxpane_dashboard/data/surfboard.py:335(canonical_board)\n    11664    0.003    0.000    0.074    0.000 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_swarm.py:1238(_optional_strings)\n    11664    0.006    0.000    0.071    0.000 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_swarm.py:1116(_string_list)\n   620728    0.060    0.000    0.060    0.000 {method 'get' of 'dict' objects}\n        1    0.000    0.000    0.045    0.045 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_manager.py:6565(_swarm_board_hero_sources)\n        2    0.002    0.001    0.043    0.022 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_swarm.py:1466(_fleet_from_slot)\n    33746    0.018    0.000    0.043    0.000 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_swarm.py:1321(_sum_known)\n   205960    0.031    0.000    0.042    0.000 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_swarm.py:1117(<genexpr>)\n   441780    0.033    0.000    0.038    0.000 {built-in method builtins.isinstance}\n    54387    0.020    0.000    0.036    0.000 {built-in method builtins.any}\n        1    0.000    0.000    0.036    0.036 /Users/banse/codex/maxpane/maxpane_dashboard/data/surf_manager.py:7655(get_launch_contribution_snapshot)\n\n\n"
+    }
+  },
+  "nft_publication": {
+    "source_bytes": 14183745,
+    "records": 33,
+    "evidence": 946,
+    "samples": 5,
+    "before": {
+      "publish_seconds": [
+        1.0242357079987414,
+        0.8969563340069726,
+        0.8995183749939315,
+        0.9535385000053793,
+        1.6722690830356441
+      ],
+      "median_seconds": 0.9535385000053793,
+      "records_sha256": "b040af434f39c69472b661d0954867350634a3c84488d215beb5a92163da30d6"
+    },
+    "after": {
+      "publish_seconds": [
+        0.6087182089686394,
+        0.39603645901661366,
+        0.36805799999274313,
+        0.38593308301642537,
+        0.4115199579973705
+      ],
+      "median_seconds": 0.39603645901661366,
+      "records_sha256": "b040af434f39c69472b661d0954867350634a3c84488d215beb5a92163da30d6"
+    }
+  },
+  "host_recheck": [
+    {
+      "host": "https://api.imd.fun",
+      "status": 200,
+      "seconds": 0.319,
+      "body": "{\"commit\":\"0a3c69e93b0f112cdf60b2bbfdd98e81bcecfb3c\",\"branch\":\"master\",\"deployedAt\":null,\"protocolVersion\":1,\"features\":{\"scheduling\":true,\"verificationQueue\":true,\"startCommitAttribution\":true}}"
+    },
+    {
+      "host": "https://identitymdcontrol-plane-production.up.railway.app",
+      "status": 404,
+      "seconds": 0.264,
+      "body": "{\"status\":\"error\",\"code\":404,\"message\":\"Application not found\",\"request_id\":\"CS5Qio-kQ0O8QrJSGbGh5g\"}"
+    },
+    {
+      "host": "https://api-imd.up.railway.app",
+      "status": 200,
+      "seconds": 0.26,
+      "body": "{\"commit\":\"0a3c69e93b0f112cdf60b2bbfdd98e81bcecfb3c\",\"branch\":\"master\",\"deployedAt\":null,\"protocolVersion\":1,\"features\":{\"scheduling\":true,\"verificationQueue\":true,\"startCommitAttribution\":true}}"
+    }
+  ],
+  "live": [
+    {
+      "view": "surfboard",
+      "size": [
+        149,
+        45
+      ],
+      "first_local_snapshot_s": 2.784,
+      "elapsed_s": 13.744,
+      "cutoff": null,
+      "requests": [
+        {
+          "at": 3.383,
+          "host": "api.dexscreener.com",
+          "route": "/tokens/v1/ethereum/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 4178,
+          "seconds": 1.878
+        },
+        {
+          "at": 4.415,
+          "host": "pool4.imd.fun",
+          "route": "/docs",
+          "delta": false,
+          "status": 200,
+          "bytes": 72318,
+          "seconds": 0.735
+        },
+        {
+          "at": 4.416,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/addresses/:id/transactions",
+          "delta": false,
+          "status": 200,
+          "bytes": 143412,
+          "seconds": 0.944
+        },
+        {
+          "at": 4.418,
+          "host": "api.coingecko.com",
+          "route": "/api/v3/simple/price",
+          "delta": false,
+          "status": 200,
+          "bytes": 28,
+          "seconds": 0.707
+        },
+        {
+          "at": 4.946,
+          "host": "api.dexscreener.com",
+          "route": "/latest/dex/pairs/ethereum/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 3028,
+          "seconds": 0.183
+        },
+        {
+          "at": 4.947,
+          "host": "api.imd.fun",
+          "route": "/launches",
+          "delta": false,
+          "status": 200,
+          "bytes": 619975,
+          "seconds": 0.693
+        },
+        {
+          "at": 5.067,
+          "host": "api.dexscreener.com",
+          "route": "/latest/dex/tokens/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 6364,
+          "seconds": 0.082
+        },
+        {
+          "at": 5.067,
+          "host": "api.imd.fun",
+          "route": "/swarm",
+          "delta": false,
+          "status": 200,
+          "bytes": 295424,
+          "seconds": 0.516
+        },
+        {
+          "at": 5.156,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 3239,
+          "seconds": 0.094
+        },
+        {
+          "at": 5.189,
+          "host": "api.imd.fun",
+          "route": "/seats/records",
+          "delta": false,
+          "status": 200,
+          "bytes": 160288,
+          "seconds": 0.288
+        },
+        {
+          "at": 5.287,
+          "host": "api.dexscreener.com",
+          "route": "/tokens/v1/robinhood/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 2,
+          "seconds": 0.156
+        },
+        {
+          "at": 5.29,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 4688,
+          "seconds": 0.029
+        },
+        {
+          "at": 5.31,
+          "host": "api.imd.fun",
+          "route": "/steps/hourly",
+          "delta": false,
+          "status": 200,
+          "bytes": 120,
+          "seconds": 0.282
+        },
+        {
+          "at": 5.362,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/addresses/:id/transactions",
+          "delta": false,
+          "status": 200,
+          "bytes": 114913,
+          "seconds": 0.338
+        },
+        {
+          "at": 5.411,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 1064,
+          "seconds": 0.026
+        },
+        {
+          "at": 5.43,
+          "host": "api.imd.fun",
+          "route": "/workflows",
+          "delta": false,
+          "status": 200,
+          "bytes": 334508,
+          "seconds": 1.776
+        },
+        {
+          "at": 5.532,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 1064,
+          "seconds": 0.07
+        },
+        {
+          "at": 5.551,
+          "host": "api.imd.fun",
+          "route": "/jobs",
+          "delta": false,
+          "status": 200,
+          "bytes": 62186,
+          "seconds": 0.179
+        },
+        {
+          "at": 5.653,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 3048,
+          "seconds": 0.03
+        },
+        {
+          "at": 5.672,
+          "host": "api.imd.fun",
+          "route": "/oracle/requests",
+          "delta": false,
+          "status": 200,
+          "bytes": 103393,
+          "seconds": 0.181
+        },
+        {
+          "at": 5.683,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 807,
+          "seconds": 0.09
+        },
+        {
+          "at": 5.701,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/addresses/:id/transactions",
+          "delta": false,
+          "status": 200,
+          "bytes": 19774,
+          "seconds": 1.501
+        },
+        {
+          "at": 5.793,
+          "host": "api.imd.fun",
+          "route": "/contributors",
+          "delta": false,
+          "status": 200,
+          "bytes": 416086,
+          "seconds": 1.549
+        },
+        {
+          "at": 7.195,
+          "host": "api.imd.fun",
+          "route": "/workers",
+          "delta": false,
+          "status": 200,
+          "bytes": 1481915,
+          "seconds": 0.359
+        },
+        {
+          "at": 7.354,
+          "host": "api.imd.fun",
+          "route": "/launches",
+          "delta": false,
+          "status": 200,
+          "bytes": 485593,
+          "seconds": 0.397
+        },
+        {
+          "at": 7.475,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 22532,
+          "seconds": 0.276
+        },
+        {
+          "at": 7.75,
+          "host": "api.imd.fun",
+          "route": "/workflows",
+          "delta": false,
+          "status": 200,
+          "bytes": 323253,
+          "seconds": 0.982
+        },
+        {
+          "at": 8.058,
+          "host": "api.dexscreener.com",
+          "route": "/tokens/v1/ethereum/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 4125,
+          "seconds": 0.183
+        },
+        {
+          "at": 8.261,
+          "host": "api.dexscreener.com",
+          "route": "/tokens/v1/robinhood/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 874,
+          "seconds": 0.851
+        },
+        {
+          "at": 9.23,
+          "host": "api.imd.fun",
+          "route": "/workflows",
+          "delta": false,
+          "status": 200,
+          "bytes": 818,
+          "seconds": 0.277
+        }
+      ],
+      "publish": [
+        {
+          "at": 5.125,
+          "slot": "eth_usd"
+        },
+        {
+          "at": 5.15,
+          "slot": "market"
+        },
+        {
+          "at": 5.483,
+          "slot": "surfboard_records"
+        },
+        {
+          "at": 5.59,
+          "slot": "surfboard_overview"
+        },
+        {
+          "at": 5.592,
+          "slot": "surfboard_hourly"
+        },
+        {
+          "at": 5.872,
+          "slot": "surf_oracles"
+        },
+        {
+          "at": 7.205,
+          "slot": "channel"
+        },
+        {
+          "at": 7.72,
+          "slot": "surfboard_activity"
+        },
+        {
+          "at": 7.742,
+          "slot": "swarm_workers"
+        }
+      ],
+      "offers": [
+        2.724
+      ],
+      "input_to_paint_ms": [
+        60.99,
+        7.71,
+        74.49,
+        9.71,
+        13.57,
+        13.85,
+        16.79,
+        0.46,
+        20.19,
+        70.17,
+        20.33,
+        13.06,
+        41.15,
+        16.09,
+        27.23,
+        3.63,
+        0.46
+      ],
+      "requests_after_deactivate": 0
+    },
+    {
+      "view": "dashboard",
+      "size": [
+        149,
+        45
+      ],
+      "first_local_snapshot_s": 2.893,
+      "elapsed_s": 8.933,
+      "cutoff": "request_budget",
+      "requests": [
+        {
+          "at": 2.748,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 125,
+          "seconds": 0.206
+        },
+        {
+          "at": 2.868,
+          "host": "api.imd.fun",
+          "route": "/swarm",
+          "delta": false,
+          "status": 200,
+          "bytes": 295424,
+          "seconds": 0.37
+        },
+        {
+          "at": 2.868,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 4135,
+          "seconds": 0.101
+        },
+        {
+          "at": 2.989,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 46,
+          "seconds": 0.026
+        },
+        {
+          "at": 3.233,
+          "host": "api.coingecko.com",
+          "route": "/api/v3/simple/price",
+          "delta": false,
+          "status": 200,
+          "bytes": 28,
+          "seconds": 0.401
+        },
+        {
+          "at": 3.234,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/addresses/:id/transactions",
+          "delta": false,
+          "status": 200,
+          "bytes": 143412,
+          "seconds": 0.302
+        },
+        {
+          "at": 3.235,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 487,
+          "seconds": 0.04
+        },
+        {
+          "at": 3.236,
+          "host": "api.dexscreener.com",
+          "route": "/latest/dex/pairs/ethereum/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 2998,
+          "seconds": 0.2
+        },
+        {
+          "at": 3.236,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 20035,
+          "seconds": 0.197
+        },
+        {
+          "at": 3.356,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/tokens/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 305,
+          "seconds": 0.163
+        },
+        {
+          "at": 3.356,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 807,
+          "seconds": 0.099
+        },
+        {
+          "at": 3.357,
+          "host": "api.imd.fun",
+          "route": "/launches",
+          "delta": false,
+          "status": 200,
+          "bytes": 126466,
+          "seconds": 0.343
+        },
+        {
+          "at": 3.357,
+          "host": "api.dexscreener.com",
+          "route": "/latest/dex/tokens/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 6364,
+          "seconds": 0.155
+        },
+        {
+          "at": 3.435,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 36,
+          "seconds": 0.082
+        },
+        {
+          "at": 3.477,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/tokens/:id/counters",
+          "delta": false,
+          "status": 200,
+          "bytes": 56,
+          "seconds": 0.089
+        },
+        {
+          "at": 3.477,
+          "host": "api.imd.fun",
+          "route": "/sites",
+          "delta": false,
+          "status": 200,
+          "bytes": 87536,
+          "seconds": 0.654
+        },
+        {
+          "at": 3.517,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 20035,
+          "seconds": 0.081
+        },
+        {
+          "at": 3.555,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 156257,
+          "seconds": 0.67
+        },
+        {
+          "at": 3.597,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/tokens/:id/transfers",
+          "delta": false,
+          "status": 200,
+          "bytes": 1421416,
+          "seconds": 0.7
+        },
+        {
+          "at": 3.597,
+          "host": "api.imd.fun",
+          "route": "/launch/policies",
+          "delta": false,
+          "status": 200,
+          "bytes": 39925,
+          "seconds": 0.629
+        },
+        {
+          "at": 3.638,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 36,
+          "seconds": 0.588
+        },
+        {
+          "at": 3.763,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/addresses/:id/logs",
+          "delta": false,
+          "status": 200,
+          "bytes": 6966,
+          "seconds": 0.712
+        },
+        {
+          "at": 4.196,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/addresses/:id/transactions",
+          "delta": false,
+          "error": "CancelledError",
+          "seconds": 3.513
+        },
+        {
+          "at": 4.225,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 5862,
+          "seconds": 0.328
+        },
+        {
+          "at": 4.359,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/addresses/:id/transactions",
+          "delta": false,
+          "status": 200,
+          "bytes": 77246,
+          "seconds": 0.229
+        },
+        {
+          "at": 4.36,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 36,
+          "seconds": 0.211
+        },
+        {
+          "at": 4.473,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 375567,
+          "seconds": 0.167
+        },
+        {
+          "at": 4.476,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 103,
+          "seconds": 0.063
+        },
+        {
+          "at": 4.479,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/addresses/:id/transactions",
+          "delta": false,
+          "status": 200,
+          "bytes": 114913,
+          "seconds": 0.359
+        },
+        {
+          "at": 4.554,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 1189,
+          "seconds": 0.136
+        },
+        {
+          "at": 4.571,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 36,
+          "seconds": 0.129
+        },
+        {
+          "at": 4.6,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/addresses/:id/transactions",
+          "delta": false,
+          "status": 200,
+          "bytes": 85773,
+          "seconds": 0.525
+        },
+        {
+          "at": 4.69,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 5799,
+          "seconds": 0.1
+        },
+        {
+          "at": 4.762,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 377034,
+          "seconds": 0.737
+        },
+        {
+          "at": 4.811,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 1955,
+          "seconds": 0.193
+        },
+        {
+          "at": 4.84,
+          "host": "eth.blockscout.com",
+          "route": "/api/v2/addresses/:id/transactions",
+          "delta": false,
+          "status": 200,
+          "bytes": 19774,
+          "seconds": 0.208
+        },
+        {
+          "at": 4.932,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.12
+        },
+        {
+          "at": 5.052,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.446
+        },
+        {
+          "at": 5.054,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 3880,
+          "seconds": 0.108
+        },
+        {
+          "at": 5.497,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 9493937,
+          "seconds": 0.332
+        },
+        {
+          "at": 5.619,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.136
+        },
+        {
+          "at": 5.621,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 373109,
+          "seconds": 0.282
+        },
+        {
+          "at": 5.755,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.2
+        },
+        {
+          "at": 5.9,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 99635,
+          "seconds": 0.151
+        },
+        {
+          "at": 5.956,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.154
+        },
+        {
+          "at": 6.021,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 66883,
+          "seconds": 0.067
+        },
+        {
+          "at": 6.11,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.18
+        },
+        {
+          "at": 6.141,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 67488,
+          "seconds": 0.041
+        },
+        {
+          "at": 6.187,
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 18591,
+          "seconds": 0.191
+        },
+        {
+          "at": 6.29,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.066
+        },
+        {
+          "at": 6.356,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.677
+        },
+        {
+          "at": 6.392,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 38215,
+          "seconds": 0.036
+        },
+        {
+          "at": 6.433,
+          "host": "rpc.mainnet.chain.robinhood.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 929,
+          "seconds": 0.596
+        },
+        {
+          "at": 7.033,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.184
+        },
+        {
+          "at": 7.217,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.2
+        }
+      ],
+      "publish": [
+        {
+          "at": 3.016,
+          "slot": "chain"
+        },
+        {
+          "at": 3.243,
+          "slot": "surfboard_overview"
+        },
+        {
+          "at": 3.512,
+          "slot": "market"
+        },
+        {
+          "at": 3.635,
+          "slot": "eth_usd"
+        },
+        {
+          "at": 3.702,
+          "slot": "swarm_launches"
+        },
+        {
+          "at": 3.754,
+          "slot": "swarm_launch_facts"
+        },
+        {
+          "at": 4.133,
+          "slot": "swarm_launches"
+        },
+        {
+          "at": 4.195,
+          "slot": "swarm_launch_facts"
+        },
+        {
+          "at": 4.228,
+          "slot": "swarm_launches"
+        },
+        {
+          "at": 4.289,
+          "slot": "swarm_launch_facts"
+        },
+        {
+          "at": 4.301,
+          "slot": "swarm_launches"
+        },
+        {
+          "at": 4.35,
+          "slot": "swarm_launch_facts"
+        },
+        {
+          "at": 4.539,
+          "slot": "nft"
+        },
+        {
+          "at": 5.05,
+          "slot": "channel"
+        },
+        {
+          "at": 6.053,
+          "slot": "logs"
+        }
+      ],
+      "offers": [
+        2.312
+      ],
+      "input_to_paint_ms": [
+        33.37,
+        12.08,
+        25.12,
+        0.35,
+        8.11,
+        57.43,
+        0.73,
+        39.55,
+        0.47,
+        28.46
+      ],
+      "requests_after_deactivate": 0
+    },
+    {
+      "view": "launchpad",
+      "size": [
+        149,
+        45
+      ],
+      "first_local_snapshot_s": 2.245,
+      "elapsed_s": 13.572,
+      "cutoff": "request_budget",
+      "requests": [
+        {
+          "at": 2.334,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 487,
+          "seconds": 0.824
+        },
+        {
+          "at": 2.339,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 45,
+          "seconds": 0.834
+        },
+        {
+          "at": 3.159,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 807,
+          "seconds": 0.034
+        },
+        {
+          "at": 3.174,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 29356,
+          "seconds": 0.042
+        },
+        {
+          "at": 3.298,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 156257,
+          "seconds": 0.336
+        },
+        {
+          "at": 3.634,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 5862,
+          "seconds": 0.096
+        },
+        {
+          "at": 3.755,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 1189,
+          "seconds": 0.064
+        },
+        {
+          "at": 3.876,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 5799,
+          "seconds": 0.059
+        },
+        {
+          "at": 3.998,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 36,
+          "seconds": 0.054
+        },
+        {
+          "at": 4.052,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 29356,
+          "seconds": 0.177
+        },
+        {
+          "at": 4.23,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 36,
+          "seconds": 0.188
+        },
+        {
+          "at": 4.418,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 36,
+          "seconds": 0.066
+        },
+        {
+          "at": 4.483,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 36,
+          "seconds": 0.572
+        },
+        {
+          "at": 5.055,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 36,
+          "seconds": 0.136
+        },
+        {
+          "at": 5.191,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.37
+        },
+        {
+          "at": 5.562,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.056
+        },
+        {
+          "at": 5.618,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.14
+        },
+        {
+          "at": 5.758,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.053
+        },
+        {
+          "at": 5.811,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.17
+        },
+        {
+          "at": 5.982,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.053
+        },
+        {
+          "at": 6.035,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.37
+        },
+        {
+          "at": 6.404,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.054
+        },
+        {
+          "at": 6.458,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.303
+        },
+        {
+          "at": 6.762,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.08
+        },
+        {
+          "at": 6.842,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.199
+        },
+        {
+          "at": 7.041,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.056
+        },
+        {
+          "at": 7.097,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.2
+        },
+        {
+          "at": 7.297,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.053
+        },
+        {
+          "at": 7.35,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.467
+        },
+        {
+          "at": 7.818,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.056
+        },
+        {
+          "at": 7.874,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.165
+        },
+        {
+          "at": 8.04,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.067
+        },
+        {
+          "at": 8.107,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.231
+        },
+        {
+          "at": 8.338,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.062
+        },
+        {
+          "at": 8.4,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.06
+        },
+        {
+          "at": 8.46,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.049
+        },
+        {
+          "at": 8.521,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.163
+        },
+        {
+          "at": 8.685,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.053
+        },
+        {
+          "at": 8.738,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.789
+        },
+        {
+          "at": 9.527,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.052
+        },
+        {
+          "at": 9.579,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.213
+        },
+        {
+          "at": 9.792,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.118
+        },
+        {
+          "at": 9.91,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.551
+        },
+        {
+          "at": 10.46,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.087
+        },
+        {
+          "at": 10.548,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.174
+        },
+        {
+          "at": 10.723,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.06
+        },
+        {
+          "at": 10.783,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.217
+        },
+        {
+          "at": 11.0,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.05
+        },
+        {
+          "at": 11.05,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.171
+        },
+        {
+          "at": 11.222,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.057
+        },
+        {
+          "at": 11.279,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.653
+        },
+        {
+          "at": 11.933,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.132
+        },
+        {
+          "at": 12.064,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.133
+        },
+        {
+          "at": 12.198,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.058
+        },
+        {
+          "at": 12.256,
+          "host": "rpc.mevblocker.io",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 37,
+          "seconds": 0.181
+        }
+      ],
+      "publish": [],
+      "offers": [
+        1.97
+      ],
+      "input_to_paint_ms": [
+        45.24,
+        12.68,
+        36.72,
+        0.54,
+        12.77,
+        0.42,
+        26.22,
+        1.18,
+        12.9,
+        0.34,
+        12.55,
+        3.68,
+        12.35,
+        0.43,
+        10.86,
+        0.41,
+        37.59,
+        0.42
+      ],
+      "requests_after_deactivate": 0
+    },
+    {
+      "view": "nft",
+      "size": [
+        149,
+        45
+      ],
+      "first_local_snapshot_s": 1.68,
+      "elapsed_s": 13.569,
+      "cutoff": null,
+      "requests": [
+        {
+          "at": 2.033,
+          "host": "api.imd.fun",
+          "route": "/jobs",
+          "delta": false,
+          "status": 200,
+          "bytes": 75860,
+          "seconds": 0.616
+        },
+        {
+          "at": 2.091,
+          "host": "api.github.com",
+          "route": "/repos/identity-md-launches/:id/contents/README.md",
+          "delta": false,
+          "status": 200,
+          "bytes": 18785,
+          "seconds": 0.517
+        },
+        {
+          "at": 2.738,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 377034,
+          "seconds": 0.452
+        },
+        {
+          "at": 3.564,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 40,
+          "seconds": 0.18
+        },
+        {
+          "at": 3.744,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 46,
+          "seconds": 0.027
+        },
+        {
+          "at": 3.865,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 15330,
+          "seconds": 0.029
+        },
+        {
+          "at": 3.985,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 103,
+          "seconds": 0.032
+        },
+        {
+          "at": 4.105,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 103,
+          "seconds": 0.044
+        },
+        {
+          "at": 4.226,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 103,
+          "seconds": 0.032
+        },
+        {
+          "at": 4.347,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 103,
+          "seconds": 0.027
+        },
+        {
+          "at": 4.468,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 32522,
+          "seconds": 0.03
+        },
+        {
+          "at": 5.034,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 41,
+          "seconds": 0.161
+        },
+        {
+          "at": 5.196,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 15331,
+          "seconds": 0.026
+        },
+        {
+          "at": 5.32,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 88,
+          "seconds": 0.05
+        },
+        {
+          "at": 5.441,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 41,
+          "seconds": 0.027
+        },
+        {
+          "at": 5.562,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 15331,
+          "seconds": 0.029
+        },
+        {
+          "at": 5.683,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 104,
+          "seconds": 0.045
+        },
+        {
+          "at": 5.804,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 41,
+          "seconds": 0.025
+        },
+        {
+          "at": 5.924,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 15331,
+          "seconds": 0.026
+        },
+        {
+          "at": 6.045,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 76,
+          "seconds": 0.027
+        },
+        {
+          "at": 6.072,
+          "host": "gateway.tenderly.co",
+          "route": "/public/mainnet",
+          "delta": false,
+          "status": 200,
+          "bytes": 40,
+          "seconds": 0.152
+        },
+        {
+          "at": 6.558,
+          "host": "api.imd.fun",
+          "route": "/jobs/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 58481,
+          "seconds": 0.474
+        },
+        {
+          "at": 7.425,
+          "host": "api.imd.fun",
+          "route": "/jobs",
+          "delta": false,
+          "status": 200,
+          "bytes": 56465,
+          "seconds": 0.403
+        },
+        {
+          "at": 7.831,
+          "host": "api.imd.fun",
+          "route": "/sites",
+          "delta": false,
+          "status": 200,
+          "bytes": 87411,
+          "seconds": 0.49
+        }
+      ],
+      "publish": [],
+      "offers": [
+        1.577,
+        2.18
+      ],
+      "input_to_paint_ms": [
+        8.83,
+        1.41,
+        20.35,
+        16.53,
+        1.14,
+        0.52,
+        0.28,
+        12.63,
+        0.42,
+        66.59,
+        14.08,
+        0.28,
+        13.06,
+        4.65,
+        0.27,
+        0.3,
+        0.29,
+        0.39
+      ],
+      "requests_after_deactivate": 0,
+      "nft_errors": 0,
+      "nft_failed": false
+    },
+    {
+      "view": "tokens",
+      "size": [
+        149,
+        45
+      ],
+      "first_local_snapshot_s": 1.579,
+      "elapsed_s": 15.436,
+      "cutoff": "http_429",
+      "requests": [
+        {
+          "at": 1.354,
+          "host": "api.dexscreener.com",
+          "route": "/tokens/v1/ethereum/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 4178,
+          "seconds": 0.22
+        },
+        {
+          "at": 1.358,
+          "host": "api.dexscreener.com",
+          "route": "/tokens/v1/robinhood/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 2,
+          "seconds": 0.195
+        },
+        {
+          "at": 1.487,
+          "host": "api.imd.fun",
+          "route": "/launches",
+          "delta": false,
+          "status": 200,
+          "bytes": 619975,
+          "seconds": 0.474
+        },
+        {
+          "at": 1.579,
+          "host": "api.geckoterminal.com",
+          "route": "/api/v2/networks/eth/pools/:id/ohlcv/hour",
+          "delta": false,
+          "status": 200,
+          "bytes": 480,
+          "seconds": 0.545
+        },
+        {
+          "at": 2.095,
+          "host": "api.imd.fun",
+          "route": "/launches",
+          "delta": false,
+          "status": 200,
+          "bytes": 485593,
+          "seconds": 0.428
+        },
+        {
+          "at": 3.098,
+          "host": "api.dexscreener.com",
+          "route": "/tokens/v1/ethereum/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 4125,
+          "seconds": 0.178
+        },
+        {
+          "at": 3.099,
+          "host": "api.dexscreener.com",
+          "route": "/tokens/v1/robinhood/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 860,
+          "seconds": 0.197
+        },
+        {
+          "at": 3.221,
+          "host": "api.imd.fun",
+          "route": "/launch/policies",
+          "delta": false,
+          "status": 200,
+          "bytes": 39925,
+          "seconds": 0.232
+        },
+        {
+          "at": 3.575,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 375567,
+          "seconds": 0.554
+        },
+        {
+          "at": 3.68,
+          "host": "api.geckoterminal.com",
+          "route": "/api/v2/networks/eth/pools/:id/trades",
+          "delta": false,
+          "status": 200,
+          "bytes": 1564,
+          "seconds": 0.45
+        },
+        {
+          "at": 4.253,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 377034,
+          "seconds": 0.296
+        },
+        {
+          "at": 4.671,
+          "host": "api.imd.fun",
+          "route": "/launches/:id",
+          "delta": false,
+          "status": 200,
+          "bytes": 373109,
+          "seconds": 0.502
+        },
+        {
+          "at": 5.175,
+          "host": "ethereum-rpc.publicnode.com",
+          "route": "/",
+          "delta": false,
+          "status": 200,
+          "bytes": 66874,
+          "seconds": 0.082
+        },
+        {
+          "at": 6.076,
+          "host": "api.geckoterminal.com",
+          "route": "/api/v2/networks/eth/pools/:id/ohlcv/hour",
+          "delta": false,
+          "status": 200,
+          "bytes": 415,
+          "seconds": 0.698
+        },
+        {
+          "at": 8.178,
+          "host": "api.geckoterminal.com",
+          "route": "/api/v2/networks/eth/pools/:id/trades",
+          "delta": false,
+          "status": 200,
+          "bytes": 11,
+          "seconds": 0.367
+        },
+        {
+          "at": 10.278,
+          "host": "api.geckoterminal.com",
+          "route": "/api/v2/networks/eth/pools/:id/ohlcv/hour",
+          "delta": false,
+          "status": 200,
+          "bytes": 415,
+          "seconds": 0.349
+        },
+        {
+          "at": 12.386,
+          "host": "api.geckoterminal.com",
+          "route": "/api/v2/networks/eth/pools/:id/trades",
+          "delta": false,
+          "status": 200,
+          "bytes": 11,
+          "seconds": 0.378
+        },
+        {
+          "at": 14.487,
+          "host": "api.geckoterminal.com",
+          "route": "/api/v2/networks/eth/pools/:id/ohlcv/hour",
+          "delta": false,
+          "status": 429,
+          "bytes": 272,
+          "error": "CancelledError",
+          "seconds": 0.021
+        }
+      ],
+      "publish": [
+        {
+          "at": 5.382,
+          "slot": "swarm_launch_facts"
+        },
+        {
+          "at": 5.384,
+          "slot": "swarm_launches"
+        }
+      ],
+      "offers": [
+        1.343
+      ],
+      "input_to_paint_ms": [
+        8.4,
+        8.49,
+        0.35,
+        22.54,
+        9.47,
+        0.28,
+        19.14,
+        37.5,
+        0.42,
+        31.81,
+        0.28,
+        0.51,
+        0.27,
+        37.29,
+        0.28,
+        0.37,
+        0.28,
+        0.27,
+        0.53,
+        0.33,
+        0.42,
+        0.26
+      ],
+      "requests_after_deactivate": 0,
+      "nft_errors": 0,
+      "nft_failed": false
+    }
+  ],
+  "validation": {
+    "data_combined": {
+      "whole_files": 18,
+      "initial_passed": 1528,
+      "initial_failed": 9,
+      "corrected_mock_cases": 3,
+      "affected_whole_file_rerun": {
+        "passed": 19,
+        "baseline_failed": 4
+      },
+      "final_combined_passing_cases": 1531,
+      "remaining_baseline_failed": 6
+    },
+    "composing_screens": {
+      "passed": 556,
+      "baseline_failed": 27,
+      "all_failed_node_ids_reproduced_on_baseline": true
+    },
+    "guards": {
+      "passed": 128,
+      "baseline_failed": 1
+    },
+    "docpins": {
+      "passed": 12
+    },
+    "full_suite_run": false,
+    "final_review": {
+      "verdict": "Approved",
+      "initial_critical": 0,
+      "initial_important": 1,
+      "finding": "Native quote/channel waits suppressed independent due sources",
+      "fix_wave_focused_passed": 29,
+      "new_red_green_regression_cases": 5,
+      "mutations_killed": 3,
+      "scoped_rereview_cases_passed": 5
+    },
+    "final_correction_composing": {
+      "whole_files": 14,
+      "passed": 1005,
+      "baseline_failed": 30,
+      "new_failed_node_ids": [],
+      "seconds": 266.39
+    }
+  }
+}

@@ -650,7 +650,7 @@ async def test_linked_job_detail_has_budget_even_with_selected_and_background_re
     manager.select(selected)
     manager.state['evidence'][background] = dict(standard='ERC-721', proofOnly=True)
     progress = []
-    async def discover(state, *, budget, page_limit, launch_limit, detail_limit):
+    async def discover(state, *, budget, page_limit, launch_limit, detail_limit, checkpoint=None):
         for _ in range(page_limit + launch_limit):
             if budget.can_admit():
                 budget.consume(http=1)

@@ -178,10 +178,14 @@ class ReaderRuntime:
         if generation == entry.generation and entry.view is not None:
             self._start_refresh(entry)
 
+    def _offer_only(self, entry):
+        capability = getattr(entry.manager, 'reader_offer_only', None)
+        return callable(capability) and capability(entry.view) is True
+
     def _start_refresh(self, entry, *, bootstrap=False):
         if self._closing or entry.view is None or entry.task is not None and not entry.task.done():
             return
-        if not bootstrap and self._manager_loading(entry):
+        if not bootstrap and self._manager_loading(entry) and not self._offer_only(entry):
             return
         entry.next_read = self._clock() + self.poll_interval
         entry.handle._mark_loading(entry.generation, True)
@@ -222,7 +226,8 @@ class ReaderRuntime:
             try:
                 # A detached read may have finished during fetch, after its
                 # return value was captured. Reconcile the passive cache once.
-                self._publish(entry, generation, busy=busy)
+                self._publish(entry, generation, busy=busy,
+                              payload=result if self._offer_only(entry) and result is not None else _UNSET)
             except Exception:
                 logger.exception('Reader completed projection %s failed', entry.handle.key)
                 self._publish(entry, generation, busy=busy, payload=result)
@@ -320,7 +325,8 @@ class ReaderRuntime:
                         self._publish(entry, entry.generation, busy=busy)
                     except Exception:
                         logger.exception('Reader projection %s failed', entry.handle.key)
-                self._skip_elapsed_polls(entry)
+                if not self._offer_only(entry):
+                    self._skip_elapsed_polls(entry)
             if self._clock() >= entry.next_read:
                 self._start_refresh(entry)
 

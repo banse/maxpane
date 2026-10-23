@@ -129,7 +129,7 @@ from maxpane_dashboard.data.surf_card_reader import SurfCardReader
 from maxpane_dashboard.data.surf_transport import read_cycle
 from maxpane_dashboard.data.surf_counter_history import replay_counters
 from maxpane_dashboard.data.surf_launch_contribution import LaunchContributionReader
-from maxpane_dashboard.data.surf_cache import SLOT_SURF_WORK, SLOT_SURF_ORACLES
+from maxpane_dashboard.data.surf_cache import SLOT_SURF_WORK, SLOT_SURF_ORACLES, TIER_SURF_WORK, TIER_SURF_ORACLES
 from maxpane_dashboard.data.surf_oracles import coerce_snapshot as coerce_oracles_snapshot
 from maxpane_dashboard.data.surf_oracles_reader import OraclesReader
 from maxpane_dashboard.data.surf_cache import SLOT_SWARM_SEAT_RANK, SLOT_SWARM_SEAT_REWARDS, SLOT_SWARM_RUNTIME_LATEST, TIER_SWARM_RUNTIME_LATEST, TIER_TTL_SECONDS, LastGood
@@ -155,6 +155,8 @@ from maxpane_dashboard.data import surf_pool4 as P
 from maxpane_dashboard.data import surf_pool4_market as mk
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
+from maxpane_dashboard.data import surf_work as work
+from maxpane_dashboard.data import surf_work_catalogue as work_catalogue
 from maxpane_dashboard.data import surfboard as hub
 from maxpane_dashboard.data import surf_pool4_hero as pool4_hero
 from maxpane_dashboard.data import surf_protocol_hero as protocol_hero
@@ -2329,7 +2331,7 @@ class SurfManager:
     # loop happens to interleave this cycle's big ``gather`` with an in-flight
     # or freshly spawned sweep.
 
-    def _spawn_launchpad(self, tiers: set[str], now: float) -> Any:
+    def _spawn_launchpad(self, tiers: set[str], now: float, *, refresh_current: bool = False) -> Any:
         """Start the v4/launchpad sweep **detached**; never wait for it.
 
         ``fetch_pool_v4`` + ``fetch_decoy_pool_count`` + ``fetch_launchpad``
@@ -2348,18 +2350,18 @@ class SurfManager:
         cycle offers again and the guard here is what keeps a slow read from
         stacking up behind a fast poll.
         """
-        if TIER_LAUNCHPAD not in tiers or not self._view_allows('dashboard', 'launchpad'):
+        if (TIER_LAUNCHPAD not in tiers and not refresh_current) or not self._view_allows('dashboard', 'launchpad'):
             return None
         running = self._launchpad_task
         if running is not None and not running.done():
             logger.debug("SURF launchpad sweep still in flight; not starting another")
             return running
         self._launchpad_task = asyncio.ensure_future(
-            self._launchpad_detached(tiers, now)
+            self._launchpad_detached(tiers, now, **({'refresh_current': True} if refresh_current else {}))
         )
         return self._launchpad_task
 
-    async def _launchpad_detached(self, tiers: set[str], now: float) -> None:
+    async def _launchpad_detached(self, tiers: set[str], now: float, *, refresh_current: bool = False) -> None:
         """``_pool_launchpad`` with nobody to raise at.
 
         A detached task's exception surfaces as an "exception was never
@@ -2369,12 +2371,13 @@ class SurfManager:
         job and must propagate so the cancellation actually completes.
         """
         try:
-            await self._pool_launchpad(tiers, now)
+            await self._pool_launchpad(tiers, now, **({'refresh_current': True} if refresh_current else {}))
         except asyncio.CancelledError:
             raise
         except Exception as exc:        # noqa: BLE001 — nobody awaits this task
             self._error_count += 1
-            self.cache.mark_failed(TIER_LAUNCHPAD, self._clock())
+            if TIER_LAUNCHPAD in tiers:
+                self.cache.mark_failed(TIER_LAUNCHPAD, self._clock())
             logger.warning("SURF launchpad sweep failed: %s", exc)
 
     async def _cancel_launchpad(self) -> None:
@@ -2389,7 +2392,7 @@ class SurfManager:
         except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001
             logger.debug("SURF launchpad sweep stopped on close: %s", exc)
 
-    async def _pool_launchpad(self, tiers: set[str], now: float) -> Any:
+    async def _pool_launchpad(self, tiers: set[str], now: float, *, refresh_current: bool = False) -> Any:
         """Read the v4 pool, the decoy scan and the launchpad getters+logs.
 
         Mirrors :meth:`_pool_nft`'s shape: a simple ``ok`` gate, never
@@ -2426,10 +2429,12 @@ class SurfManager:
         cold ~34k-block re-read forever; the round-trip test earns its keep
         by mutation, not by inspection.
         """
-        if TIER_LAUNCHPAD not in tiers:
+        if TIER_LAUNCHPAD not in tiers and not refresh_current:
             return None
         prior_entry = self.cache.get_last_good(SLOT_LAUNCHPAD)
         prior_slot = prior_entry.payload if prior_entry is not None else None
+        if TIER_LAUNCHPAD not in tiers and isinstance(prior_slot, dict) and prior_slot:
+            return await self._launchpad_current(prior_entry)
         cursor = prior_slot.get("cursor") if isinstance(prior_slot, dict) else None
         pool_state, launchpad_state = await asyncio.gather(
             self._guard(self.client.fetch_pool_v4, "fetch_pool_v4"),
@@ -2487,6 +2492,34 @@ class SurfManager:
             "launchpad": launchpad_state,
             "ok": ok,
         }
+
+    async def _launchpad_current(self, prior_entry) -> dict[str, Any]:
+        """Refresh live values on entry; the retained history keeps its clock."""
+        pool, getters = await asyncio.gather(
+            self._guard(self.client.fetch_pool_v4, 'fetch_pool_v4'),
+            self._guard(lambda: self.client.fetch_launchpad_getters(), 'fetch_launchpad_getters'),
+        )
+        prior = prior_entry.payload
+        payload = dict(prior)
+        getters = getters if isinstance(getters, dict) else {}
+        for field in ('coin_count', 'imd_to_burn_wei', 'executor_balance_wei',
+                      'min_bridge_wei', 'bridge_amount_wei', 'creator_eth_owed_wei'):
+            if getters.get(field) is not None:
+                payload[field] = getters[field]
+        # A failed pool read still carries a fallback id; that id alone is
+        # not a fresh observation and must not replace a confirmed binding.
+        if any(_field(pool, field) is not None for field in ('sqrt_price_x96', 'tick', 'lp_fee', 'liquidity')):
+            pool_id = _field(pool, 'pool_id')
+            if pool_id != prior.get('pool_id'):
+                payload.update(decoy_pool_count=None, decoy_newest_fee_bps=None)
+            payload.update(pool_id=pool_id, pool_fee=_opt_int(_field(pool, 'lp_fee')),
+                           pool_id_source=_field(pool, 'pool_id_source'),
+                           sqrt_price_x96=_opt_int(_field(pool, 'sqrt_price_x96')))
+        changed = payload != prior
+        if changed:
+            self.cache.store_last_good(SLOT_LAUNCHPAD, payload, ts=prior_entry.ts)
+        # Never mark the history tier fetched or failed for a getter-only read.
+        return {'pool': pool, 'changed': changed}
 
     def _launchpad_keys(self, slot, entry, *, eth_usd):
         """One captured slot supplies both the native body and rack cards."""
@@ -3220,7 +3253,7 @@ class SurfManager:
     # 3. **The marker moves only when the content does.** See
     #    :meth:`_pool4_content`.
 
-    def _spawn_pool4(self, tiers: set[str], now: float, rows: Any) -> Any:
+    def _spawn_pool4(self, tiers: set[str], now: float, rows: Any, *, refresh_current: bool = False) -> Any:
         """Start the pool4 sweep **detached**; never wait for it.
 
         Discovery plus three getter rounds plus a paged log window over a
@@ -3240,18 +3273,18 @@ class SurfManager:
         so every cycle offers again and this guard is what keeps a slow sweep
         from stacking behind a 30 s poll.
         """
-        if TIER_POOL4 not in tiers or not self._view_allows('pool4', 'pool4_user'):
+        if (TIER_POOL4 not in tiers and not refresh_current) or not self._view_allows('pool4', 'pool4_user'):
             return None
         running = self._pool4_task
         if running is not None and not running.done():
             logger.debug("SURF pool4 sweep still in flight; not starting another")
             return running
         self._pool4_task = asyncio.ensure_future(
-            self._pool4_detached(tiers, now, rows)
+            self._pool4_detached(tiers, now, rows, **({'refresh_current': True} if refresh_current else {}))
         )
         return self._pool4_task
 
-    async def _pool4_detached(self, tiers: set[str], now: float, rows: Any) -> None:
+    async def _pool4_detached(self, tiers: set[str], now: float, rows: Any, *, refresh_current: bool = False) -> None:
         """``_pool_pool4`` with nobody to raise at.
 
         A detached task's exception surfaces as an "exception was never
@@ -3260,12 +3293,13 @@ class SurfManager:
         that one is :meth:`close` doing its job.
         """
         try:
-            await self._pool_pool4(tiers, now, rows)
+            await self._pool_pool4(tiers, now, rows, **({'refresh_current': True} if refresh_current else {}))
         except asyncio.CancelledError:
             raise
         except Exception as exc:            # noqa: BLE001 — nobody awaits this task
             self._error_count += 1
-            self.cache.mark_failed(TIER_POOL4, self._clock())
+            if TIER_POOL4 in tiers:
+                self.cache.mark_failed(TIER_POOL4, self._clock())
             logger.warning("SURF pool4 sweep failed: %s", exc)
 
     async def _cancel_pool4(self) -> None:
@@ -3280,7 +3314,7 @@ class SurfManager:
         except (asyncio.CancelledError, Exception) as exc:  # noqa: BLE001
             logger.debug("SURF pool4 sweep stopped on close: %s", exc)
 
-    async def _pool_pool4(self, tiers: set[str], now: float, rows: Any) -> Any:
+    async def _pool_pool4(self, tiers: set[str], now: float, rows: Any, *, refresh_current: bool = False) -> Any:
         """Adjudicate, read known contracts atomically, then sweep their logs.
 
         The client discovers the variable-length vault path on first use and
@@ -3293,11 +3327,12 @@ class SurfManager:
         point of the sweep being one slot with per-field ``None``s rather than
         four slots.
         """
-        if TIER_POOL4 not in tiers:
+        if TIER_POOL4 not in tiers and not refresh_current:
             return None
         prior_entry = self.cache.get_last_good(SLOT_POOL4)
         prior = getattr(prior_entry, "payload", None)
         prior = prior if isinstance(prior, dict) else {}
+        read_history = TIER_POOL4 in tiers or not prior
 
         discovery, discovery_source = await self._pool4_discovery(rows, prior)
         adopted = (
@@ -3325,6 +3360,46 @@ class SurfManager:
         distributor_addr = self._pool4_distributor_addr(path)
         dripper, vault = bundle.get("dripper"), bundle.get("vault")
         distributor, reference = bundle.get("distributor"), bundle.get("reference")
+        # Publish the exact-block getters before the independently budgeted
+        # history scan. A retained flow keeps its older envelope timestamp;
+        # counter reconciliation stays unchecked until matching logs arrive.
+        if not self._pool4_read_is_blank(hook, dripper, vault, None, distributor):
+            current = self._pool4_payload(discovery=discovery, discovery_source=discovery_source,
+                network=network, hook_addr=hook_addr, token_addr=token_addr,
+                dripper_addr=dripper_addr, vault_addr=vault_addr, distributor_addr=distributor_addr,
+                path=path, hook=hook, dripper=dripper, vault=vault, distributor=distributor,
+                reference=reference, logs=None)
+            same_binding = all(current.get(field) == prior.get(field) for field in (
+                'network', 'hook_addr', 'token_addr', 'dripper_addr', 'vault_addr',
+                'distributor_addr'))
+            if not read_history and same_binding:
+                for field in ('flow', 'unsettled_burn', 'unsettled_stakers', 'dripped_imd',
+                              'drip_window_seconds', 'drip_seconds_per_block', 'drip_from_block', 'drip_to_block'):
+                    current[field] = copy.deepcopy(prior.get(field))
+                # An old reconciliation never certifies a new block. At the
+                # identical block/counters, its original evidence still holds.
+                if current.get('block_number') is not None and all(
+                    current.get(field) == prior.get(field) for field in (
+                        'block_number', 'total_burned_wei', 'total_rewarded_wei', 'total_fee_token_wei')
+                ):
+                    current.update(counter_state=prior.get('counter_state'), counter_detail=prior.get('counter_detail'))
+                if current != prior:
+                    self.cache.store_last_good(SLOT_POOL4, current, ts=prior_entry.ts)
+                return {'ok': True, 'network': network, 'payload': current, 'changed': current != prior}
+            # A newly observed binding cannot borrow another contract's
+            # history. Its first complete read is legitimately due now.
+            if prior and not same_binding:
+                self.cache.set_pool4_accumulator(network, P.empty_accumulator())
+            read_history = True
+            stamp = now
+            if same_binding and prior.get('flow') is not None:
+                current['flow'] = copy.deepcopy(prior['flow'])
+                stamp = min(now, prior_entry.ts)
+            self.cache.store_last_good(SLOT_POOL4, current, ts=stamp)
+        if not read_history:
+            # Failed current getters leave both current values and the slower
+            # history tier's observation/backoff clocks intact.
+            return {'ok': False, 'network': network, 'payload': None}
         # The bundle pins all getter values and both venues to one block.
         # History remains independent: failed logs cannot erase good getters.
         log_read, drip = await asyncio.gather(
@@ -3397,6 +3472,9 @@ class SurfManager:
             # the failure backoff — but the ``as of`` marker stays where it
             # was, because it names when these values were *first* seen and
             # nothing about them is newer than that.
+            # Replace the provisional getter-only publication with the complete
+            # unchanged result, preserving its original observation time.
+            self.cache.store_last_good(SLOT_POOL4, payload, ts=prior_entry.ts)
             logger.debug("SURF pool4 sweep found nothing new; marker left alone")
         self.cache.mark_fetched(TIER_POOL4, now)
         return {"ok": True, "network": network, "payload": payload, "changed": changed}
@@ -3996,7 +4074,7 @@ class SurfManager:
                     return False
                 continue
             fields = getattr(state, "__dataclass_fields__", None) or {}
-            if any(getattr(state, name, None) is not None for name in fields):
+            if any(getattr(state, name, None) is not None for name in fields if name != 'block_number'):
                 return False
         return True
 
@@ -5567,6 +5645,10 @@ class SurfManager:
             self._portfolio_manager = PortfolioManager(self.swarm_tokens_manager(), wallet, clock=self._clock)
         return self._portfolio_manager
 
+    def swarm_tokens_source_revision(self):
+        return tuple(self.cache.get_last_good(slot) for slot in
+                     (SLOT_SWARM_LAUNCHES, SLOT_SWARM_LAUNCH_FACTS))
+
     def swarm_tokens_source(self, catalogue=None):
         """Borrow launch evidence without running unrelated SURF collectors.
 
@@ -5705,10 +5787,41 @@ class SurfManager:
         legacy_policies = (slot.get('policies_schema') != 1
                            and any(not policy.get('kind') for policy in slot.get('policies') or []))
         failed, refreshed_policy, policy_read_ok = False, False, True
-        for route, cadence, method in (('launches', 0, 'fetch_launches'), ('sites', SWARM_SITE_REFRESH_S, 'fetch_sites'), ('policies', 1800, 'fetch_launch_policies')):
+        def publish_heads():
+            nonlocal slot
+            # Validate list elements before catalogue joins consume identities.
+            slot = sw.coerce_launches_slot(slot, now=self._clock()) or {}
+            catalogue = {row['id']: row for row in getattr(self, '_swarm_tokens_catalogue', [])}
+            for row in slot.get('launches') or []:
+                cached = catalogue.get(row['id'], {})
+                if (row.get('updatedAt') or '') >= (cached.get('updatedAt') or ''):
+                    catalogue[row['id']] = row
+            for row in catalogue.values():
+                if lc.is_production(row):
+                    point = facts['launches'].setdefault(row['id'], {})
+                    version = [row['status'], row.get('updatedAt')]
+                    if point.get('detail_version') != version:
+                        # Every detail-derived fact belongs to its catalogue version,
+                        # including the position and pool. Keep only retry ordering.
+                        for key in tuple(point):
+                            if key not in ('row', 'detail_failed_ts', 'detail_attempt_ts'):
+                                point.pop(key)
+                    point['row'] = row
+                else:
+                    facts['launches'].pop(row['id'], None)
+            stamps = [slot.get(route + '_ts') for route in ('launches', 'sites', 'policies')
+                      if slot.get(route + '_ts') is not None]
+            if stamps:
+                self.cache.store_last_good(SLOT_SWARM_LAUNCHES,
+                    sw.coerce_launches_slot(slot, now=self._clock()), ts=max(stamps))
+                previous = self.cache.get_last_good(SLOT_SWARM_LAUNCH_FACTS)
+                self.cache.store_last_good(SLOT_SWARM_LAUNCH_FACTS,
+                    sw.coerce_launch_facts_slot(facts), ts=min(now, previous.ts) if previous else now)
+        async def read_head(route, cadence, method):
+            nonlocal failed, refreshed_policy, policy_read_ok
             if cadence and not (route == 'policies' and legacy_policies) and slot.get(route + '_ts') is not None and now - slot[route + '_ts'] < cadence:
-                continue
-            value = await self._guard(lambda method=method: getattr(self.swarm_client, method)(), 'swarm ' + method)
+                return
+            value = await self._guard(lambda: getattr(self.swarm_client, method)(), 'swarm ' + method)
             if route == 'launches':
                 self._swarm_launch_read_ok = isinstance(value, list)
             if route == 'policies':
@@ -5717,29 +5830,15 @@ class SurfManager:
             if isinstance(value, list):
                 slot[route], slot[route + '_ts'] = value, now
                 if route == 'policies': slot['policies_schema'] = 1
+                publish_heads()
             else:
                 failed |= route == 'launches'
-                logger.debug('SURF launch %s read failed; retaining last-good', route)
-        slot = sw.coerce_launches_slot(slot, now=now)
-        # Only a successful list advances rows; a failed list retains its version.
-        catalogue = {row['id']: row for row in getattr(self, '_swarm_tokens_catalogue', [])}
-        for row in slot.get('launches') or []:
-            cached = catalogue.get(row['id'], {})
-            if (row.get('updatedAt') or '') >= (cached.get('updatedAt') or ''):
-                catalogue[row['id']] = row
-        for row in catalogue.values():
-            if lc.is_production(row):
-                point = facts['launches'].setdefault(row['id'], {})
-                version = [row['status'], row.get('updatedAt')]
-                if point.get('detail_version') != version:
-                    # Every detail-derived fact belongs to its catalogue version,
-                    # including the position and pool. Keep only retry ordering.
-                    for key in tuple(point):
-                        if key not in ('row', 'detail_failed_ts', 'detail_attempt_ts'):
-                            point.pop(key)
-                point['row'] = row
-            else:
-                facts['launches'].pop(row['id'], None)
+        async with asyncio.TaskGroup() as group:
+            for args in (
+                ('launches', 0, 'fetch_launches'), ('sites', SWARM_SITE_REFRESH_S, 'fetch_sites'),
+                ('policies', 1800, 'fetch_launch_policies')):
+                group.create_task(read_head(*args))
+        publish_heads()
         points = sorted(facts['launches'].values(), key=lambda p: p['row']['launchNumber'], reverse=True)
         rpc, requests = await self._enrich_swarm_launch_evidence(
             slot, points, now, refreshed_policy=refreshed_policy, policy_read_ok=policy_read_ok)
@@ -6492,10 +6591,9 @@ class SurfManager:
             ("fetch_contributors", SLOT_SWARM_CONTRIBUTORS, sw.normalize_contributors, sw.coerce_contributors_slot),
             ("fetch_workers", SLOT_SWARM_WORKERS, sw.normalize_workers, sw.coerce_workers_slot),
         )
-        values = await asyncio.gather(*(self._guard(
-            lambda method=method: getattr(self.swarm_client, method)(), f"swarm {method}")
-            for method, *_ in readers))
-        for (method, slot, normalize, coerce), raw in zip(readers, values):
+        async def read_source(method, slot, normalize, coerce):
+            nonlocal succeeded
+            raw = await self._guard(lambda: getattr(self.swarm_client, method)(), f"swarm {method}")
             self._swarm_board_pending.discard(method.removeprefix('fetch_'))
             payload = normalize(raw)
             observed_at = float(self._clock())
@@ -6508,12 +6606,13 @@ class SurfManager:
             if payload is None:
                 source = self._swarm_board_source(slot, prior, now=observed_at)
                 self._swarm_board_observations[slot] = dict(entry=prior, read_ts=source['read_ts'], failed=True)
-                continue
+                return
             if coerce(getattr(prior, "payload", None)) != payload:
                 self.cache.store_last_good(slot, payload, ts=now)
             self._swarm_board_observations[slot] = dict(
                 entry=self.cache.get_last_good(slot), read_ts=observed_at, failed=False)
             succeeded += 1
+        await asyncio.gather(*(read_source(*reader) for reader in readers))
         if records_task is not None:
             await asyncio.shield(records_task)
         if succeeded == 2:
@@ -6772,16 +6871,29 @@ class SurfManager:
         if self._seat_busy_token == token:
             self._seat_busy_token = None
         if state == "ok":
-            if self._agent_active:
-                await self._agent_card_sources.read(result, float(self._clock()))
-            await self._resolve_seat_owner(result, now)
-            await self._pool_swarm_seat_rewards(result, token, now)
-            # Membership completed after the cycle began; all RECORD readers
-            # must see that snapshot instead of discarding its newer timestamps.
-            record_now = max(now, float(self._clock()))
-            await self._pool_swarm_answers(result, token, record_now)
-            await self._pool_swarm_oracle(result, token, record_now)
-            await self._pool_swarm_job_details(result, record_now)
+            launches_filter = (self.record_launches_only
+                or getattr(self.record_spec, 'launches', None) == 'launched')
+            async def records():
+                # Membership is a real dependency only for a launch-filtered
+                # window. Other visible records can load immediately.
+                if self._agent_active and launches_filter:
+                    await card_task
+                record_now = max(now, float(self._clock()))
+                async with asyncio.TaskGroup() as group:
+                    group.create_task(self._pool_swarm_answers(result, token, record_now))
+                    group.create_task(self._pool_swarm_oracle(result, token, record_now))
+                # Popup eligibility consumes the answers/panels just read.
+                await self._pool_swarm_job_details(result, record_now)
+            async def cards():
+                if self._agent_active:
+                    priority = [row['job_id'] for row in self._record_rows(result, now)][:24]
+                    await self._agent_card_sources.read(result, float(self._clock()),
+                                                        priority_jobs=priority)
+            async with asyncio.TaskGroup() as group:
+                card_task = group.create_task(cards())
+                group.create_task(records())
+                group.create_task(self._resolve_seat_owner(result, now))
+                group.create_task(self._pool_swarm_seat_rewards(result, token, now))
         return slot
 
     async def _resolve_seat_owner(self, seat: dict, now: float) -> None:
@@ -7154,41 +7266,76 @@ class SurfManager:
             self.cache.mark_failed(TIER_SWARM_SCORES, now)
             return {"ok": False, "payload": None}
 
-        observations = []
-        details = await self._swarm_details(_swarm_sweep_ids(jobs), "swarm scores fetch_job", observations=observations)
-        if details is None:
-            self.cache.mark_failed(TIER_SWARM_SCORES, now)
-            return {"ok": False, "payload": None}
-
-        skills = await self._guard(lambda: client.fetch_skills(), "swarm fetch_skills")
         prior = self.cache.get_last_good(SLOT_SWARM_SCORES)
-        old_slot = prior.payload if prior is not None and isinstance(prior.payload, dict) else {}
-        previous = old_slot.get("workflows")
-        complete = isinstance(previous, list) and old_slot.get("workflows_complete") is True
-        if complete:
-            workflows = await self._guard(
-                lambda: client.fetch_workflows(limit=SWARM_WORKFLOW_PAGE_SIZE), "swarm fetch_workflows")
-        else:
-            history = await self._guard(client.fetch_workflow_history, "swarm workflow history")
-            workflows, complete = history if history is not None else (None, False)
-        workflows_ts = old_slot.get("workflows_ts")
+        old = prior.payload if prior is not None and isinstance(prior.payload, dict) else {}
+        workflows, complete, workflows_ts = old.get('workflows'), old.get('workflows_complete', False), old.get('workflows_ts')
+        workflows = sw.merge_workflow_history(workflows, [], cap=SWARM_WORKFLOW_HISTORY_CAP) if isinstance(workflows, list) else None
         if not sw._optional_stamp(workflows_ts):
             workflows_ts = None
-        if isinstance(workflows, list):
-            workflows = sw.merge_workflow_history(previous, workflows, cap=SWARM_WORKFLOW_HISTORY_CAP)
-            workflows_ts = now
-        elif isinstance(previous, list):
-            workflows = sw.merge_workflow_history(previous, [], cap=SWARM_WORKFLOW_HISTORY_CAP)
-
-        payload = {
-            "jobs": jobs, "details": details,
-            "skills": skills,
-            "workflows": workflows, "workflows_complete": complete, "workflows_ts": workflows_ts,
-        }
-        self.cache.store_last_good(SLOT_SWARM_SCORES, payload, ts=min([now, *observations]))
-        self.cache.mark_fetched(TIER_SWARM_SCORES, now)
-        self._fold_swarm_seen(jobs, details, now)
-        return {"ok": True, "payload": payload}
+        try:
+            rows, scanned, stamp = await self._refresh_workflow_catalogue(now)
+            workflows = sw.merge_workflow_history(workflows, rows, cap=SWARM_WORKFLOW_HISTORY_CAP)
+            complete, workflows_ts = scanned, stamp
+        except Exception:
+            pass  # retain the last independently observed workflow listing
+        skills = await self._guard(lambda: client.fetch_skills(), 'swarm fetch_skills')
+        current = {row['id']: row for row in jobs if isinstance(row, dict) and row.get('id')}
+        def same_revision(detail):
+            row = current.get(detail.get('id')) if isinstance(detail, dict) else None
+            return row is not None and all(detail.get(k) == row.get(k) for k in ('state', 'updatedAt'))
+        details = {d['id']: d for d in old.get('details') or [] if same_revision(d)}
+        previous = {row['id']: row for row in old.get('jobs') or [] if same_revision(row)}
+        old_attempts = old.get('_detail_attempts')
+        old_attempts = old_attempts if isinstance(old_attempts, dict) else {}
+        attempts = {key: value for key, value in old_attempts.items()
+                    if key in previous and work._stamp(value, self._clock()) is not None}
+        old_observations = old.get('_detail_observations')
+        old_observations = old_observations if isinstance(old_observations, dict) else {}
+        observations = {key: (old_observations[key] if work._stamp(old_observations.get(key), self._clock())
+                             is not None else prior.ts) for key in details}
+        payload = dict(jobs=jobs, details=list(details.values()), skills=skills,
+                       workflows=workflows, workflows_complete=complete, workflows_ts=workflows_ts)
+        def publish():
+            payload.update(details=list(details.values()), _detail_attempts=dict(attempts),
+                           _detail_observations=dict(observations))
+            self.cache.store_last_good(SLOT_SWARM_SCORES, copy.deepcopy(payload),
+                ts=min([now, *observations.values()]))
+        publish()  # workflow/skill lists never wait for the optional detail batch
+        identities = list(dict.fromkeys(_swarm_sweep_ids(jobs)))
+        due = [key for key in identities if key not in attempts or self._clock() - attempts[key] >= 600]
+        due.sort(key=lambda key: (attempts.get(key, 0), identities.index(key)))
+        failed = busy = False
+        async def read(key):
+            nonlocal failed, busy
+            attempts[key] = self._clock()
+            result = await self._guard(lambda: client.read_job_detail(key), 'swarm score detail')
+            detail = result.payload if result is not None else None
+            if detail == SEAT_BUSY:
+                busy = True
+            if not same_revision(detail) or result.observed_at is None:
+                failed = True
+                return
+            details[key] = detail
+            observations[key] = result.observed_at
+        try:
+            async with asyncio.timeout(8):
+                for offset in range(0, min(24, len(due)), 4):
+                    await asyncio.gather(*(read(key) for key in due[offset:offset + 4]))
+                    publish()
+                    if busy:
+                        break
+        except TimeoutError:
+            failed = True
+        finally:
+            publish()  # completed observations survive cancellation; clocks do not advance
+        if busy:
+            self.cache.mark_failed(TIER_SWARM_SCORES, now)
+        elif len(due) > 24:
+            self.cache.mark_due(TIER_SWARM_SCORES)
+        else:
+            (self.cache.mark_failed if failed else self.cache.mark_fetched)(TIER_SWARM_SCORES, now)
+        self._fold_swarm_seen(jobs, list(details.values()), now)
+        return {'ok': not busy, 'payload': None if busy else payload}
 
     def _swarm_keys(
         self, slot: dict[str, Any], entry: Any, now: float, seen: Any = None
@@ -7429,6 +7576,31 @@ class SurfManager:
         out["feed_signal_tx_hashes"] = targets
         return out
 
+    async def _refresh_workflow_catalogue(self, now):
+        """Share a certified listing across summaries without loading job details."""
+        entry = work_catalogue.coerce_catalogue(
+            {'workflows': self.cache.workflow_catalogue}, now=self._clock())['workflows']
+        if entry is not None and 0 <= now - entry['read_ts'] < 30:
+            return work_catalogue.source_rows(entry, 'workflows'), True, entry['read_ts']
+        async def fetch(method, **kwargs):
+            return await self._work_reader._fetch(method, **kwargs)
+        if entry is not None and now - entry['full_ts'] < work_catalogue.RECONCILE_SECONDS:
+            updated = await work_catalogue.read_delta(fetch, entry, 'workflows', now=self._clock, start=now)
+        else:
+            rows, complete, started = await self._work_reader._workflow_catalogue(now)
+            if not complete:
+                return rows, False, started
+            updated = work_catalogue.make_entry(rows, 'workflows', now=self._clock(),
+                                                 read_ts=started, full_ts=started)
+            if updated is None:
+                return rows, True, started  # display only; cannot certify a delta watermark
+            if self._clock() - started >= work_catalogue.DELTA_OVERLAP_SECONDS:
+                updated = await work_catalogue.read_delta(fetch, updated, 'workflows',
+                    now=self._clock, start=self._clock(), since_ts=started)
+        self.cache.workflow_catalogue = updated
+        self.cache._dirty = True
+        return work_catalogue.source_rows(updated, 'workflows'), True, updated['read_ts']
+
     # -- public API ----------------------------------------------------------
 
     def is_loading(self, view: str | None = None) -> bool:
@@ -7442,19 +7614,23 @@ class SurfManager:
         if view in (None, 'surfboard', 'surf-nft') and nft is not None and nft.is_loading(view):
             return True
         sources = self._hub_source_tasks
+        native_market = sources.get('native_market')
+        native_protocol = sources.get('native_protocol')
         tokens = getattr(self, '_swarm_tokens_manager', None)
         token_tasks = getattr(tokens, '_tasks', {})
         groups = {
             'dashboard': (self._full_task, self._launchpad_task, self._swarm_task,
                           self._swarm_launches_task, sources.get('overview')),
-            'launchpad': (self._full_task, self._launchpad_task),
-            'pool4': (self._full_task, self._pool4_task, self._pool4_stakers_task),
-            'pool4_user': (self._full_task, self._pool4_task, self._pool4_stakers_task),
+            'launchpad': (self._full_task, self._launchpad_task, native_market),
+            'pool4': (self._full_task, self._pool4_task, self._pool4_stakers_task,
+                      native_market, native_protocol),
+            'pool4_user': (self._full_task, self._pool4_task, self._pool4_stakers_task,
+                           native_market, native_protocol),
             'swarm': (self._full_task, self._swarm_task, self._swarm_scores_task,
                       self._swarm_launches_task, sources.get('overview'), sources.get('hourly')),
             'agent': (self._full_task, self._swarm_task, self._swarm_scores_task,
                       self._swarm_board_task, self._swarm_seat_task, self._runtime_task,
-                      sources.get('records')),
+                      sources.get('records'), native_market),
             'board': (self._full_task, self._swarm_board_task, sources.get('records'),
                       self._launch_contribution_reader.task, token_tasks.get('catalogue')),
             'work': (self._work_reader.task, self._swarm_launches_task),
@@ -7466,6 +7642,9 @@ class SurfManager:
         }
         tasks = (task for group in groups.values() for task in group) if view is None else groups.get(view, ())
         return any(task is not None and not task.done() and not task.cancelling() for task in tasks)
+
+    def reader_offer_only(self, view):
+        return view not in (None, 'legacy')
 
     def get_snapshot(self) -> dict[str, Any]:
         """Passive cache projection for a completed background read repaint."""
@@ -7504,8 +7683,12 @@ class SurfManager:
             setter = getattr(manager, 'set_active_view', None)
             if setter is not None:
                 setter('surfboard' if view == 'surfboard' else None)
-        from maxpane_dashboard.data.surf_cache import TIERS
-        for tier in TIERS if view is not None else ():
+        live_tiers = {
+            'agent': (TIER_SWARM_SEAT, TIER_SWARM_BOARD),
+            'board': (TIER_SWARM_BOARD,), 'swarm': (TIER_SWARM,),
+            'work': (TIER_SURF_WORK,), 'oracles': (TIER_SURF_ORACLES,),
+        }
+        for tier in live_tiers.get(view, ()):
             self.cache.mark_due(tier)
 
     def _view_allows(self, *views):
@@ -7768,6 +7951,14 @@ class SurfManager:
             channel = getattr(self.cache.get_last_good(SLOT_CHANNEL), "payload", None) or {}
             items = channel.get("items")
             data["feed_last_post_age_s"] = self._last_post_age(items, now) if isinstance(items, list) else None
+            if self._active_view == 'dashboard':
+                if isinstance(items, list):
+                    data['feed_items'] = select_feed_window(items,
+                        data.get('feed_signal_tx_hashes') or (), FEED_ITEM_LIMIT)
+                activity_entry = self.cache.get_last_good(SLOT_ACTIVITY)
+                activity = getattr(activity_entry, 'payload', None)
+                if isinstance(activity, dict) and isinstance(activity.get('rows'), list):
+                    data['dev_activity'] = list(activity['rows'])
             data["degraded"] = self._degraded()
             stakers_entry = self.cache.get_last_good(SLOT_POOL4_STAKERS)
             data.update(self._pool4_stakers_keys(getattr(stakers_entry, "payload", None) or {}, stakers_entry))
@@ -7780,8 +7971,9 @@ class SurfManager:
                     'launchpad': self._pool4_hero_source(launch_entry, now=now, tier=TIER_LAUNCHPAD, group=SOURCE_LAUNCHPAD),
                     'market': pool4_hero_sources['market'],
                 }, now=now)
-        refresh_agent = (refresh_legacy or not isinstance(data.get('surf_agent_hero'), dict)
-                         or (data.get('swarm_seat_selected') or {}).get('token_id') != sw.parse_seat_token(self._seat_saved))
+        refresh_agent = (self._active_view in ('legacy', 'agent') and
+                         (refresh_legacy or not isinstance(data.get('surf_agent_hero'), dict)
+                          or (data.get('swarm_seat_selected') or {}).get('token_id') != sw.parse_seat_token(self._seat_saved)))
         if refresh_agent:
             # A full cycle retains its frozen detail family; cached repaints and
             # seat switches capture a new one without borrowing another seat.
@@ -7832,7 +8024,8 @@ class SurfManager:
                 if (seat['live'] or {}).get('live_state') == 'offline':
                     seat['live'] = None  # an incomplete roster cannot prove absent capacity
         data["surf_work"] = (self._card_reader.work_snapshot(sources['overview'])
-                             if self._hub_active else self._work_reader.project())
+                             if self._hub_active else self._work_reader.project()
+                             if self._active_view in ('legacy', 'work') else work.project(None, now=now))
         data["surf_oracles"] = self._oracles_reader.project()
         if self._hub_active:
             data.update(self._card_reader.pool_snapshot())
@@ -7857,7 +8050,7 @@ class SurfManager:
                                                       'pool_ids': self._swarm_token_pool_ids()})
                                                      if getattr(self, '_swarm_tokens_manager', None) is not None else None))
         data["surf_news_hero"] = self._news_hero(data, now)
-        data["surf_swarm_hero"] = self._swarm_hero(sources, now)
+        data["surf_swarm_hero"] = self._swarm_hero(sources, now, launch_keys=data)
         if refresh_agent:
             quote = data['surf_news_hero']['market']
             data.update(self._seat_rewards_keys(data, quote.get('price_usd'), now,
@@ -7927,7 +8120,7 @@ class SurfManager:
         """Read completed cache writes without offering any network work."""
         return self._project_hub()
 
-    def _swarm_hero(self, sources: dict, now: float) -> dict:
+    def _swarm_hero(self, sources: dict, now: float, *, launch_keys=None) -> dict:
         """Project one synchronous cache snapshot, including each route's clock."""
         scores_entry = self.cache.get_last_good(SLOT_SWARM_SCORES)
         scores = getattr(scores_entry, "payload", None)
@@ -7938,7 +8131,8 @@ class SurfManager:
             failed=self.cache.last_failure_ts(TIER_SWARM_SCORES) is not None or
             (workflows_ts is not None and scores_ts is not None and scores_ts > workflows_ts))
         launches = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
-        launch_keys = self._swarm_launch_keys()
+        if launch_keys is None:
+            launch_keys = self._swarm_launch_keys()
         launch_source = news_hero.source(launches.get("launches_ts"), now=now, ttl=TIER_TTL_SECONDS[TIER_SWARM_LAUNCHES],
             failed=self._swarm_launch_read_ok is False or self.cache.last_failure_ts(TIER_SWARM_LAUNCHES) is not None)
         sites_ts = news_hero._stamp(launches.get("sites_ts"), now)
@@ -8055,8 +8249,10 @@ class SurfManager:
                 self._work_reader.offer()
             return self._project_hub()
         task = self._offer_full(float(self._clock()))
-        if task is not None:
+        if task is not None and self._active_view == 'legacy':
             await asyncio.shield(task)
+        if self._active_view == 'dashboard':
+            return self._project_hub()
         data = self._project_hub(refresh_legacy=task is None)
         selected = data.get("swarm_seat_selected")
         if not self._closing:
@@ -8075,13 +8271,15 @@ class SurfManager:
         if self._full_task is None or self._full_task.done():
             if self._force_view or self._full_started is None or now - self._full_started >= self.poll_interval:
                 self._full_started = now
-                self._full_task = asyncio.create_task(self._collect_visible_detail(self._active_view, now))
+                entry = {'entry_refresh': True} if self._force_view else {}
+                self._full_task = asyncio.create_task(self._collect_visible_detail(self._active_view, now, **entry))
         self._force_view = False
         return self._project_hub()
 
     @read_cycle
-    async def _collect_visible_detail(self, view, now):
+    async def _collect_visible_detail(self, view, now, *, entry_refresh: bool = False):
         tiers = set(self.cache.tiers_due(now))
+        current = {'refresh_current': True} if entry_refresh else {}
         try:
             if view == 'swarm':
                 self._offer_hub_source('overview', now)
@@ -8101,22 +8299,39 @@ class SurfManager:
                     await self._offer_swarm_seat(tiers, token,
                         self.cache.get_last_good(SLOT_SWARM_SEAT), now)
                     self._spawn_runtime_latest(self.cache.get_last_good(SLOT_SWARM_SEAT), token, now)
-                    await self._card_reader._market()
+                    self._offer_native_read('market', self._card_reader._market)
             elif view == 'launchpad':
-                self._spawn_launchpad(tiers, now)
-                await self._card_reader._market()
+                self._spawn_launchpad(tiers, now, **current)
+                self._offer_native_read('market', self._card_reader._market)
             elif view in ('pool4', 'pool4_user'):
-                await asyncio.gather(self._pool_channel({TIER_MEDIUM}, now, None),
-                                     self._card_reader._market())
-                channel = getattr(self.cache.get_last_good(SLOT_CHANNEL), 'payload', None) or {}
-                self._spawn_pool4(tiers, now, channel.get('items'))
                 self._spawn_pool4_stakers(tiers, now)
+                async def protocol():
+                    await self._pool_channel({TIER_MEDIUM}, now, None)
+                    channel = getattr(self.cache.get_last_good(SLOT_CHANNEL), 'payload', None) or {}
+                    self._spawn_pool4(tiers, now, channel.get('items'), **current)
+                self._offer_native_read('protocol', protocol)
+                self._offer_native_read('market', self._card_reader._market)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.debug('SURF %s retained cached detail: %s', view, exc)
         finally:
             self.save_cache()
+
+    def _offer_native_read(self, name, read):
+        """Use the shared scope's task ownership without holding the next offer."""
+        key = 'native_' + name
+        running = self._hub_source_tasks.get(key)
+        if running is not None and not running.done():
+            return
+
+        async def collect():
+            try:
+                await self._guard(read, key)
+            finally:
+                self.save_cache()
+
+        self._hub_source_tasks[key] = asyncio.create_task(collect())
 
     def _hub_cached_identities(self) -> dict[int, dict]:
         entry = self.cache.get_last_good(SLOT_SWARM_SEAT)

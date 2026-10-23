@@ -12,7 +12,7 @@ from maxpane_dashboard.analytics.surf_nft import normalize_record, project_snaps
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.data.surf_nft_cache import SurfNftCache, _stamp
 from maxpane_dashboard.data.surf_nft_client import Budget, BudgetExhausted, SurfNftClient
-from maxpane_dashboard.data.surf_nft_discovery import SurfNftDiscovery, discovery_candidates
+from maxpane_dashboard.data.surf_nft_discovery import DiscoveryResult, SurfNftDiscovery, discovery_candidates
 from maxpane_dashboard.data.surf_nft_chain import SurfNftInspector, inspection_revision
 from maxpane_dashboard.data.surf_nft_rules.catalog import NFT_WORDS, project_catalog
 from maxpane_dashboard.data.surf_nft_rules.children import FACTORIES
@@ -61,6 +61,8 @@ class SurfNftManager:
         self._readme_generation = 0
         self._readme_key = None
         self._readme_base = None
+        self._candidate_source = None
+        self._candidate_cache = {}
         self._readme_cache = OrderedDict()
 
     def _retire_readme(self):
@@ -168,6 +170,9 @@ class SurfNftManager:
         return bool(not self._closed and any(task is not None and not task.done() and not task.cancelling()
                                             for task in (self._task, self._readme_task)))
 
+    def reader_offer_only(self, view):
+        return True
+
     def offer_hub(self):
         self._offer(proof_only=True)
 
@@ -228,7 +233,11 @@ class SurfNftManager:
         return self.get_snapshot()['nft_summary']
 
     def _candidates(self):
-        return {**discovery_candidates(self.state.get('discovery') or {}),
+        source = self.state.get('discovery')
+        if source is not self._candidate_source:
+            self._candidate_source = source
+            self._candidate_cache = discovery_candidates(source or {})
+        return {**self._candidate_cache,
                 **self.state.get('child_candidates', {})}
 
     def _uninspected_child(self, identity):
@@ -414,9 +423,18 @@ class SurfNftManager:
             return
         self.state.setdefault('evidence', {})[identity] = evidence
 
+    def _discovery_checkpoint(self, state):
+        self.state['discovery'] = state
+        self._candidate_source = None
+
     async def _discover(self, budget, **limits):
-        result = await self.discovery.advance(self.state.get('discovery'), budget=budget, **limits)
+        result = await self.discovery.advance(self.state.get('discovery'), budget=budget,
+                                              checkpoint=self._discovery_checkpoint, **limits)
         self.state['discovery'] = result.state
+        if isinstance(result, DiscoveryResult):
+            self._candidate_source, self._candidate_cache = result.state, result.candidates
+        else:
+            self._candidate_source = None
         self.state['discovery'].setdefault('raw', {})['coverage'] = result.coverage
         return result
 
@@ -484,6 +502,7 @@ class SurfNftManager:
                     await self._slice(probe, candidates[probe], budget, http=6, rpc=64, proof_only=True)
                     if self._proof_current(probe, candidates[probe]):
                         self.state['progress'].pop(probe, None)
+                        self._publish()
                 # Keep discovery/proof separate from mint/getter/source history.
                 # Recent proofs need no detail work to render collection counts.
                 for identity, candidate in self._pending(candidates, proof_only=True):
@@ -507,11 +526,14 @@ class SurfNftManager:
             priority = self._selected if self._selected in candidates and self._due(self._selected) else None
             if priority is not None:
                 await self._slice(priority, candidates[priority], budget, http=8, rpc=64, seconds=3)
+                self._publish()
             probe = self._focus(candidates, probe=True)
             if probe is not None and probe != priority and budget.can_admit():
                 await self._slice(probe, candidates[probe], budget,
                                   http=3 if priority is not None else 6, rpc=32,
                                   seconds=3, proof_only=True)
+                if self._proof_current(probe, candidates[probe]):
+                    self._publish()
             # A fresh proof is visible before its name/getters are loaded. Give
             # the oldest verified newcomer a small slice without replacing a
             # pinned factory/collection focus; background work keeps its turn.
@@ -558,14 +580,18 @@ class SurfNftManager:
                 self._failed = True
                 self._error_count += 1
                 log.warning('NFT projection retained last good catalog: %s', exc)
-            prepare = getattr(self.cache, 'prepare', None)
-            if prepare is not None:
-                self.state = prepare(self.state, selected_id=self._selected)
+            persist = getattr(self.cache, 'prepare_and_save', None)
+            if persist is not None:
+                self.state = persist(self.state, selected_id=self._selected)
+            else:
+                prepare = getattr(self.cache, 'prepare', None)
+                if prepare is not None:
+                    self.state = prepare(self.state, selected_id=self._selected)
+                self.cache.save(self.state, selected_id=self._selected)
             keep = set(self.state.get('evidence', {})) | set(self.state.get('progress', {}))
             self._inspection_attempts = {key: stamp for key, stamp in self._inspection_attempts.items() if key in keep}
             self._inspection_deferred = {key: stamp for key, stamp in self._inspection_deferred.items()
                                         if key in keep and stamp > self._clock()}
-            self.cache.save(self.state, selected_id=self._selected)
 
     async def wait_pending(self):
         while pending := [task for task in (self._task, self._readme_task)

@@ -490,6 +490,7 @@ class SurfCache:
         #: pool4's running counter totals, keyed by the same series name the
         #: reserve history uses -- one per network, for the same reason.
         self._pool4_accumulators: dict[str, dict[str, Any]] = {}
+        self.workflow_catalogue = None  # private certified listing, shared by card/SWARM
         # F7: whether any persisted field has changed since the last
         # successful ``save()``. ``save()`` skips the disk write entirely
         # while this is ``False`` -- the two swarm slots alone add ~276 KB to
@@ -1184,6 +1185,8 @@ class SurfCache:
             # a cursor that moves every block would make every tick look like
             # new data and the ``as of`` marker would advance for ever.
             "pool4_accumulators": _jsonable(self._pool4_accumulators),
+            **({"workflow_catalogue": self.workflow_catalogue}
+               if self.workflow_catalogue is not None else {}),
         }
         tmp = target + ".tmp"
         try:
@@ -1280,6 +1283,10 @@ class SurfCache:
             return
 
         reference = self._now(now)
+        # Private checkpoint, like the opaque launchpad cursor. The reader
+        # validates every row and clock before using it as a delta watermark.
+        checkpoint = payload.get('workflow_catalogue')
+        self.workflow_catalogue = checkpoint if isinstance(checkpoint, dict) else None
 
         try:
             for slot, data in self._outer_mapping(payload, "last_good").items():

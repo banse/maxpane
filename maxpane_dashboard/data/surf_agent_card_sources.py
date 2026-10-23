@@ -10,6 +10,11 @@ from maxpane_dashboard.data.surf_news_hero import _stamp, source
 from maxpane_dashboard.data.surf_swarm import coerce_oracle_index
 
 TTL = 600
+WORK_REQUEST_BUDGET, WORK_SECONDS = 24, 8
+
+
+class _BudgetExhausted(Exception):
+    pass
 
 
 def coerce_earnings(value, now):
@@ -29,6 +34,7 @@ class AgentCardSources:
         self.earnings_failed, self.work_failed, self.pending = set(), set(), set()
         self.attempts = {}
         self.work_attempts = {}
+        self._work_turn = 0
 
     def capture(self, now):
         oracle = coerce_oracle_index(getattr(self.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX), 'payload', None)) or {}
@@ -38,9 +44,9 @@ class AgentCardSources:
                     earnings_failed=set(self.earnings_failed), work_failed=set(self.work_failed),
                     pending=set(self.pending))
 
-    async def read(self, seat, now):
+    async def read(self, seat, now, *, priority_jobs=()):
         # Sources write disjoint cache slots; a slow explorer cannot gate job reads.
-        await asyncio.gather(self._earnings(seat, now), self._work(seat, now))
+        await asyncio.gather(self._earnings(seat, now), self._work(seat, now, priority_jobs=priority_jobs))
 
     async def _earnings(self, seat, now):
         owner = address(seat.get('owner'))
@@ -68,29 +74,41 @@ class AgentCardSources:
         finally:
             self.pending.discard(owner)
 
-    async def _work(self, seat, now):
+    async def _work(self, seat, now, *, priority_jobs=()):
         points = self.capture(now)['work']
         candidates = work.record_candidates(seat)
         accepted = set(work.candidates(seat))
         self.work_attempts = {job: stamp for job, stamp in self.work_attempts.items() if job in candidates}
+        self.work_failed.intersection_update(candidates)
         due = work.due(seat, points, now, cap=len(candidates), include_attempts=True)
-        due.sort(key=lambda job: (job not in accepted, job in points, self.work_attempts.get(job, 0)))
+        priority = set(priority_jobs) & set(candidates)
+        due.sort(key=lambda job: (self.work_attempts.get(job, 0), job not in priority, job not in accepted, job in points))
+        remaining = WORK_REQUEST_BUDGET
+        async def read(method, identity):
+            nonlocal remaining
+            if remaining <= 0:
+                raise _BudgetExhausted
+            remaining -= 1
+            return await method(identity)
         async def read_job(job):
-            self.work_attempts[job] = now
+            self._work_turn += 1
+            self.work_attempts[job] = self._work_turn
             try:
-                read = await self.swarm.read_job_detail(job)
-                stamp = read.observed_at if read is not None else None
-                detail = read.payload if read is not None else None
+                observed = await read(self.swarm.read_job_detail, job)
+                stamp = observed.observed_at if observed is not None else None
+                detail = observed.payload if observed is not None else None
                 point = work.membership_point(detail, job, stamp)
                 if point is not None and point['shipped'] is None:
-                    workflow = await self.swarm.fetch_workflow(detail['workflow']['id'])
+                    workflow = await read(self.swarm.fetch_workflow, detail['workflow']['id'])
                     identity = work.workflow_contract(detail, workflow, job)
-                    contract = (read if identity == job else await self.swarm.read_job_detail(identity)) if identity else None
+                    contract = (observed if identity == job else await read(self.swarm.read_job_detail, identity)) if identity else None
                     if contract is not None and contract.observed_at is not None:
                         stamp = min(stamp, contract.observed_at)
                         point = work.workflow_point(detail, workflow, contract.payload, job, stamp)
                     else:
                         point = None
+            except _BudgetExhausted:
+                return  # deferred work is not a failed observation
             except Exception:
                 point = None
             if point is None:
@@ -100,10 +118,16 @@ class AgentCardSources:
             self.work_failed.discard(job)
             self.cache.store_last_good(SLOT_AGENT_WORK, work.coerce_points(points, float(self.clock())), ts=stamp)
 
-        # Finish typical seat histories on the first read without an unbounded burst.
-        batch = due[:64]
-        for offset in range(0, len(batch), 4):
-            await asyncio.gather(*(read_job(job) for job in batch[offset:offset+4]))
+        # Count every source call, including workflow/contract followups. Keep
+        # completed membership points; next offer rotates past attempted jobs.
+        try:
+            async with asyncio.timeout(WORK_SECONDS):
+                for offset in range(0, len(due), 4):
+                    if remaining <= 0:
+                        break
+                    await asyncio.gather(*(read_job(job) for job in due[offset:offset+min(4, remaining)]))
+        except TimeoutError:
+            pass
 
 
 def project(capture, seat, *, now):

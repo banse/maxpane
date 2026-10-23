@@ -217,9 +217,21 @@ class SurfNftCache:
         return self._coerce(state, selected_id=selected_id)
 
     def save(self, state, *, selected_id=None):
+        try:
+            return self._write(self.prepare(state, selected_id=selected_id))
+        except (ValueError, TypeError, RecursionError) as exc:
+            log.debug('NFT cache validation failed: %s', exc)
+            return False
+
+    def prepare_and_save(self, state, *, selected_id=None):
+        """Validate once, persist that exact bounded snapshot, and retain it."""
+        clean = self.prepare(state, selected_id=selected_id)
+        self._write(clean)
+        return clean
+
+    def _write(self, clean):
         temporary = None
         try:
-            clean = self._coerce(state, selected_id=selected_id)
             payload = json.dumps(dict(clean, version=1, saved_at=self.clock()), allow_nan=False,
                                  separators=(',', ':')).encode()
             if len(payload) > self.MAX_BYTES:

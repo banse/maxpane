@@ -37,9 +37,11 @@ from __future__ import annotations
 import asyncio
 import copy
 import inspect
+import json
 import re
 from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -58,6 +60,7 @@ from maxpane_dashboard.data.surf_swarm_client import SEAT_BUSY, UNKNOWN_SEAT
 from tests.data.test_surf_manager import FakeClock, FakeSurfClient, NOW
 from tests.data.test_surf_manager_pool4 import FakePool4Client
 from tests.data.test_surfboard import capture as hub_capture
+from tests.data.test_surf_work_reader import source_page
 from tests.surf_swarm_fixtures import (
     swarm_capture_v2, swarm_capture_v6, swarm_details_v2, swarm_seat_capture, swarm_capture_v3,
 )
@@ -96,6 +99,17 @@ def _synthetic_jobs(n: int, *, start_ts: float, step_s: float = 1.0,
     ]
 
 
+def _work_capture():
+    return json.loads(Path('tests/fixtures/surf/work/captured.json').read_text())
+
+
+def _workflow(number, *, now, created=None, status='completed'):
+    row = _work_capture()['workflows'][0]
+    return dict(row, id=f'00000000-0000-0000-0000-{number:012d}', status=status,
+                createdAt=_stamp(now - 100 + number if created is None else created),
+                updatedAt=_stamp(now - 10), failure=None)
+
+
 class _FakeSwarm:
     """Serves committed swarm captures and counts what was asked for, per route.
 
@@ -131,6 +145,7 @@ class _FakeSwarm:
         self.calls: Counter = Counter()
         self.sweep_order: list[str] = []
         self.workflow_limits: list = []
+        self.workflow_queries: list = []
         self._fail_workflows = fail_workflows
         self._workflows = (swarm_capture_v6("workflows_limit12")["workflows"]
                            if workflows is None else workflows)
@@ -237,12 +252,15 @@ class _FakeSwarm:
         self.sweep_order.append("sites")
         return None if self._fail_sites else list(swarm_capture_v2("sites")["sites"])
 
-    async def fetch_workflows(self, *, limit=None, before=None):
+    async def fetch_workflows(self, *, limit=None, before=None, since=None):
         await asyncio.sleep(0)
         self.calls["workflows"] += 1
         self.sweep_order.append("workflows")
         self.workflow_limits.append(limit)
-        return None if self._fail_workflows else copy.deepcopy(self._workflows)
+        self.workflow_queries.append(dict(limit=limit, before=before, since=since))
+        return None if self._fail_workflows else source_page(
+            {'workflows': self._workflows}, 'workflows', limit=limit or 100,
+            before=before, since=since)
 
     async def fetch_workflow_history(self):
         rows = await self.fetch_workflows(limit=100)
@@ -605,21 +623,54 @@ def test_every_corpus_stamp_is_utc_iso_8601_with_milliseconds():
 
 
 async def test_the_sweep_reads_at_most_the_cap_newest_first(tmp_path):
-    """R-F: ``SWARM_SWEEP_CAP + 3`` jobs with distinct stamps -> exactly
-    ``SWARM_SWEEP_CAP`` detail reads, and the three *oldest* are the ones
-    not asked for."""
-    jobs = _synthetic_jobs(SWARM_SWEEP_CAP + 3, start_ts=V2_NOW - 3600.0)
-    # Shuffle the list order so a sort that trusts the host's order fails too.
+    """Publish lists first, bound optional work to 24/four, then resume fairly."""
+    raw = _work_capture()
+    clock = FakeClock(raw['read_ts'])
+    jobs = [dict(raw['jobs'][0], id=f'00000000-0000-0000-0000-{i:012d}',
+                 state='completed', createdAt=_stamp(clock() - 3600 + i),
+                 updatedAt=_stamp(clock() - 3600 + i + .5))
+            for i in range(SWARM_SWEEP_CAP + 3)]
+    details = {row['id']: dict(raw['details'][0], **row) for row in jobs}
     jobs = jobs[1::2] + jobs[0::2]
-    swarm = _FakeSwarm(jobs=jobs)
-    manager = _manager(tmp_path, swarm, clock=FakeClock(V2_NOW))
-    result = await manager._pool_swarm_scores({TIER_SWARM_SCORES}, V2_NOW)
-    assert result["ok"]
-    assert len(swarm.detail_calls) == SWARM_SWEEP_CAP
-    oldest = {"synthetic-0000", "synthetic-0001", "synthetic-0002"}
-    assert oldest.isdisjoint(swarm.detail_calls)
-    assert swarm.detail_calls[0] == f"synthetic-{SWARM_SWEEP_CAP + 2:04d}", "newest first"
-    await manager.close()
+    swarm = _FakeSwarm(jobs=jobs, details=details, workflows=raw['workflows'])
+    manager = _manager(tmp_path, swarm, clock=clock)
+    gate, four_started = asyncio.Event(), asyncio.Event()
+    original = swarm.fetch_job
+    active = peak = 0
+    async def gated(identity):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        if active == 4:
+            four_started.set()
+        try:
+            await gate.wait()
+            return await original(identity)
+        finally:
+            active -= 1
+    swarm.fetch_job = gated
+    pending = asyncio.create_task(manager._pool_swarm_scores({TIER_SWARM_SCORES}, clock()))
+    try:
+        await four_started.wait()
+        early = manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
+        assert early['workflows_complete'] is True and len(early['workflows']) == 2
+        assert early['details'] == [], 'list publication does not await optional details'
+        gate.set()
+        assert (await pending)['ok']
+        expected = [row['id'] for row in sorted(jobs, key=lambda row: row['createdAt'], reverse=True)]
+        assert swarm.detail_calls == expected[:24]
+        assert peak == 4
+        assert manager.cache.is_due(TIER_SWARM_SCORES, clock()), 'remaining work stays eligible'
+        clock.advance(30)
+        assert (await manager._pool_swarm_scores({TIER_SWARM_SCORES}, clock()))['ok']
+        assert swarm.detail_calls == expected[:48], 'fresh attempts cannot starve the next jobs'
+        stored = manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
+        assert {row['id'] for row in stored['details']} == set(expected[:48])
+        assert set(expected[-3:]).isdisjoint(swarm.detail_calls)
+    finally:
+        gate.set()
+        await asyncio.gather(pending, return_exceptions=True)
+        await manager.close()
 
 
 async def test_a_job_past_the_sweep_cap_is_still_served_from_the_seen_slot(tmp_path):
@@ -830,17 +881,27 @@ async def test_a_failed_jobs_read_leaves_the_seen_slot_untouched(tmp_path):
 
 async def test_the_slow_sweep_also_folds_the_seen_slot(tmp_path):
     """A1: seat records for jobs the live tier never saw executing enter the
-    slot through the sweep's detail read -- the 25 committed details cover
-    completed jobs whose nodes the live tier (executing only) never reads."""
+    slot progressively, but an older detail revision cannot restore its nodes."""
     swarm = _FakeSwarm()
     manager = _manager(tmp_path, swarm, clock=FakeClock(V2_NOW))
-    await manager._pool_swarm_scores({TIER_SWARM_SCORES}, V2_NOW)
-    seen = _seen(manager)
-    assert len(seen) == 100
-    with_nodes = {job_id for job_id, e in seen.items() if e["nodes"]}
-    assert with_nodes == {k for k in swarm._details if k in seen}
-    assert len(with_nodes) == 25
-    await manager.close()
+    try:
+        for _ in range(5):
+            before = len(swarm.detail_calls)
+            await manager._pool_swarm_scores({TIER_SWARM_SCORES}, manager._clock())
+            assert len(swarm.detail_calls) - before <= 24
+            manager._clock.advance(30)
+        seen = _seen(manager)
+        assert len(seen) == 100
+        with_nodes = {job_id for job_id, e in seen.items() if e['nodes']}
+        matching = {key for key, detail in swarm._details.items()
+                    if any(job['id'] == key and job['state'] == detail.get('state')
+                           and job['updatedAt'] == detail.get('updatedAt') for job in swarm._jobs)}
+        assert with_nodes == matching, 'only same-revision detail may populate historical nodes'
+        assert len(with_nodes) == 24
+        assert 'f046299c-d94e-4760-9e3c-c1e2d3a1a3b2' not in with_nodes
+        assert len(swarm.detail_calls) == len(set(swarm.detail_calls)) == 100
+    finally:
+        await manager.close()
 
 
 async def test_completed_24h_is_none_until_a_day_has_accumulated_then_an_int(tmp_path):
@@ -2021,27 +2082,36 @@ async def test_a_busy_detail_host_stops_the_live_loop_and_keeps_the_prior_read(t
 
 @pytest.mark.parametrize("answered", [0, 2])
 async def test_a_busy_detail_host_stops_the_sweep_and_keeps_the_prior_read(tmp_path, answered):
-    """The sweep reads up to ``SWARM_SWEEP_CAP`` details on a 1800 s tier:
-    busy after ``answered`` good details stops it there, stores nothing (a
-    short list is not "fewer jobs"), skips skills/launches/sites, and backs
-    the tier off."""
+    """Busy ends the admitted four-read batch without losing independent lists."""
     from maxpane_dashboard.data.surf_cache import TIER_FAILURE_BACKOFF_SECONDS
-    swarm = _FakeSwarm()
-    manager = _manager(tmp_path, swarm)
-    now = manager._clock()
+    raw = _work_capture()
+    clock = FakeClock(raw['read_ts'])
+    jobs = [dict(raw['jobs'][0], id=f'00000000-0000-0000-0000-{i:012d}',
+                 state='completed') for i in range(8)]
+    swarm = _FakeSwarm(jobs=jobs, details={row['id']: dict(raw['details'][0], **row) for row in jobs},
+                       workflows=[_workflow(1, now=clock())])
+    manager = _manager(tmp_path, swarm, clock=clock)
+    now = clock()
     try:
         assert (await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now))["ok"]
         prior = manager.cache.get_last_good(SLOT_SWARM_SCORES)
         assert len(prior.payload["details"]) > answered
         swarm.busy_from = swarm.calls["job"] + answered
         before = dict(swarm.calls)
-        later = now + 1800
+        later = clock.advance(1800)
+        swarm._workflows[0].update(status='cancelled', updatedAt=_stamp(later - 1))
         assert await manager._pool_swarm_scores({TIER_SWARM_SCORES}, later) == {"ok": False, "payload": None}
-        assert swarm.calls["job"] == before["job"] + answered + 1
+        assert swarm.calls['job'] == before['job'] + 4, 'finish only the already admitted batch'
+        assert swarm.calls['skills'] == before['skills'] + 1
+        assert swarm.calls['workflows'] == before['workflows'] + 1
         assert all(swarm.calls[route] == before.get(route, 0)
-                   for route in ("skills", "launches", "sites", "workflows"))
+                   for route in ('launches', 'sites'))
         entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
-        assert (entry.payload, entry.ts) == (prior.payload, prior.ts)
+        assert entry.payload['details'] == prior.payload['details']
+        assert entry.ts == prior.ts
+        assert entry.payload['workflows'][0]['status'] == 'cancelled'
+        assert entry.payload['workflows_ts'] == later
+        assert sorted(entry.payload['_detail_observations'].values()) == [now] * (8 - answered) + [later] * answered
         assert manager.cache.last_fetch_ts(TIER_SWARM_SCORES) == now
         assert (manager.cache.seconds_until_due(TIER_SWARM_SCORES, later)
                 == TIER_FAILURE_BACKOFF_SECONDS[TIER_SWARM_SCORES])
@@ -2054,11 +2124,11 @@ async def test_a_busy_detail_host_stops_the_sweep_and_keeps_the_prior_read(tmp_p
 # ---------------------------------------------------------------------------
 
 
-async def test_the_workflows_are_read_after_sites_and_land_behind_the_sweep_marker(tmp_path):
+async def test_workflows_are_read_before_skills_with_their_own_publication_clock(tmp_path):
     swarm = _FakeSwarm()
     manager, payload = await _landed(tmp_path, swarm)
     try:
-        assert [r for r in swarm.sweep_order if r not in ("launches", "sites")] == ["skills", "workflows"]
+        assert [r for r in swarm.sweep_order if r not in ("launches", "sites")] == ['workflows', 'skills']
         assert swarm.sweep_order.count("launches") == swarm.sweep_order.count("sites") == 1
         assert swarm.calls["workflows"] == 1
         # The client's own default page size is the one asked for.
@@ -2174,7 +2244,6 @@ async def test_a_slot_persisted_before_workflows_makes_the_sweep_due_next_cycle(
     "never read", not "read failed" -- so the tier is due on the next cycle
     even though its clock says fresh. A slot that has the key (a ``[]`` page
     here) is left to its TTL."""
-    from maxpane_dashboard.data.surf_cache import TIER_TTL_SECONDS
     clock = FakeClock(NOW)
     cache = _warm_cache_with_scores_slot(tmp_path, clock, legacy=legacy)
     assert TIER_SWARM_SCORES not in cache.tiers_due(clock())
@@ -2192,8 +2261,9 @@ async def test_a_slot_persisted_before_workflows_makes_the_sweep_due_next_cycle(
             after = await manager.fetch_and_compute()
             assert len(after["swarm_workflow_rows"]) == 12
             assert "workflows" in manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
-            assert manager.cache.seconds_until_due(TIER_SWARM_SCORES, clock()) == (
-                TIER_TTL_SECONDS[TIER_SWARM_SCORES])
+            assert manager.cache.seconds_until_due(TIER_SWARM_SCORES, clock()) == 0
+            stored = manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
+            assert len(stored['_detail_attempts']) == 24, 'history enrichment resumes on the next offer'
         else:
             assert manager._swarm_scores_task is None, "a slot with the key keeps its TTL"
             assert swarm.calls["workflows"] == 0 and swarm.calls["jobs"] == 0
@@ -2260,78 +2330,109 @@ async def test_persisted_non_list_routes_publish_none_but_empty_lists_survive(tm
             await manager.close()
 
 
-async def test_workflow_history_merges_newest_page_and_keeps_persisted_rows(tmp_path):
-    old = {"id": "older", "createdAt": "2026-09-01T00:00:00.000Z", "status": "blocked"}
-    fresh = {"id": "newer", "createdAt": "2026-10-01T00:00:00.000Z", "status": "completed"}
-    swarm = _FakeSwarm(workflows=[old, fresh])
-    manager = _manager(tmp_path, swarm)
+async def test_workflow_delta_updates_old_rows_and_retains_unchanged_history(tmp_path):
+    raw = _work_capture()
+    clock = FakeClock(raw['read_ts'])
+    now = clock()
+    old = _workflow(1, now=now, created=now - 5000, status='blocked')
+    fresh = _workflow(2, now=now, created=now - 100)
+    swarm = _FakeSwarm(jobs=[], details={}, workflows=[old, fresh])
+    manager = _manager(tmp_path, swarm, clock=clock)
     try:
-        now = manager._clock()
-        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now)
-        swarm._workflows = [dict(fresh, status="cancelled")]
-        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now + 1800)
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, clock())
+        assert swarm.workflow_queries == [dict(limit=100, before=None, since=None)]
+        initial_catalogue = copy.deepcopy(manager.cache.workflow_catalogue)
+        clock.advance(60)
+        swarm._workflows = [dict(old, status='cancelled', updatedAt=_stamp(clock() - 1))]
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, clock())
         entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
-        rows = manager._swarm_scores_keys(entry.payload, entry, None, now)["swarm_workflow_rows"]
-        assert [(row["workflow_id"], row["status"]) for row in rows] == [("newer", "cancelled"), ("older", "blocked")]
-        assert entry.payload["workflows_complete"] is True
-        assert entry.payload["workflows_ts"] == now + 1800
+        rows = manager._swarm_scores_keys(entry.payload, entry, None, clock())['swarm_workflow_rows']
+        assert [(row['workflow_id'], row['status']) for row in rows] == [
+            (fresh['id'], 'completed'), (old['id'], 'cancelled')]
+        assert swarm.workflow_queries[-1] == dict(
+            limit=100, before=None, since=_stamp(initial_catalogue['watermark'] - 300))
+        assert entry.payload['workflows_complete'] is True
+        assert entry.payload['workflows_ts'] == now + 60
+        assert manager.cache.workflow_catalogue['full_ts'] == now
+        certified = copy.deepcopy(manager.cache.workflow_catalogue)
         swarm._fail_workflows = True
-        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now + 3600)
+        clock.advance(60)
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, clock())
         after = manager.cache.get_last_good(SLOT_SWARM_SCORES)
-        assert after.payload["workflows"] == entry.payload["workflows"]
-        # Detail envelopes retain the fixed injected HTTP observation, while
-        # this successful cycle and workflow history have independent clocks.
-        assert after.ts == now
-        assert manager.cache.last_fetch_ts(TIER_SWARM_SCORES) == now + 3600
-        assert after.payload["workflows_ts"] == now + 1800
-        keys = manager._swarm_scores_keys(after.payload, after, None, now + 3600)
+        assert after.payload['workflows'] == entry.payload['workflows']
+        assert after.payload['workflows_ts'] == now + 60
+        assert manager.cache.workflow_catalogue == certified, 'failure cannot advance the update watermark'
+        keys = manager._swarm_scores_keys(after.payload, after, None, clock())
         from maxpane_dashboard.data.surf_cache import LastGood
-        assert keys["swarm_workflows_as_of_hhmm"] == LastGood(None, now + 1800).as_of_hhmm()
+        assert keys['swarm_workflows_as_of_hhmm'] == LastGood(None, now + 60).as_of_hhmm()
     finally:
         await manager.close()
 
 
-async def test_workflow_incomplete_backfill_retries_and_history_caps(tmp_path, monkeypatch):
-    monkeypatch.setattr(surf_manager_mod, "SWARM_WORKFLOW_HISTORY_CAP", 2)
-    swarm = _FakeSwarm(workflows=[])
-    manager = _manager(tmp_path, swarm)
-    calls = []
-    async def history():
-        calls.append(1)
-        return ([{"id": str(n), "createdAt": _stamp(V2_NOW + n)} for n in range(3)] + [{"id": "undated"}], len(calls) > 1)
-    swarm.fetch_workflow_history = history
+async def test_workflow_incomplete_backfill_resumes_after_failure_and_caps_display(tmp_path, monkeypatch):
+    from maxpane_dashboard.data import surf_work as work
+    monkeypatch.setattr(work, 'PAGE_LIMIT', 2)
+    monkeypatch.setattr(work, 'WORKFLOW_PAGES_PER_READ', 1)
+    monkeypatch.setattr(surf_manager_mod, 'SWARM_WORKFLOW_HISTORY_CAP', 2)
+    clock = FakeClock(_work_capture()['read_ts'])
+    rows = [_workflow(i, now=clock(), created=clock() - 100 + i) for i in range(1, 4)]
+    swarm = _FakeSwarm(jobs=[], details={}, workflows=rows)
+    manager = _manager(tmp_path, swarm, clock=clock)
     try:
-        now = manager._clock()
-        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now)
-        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, now + 1800)
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, clock())
+        first = manager.cache.get_last_good(SLOT_SWARM_SCORES)
+        assert first.payload['workflows_complete'] is False
+        assert manager.cache.workflow_catalogue is None
+        swarm._fail_workflows = True
+        clock.advance(30)
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, clock())
+        assert manager.cache.get_last_good(SLOT_SWARM_SCORES).payload['workflows_complete'] is False
+        assert manager.cache.workflow_catalogue is None
+        swarm._fail_workflows = False
+        for _ in range(2):
+            clock.advance(30)
+            await manager._pool_swarm_scores({TIER_SWARM_SCORES}, clock())
         entry = manager.cache.get_last_good(SLOT_SWARM_SCORES)
-        assert [row["id"] for row in entry.payload["workflows"]] == ["2", "1"]
-        assert len(calls) == 2 and entry.payload["workflows_complete"] is True
+        assert [row['id'] for row in entry.payload['workflows']] == [rows[2]['id'], rows[1]['id']]
+        assert len(swarm.workflow_queries) == 4
+        assert swarm.workflow_queries[1]['before'] == swarm.workflow_queries[2]['before']
+        assert swarm.workflow_queries[3]['before'] < swarm.workflow_queries[2]['before']
+        assert entry.payload['workflows_complete'] is True
+        assert {row['id'] for row in manager.cache.workflow_catalogue['rows']} == {row['id'] for row in rows}
     finally:
         await manager.close()
 
 
-@pytest.mark.parametrize("complete", [True, False, None])
-async def test_persisted_workflow_completion_selects_page_or_backfill(tmp_path, complete):
-    seed = _manager(tmp_path, _FakeSwarm())
-    row = {"id": "persisted", "createdAt": "2026-09-01T00:00:00.000Z"}
-    slot = {"workflows": [row]}
+@pytest.mark.parametrize('complete', [True, False, None])
+@pytest.mark.parametrize('certified', [False, True])
+async def test_persisted_workflow_catalogue_not_display_flag_authorizes_delta(tmp_path, complete, certified):
+    from maxpane_dashboard.data import surf_work_catalogue as catalogue
+    clock = FakeClock(_work_capture()['read_ts'])
+    row = _workflow(1, now=clock(), status='blocked')
+    seed = _manager(tmp_path, _FakeSwarm(jobs=[]), clock=clock)
+    slot = {'workflows': [row], 'workflows_ts': clock()}
     if complete is not None:
-        slot["workflows_complete"] = complete
-    seed.cache.store_last_good(SLOT_SWARM_SCORES, slot, ts=seed._clock())
+        slot['workflows_complete'] = complete
+    seed.cache.store_last_good(SLOT_SWARM_SCORES, slot, ts=clock())
+    if certified:
+        seed.cache.workflow_catalogue = catalogue.make_entry(
+            [row], 'workflows', now=clock(), read_ts=clock(), full_ts=clock())
     seed.cache.save()
     await seed.close()
-    swarm = _FakeSwarm(workflows=[])
-    backfills = []
-    async def history():
-        backfills.append(1)
-        return [], True
-    swarm.fetch_workflow_history = history
-    manager = _manager(tmp_path, swarm)
+    clock.advance(60)
+    updated = dict(row, status='completed', updatedAt=_stamp(clock() - 1))
+    swarm = _FakeSwarm(jobs=[], details={}, workflows=[updated])
+    manager = _manager(tmp_path, swarm, clock=clock)
     try:
-        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, manager._clock())
-        assert len(backfills) == (0 if complete is True else 1)
-        assert manager.cache.get_last_good(SLOT_SWARM_SCORES).payload["workflows"] == [row]
+        await manager._pool_swarm_scores({TIER_SWARM_SCORES}, clock())
+        assert len(swarm.workflow_queries) == 1
+        assert (swarm.workflow_queries[0]['since'] is not None) is certified
+        assert swarm.workflow_queries[0]['before'] is None
+        stored = manager.cache.get_last_good(SLOT_SWARM_SCORES).payload
+        assert [(r['id'], r['status']) for r in stored['workflows']] == [(row['id'], 'completed')]
+        assert stored['workflows_complete'] is True
+        assert stored['workflows_ts'] == clock()
+        assert manager.cache.workflow_catalogue['read_ts'] == clock()
     finally:
         await manager.close()
 

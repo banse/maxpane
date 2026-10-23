@@ -145,7 +145,49 @@ async def test_selection_race_drains_latest_without_cross_request_display(setup)
     data = reader.project()
     assert data['detail']['id'] == data['selected_id'] == third
     assert data['detail_state'] == 'ok'
-    assert [value for kind, value in client.calls if kind == 'detail'] == [first, third]
+    assert [value for kind, value in client.calls if kind == 'detail'] == [third]
+
+
+async def test_selection_cancels_old_detail_without_waiting_for_its_response(setup):
+    reader, client, cache, clock, raw = setup
+    first, second = list(raw['details'])[:2]
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+    fetch = client.fetch_oracle_detail
+    async def hanging(identity):
+        if identity == first:
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+        return await fetch(identity)
+    client.fetch_oracle_detail = hanging
+    task = reader.offer()
+    await entered.wait()
+    reader.select(second)
+    try:
+        await asyncio.wait_for(asyncio.shield(task), 1)
+        assert cancelled.is_set()
+        assert reader.project()['detail']['id'] == second
+        assert reader.project()['rows']
+        assert sum(kind == 'list' for kind, _ in client.calls) == 1
+    finally:
+        await reader.close()
+
+
+async def test_list_success_cadence_starts_when_the_read_starts(setup):
+    reader, client, cache, clock, raw = setup
+    fetch = client.fetch_oracle_requests
+    async def slow(*, limit):
+        clock.now += 20
+        return await fetch(limit=limit)
+    client.fetch_oracle_requests = slow
+    started = clock.now
+    await reader.offer(include_detail=False)
+    assert cache.last_fetch_ts(TIER_SURF_ORACLES) == started
+    clock.now = started + 60
+    assert reader.offer(include_detail=False) is not None
+    await reader.task
 
 
 @pytest.mark.asyncio

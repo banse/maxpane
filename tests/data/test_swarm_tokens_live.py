@@ -349,9 +349,8 @@ async def test_history_and_trade_work_waits_for_market_discovery():
         await manager.fetch_and_compute()
         await settle(manager)
         await manager.wait_pending()
-        assert not market.calls
-        await manager.fetch_and_compute()
-        await manager.wait_pending()
+        # A discovered pool offers its bounded history immediately, without
+        # waiting another poll; it still never reads history before a pool.
         assert market.calls and all(pool is not None for _, pool in market.calls)
     finally:
         await manager.close()
@@ -381,8 +380,10 @@ async def test_history_and_activity_do_not_cross_selected_market_pools():
         await manager.fetch_and_compute()
         await manager.wait_pending()
         after = await manager.fetch_and_compute()
-        assert all(row['sparkline'] is None for row in after['tokens'])
-        assert all(row['kind'] == 'LAUNCH' for row in after['activity'])
+        # New-pool history can now arrive within the same offered cycle.
+        assert all(point[0]['_pool'] == market.pool for point in manager._history.values()
+                   if point[1] == now[0])
+        assert all(event['kind'] == 'LAUNCH' or market.pool in event['id'] for event in after['activity'])
     finally:
         await manager.close()
 
@@ -487,7 +488,11 @@ async def test_new_expected_pool_withholds_cached_or_inflight_quote_and_reads_im
         await manager.wait_pending()
         fresh = await manager.fetch_and_compute()
         assert all(t['market_pool'] == new_pool and t['price_usd'] == 2 for t in fresh['tokens'])
-        assert len(market.calls) == 2  # same clock: invalidation, not TTL expiry
+        counts = {}
+        for batch in market.calls:
+            for row in batch:
+                counts[row['id']] = counts.get(row['id'], 0) + 1
+        assert set(counts.values()) == {2}  # same clock: invalidation, not TTL expiry
     finally:
         gate.set()
         await manager.close()
@@ -699,7 +704,7 @@ async def test_portfolio_and_market_share_singleflight_clocks_and_enrichment():
     manager = SwarmTokensManager(Source(), client=pages, market=market, clock=lambda:1000)
     try:
         await manager.fetch_portfolio()
-        await manager.wait_pending()
+        await manager._tasks['catalogue']
         await manager.fetch_portfolio()
         await entered.wait()
         await manager.fetch_and_compute()
@@ -779,10 +784,10 @@ async def test_portfolio_priority_reserves_capacity_for_oldest_market_candidates
     try:
         await manager.fetch_portfolio(priority_ids=[priority])
         await manager.wait_pending()
+        assert market.calls[0][0] == priority
+        assert sum(len(call) for call in market.calls) == 2
         await manager.fetch_and_compute()  # persisted portfolio priorities apply here too
         await manager.wait_pending()
-        assert market.calls[0][0] == priority
-        assert len(market.calls[0]) == 2
         # Make priorities due again: never-refreshed market tokens still get slots.
         now[0] += manager.MARKET_TTL
         await manager.fetch_portfolio(priority_ids=[priority])
@@ -935,15 +940,11 @@ async def test_hub_volume_offer_is_nonblocking_singleflight_and_never_reads_pric
     manager = SwarmTokensManager(Source(), client=Pages(rows()[:3]), market=market, clock=lambda: now[0])
     try:
         manager.offer_hub_volume()
-        await manager.wait_pending()
-        manager.offer_hub_volume()
-        await manager.wait_pending()
-        manager.offer_hub_volume()
         await entered.wait()
         manager.offer_hub_volume()
         await asyncio.sleep(0)
         assert manager.catalogue_summary()['volume']['points'] is None
-        assert len(market.markets) == 1 and len(market.volumes) == 1
+        assert sum(len(call) for call in market.markets) == 3 and len(market.volumes) == 1
         assert set(manager._tasks) == {'catalogue', 'markets', 'volume'}
         gate.set()
         await manager.wait_pending()
@@ -985,18 +986,20 @@ async def test_hub_volume_rotates_bounded_batches_before_retrying_old_work():
     try:
         manager.offer_hub_volume()
         await manager.wait_pending()
-        manager.offer_hub_volume()
-        await manager.wait_pending()
-        manager.offer_hub_volume()
-        await manager.wait_pending()
         assert len(market.calls) == 10
         manager.offer_hub_volume()
         await manager.wait_pending()
         assert len(market.calls) == 20
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        assert len(market.calls) == 25 and len(set(market.calls)) == 25
+        manager.offer_hub_volume()
+        await manager.wait_pending()
+        assert len(market.calls) == 25
         now[0] += manager.HISTORY_TTL
         manager.offer_hub_volume()
         await manager.wait_pending()
-        assert len(market.calls) == 30 and len(set(market.calls)) == 25
+        assert len(market.calls) == 35 and len(set(market.calls)) == 25
         assert manager.catalogue_summary()['volume']['points'] is None
     finally:
         await manager.close()

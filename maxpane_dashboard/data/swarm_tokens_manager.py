@@ -1,11 +1,12 @@
 """Nonblocking live SWARM TOKENS adapter; borrows SURF's launch evidence.
 
 Catalogue createdAt is launch-record time, not a proven deployment block time.
-Session caches keep their independent successful clocks; no demo values enter here.
+Retained observations keep independent successful clocks; no demo values enter here.
 """
 import asyncio
 from copy import deepcopy
 import math
+from pathlib import Path
 import time
 
 from maxpane_dashboard.analytics.surf_launch_checks import ZERO, address
@@ -14,6 +15,7 @@ from maxpane_dashboard.data.surf_swarm import launch_rows
 from maxpane_dashboard.data.series_points import coerce_points
 from maxpane_dashboard.data.swarm_tokens_client import SwarmTokensClient
 from maxpane_dashboard.data.swarm_tokens_models import TOKEN_KEYS
+from maxpane_dashboard.data.swarm_tokens_cache import SwarmTokensCache
 
 CHAINS = {1: 'eth', 8453: 'base', 4663: 'rh'}
 MARKET_FIELDS = ('price_usd', 'change_24h', 'mcap_usd', 'fdv_usd', 'volume_24h',
@@ -56,7 +58,7 @@ class SwarmTokensManager:
     VOLUME_BATCH = 10
     PROVENANCE_BATCH, PROVENANCE_RETRY = 3, 60
 
-    def __init__(self, surf_manager, *, client=None, market=None, clock=time.time):
+    def __init__(self, surf_manager, *, client=None, market=None, clock=time.time, cache_path=None):
         self.surf = surf_manager
         self.client = client or SwarmTokensClient()
         if market is None:
@@ -88,6 +90,54 @@ class SwarmTokensManager:
         self._active_view = 'legacy'
         self._retired = set()
         self._provenance_attempts = {}
+        parent_path = getattr(getattr(surf_manager, 'cache', None), 'path', None)
+        if cache_path is None and parent_path:
+            cache_path = Path(parent_path).with_name('swarm_tokens_cache.json')
+        self._cache = SwarmTokensCache(cache_path)
+        retained = self._cache.load(clock())
+        self._catalogue = retained.get('catalogue')
+        self._cat_as_of = retained.get('cat_as_of')
+        self._complete = retained.get('complete', False)
+        self._cat_attempt = self._cat_as_of if self._complete else None
+        for kind in ('market', 'history', 'trades', 'volume'):
+            values = retained.get(kind, {})
+            setattr(self, '_' + kind, values)
+            name = 'markets' if kind == 'market' else kind
+            self._attempts[name] = {key: point[1] for key, point in values.items()}
+            if kind == 'market':
+                self._market_expectations = {key: point[0].get('_expected_pool') for key, point in values.items()}
+            else:
+                self._detail_pools[name] = {key: point[0].get('_pool') for key, point in values.items()}
+        self._catalogue_generation = 0
+        self._source_revision = self._source_generation = self._source_cached = None
+        self._base_input = self._base_cached = self._indexed_base = None
+        self._identity_rows = {}
+        self._enriched_source, self._enriched_index = None, {}
+        self._enrichment_mode = None
+        self._selected_id = None
+        self._dependent_details = set()
+
+    def _save(self):
+        self._cache.save(dict(version=1, catalogue=self._catalogue, cat_as_of=self._cat_as_of,
+                              complete=self._complete, market=self._market, history=self._history,
+                              trades=self._trades, volume=self._volume), self._clock())
+
+    def reader_offer_only(self, view):
+        return True
+
+    def _source(self):
+        revision = getattr(self.surf, 'swarm_tokens_source_revision', None)
+        current = tuple(revision()) if callable(revision) else None
+        if (current is not None and self._source_revision is not None
+                and len(current) == len(self._source_revision)
+                and all(a is b for a, b in zip(current, self._source_revision))
+                and self._source_generation == self._catalogue_generation):
+            return self._source_cached
+        source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
+        if source != self._source_cached:
+            self._source_cached = source
+        self._source_revision, self._source_generation = current, self._catalogue_generation
+        return self._source_cached
 
     def set_active_view(self, view):
         if view == self._active_view:
@@ -100,11 +150,9 @@ class SwarmTokensManager:
         self._tasks.clear()
         self._task_token_ids.clear()
         self._portfolio_active = view == 'portfolio'
-        if view is not None:
-            self._cat_attempt = None
-            for attempts in self._attempts.values():
-                attempts.clear()
-            self._provenance_attempts.clear()
+        self._enrichment_mode = None
+        self._selected_id = None
+        self._dependent_details.clear()
 
     async def drain_reads(self):
         if self._retired:
@@ -118,6 +166,13 @@ class SwarmTokensManager:
             return
         self._tasks[name] = asyncio.create_task(coroutine)
         self._task_token_ids[name] = frozenset(token_ids)
+        if name in self._detail_pools:
+            self._tasks[name].add_done_callback(lambda _: self._resume_details(name))
+
+    def _resume_details(self, name):
+        if name in self._dependent_details:
+            self._dependent_details.discard(name)
+            self._offer_dependent(only=name)
 
     def is_loading(self, view: str | None = None, *, token_id: str | None = None) -> bool:
         """Observe accepted tasks, optionally scoped to one selected deployment."""
@@ -131,8 +186,8 @@ class SwarmTokensManager:
 
     async def wait_pending(self):
         """Observable completion seam for offline tests and one-shot live captures."""
-        if self._tasks:
-            await asyncio.gather(*tuple(self._tasks.values()), return_exceptions=True)
+        while pending := [task for task in self._tasks.values() if not task.done()]:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def _scan_catalogue(self):
         self._cat_attempt = self._clock()
@@ -145,6 +200,7 @@ class SwarmTokensManager:
                         or page and self._cursor is not None and page[0]['launchNumber'] >= self._cursor):
                     raise ValueError('failed or nonprogressing catalogue page')
                 self._scan.update({row['id']: row for row in page})
+                self._catalogue_generation += 1
                 if not self._complete:
                     prior = {row['id']: row for row in self._catalogue or []}
                     prior.update(self._scan)
@@ -165,7 +221,10 @@ class SwarmTokensManager:
         finally:
             # A cold catalogue completes between polls. Start its missing
             # provenance now; passive UI projections must never schedule I/O.
-            self._offer_provenance()
+            self._save()
+            if not asyncio.current_task().cancelling():
+                self._offer_provenance()
+                self._offer_dependent()
 
     def _catalogue_rows(self):
         if self._scan:
@@ -176,18 +235,33 @@ class SwarmTokensManager:
 
     def _base_rows(self, source):
         raw = self._catalogue_rows()
-        return launch_rows(raw) if raw is not None else source.get('rows')
+        if raw is None:
+            return source.get('rows')
+        if raw != self._base_input:
+            self._base_input, self._base_cached = deepcopy(raw), launch_rows(raw)
+        return self._base_cached
 
-    def _tokens(self, source, now, *, include_inactive=False):
+    def _tokens(self, source, now, *, include_inactive=False, selected_id=None):
         base = self._base_rows(source)
         if base is None:
             return None
-        enriched = {row['launch_id']: row for row in source.get('rows') or []}
+        if source is not self._enriched_source:
+            self._enriched_source = source
+            self._enriched_index = {row['launch_id']: row for row in source.get('rows') or []}
+        enriched = self._enriched_index
         result = {}
-        # Keep the market view's live representative when the same deployment
-        # has inactive aliases, so switching views never churns its pool cache.
-        for row in sorted(base, key=lambda r: (r.get('status') == 'live',
-                                             r.get('launch_number') or -1), reverse=True):
+        if base is not self._indexed_base:
+            self._indexed_base = base
+            self._ordered_rows = sorted(base, key=lambda r: (r.get('status') == 'live',
+                                        r.get('launch_number') or -1), reverse=True)
+            self._identity_rows = {}
+            for row in self._ordered_rows:
+                artifacts, _ = _token_artifacts(row)
+                for contract in artifacts:
+                    self._identity_rows.setdefault(f"{row.get('chain_id')}:{contract}", []).append(row)
+        # A selected identity uses the same representative and alias order.
+        population = self._ordered_rows if selected_id is None else self._identity_rows.get(selected_id, [])
+        for row in population:
             chain = row.get('chain_id')
             artifacts, ambiguous = _token_artifacts(row)
             if chain not in CHAINS or len(artifacts) != 1 or include_inactive and ambiguous:
@@ -267,13 +341,46 @@ class SwarmTokensManager:
         return list(result.values())
 
     async def _refresh_markets(self, tokens):
-        now = self._clock()
-        for token in tokens:
-            self._attempts['markets'][token['id']] = now
+        # The existing token budget is split over at most three independent
+        # chains. Cancellation drains every child before another offer starts.
+        async with asyncio.TaskGroup() as group:
+            for chain in dict.fromkeys(token.get('chain') for token in tokens):
+                if chain in CHAINS.values():
+                    batch = [token for token in tokens if token.get('chain') == chain]
+                    group.create_task(self._refresh_market_batch(batch))
+
+    async def _refresh_market_batch(self, batch):
+        previous_pools = {token['id']: self._market.get(token['id'], ({},))[0].get('market_pool')
+                          for token in batch}
+        for token in batch:
+            self._attempts['markets'][token['id']] = self._clock()
             self._market_expectations[token['id']] = token.get('launch_pool')
             baseline = self._price_baselines.get(token['id'])
             if baseline and baseline[0][0] != token.get('launch_pool'):
                 self._price_baselines.pop(token['id'])
+        try:
+            await self._refresh_market_chain(batch)
+        except asyncio.CancelledError:
+            for token in batch:
+                self._attempts['markets'].pop(token['id'], None)
+            raise
+        self._save()
+        new_pools = [token for token in batch if
+                     (pool := self._market.get(token['id'], ({},))[0].get('market_pool'))
+                     and pool != previous_pools[token['id']]]
+        if not new_pools:
+            return
+        # Coalesce newly discovered pools while an existing bounded detail
+        # batch is busy; its completion offers one bounded follow-up.
+        for name, pools in self._detail_pools.items():
+            task = self._tasks.get(name)
+            if task is not None and not task.done() and any(
+                    (pool := self._market.get(token['id'], ({},))[0].get('market_pool'))
+                    and pools.get(token['id']) != pool for token in new_pools):
+                self._dependent_details.add(name)
+        self._offer_dependent()
+
+    async def _refresh_market_chain(self, tokens):
         try:
             response = await self.market.fetch_markets(tokens)
         except Exception:
@@ -308,6 +415,9 @@ class SwarmTokensManager:
             self._detail_pools[name][key] = token.get('market_pool')
             try:
                 point = await method(token)
+            except asyncio.CancelledError:
+                self._attempts[name].pop(key, None)
+                raise
             except Exception:
                 point = None
             if point is not None and point.get('state') not in ('unavailable', 'error'):
@@ -315,6 +425,31 @@ class SwarmTokensManager:
                 self._failed[name].discard(key)
             else:
                 self._failed[name].add(key)
+        self._save()
+
+    def _offer_dependent(self, *, only=None):
+        """Use newly published inputs without scheduling another catalogue scan."""
+        if self._closed or self._active_view is None or self._retired or self._enrichment_mode is None:
+            return
+        now = self._clock()
+        source = self._source()
+        view = self._active_view
+        if self._selected_id is not None:
+            tokens = self._tokens(source, now, include_inactive=True, selected_id=self._selected_id)
+            self._offer_enrichment(tokens, now, only=only)
+        elif self._enrichment_mode in ('markets', 'volume'):
+            tokens = self._tokens(source, now, include_inactive=True)
+            self._offer_enrichment(tokens, now, markets_only=self._enrichment_mode == 'markets',
+                                   hub_volume=self._enrichment_mode == 'volume', only=only)
+        elif view in ('legacy', 'SWARM TOKENS', 'portfolio'):
+            tokens = self._tokens(source, now)
+            if self._portfolio_active:
+                candidates = self._tokens(source, now, include_inactive=True)
+                tokens = list({row['id']: row for group in (tokens, candidates) for row in group or []}.values())
+            self._offer_enrichment(tokens, now, only=only)
+        elif str(view).startswith('token:'):
+            tokens = self._tokens(source, now, include_inactive=True, selected_id=view[6:])
+            self._offer_enrichment(tokens, now, only=only)
 
     def offer_catalogue(self):
         """Schedule only catalogue discovery."""
@@ -325,7 +460,8 @@ class SwarmTokensManager:
     def offer_hub_volume(self):
         """Offer catalogue, shared selected markets and hourly USD volumes only."""
         now = self._clock()
-        source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
+        self._selected_id = None
+        source = self._source()
         tokens = self._tokens(source, now, include_inactive=True)
         self.offer_catalogue()
         self._offer_enrichment(tokens, now, hub_volume=True)
@@ -333,7 +469,8 @@ class SwarmTokensManager:
     def offer_hub_markets(self):
         """Offer only shared catalogue and bounded selected-market reads."""
         now = self._clock()
-        source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
+        self._selected_id = None
+        source = self._source()
         self.offer_catalogue()
         self._offer_enrichment(self._tokens(source, now, include_inactive=True), now, markets_only=True)
 
@@ -582,16 +719,23 @@ class SwarmTokensManager:
             self._provenance_attempts[row['id']] = (version, self._clock())
         try:
             await read([candidate[2] for candidate in batch])
+        except asyncio.CancelledError:
+            for _, _, row, _, _ in batch:
+                self._provenance_attempts.pop(row['id'], None)
+            raise
         except Exception:
             # Keep last-good facts and let the bounded retry queue advance.
             self._error_count += 1
 
-    def _offer_enrichment(self, tokens, now, *, hub_volume=False, markets_only=False):
+    def _offer_enrichment(self, tokens, now, *, hub_volume=False, markets_only=False, only=None):
+        self._enrichment_mode = 'markets' if markets_only else 'volume' if hub_volume else 'all'
         tiers = [('markets', self.MARKET_TTL, self.MARKET_BATCH)]
         tiers += ([] if markets_only else [('volume', self.HISTORY_TTL, self.VOLUME_BATCH)] if hub_volume else [
             ('history', self.HISTORY_TTL, self.DETAIL_BATCH),
             ('trades', self.TRADES_TTL, self.DETAIL_BATCH)])
         for name, ttl, limit in tiers:
+            if only is not None and name != only:
+                continue
             attempts = self._attempts[name]
             due = [row for row in tokens or []
                    if (name == 'markets' or row.get('market_pool'))
@@ -627,6 +771,7 @@ class SwarmTokensManager:
         """Offer existing cache work for exactly one identity; no overview mode change."""
         token = self.get_selected_token(token_id, launch_uuid=launch_uuid)
         await self.drain_reads()
+        self._selected_id = token_id
         if not str(self._active_view).startswith('token:'):
             self.offer_catalogue()
         if token is not None:
@@ -636,8 +781,8 @@ class SwarmTokensManager:
     def get_selected_token(self, token_id, *, launch_uuid=None):
         """Project one immutable identity from cache without offering network work."""
         now = self._clock()
-        source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
-        tokens = self._tokens(source, now, include_inactive=True)
+        source = self._source()
+        tokens = self._tokens(source, now, include_inactive=True, selected_id=token_id)
         token = next((row for row in tokens or [] if row['id'] == token_id
                       and (launch_uuid is None or row['launch_uuid'] == launch_uuid)), None)
         if token is None:
@@ -662,7 +807,7 @@ class SwarmTokensManager:
 
     def _snapshot(self, *, portfolio=False, offer=True):
         now = self._clock()
-        source = self.surf.swarm_tokens_source(catalogue=self._catalogue if self._complete else None)
+        source = self._source()
         tokens = self._tokens(source, now, include_inactive=portfolio)
         enrichment = tokens
         if self._portfolio_active:
@@ -673,6 +818,7 @@ class SwarmTokensManager:
             enrichment = list({row['id']: row for population in (candidates, market_tokens)
                                for row in population or []}.values())
         if offer:
+            self._selected_id = None
             self.offer_catalogue()
             self._offer_enrichment(enrichment, now)
             if not portfolio:
@@ -708,6 +854,7 @@ class SwarmTokensManager:
         for task in self._tasks.values():
             task.cancel()
         await self.wait_pending()
+        self._save()
         if self._owns_client:
             await self.client.close()
         if self._owns_market:

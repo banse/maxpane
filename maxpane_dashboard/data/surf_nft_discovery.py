@@ -16,7 +16,7 @@ import time
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.data.surf_nft_client import BudgetExhausted, SourceUnavailable, valid_page_cursor
 from maxpane_dashboard.data.surf_nft_rules.catalog import (
-    JOB_ID, NFT_WORDS, NON_BUILD_TEMPLATES, deployment_candidates, job_references, related_records, timestamp,
+    JOB_ID, NFT_WORDS, NON_BUILD_TEMPLATES, deployment_candidates, job_references, related_records, record_index, timestamp,
 )
 
 SEARCHES = ('NFT', '721', '1155', 'non-fungible', 'generative', 'mint', 'collection')
@@ -24,6 +24,8 @@ SOURCES = ('launches', 'jobs', 'workflows', 'publications', *(f'search:{q}' for 
 MAX_FACTS = 2000
 MAX_FACT_BYTES = 32 * 1024
 HEAD_TTL = 300.
+RECONCILE_TTL = 600.
+UPDATE_OVERLAP = 300.
 DETAIL_TTL = 600.
 RETRY_TTL = 120.
 
@@ -41,7 +43,10 @@ def empty_discovery_state():
         'version': 1, 'rotation': 0, 'observed_at': None, 'truncated': False,
         'sources': {source: {'head_at': None, 'tail_cursor': None, 'terminal': False,
                             'head_ids': [], 'refresh_ids': [], 'refresh_cursor': None,
-                            'last_attempt': None, 'retry_at': 0., 'count': 0,
+                            'last_attempt': None, 'retry_at': 0., 'head_retry_at': 0., 'count': 0,
+                            'reconcile_at': None, 'reconciling': False, 'updated_at': None,
+                            'scan_max': None, 'scan_started': None, 'scan_valid': True,
+                            'delta_since': None, 'delta_cursor': None, 'delta_max': None, 'delta_started': None,
                             'provider_total': None, 'warnings': [], 'recent_ids': []}
                     for source in SOURCES},
         'raw': {'launches': [], 'launchDetails': {}, 'jobDetails': {}, 'workflows': [],
@@ -217,9 +222,22 @@ def _restore(value):
         if not valid_page_cursor('jobs' if name.startswith('search:') else name, source.get('tail_cursor')):
             state['truncated'] = True
             continue  # Restart just this source, retaining all other facts/cursors.
-        for key in ('head_at', 'last_attempt', 'retry_at'):
+        for key in ('head_at', 'last_attempt', 'retry_at', 'head_retry_at', 'reconcile_at', 'updated_at', 'scan_max', 'scan_started'):
             if _number(source.get(key)):
                 defaults[key] = source[key]
+        defaults['reconciling'] = source.get('reconciling') is True
+        defaults['scan_valid'] = (source.get('scan_valid', True) is True
+                                  and (source.get('tail_cursor') is None or _number(source.get('scan_started'))))
+        if (name in ('jobs', 'workflows') and isinstance(source.get('delta_since'), str)
+                and valid_page_cursor(name, source['delta_since'])
+                and valid_page_cursor(name, source.get('delta_cursor'))):
+            defaults['delta_since'] = source['delta_since']
+            defaults['delta_cursor'] = source.get('delta_cursor')
+            for key in ('delta_max', 'delta_started'):
+                if _number(source.get(key)):
+                    defaults[key] = source[key]
+        elif source.get('delta_since') is not None or source.get('delta_cursor') is not None:
+            defaults['head_retry_at'] = 0.  # Corrupt optional progress cannot strand good facts.
         defaults['tail_cursor'] = source.get('tail_cursor') if type(source.get('tail_cursor')) in (str, int) else None
         if valid_page_cursor('jobs' if name.startswith('search:') else name, source.get('refresh_cursor')):
             defaults['refresh_cursor'] = source.get('refresh_cursor')
@@ -290,11 +308,18 @@ def validate_discovery_state(value, now):
         state['observed_at'] = None
         state['truncated'] = True
     for source in state['sources'].values():
-        for key in ('head_at', 'last_attempt'):
+        for key in ('head_at', 'last_attempt', 'reconcile_at', 'updated_at', 'delta_max', 'delta_started', 'scan_max', 'scan_started'):
             if source[key] is not None and not 0 <= source[key] <= now:
                 source[key] = None
+                if key.startswith('scan_'):
+                    source['scan_valid'] = False
                 source['terminal'] = False
                 _warn(source, 'invalid_observation_clock')
+        if source['reconcile_at'] is None:
+            source['reconcile_at'] = now
+        if timestamp(source['delta_since']) is not None and timestamp(source['delta_since']) > now:
+            source.update(delta_since=None, delta_cursor=None, delta_max=None, delta_started=None)
+            _warn(source, 'invalid_update_clock')
     raw = state['raw']
     for family in ('launches', 'launchDetails', 'jobDetails', 'workflows', 'publications', 'sites'):
         values = raw[family]['sites'] if family == 'sites' else raw[family]
@@ -357,9 +382,10 @@ def discovery_candidates(state):
     found = deployment_candidates(raw)
     references = job_references(raw.get('jobDetails', {}))
     priority_jobs, priority_launches = priority_references(raw)
+    index = record_index(raw, references)
     for identity, candidate in found.items():
         jobs, sites, repos = related_records(raw, candidate['jobIds'], candidate['address'],
-                                           candidate['launchIds'], references=references)
+                                           candidate['launchIds'], references=references, index=index)
         candidate['jobIds'] = [j['id'] for j in jobs]
         candidate['nft_intent'] = (any(v in priority_launches for v in candidate['launchIds'])
                                    or any(v in priority_jobs for v in candidate['jobIds']))
@@ -483,7 +509,28 @@ class SurfNftDiscovery:
                 source['refresh_ids'] = []
         return True
 
-    async def advance(self, state=None, *, budget, page_limit=4, detail_limit=8, launch_limit=4):
+    @staticmethod
+    def _scan_page(source, page, now):
+        """Only a clean, complete scan certifies an update baseline."""
+        if source['scan_started'] is None:
+            source['scan_started'] = now
+        stamps = [timestamp(row.get('updatedAt')) for row in page.rows]
+        if page.warning or any(stamp is None or stamp > now for stamp in stamps):
+            source['scan_valid'] = False
+        elif stamps:
+            source['scan_max'] = max([source['scan_max'] or 0, *stamps])
+        if page.terminal and source['scan_valid'] and not source['warnings'] and source['scan_max'] is not None:
+            source['updated_at'] = max(source['updated_at'] or 0,
+                                      min(source['scan_max'], source['scan_started']))
+
+    @staticmethod
+    def _checkpoint(state, checkpoint):
+        if checkpoint is not None:
+            # Do not certify coverage until all admitted work has finished.
+            state['raw']['coverage'] = {**state['raw'].get('coverage', {}), 'complete': False}
+            checkpoint(state)
+
+    async def advance(self, state=None, *, budget, page_limit=4, detail_limit=8, launch_limit=4, checkpoint=None):
         if any(type(v) is not int or v < 0 for v in (page_limit, detail_limit, launch_limit)):
             raise ValueError('invalid discovery work limit')
         state = validate_discovery_state(state, self.clock())
@@ -496,11 +543,34 @@ class SurfNftDiscovery:
             checked += 1
             source = state['sources'][name]
             now = self.clock()
-            if source['retry_at'] > now:
-                continue
+            if (name not in ('sites', 'capabilities') and not source['reconciling'] and source['terminal']
+                    and (source['delta_since'] is None or source['head_retry_at'] > 0)
+                    and now - source['reconcile_at'] >= RECONCILE_TTL):
+                # Revisit older records even on sources without an update API.
+                # Retain accepted facts; only a validated terminal page certifies this scan.
+                source.update(reconciling=True, reconcile_at=now, terminal=False,
+                              tail_cursor=None, count=0, recent_ids=[], refresh_cursor=None,
+                              scan_started=now, scan_max=None, scan_valid=True,
+                              delta_since=None, delta_cursor=None, delta_max=None, delta_started=None)
+            if (name in ('jobs', 'workflows') and not source['reconciling'] and source['updated_at'] is not None
+                    and source['delta_since'] is None and now - (source['head_at'] or 0) >= HEAD_TTL):
+                source['delta_since'] = datetime.fromtimestamp(max(0, source['updated_at'] - UPDATE_OVERLAP),
+                    timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+                source['delta_max'] = source['updated_at']
+                source['delta_started'] = now
+            delta = source['delta_since'] is not None
             refreshing = source['refresh_cursor'] is not None
-            head = not refreshing and (source['head_at'] is None or now - source['head_at'] >= HEAD_TTL)
-            if not head and not refreshing and source['terminal']:
+            head = not delta and not refreshing and (source['head_at'] is None or now - source['head_at'] >= HEAD_TTL)
+            # A reconciliation's first page doubles as its head observation. Later
+            # head reads have their own retry lane and never rewind history.
+            if source['reconciling'] and source['tail_cursor'] is None:
+                head = False
+            retry_key = 'head_retry_at' if delta or head or refreshing else 'retry_at'
+            if source[retry_key] > now:
+                continue
+            history_page = not delta and not refreshing and (not head or source['head_at'] is None)
+            first_history = history_page and source['tail_cursor'] is None
+            if not delta and not head and not refreshing and source['terminal']:
                 continue
             if not budget.can_admit():
                 state['rotation'] = index
@@ -512,21 +582,44 @@ class SurfNftDiscovery:
                     read = await self.client.detail('capabilities', None, budget=budget)
                     source.update(head_at=read.observed_at, terminal=True)
                     state['observed_at'] = read.observed_at
+                    self._checkpoint(state, checkpoint)
                     continue
                 page = await self.client.page('jobs' if name.startswith('search:') else name,
-                                              cursor=None if head else source['refresh_cursor'] if refreshing else source['tail_cursor'],
+                                              cursor=source['delta_cursor'] if delta else None if head else source['refresh_cursor'] if refreshing else source['tail_cursor'],
                                               query=name.partition(':')[2] if name.startswith('search:') else None,
-                                              budget=budget)
-                if self._accept_page(source, page, head=head, refreshing=refreshing):
+                                              budget=budget, **({'since': source['delta_since']} if delta else {}))
+                if delta:
+                    stamps = [timestamp(row.get('updatedAt')) for row in page.rows]
+                    if (page.warning or any(stamp is None or stamp > self.clock() or stamp < timestamp(source['delta_since']) for stamp in stamps)
+                            or not page.terminal and page.next_cursor == source['delta_cursor']):
+                        raise SourceUnavailable('uncertified update page')
+                    source['delta_max'] = max([source['delta_max'] or 0, *stamps])
+                    source['delta_cursor'] = page.next_cursor
+                    if page.terminal:
+                        source.update(updated_at=min(source['delta_max'], source['delta_started'] or now),
+                                      head_at=page.observed_at, delta_since=None, delta_cursor=None,
+                                      delta_max=None, delta_started=None)
+                    accepted = True
+                else:
+                    accepted = self._accept_page(source, page, head=head, refreshing=refreshing)
+                    if accepted and history_page:
+                        self._scan_page(source, page, now)
+                        if first_history:
+                            source['head_at'] = page.observed_at
+                        if source['reconciling'] and page.terminal:
+                            source['reconciling'] = False
+                if accepted:
+                    source[retry_key] = 0.
                     self._ingest(state, name, page.rows, page.observed_at)
                     state['observed_at'] = page.observed_at
+                    self._checkpoint(state, checkpoint)
                 else:
-                    source['retry_at'] = self.clock() + RETRY_TTL
+                    source[retry_key] = self.clock() + RETRY_TTL
             except BudgetExhausted:
                 state['rotation'] = index
                 break
             except (SourceUnavailable, ValueError):
-                source['retry_at'] = self.clock() + RETRY_TTL
+                source[retry_key] = self.clock() + RETRY_TTL
                 # Failed refresh never destroys previously observed tail completeness.
         priority_jobs, priority_launches = priority_references(state['raw'])
         launch_numbers = {row['id']: row.get('launchNumber') for row in state['raw']['launches']}
@@ -555,6 +648,7 @@ class SurfNftDiscovery:
                 for job in fact.get('jobs', []):
                     self._queue(state, job.get('id'), revision=job.get('updatedAt'))
                 state['pending_launches'].pop(identity)
+                self._checkpoint(state, checkpoint)
             else:
                 state['truncated'] = True
                 pending['retry_at'] = self.clock() + RETRY_TTL
@@ -606,6 +700,7 @@ class SurfNftDiscovery:
                 self._queue(state, version.get('jobId'))
             for linked in JOB_ID.findall(fact.get('objective') or ''):
                 self._queue(state, linked)
+            self._checkpoint(state, checkpoint)
         # Workflow/publication links discovered earlier also join newly loaded jobs.
         linked_jobs = set(state['raw']['jobDetails'])
         for workflow in state['raw']['workflows']:
@@ -619,7 +714,7 @@ class SurfNftDiscovery:
                 for identity in linked:
                     self._queue(state, identity)
         _bound(state)
-        coverage = {'complete': (all(v['terminal'] and v['refresh_cursor'] is None and not v['warnings'] for k, v in state['sources'].items()
+        coverage = {'complete': (all(v['terminal'] and v['refresh_cursor'] is None and v['delta_since'] is None and not v['warnings'] for k, v in state['sources'].items()
                                      if k not in ('sites', 'capabilities'))
                                  and not state['pending_launches'] and not state['pending_jobs'] and not state['truncated']),
                     'truncated': state['truncated'], 'observed': state['observed_at'] is not None,

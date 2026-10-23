@@ -252,13 +252,15 @@ class SurfNftClient(OwnedHttpClient):
                 continue
         raise SourceUnavailable('public API did not answer')
 
-    async def page(self, source, *, cursor=None, query=None, budget):
+    async def page(self, source, *, cursor=None, query=None, since=None, budget):
         if source not in ('launches', 'jobs', 'workflows', 'publications', 'sites'):
             raise ValueError('unknown discovery source')
         if query is not None and (source != 'jobs' or not isinstance(query, str) or len(query) > 200):
             raise ValueError('invalid search query')
         if not valid_page_cursor(source, cursor):
             raise ValueError('invalid discovery cursor')
+        if since is not None and (source not in ('jobs', 'workflows') or _timestamp(since) is None):
+            raise ValueError('invalid update filter')
         if source == 'publications':
             params = {'page': str(cursor or 1), 'pageSize': '100'}
         else:
@@ -267,6 +269,8 @@ class SurfNftClient(OwnedHttpClient):
                 params['before'] = str(cursor)
             if query is not None:
                 params['q'] = query
+            if since is not None:
+                params['since'] = since
         body = await self._get('/' + source, budget=budget, params=params)
         rows = body.get('items' if source == 'publications' else source) if isinstance(body, dict) else None
         if (not isinstance(rows, list) or len(rows) > 100 or any(not isinstance(r, dict) for r in rows)
@@ -274,6 +278,9 @@ class SurfNftClient(OwnedHttpClient):
                 or len({r['id'] for r in rows}) != len(rows)):
             raise SourceUnavailable('malformed discovery page')
         warning = None
+        if since is not None and any(_timestamp(row.get('updatedAt')) is None or
+                                     _timestamp(row['updatedAt']) < _timestamp(since) for row in rows):
+            raise SourceUnavailable('update filter was not honored')
         if source == 'publications':
             total, pages = body.get('count'), body.get('totalPages')
             if type(total) is not int or total < 0 or type(pages) is not int or pages < 0:

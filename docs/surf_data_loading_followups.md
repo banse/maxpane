@@ -1,5 +1,35 @@
 # Surf data loading — execution and follow-ups
 
+## 2026-10-23 cross-view implementation
+
+The owner authorized the full actionable order in the
+[BOARDROOM loading review](surf_boardroom_loading_review_2026_10_23.md).
+[Implementation and measured evidence](surf_loading_improvements_2026_10_23.md)
+cover the shared reader, NFT acquisition/publication, SWARM/AGENT, TOKENS and
+native-source scheduling. The independent source guards remain authoritative;
+no catch-up queue or hidden-view acquisition is introduced.
+
+Remaining conditional work: measure actual dirty-write frequency before cache
+write coalescing; measure a launch with more than twelve contributor jobs before
+expanding token contributor continuation; keep Launchpad history/cursor changes
+separate from cheap current-value refresh. Large catalogues can require multiple
+bounded cycles. A complete FLEET ranking stays retained when the budget cannot
+refresh every active constituent within its TTL.
+
+Validation maintenance: 27 native screen assertions reproduce on baseline
+`21208b1a` (old labels/heroes/filter reset and loading-timer behavior). The TOKENS
+CSS guard still includes the later SWORN block, also a baseline failure. Six
+shared-data failures are likewise baseline: four old pool-card source doubles,
+BOARD's omitted `swarm_launch_read_ts`, and the old unavailable-seat caption.
+Update these expectations when their own UI/contracts are next changed; this
+loading implementation does not change them to conceal failures.
+
+Minor review residual: the malformed launch/cancellation regression detects the
+combined original bug but cannot independently detect removal of normalization
+while TaskGroup remains. When this test file is next touched, add a clean
+completed-read assertion for the normalized publication. The reviewer verified
+that production path directly; this is a test-rigor follow-up.
+
 ## 2026-10-23 boxed loading marker and WIP captions
 
 The [caption follow-up](card_loading_footer_plan.md) replaces the plain diamond
