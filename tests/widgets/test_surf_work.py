@@ -111,6 +111,37 @@ async def test_recent_workflow_does_not_make_old_child_recent_or_duplicate_jobs(
         assert 'job-b' in painted(app, '#work-detail-panel')
 
 
+async def test_empty_24h_workflows_fall_back_to_latest_three_then_return_to_recent():
+    data = payload()
+    data.update(now_ts=200_000, read_ts=200_000, jobs=[], jobs_loaded=0,
+                workflows_loaded=5, projects=[])
+    data['workflows'] = [dict(id=f'flow-{i}', status='blocked' if i == 4 else 'completed',
+                             objective=f'Older workflow {i}', created_ts=60_000 - i,
+                             updated_ts=70_000 + i, contracts_job_id=None, frontend_job_id=None)
+                         for i in range(5)]
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app, body = pilot.app, pilot.app.query_one(SurfWorkBody)
+        tree = app.query_one('#work-tree', Tree)
+        assert [n.data[0] for n in tree.root.children if n.data] == [
+            'workflow:flow-4', 'workflow:flow-3', 'workflow:flow-2']
+        output = painted(app, '#work-tree-panel')
+        assert 'LATEST 3' in output
+        assert 'Older workflow 4' in output and 'Older workflow 2' in output
+        assert 'Older workflow 1' not in output
+        select(tree, 'workflow:flow-3')
+        await pilot.pause()
+        assert 'Older workflow 3' in painted(app, '#work-detail-panel')
+        body.update_data(surf_work=deepcopy(data))
+        await pilot.pause()
+        assert body._selected == 'workflow:flow-3'
+        data['workflows'][0]['updated_ts'] = 199_999
+        body.update_data(surf_work=data)
+        await pilot.pause()
+        assert [n.data[0] for n in tree.root.children if n.data] == ['workflow:flow-0']
+        assert 'LATEST 3' not in painted(app, '#work-tree-panel')
+
+
 def painted(app, selector):
     region = app.query_one(selector).region
     return "\n".join(strip.crop(region.x, region.right).text for strip in app.screen._compositor.render_strips()[region.y:region.bottom])

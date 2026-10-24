@@ -189,6 +189,7 @@ class SurfWorkBody(Horizontal):
         self._payload = {}
         self._selected = None
         self._filter = "24h"
+        self._workflow_fallback = set()
         self._search = ""
         self._work_nodes = {}
         self._entries = {}
@@ -277,6 +278,11 @@ class SurfWorkBody(Horizontal):
         self._work_nodes, self._entries = {}, {}
         jobs = self._payload.get("jobs")
         workflows = self._payload.get("workflows")
+        self._workflow_fallback = set()
+        if self._filter == "24h" and workflows and not any(
+                recent_activity(row, self._payload.get("now_ts")) for row in workflows):
+            self._workflow_fallback = {row['id'] for row in sorted(
+                workflows, key=lambda row: -(activity_ts(row) or 0))[:3]}
         projects = self._payload.get("projects") or []
         by_id = {j["id"]: j for j in jobs or []}
         flow_by_id = {w["id"]: w for w in workflows or []}
@@ -331,7 +337,8 @@ class SurfWorkBody(Horizontal):
             original_open = workflow_is_open(workflow.get("status")) is True
             allowed = (blocked or original_open) if self._filter == "blocked" else original_open or history_search
             if self._filter == "24h":
-                allowed = recent_activity(workflow, self._payload.get("now_ts"))
+                allowed = (workflow['id'] in self._workflow_fallback
+                           or recent_activity(workflow, self._payload.get("now_ts")))
             if not allowed:
                 return [], False
             match = parent_match or matches_row(workflow)
@@ -371,7 +378,7 @@ class SurfWorkBody(Horizontal):
             for wid in missing_flows:
                 if "missing-workflow:" + wid not in self._entries:
                     add(parent, "missing-workflow:" + wid, "missing workflow", {"id": wid}, wid, suffix="workflow not loaded")
-        for workflow in sorted(workflows or [], key=lambda w: (w.get("status") == "blocked", -(activity_ts(w) or 0))):
+        for workflow in sorted(workflows or [], key=lambda w: (w.get("status") == "blocked" and not self._workflow_fallback, -(activity_ts(w) or 0))):
             if workflow["id"] not in project_flows:
                 children, show = flow_view(workflow)
                 if children or show:
@@ -445,6 +452,8 @@ class SurfWorkBody(Horizontal):
             jobs_title += " · " + WIDEN_HINT
         self.query_one("#work-jobs-panel .panel-title", Static).update(Text(jobs_title))
         coverage = f"{_count(self._payload.get('jobs_loaded'))} jobs · {_count(self._payload.get('workflows_loaded'))} workflows loaded · {hhmm(self._payload.get('read_ts'), unknown='--:--')}"
+        if self._workflow_fallback:
+            coverage = f"LATEST {len(self._workflow_fallback)} · " + coverage
         if self._payload.get("partial"):
             coverage += " · partial"
         if state == "unavailable":
