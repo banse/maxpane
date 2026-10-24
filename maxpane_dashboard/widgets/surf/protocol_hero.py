@@ -97,10 +97,9 @@ class ProtocolHeroCard(Pool4HeroCard):
 
     def set_record(self, record):
         self.raw_record = record
-        super().set_record(self._fit_content(record))
+        super().set_record(record)
 
     def on_resize(self):
-        self.data = self._fit_content(self.raw_record)
         super().on_resize()
 
     def _footer(self):

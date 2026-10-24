@@ -93,12 +93,11 @@ class LaunchpadHeroCard(Pool4HeroCard):
 
     def set_record(self, record):
         self.raw_record = record
-        super().set_record(self._fit_content(record))
+        super().set_record(record)
         if record.stats:
             self.tooltip = Text(str(self.tooltip) + "\n" + "\n".join(f"{label} {value}" for label, value in record.stats))
 
     def on_resize(self):
-        self.data = self._fit_content(self.raw_record)
         super().on_resize()
 
 

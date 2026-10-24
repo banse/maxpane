@@ -1,4 +1,4 @@
-"""BOARDROOM captions and missing values follow the footer's shared clock."""
+"""BOARDROOM captions follow the footer clock while card values stay static."""
 from rich.cells import cell_len
 from textual.screen import Screen
 
@@ -7,6 +7,7 @@ from maxpane_dashboard.widgets.status_bar import StatusBar
 from tests.screens.test_surfboard_layout import HubHarness
 from tests.surfboard_fixtures import hub_payload
 from tests.widgets.test_status_bar_loading import ManualTimer
+from tests.widgets.test_card_loading import face, inset_rows, card_styles
 
 
 def caption_ink(screen, text):
@@ -15,25 +16,17 @@ def caption_ink(screen, text):
     return next(iter(row.crop(x, x + 2))).style.color.get_truecolor()
 
 
-def assert_loading_block(screen, gray):
-    rows = screen._compositor.render_strips()
-    y, x = next((y, row.text.index('<>')) for y, row in enumerate(rows) if '<>' in row.text)
-    for dy, expected in ((-1, '      '), (0, '  <>  '), (1, '      ')):
-        block = rows[y+dy].crop(x-2, x+4)
-        assert block.text == expected
-        assert all(segment.style.bgcolor.get_truecolor() == (gray, gray, gray) for segment in block)
-
-
 async def test_captions_share_footer_phase_and_restore_idle_on_leave(monkeypatch):
+    monkeypatch.delenv('NO_COLOR', raising=False)
     clocks = []
-    original = DashboardScreen.set_interval
+    set_interval = DashboardScreen.set_interval
 
     def interval(screen, seconds, callback, **kwargs):
         if callback.__name__ == '_tick_loading':
             timer = ManualTimer(seconds, callback)
             clocks.append(timer)
             return timer
-        return original(screen, seconds, callback, **kwargs)
+        return set_interval(screen, seconds, callback, **kwargs)
 
     def forbidden_timer(*args, **kwargs):
         raise AssertionError('screen owns the loading clock')
@@ -43,7 +36,7 @@ async def test_captions_share_footer_phase_and_restore_idle_on_leave(monkeypatch
     payload = hub_payload()
     wip = next(card for card in payload['surfboard_cards'] if card['key'] == 'work')
     wip['work_summary'] = {'workflows': None}
-    wip['primary'] = '—'  # Footer counts are static zero; animate the main value.
+    wip['primary'] = '—'  # The unread central value stays blank through every phase.
     app = HubHarness(payload)
     manager = app.hub._data_manager
     reads = 0
@@ -63,6 +56,10 @@ async def test_captions_share_footer_phase_and_restore_idle_on_leave(monkeypatch
         screen._tick_loading()
         await pilot.pause()
         idle = caption_ink(screen, 'キープ')
+        card = screen.query_one('#surfboard-card-work')
+        original, styles = face(app, card), card_styles(app, card)
+        assert not any(row.strip() for row in inset_rows(app, card))
+        assert '0 workflows' in original
         assert idle == (9, 155, 43)
         assert len(clocks) == 1
         initial_reads = reads
@@ -74,20 +71,19 @@ async def test_captions_share_footer_phase_and_restore_idle_on_leave(monkeypatch
             await pilot.pause()
             assert caption_ink(screen, 'キープ') == ink
             assert caption_ink(screen, 'ビルディング') == ink
-            shade = (28, 77, 127, 176, 226, 176, 127, 77)[phase]
-            assert caption_ink(screen, '<>') == (shade, shade, shade)
-            background = (226, 176, 127, 77, 28, 77, 127, 176)[phase]
-            assert_loading_block(screen, background)
+            assert face(app, card) == original
+            assert card_styles(app, card) == styles
             rows = screen._compositor.render_strips()
+            assert not any('<>' in row.text or '◇' in row.text for row in rows)
             assert f"{'◐◓◑◒'[phase % 4]} loading" in rows[-1].text
             assert screen.query_one(StatusBar)._loading_timer is None
             if phase == 4:
-                assert any('<>' in row.text for row in rows)
                 await pilot.resize_terminal(143, 37)
                 await pilot.pause()
                 assert caption_ink(screen, 'キープ') == ink
                 assert caption_ink(screen, 'ビルディング') == ink
-                assert_loading_block(screen, background)
+                assert not any(row.strip() for row in inset_rows(app, card))
+                original, styles = face(app, card), card_styles(app, card)
         assert reads == initial_reads
         # A suspended screen resets both captions and drops its shared timer.
         await app.push_screen(Screen())

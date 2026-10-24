@@ -211,8 +211,8 @@ async def test_acceptance_rate_moves_inside_and_updates_without_an_outer_meter(w
         for accepted, attempts, percent, expected in (
             (3271, 3413, 100 * 3271 / 3413, "95.84%"),
             (1, 2, 50., "50%"), (0, 10, 0., "0%"),
-            (10, 10, 100., "100%"), (None, None, None, "--%"),
-            (11, 10, 110., "--%"), (0, 0, None, ""),
+            (10, 10, 100., "100%"), (None, None, None, "100%"),
+            (11, 10, 110., "100%"), (0, 0, None, ""),
         ):
             data["accepted"].update(accepted=accepted, attempts=attempts, percent=percent)
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
@@ -279,7 +279,7 @@ async def test_detail_failure_preserves_selected_id_and_independent_records(stat
         assert "96%" in painted(pilot.app, "accepted")
         assert "example.eth" not in painted(pilot.app, "owner")
         assert "up to date" not in painted(pilot.app, "runtime")
-        expected = "never paired" if state == "unknown_seat" else "--"
+        expected = "never paired" if state == "unknown_seat" else ""
         assert expected in painted(pilot.app, "owner")
 
 
@@ -308,7 +308,7 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
 
 
 @pytest.mark.parametrize("live,meter,word", [("working", "busy", "BUSY"), ("idle", "idle", "IDLE"),
-                                               ("offline", "offline", "OFF"), ("paused", "idle", "IDLE"), (None, "unavailable", "—")])
+                                               ("offline", "offline", "OFF"), ("paused", "idle", "IDLE"), (None, "unavailable", "")])
 async def test_status_meter_colors_and_unknown_worker_never_claim_offline(live, meter, word):
     data = payload()
     data["seat"]["api_status"] = "revoked"
@@ -321,7 +321,7 @@ async def test_status_meter_colors_and_unknown_worker_never_claim_offline(live, 
         app = pilot.app
         text = painted(app, "status")
         if live is None:
-            assert "status --" in painted(app, "seat")
+            assert "status --" not in painted(app, "seat")
             assert "revoked" not in painted(app, "seat")
             assert border_color(app, "seat") != app.ansi_theme.ansi_colors[1]
         assert word in text, text
@@ -471,8 +471,9 @@ async def test_malformed_numbers_dates_and_nested_values_clear_old_facts_safely(
         pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
         for key in ('seat', 'accepted', 'rewards', 'owner', 'models', 'nodes'):
-            assert '--' in painted(pilot.app, key), (key, painted(pilot.app, key))
-        assert '—' in painted(pilot.app, 'status')
+            assert '--' not in painted(pilot.app, key), (key, painted(pilot.app, key))
+            assert pilot.app.query_one(f'#hero-{key}').data.digits == ''
+        assert '—' not in painted(pilot.app, 'status')
         assert 'OFF' not in painted(pilot.app, 'status')
         assert 'up to date' not in painted(pilot.app, 'runtime')
         assert '⧉' not in painted(pilot.app, 'owner')
@@ -627,7 +628,7 @@ async def test_reward_payment_time_stays_in_hover_with_no_outer_footer(width):
         assert "$120.82" in painted(pilot.app, "rewards")
 
 
-@pytest.mark.parametrize("width,working,glyph", [(149, 2, "╭─╮╭─╴"), (132, None, "0F")])
+@pytest.mark.parametrize("width,working,glyph", [(149, 2, "╭─╮╭─╴"), (132, None, "╭─╮╭─╴")])
 async def test_status_separator_uses_midpoint_gray_in_tall_and_compact_readouts(width, working, glyph):
     data = payload()
     data["status"]["working"] = working
@@ -726,8 +727,8 @@ async def test_researched_uses_production_oracle_count_independently_of_models()
         for state, oracle, glyphs in (
             ("ok", 120, ("╶╮ ╶─╮╭─╮", " │ ┌─┘│ │", "╶┴╴╰─╴╰─╯")),
             ("partial", 0, ("╭─╮", "│ │", "╰─╯")),
-            ("partial", None, ("--",)),
-            ("pending", 999, ("--",)),
+            ("partial", None, ("╭─╮", "│ │", "╰─╯")),
+            ("pending", 999, ("╭─╮", "│ │", "╰─╯")),
         ):
             data["nodes"].update(state=state, oracle=oracle, oracle_total=oracle)
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
@@ -736,8 +737,8 @@ async def test_researched_uses_production_oracle_count_independently_of_models()
             assert strips(app, "models")[0].text.strip("╭─╮ ⊙") == "ORACLE"
             assert "JOBS" in strips(app, "models")[2].text
             assert all(any(glyph in row.text for row in body_rows(app, "models")) for glyph in glyphs), text
-            assert strips(app, "models")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("100%" if state == "ok" else "--%")
-            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("--%" if state == "pending" else "85%")
+            assert strips(app, "models")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("100%" if state == "ok" else "0%")
+            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == "85%"
             card = app.query_one("#hero-models")
             assert card.data.state == state and card.data.read_ts == data["nodes"]["read_ts"]
             assert "production networks; testnets excluded" in str(card.tooltip)
@@ -769,14 +770,14 @@ async def test_runtime_retains_model_count_and_independent_model_source(width):
         assert "‹" in strips(app, "runtime")[0].text
         tip = str(app.query_one("#hero-runtime").tooltip)
         assert long_model + " · xhigh" in tip and "second · low" in tip
-        for state, rows, value in (("ok", [], "none"), ("pending", data["models"]["rows"], "--"),
-                                   ("unavailable", None, "--")):
+        for state, rows, value in (("ok", [], "none"), ("pending", data["models"]["rows"], "none"),
+                                   ("unavailable", None, "none")):
             data["runtime"]["state"] = "ok"
             data["models"].update(state=state, rows=rows)
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             assert body_rows(app, "runtime")[2].text.split() == ["model", value]
-            assert strips(app, "runtime")[6].text.split("└")[1].split("┘")[0].strip("─ ") == "--"
+            assert strips(app, "runtime")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ""
             assert "xhigh" not in str(app.query_one("#hero-runtime").tooltip)
 
 
@@ -822,7 +823,7 @@ async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
         text = painted(app, "earnings")
-        assert "0 new" in text
+        assert "4 new" in text
         assert "-- new" not in text
 
 
@@ -840,7 +841,7 @@ async def test_earnings_inner_footer_shows_new_tokens_from_last_24h(new, worked)
         assert "CLAIMED" not in painted(app, "earnings")
         inner_footer = next(row.text for row in strips(app, "earnings") if "└" in row.text)
         caption = inner_footer.split("└", 1)[1].split("┘", 1)[0].strip("─ ")
-        assert caption == f"{new if new is not None else 0} new"
+        assert caption == f"{new if new is not None else 4} new"
         assert "worked on" not in painted(app, "earnings")
         tooltip = str(app.query_one("#hero-earnings").tooltip)
         assert "this agent's accepted work" in tooltip
@@ -903,7 +904,7 @@ async def test_ship_counts_launch_jobs_and_labels_the_unit():
             (dict(oracle=120, launches=340, other=500, known_jobs=840, total_jobs=840),
              ("╶─╮╷ ╷╭─╮", " ─┤╰─┤│ │", "╶─╯  ╵╰─╯")),
             (dict(state="partial", oracle=120, launches=None, other=None, known_jobs=17, total_jobs=840),
-             ("--",)),
+             ("╶─╮╷ ╷╭─╮", " ─┤╰─┤│ │", "╶─╯  ╵╰─╯")),
             (dict(state="partial", oracle=None, launches=12, known_jobs=840, total_jobs=840),
              ("╶╮ ╶─╮", " │ ┌─┘", "╶┴╴╰─╴")),
             (dict(state="ok", oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0),
@@ -918,7 +919,7 @@ async def test_ship_counts_launch_jobs_and_labels_the_unit():
             assert "NODES" not in text and "work by type" not in text and "other" not in text
             for glyph in digits:
                 assert any(glyph in row.text for row in body_rows(app, "nodes")), text
-            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("100%" if values["launches"] else "--%")
+            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("0%" if values["launches"] == 0 else "100%")
             assert not strips(app, "nodes")[-1].text.strip("╰─╯ ")
             assert border_color(app, "nodes") == border_color(app, "accepted")
             tooltip = str(app.query_one("#hero-nodes").tooltip)
@@ -932,8 +933,8 @@ async def test_job_cards_show_total_digits_and_acceptance_percentages_independen
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         app = pilot.app
         for accepted, total, caption in ((3, 4, '75%'), (0, 4, '0%'), (4, 4, '100%'),
-                                         (0, 0, '--%'), (None, 4, '--%'), (3, None, '--%'),
-                                         (5, 4, '--%'), (True, 4, '--%')):
+                                         (0, 0, '0%'), (None, 4, '0%'), (3, None, '0%'),
+                                         (5, 4, '0%'), (True, 4, '0%')):
             data['nodes'].update(launches=accepted, launches_total=total, oracle=accepted, oracle_total=total)
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
@@ -943,14 +944,15 @@ async def test_job_cards_show_total_digits_and_acceptance_percentages_independen
                 assert rendered[2].text.split('┌')[1].split('┐')[0].strip('─ ') == 'JOBS'
                 assert rendered[6].text.split('└')[1].split('┘')[0].strip('─ ') == caption
                 body = '\n'.join(row.text for row in body_rows(app, key))
-                assert ('--' in body) == (total is None)
+                assert '--' not in body
                 if total == 4:
                     assert '╷ ╷' in body and '╰─┤' in body and '  ╵' in body, body
                 assert not rendered[-1].text.strip('╰─╯ ')
         data['nodes'].update(state='pending', launches=3, launches_total=4)
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
-        assert '--%' in painted(app, 'nodes') and '--' in body_rows(app, 'nodes')[1].text
+        assert '0%' in painted(app, 'nodes') and '--' not in body_rows(app, 'nodes')[1].text
+        assert app.query_one('#hero-nodes').source_record.state == 'pending'
 
 
 async def test_mixed_job_card_keeps_any_accepted_work_in_the_oracle_rate():
@@ -969,4 +971,4 @@ async def test_mixed_job_card_keeps_any_accepted_work_in_the_oracle_rate():
                 assert '100%' in strips(app, 'models')[6].text
                 assert 'Accepted / total jobs: 1 / 1' in str(app.query_one('#hero-models').tooltip)
                 assert 'Accepted / total jobs: 0 / 0' in str(app.query_one('#hero-nodes').tooltip)
-                assert '--%' in strips(app, 'nodes')[6].text
+                assert '0%' in strips(app, 'nodes')[6].text

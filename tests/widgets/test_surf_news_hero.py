@@ -87,10 +87,10 @@ async def test_unknown_empty_and_zero_remain_distinct():
         assert "activity" in painted(app, app.query_one("#hero-activity"))
         signals = painted(app, app.query_one("#hero-signals"))
         assert "known 0/11" in signals and "unavailable" not in signals
-        assert all(any(label in line and "--" in line for line in signals.splitlines()) for label in ("fired", "watch", "quiet"))
+        assert all(any(label in line and "0" in line for line in signals.splitlines()) for label in ("fired", "watch", "quiet"))
         boards = painted(app, app.query_one("#hero-boards"))
         assert any("holders" in line and "0" in line for line in boards.splitlines())
-        assert any("written" in line and "--" in line for line in boards.splitlines())
+        assert any("written" in line and "0" in line for line in boards.splitlines())
         app.query_one(SurfNewsHero).update_data(surf_news_hero=None)
         await pilot.pause()
         assert all("unavailable" not in painted(app, card) for card in app.query(NewsHeroCard))

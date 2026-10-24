@@ -21,7 +21,12 @@ Layout and sizing rules live in `.claude/skills/terminal-layout/SKILL.md`, not h
 ## Source display override — 2026-10-17
 
 The owner requests neutral first-load and reload presentation across dashboards.
-Keep retained values, and render never-observed values as dashes. Fixed application
+Keep retained values; other panels render never-observed values as dashes.
+Card override (2026-10-24): no card loading indicators; unread central readouts stay
+blank. Other missing card numbers retain the last observation or display 0; text
+retains the last observation or stays blank. Reset retention when identity changes,
+and accept real zero/empty observations. Display fallbacks never become source data.
+Fixed application
 source notices such as stale/unavailable are no longer visible labels. This
 overrides older display wording below; source states, failures, coverage and
 observation timestamps remain truthful internally. Never filter third-party prose

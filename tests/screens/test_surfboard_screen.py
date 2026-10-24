@@ -570,6 +570,7 @@ async def test_loading_repaints_completed_cache_without_offering_more_reads():
     from maxpane_dashboard.screens.surfboard import SurfboardScreen
     from tests.screens.test_surfboard_layout import HubHarness
     from tests.surfboard_fixtures import hub_payload, HubPayloadManager
+    from tests.widgets.test_card_loading import face
     payload = hub_payload()
     loading = deepcopy(payload)
     next(c for c in loading['surfboard_cards'] if c['key'] == 'pool4')['status'] = 'loading'
@@ -583,11 +584,13 @@ async def test_loading_repaints_completed_cache_without_offering_more_reads():
         hub = app.hub
         hub._age_timer.pause()
         hub._refresh_timer.pause()
-        assert '◌ loading' in painted(app)
+        card = hub.query_one('#surfboard-card-pool4')
+        assert hub._loading and card.data['status'] == 'loading'
+        assert 'loading' not in face(app, card) and '1 sIMD =' in face(app, card)
         offered = manager.fetch_hub_snapshot.await_count
         hub._tick_terminal_age()
         await pilot.pause()
-        assert '◌ loading' not in painted(app)
+        assert 'loading' not in face(app, card) and '1 sIMD =' in face(app, card)
         assert not hub._loading
         assert manager.get_hub_snapshot.call_count == 2  # entry cache + completed read
         assert manager.fetch_hub_snapshot.await_count == offered

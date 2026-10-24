@@ -598,7 +598,9 @@ def _lost_launchpad_card_text(app, card):
     from textual.renderables.digits import Digits
     from maxpane_dashboard.widgets.markup_safety import strip_tags
 
-    record = card.raw_record
+    # Measure complete display values before width fitting; source placeholders
+    # intentionally become blank/zero and are not clipped content.
+    record = card._display_record
     text = _region_text(app, card)
     footer = card.border_subtitle
     footer = footer.plain if hasattr(footer, "plain") else strip_tags(footer)

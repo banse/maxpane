@@ -62,12 +62,13 @@ class LoadingApp(App):
 
 
 @pytest.mark.parametrize('failure', [False, True])
-async def test_card_pulse_tracks_visible_reads_without_fetches_or_own_timers(failure, monkeypatch):
+async def test_cards_stay_blank_while_visible_reads_animate_only_the_footer(failure, monkeypatch):
     from textual.containers import Vertical
     from maxpane_dashboard.widgets.surf.news_hero import NewsHeroCard, HeroRecord
+    from tests.widgets.test_card_loading import face, inset_rows
 
     def forbidden_timer(*args, **kwargs):
-        raise AssertionError('card must reuse the screen clock')
+        raise AssertionError('cards must not create loading timers')
 
     monkeypatch.setattr(NewsHeroCard, 'set_interval', forbidden_timer)
 
@@ -75,7 +76,7 @@ async def test_card_pulse_tracks_visible_reads_without_fetches_or_own_timers(fai
         def compose(self):
             yield from super().compose()
             with Vertical(id='card-body'):
-                yield NewsHeroCard(HeroRecord('pulse', 'COUNT', 'VALUE', '', digits='--'))
+                yield NewsHeroCard(HeroRecord('static', 'COUNT', 'VALUE', '', digits='--'))
 
     class CardApp(App):
         def on_mount(self):
@@ -88,16 +89,19 @@ async def test_card_pulse_tracks_visible_reads_without_fetches_or_own_timers(fai
         await provider.started.wait()
         screen = app.screen
         await pilot.pause()
+        card = screen.query_one(NewsHeroCard)
+        original = face(app, card)
+        assert not any(row.strip() for row in inset_rows(app, card))
         screen._tick_loading()
         await pilot.pause()
-        assert '<>' in painted(screen)
+        assert 'loading' in painted(screen).splitlines()[-1]
         reads, projections = provider.reads, provider.projections
         for _ in range(16):
             screen._tick_loading()
         await pilot.pause()
         assert (provider.reads, provider.projections) == (reads, projections)
+        assert face(app, card) == original
         body = screen.query_one('#card-body')
-        card = screen.query_one(NewsHeroCard)
         body.display = False
         await pilot.pause()
         screen._tick_loading()
@@ -106,19 +110,21 @@ async def test_card_pulse_tracks_visible_reads_without_fetches_or_own_timers(fai
         await pilot.pause()
         screen._tick_loading()
         await pilot.pause()
-        assert '<>' in painted(screen)
+        assert face(app, card) == original
         provider.release.set()
         await app.workers.wait_for_complete()
         screen._tick_loading()
         await pilot.pause()
-        assert '<>' not in painted(screen)
+        assert 'loading' not in painted(screen).splitlines()[-1]
+        assert face(app, card) == original
         provider.release.clear()
         provider.started.clear()
         screen.start_refresh()
         await provider.started.wait()
         screen._tick_loading()
         await pilot.pause()
-        assert '<>' in painted(screen)
+        assert 'loading' in painted(screen).splitlines()[-1]
+        assert face(app, card) == original
         await app.push_screen(Screen())
         assert card._card_loading is False
         assert screen._loading_timer is None
@@ -127,7 +133,9 @@ async def test_card_pulse_tracks_visible_reads_without_fetches_or_own_timers(fai
         await provider.started.wait()
         screen._tick_loading()
         await pilot.pause()
-        assert '<>' in painted(screen)
+        assert 'loading' in painted(screen).splitlines()[-1]
+        assert face(app, card) == original
+        assert '<>' not in painted(screen) and '◇' not in painted(screen)
         provider.release.set()
 
 
@@ -326,6 +334,116 @@ async def test_all_surf_bodies_hide_missing_source_notices(mode):
         assert 'stale' not in text
         assert 'load failed' not in text
         assert 'loading' not in text
+
+
+@pytest.mark.parametrize('mode,hero_name,projection,key,values', [
+    ('pool4_user', 'SurfPool4RackHero', 'surf_pool4_hero', 'rate', {'imd': 7.964}),
+    ('pool4', 'SurfProtocolHero', 'surf_protocol_hero', 'totals',
+     {'burned': 47, 'rewarded': 0, 'fees': 0}),
+])
+@pytest.mark.parametrize('identity_field,new_identity', [
+    ('pool4_network', 'SEPOLIA'),
+    ('pool4_hook_addr', '0x' + '3' * 40),
+    ('pool4_token_addr', '0x' + '4' * 40),
+])
+async def test_pool4_cards_retain_failed_reads_only_for_the_same_deployment(
+        mode, hero_name, projection, key, values, identity_field, new_identity):
+    from maxpane_dashboard.screens.surf import SurfScreen
+    from tests.screens.test_surf_screen import _FakeManager, _ThemedHarness, _all_none_payload
+    from tests.widgets.test_card_loading import inset_rows
+
+    payload = _all_none_payload()
+    payload.update(pool4_network='MAINNET', pool4_hook_addr='0x' + '1' * 40,
+                   pool4_token_addr='0x' + '2' * 40)
+    payload[projection] = {key: dict(state='ok', read_ts=1000, **values)}
+    manager = _FakeManager(payload)
+    screen = SurfScreen(manager, poll_interval=3600)
+    screen._mode = mode
+    app = _ThemedHarness(screen)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        card = screen.query_one(hero_name).query_one('#hero-' + key)
+        observed = inset_rows(app, card)
+        assert any(row.strip() for row in observed)
+        if key == 'totals':
+            assert observed[0].split() == ['burned', '47']
+
+        # A failure can omit addresses without identifying a different deployment.
+        failed = dict(payload, pool4_hook_addr=None, pool4_token_addr=None)
+        failed[projection] = {key: dict(state='unavailable', read_ts=None,
+                                       **dict.fromkeys(values))}
+        manager._payload = failed
+        await screen._do_refresh()
+        await pilot.pause()
+        assert card.source_record.state == 'unavailable'
+        assert inset_rows(app, card) == observed
+
+        manager._payload = dict(failed, **{identity_field: new_identity})
+        await screen._do_refresh()
+        await pilot.pause()
+        current = inset_rows(app, card)
+        assert current != observed
+        if key == 'rate':
+            assert not any(row.strip() for row in current)
+        else:
+            assert current[0].split() == ['burned', '0']
+        assert card.source_record.state == 'unavailable'
+
+
+async def test_token_filter_cannot_retain_liquidity_from_the_previous_cohort():
+    from textual.widgets import Select
+    from tests.screens.test_swarm_tokens_live import LiveProvider, LiveApp
+    from tests.widgets.test_card_loading import inset_rows
+
+    provider = LiveProvider()
+    now = provider.snapshot['as_of']
+    rows = provider.snapshot['tokens'][:2]
+    for row, chain, amount in zip(rows, ('eth', 'base'), (42, 0)):
+        row.update(chain=chain, paired_symbol='IMD', paired_amount=amount,
+                   liquidity_state='ok', liquidity_read_at=now)
+    provider.snapshot['tokens'] = rows
+    release, started = asyncio.Event(), asyncio.Event()
+    release.set()
+    fetch = provider.fetch_and_compute
+
+    async def fetch_snapshot():
+        started.set()
+        await release.wait()
+        return await fetch()
+
+    provider.fetch_and_compute = fetch_snapshot
+    app = LiveApp(provider)
+    async with app.run_test(size=(149, 45)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        screen = app.screen
+        card = screen.query_one('#hero-liquidity')
+        assert inset_rows(app, card)[0].split() == ['42', 'IMD']
+
+        for row in rows:
+            row.update(paired_amount=None, liquidity_state='unavailable', liquidity_read_at=None)
+        await screen._do_refresh()
+        await pilot.pause()
+        assert screen.snapshot['tokens_hero']['liquidity']['imd'] is None
+        assert inset_rows(app, card)[0].split() == ['42', 'IMD']
+
+        await pilot.press('f')
+        screen.query_one('#filter-chain', Select).value = 'base'
+        release.clear()
+        started.clear()
+        await pilot.click('#filter-apply')
+        await started.wait()
+        await pilot.pause()
+        # The cached source must already use the new cohort while its read waits.
+        assert screen.chain == 'base'
+        assert inset_rows(app, card)[0].split() == ['0', 'IMD']
+        release.set()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert {row['chain'] for row in screen.snapshot['tokens']} == {'base'}
+        assert screen.snapshot['tokens_hero']['liquidity']['imd'] is None
+        assert inset_rows(app, card)[0].split() == ['0', 'IMD']
 
 
 async def test_background_completion_during_refresh_is_not_lost():

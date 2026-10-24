@@ -194,4 +194,4 @@ async def test_pool4_share_rate_uses_available_precision_and_explicit_unknown():
             assert expected in strips(pilot.app, card)[-1].text
         card.set_data(dict(share_price=None))
         await pilot.pause()
-        assert '1 sIMD = — IMD' in strips(pilot.app, card)[-1].text
+        assert '1 sIMD = 7.963529 IMD' in strips(pilot.app, card)[-1].text

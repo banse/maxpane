@@ -138,7 +138,7 @@ async def test_news_signal_footer_refresh_and_overflow_remain_exact():
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         card = app.hub.query_one("#surfboard-card-announce", SurfboardCard)
-        for count, total in [(24, 30), (3, 11), (None, None)]:
+        for count, total, displayed in [(24, 30, 24), (3, 11, 3), (None, None, 3), (0, 11, 0)]:
             card.set_data(dict(primary="Latest post", secondary="7 new", numerator=count, denominator=total))
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(
@@ -146,9 +146,9 @@ async def test_news_signal_footer_refresh_and_overflow_remain_exact():
             if count == 24:
                 assert "24 SIGNALS" in footer and "▰" not in footer
             else:
-                assert footer.count("▰") == (count or 0)
+                assert footer.count("▰") == displayed
                 assert "‹ widen" not in str(card.border_title)
-                assert ("0 SIGNALS" in footer) == (count is None)
+                assert f"{displayed} SIGNALS" in footer
 
 
 async def test_terminal_uses_dashboard_background_and_native_text_colors():
@@ -448,19 +448,26 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
     assert all(value >= 7 for value in r["heights"].values()), r
     if height >= SURFBOARD_FULL_LAYOUT_ROWS:
         for card in payload["surfboard_cards"][:8]:
+            text = r["card_text"][card["key"]]
+            lines = text.splitlines()
+            top = next(index for index, line in enumerate(lines) if '┌' in line)
+            left, right = lines[top].index('┌'), lines[top].index('┐')
+            body = [line[left + 1:right] for line in lines[top + 1:top + 4]]
             if card["key"] == "swarm-tokens":
                 text = r["card_text"]["swarm-tokens"]
                 assert "LATEST" in text
                 if kind != "unavailable":
                     assert card["secondary"] in text and "24h" in text
-                expected = ('—',) if kind == 'unavailable' else ('SFPT', 'RAI', 'TDEMO', '↑', '↓')
-                assert all(word in text for word in expected), r
+                if kind == 'unavailable':
+                    assert not any(row.strip() for row in body), r
+                else:
+                    assert all(word in text for word in ('SFPT', 'RAI', 'TDEMO', '↑', '↓')), r
                 continue
             if card["key"] == "announce":
                 text=r["card_text"]["announce"]
                 assert " LATEST " in text
                 if kind == "unavailable":
-                    assert "—" in text and "unavailable" not in text
+                    assert not any(row.strip() for row in body) and "unavailable" not in text
                 else:
                     assert "You can now" in text and "deploy via the" in text and "..." in text
                     assert card["secondary"].removesuffix(" replies") in text
@@ -472,7 +479,8 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 assert 'capacity' in text or 'cap.' in text
                 assert 'top model' not in text and 'TOP AGENTS' not in text
                 if kind == "unavailable":
-                    assert "—" in text and "unavailable" not in text
+                    assert [row.split() for row in body] == [['tokens', '0'], ['jobs', '0'], ['capacity', '0']]
+                    assert '0.00%' in text and "unavailable" not in text
                 else:
                     assert ('100.00%' if kind == 'stress' else '95.84%') in text
                 continue
@@ -480,13 +488,17 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 text = r["card_text"]["oracles"]
                 assert "JOBS" in text
                 if kind == "unavailable":
-                    assert '—' in text
+                    assert not any(row.strip() for row in body)
                 elif kind == "stress":
                     assert "╶╮ ╭─╮╭─╮" in text
                 else:
                     assert "╶─┐" in text
                 caption = '0 agents' if card['secondary'] == '— agents' else card['secondary']
-                assert (caption if kind != 'unavailable' else '—') in text
+                if kind == 'unavailable':
+                    assert not lines[top + 4][left + 1:right].strip('─ ')
+                    assert '0 chains' in text
+                else:
+                    assert caption in text
                 continue
             if card["key"] == "surf-nft":
                 text = r["card_text"]["surf-nft"]
@@ -495,15 +507,18 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
             if card["key"] == "pool4":
                 text = r["card_text"]["pool4"]
                 assert " IMD PRICE " in text and "USD" in text, r
-                expected = (("╶─┐ ╭─╮╭─╮", "  │ ╰─┤│ │", "  ╵•╶─╯╰─╯")
-                            if kind in ("normal", "wide") else ('—' if kind == 'unavailable' else card["primary"],))
-                assert all(row in text for row in expected), r
+                if kind == 'unavailable':
+                    assert not any(row.strip() for row in body), r
+                else:
+                    expected = (("╶─┐ ╭─╮╭─╮", "  │ ╰─┤│ │", "  ╵•╶─╯╰─╯")
+                                if kind in ("normal", "wide") else (card["primary"],))
+                    assert all(row in text for row in expected), r
                 continue
             if card["key"] == "agent":
                 text = r["card_text"]["agent"]
                 assert " SEAT " in text, r
                 if kind == 'unavailable':
-                    assert '—' in text and 'unavailable' not in text
+                    assert not any(row.strip() for row in body) and 'unavailable' not in text
                     continue
                 expected = (("╭─╮" * 5, "╰─┤" * 5, "╶─╯" * 5) if kind == "stress" else
                             ("╷ ╷╶─╮╭─╮", "╰─┤┌─┘│ │", "  ╵╰─╴╰─╯") if kind in ("normal", "wide") else
@@ -514,9 +529,11 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
             if card["key"] == "swarm":
                 text = r["card_text"]["swarm"]
                 assert "AGENTS" in text and "AGENTS ONLINE" not in text, r
-                expected = ("╭─╮╭─╴╶─╮", "├─┤├─╮ ─┤", "╰─╯╰─╯╶─╯") if kind in ("normal", "wide") else ('—' if kind == 'unavailable' else card["primary"],)
-                assert all(row in text for row in expected), r
-                if kind != 'unavailable':
+                if kind == 'unavailable':
+                    assert not any(row.strip() for row in body), r
+                else:
+                    expected = ("╭─╮╭─╴╶─╮", "├─┤├─╮ ─┤", "╰─╯╰─╯╶─╯") if kind in ("normal", "wide") else (card["primary"],)
+                    assert all(row in text for row in expected), r
                     assert card["secondary"] in text, r
                 continue
             assert card["primary"] in r["card_text"][card["key"]], (card, r)

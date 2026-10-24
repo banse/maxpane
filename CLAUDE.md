@@ -166,8 +166,11 @@ and an interpreter without `httpx` *skips* sybilkit's fetcher tests and reports 
   never a crash, a blank panel, a stale number presented as live, or a *false* degradation.
   A real negative needs a representable value distinct from "could not look".
   Owner display override (2026-10-17): retain source states and observation times internally;
-  paint missing values as dashes and use the shared loading footer during reads instead of
-  generated stale/unavailable notices. Do not filter third-party prose or domain states.
+  use the shared loading footer during reads instead of generated stale/unavailable notices.
+  Card override (2026-10-24): retain last observed values for the same identity; unread central
+  readouts stay blank, other missing card numbers display 0 and text stays blank. No card loader.
+  These are display fallbacks only; source facts remain None. Other panels keep dashes.
+  Do not filter third-party prose or domain states.
 - **Escape every third-party string** before markup or a `DataTable`: `markup_safety.safe_markup`.
   Token symbols are attacker-controlled. A `Static` gets a pre-built `rich.text.Text`, never a
   markup string.

@@ -121,7 +121,7 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
             ('assessing', '7', '8 agents', 2, ['╶─┐', '  │', '  ╵']),
             ('idle', '0', '0 agents', 0, ['╭─╮', '│ │', '╰─╯']),
             ('stale', '7', '8 agents', 2, ['╶─┐', '  │', '  ╵']),
-            ('unavailable', '—', '— agents', None, ['', '—', '']),
+            ('unavailable', '—', '— agents', None, ['╶─┐', '  │', '  ╵']),
         ]:
             card.set_data(dict(primary=primary, secondary=subtitle, status=status,
                                numerator=chains, denominator=100, meter_kind='oracles'))
@@ -137,15 +137,15 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
                     digit_ink = app.ansi_theme.ansi_colors[2] if status == 'assessing' else card.rich_style.color.get_truecolor()
                     assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                                for s in strip.crop(left+1, right) if s.text.strip())
-            assert ('0 agents' if subtitle == '— agents' else subtitle) in strips[top+4].text
-            expected_footer = f'{chains} chains' if chains is not None else '0 chains'
+            assert ('8 agents' if subtitle == '— agents' else subtitle) in strips[top+4].text
+            expected_footer = f'{chains} chains' if chains is not None else '2 chains'
             assert expected_footer in strips[-1].text
             assert not any(glyph in strips[-1].text for glyph in '▰▱▁▂▃▄▅▆▇█')
             tone = Color.parse(app.get_css_variables()['accent']).get_truecolor() if status == 'assessing' else neutral_inset_color(app)
             for strip in strips[top:top+5]:
                 for x in (left, right):
                     assert next(iter(strip.crop(x, x+1))).style.color.get_truecolor() == tone
-            for label in ('JOBS', '0 agents' if subtitle == '— agents' else subtitle):
+            for label in ('JOBS', '8 agents' if subtitle == '— agents' else subtitle):
                 segment = next(s for row in strips for s in row if label in s.text)
                 assert segment.style.color.get_truecolor() == tone
             assert card.data['destination'] == 'oracles'
@@ -164,7 +164,7 @@ def painted(app):
     ("1,000 online", ["╶╮ ╭─╮╭─╮╭─╮", " │ │ ││ ││ │", "╶┴╴╰─╯╰─╯╰─╯"]),
     ("12,345 online", ["╶╮ ╶─╮╶─╮╷ ╷╭─╴", " │ ┌─┘ ─┤╰─┤╰─╮", "╶┴╴╰─╴╶─╯  ╵╶─╯"]),
     ("1,234,567 online", ["", "1,234,567", ""]),
-    ("unavailable", ["", "—", ""]),
+    ("unavailable", ["", "", ""]),
 ])
 async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(size, primary, expected):
     async with RackApp().run_test(size=size) as pilot:
@@ -262,14 +262,14 @@ async def test_agent_seat_digits_and_slot_border_follow_working_state(size):
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for s in strip.crop(left+1, right) if s.text.strip())
             assert "slots" not in strips[top + 4].text
-            footer_text = slots.removesuffix(" slots")
+            footer_text = "0 of 3" if slots == "— of — slots" else slots.removesuffix(" slots")
             footer = next(segment for segment in strips[top + 4] if footer_text in segment.text)
             if status == "offline":
                 assert " of " not in strips[top + 4].text
             assert not footer.style.bold and footer.style.color.get_truecolor() == ink
             if activity == "unavailable":
-                assert strips[-1].text.strip('╰╯─ ') == '— —'
-                assert not any(glyph in strips[-1].text for glyph in "▰▱")
+                assert strips[-1].text.strip('╰╯─ ') == 'OFF ' + '▱' * (card.region.width - 10)
+                assert "▰" not in strips[-1].text
             elif activity == "offline":
                 assert strips[-1].text == '╰─ OFF ' + '▱' * (card.region.width - 10) + ' ─╯'
             else:
@@ -427,9 +427,9 @@ async def test_live_cards_route_and_empty_seats_focus_input_without_opening():
 
 @pytest.mark.parametrize("numerator,denominator,expected", [
     (0, 8, "IDLE ▱▱▱▱▱▱▱▱▱▱▱▱▱"), (4, 8, "IDLE ▰▰▰▰▰▰▱▱▱▱▱▱▱"),
-    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE —"),
-    (None, 8, "IDLE —"), (True, 8, "IDLE —"), (9, 8, "IDLE —"),
-    (-1, 8, "IDLE —"), (float("inf"), 8, "IDLE —"),
+    (8, 8, "IDLE ▰▰▰▰▰▰▰▰▰▰▰▰▰"), (0, 0, "IDLE"),
+    (None, 8, "IDLE"), (True, 8, "IDLE"), (9, 8, "IDLE"),
+    (-1, 8, "IDLE"), (float("inf"), 8, "IDLE"),
 ])
 async def test_ratio_meter_never_fakes_zero_or_clamps_invalid_data(numerator, denominator, expected):
     async with RackApp().run_test(size=(149, 45)) as pilot:
@@ -454,7 +454,7 @@ async def test_chart_requires_all_eight_buckets_and_empty_seats_stay_unlit():
         assert empty.data["destination"] is None
         rack.update_data(surfboard_cards=[dict(key="swarm", meter_kind="sparkline", points=[0, 1])])
         await pilot.pause()
-        assert "24H —" in painted(pilot.app)
+        assert "24H ▁▁▂▂▃▃▄▅▅▆▆▇▇█" in painted(pilot.app)
 
 
 async def test_swarm_history_footer_stretches_on_resize_and_keeps_unknown_left():
@@ -478,8 +478,8 @@ async def test_swarm_history_footer_stretches_on_resize_and_keeps_unknown_left()
         app.hub.query_one(SurfboardRack).update_data(**payload)
         await pilot.pause()
         footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
-        assert footer.text.strip('╰╯─ ') == '24H —'
-        assert not any(char in footer.text for char in "▁▂▃▄▅▆▇█")
+        assert footer.text.strip('╰╯─ ') == '24H ▁▁▂▂▃▃▄▅▅▆▆▇▇█'
+        assert any(char in footer.text for char in "▁▂▃▄▅▆▇█")
 
 
 @pytest.mark.parametrize('size', [(149, 45), (146, 37)])
@@ -513,7 +513,7 @@ async def test_swarm_and_wip_keep_their_footers_with_independent_sources(size):
         before = {card.key: [line.text for line in card_strips(app, card)[1:-1]] for card in (swarm, work)}
         for work_state, swarm_state, counts, chart in (
             ('loading', 'active', '1 workflows', True),
-            ('active', 'loading', '1 workflows', False),
+            ('active', 'loading', '1 workflows', True),
             ('active', 'active', '1 workflows', True),
         ):
             sources['work']['status'], sources['swarm']['status'] = work_state, swarm_state
@@ -539,10 +539,10 @@ async def test_swarm_and_wip_keep_their_footers_with_independent_sources(size):
         await pilot.pause()
         assert '‹' in card_strips(app, work)[0].text
         assert '‹' not in card_strips(app, swarm)[0].text
+        last_footers = [card_strips(app, card)[-1].text for card in (work, swarm)]
         rack.update_data(surfboard_cards=[])
         await pilot.pause()
-        assert '0 workflows' in card_strips(app, work)[-1].text
-        assert card_strips(app, swarm)[-1].text.strip('╰╯─ ') == '24H —'
+        assert [card_strips(app, card)[-1].text for card in (work, swarm)] == last_footers
 
 
 async def test_activity_card_footers_fill_width_on_resize():
@@ -584,8 +584,9 @@ async def test_activity_card_footers_fill_width_on_resize():
         for key in labels.keys() - placeholders:
             card = app.hub.query_one(f"#surfboard-card-{key}", SurfboardCard)
             footer = strips[card.region.bottom - 1].crop(card.region.x, card.region.right).text
-            assert footer.strip('╰╯─ ') == f'{labels[key]} —'
-            assert "▰" not in footer and "▱" not in footer
+            assert footer.strip('╰╯─ ').startswith(f'{labels[key]} ')
+            bar = footer.strip('╰╯─ ').split(' ', 1)[1]
+            assert set(bar) <= {'▰', '▱'} and bar.count('▰') == len(bar) // 2
 
 
 def token_card_data():
@@ -692,14 +693,14 @@ async def test_token_empty_unread_and_unavailable_keep_independent_volume_footer
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
         for envelope, body in [
-            (None, '—'),
+            (None, ''),
             (dict(ranking, latest=None, newest=None, state='unavailable', known=0, total=None),
-             '—'),
+             ''),
             (dict(ranking, latest=[], newest=None, known=0, total=0), 'no launches'),
             (dict(ranking, latest=[], newest=dict(ranking['newest'], age_s=172800), known=0, total=0),
              'no launches'),
             (dict(ranking, latest=None, state='unavailable', known=0, total=3),
-             '—'),
+             'no launches'),
         ]:
             card.set_data(dict(data, token_ranking=envelope, status='idle', secondary='0 new'))
             await pilot.pause()
@@ -724,7 +725,7 @@ async def test_token_hostile_wide_tickers_preserve_age_marker_and_advertise_clip
         top = next(i for i, s in enumerate(strips) if '┌' in s.text)
         left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
         row = strips[top+1].crop(left+1, right)
-        assert row.text.startswith(' —   [/x]') and '…' in row.text
+        assert row.text.startswith('     [/x]') and '…' in row.text
         assert row.crop(right-left-3, right-left-2).text == '↑'
         assert row.crop(right-left-2, right-left-1).text == ' '
         assert all(s.crop(right, right+1).text == '│' for s in strips[top+1:top+4])
@@ -830,7 +831,7 @@ async def test_fleet_worked_footer_floors_time_and_centers_without_activity_bar(
                           (604799999, 'worked 0y 0w 6d'),
                           (86400000, 'worked 0y 0w 1d'),
                           (86399999, 'worked 0y 0w 0d'),
-                          (0, 'worked 0y 0w 0d'), (None, 'worked —')]:
+                          (0, 'worked 0y 0w 0d'), (None, 'worked 0y 0w 0d')]:
             card.set_data(dict(card.data, meter_kind='duration', numerator=ms, denominator=None))
             await pilot.pause()
             footer = card_strips(app, card)[-1].text
@@ -865,11 +866,11 @@ async def test_fleet_unknown_zero_invalid_counts_and_retained_data_on_resize():
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-board', SurfboardCard)
         for summary, values, acceptance in [
-            (None, ['—', '—', '—'], '—'),
+            (None, ['0', '0', '0'], '0.00%'),
             ({'tokens': 0, 'jobs': 0, 'capacity': 0, 'accept_rate': 0}, ['0', '0', '0'], '0.00%'),
-            ({'tokens': True, 'jobs': float('inf'), 'capacity': -1, 'accept_rate': True}, ['—', '—', '—'], '—'),
-            ({'tokens': -1, 'jobs': '21', 'capacity': 1.5, 'accept_rate': 101}, ['—', '—', '—'], '—'),
-            ({'tokens': 12500, 'jobs': 2, 'capacity': None, 'accept_rate': float('nan')}, ['12.5K', '2', '—'], '—'),
+            ({'tokens': True, 'jobs': float('inf'), 'capacity': -1, 'accept_rate': True}, ['0', '0', '0'], '0.00%'),
+            ({'tokens': -1, 'jobs': '21', 'capacity': 1.5, 'accept_rate': 101}, ['0', '0', '0'], '0.00%'),
+            ({'tokens': 12500, 'jobs': 2, 'capacity': None, 'accept_rate': float('nan')}, ['12.5K', '2', '0'], '0.00%'),
         ]:
             card.set_data(dict(fleet_card_data(), fleet_summary=summary))
             await pilot.pause()
@@ -956,8 +957,8 @@ async def test_empty_and_assigned_seat_footers_stay_centered():
                 if data is None:
                     assert abs(row.index('Identity.md') - (card.region.width - 11) / 2) <= .5
                 else:
-                    assert row.strip('╰╯─ ') == 'IDLE —'
-                    assert abs(row.index('IDLE —') - (card.region.width - 6) / 2) <= .5
+                    assert row.strip('╰╯─ ') == 'IDLE'
+                    assert abs(row.index('IDLE') - (card.region.width - 4) / 2) <= .5
 
 
 async def test_all_boardroom_card_footers_center_on_resize():
@@ -1003,14 +1004,15 @@ async def test_pool4_price_direction_only_colors_centered_indicator(primary):
                     if segment.text.strip() and not any(char in segment.text for char in '↑↓'):
                         assert segment.style.color == card.rich_style.color and not segment.style.dim
             if primary != '8.77':
-                face = primary + ('  ' + marker if marker else '')
+                face = ('' if primary == '—' else primary) + ('  ' + marker if marker else '')
                 assert content[1].text.strip() == face
-                original_width = len(primary) + (2 if marker else 0)
-                assert abs(content[1].text.index(face) - (right-left-1-original_width)/2) <= .5
+                if face:
+                    original_width = len(primary) + (2 if marker else 0)
+                    assert abs(content[1].text.index(face) - (right-left-1-original_width)/2) <= .5
 
 
 @pytest.mark.parametrize('value,state,label', [(0, 'ok', '24h $0.00'),
-    (123456, 'partial', '24h ≥$123.5K'), (None, 'unavailable', '24h —')])
+    (123456, 'partial', '24h ≥$123.5K'), (None, 'unavailable', '24h 0')])
 async def test_token_numeric_volume_footer_shares_swarm_label_color(value, state, label):
     async with RackApp().run_test(size=(149, 45)) as pilot:
         card = pilot.app.query_one('#surfboard-card-swarm-tokens', SurfboardCard)
@@ -1074,7 +1076,7 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
             top = next(i for i, s in enumerate(strips) if '┌' in s.text)
             assert strips[top].text.strip('│┌┐─ ') == 'JOBS'
             expected = (Color.parse(app.get_css_variables()['accent']).get_truecolor()
-                        if primary in ('5', '1,000') else neutral_inset_color(app))
+                        if primary in ('5', '1,000', '—') else neutral_inset_color(app))
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
             for row in strips[top:top+5]:
                 for x in (left, right):
@@ -1084,11 +1086,11 @@ async def test_work_card_highlights_positive_jobs_across_source_states():
                              if primary in ('5', '1,000') else card.rich_style.color.get_truecolor())
                 assert all(s.style.color.get_truecolor() == digit_ink and not s.style.dim
                            for row in strips[top+1:top+4] for s in row.crop(left+1, right) if s.text.strip())
-            for row, label in ((strips[top], 'JOBS'), (strips[top+4], '0 build' if secondary == '— build' else secondary)):
+            for row, label in ((strips[top], 'JOBS'), (strips[top+4], '3 build' if secondary == '— build' else secondary)):
                 caption = next(s for s in row if label in s.text)
                 assert caption.style.color.get_truecolor() == expected
                 assert not caption.style.bold
-            assert ('0 build' if secondary == '— build' else secondary) in '\n'.join(s.text for s in strips)
+            assert ('3 build' if secondary == '— build' else secondary) in '\n'.join(s.text for s in strips)
             if primary == '—':
                 assert '0 workflows' in strips[-1].text
             if state == 'idle':
@@ -1117,10 +1119,7 @@ async def test_boardroom_loading_footers_keep_cached_content_and_clear(size):
             if card.empty_seat:
                 assert 'loading' not in '\n'.join(s.text for s in strips)
                 continue
-            if data['key'] in ('work', 'oracles', 'surf-nft', 'announce'):
-                assert 'loading' not in strips[-1].text
-            else:
-                assert '◌ loading' in strips[-1].text
+            assert 'loading' not in strips[-1].text
             assert [s.text for s in strips[1:-1]] == before
             card.set_data(data)
             await pilot.pause()

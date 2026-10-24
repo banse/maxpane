@@ -97,6 +97,14 @@ class BoardHeroCard(Pool4HeroCard):
 
     DEFAULT_CSS = "BoardHeroCard { border-subtitle-align: center; }"
 
+    def set_record(self, record):
+        if record.key == 'top':
+            if record.digits.isascii() and record.digits.isdecimal():
+                self.set_value_scope(record.digits)
+            elif record.preview == 'no recorded seats':
+                self.set_value_scope(None)
+        super().set_record(record)
+
     def _footer(self):
         data = self.data
         self.border_subtitle = self.count_caption(Text(data.footer, style="dim"))

@@ -382,3 +382,46 @@ Implementation evidence:
 - Final independent review: Approved, no findings; 23 named checks passed.
   Removing inverse styling from blank rows failed all 16 footprint variants
   and the screen lifecycle check; the mutation was restored byte for byte.
+
+## Quiet card placeholders and last-read values — 2026-10-24
+
+The owner removes card loading indicators. A never-observed central readout is
+blank; other generated missing numeric fields show the last observed value or
+0, while text fields show their last observed value or blank. Actual prose,
+source states and timestamps remain intact; the global footer/caption clock
+continues. Observed zero/empty results supersede earlier values, and fallback
+zeros are never cached as observations. Retain body values together with units.
+
+Tier 2, under 1,000 production lines, one final review. Root owns shared display
+memory, HeroRecord and BOARDROOM rendering, AGENT scopes, and their tests. The
+Agency architect owns only screen scope wiring in surf.py/swarm_tokens.py,
+independent after agreeing LoadingCard.set_value_scope(scope). Clear values on
+seat/owner/network/market-filter changes; keep source dictionaries unchanged.
+No rank-row cache keyed by ambiguous token symbols. Verify cold/load/fail/reopen,
+zero and empty transitions, unit changes, raw text/links, identity switches and
+resize. Show live 149×45 output before final checks/review; no full suite.
+
+Implementation and verification:
+
+- Shared presentation memory retains named fields before width fitting, with
+  primary values paired with their units. Explicit empty values and observed
+  zero denominators clear superseded values. TOKENS list fields use stable row
+  IDs; anonymous ranked symbols never borrow another row's numbers.
+- Card pulse rendering and per-card loading labels are removed. Screen footer
+  and Japanese caption animation still share their original clock.
+- Live keyless BOARDROOM rendering at 149×45 was shown before review; snapshots
+  and source metadata are in `/private/tmp/maxpane-quiet-cards/`.
+- Initial whole touched/composing run: 1,578 passed / 86 failed. The previous
+  commit `bae4ab3e` reproduced 40 of those failures. After display-expectation
+  updates and the single fix wave, the targeted function rerun finished with
+  220 passed / 31 failed; every remaining failure reproduces on that baseline,
+  with no new failure. No full repository suite was run.
+- Dedicated fallback/retention checks: 70 passed. Deployment/filter scope checks:
+  7 passed. Fast guards: 128 passed, the known TOKENS/SWORN CSS slice guard
+  failed. Doc pins: 12 passed after updating the owner display convention.
+- Final scoped review: Approved. Empty primary, MARKET percentage formatting,
+  per-token field retention and empty job-rate reset verified. Disabling scope
+  reset was killed by its named regression; mutation restored byte for byte.
+- Logs: `composing.log`, `baseline.log`, `final-check.log`, `fix-wave.log`,
+  `guards.log`, `docpins-final.log` in the preview directory above. Residual
+  baseline validation debt is recorded in `surfboard_followups.md`.

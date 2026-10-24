@@ -92,12 +92,12 @@ async def test_no_bid_zero_balances_and_missing_values_remain_distinct():
         await pilot.pause()
         app = pilot.app
         assert "none deployed" in painted(app, "bid") and "DEPLOYED" not in painted(app, "bid")
-        assert any("addresses" in line and "--" in line for line in painted(app, "vault").splitlines())
-        assert "0 IMD" in painted(app, "queue") and "0 IMD/d" in painted(app, "queue") and "--d" in painted(app, "queue")
+        assert any("addresses" in line and "0" in line for line in painted(app, "vault").splitlines())
+        assert "0 IMD" in painted(app, "queue") and "0 IMD/d" in painted(app, "queue") and "0d" in painted(app, "queue")
         app.query_one(SurfPool4RackHero).update_data(surf_pool4_hero=None)
         await pilot.pause()
         assert all("unavailable" not in painted(app, key) for key in payload())
-        assert "none deployed" not in painted(app, "bid")
+        assert "none deployed" in painted(app, "bid")
 
 
 async def test_zero_price_apr_and_holder_count_are_visible_before_unread():
@@ -115,8 +115,8 @@ async def test_zero_price_apr_and_holder_count_are_visible_before_unread():
         await pilot.pause()
         for key, glyphs in zero_rows.items():
             output = painted(app, key)
-            assert "--" in output and "unavailable" not in output and glyphs not in output
-        assert any("addresses" in line and "--" in line
+            assert "--" not in output and "unavailable" not in output and glyphs in output
+        assert any("addresses" in line and "0" in line
                    for line in painted(app, "vault").splitlines())
 
 
@@ -139,13 +139,14 @@ async def test_source_clocks_and_holder_provenance_remain_distinct(local_clock):
                    for segment in footer if "partial" in segment.text)
 
 
-@pytest.mark.parametrize("venue,gap,expected", [("reference", 1.2, "ref -1.20%"), (None, .1, "no venue edge"), (None, None, "venue --"), ("[/x]\x1b", .1, "no venue edge")])
+@pytest.mark.parametrize("venue,gap,expected", [("reference", 1.2, "ref -1.20%"), (None, .1, "no venue edge"), (None, None, ""), ("[/x]\x1b", .1, "no venue edge")])
 async def test_price_venue_subtitle_does_not_invent_an_edge(venue, gap, expected):
     data = payload()
     data["price"].update(venue=venue, gap_pct=gap)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert expected in painted(pilot.app, "price")
+        caption = next(line for line in painted(pilot.app, "price").splitlines() if "└" in line)
+        assert caption.split("└", 1)[1].split("┘", 1)[0].strip("─ ") == expected
 
 
 @pytest.mark.parametrize("amount,expected", [(0.0000000042, "4.2e-09"), (0.001234, "0.001234"), (123456789012345., "1.235e+14")])

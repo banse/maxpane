@@ -128,7 +128,7 @@ async def test_partial_history_retains_factory_count_and_independent_current_get
         for key in ("coins", "flow", "burned"):
             assert "partial 04:50" in painted(app, key)
             assert frame_color(app, key) != Color.parse(app.get_css_variables()["accent"]).get_truecolor()
-        assert any("traders" in line and "--" in line for line in painted(app, "flow").splitlines())
+        assert any("traders" in line and "0" in line for line in painted(app, "flow").splitlines())
         assert "12.4k" in painted(app, "flow") and "UNCLAIMED" in painted(app, "fees") and "READY" in painted(app, "queue")
 
 
@@ -171,14 +171,14 @@ async def test_unread_and_partial_volume_do_not_keep_a_chart_and_full_refresh_re
         app.query_one(SurfLaunchpadHero).update_data(surf_launchpad_hero=data)
         await pilot.pause()
         text = painted(app, "volume")
-        assert "partial 04:50" in text and "--" in text
+        assert "partial 04:50" in text and "  ╵╰─╴•╰─╯" in text
         assert not any(c in text for c in "▁▂▃▄▅▆▇█")
         assert "50/210" in str(app.query_one("#hero-volume").tooltip)
         app.query_one(SurfLaunchpadHero).update_data(surf_launchpad_hero=None)
         await pilot.pause()
         for key in data:
             assert "unavailable" not in painted(app, key)
-        assert "12.4k" not in painted(app, "flow") and "READY" not in painted(app, "queue")
+        assert "12.4k" in painted(app, "flow") and "READY" not in painted(app, "queue")
         assert "3.2k" not in str(app.query_one("#hero-volume").tooltip)
         app.query_one(SurfLaunchpadHero).update_data(surf_launchpad_hero=payload())
         await pilot.pause()
@@ -201,7 +201,7 @@ async def test_small_nonzero_amounts_are_never_rounded_to_zero():
         assert "kIMD" not in painted(pilot.app, "burned") and "IMD" in painted(pilot.app, "burned")
 
 
-async def test_stale_volume_keeps_its_value_and_clock_then_unavailable_clears_it(local_clock):
+async def test_volume_retains_its_last_value_while_source_metadata_changes(local_clock):
     data = payload()
     data["volume"].update(state="stale", read_ts=1791773400.)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
@@ -216,8 +216,8 @@ async def test_stale_volume_keeps_its_value_and_clock_then_unavailable_clears_it
         await pilot.pause()
         for key in data:
             assert "unavailable" not in painted(app, key)
-        assert "  ╵╰─╴•╰─╯" not in painted(app, "volume") and "2h to --:--" in painted(app, "volume")
-        assert "12.4k" not in painted(app, "flow") and "250" not in painted(app, "queue")
+        assert "  ╵╰─╴•╰─╯" in painted(app, "volume") and "2h to 05:00" in painted(app, "volume")
+        assert "12.4k" in painted(app, "flow") and "250" in painted(app, "queue")
 
 
 async def test_failed_usd_read_keeps_covered_volume_metadata_in_tooltip(local_clock):
@@ -242,7 +242,7 @@ async def test_fractional_counts_and_one_invalid_bucket_are_not_valid_data():
         await pilot.pause()
         app = pilot.app
         assert "0 new /24h" in painted(app, "coins")
-        assert any("swaps" in row and "--" in row for row in painted(app, "flow").splitlines())
+        assert any("swaps" in row and "0" in row for row in painted(app, "flow").splitlines())
         assert not any(c in painted(app, "volume") for c in "▁▂▃▄▅▆▇█")
         assert "UNKNOWN" in painted(app, "queue") and "120" in painted(app, "queue")
         green = Color.parse(app.get_css_variables()["accent"]).get_truecolor()
@@ -260,8 +260,10 @@ async def test_invalid_values_and_dates_are_safe_unknowns(bad):
         app = pilot.app
         assert "0 new /24h" in painted(app, "coins")
         assert "stale" not in painted(app, "fees") and "--:--" in str(app.query_one("#hero-fees").tooltip)
-        assert "2h to --:--" in painted(app, "volume")
-        assert "--" in painted(app, "fees")
+        assert "2h to" not in painted(app, "volume")
+        assert app.query_one("#hero-volume").source_record.subtitle == "2h to --:--"
+        assert "--" not in painted(app, "fees")
+        assert app.query_one("#hero-fees").data.digits == ""
         assert all("PWNED" not in painted(app, key) for key in data)
         assert "PWNED" not in str(app.query_one("#hero-volume").tooltip)
         assert frame_color(app, "coins") != Color.parse(app.get_css_variables()["accent"]).get_truecolor()

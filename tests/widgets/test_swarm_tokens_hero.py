@@ -117,7 +117,7 @@ async def test_partial_and_stale_keep_coverage_and_their_own_clocks(local_clock)
         assert "stale" not in str(app.query_one("#hero-volume").tooltip)
         assert "05:00 local" in str(app.query_one("#hero-volume").tooltip)
         assert "stale" not in painted(app, "liquidity") and "43/48 known" in painted(app, "liquidity")
-        assert "-- IMD" in painted(app, "liquidity") and "-- ETH" in painted(app, "liquidity")
+        assert "0 IMD" in painted(app, "liquidity") and "0 ETH" in painted(app, "liquidity")
         assert "41/48 known" in painted(app, "top_volume")
         assert "2 other" in painted(app, "pools")
         assert "05:10 local" in str(app.query_one("#hero-liquidity").tooltip)
@@ -135,12 +135,12 @@ async def test_empty_selection_zero_and_unknown_are_distinct():
         await pilot.pause()
         app = pilot.app
         assert "0/0 known" in painted(app, "volume")
-        assert "0 IMD" in painted(app, "liquidity") and "-- ETH" in painted(app, "liquidity")
+        assert "0 IMD" in painted(app, "liquidity") and "0 ETH" in painted(app, "liquidity")
         assert "No matching" in painted(app, "top_volume") and "tokens" in painted(app, "top_volume")
         app.query_one(TokensHero).update_data(tokens_hero=None)
         await pilot.pause()
         assert all("unavailable" not in painted(app, key) for key in payload())
-        assert "0/0 known" not in painted(app, "volume")
+        assert "0/0 known" in painted(app, "volume")
 
 
 @pytest.mark.parametrize("amount,heading,face", [(0.0000000042, "USD / 24H", "4.2e-09"), (4.2, "USD / 24H", "4.2"), (12480000., "MUSD / 24H", "12.48")])
@@ -168,4 +168,4 @@ async def test_hostile_symbols_large_counts_and_unknown_leaders_stay_honest():
         assert "…" in output and "[/x]" in output
         assert "0x" not in output and "token" in output
         assert "$4.2e-09" in output
-        assert any("BMC" in row and "--" in row for row in output.splitlines())
+        assert any("BMC" in row and "0" in row for row in output.splitlines())

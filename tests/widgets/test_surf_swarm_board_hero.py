@@ -198,7 +198,7 @@ async def test_known_zero_rate_and_counts_are_distinct_from_cold_and_recover():
         app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=None)
         await pilot.pause()
         assert all("unavailable" not in painted(app, key) for key in payload())
-        assert "╰─╯•╰─╯" not in painted(app, "rate") and "0 accepted" in painted(app, "top")
+        assert "╰─╯•╰─╯" in painted(app, "rate") and "0 accepted" in painted(app, "top")
         app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=payload())
         await pilot.pause()
         assert "4.188k accepted" in painted(app, "top") and "96k / 100k" in painted(app, "rate")
@@ -219,17 +219,17 @@ async def test_partial_stale_and_failed_sources_remain_independent(local_clock):
         assert "04:50" in app.query_one("#hero-top").tooltip.plain
         assert "partial" in app.query_one("#hero-effort").tooltip.plain
         assert "05:00" in app.query_one("#hero-effort").tooltip.plain
-        assert any("turns" in line and "--" in line for line in painted(app, "effort").splitlines())
+        assert any("turns" in line and "0" in line for line in painted(app, "effort").splitlines())
         assert "52.4% run codex" in painted(app, "workers") and "966" in painted(app, "workers")
         data["workers"]["state"] = "unavailable"
         app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=data)
         await pilot.pause()
-        assert "966" not in painted(app, "workers") and "unavailable" not in painted(app, "workers")
+        assert "966" in painted(app, "workers") and "unavailable" not in painted(app, "workers")
         assert "18.4M" in painted(app, "effort")
 
 
 @pytest.mark.parametrize("bad", [True, -1, 1.5, float("nan"), float("inf"), "[/x]", {}])
-async def test_malformed_identifiers_counts_and_clocks_cannot_paint_old_values(bad):
+async def test_malformed_reads_keep_last_good_values_without_echoing_bad_input(bad):
     async with Harness(payload()).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         data = payload()
@@ -238,10 +238,10 @@ async def test_malformed_identifiers_counts_and_clocks_cannot_paint_old_values(b
         pilot.app.query_one(SurfSwarmBoardHero).update_data(surf_leaderboard_hero=data)
         await pilot.pause()
         text = painted(pilot.app, "top")
-        assert "4.188k" not in text and "0 accepted" in text and "stale" not in text
+        assert "4.188k accepted" in text and "stale" not in text
         assert "--:--" in pilot.app.query_one("#hero-top").tooltip.plain
         assert "[/x]" not in text and "PWNED" not in text
-        assert any("claude" in line and "--" in line for line in painted(pilot.app, "launches").splitlines())
+        assert any("claude" in line and "602" in line for line in painted(pilot.app, "launches").splitlines())
 
 
 @pytest.mark.parametrize("percent", [-1, 101, True, float("nan"), "[/x]"])
@@ -253,11 +253,12 @@ async def test_invalid_percent_is_unknown_instead_of_a_success_rate(percent):
     data["workers"]["runtime_percent"] = percent
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        assert "--" in painted(pilot.app, "rate")
+        assert pilot.app.query_one("#hero-rate").data.digits == ""
+        assert "--" not in painted(pilot.app, "rate")
         assert "╶─╯╰─╯•╰─╯" not in painted(pilot.app, "rate")
-        assert "--%" in painted(pilot.app, "top")
-        assert "--%" in painted(pilot.app, "launches")
-        assert "--% run codex" in painted(pilot.app, "workers")
+        assert "0%" in painted(pilot.app, "top")
+        assert "0%" in painted(pilot.app, "launches")
+        assert "0% run codex" in painted(pilot.app, "workers")
 
 
 async def test_small_effort_hours_and_tiny_nonzero_accept_rate_remain_visible():
@@ -323,7 +324,7 @@ async def test_launch_refresh_updates_only_its_card_and_retains_neutral_values(s
         assert "901 of 941" in app.query_one("#hero-launches").tooltip.plain
 
 
-@pytest.mark.parametrize("state, footer", [("pending", "--%"), ("failed", "--%")])
+@pytest.mark.parametrize("state, footer", [("pending", "0%"), ("failed", "0%")])
 async def test_launch_first_read_status_keeps_unknown_and_known_zero_distinct(state, footer):
     data = payload()
     data["launches"] = dict(state=state)
@@ -332,21 +333,23 @@ async def test_launch_first_read_status_keeps_unknown_and_known_zero_distinct(st
         app = pilot.app
         text = painted(app, "launches")
         assert footer in text
-        assert all(any(label in line and "--" in line for line in text.splitlines())
+        assert app.query_one("#hero-launches").source_record.footer == "--%"
+        assert all(any(label in line and "0" in line for line in text.splitlines())
                    for label in ("seats", "claude", "codex"))
         assert "loading" not in text and "load failed" not in text
         app.query_one(SurfSwarmBoardHero).set_launch_contribution({
             "summary": dict(state=state, seats=0, claude=0, codex=0, jobs=0, runtime_known=0, percent=0, total_seats=1024)})
         await pilot.pause()
         text = painted(app, "launches")
-        assert "0%" in text and footer not in text
+        assert "0%" in text
+        assert app.query_one("#hero-launches").source_record.footer == "0%"
         assert all(any(label in line and "0" in line for line in text.splitlines())
                    for label in ("seats", "claude", "codex"))
 
 
 @pytest.mark.parametrize("milliseconds, footer", [
     (0, "worked 0y 0w 0d"), (23 * 3600000, "worked 0y 0w 0d"),
-    (25 * 3600000, "worked 0y 0w 1d"), (None, "worked —"),
+    (25 * 3600000, "worked 0y 0w 1d"), (None, ""),
 ])
 async def test_effort_duration_omits_subday_hours_and_missing_tokens_stay_unknown(milliseconds, footer):
     data = payload()
@@ -354,8 +357,8 @@ async def test_effort_duration_omits_subday_hours_and_missing_tokens_stay_unknow
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         text = painted(pilot.app, "effort")
-        assert footer in text.splitlines()[8]
-        assert any("tokens" in line and "--" in line for line in text.splitlines())
+        assert text.splitlines()[8].strip("╰╯─ ") == footer
+        assert any("tokens" in line and "0" in line for line in text.splitlines())
 
 
 # Native widgets still consume the original, independent source-clock contract.
@@ -382,8 +385,9 @@ async def test_share_footers_keep_denominators_on_hover_and_unknowns_unknown(loc
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert '--%' in painted(app, 'launches').splitlines()[8]
-        assert '--% run --' in painted(app, 'workers').splitlines()[8]
+        assert '0%' in painted(app, 'launches').splitlines()[8]
+        workers_footer = painted(app, 'workers').splitlines()[8]
+        assert '0%' in workers_footer and '--' not in workers_footer and 'run 0' not in workers_footer
         launch = app.query_one('#hero-launches').tooltip.plain
         assert 'recorded seats · as of' in launch and '--:--' in launch
         assert '900 of 966' in app.query_one('#hero-workers').tooltip.plain

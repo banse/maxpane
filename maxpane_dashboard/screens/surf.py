@@ -249,6 +249,7 @@ from maxpane_dashboard.screens.dashboard_screen import DashboardScreen
 from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen, SurfStatusBar
 from maxpane_dashboard.screens.seat_input import SeatInputScreen
 from maxpane_dashboard.widgets.markup_safety import flatten, safe_markup, sanitize_cell
+from maxpane_dashboard.widgets.card_inner import LoadingCard
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.surf._swarm_seat import seat_token
 from maxpane_dashboard.widgets.surf.swarm_record_filter import (
@@ -4630,7 +4631,18 @@ class SurfScreen(SurfDashboardScreen):
     def _update_panel(self, widget_class, **payload):
         """Keep hidden bodies mounted without rebuilding their tables."""
         if widget_class in _MODE_PANELS[self._mode]:
-            self.query_one(widget_class).update_data(**payload)
+            widget = self.query_one(widget_class)
+            if widget_class in (SurfProtocolHero, SurfPool4RackHero):
+                data = self._title_data or {}
+                previous = getattr(self, '_pool4_card_scope', (None, None, None))
+                network = data.get('pool4_network') or previous[0]
+                prior_addresses = previous[1:] if network == previous[0] else (None, None)
+                scope = (network, data.get('pool4_hook_addr') or prior_addresses[0],
+                         data.get('pool4_token_addr') or prior_addresses[1])
+                self._pool4_card_scope = scope
+                for card in widget.query(LoadingCard):
+                    card.set_value_scope((widget_class.__name__, scope))
+            widget.update_data(**payload)
 
     async def _do_refresh(self) -> None:
         try:

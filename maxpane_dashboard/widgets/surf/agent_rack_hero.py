@@ -150,7 +150,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["stats"] = ((runtime_id or "runtime", version or "--"),
                                ("daemon", flatten(section.get("daemon")).partition("+")[0] or "--"),
                                ("model", model))
-            fields["subtitle"] = (flatten(rows[0].get("effort")) or "--") if rows else "--"
+            fields["subtitle"] = (flatten(rows[0].get("effort")) or "--") if rows else "" if rows == [] else "--"
             fields["accent"] = False
         elif key == "earnings":
             fields["digits"] = _count(count(section.get("earned")))
@@ -188,9 +188,11 @@ class AgentRackCard(Pool4HeroCard):
     def _fit_content(self, record):
         if record.key == "owner":
             address = self.source.get("address")
+            address = self._values.field('owner-address', address if record.state in _AVAILABLE and is_address(address) else '--')
+            name = self._values.field('owner-name', (flatten(self.source.get('name')) or '') if record.state in _AVAILABLE and is_address(self.source.get('address')) else '--')
             room = max(1, self.content_size.width - 4 - ICON_COLS)
-            self.owner_text = (wallet_text(address, label=self.source.get("name"), width=min(17, room), explorer=IMD)
-                               if record.state in _AVAILABLE and is_address(address) else Text("--"))
+            self.owner_text = (wallet_text(address, label=name or None, width=min(17, room), explorer=IMD)
+                               if is_address(address) else Text(''))
             # Below the safe address-window width keep the link, copy and full tooltip.
             if self.owner_text.cell_len > room + ICON_COLS:
                 self.owner_text = wallet_text(address, label="wallet", width=room, explorer=IMD)
@@ -216,11 +218,13 @@ class AgentRackCard(Pool4HeroCard):
     def set_source(self, record, source):
         self.source = source
         self.raw_record = record
-        super().set_record(self._fit_content(record))
+        category = {'models': 'oracle', 'nodes': 'launches'}.get(record.key)
+        if category and record.state in _AVAILABLE and count(source.get(category)) == 0 and count(source.get(category + '_total')) == 0:
+            self._values.field('subtitle', '')
+        super().set_record(record)
         self.tooltip = self._source_tooltip(record, source)
 
     def on_resize(self):
-        self.data = self._fit_content(self.raw_record)
         super().on_resize()
 
     def _update_title(self):
@@ -228,8 +232,8 @@ class AgentRackCard(Pool4HeroCard):
         if (self.data.key == "owner" and self.data.state in _AVAILABLE
                 and cell_len(flatten(self.source.get("name"))) > max(1, self.content_size.width - 4 - ICON_COLS)):
             self.border_title = Text(title_with_hint("⊙ OWNER", True, max(0, self.region.width - 6)))
-        elif (self.data.key == "runtime" and self.raw_record.stats
-              and self.raw_record.stats[2] != self.data.stats[2]):
+        elif (self.data.key == "runtime" and self._display_record.stats
+              and self._display_record.stats[2] != self.data.stats[2]):
             self.border_title = Text(title_with_hint("⊙ RUNTIME", True, max(0, self.region.width - 6)))
 
     def _footer(self):
@@ -243,7 +247,7 @@ class AgentRackCard(Pool4HeroCard):
         elif data.key == "status":
             room = max(5, self.region.width - 6)
             meter = {key: self.source.get(key) for key in ("meter_kind", "meter_state", "numerator", "denominator")}
-            self.border_subtitle = meter_text(dict(meter, key="agent"), width=room)
+            self.border_subtitle = self.retained_meter(meter_text(dict(meter, key="agent"), width=room))
         else:
             delta = _number(self.source.get("delta"), signed=True) if data.key == "rank" else None
             color = "green" if delta and delta > 0 else "red" if delta and delta < 0 else "dim"
@@ -297,30 +301,14 @@ class AgentRackCard(Pool4HeroCard):
         values = data.digits.split()
         groups = [[segment.text for segment in Digits(value).render(Style()) if segment.text != "\n"] for value in values]
         rows = []
-        if len(groups) == 3 and all(value != "--" for value in values) and sum(len(group[0]) for group in groups) + 2 <= inside:
+        if not values:
+            rows = [Text(''), Text(''), Text('')]
+        elif len(groups) == 3 and all(value != "--" for value in values) and sum(len(group[0]) for group in groups) + 2 <= inside:
             for n in range(3):
                 rows.append(Text(groups[0][n] + " ", style=digits).append(groups[1][n], style=separator).append(" " + groups[2][n], style=digits))
         else:
-            left_value, right_value = (Text(value, style=digits) for value in (values[0], values[-1]))
-            left = self.loading_block(left_value, inside-2)
-            right = self.loading_block(right_value, inside-2)
-            if left is not None and right is not None:
-                rows = left
-            elif left is not None or right is not None:
-                left = left or [Text(''), left_value, Text('')]
-                right = right or [Text(''), right_value, Text('')]
-                left_width, right_width = max(row.cell_len for row in left), max(row.cell_len for row in right)
-                if left_width + right_width + 4 <= inside-2:
-                    for index in range(3):
-                        left[index].align('center', left_width)
-                        right[index].align('center', right_width)
-                        row = left[index].append(' 0F ' if index == 1 else '    ', style=separator)
-                        rows.append(row.append_text(right[index]))
-            if not rows:
-                row = self.loading_value(left_value).append(' ', style=digits)
-                row.append('0F', style=separator).append(' ', style=digits)
-                row.append_text(self.loading_value(right_value))
-                rows = [Text(''), row, Text('')]
+            row = Text(values[0], style=digits).append(' 0F ', style=separator).append(values[-1], style=digits)
+            rows = [Text(''), row, Text('')]
             rows = [padded_inner_row(row, inside, align='center') for row in rows]
         heading = " " + clip(data.heading, inside - 2) + " "
         content = Text("┌" + heading.center(inside, "─") + "┐\n", style=frame)
@@ -416,8 +404,17 @@ class SurfSwarmAgentRackHero(Grid):
             yield AgentRackCard(record)
 
     def update_data(self, *, surf_agent_hero=None, **kwargs):
+        seat = _source(surf_agent_hero, 'seat').get('token_id')
+        owner = _source(surf_agent_hero, 'owner').get('address')
+        if seat != getattr(self, '_display_seat', None):
+            self._display_owner = None
+        self._display_seat = seat
+        if is_address(owner):
+            self._display_owner = owner.lower()
         for record in agent_records(surf_agent_hero):
             source = _card_source(surf_agent_hero, record.key)
             if record.key == "seat":
                 source = dict(source, live_state=_source(surf_agent_hero, "status").get("live_state"))
-            self.query_one(f"#hero-{record.key}", AgentRackCard).set_source(record, source)
+            card = self.query_one(f"#hero-{record.key}", AgentRackCard)
+            card.set_value_scope((seat, getattr(self, '_display_owner', None)))
+            card.set_source(record, source)

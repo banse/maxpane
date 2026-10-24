@@ -4,9 +4,9 @@ import re
 from rich.color import Color
 from rich.style import Style
 from rich.text import Text
-from textual.color import Color as TextualColor
 
 from maxpane_dashboard.widgets.panels import HeroBoxBase
+from maxpane_dashboard.widgets.card_values import CardValues, MISSING
 
 _COUNT_CAPTION = re.compile(
     r'(?:^|(?<=·))\s*(?P<number>--|—|-)(?=\s*(?:'
@@ -22,7 +22,7 @@ def loading_fraction(frame: int) -> float:
 
 
 class LoadingCard(HeroBoxBase):
-    """A missing-value pulse driven by the screen's existing local clock."""
+    """Presentation memory shared by the boardroom and dashboard cards."""
 
     _card_loading = False
     _card_loading_frame = 0
@@ -31,43 +31,35 @@ class LoadingCard(HeroBoxBase):
     def _can_load_card(self):
         return True
 
+    def __init__(self, *args, **kwargs):
+        self._values = CardValues()
+        self._value_scope = None
+        super().__init__(*args, **kwargs)
+
+    def reset_display_values(self):
+        self._values.clear()
+
+    def set_value_scope(self, scope):
+        if scope != self._value_scope:
+            self.reset_display_values()
+            self._value_scope = scope
+
     def set_card_loading(self, busy: bool, frame: int):
-        busy = bool(busy and self._can_load_card())
-        changed = busy != self._card_loading or busy and frame != self._card_loading_frame
-        self._card_loading, self._card_loading_frame = busy, frame
-        if changed and self._has_missing_value:
-            self.refresh()
+        # The screen still owns its footer/caption clock; cards never pulse.
+        self._card_loading, self._card_loading_frame = bool(busy), frame
 
     def loading_value(self, value: Text) -> Text:
-        """Replace an explicit whole missing field, never punctuation in prose."""
-        if value.plain.strip() not in ('-', '--', '—'):
-            return value
-        self._has_missing_value = True
-        if not self._card_loading or not self._can_load_card():
-            return value
-        return self._loading_text('◇')
+        return Text('', style=value.style) if MISSING.fullmatch(value.plain.strip()) else value
 
-    def loading_block(self, value: Text, width: int) -> list[Text] | None:
-        """Use the existing three body rows; keep a compact mark if too narrow."""
-        indicator = self.loading_value(value)
-        if indicator is value:
-            return None
-        if width < 6:
-            return [Text(''), indicator, Text('')]
-        return [self._loading_text(row) for row in ('      ', '  <>  ', '      ')]
-
-    def _loading_text(self, characters: str) -> Text:
-        palette = self.app.get_css_variables()
-        dark = TextualColor.parse(palette['background']).monochrome
-        light = TextualColor.from_rich_color(self.rich_style.color, self.app.ansi_theme).monochrome
-        fraction = loading_fraction(self._card_loading_frame)
-        shade = dark.blend(light, fraction)
-        ink = Style(color=shade.rich_color,
-                    bgcolor=palette['background'], dim=False, bold=False)
-        indicator = Text(characters, style=ink)
-        # A span keeps the inverse background off alignment/padding cells.
-        indicator.stylize(Style(bgcolor=dark.blend(light, 1 - fraction).rich_color), 0, len(indicator))
-        return indicator
+    def retained_meter(self, value: Text) -> Text:
+        previous = self._values.retain('meter-rich', value, missing=bool(MISSING.search(value.plain)))
+        if previous is not None:
+            return previous
+        result = value.copy()
+        for match in reversed(list(MISSING.finditer(value.plain))):
+            result = result[:match.start()] + result[match.end():]
+        result.rstrip()
+        return result
 
     @staticmethod
     def count_caption(value: Text) -> Text:
@@ -81,16 +73,10 @@ class LoadingCard(HeroBoxBase):
         return result
 
     def loading_caption(self, value: Text) -> Text:
-        """Pulse missing numbers in a generated numeric caption, never prose/dates."""
-        value = self.count_caption(value)
-        matches = list(re.finditer(r'(?<![\w-])(?:--|—|-)(?![\w-])', value.plain))
-        if not matches:
-            return value
-        result = value.copy()
-        for match in reversed(matches):
-            start, end = match.span()
-            result = result[:start] + self.loading_value(result[start:end]) + result[end:]
-        return result
+        # Compatibility for generated numeric captions; observations are retained
+        # at set_record/set_data, before this final formatting step.
+        text = CardValues().field('caption', value.plain, numeric=True)
+        return Text(text, style=value.style)
 
 
 def inner_styles(palette, *, active=False, frame_color=None, ansi_theme=None, text_color="white"):

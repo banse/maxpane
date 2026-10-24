@@ -628,6 +628,7 @@ async def test_board_enter_persists_using_shared_writer_and_opens_agent(monkeypa
 @pytest.mark.parametrize("state", ["pending", None])
 async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_unread(state):
     from tests.screens.test_surf_swarm_layout import _v3_agent_payload
+    from tests.widgets.test_card_loading import inset_rows
     payload = project_agent_payload(_v3_agent_payload("pending" if state else "seats-unavailable"))
     async with _surf_app(payload).run_test(size=(170, 60)) as pilot:
         screen = await _open(pilot, "a")
@@ -641,7 +642,8 @@ async def test_selected_seat_keeps_worker_and_contributor_groups_when_seats_is_u
         assert "╶─╮ ╶─╮╭─╴╶─╮" in accepted
         assert "WORKER" in status and "IDLE" in status and "unavailable" not in status
         assert "⧉" not in owner
-        assert "--" in owner and "loading" not in owner and "unavailable" not in owner
+        assert not any(row.strip() for row in inset_rows(pilot.app, hero.query_one('#hero-owner')))
+        assert "loading" not in owner and "unavailable" not in owner
 
 @pytest.mark.parametrize("row_index", [0,1])
 async def test_board_first_click_saves_clicked_seat_once_and_opens_agent(monkeypatch,row_index):
@@ -742,8 +744,11 @@ async def test_polish_agent_worker_states_keep_five_digit_counts_whole(live_stat
         screen = await _open(pilot, 'a')
         hero = screen.query_one(SurfSwarmAgentRackHero)
         text = _region_text(pilot.app, hero.query_one('#hero-status'))
-        word = {'working': 'BUSY', 'idle': 'IDLE', 'paused': 'IDLE'}.get(live_state, '— —')
-        assert word in text
+        if live_state is None:
+            assert not text.splitlines()[-1].strip('╰─╯ ')
+        else:
+            word = {'working': 'BUSY', 'idle': 'IDLE', 'paused': 'IDLE'}[live_state]
+            assert word in text
         assert '0F' in text and '99,999' in text
         assert ('99,999 0F 99,999' if live_state == 'working' else '0 0F 99,999') in text
         if live_state == 'paused':

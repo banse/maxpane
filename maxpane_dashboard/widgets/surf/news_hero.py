@@ -1,7 +1,8 @@
 """Six rack-style news highlights; accepts projected primitives only."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import re
 from datetime import datetime, timezone
 
 from rich.color import Color
@@ -12,6 +13,7 @@ from textual.containers import Grid
 from textual.renderables.digits import Digits
 
 from maxpane_dashboard.widgets.card_inner import LoadingCard, inner_styles, padded_inner_row
+from maxpane_dashboard.widgets.card_values import CardValues, MISSING
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.rowfit import cell_len, clip
@@ -149,11 +151,66 @@ class NewsHeroCard(LoadingCard):
         self.set_record(data)
 
     def set_record(self, data: HeroRecord):
-        self.data = data
+        self.source_record = data
+        self._display_record = self._present_record(data)
+        self.data = self._fit_content(self._display_record)
         self.border_title = Text("⊙ " + flatten(data.title))
         self.tooltip = Text(f"{data.title} · as of {_clock(data.read_ts)} UTC")
         self._footer()
         self.refresh()
+
+    def _fit_content(self, data):
+        return data
+
+    def _present_record(self, data):
+        body = dict(heading=data.heading, digits=data.digits, preview=data.preview,
+                    stats=data.stats, rows=data.rows)
+        missing = (bool(data.digits) and bool(MISSING.fullmatch(data.digits.strip()))
+                   or bool(data.preview) and bool(MISSING.fullmatch(data.preview.strip()))
+                   and not (data.key in ('announcement', 'reply') and data.state in ('ok', 'stale', 'partial')))
+        missing |= data.key == 'split' and data.rows == ('route --',)
+        if data.key == 'status' and data.digits:
+            counts = data.digits.split(' 0F ')
+            missing = len(counts) == 2 and all(MISSING.fullmatch(value) for value in counts)
+        previous = self._values.retain('body', body, missing=missing)
+        if missing:
+            body = previous or dict(body, digits='', preview='', rows=(), stats=())
+        data = replace(data, **body)
+        if data.key == 'status' and data.digits:
+            data = replace(data, digits=self._values.field('status-counts', data.digits, numeric=True))
+        # Fixed named metric rows have stable identities. Ranked token symbols do
+        # not; only the whole prior list may be reused when wholly unread.
+        if data.key == 'runtime' and data.stats:
+            runtime = data.stats[0]
+            previous = self._values.retain('runtime-pair', runtime,
+                missing=runtime[0] == 'runtime' and bool(MISSING.fullmatch(runtime[1])))
+            if previous is not None and runtime[0] == 'runtime' and MISSING.fullmatch(runtime[1]):
+                data = replace(data, stats=(previous, *data.stats[1:]))
+        memory = CardValues() if data.key == 'top-volume' else self._values
+        stats = tuple((label if label not in ('-', '--', '—') else '',
+                       memory.field(('stat', label), value, numeric=data.key != 'runtime'))
+                      for label, value in data.stats)
+        rows = tuple(self._values.field(('row', index), row,
+                     numeric=data.key == 'liquidity' or data.key == 'checks' and row.startswith('drift '),
+                     literal=data.key in ('activity', 'workflow'))
+                     for index, row in enumerate(data.rows))
+        def caption(field, value):
+            if data.key == 'market' and value == '24h --':
+                value = '--% · 24h'
+            if data.key == 'workers' and ' run ' in value:
+                percent, runtime = value.split(' run ', 1)
+                percent = self._values.field((field, 'percent'), percent, numeric=True)
+                runtime = self._values.field((field, 'runtime'), runtime)
+                return percent + (' run ' + runtime if runtime else '')
+            textual = data.key in ('runtime', 'owner', 'seat', 'status') or bool(re.search(
+                r'^venue |--:--|\b(?:paid|paired|worked|work|since|until|to)\b', value, re.I))
+            numeric = not textual and (bool(MISSING.fullmatch(value.strip())) or bool(re.search(
+                r'[%$#/=]|(?:--|—|-)[dhms]\b|\b(?:of|known|new|cached|other|working|building|agents?|tokens?|jobs?|'
+                r'accepted|attempts|online|wallets?|models?|chains?|workflows?|collaborators?|collections?|records?|IMD|ETH|USD|24h)\b',
+                value, re.I)))
+            return self._values.field(field, value, numeric=numeric, literal=not textual and not numeric)
+        return replace(data, stats=stats, rows=rows,
+                       subtitle=caption('subtitle', data.subtitle), footer=caption('footer', data.footer))
 
     def _footer(self):
         data = self.data
@@ -164,6 +221,7 @@ class NewsHeroCard(LoadingCard):
         self.border_subtitle = footer
 
     def on_resize(self):
+        self.data = self._fit_content(self._display_record)
         self._footer()
         self.refresh()
 
@@ -196,12 +254,7 @@ class NewsHeroCard(LoadingCard):
         prose_ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
         if data.preview:
             preview = Text(data.preview, style=prose_ink)
-            block = (self.loading_block(preview, room)
-                     if data.state in ('unavailable', 'pending', 'loading', 'busy') else None)
-            if block is not None:
-                rows = [padded_inner_row(row, inside, align='center') for row in block]
-            else:
-                rows = [padded_inner_row(row, inside) for row in post_preview(data.preview, room, prose_ink)]
+            rows = [padded_inner_row(row, inside) for row in post_preview(preview.plain, room, prose_ink)]
         elif data.digits:
             digit_ink = digit_ink if data.digits != "--" else ink
             digits = [Text(segment.text, style=digit_ink) for segment in Digits(data.digits).render(Style()) if segment.text != "\n"]
@@ -209,7 +262,7 @@ class NewsHeroCard(LoadingCard):
                 rows = digits
             else:
                 value = Text(data.digits, style=digit_ink)
-                rows = self.loading_block(value, room) or [Text(''), value, Text('')]
+                rows = [Text(''), value, Text('')]
                 rows = [padded_inner_row(row, inside, align='center') for row in rows]
             centered = True
         elif data.stats:

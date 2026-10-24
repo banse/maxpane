@@ -791,3 +791,33 @@ Live 149×45 rendering and in-situ 143×37 checks confirmed unchanged geometry.
 Final review approved without findings; 370 affected/composing/layout checks,
 128 guards and 12 doc pins passed. The same two baseline failures remain; no
 new follow-up was introduced. Evidence is in `card_loading_footer_plan.md`.
+
+## Quiet card values — 2026-10-24
+
+Supersedes the animated card loader notes above: card centers are blank until
+observed; other card numbers retain the last value or display 0, and text retains
+its last value or stays blank. Source facts and timestamps remain unchanged.
+The shared screen footer and Japanese caption animation remain active.
+
+Implementation review approved after the single fix wave. Final targeted run:
+220 passed; 31 residual failures independently reproduced at `bae4ab3e`, with
+no new failures. The nine additional baseline LAUNCHPAD layout failures were
+resolved by measuring complete pre-fit display values instead of intentionally
+suppressed raw placeholders. Full evidence is in `card_loading_footer_plan.md`.
+
+Remaining test maintenance, grouped by file (do when the area is next touched):
+- `tests/screens/test_surf_loading.py`: 1 baseline failure(s).
+- `tests/screens/test_surf_pool4_market_screen.py`: 2 baseline failure(s).
+- `tests/screens/test_surf_pool4_screen.py`: 2 baseline failure(s).
+- `tests/screens/test_surf_swarm_screen.py`: 7 baseline failure(s).
+- `tests/screens/test_surfboard_screen.py`: 2 baseline failure(s).
+- `tests/screens/test_swarm_tokens.py`: 1 baseline failure(s).
+- `tests/screens/test_swarm_tokens_live.py`: 2 baseline failure(s).
+- `tests/widgets/test_surfboard_card_activity.py`: 14 baseline failure(s).
+
+These cover retired hero/card structure, command/navigation test doubles,
+missing fake-manager methods, old timer ownership, the existing extra market
+fetch, and the already documented TOKENS/SWORN stylesheet slice. Exact node IDs
+are in `/private/tmp/maxpane-quiet-cards/residual-failures.json`; each was run
+against the unchanged baseline in an isolated worktree. This is validation debt,
+not a reason to restore removed card indicators or overwrite source unknowns.

@@ -100,7 +100,7 @@ async def test_six_approved_cards_have_equal_geometry_and_visible_values():
             assert all(segment.style.bgcolor.get_truecolor() == background for segment in frames)
 
 
-async def test_zero_unknown_and_negative_headroom_survive_refresh_then_clear():
+async def test_zero_fallback_and_negative_headroom_survive_unavailable_refresh():
     data = payload()
     data["totals"].update(state="partial", burned=0, rewarded=None, fees=0)
     data["inventory"]["headroom"] = -5000
@@ -109,16 +109,17 @@ async def test_zero_unknown_and_negative_headroom_survive_refresh_then_clear():
         await pilot.pause()
         app = pilot.app
         assert any("burned" in row and "0" in row for row in painted(app, "totals").splitlines())
-        assert any("rewarded" in row and "--" in row for row in painted(app, "totals").splitlines())
+        assert any("rewarded" in row and "0" in row for row in painted(app, "totals").splitlines())
         assert "-5k" in painted(app, "inventory")
         assert "0/d" in painted(app, "delivery")
         app.query_one(SurfProtocolHero).update_data(surf_protocol_hero=None)
         await pilot.pause()
         for key in payload():
             assert "unavailable" not in painted(app, key)
-        assert "-5k" not in painted(app, "inventory")
+        assert "-5k" in painted(app, "inventory")
+        assert "not established" in painted(app, "checks")
         assert "reconciled" not in painted(app, "checks")
-        assert "0/d" not in painted(app, "delivery")
+        assert "0/d" in painted(app, "delivery")
 
 
 async def test_partial_stale_source_times_and_derived_marker(local_clock):
@@ -198,21 +199,26 @@ async def test_stale_fault_retains_alarm_and_a_fresh_recovery_clears_it(local_cl
                    for strip in strips(app, "checks") for segment in strip if "┌" in segment.text)
 
 
-@pytest.mark.parametrize("route,expected", [("direct", "to stakers"), ("[/x]\x1b", "route --"), (None, "route --")])
+@pytest.mark.parametrize("route,expected", [("direct", "to stakers"), ("[/x]\x1b", ""), (None, "")])
 async def test_routes_never_invent_distributor_allocations(route, expected):
     data = payload()
     data["split"]["path"] = data["checks"]["path"] = route
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         output = painted(pilot.app, "split")
-        assert expected in output
+        if expected:
+            assert expected in output
+        else:
+            assert not pilot.app.query_one("#hero-split").data.rows
+            assert all(not row.text.strip("│ ") for row in strips(pilot.app, "split")[3:6])
+            assert "route --" not in output
         assert "30%" not in output and "40%" not in output
         assert "distributor" not in painted(pilot.app, "checks")
         assert "[/x]" not in output
 
 
 @pytest.mark.parametrize("bad", [True, float("nan"), float("inf"), "[/x]\x1b", {}, -(10 ** 500)])
-async def test_invalid_values_and_dates_do_not_leave_old_data_or_raise(bad):
+async def test_invalid_reads_retain_last_values_and_leave_source_clock_unknown(bad):
     async with Harness(payload()).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         data = payload()
@@ -221,8 +227,8 @@ async def test_invalid_values_and_dates_do_not_leave_old_data_or_raise(bad):
         pilot.app.query_one(SurfProtocolHero).update_data(surf_protocol_hero=data)
         await pilot.pause()
         text = painted(pilot.app, "totals")
-        assert "33.3k" not in text and "stale" not in text and "--:--" in str(pilot.app.query_one("#hero-totals").tooltip)
-        assert any("burned" in row and "--" in row for row in text.splitlines())
+        assert "33.3k" in text and "stale" not in text and "--:--" in str(pilot.app.query_one("#hero-totals").tooltip)
+        assert any("burned" in row and "33.3k" in row for row in text.splitlines())
         assert "reconciled" not in painted(pilot.app, "checks")
 
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 
 from rich.style import Style
 from rich.text import Text
@@ -16,6 +17,7 @@ from textual.widgets import Input, Static
 from maxpane_dashboard.analytics.surfboard import SURFBOARD_AGENT_KEYS as AGENT_KEYS
 from maxpane_dashboard.widgets.address import is_copy_click, is_explorer_click
 from maxpane_dashboard.widgets.card_inner import LoadingCard, inner_styles, loading_fraction, padded_inner_row
+from maxpane_dashboard.widgets.card_values import MISSING
 from maxpane_dashboard.widgets.explorer import for_network
 from maxpane_dashboard.widgets.fmt import fmt_age, worked_duration
 from maxpane_dashboard.widgets.markup_safety import flatten
@@ -48,9 +50,9 @@ def _number(value):
 
 def _token_line(row, width, style, value_style):
     """Fit age and literal ticker while preserving address copy/link units."""
-    age = fmt_age(row.get('age_s')) if _number(row.get('age_s')) else '—'
+    age = fmt_age(row.get('age_s')) if _number(row.get('age_s')) else ''
     chain = flatten(row.get('chain')).upper()
-    symbol, lost = fit_prose(row.get('symbol') or '—', max(0, width-4),
+    symbol, lost = fit_prose(row.get('symbol') or '', max(0, width-4),
                              style=value_style if row.get('symbol') else style,
                              explorer=for_network('MAINNET' if chain == 'ETH' else chain))
     line = Text(clip(clip(age, 3).ljust(3) + ' ', width), style=style).append_text(symbol)
@@ -263,12 +265,6 @@ class SurfboardCard(LoadingCard, can_focus=True):
         return not self.empty_seat and self.data.get('status') in (
             None, 'loading', 'active', 'idle', 'working', 'ready', 'assessing', 'falling')
 
-    def set_card_loading(self, busy, frame):
-        previous = self._card_loading, self._card_loading_frame
-        super().set_card_loading(busy, frame)
-        if previous != (self._card_loading, self._card_loading_frame) and self._footer_has_missing_value:
-            self._update_meter()
-
     def compose(self):
         if self.seat_slot is not None:
             yield Input(placeholder="seat number", restrict=r"#?[0-9]*", max_length=11,
@@ -326,6 +322,11 @@ class SurfboardCard(LoadingCard, can_focus=True):
         else:
             self._seat_error = ""
         self.footer_data = dict(footer_data) if isinstance(footer_data, dict) else self.data
+        if self.seat_slot is not None:
+            self.set_value_scope((self.key, self.data.get('token_id')))
+        self._display_data = self._present_data(self.data, 'body')
+        self._display_footer = (self._display_data if self.footer_data is self.data else
+                                self._present_data(self.footer_data, 'footer'))
         self.tooltip = Text(self.detail)
         if self.key == "board":
             summary = self.data.get("fleet_summary") or {}
@@ -341,20 +342,67 @@ class SurfboardCard(LoadingCard, can_focus=True):
         self._update_input()
         self.refresh()
 
+    def _present_data(self, raw, prefix):
+        """Remember named display fields without changing the source snapshot."""
+        data = deepcopy(raw)
+        key = data.get('key')
+        primary = '' if data.get('primary') is None else str(data['primary'])
+        if key == 'protocol':
+            primary = primary or '\n'.join(f'★ {name} — IMD' for name in ('burned', 'rewarded', 'fees'))
+            data['primary'] = self._values.field((prefix, 'primary'), primary, numeric=True)
+        else:
+            missing = data.get('primary') is None or primary == 'unavailable' and key != 'announce' or (bool(MISSING.fullmatch(primary)) and
+                                       (key != 'announce' or data.get('status') in (None, 'loading', 'unavailable')))
+            data['primary'] = self._values.retain((prefix, 'primary'), primary, missing=missing) or ''
+        secondary = flatten(data.get('secondary'))
+        count_label = {'work': 'working', 'oracles': 'agents', 'surf-nft': 'building'}.get(key)
+        if count_label and MISSING.fullmatch(secondary):
+            secondary += ' ' + count_label
+        data['secondary'] = self._values.field((prefix, 'secondary'), secondary, numeric=True)
+        for name in ('numerator', 'denominator', 'share_price'):
+            data[name] = self._values.retain((prefix, name), data.get(name), missing=not _number(data.get(name)))
+        for name, fields in (('fleet_summary', ('tokens', 'jobs', 'capacity', 'accept_rate')),
+                             ('work_summary', ('workflows',)), ('nft_summary', ('building', 'mint_open'))):
+            summary = data.setdefault(name, {}) or {}
+            data[name] = summary
+            for field in fields:
+                value = self._values.retain((prefix, name, field), summary.get(field), missing=not (_number(summary.get(field)) and (summary[field] <= 100 if field == 'accept_rate' else summary[field] == int(summary[field]))))
+                summary[field] = value if value is not None else 0
+        if key == 'swarm-tokens':
+            ranking = data.setdefault('token_ranking', {}) or {}
+            data['token_ranking'] = ranking
+            ranking['latest'] = self._values.retain((prefix, 'latest'), ranking.get('latest'), missing=ranking.get('latest') is None)
+            for row in ranking['latest'] or []:
+                identity = row.get('id')
+                if not isinstance(identity, (str, int)) or isinstance(identity, bool):
+                    continue
+                for field in ('age_s', 'symbol', 'chain'):
+                    value = row.get(field)
+                    missing = not _number(value) if field == 'age_s' else not isinstance(value, str) or not value
+                    row[field] = self._values.retain((prefix, 'token', identity, field), value, missing=missing)
+        # Histories remain observations; no fabricated zero points.
+        data['points'] = self._values.retain((prefix, 'points'), data.get('points'), missing=data.get('points') is None)
+        return data
+
     def _update_meter(self):
         self.styles.border_subtitle_align = "center"
-        self._footer_has_missing_value = False
-        if self.footer_data.get("status") == "loading" and self.footer_data.get("key") not in ('work', 'oracles', 'surf-nft', 'announce'):
-            self.border_subtitle = Text("◌ loading", style=AMBER)
-        elif self.key == "announce":
-            # Textual reserves six cells for corners, border stubs and padding.
-            self.border_subtitle = self.count_caption(signal_meter_text(self.data, max(0, self.region.width - 6)))
+        width = max(0, self.region.width - 6)
+        if self.key == "announce":
+            footer = self.count_caption(signal_meter_text(self._display_data, width))
         else:
-            footer = self.count_caption(meter_text(self.footer_data, max(0, self.region.width - 6)))
-            if self.footer_data.get('key') in ('work', 'oracles', 'surf-nft', 'pool4', 'swarm-tokens', 'board'):
-                self._footer_has_missing_value = '—' in footer.plain
-                footer = self.loading_caption(footer)
-            self.border_subtitle = footer
+            footer = meter_text(self._display_footer, width)
+        numeric = self._display_footer.get('key') in ('work', 'oracles', 'surf-nft', 'pool4', 'swarm-tokens', 'protocol')
+        # Keep rich meter styles while replacing missing values.
+        if MISSING.search(footer.plain):
+            if numeric:
+                footer = Text(self._values.field('meter', footer.plain, numeric=True), style=MUTED)
+            else:
+                footer = self.retained_meter(footer)
+        else:
+            self._values.retain('meter-rich', footer)
+            if numeric:
+                self._values.field('meter', footer.plain, numeric=True)
+        self.border_subtitle = footer
 
     def on_resize(self):
         self._update_meter()
@@ -372,20 +420,21 @@ class SurfboardCard(LoadingCard, can_focus=True):
 
     def render(self):
         self._has_missing_value = False
+        data = self._display_data
         width = max(4, self.content_size.width)
         inside = width - 2
-        status = flatten(self.data.get("status")) or "unavailable"
+        status = flatten(data.get("status")) or "unavailable"
         muted = self.empty_seat
         color = MUTED if muted else {"active": GREEN, "working": GREEN, "ready": "bright_yellow",
             "stale": AMBER, "unavailable": AMBER, "paused": AMBER,
             "offline": RED, "error": RED, "failed": RED}.get(status, AMBER)
-        primary = flatten(self.data.get("primary")) or "—"
-        secondary = flatten(self.data.get("secondary"))
+        primary = flatten(data.get("primary"))
+        secondary = flatten(data.get("secondary"))
         if self.key != "announce" and primary == "unavailable":
             primary = "—"
         if secondary == "unavailable":
             secondary = ""
-        ranking = self.data.get("token_ranking") or {}
+        ranking = data.get("token_ranking") or {}
         if self.key == "swarm-tokens" and ranking.get("state", "unavailable") != "ok":
             color = AMBER
         working = secondary.removesuffix(" working").replace(",", "")
@@ -451,7 +500,7 @@ class SurfboardCard(LoadingCard, can_focus=True):
         preview = None
         if self.key == "protocol":
             label = " STATS "
-            stats = str(self.data.get("primary") or "").splitlines()
+            stats = str(data.get("primary") or "").splitlines()
             if len(stats) != 3:
                 stats = [f"★ {name} — IMD" for name in ("burned", "rewarded", "fees")]
             fields = [flatten(line).removeprefix("★ ").split() for line in stats]
@@ -483,17 +532,13 @@ class SurfboardCard(LoadingCard, can_focus=True):
             preview = [(padded_inner_row(line, inside), False)
                        for line in _post_preview(primary, max(0, inside-2), prose_style)]
         elif self.key == "board":
-            summary = self.data.get("fleet_summary") or {}
+            summary = data.get("fleet_summary") or {}
             label, secondary = " STATS ", _fleet_accept_rate(summary)
             preview = _fleet_preview(summary, inside, label_style, value_style, self.loading_value)
         elif self.key == "swarm-tokens":
             label = " LATEST "
             preview = _token_preview(ranking.get("latest"), inside,
                                      label_style, value_style, self.loading_value)
-        if preview is None and not native_digits and not self.empty_seat:
-            block = self.loading_block(Text(rows[1][0], style=label_style), max(0, inside-2))
-            if block is not None:
-                preview = [(padded_inner_row(row, inside, align='center'), False) for row in block]
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
@@ -516,11 +561,11 @@ class SurfboardCard(LoadingCard, can_focus=True):
                 bottom = bottom.replace(" new ", " ")
         clipped = cell_len(label) > inside or cell_len(bottom) > inside
         if self.key == "protocol":
-            clipped |= _protocol_footer(self.data, max(0, self.region.width - 6))[1]
-        if self.footer_data.get("key") == "work":
-            clipped |= _work_footer(self.footer_data, max(0, self.region.width - 6))[1]
+            clipped |= _protocol_footer(data, max(0, self.region.width - 6))[1]
+        if self._display_footer.get("key") == "work":
+            clipped |= _work_footer(self._display_footer, max(0, self.region.width - 6))[1]
         if self.key == "board":
-            clipped |= _fleet_footer(self.data, max(0, self.region.width - 6))[1]
+            clipped |= _fleet_footer(data, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
             style = (readout_style if numeric_readout or self.key == 'pool4' else label_style) + Style(bold=bold)
             if self.empty_seat:

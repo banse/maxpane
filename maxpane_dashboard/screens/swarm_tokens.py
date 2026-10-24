@@ -7,6 +7,7 @@ from textual.widgets import DataTable, Input, Select, Static
 from maxpane_dashboard.analytics.swarm_tokens import project_snapshot
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
 from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen, SurfStatusBar
+from maxpane_dashboard.widgets.card_inner import LoadingCard
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.status_bar import StatusBar
 from maxpane_dashboard.widgets.fmt import hhmm
@@ -120,8 +121,28 @@ class SwarmTokensScreen(SurfDashboardScreen):
                                 lp_state=self.lp_state, sort=self.sort)
 
     def _update_title(self, data):
+        self._scope_tokens_hero()
         self.snapshot = data
         self.call_after_refresh(self._chrome)
+
+    def _scope_tokens_hero(self):
+        if not any(widget is TokensHero for widget, _ in self.PANELS):
+            return None
+        hero = self.query_one(TokensHero)
+        scope = (self.chain, self.search_query.strip().casefold(), self.lp_state, self._is_mock)
+        for card in hero.query(LoadingCard):
+            card.set_value_scope(scope)
+        return hero
+
+    def _repaint_tokens_hero(self):
+        hero = self._scope_tokens_hero()
+        if hero is None:
+            return
+        raw = self._snapshot_data()
+        # The cached manager snapshot is unfiltered; re-project the new cohort.
+        data = project_snapshot(raw, chain=self.chain, query=self.search_query,
+                                lp_state=self.lp_state, sort=self.sort) if raw is not None else {}
+        hero.update_data(tokens_hero=data.get('tokens_hero'))
 
     def on_mount(self):
         self.call_after_refresh(lambda: self.query_one(TokensTable).query_one('DataTable').focus())
@@ -184,6 +205,7 @@ class SwarmTokensScreen(SurfDashboardScreen):
         self.lp_state='all' if values['liquidity']=='any' else values['liquidity']
         self.sort='volume' if values['sort']=='any' else values['sort']
         self.search_query=values['query'].strip()
+        self._repaint_tokens_hero()
         self._show_filter(False)
         self.action_refresh()
         self.call_after_refresh(lambda: self.query_one(DataTable).focus())
@@ -215,6 +237,7 @@ class SwarmTokensScreen(SurfDashboardScreen):
             return
         values=['all','eth','base','rh']
         self.chain=values[(values.index(self.chain)+1)%len(values)]
+        self._repaint_tokens_hero()
         self.action_refresh()
 
     def action_sort(self):
