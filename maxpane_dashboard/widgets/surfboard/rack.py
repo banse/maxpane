@@ -490,6 +490,10 @@ class SurfboardCard(LoadingCard, can_focus=True):
             label = " LATEST "
             preview = _token_preview(ranking.get("latest"), inside,
                                      label_style, value_style, self.loading_value)
+        if preview is None and not native_digits and not self.empty_seat:
+            block = self.loading_block(Text(rows[1][0], style=label_style), max(0, inside-2))
+            if block is not None:
+                preview = [(padded_inner_row(row, inside, align='center'), False) for row in block]
         body = Text()
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
@@ -528,7 +532,7 @@ class SurfboardCard(LoadingCard, can_focus=True):
             clipped |= lost
             if preview is None and not native_digits:
                 if not self.empty_seat:
-                    line = self.loading_value(line, padded=True)
+                    line = self.loading_value(line)
                 line = padded_inner_row(line, inside, align='center')
             line.align("left" if preview is not None else "center", inside)
             if marker_width and index == 1:

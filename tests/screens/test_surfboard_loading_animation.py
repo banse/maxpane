@@ -15,6 +15,15 @@ def caption_ink(screen, text):
     return next(iter(row.crop(x, x + 2))).style.color.get_truecolor()
 
 
+def assert_loading_block(screen, gray):
+    rows = screen._compositor.render_strips()
+    y, x = next((y, row.text.index('<>')) for y, row in enumerate(rows) if '<>' in row.text)
+    for dy, expected in ((-1, '      '), (0, '  <>  '), (1, '      ')):
+        block = rows[y+dy].crop(x-2, x+4)
+        assert block.text == expected
+        assert all(segment.style.bgcolor.get_truecolor() == (gray, gray, gray) for segment in block)
+
+
 async def test_captions_share_footer_phase_and_restore_idle_on_leave(monkeypatch):
     clocks = []
     original = DashboardScreen.set_interval
@@ -66,16 +75,19 @@ async def test_captions_share_footer_phase_and_restore_idle_on_leave(monkeypatch
             assert caption_ink(screen, 'キープ') == ink
             assert caption_ink(screen, 'ビルディング') == ink
             shade = (28, 77, 127, 176, 226, 176, 127, 77)[phase]
-            assert caption_ink(screen, '◇') == (shade, shade, shade)
+            assert caption_ink(screen, '<>') == (shade, shade, shade)
+            background = (226, 176, 127, 77, 28, 77, 127, 176)[phase]
+            assert_loading_block(screen, background)
             rows = screen._compositor.render_strips()
             assert f"{'◐◓◑◒'[phase % 4]} loading" in rows[-1].text
             assert screen.query_one(StatusBar)._loading_timer is None
             if phase == 4:
-                assert any('◇' in row.text for row in rows)
+                assert any('<>' in row.text for row in rows)
                 await pilot.resize_terminal(143, 37)
                 await pilot.pause()
                 assert caption_ink(screen, 'キープ') == ink
                 assert caption_ink(screen, 'ビルディング') == ink
+                assert_loading_block(screen, background)
         assert reads == initial_reads
         # A suspended screen resets both captions and drops its shared timer.
         await app.push_screen(Screen())

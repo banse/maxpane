@@ -196,10 +196,10 @@ class NewsHeroCard(LoadingCard):
         prose_ink = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
         if data.preview:
             preview = Text(data.preview, style=prose_ink)
-            if data.state in ('unavailable', 'pending', 'loading', 'busy'):
-                preview = self.loading_value(preview, padded=True)
-            if preview.plain != data.preview:
-                rows = [Text(''), padded_inner_row(preview, inside, align='center'), Text('')]
+            block = (self.loading_block(preview, room)
+                     if data.state in ('unavailable', 'pending', 'loading', 'busy') else None)
+            if block is not None:
+                rows = [padded_inner_row(row, inside, align='center') for row in block]
             else:
                 rows = [padded_inner_row(row, inside) for row in post_preview(data.preview, room, prose_ink)]
         elif data.digits:
@@ -208,7 +208,9 @@ class NewsHeroCard(LoadingCard):
             if data.digits != "--" and all(character in "0123456789.," for character in data.digits) and all(row.cell_len <= inside for row in digits):
                 rows = digits
             else:
-                rows = [Text(""), padded_inner_row(self.loading_value(Text(data.digits, style=digit_ink), padded=True), inside, align="center"), Text("")]
+                value = Text(data.digits, style=digit_ink)
+                rows = self.loading_block(value, room) or [Text(''), value, Text('')]
+                rows = [padded_inner_row(row, inside, align='center') for row in rows]
             centered = True
         elif data.stats:
             rows = []

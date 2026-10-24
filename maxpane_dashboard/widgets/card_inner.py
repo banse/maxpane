@@ -38,13 +38,25 @@ class LoadingCard(HeroBoxBase):
         if changed and self._has_missing_value:
             self.refresh()
 
-    def loading_value(self, value: Text, *, padded: bool = False) -> Text:
+    def loading_value(self, value: Text) -> Text:
         """Replace an explicit whole missing field, never punctuation in prose."""
         if value.plain.strip() not in ('-', '--', '—'):
             return value
         self._has_missing_value = True
         if not self._card_loading or not self._can_load_card():
             return value
+        return self._loading_text('◇')
+
+    def loading_block(self, value: Text, width: int) -> list[Text] | None:
+        """Use the existing three body rows; keep a compact mark if too narrow."""
+        indicator = self.loading_value(value)
+        if indicator is value:
+            return None
+        if width < 6:
+            return [Text(''), indicator, Text('')]
+        return [self._loading_text(row) for row in ('      ', '  <>  ', '      ')]
+
+    def _loading_text(self, characters: str) -> Text:
         palette = self.app.get_css_variables()
         dark = TextualColor.parse(palette['background']).monochrome
         light = TextualColor.from_rich_color(self.rich_style.color, self.app.ansi_theme).monochrome
@@ -52,7 +64,7 @@ class LoadingCard(HeroBoxBase):
         shade = dark.blend(light, fraction)
         ink = Style(color=shade.rich_color,
                     bgcolor=palette['background'], dim=False, bold=False)
-        indicator = Text(' ◇ ' if padded else '◇', style=ink)
+        indicator = Text(characters, style=ink)
         # A span keeps the inverse background off alignment/padding cells.
         indicator.stylize(Style(bgcolor=dark.blend(light, 1 - fraction).rich_color), 0, len(indicator))
         return indicator

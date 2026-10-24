@@ -349,3 +349,36 @@ failure remains. Guards: 128 passed with the known CSS-boundary failure; doc pin
 Final review approved without findings. Its glyph-only background mutation failed
 all seven padded-indicator cases while four caption/stat cases remained green;
 the mutation was restored byte for byte.
+
+## Six-by-three centered loader — 2026-10-24
+
+Replace the centered three-cell diamond with a six-column, three-row block.
+Rows are six spaces, `  <>  `, then six spaces; all 18 cells use the inverse
+background, while both brackets use the existing foreground pulse. Retain the
+shared eight-frame clock, palette bounds and existing three-row card body.
+Footer and tabular loaders stay single-cell diamonds. Loaded values do not blink.
+
+Tier 2, under 100 production lines, one root-owned package: shared block renderer,
+NewsHeroCard and SurfboardCard composition, and AGENT status composition. An
+entirely unknown status uses one block; partial status retains its known value
+and separator, with a compact indicator if a block cannot fit. No layout pins or
+reader changes. First assert the composited 6×3 footprint, all eight phases in
+two themes, normal/narrow widths, restored idle/known values and unchanged
+captions. Show live 149×45 rendering before boundary checks, then affected files,
+guards/doc pins and one final review with the usual bounded fix wave.
+
+Implementation evidence:
+
+- Live keyless 149×45 BOARDROOM shown at 1.02s (dark brackets/light block) and
+  3.46s (light brackets/dark block); loaded counts at 5.07s. Captures and logs:
+  `/private/tmp/maxpane-loading-block-6x3/`. All surrounding cells are spaces.
+- Composited checks cover the full 18-cell footprint in two themes at 16/24-cell
+  card widths, partial known counts, tiny-card fallback and idle restoration.
+  The actual screen preserves the block and shared phase at 149×45 and 143×37;
+  no width/height pin moved and no extra reads or timers were introduced.
+- 47 focused checks passed; affected/composing/layout files: 370 passed, with
+  the existing token-fetch call-count failure. Guards: 128 passed plus the
+  existing CSS-boundary failure. Doc pins: 12 passed. No full suite was run.
+- Final independent review: Approved, no findings; 23 named checks passed.
+  Removing inverse styling from blank rows failed all 16 footprint variants
+  and the screen lifecycle check; the mutation was restored byte for byte.

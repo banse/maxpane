@@ -90,7 +90,7 @@ async def test_card_pulse_tracks_visible_reads_without_fetches_or_own_timers(fai
         await pilot.pause()
         screen._tick_loading()
         await pilot.pause()
-        assert '◇' in painted(screen)
+        assert '<>' in painted(screen)
         reads, projections = provider.reads, provider.projections
         for _ in range(16):
             screen._tick_loading()
@@ -106,19 +106,19 @@ async def test_card_pulse_tracks_visible_reads_without_fetches_or_own_timers(fai
         await pilot.pause()
         screen._tick_loading()
         await pilot.pause()
-        assert '◇' in painted(screen)
+        assert '<>' in painted(screen)
         provider.release.set()
         await app.workers.wait_for_complete()
         screen._tick_loading()
         await pilot.pause()
-        assert '◇' not in painted(screen)
+        assert '<>' not in painted(screen)
         provider.release.clear()
         provider.started.clear()
         screen.start_refresh()
         await provider.started.wait()
         screen._tick_loading()
         await pilot.pause()
-        assert '◇' in painted(screen)
+        assert '<>' in painted(screen)
         await app.push_screen(Screen())
         assert card._card_loading is False
         assert screen._loading_timer is None
@@ -127,7 +127,7 @@ async def test_card_pulse_tracks_visible_reads_without_fetches_or_own_timers(fai
         await provider.started.wait()
         screen._tick_loading()
         await pilot.pause()
-        assert '◇' in painted(screen)
+        assert '<>' in painted(screen)
         provider.release.set()
 
 

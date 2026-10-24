@@ -783,3 +783,11 @@ one blank on either side, sharing their inverse background. Footer and tabular
 indicators retain one cell. Live rendering and 11 focused checks verify the
 three-cell strip. Affected/composing/layout checks: 354 passed; guards: 128 passed;
 doc pins: 12 passed. Only the two already documented baseline checks fail.
+
+The subsequent approved 6×3 loader replaces the centered strip with blank rows
+around `  <>  `, retaining the same inverse pulse and narrow footer indicators.
+Known partial AGENT counts stay visible, with a compact fallback if needed.
+Live 149×45 rendering and in-situ 143×37 checks confirmed unchanged geometry.
+Final review approved without findings; 370 affected/composing/layout checks,
+128 guards and 12 doc pins passed. The same two baseline failures remain; no
+new follow-up was introduced. Evidence is in `card_loading_footer_plan.md`.

@@ -44,6 +44,7 @@ async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, fiel
     app = Cards(card)
     app.register_theme(THEMES[theme])
     app.theme = theme
+    marker = '◇' if field == 'stats' else '<>'
     async with app.run_test(size=(30, 12)) as pilot:
         await pilot.pause()
         original = face(pilot.app, card)
@@ -53,10 +54,10 @@ async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, fiel
             card.set_card_loading(True, frame)
             await pilot.pause()
             painted = face(pilot.app, card)
-            assert '◇' in painted
+            assert marker in painted
             if field == 'stats':
                 assert '0' in painted
-            row, col = next((y, line.index('◇')) for y, line in enumerate(painted.splitlines()) if '◇' in line)
+            row, col = next((y, line.index(marker)) for y, line in enumerate(painted.splitlines()) if marker in line)
             positions.append((row, col))
             colors.append(pilot.app.screen.get_style_at(card.region.x+col, card.region.y+row).color)
         assert positions[0] == positions[1]
@@ -70,20 +71,16 @@ async def test_missing_values_pulse_only_during_reads(monkeypatch, missing, fiel
         card.set_card_loading(True, 0)
         card.set_record(replace(record, digits='42', preview='', stats=()))
         await pilot.pause()
-        assert '◇' not in face(pilot.app, card)
+        assert marker not in face(pilot.app, card)
 
 
 @pytest.mark.parametrize('theme', ['matrix', 'minimal'])
-@pytest.mark.parametrize('field', ['digits', 'preview', 'stats', 'subtitle', 'boardroom'])
+@pytest.mark.parametrize('field', ['stats', 'subtitle'])
 async def test_loading_background_is_inverse_and_confined_to_indicator(monkeypatch, theme, field):
     monkeypatch.delenv('NO_COLOR', raising=False)
-    if field == 'boardroom':
-        card = SurfboardCard('work', 'WIP', 0, 0)
-        card.set_data(dict(status='loading', primary='—'))
-    else:
-        content = (('pending', '--'),) if field == 'stats' else '--'
-        card = NewsHeroCard(HeroRecord('test', 'TEST', 'VALUE', '',
-                                      state='unavailable', **{field: content}))
+    content = (('pending', '--'),) if field == 'stats' else '--'
+    card = NewsHeroCard(HeroRecord('test', 'TEST', 'VALUE', '',
+                                  state='unavailable', **{field: content}))
     app = Cards(card)
     app.register_theme(THEMES[theme])
     app.theme = theme
@@ -94,7 +91,6 @@ async def test_loading_background_is_inverse_and_confined_to_indicator(monkeypat
         light = Color.from_rich_color(card.rich_style.color, app.ansi_theme).monochrome
         backgrounds = []
         positions = []
-        padded = field in ('digits', 'preview', 'boardroom')
         for fraction, frame in zip((0, .25, .5, .75, 1, .75, .5, .25), range(8)):
             card.set_card_loading(True, frame)
             await pilot.pause()
@@ -106,15 +102,11 @@ async def test_loading_background_is_inverse_and_confined_to_indicator(monkeypat
             style = app.screen.get_style_at(x, y)
             assert style.color.get_truecolor() == dark.blend(light, fraction).rgb
             assert style.bgcolor.get_truecolor() == dark.blend(light, 1 - fraction).rgb
-            if padded:
-                assert painted.splitlines()[row][col-1:col+2] == ' ◇ '
-                for offset in (-1, 1):
-                    assert app.screen.get_style_at(x + offset, y).bgcolor == style.bgcolor
             # The pulse must not leak through Text alignment into any other cell.
             backgrounds.append([
                 app.screen.get_style_at(card.region.x + cx, card.region.y + cy).bgcolor
                 for cy in range(card.region.height) for cx in range(card.region.width)
-                if not (cy == row and abs(cx - col) <= int(padded))
+                if (cy, cx) != (row, col)
             ])
         assert len(set(positions)) == 1
         assert all(frame == backgrounds[0] for frame in backgrounds[1:])
@@ -123,6 +115,88 @@ async def test_loading_background_is_inverse_and_confined_to_indicator(monkeypat
         assert face(app, card) == original
         assert app.screen.get_style_at(x, y).bgcolor.get_truecolor() == Color.parse(
             app.get_css_variables()['background']).rgb
+
+
+@pytest.mark.parametrize('theme', ['matrix', 'minimal'])
+@pytest.mark.parametrize('field', ['digits', 'preview', 'boardroom', 'status'])
+@pytest.mark.parametrize('width', [16, 24])
+async def test_centered_loading_block_is_six_by_three(monkeypatch, theme, field, width):
+    monkeypatch.delenv('NO_COLOR', raising=False)
+    if field == 'boardroom':
+        card = SurfboardCard('work', 'WIP', 0, 0)
+        card.set_data(dict(status='loading', primary='—'))
+    elif field == 'status':
+        card = AgentRackCard(next(r for r in agent_records(None) if r.key == 'status'))
+    else:
+        card = NewsHeroCard(HeroRecord('test', 'TEST', 'VALUE', '',
+                                      state='unavailable', **{field: '--'}))
+    card.styles.width = width
+    app = Cards(card)
+    app.register_theme(THEMES[theme])
+    app.theme = theme
+    async with app.run_test(size=(30, 12)) as pilot:
+        await pilot.pause()
+        original = face(app, card)
+        dark = Color.parse(app.get_css_variables()['background']).monochrome
+        light = Color.from_rich_color(card.rich_style.color, app.ansi_theme).monochrome
+        positions, outside = [], []
+        for frame, fraction in enumerate((0, .25, .5, .75, 1, .75, .5, .25)):
+            card.set_card_loading(True, frame)
+            await pilot.pause()
+            lines = face(app, card).splitlines()
+            row, col = next((y, line.index('<>')) for y, line in enumerate(lines) if '<>' in line)
+            x, y = col - 2, row - 1
+            positions.append((x, y))
+            assert [line[x:x+6] for line in lines[y:y+3]] == ['      ', '  <>  ', '      ']
+            assert '<>' not in next(line for line in lines if '└' in line)
+            for dy in range(3):
+                for dx in range(6):
+                    ink = app.screen.get_style_at(card.region.x+x+dx, card.region.y+y+dy)
+                    assert ink.bgcolor.get_truecolor() == dark.blend(light, 1-fraction).rgb
+                    if dy == 1 and dx in (2, 3):
+                        assert ink.color.get_truecolor() == dark.blend(light, fraction).rgb
+            outside.append([
+                app.screen.get_style_at(card.region.x+cx, card.region.y+cy).bgcolor
+                for cy in range(card.region.height) for cx in range(card.region.width)
+                if not (x <= cx < x+6 and y <= cy < y+3)
+            ])
+        assert len(set(positions)) == 1
+        assert all(colors == outside[0] for colors in outside[1:])
+        card.set_card_loading(False, 0)
+        await pilot.pause()
+        assert face(app, card) == original
+
+
+@pytest.mark.parametrize('digits,known', [('0 0F --', '0'), ('-- 0F 3', '3')])
+@pytest.mark.parametrize('width', [16, 24])
+async def test_status_block_preserves_known_counts(digits, known, width):
+    record = next(r for r in agent_records(None) if r.key == 'status')
+    card = AgentRackCard(replace(record, digits=digits))
+    card.styles.width = width
+    async with Cards(card).run_test(size=(30, 12)) as pilot:
+        for frame in (0, 4):
+            card.set_card_loading(True, frame)
+            await pilot.pause()
+            lines = face(pilot.app, card).splitlines()
+            middle = next(line for line in lines if '0F' in line)
+            assert known in middle.split('0F')[0 if digits.startswith(known) else 1]
+            assert ('<>' if width == 24 else '◇') in middle
+            assert len(next(line for line in lines if '┌' in line)) == len(middle)
+
+
+@pytest.mark.parametrize('field', ['digits', 'boardroom'])
+async def test_loading_block_uses_compact_indicator_in_tiny_cards(field):
+    if field == 'boardroom':
+        card = SurfboardCard('work', 'WIP', 0, 0)
+        card.set_data(dict(status='loading', primary='—'))
+    else:
+        card = NewsHeroCard(HeroRecord('test', 'TEST', 'VALUE', '', digits='--'))
+    card.styles.width = 10
+    async with Cards(card).run_test(size=(30, 12)) as pilot:
+        card.set_card_loading(True, 0)
+        await pilot.pause()
+        assert '◇' in face(pilot.app, card)
+        assert '<>' not in face(pilot.app, card)
 
 
 async def test_cached_values_prose_and_fully_loaded_cards_do_not_animate(monkeypatch):
@@ -151,15 +225,8 @@ async def test_agent_status_counts_and_token_liquidity_use_same_indicator():
         status.set_card_loading(True, 0)
         liquidity.set_card_loading(True, 0)
         await pilot.pause()
-        assert face(pilot.app, status).count('◇') == 2
-        assert '0F' in face(pilot.app, status)
-        for row, line in enumerate(face(pilot.app, status).splitlines()):
-            for col, char in enumerate(line):
-                if char == '◇':
-                    x, y = status.region.x + col, status.region.y + row
-                    ink = pilot.app.screen.get_style_at(x, y).bgcolor
-                    assert all(pilot.app.screen.get_style_at(x + offset, y).bgcolor == ink
-                               for offset in (-1, 1))
+        assert face(pilot.app, status).count('<>') == 1
+        assert '0F' not in face(pilot.app, status)
         assert face(pilot.app, liquidity).count('◇') == 4
         assert 'IMD' in face(pilot.app, liquidity) and 'ETH' in face(pilot.app, liquidity)
 
@@ -211,13 +278,15 @@ async def test_boardroom_obeys_card_state_and_keeps_empty_seats(key, extra, expe
     async with Cards(card).run_test(size=(30, 12)) as pilot:
         card.set_card_loading(True, 0)
         await pilot.pause()
-        assert face(pilot.app, card).count('◇') == expected
+        text = face(pilot.app, card)
+        assert text.count('◇') + text.count('<>') == expected
         if key == 'agent':
             assert card.query_one('Input').display
         card.set_data(dict(card.data, status='unavailable'))
         card.set_card_loading(True, 4)
         await pilot.pause()
         assert '◇' not in face(pilot.app, card)
+        assert '<>' not in face(pilot.app, card)
 
 
 async def test_loaded_wip_primary_keeps_static_zero_inner_and_outer_counts():

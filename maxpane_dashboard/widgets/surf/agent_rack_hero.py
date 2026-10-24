@@ -301,10 +301,27 @@ class AgentRackCard(Pool4HeroCard):
             for n in range(3):
                 rows.append(Text(groups[0][n] + " ", style=digits).append(groups[1][n], style=separator).append(" " + groups[2][n], style=digits))
         else:
-            row = self.loading_value(Text(values[0], style=digits), padded=True).append(' ', style=digits)
-            row.append("0F", style=separator).append(' ', style=digits)
-            row.append_text(self.loading_value(Text(values[-1], style=digits), padded=True))
-            rows = [Text(""), padded_inner_row(row, inside, align="center"), Text("")]
+            left_value, right_value = (Text(value, style=digits) for value in (values[0], values[-1]))
+            left = self.loading_block(left_value, inside-2)
+            right = self.loading_block(right_value, inside-2)
+            if left is not None and right is not None:
+                rows = left
+            elif left is not None or right is not None:
+                left = left or [Text(''), left_value, Text('')]
+                right = right or [Text(''), right_value, Text('')]
+                left_width, right_width = max(row.cell_len for row in left), max(row.cell_len for row in right)
+                if left_width + right_width + 4 <= inside-2:
+                    for index in range(3):
+                        left[index].align('center', left_width)
+                        right[index].align('center', right_width)
+                        row = left[index].append(' 0F ' if index == 1 else '    ', style=separator)
+                        rows.append(row.append_text(right[index]))
+            if not rows:
+                row = self.loading_value(left_value).append(' ', style=digits)
+                row.append('0F', style=separator).append(' ', style=digits)
+                row.append_text(self.loading_value(right_value))
+                rows = [Text(''), row, Text('')]
+            rows = [padded_inner_row(row, inside, align='center') for row in rows]
         heading = " " + clip(data.heading, inside - 2) + " "
         content = Text("┌" + heading.center(inside, "─") + "┐\n", style=frame)
         for row in rows:
