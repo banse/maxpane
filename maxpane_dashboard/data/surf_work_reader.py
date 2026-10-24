@@ -18,6 +18,7 @@ class WorkReader:
         self._workflow_rows = {}
         self._workflow_started = None
         self._workflow_boundary = None
+        self._workflow_lock = asyncio.Lock()
 
     def offer(self):
         if self.task is not None and not self.task.done():
@@ -101,6 +102,46 @@ class WorkReader:
             self._workflow_before = catalogue.cursor_after(stamp)
         return list(self._workflow_rows.values()), False, self._workflow_started
 
+    def _workflow_checkpoint(self):
+        """Adopt the newest certified checkpoint, including older WIP caches."""
+        cached = self.cache.get_last_good(SLOT_SURF_WORK)
+        previous = work.coerce_snapshot(getattr(cached, 'payload', None), now=self.clock())
+        points = [catalogue.coerce_catalogue({'workflows': self.cache.workflow_catalogue},
+                                             now=self.clock())['workflows'],
+                  ((previous or {}).get('catalogue') or {}).get('workflows')]
+        return max((point for point in points if point is not None),
+                   key=lambda point: (point['read_ts'], point['full_ts']), default=None)
+
+    async def refresh_workflows(self, started, *, reconcile=True):
+        """One list owner for WIP, SWARM and cards; cancellation stays caller-owned."""
+        async with self._workflow_lock:
+            started = max(started, self.clock())
+            point = self._workflow_checkpoint()
+            full = point is None or reconcile and started - point['full_ts'] >= catalogue.RECONCILE_SECONDS
+            if point is not None and not full and 0 <= started - point['read_ts'] < 30:
+                if self.cache.workflow_catalogue != point:
+                    self.cache._dirty = True
+                self.cache.workflow_catalogue = point
+                return catalogue.source_rows(point, 'workflows'), True, point['read_ts']
+            if not full:
+                updated = await catalogue.read_delta(self._fetch, point, 'workflows',
+                                                       now=self.clock, start=started)
+            else:
+                rows, complete, scan_started = await self._workflow_catalogue(started)
+                if not complete:
+                    return rows, False, scan_started
+                updated = catalogue.make_entry(rows, 'workflows', now=self.clock(),
+                                                read_ts=scan_started, full_ts=scan_started)
+                if updated is None:
+                    return rows, True, scan_started  # display-only; never certify a watermark
+                if self.clock() - scan_started >= catalogue.DELTA_OVERLAP_SECONDS:
+                    updated = await catalogue.read_delta(self._fetch, updated, 'workflows',
+                        now=self.clock, start=started, since_ts=scan_started)
+                    updated['full_ts'] = started
+            self.cache.workflow_catalogue = updated
+            self.cache._dirty = True
+            return catalogue.source_rows(updated, 'workflows'), True, updated['read_ts']
+
     def _publish(self, snapshot, started):
         validated = work.coerce_snapshot(snapshot, now=self.clock())
         if validated is None:
@@ -108,7 +149,8 @@ class WorkReader:
         self.cache.store_last_good(SLOT_SURF_WORK, validated, ts=started)
         self.cache.save()
 
-    async def _collect(self, started, *, force_full=False, first_page_only=False):
+    async def _collect(self, started, *, force_full=False, first_page_only=False, optional_limit=None):
+        optional_limit = work.DETAIL_LIMIT if optional_limit is None else optional_limit
         entry = self.cache.get_last_good(SLOT_SURF_WORK)
         previous = work.coerce_snapshot(getattr(entry, 'payload', None), now=self.clock())
         catalogues = dict((previous or {}).get('catalogue') or {'jobs': None, 'workflows': None})
@@ -121,23 +163,10 @@ class WorkReader:
         else:
             jobs = await self._fetch('fetch_jobs', limit=work.PAGE_LIMIT)
         if not isinstance(jobs, list): raise ValueError('jobs unavailable')
-        if incremental['workflows']:
-            catalogues['workflows'] = await catalogue.read_delta(
-                self._fetch, catalogues['workflows'], 'workflows', now=self.clock, start=started)
-            workflows = catalogue.source_rows(catalogues['workflows'], 'workflows')
-            workflow_complete, workflow_started = True, started
-        else:
-            workflows, workflow_complete, workflow_started = await self._workflow_catalogue(started)
-            if workflow_complete:
-                catalogues['workflows'] = catalogue.make_entry(
-                    workflows, 'workflows', now=self.clock(), read_ts=started, full_ts=workflow_started)
-                if (catalogues['workflows'] is not None and
-                        self.clock() - workflow_started >= catalogue.DELTA_OVERLAP_SECONDS):
-                    catalogues['workflows'] = await catalogue.read_delta(
-                        self._fetch, catalogues['workflows'], 'workflows', now=self.clock,
-                        start=started, since_ts=workflow_started)
-                    catalogues['workflows']['full_ts'] = started
-                    workflows = catalogue.source_rows(catalogues['workflows'], 'workflows')
+        workflows, workflow_complete, workflow_started = await self.refresh_workflows(
+            started, reconcile=force_full)
+        point = self._workflow_checkpoint()
+        catalogues['workflows'] = point if workflow_complete and point is not None and point['read_ts'] == workflow_started else None
         rows, _ = work._page(jobs, work._job, self.clock(), work.HISTORY_JOB_LIMIT)
         flows, _ = work._page(workflows, work._workflow, self.clock(), work.WORKFLOW_LIMIT)
         if (jobs and not rows) or (workflows and not flows):
@@ -150,8 +179,8 @@ class WorkReader:
         first_page = [raw for raw in jobs if isinstance(raw, dict) and raw.get('id') in valid_ids]
         listing = list(first_page)
         cutoff = started - work.HISTORY_SECONDS
-        jobs = [raw for raw in first_page if raw['state'] not in work.TERMINAL or
-                (work._stamp(work._ts(raw.get('createdAt')), self.clock()) or started) >= cutoff]
+        recent_ids = {row['id'] for row in rows if work.recent_activity(row, started)}
+        jobs = [raw for raw in first_page if raw['state'] not in work.TERMINAL or raw['id'] in recent_ids]
         overview = await self._fetch('fetch_overview')
         counts = overview.get('counts') if isinstance(overview, dict) else None
         states = counts.get('jobStates') if isinstance(counts, dict) else None
@@ -184,6 +213,9 @@ class WorkReader:
             read = await self._fetch('read_job_detail', identity, fresh_after=fresh_after)
             raw = read.payload if read is not None else None
             row = work._job(raw, self.clock(), detail=True)
+            if (not required and row is not None and identity in listed_versions
+                    and listed_versions[identity] != [row['state'], row['updated_ts']]):
+                row = None  # Optional cached details cannot replace a newer list revision.
             details[identity] = raw if row is not None and row['id'] == identity else None
             detail_bounds[identity] = fresh_after
             detail_times[identity] = work._stamp(read.observed_at, self.clock()) if read is not None else None
@@ -218,7 +250,8 @@ class WorkReader:
         # fleet witness must agree before trusting the retained open population.
         if incremental['jobs'] and ((hint is not None and len(observed) != hint)
                                    or (open_hint is not None and len(open_ids) != open_hint)):
-            return await self._collect(started, force_full=True, first_page_only=first_page_only)
+            return await self._collect(started, force_full=True, first_page_only=first_page_only,
+                                       optional_limit=optional_limit)
         for _ in range(0 if incremental['jobs'] or first_page_only else max(0, work.SCAN_PAGES - 1)):
             if (history_complete and hint is not None and len(observed) == hint
                     and (reached_end or open_hint is not None and len(open_ids) == open_hint)): break
@@ -245,7 +278,7 @@ class WorkReader:
             reached_end = len(page) < work.SCAN_PAGE_LIMIT
             history_complete |= reached_end or any(j['created_ts'] is not None and j['created_ts'] < cutoff for j in decoded)
             for row in decoded:
-                if row['state'] in work.TERMINAL and (row['created_ts'] or started) < cutoff: continue
+                if row['state'] in work.TERMINAL and not work.recent_activity(row, started): continue
                 if row['id'] not in stored_ids:
                     if len(jobs) >= work.HISTORY_JOB_LIMIT + work.CONTEXT_DETAIL_LIMIT:
                         discovery_ok = False; continue
@@ -262,13 +295,28 @@ class WorkReader:
         partial |= not history_complete or not open_complete
         if previous and not first_page_only and (not discovery_ok or not history_complete or not open_complete):
             raise ValueError('job history or open population incomplete; retaining previous snapshot')
+        baseline_ready = False
         if not incremental['jobs'] and discovery_ok and history_complete and open_complete:
             if self.clock() - started >= catalogue.DELTA_OVERLAP_SECONDS:
                 raise ValueError('job baseline exceeded safe update overlap; retaining foreground')
             catalogues['jobs'] = catalogue.make_entry(
                 listing, 'jobs', now=self.clock(), read_ts=started, full_ts=started)
+            if catalogues['jobs'] is not None and not reached_end:
+                # Creation paging can stop while an older job was updated today.
+                # Fetch that activity window before certifying the baseline.
+                catalogues['jobs'] = await catalogue.read_delta(self._fetch, catalogues['jobs'], 'jobs',
+                    now=self.clock, start=started, since_ts=cutoff + catalogue.DELTA_OVERLAP_SECONDS)
+                jobs = catalogue.source_rows(catalogues['jobs'], 'jobs')
+                for raw in jobs:
+                    prior = details.get(raw['id'])
+                    changed = prior is not None and (prior.get('state') != raw.get('state')
+                        or work._ts(prior.get('updatedAt')) != work._ts(raw.get('updatedAt')))
+                    if changed or raw['state'] == 'executing' and raw['id'] not in details:
+                        if await read_job(raw['id'], fresh_after=self.client._monotonic()) is None:
+                            complete = False
+            baseline_ready = catalogues['jobs'] is not None
         reconcile = first_page_only and (
-            not incremental['jobs'] and not reached_end or
+            not incremental['jobs'] and not reached_end and not baseline_ready or
             any(point is not None and started - point['full_ts'] >= catalogue.RECONCILE_SECONDS
                 for point in catalogues.values()))
         retained_history = first_page_only and not incremental['jobs'] and not reached_end and previous
@@ -349,11 +397,21 @@ class WorkReader:
                         del projects[pid]
                 if identity in active: complete = False
         current_rows, _ = work._page(jobs, work._job, self.clock(), work.HISTORY_JOB_LIMIT + work.CONTEXT_DETAIL_LIMIT)
-        enrichment_rows = [row for row in current_rows if row['state'] == 'executing' or (row['created_ts'] or started) >= cutoff]
-        optional = [i for i in work.detail_ids(enrichment_rows, flows) if i not in details and i not in expected]
+        enrichment_rows = [row for row in current_rows if row['state'] == 'executing' or work.recent_activity(row, started)]
+        optional = [i for i in work.detail_ids(enrichment_rows, flows, now=started) if i not in details and i not in expected]
+        listed_versions = {row['id']: [row['state'], row['updated_ts']] for row in current_rows}
+        versions = dict(listed_versions)
         expected.update(optional)
-        versions = {row['id']: [row['state'], row['updated_ts']] for row in current_rows}
         prior_jobs = {row['id']: row for row in previous['jobs']} if previous else {}
+        prior_flows = {row['id']: row for row in previous['workflows']} if previous else {}
+        # An unchanged authoritative workflow link can retain its unlisted stage
+        # through the context pass. A new link/revision must earn a new read.
+        for flow in flows:
+            if flow != prior_flows.get(flow['id']): continue
+            for identity in (flow['contracts_job_id'], flow['frontend_job_id']):
+                if identity not in versions and identity in prior_jobs:
+                    row = prior_jobs[identity]
+                    versions[identity] = [row['state'], row['updated_ts']]
         retained = {identity: point for identity, point in (previous or {}).get('optional_details', {}).items()
                     if identity in optional and point['version'] == versions.get(identity)
                     and started - point['read_ts'] < work.HISTORY_SECONDS}
@@ -392,16 +450,14 @@ class WorkReader:
         if first_page_only:
             self._reconcile_pending = reconcile
             self._context_pending = context_pending
-        if reconcile or context_pending:
-            return assembled()
         if due:
-            # Current work and its required context are ready; optional history
-            # must not hold the visible snapshot or its next poll hostage.
+            # Visible rows publish before hydration. Pending project membership
+            # remains withheld; job/workflow listings authorize optional reads.
             self._publish(assembled(), started)
             self.cache.mark_fetched(TIER_SURF_WORK, started)
         deadline = asyncio.get_running_loop().time() + OPTIONAL_SECONDS
-        for offset in range(0, min(len(due), work.DETAIL_LIMIT), 4):
-            batch = due[offset:min(offset + 4, work.DETAIL_LIMIT)]
+        for offset in range(0, min(len(due), optional_limit), 4):
+            batch = due[offset:min(offset + 4, optional_limit)]
             tasks = [asyncio.create_task(read_job(identity, required=False)) for identity in batch]
             try:
                 async with asyncio.timeout(max(0, deadline - asyncio.get_running_loop().time())):
@@ -420,8 +476,8 @@ class WorkReader:
                 break  # optional backpressure cannot fail the committed foreground
             for identity in batch:
                 row = work._job(details.get(identity), self.clock(), detail=True)
-                if (row is not None and row['nodes'] is not None and identity in versions
-                        and detail_times[identity] is not None):
+                if row is not None and row['nodes'] is not None and detail_times[identity] is not None:
+                    versions[identity] = [row['state'], row['updated_ts']]
                     retained[identity] = dict(version=versions[identity], read_ts=detail_times[identity])
                 elif identity in retained:
                     # A failed refresh cannot retimestamp or erase same-version evidence.
@@ -436,7 +492,8 @@ class WorkReader:
             self._publish(snapshot, started)
             self.cache.mark_fetched(TIER_SURF_WORK, started)
             if self._reconcile_pending or self._context_pending:
-                snapshot = await self._collect(started, force_full=self._reconcile_pending)
+                snapshot = await self._collect(started, force_full=self._reconcile_pending,
+                    optional_limit=0)
                 self._publish(snapshot, started)
                 self.cache.mark_fetched(TIER_SURF_WORK, started)
         except asyncio.CancelledError:

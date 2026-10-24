@@ -67,9 +67,12 @@ def test_pruning_does_not_lose_watermark_or_old_open_jobs(captured):
     rows = [job(captured, 1, created=now - 90000, updated=now - 1, state='completed'),
             job(captured, 2, created=now - 90000, updated=now - 2), job(captured, 3)]
     result = catalogue.make_entry(rows, 'jobs', now=now, read_ts=now, full_ts=now)
-    assert {r['id'] for r in result['rows']} == {rows[1]['id'], rows[2]['id']}
+    assert {r['id'] for r in result['rows']} == {row['id'] for row in rows}
     assert result['watermark'] == work._ts(rows[0]['updatedAt'])
     assert all(row['nodes'] is None and row['detail_state'] == 'not_loaded' for row in result['rows'])
+    expired = catalogue.make_entry(rows, 'jobs', now=now + 86401, read_ts=now + 86401, full_ts=now)
+    assert {r['id'] for r in expired['rows']} == {rows[1]['id'], rows[2]['id']}
+    assert expired['watermark'] == result['watermark']
 
 
 @pytest.mark.parametrize('field,value', [('id', 'bad'), ('state', None), ('createdAt', None),

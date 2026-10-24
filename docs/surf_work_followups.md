@@ -1,5 +1,61 @@
 # WORK IN PROGRESS follow-ups
 
+## Recent activity and shared workflow checkpoint (2026-10-24)
+
+WIP now defaults to all statuses in a rolling 24-hour activity window. The owner
+confirmed that an old-created record updated today belongs in the window. Open,
+Blocked, Build and Review remain available for active work and older context.
+Completed jobs/workflows and accepted steps use dim theme foreground, matching
+the dark-green BOARDROOM captions. Hero metrics keep their active/current meaning.
+See `surf_work_24h_plan.md` for the contract and package ownership.
+
+Comparison found two catalogue consumers calling the same mutable workflow pager
+with separate certified checkpoints. WIP, BUILT BY SWARM and cards now reuse one
+reader-owned workflow loader/checkpoint, with serialized refresh and cancellation
+owned by its caller. The all-history catalogue remains available to BUILT BY SWARM.
+Cold job discovery catches older records updated within the activity window before
+certifying its checkpoint. Completed jobs enter bounded optional detail rotation.
+Visible recent details publish before historical reconciliation, including when
+project context is still being validated; project grouping remains withheld until
+validated. One offer still admits at most 24 optional reads, four at once, for
+eight seconds total across its foreground/reconciliation phases.
+
+Live keyless captures at 149x45 on October 24 around 01:23–01:29 UTC showed 82
+recent jobs and no recent workflows. The latest served workflow activity was
+October 21 at 21:13:47.694 UTC. First publication was 5.288s before moving optional
+details forward and 5.247s afterward. Detail coverage increased from 1 to 8 by
+14.26s afterward; the earlier long capture still showed 1 at 65.696s. These are
+observed sequential workloads, not a controlled latency benchmark. Historical
+reconciliation remains an occasional background cost; the final 40-second cold
+capture was still partial, with 8/82 expected details. Subsequent polls continue
+the bounded rotation. No complete-hydration or full-scan speedup is claimed.
+
+Existing test failures reproduced on unchanged HEAD `210f9e57`: the SWARM manager
+key expectation omits `swarm_launch_read_ts`, and the widget import guard omits
+the already-used pure `surf_launch_checks` module. The existing SWARM TOKENS CSS
+guard also still includes the later SWORN block. These are outside this change.
+Sixteen existing `test_surf_card_current.py` fixtures also lack the manager's
+`_refresh_workflow_catalogue` method; the data implementer reproduced all sixteen
+against HEAD modules.
+
+Final review found one Important regression: filtering optional workflow stages
+by age broke linked-job hydration for older Open/Blocked workflows. The single
+fix wave restored age-independent workflow-stage hydration. Open work gets first
+priority, followed by recent jobs and then stopped history. Unlisted stages retain
+their original observation times across reconciliation only while their parent
+workflow listing is unchanged; changed links/revisions invalidate the evidence.
+Pending project grouping remains withheld. Eleven scoped age/context/priority
+cases passed, including eight that failed before the fix. The affected/composing
+data run passed 246 tests after the fix.
+
+Scoped re-review approved the fix: 13 cases passed; restoring the workflow age
+cutoff and removing parent-revision invalidation both failed their named tests.
+The initial review also killed shared-lock and doubled-budget mutations; the
+session's default-filter and completion-color mutations were killed. All restored.
+
+The old F-C1 caption-test follow-up below is resolved for WORK: expected inner
+caption literals are now independently listed. ORACLES remains untouched.
+
 ## Inner captions (2026-10-16)
 
 The twelve native WORK and ORACLES captions now occupy their inner bottom

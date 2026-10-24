@@ -9,7 +9,7 @@ from textual.binding import Binding
 from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
 from textual.widgets import Input, Static, Tree
 
-from maxpane_dashboard.analytics.surf_work import WORKFLOW_STOPPED, workflow_is_open
+from maxpane_dashboard.analytics.surf_work import WORKFLOW_STOPPED, activity_ts, recent_activity, workflow_is_open
 from maxpane_dashboard.widgets.address import address_prose, job_text
 from maxpane_dashboard.widgets.fmt import fmt_age, hhmm
 from maxpane_dashboard.widgets.markup_safety import flatten
@@ -22,18 +22,18 @@ from .news_hero import HeroRecord, NewsHeroCard, _count, _number
 from .pool4_hero import Pool4HeroCard
 
 _BUILD = {"implement", "integrate", "test", "tests"}
-_FILTERS = ("open", "blocked", "build", "review")
+_FILTERS = ("24h", "open", "blocked", "build", "review")
 
 
-def _tone(state, accent):
+def _tone(state, accent, foreground):
     if state in ("blocked", "failed", "rejected"):
         return "red"
     if state in ("accepted", "completed"):
-        return "green"
+        return f"dim {foreground}"
     if state in ("working", "executing"):
         return accent
     if state == "pass":
-        return "green"
+        return f"dim {foreground}"
     return "yellow" if state in ("queued", "waiting", "pending") else "grey62"
 
 
@@ -188,7 +188,7 @@ class SurfWorkBody(Horizontal):
         super().__init__(**kwargs)
         self._payload = {}
         self._selected = None
-        self._filter = "open"
+        self._filter = "24h"
         self._search = ""
         self._work_nodes = {}
         self._entries = {}
@@ -252,7 +252,9 @@ class SurfWorkBody(Horizontal):
 
     def _matches(self, job, *, workflow_match=False, workflow_blocked=False):
         nodes = job.get("nodes") or []
-        if self._filter != "blocked" and (job.get("state") == "blocked" or workflow_blocked):
+        if self._filter == "24h" and not recent_activity(job, self._payload.get("now_ts")):
+            return False
+        if self._filter not in ("24h", "blocked") and (job.get("state") == "blocked" or workflow_blocked):
             return False
         if self._filter == "blocked" and job.get("state") != "blocked" and not workflow_blocked:
             return False
@@ -286,7 +288,8 @@ class SurfWorkBody(Horizontal):
             label, suffix = flatten(label), flatten(suffix)
             entry = (key, kind, row, label, suffix)
             state = row.get("state", row.get("status"))
-            tone = _tone(state, self.app.get_css_variables()["accent"])
+            palette = self.app.get_css_variables()
+            tone = _tone(state, palette["accent"], palette["foreground"])
             node = parent.add(Text(label + ("  " + suffix if suffix else ""), style=tone),
                               data=entry, allow_expand=children,
                               expand=bool(self._search) or self._expansion.get(key, expanded))
@@ -327,13 +330,15 @@ class SurfWorkBody(Horizontal):
             history_search = bool(self._search) and self._filter == "open"
             original_open = workflow_is_open(workflow.get("status")) is True
             allowed = (blocked or original_open) if self._filter == "blocked" else original_open or history_search
+            if self._filter == "24h":
+                allowed = recent_activity(workflow, self._payload.get("now_ts"))
             if not allowed:
                 return [], False
             match = parent_match or matches_row(workflow)
-            state_match = self._filter == "open" or self._filter == "blocked" and blocked
+            state_match = self._filter in ("24h", "open") or self._filter == "blocked" and blocked
             visible = [jid for jid in linked if
                        (self._matches(by_id[jid], workflow_match=match, workflow_blocked=blocked) if jid in by_id
-                        else state_match and (match or self._search in jid.casefold()))]
+                        else self._filter != "24h" and state_match and (match or self._search in jid.casefold()))]
             return visible, match and state_match
 
         def add_flow(parent, workflow, children):
@@ -366,7 +371,7 @@ class SurfWorkBody(Horizontal):
             for wid in missing_flows:
                 if "missing-workflow:" + wid not in self._entries:
                     add(parent, "missing-workflow:" + wid, "missing workflow", {"id": wid}, wid, suffix="workflow not loaded")
-        for workflow in sorted(workflows or [], key=lambda w: (w.get("status") == "blocked", -(w.get("created_ts") or 0))):
+        for workflow in sorted(workflows or [], key=lambda w: (w.get("status") == "blocked", -(activity_ts(w) or 0))):
             if workflow["id"] not in project_flows:
                 children, show = flow_view(workflow)
                 if children or show:
@@ -424,7 +429,7 @@ class SurfWorkBody(Horizontal):
         for index, choice in enumerate(_FILTERS):
             if index: title.append(" · ")
             active = choice == self._filter
-            title.append(choice.title(), style=Style(color=self.app.get_css_variables()["accent"] if active else None,
+            title.append("24H" if choice == "24h" else choice.title(), style=Style(color=self.app.get_css_variables()["accent"] if active else None,
                          bold=active, dim=not active, meta={"work_filter": choice}))
         panel = self.query_one("#work-tree-panel", PanelBase)
         room = max(1, panel.content_size.width - 2)
@@ -482,6 +487,7 @@ class SurfWorkBody(Horizontal):
             out.append_text(address_prose(flatten(value) or "--", style=style, explorer=None)).append("\n")
         now = self._payload.get("now_ts")
         accent = self.app.get_css_variables()["accent"]
+        foreground = self.app.get_css_variables()["foreground"]
         if kind in ("project", "job", "workflow"):
             objective = flatten(row.get("objective")) or "—"
             preview = post_preview(objective, max(8, panel.content_size.width - 2), Style())
@@ -489,7 +495,7 @@ class SurfWorkBody(Horizontal):
             if kind == "job":
                 out.append("JOB            ", style="dim").append_text(job_text(row.get("id"), 36, explorer=JOB_EXPLORER)).append("\n")
             if kind != "project":
-                field("STATE", row.get("state", row.get("status")), _tone(row.get("state", row.get("status")), accent))
+                field("STATE", row.get("state", row.get("status")), _tone(row.get("state", row.get("status")), accent, foreground))
                 field("CREATED", _age(row.get("created_ts"), now))
                 field("LAST UPDATE", _age(row.get("updated_ts"), now))
         if kind == "project":
@@ -498,7 +504,7 @@ class SurfWorkBody(Horizontal):
             for jid in _project_job_ids(row, self._payload.get("workflows")):
                 out.append_text(job_text(jid, 36, explorer=JOB_EXPLORER))
                 state = (jobs[jid].get("state") or "unknown") if jid in jobs else "not loaded"
-                out.append(" · " + flatten(state) + "\n", style=_tone(state, accent))
+                out.append(" · " + flatten(state) + "\n", style=_tone(state, accent, foreground))
         elif kind == "workflow":
             jobs = {j["id"]: j for j in self._payload.get("jobs") or []}
             out.append("\nLINKED JOBS\n", style="dim")
@@ -532,7 +538,7 @@ class SurfWorkBody(Horizontal):
                     fitted = fit_prose(key, key_width)
                     fitted.pad_right(max(0, key_width - fitted.cell_len))
                     out.append_text(fitted).append("  " + pad(clip(seat, 7), 7) + "  ")
-                    out.append(pad(clip(state, 10), 10), style=_tone(step.get("state"), accent))
+                    out.append(pad(clip(state, 10), 10), style=_tone(step.get("state"), accent, foreground))
                     out.append("  " + _age(step.get("updated_ts"), now) + "\n")
                 if clipped:
                     panel.query_one(".panel-title", Static).update(Text("SELECTED JOB · " + WIDEN_HINT))
@@ -560,7 +566,7 @@ class SurfWorkBody(Horizontal):
             field("STEP", row.get("key"))
             field("SEAT", f"#{row['seat']}" if row.get("seat") is not None else "--")
             field("ROLE", row.get("role"))
-            field("STATE", row.get("state"), _tone(row.get("state"), accent))
+            field("STATE", row.get("state"), _tone(row.get("state"), accent, foreground))
             field("LAST UPDATE", _age(row.get("updated_ts"), now))
             field("ATTEMPT", _count(row.get("attempt")))
             field("REVISIONS", _count(row.get("revisions")))

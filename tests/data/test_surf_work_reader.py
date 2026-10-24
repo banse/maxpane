@@ -742,7 +742,7 @@ async def test_revalidated_prior_job_does_not_hide_other_active_jobs_on_cursor_p
                  project=None, createdAt='2026-10-11T00:00:00.000Z')
     prior['createdAt'] = '2026-10-10T00:00:00.000Z'
     raw['jobs'] = [dict(prior, id=f'00000000-0000-0000-0000-{n:012d}', state='completed',
-                        createdAt='2026-10-12T00:00:00.000Z') for n in range(100)]
+                        createdAt='2026-10-12T00:00:00.000Z', updatedAt='2026-10-12T00:00:00.000Z') for n in range(100)]
     raw['next_jobs'] = [fresh, prior]
     raw['executing_count'] = 2
     raw['details'].append(fresh)
@@ -956,15 +956,15 @@ async def test_jobs_scan_retains_24h_history_after_active_hint_is_satisfied(setu
     base = raw['jobs'][0]
     raw['jobs'] = [dict(base, id=f'00000000-0000-0000-0000-{n:012d}', state='completed',
                        createdAt=iso(clock.now - n)) for n in range(100)]
-    recent = dict(base, id='00000000-0000-0000-0000-000000000100', state='completed', createdAt=iso(clock.now - 86400))
-    old = dict(recent, id='00000000-0000-0000-0000-000000000101', createdAt=iso(clock.now - 86401))
+    recent = dict(base, id='00000000-0000-0000-0000-000000000100', state='completed', createdAt=iso(clock.now - 86400), updatedAt=iso(clock.now - 86400))
+    old = dict(recent, id='00000000-0000-0000-0000-000000000101', createdAt=iso(clock.now - 86401), updatedAt=iso(clock.now - 86401))
     raw.update(next_jobs=[recent, old], workflows=[], executing_count=0)
     await reader.offer()
     data = reader.project()
     assert data['jobs_loaded'] == 101
     assert recent['id'] in {job['id'] for job in data['jobs']}
     assert old['id'] not in {job['id'] for job in data['jobs']}
-    assert data['summary']['jobs'] == 0 and not data['partial']
+    assert data['summary']['jobs'] == 0 and data['partial']  # recent completed details are still pending
     assert len([call for call in client.calls if call[0] == 'jobs']) == 3  # foreground then head + tail
 
 
@@ -1082,7 +1082,8 @@ async def test_older_open_jobs_survive_cutoff_and_do_not_require_details(setup, 
     base = raw['jobs'][0]
     def old_job(index, state):
         return dict(base, id=f'00000000-0000-0000-0000-{index:012d}', state=state,
-                    createdAt=datetime.fromtimestamp(clock.now - 86401 - index, timezone.utc).isoformat().replace('+00:00', 'Z'))
+                    createdAt=datetime.fromtimestamp(clock.now - 86401 - index, timezone.utc).isoformat().replace('+00:00', 'Z'),
+                    updatedAt=datetime.fromtimestamp(clock.now - 86401 - index, timezone.utc).isoformat().replace('+00:00', 'Z'))
     tail = [old_job(100, 'blocked'), old_job(101, 'queued'), old_job(102, 'completed')]
     raw.update(jobs=[old_job(n, 'completed') for n in range(100)] if full_head else tail,
                next_jobs=tail, workflows=[], executing_count=0)
@@ -1135,7 +1136,8 @@ async def test_open_population_shortcut_requires_matching_validated_total(setup,
     base = raw['jobs'][0]
     raw.update(jobs=[dict(base, id=f'00000000-0000-0000-0000-{n:012d}',
                          state='blocked' if n == 0 else 'completed',
-                         createdAt=datetime.fromtimestamp(clock.now - 86401 - n, timezone.utc).isoformat().replace('+00:00', 'Z'))
+                         createdAt=datetime.fromtimestamp(clock.now - 86401 - n, timezone.utc).isoformat().replace('+00:00', 'Z'),
+                         updatedAt=datetime.fromtimestamp(clock.now - 86401 - n, timezone.utc).isoformat().replace('+00:00', 'Z'))
                     for n in range(100)], next_jobs=[], workflows=[], executing_count=0)
     async def overview():
         return {'counts': {'jobs': total, 'jobStates': {'executing': 0, 'blocked': 1, 'completed': 999}}}
@@ -1152,7 +1154,8 @@ async def test_recent_blocked_diagnostics_remain_bounded_while_old_rows_only_lis
     recent = dict(raw['details'][0], state='blocked',
                   createdAt=datetime.fromtimestamp(clock.now, timezone.utc).isoformat().replace('+00:00', 'Z'))
     old = dict(recent, id='00000000-0000-0000-0000-000000000100',
-               createdAt=datetime.fromtimestamp(clock.now - 86401, timezone.utc).isoformat().replace('+00:00', 'Z'))
+               createdAt=datetime.fromtimestamp(clock.now - 86401, timezone.utc).isoformat().replace('+00:00', 'Z'),
+               updatedAt=datetime.fromtimestamp(clock.now - 86401, timezone.utc).isoformat().replace('+00:00', 'Z'))
     raw.update(jobs=[recent, old], details=[recent], workflows=[], executing_count=0)
     await reader.offer()
     assert [call for call in client.calls if call[0] == 'detail'] == [('detail', recent['id'])]
@@ -1216,7 +1219,7 @@ async def test_incremental_old_job_update_is_merged_and_active_detail_stays_fres
     assert all(query['since'] is not None for _, query in requests)
     assert ('detail', identity) in client.calls  # prior active IDs still receive fresh detail
     assert reader.project()['summary']['jobs'] == 1
-    assert all(j['id'] != identity for j in cache.get_last_good(SLOT_SURF_WORK).payload['catalogue']['jobs']['rows'])
+    assert any(j['id'] == identity for j in cache.get_last_good(SLOT_SURF_WORK).payload['catalogue']['jobs']['rows'])
 
 
 async def test_incremental_failed_delta_keeps_entire_committed_snapshot(incremental_setup):

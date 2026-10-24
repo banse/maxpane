@@ -156,7 +156,6 @@ from maxpane_dashboard.data import surf_pool4_market as mk
 from maxpane_dashboard.data import ens
 from maxpane_dashboard.data import surf_swarm as sw
 from maxpane_dashboard.data import surf_work as work
-from maxpane_dashboard.data import surf_work_catalogue as work_catalogue
 from maxpane_dashboard.data import surfboard as hub
 from maxpane_dashboard.data import surf_pool4_hero as pool4_hero
 from maxpane_dashboard.data import surf_protocol_hero as protocol_hero
@@ -7584,29 +7583,8 @@ class SurfManager:
         return out
 
     async def _refresh_workflow_catalogue(self, now):
-        """Share a certified listing across summaries without loading job details."""
-        entry = work_catalogue.coerce_catalogue(
-            {'workflows': self.cache.workflow_catalogue}, now=self._clock())['workflows']
-        if entry is not None and 0 <= now - entry['read_ts'] < 30:
-            return work_catalogue.source_rows(entry, 'workflows'), True, entry['read_ts']
-        async def fetch(method, **kwargs):
-            return await self._work_reader._fetch(method, **kwargs)
-        if entry is not None and now - entry['full_ts'] < work_catalogue.RECONCILE_SECONDS:
-            updated = await work_catalogue.read_delta(fetch, entry, 'workflows', now=self._clock, start=now)
-        else:
-            rows, complete, started = await self._work_reader._workflow_catalogue(now)
-            if not complete:
-                return rows, False, started
-            updated = work_catalogue.make_entry(rows, 'workflows', now=self._clock(),
-                                                 read_ts=started, full_ts=started)
-            if updated is None:
-                return rows, True, started  # display only; cannot certify a delta watermark
-            if self._clock() - started >= work_catalogue.DELTA_OVERLAP_SECONDS:
-                updated = await work_catalogue.read_delta(fetch, updated, 'workflows',
-                    now=self._clock, start=self._clock(), since_ts=started)
-        self.cache.workflow_catalogue = updated
-        self.cache._dirty = True
-        return work_catalogue.source_rows(updated, 'workflows'), True, updated['read_ts']
+        """Share the certified list owner with WIP, without loading job details."""
+        return await self._work_reader.refresh_workflows(now)
 
     # -- public API ----------------------------------------------------------
 

@@ -35,17 +35,80 @@ def payload():
 
 class Harness(App):
     CSS = "Screen { padding: 1; background: $background; color: $text; } SurfWorkBody { margin-top: 1; }"
-    def __init__(self, data=None):
+    def __init__(self, data=None, *, view=None):
         super().__init__()
         self.data = data
+        self.view = view
         self.register_theme(THEMES["matrix"])
         self.theme = "matrix"
     def compose(self):
         yield SurfWorkHero()
         yield SurfWorkBody()
     def on_mount(self):
+        if self.view is not None:
+            self.query_one(SurfWorkBody)._filter = self.view
         self.query_one(SurfWorkHero).update_data(surf_work=self.data)
         self.query_one(SurfWorkBody).update_data(surf_work=self.data)
+
+
+async def test_default_window_shows_all_recent_states_by_latest_activity():
+    data = payload()
+    data.update(now_ts=100_000, projects=[])
+    data['jobs'] = [dict(data['jobs'][2], id=state, objective=f'{state} recently',
+                        state=state, created_ts=1, updated_ts=99_999, nodes=[])
+                    for state in ('executing', 'completed', 'blocked', 'failed')]
+    data['jobs'].extend([
+        dict(data['jobs'][0], id='old', objective='Old activity', updated_ts=13_599),
+        dict(data['jobs'][0], id='unknown', objective='Unknown activity', created_ts=None, updated_ts=None),
+        dict(data['jobs'][0], id='boundary', objective='Cutoff included', updated_ts=13_600),
+    ])
+    data['workflows'] = [dict(id=state, status=state, objective=f'{state} workflow',
+                             created_ts=1, updated_ts=99_999)
+                         for state in ('completed', 'blocked', 'failed', 'future-state')]
+    data['workflows'].append(dict(id='old-flow', status='executing', objective='Old workflow', created_ts=1))
+    async with Harness(data).run_test(size=(149, 55)) as pilot:
+        await pilot.pause()
+        app, body = pilot.app, pilot.app.query_one(SurfWorkBody)
+        assert body._filter == '24h'
+        assert '24H' in painted(app, '#work-navigation')
+        for state in ('executing', 'completed', 'blocked', 'failed'):
+            assert f'{state} recently' in painted(app, '#work-jobs-panel')
+        for state in ('completed', 'blocked', 'failed', 'future-state'):
+            assert f'workflow:{state}' in body._entries
+        output = painted(app, '#work-navigation')
+        assert 'Cutoff included' in output
+        assert 'Old activity' not in output and 'Unknown activity' not in output
+        assert 'Old workflow' not in output
+        select(app.query_one('#work-tree', Tree), 'workflow:completed')
+        await pilot.pause()
+        region = app.query_one('#work-detail-panel').region
+        completed = [segment for strip in app.screen._compositor.render_strips()[region.y:region.bottom]
+                     for segment in strip.crop(region.x, region.right) if segment.text == 'completed']
+        assert completed and completed[0].style.color.get_truecolor(app.ansi_theme) == (9, 155, 43)
+        body.cycle_filter()
+        await pilot.pause()
+        assert body._filter == 'open'
+        assert 'workflow:old-flow' in body._entries
+
+
+async def test_recent_workflow_does_not_make_old_child_recent_or_duplicate_jobs():
+    data = project_payload()
+    data.update(now_ts=100_000)
+    data['workflows'][0].update(updated_ts=99_999, status='completed')
+    data['jobs'][0].update(updated_ts=99_999)
+    data['projects'][0]['workflow_ids'] = ['flow-a']
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        await pilot.pause()
+        app, body = pilot.app, pilot.app.query_one(SurfWorkBody)
+        assert {'project:project-a', 'workflow:flow-a', 'job:job-a'} <= body._entries.keys()
+        assert 'job:job-b' not in body._entries
+        assert 'Earlier release' not in painted(app, '#work-navigation')
+        assert node(app.query_one('#work-tree', Tree), 'job:job-a').parent.data[0] == 'workflow:flow-a'
+        assert not app.query_one('#work-jobs-tree', Tree).root.children[0].data
+        # Full linked context remains inspectable in details.
+        select(app.query_one('#work-tree', Tree), 'workflow:flow-a')
+        await pilot.pause()
+        assert 'job-b' in painted(app, '#work-detail-panel')
 
 
 def painted(app, selector):
@@ -75,7 +138,9 @@ async def test_hero_captions_share_inner_bottom_border_and_color(state, monkeypa
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        for key, _title, _heading, caption in SurfWorkHero.CARDS:
+        for key, caption in (("jobs", "executing"), ("workflows", "in progress"),
+                             ("seats", "assigned seats"), ("build", "building"),
+                             ("review", "reviewing"), ("blocked", "needs attention")):
             card = app.query_one("#hero-work-" + key)
             region = card.region
             rows = [row.crop(region.x, region.right) for row in
@@ -124,7 +189,7 @@ def project_payload():
 async def test_open_project_history_includes_completed_but_excludes_blocked_versions():
     data = project_payload()
     data["workflows"] = []
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         tree = app.query_one("#work-tree", Tree)
@@ -142,10 +207,11 @@ async def test_open_project_history_includes_completed_but_excludes_blocked_vers
         assert "legacy_step" in painted(app, "#work-navigation")
 
 
-async def test_running_jobs_use_accent_and_completed_jobs_use_previous_running_green():
+
+async def test_running_jobs_use_accent_and_completed_jobs_use_dark_green():
     data = project_payload()
     data["workflows"] = []
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         app = pilot.app
         tree = app.query_one("#work-tree", Tree)
         node(tree, "job:" + data["jobs"][3]["id"]).expand()
@@ -159,7 +225,7 @@ async def test_running_jobs_use_accent_and_completed_jobs_use_previous_running_g
             return segments[0].style.color.get_truecolor(app.ansi_theme)
 
         heading_green = color("#hero-work-seats", "WORKING")
-        completed_green = Style(color='green').color.get_truecolor(app.ansi_theme)
+        completed_green = (9, 155, 43)  # Matrix foreground dimmed against its background.
         assert completed_green != heading_green
         assert color("#work-navigation", "Repair logging") == heading_green
         assert color("#work-navigation", "Earlier release") == completed_green
@@ -174,13 +240,14 @@ async def test_running_jobs_use_accent_and_completed_jobs_use_previous_running_g
         assert color("#work-detail-panel", "accepted") == completed_green
 
 
+
 async def test_project_nests_open_workflows_and_releases_terminal_jobs():
     data = project_payload()
     data["projects"][0].update(workflow_ids=["flow-a", "flow-old", "flow-duplicate"], active_job_ids=["job-a", "job-c"])
     data["projects"][0]["job_ids"].append("job-c")
     data["workflows"][1]["contracts_job_id"] = data["jobs"][3]["id"]
     data["workflows"].append(dict(data["workflows"][0], id="flow-duplicate", objective="Second workflow reference"))
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         tree = app.query_one("#work-tree", Tree)
@@ -196,10 +263,11 @@ async def test_project_nests_open_workflows_and_releases_terminal_jobs():
         assert "BunkerVault [limits]" in painted(app, "#work-detail-panel")
 
 
+
 @pytest.mark.parametrize("query", ["Earlier release", "legacy_step", "999"])
 async def test_project_history_search_reveals_steps_and_restores_collapse(query):
     data = project_payload()
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         body = app.query_one(SurfWorkBody)
@@ -217,12 +285,13 @@ async def test_project_history_search_reveals_steps_and_restores_collapse(query)
         assert "legacy_step" not in painted(app, "#work-navigation")
 
 
+
 async def test_project_filters_exclude_historical_working_nodes_but_keep_parent_path():
     data = project_payload()
     data['projects'][0]['workflow_ids'] = ['flow-a']
     data["jobs"][3]["nodes"][0].update(state="working", role="implement")
     data["jobs"][3]["nodes"].append(dict(data["jobs"][3]["nodes"][0], role="review", key="legacy_review"))
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         body = pilot.app.query_one(SurfWorkBody)
         body.cycle_filter()  # Open -> Blocked -> Build
@@ -235,7 +304,8 @@ async def test_project_filters_exclude_historical_working_nodes_but_keep_parent_
         await pilot.pause()
         assert "Vault project" in painted(pilot.app, "#work-navigation")
         assert "Earlier release" not in painted(pilot.app, "#work-navigation")
-        body.cycle_filter()  # Review -> Open -> Blocked
+        body.cycle_filter()  # Review -> 24H -> Open -> Blocked
+        body.cycle_filter()
         body.cycle_filter()
         await pilot.pause()
         output = painted(pilot.app, "#work-navigation")
@@ -243,11 +313,12 @@ async def test_project_filters_exclude_historical_working_nodes_but_keep_parent_
         assert pilot.app.query_one("#hero-work-blocked").data.digits == "1"
 
 
+
 async def test_project_history_selection_expansion_and_removal_follow_fresh_snapshot():
     data = project_payload()
     data['projects'][0]['workflow_ids'] = ['flow-a']
     previous_id = data["jobs"][3]["id"]
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         body = app.query_one(SurfWorkBody)
@@ -271,6 +342,7 @@ async def test_project_history_selection_expansion_and_removal_follow_fresh_snap
         assert "legacy_step" not in painted(app, "#work-detail-panel")
 
 
+
 async def test_project_details_show_linked_history_unknown_states_and_literal_prose():
     data = project_payload()
     data['projects'][0]['workflow_ids'] = ['flow-a']
@@ -278,7 +350,7 @@ async def test_project_details_show_linked_history_unknown_states_and_literal_pr
     data["projects"][0]["objective"] = "部署 [bold] project\x1b\u202e"
     data["projects"][0]["job_ids"].extend(["unknown-job", "missing-job"])
     data["jobs"].append(dict(id="unknown-job", state=None, objective="Unknown version", nodes=None))
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         tree = app.query_one("#work-tree", Tree)
@@ -298,11 +370,12 @@ async def test_project_details_show_linked_history_unknown_states_and_literal_pr
         assert "job not loaded" in painted(app, "#work-navigation")
 
 
+
 async def test_project_details_include_workflow_siblings_outside_version_ids():
     data = project_payload()
     data["projects"][0].update(job_ids=["job-a"], workflow_ids=["flow-a", "missing-workflow"])
     data["jobs"][1]["state"] = None
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         tree = app.query_one("#work-tree", Tree)
@@ -317,6 +390,7 @@ async def test_project_details_include_workflow_siblings_outside_version_ids():
         select(tree, "job:job-b")
         await pilot.pause()
         assert "job-a" in painted(app, "#work-detail-panel")
+
 
 
 async def test_six_cards_tree_and_default_job_detail_are_painted():
@@ -340,7 +414,7 @@ async def test_inactive_workflow_does_not_hide_followup_jobs(status):
     data['workflows'] = [dict(data['workflows'][0], status=status)]
     data['projects'] = [dict(id='project-a', objective='Earlier project',
                             workflow_ids=['flow-a'], job_ids=['job-a', 'job-c'], active_job_ids=['job-c'])]
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         body = app.query_one(SurfWorkBody)
@@ -365,6 +439,7 @@ async def test_inactive_workflow_does_not_hide_followup_jobs(status):
         assert 'project:project-a' not in body._entries
 
 
+
 @pytest.mark.parametrize('workflow_ids', [[], ['flow-old'], ['missing-workflow']])
 async def test_project_without_visible_workflow_keeps_jobs_and_history_in_jobs(workflow_ids):
     data = project_payload()
@@ -372,7 +447,7 @@ async def test_project_without_visible_workflow_keeps_jobs_and_history_in_jobs(w
     data['projects'][0]['workflow_ids'] = workflow_ids
     data['projects'][0]['job_ids'].append('missing-job')
     data['workflows'] = [dict(data['workflows'][1], contracts_job_id=previous_id)]
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app, body = pilot.app, pilot.app.query_one(SurfWorkBody)
         workflows, jobs = app.query_one('#work-tree', Tree), app.query_one('#work-jobs-tree', Tree)
@@ -391,10 +466,11 @@ async def test_project_without_visible_workflow_keeps_jobs_and_history_in_jobs(w
         assert 'Repair logging' not in painted(app, '#work-jobs-panel')
 
 
+
 async def test_paused_workflow_remains_inspectable_in_blocked_filter():
     data = payload()
     data['workflows'] = [dict(data['workflows'][0], status='paused')]
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         body = pilot.app.query_one(SurfWorkBody)
         body.cycle_filter()
         await pilot.pause()
@@ -402,6 +478,7 @@ async def test_paused_workflow_remains_inspectable_in_blocked_filter():
         select(tree, 'workflow:flow-a')
         await pilot.pause()
         assert 'paused' in painted(pilot.app, '#work-detail-panel')
+
 
 
 async def test_keyboard_selection_step_detail_and_refresh_preserve_identity_and_collapse():
@@ -427,7 +504,7 @@ async def test_keyboard_selection_step_detail_and_refresh_preserve_identity_and_
 
 
 async def test_find_and_filter_are_local_and_restore_tree_focus():
-    async with Harness(payload()).run_test(size=(149, 45)) as pilot:
+    async with Harness(payload(), view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         body = app.query_one(SurfWorkBody)
@@ -448,7 +525,8 @@ async def test_find_and_filter_are_local_and_restore_tree_focus():
         body.cycle_filter()
         await pilot.pause()
         assert body._filter == "review" and "Review" in painted(app, "#work-navigation")
-        body.cycle_filter()  # Review -> Open -> Blocked
+        body.cycle_filter()  # Review -> 24H -> Open -> Blocked
+        body.cycle_filter()
         body.cycle_filter()
         await pilot.pause()
         assert "BunkerVault" in painted(app, "#work-detail-panel")
@@ -458,10 +536,11 @@ async def test_find_and_filter_are_local_and_restore_tree_focus():
         assert "Vault frontend" in painted(app, "#work-detail-panel")
 
 
+
 async def test_missing_reads_and_missing_linked_jobs_are_explicit():
     data = payload()
     data["workflows"][0]["frontend_job_id"] = "missing-id"
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         assert "not loaded" in painted(app, "#work-navigation")
@@ -471,6 +550,7 @@ async def test_missing_reads_and_missing_linked_jobs_are_explicit():
         assert "unavailable" not in painted(app, "#work-navigation")
         assert "-- shown" in painted(app, "#work-jobs-panel")
         assert all("unavailable" not in painted(app, f"#hero-work-{key}") for key in ["jobs", "workflows", "seats", "build", "review", "blocked"])
+
 
 
 async def test_third_party_prose_preserves_brackets_cjk_and_address_copy_without_guessing_chain():
@@ -513,7 +593,7 @@ async def test_long_objective_keeps_live_fields_visible_and_step_columns_aligned
 async def test_blocked_workflow_selection_survives_refresh_and_exposes_missing_job():
     data = payload()
     data["workflows"].insert(0, dict(id="flow-blocked", status="blocked", objective="Blocked deployment", contracts_job_id="missing", frontend_job_id=None, created_ts=10001))
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         tree = app.query_one("#work-tree", Tree)
@@ -537,6 +617,7 @@ async def test_blocked_workflow_selection_survives_refresh_and_exposes_missing_j
         assert "job not loaded" in painted(app, "#work-navigation")
 
 
+
 async def test_known_zero_stale_and_unknown_are_not_fresh_activity():
     data = payload()
     data.update(state="stale", read_ts=9000)
@@ -547,7 +628,8 @@ async def test_known_zero_stale_and_unknown_are_not_fresh_activity():
         app = pilot.app
         assert "stale" not in painted(app, "#hero-work-jobs")
         assert app.query_one("#hero-work-jobs").data.digits == "0"
-        assert "--" in painted(app, "#hero-work-seats")
+        assert "--" not in painted(app, "#hero-work-seats")
+        assert app.query_one("#hero-work-seats").source_record.digits == "--"
         tree = app.query_one("#work-tree", Tree)
         select(tree, "step:job-a:vault")
         await pilot.pause()
@@ -586,7 +668,7 @@ async def test_default_selection_uses_latest_update_and_keeps_superseded_history
     data["jobs"][2]["updated_ts"] = 10000
     data["jobs"].append(dict(id="old-job", state="superseded", objective="Replaced objective"))
     data["workflows"].append(dict(id="old-flow", status="superseded", objective="Replaced workflow"))
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         assert "Repair logging" in painted(pilot.app, "#work-detail-panel")
         assert "Replaced workflow" not in painted(pilot.app, "#work-navigation")
@@ -594,6 +676,7 @@ async def test_default_selection_uses_latest_update_and_keeps_superseded_history
         pilot.app.query_one('#work-find', Input).value = 'Replaced'
         await pilot.pause()
         assert "Replaced workflow" in painted(pilot.app, "#work-navigation")
+
 
 
 @pytest.mark.parametrize("width", [125, 130, 149])
@@ -621,7 +704,7 @@ async def test_blocked_filter_keeps_workflow_without_blocked_child(linked):
     data = payload()
     data["workflows"] = [dict(id="flow-blocked", status="blocked", objective="Awaiting deployment", contracts_job_id=linked, frontend_job_id=None)]
     data["jobs"] = [dict(data["jobs"][0], state="completed")]
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         body = pilot.app.query_one(SurfWorkBody)
         body.cycle_filter()
@@ -633,6 +716,7 @@ async def test_blocked_filter_keeps_workflow_without_blocked_child(linked):
             select(tree, "workflow:flow-blocked")
             await pilot.pause()
             assert "Contracts" in painted(pilot.app, "#work-detail-panel")
+
 
 
 async def test_default_without_executing_job_selects_newest_unfinished_workflow():
@@ -732,7 +816,7 @@ async def test_open_and_blocked_tabs_partition_work_and_keep_history():
     data['projects'][0]['workflow_ids'] = ['flow-a']
     data['jobs'].append(dict(id='blocked-other', state='blocked', objective='Blocked standalone'))
     data['workflows'].append(dict(id='blocked-flow', status='blocked', objective='Blocked workflow', contracts_job_id=None, frontend_job_id=None))
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app, body = pilot.app, pilot.app.query_one(SurfWorkBody)
         assert body._filter == 'open'
@@ -753,10 +837,11 @@ async def test_open_and_blocked_tabs_partition_work_and_keep_history():
         assert all(edge[0] == '' for edge in app.query_one('#work-detail-panel').styles.border)
 
 
+
 async def test_workflow_and_standalone_job_trees_share_detail_and_preserve_navigation():
     data = project_payload()
     data['projects'][0]['workflow_ids'] = ['flow-a']
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app, body = pilot.app, pilot.app.query_one(SurfWorkBody)
         workflow_panel, jobs_panel = app.query_one('#work-tree-panel'), app.query_one('#work-jobs-panel')
@@ -797,6 +882,7 @@ async def test_workflow_and_standalone_job_trees_share_detail_and_preserve_navig
         assert 'BunkerVault' in painted(app, '#work-tree-panel')
         assert 'BunkerVault' not in painted(app, '#work-jobs-panel')
         assert 'Repair logging' not in painted(app, '#work-jobs-panel')
+
 
 
 @pytest.mark.parametrize('job_state', ['completed', 'executing'])
@@ -885,7 +971,7 @@ async def test_workflow_keeps_jobs_and_steps_out_of_standalone_tree(in_project):
 async def test_missing_workflow_job_stays_under_its_workflow():
     data = payload()
     data['workflows'][0]['frontend_job_id'] = 'missing-id'
-    async with Harness(data).run_test(size=(149, 45)) as pilot:
+    async with Harness(data, view="open").run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
         tree = app.query_one('#work-tree', Tree)

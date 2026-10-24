@@ -101,7 +101,7 @@ def make_entry(raw_rows, kind, *, now, read_ts, full_ts, watermark=None):
     watermark = max(points, default=None)
     if kind == 'jobs':
         rows = [row for row in rows if row['state'] not in work.TERMINAL
-                or row['created_ts'] >= now - work.HISTORY_SECONDS]
+                or work.recent_activity(row, now, work.HISTORY_SECONDS)]
     rows.sort(key=lambda row: (row['created_ts'], row['id']), reverse=True)
     return _coerce_entry(dict(rows=rows, watermark=watermark, full_ts=full_ts, read_ts=read_ts), kind, now)
 

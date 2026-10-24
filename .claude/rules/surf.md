@@ -1112,9 +1112,12 @@ Native Tree handles nested click/Space folding. Width/height pins are documented
 The approved tree/detail body is `MODE_WORK`, reachable from Surf and the boardroom.
 It shares SurfScreen and SurfManager; no new top-level game registration. Six rack heroes
 and the body consume only `surf_work`. The work reader owns a separate 30s cache tier, measured from read start,
-and 120s failure backoff. It persists independent jobs/workflows catalogues and
-merges `since=max(updatedAt)-300s` deltas by ID. Current work and required context
-publish before optional history. A missing baseline or ten-minute reconciliation
+and 120s failure backoff. It persists its jobs catalogue and shares a certified
+workflow catalogue with BUILT BY SWARM and boardroom readers, under one reader-owned lock, and
+merges `since=max(updatedAt)-300s` deltas by ID. Current work publishes before
+optional history; project grouping follows required-context validation. Recent
+job details can publish while that context and historical scans remain pending.
+A missing baseline or ten-minute reconciliation
 uses fresh 100-job/100-workflow pages; discover older
 executing jobs through up to 100 total job pages (subsequent pages up to 500), using
 the overview count only as a stopping hint. Revalidate previously active IDs.
@@ -1148,12 +1151,20 @@ SWARM keeps its own 24H chart. Missing current activity stays unknown; positive
 job counts retain the green inset. Click/Enter opens Work, Escape returns.
 
 The upper WORKFLOWS tree groups projects → workflows → their jobs → steps.
-Default Open admits only original active lifecycles, never completed workflows
+Default 24H includes every job/workflow status whose latest valid created/updated
+activity falls within the rolling 24 hours, using the snapshot clock. Old-created
+jobs updated today are included by an additional update-window catch-up when
+creation paging stops early. Recent completed jobs enter bounded optional detail
+enrichment after active work. Relationship-only context is not counted as recent.
+Older open/stopped workflow stages still hydrate independently of that window;
+retained unlisted stages keep their observation times and invalidate on parent changes.
+The retained Open filter admits only original active lifecycles, never completed workflows
 because a follow-up is executing. Paused joins Blocked; explicit search can show
 historic workflows. Jobs whose workflow is not displayed stay in the lower JOBS
 tree. Membership is computed from displayed workflows, so a hidden parent cannot
 hide its jobs. Project headings require a visible workflow. Running jobs use
-the theme accent and completed jobs green. A separate
+the theme accent; completed jobs/workflows and accepted steps use dim foreground,
+matching BOARDROOM's dark-green middle text in Matrix. A separate
 persisted workflow-scan completeness flag prevents partial pagination from
 certifying zero active workflows. Legacy partial snapshots remain unknown until
 refreshed. Empty tree placeholders also render with NO_COLOR enabled.

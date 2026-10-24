@@ -5,7 +5,7 @@ import math
 
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.analytics.surf_launch_checks import integer
-from maxpane_dashboard.analytics.surf_work import WORKFLOW_STOPPED, workflow_is_open
+from maxpane_dashboard.analytics.surf_work import WORKFLOW_STOPPED, recent_activity, workflow_is_open
 from maxpane_dashboard.data.surf_swarm import _ts, clean_reply, parse_seat_token
 from maxpane_dashboard.data.surf_models import (
     SURF_WORK_JOB_FIELDS as JOB_FIELDS, SURF_WORK_NODE_FIELDS as NODE_FIELDS,
@@ -95,10 +95,12 @@ def _page(raw, decoder, now, limit=PAGE_LIMIT):
     return rows, partial
 
 
-def detail_ids(jobs, workflows):
-    """Current executing jobs first, unfinished workflow links next, blocked last."""
+def detail_ids(jobs, workflows, *, now=None):
+    """Active work first, then bounded enrichment of the visible recent history."""
     ids = [j['id'] for j in jobs if j['state'] == 'executing']
     for blocked in (False, True):
+        if blocked and now is not None:
+            ids.extend(j['id'] for j in jobs if recent_activity(j, now))
         for row in workflows:
             stopped = row['status'] in WORKFLOW_STOPPED
             if (workflow_is_open(row['status']) is True or stopped) and stopped == blocked:
@@ -183,8 +185,9 @@ def snapshot(jobs, workflows, details, *, read_ts, now=None, projects=None, meta
         if row is not None and identity not in rows:
             row['detail_state'] = 'unavailable'; rows[identity] = row
     for identity, row in (retained_details or {}).items():
-        if identity in current:
+        if identity in current or identity in expected:
             rows[identity] = row
+            if identity not in (metadata or {}): current.add(identity)
     for identity, raw in list(details.items())[:CONTEXT_DETAIL_LIMIT + DETAIL_LIMIT]:
         row = _job(raw, now, detail=True)
         if row is not None and row['id'] == identity:
