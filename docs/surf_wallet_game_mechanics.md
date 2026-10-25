@@ -7,8 +7,9 @@ Die Vorschläge stehen in `surf_wallet_ascii_mockups.md`.
 
 ## Aufgabe und Betrachtungsbereich
 
-Eine ausgewählte öffentliche Wallet beantwortet drei Fragen: Was habe ich
-beauftragt, was habe ich dafür bezahlt, und was wurde daraus? Tatsächliche
+Eine ausgewählte öffentliche Wallet beantwortet vier Fragen: Was habe ich
+beauftragt, was habe ich dafür bezahlt, was wurde daraus, und welche onchain
+Nutzung haben die daraus entstandenen Sites, Contracts und Tokens? Tatsächliche
 Zahlungen und Rückerstattungen bleiben getrennt. Agent-Details, Seats,
 Worker-Status, geleistete Arbeit, Rechenaufwand und Agent-Rewards sind auf
 ausdrücklichen Nutzerwunsch vollständig außerhalb dieser Ansicht. Die
@@ -29,6 +30,65 @@ Entwurf nicht um Agent-Betrieb oder eine allgemeine Wallet-Portfolioanalyse.
 Weitere Aktionstypen sind keine bereits zugesagte Datenintegration.
 Trades, Kurscharts, P/L und LP-/Staking-Positionsanalysen gehören nicht hinein.
 Ein Swap in derselben Transaktion wird dadurch nicht als Swarm-Aktion übernommen.
+
+Die vom Swarm gelieferten Artefakte bilden einen eigenen Bestand innerhalb
+dieser Wallet-Ansicht. Es sind nur belegte Ergebnisse ihrer Aufträge, keine
+beliebigen Wallet-Holdings, selbst deployten Contracts oder Outputs ihrer Agents.
+Nutzung dieser Artefakte darf auch von anderen Adressen stammen; sie wird nicht
+als direkte Aktion der beauftragenden Wallet ausgegeben. Nutzerkorrektur:
+**ausschließlich onchain Nutzung**, keine Visits, Pageviews, Sessions,
+Browser-Telemetrie oder HTTP-Probes als Nutzungssignale.
+
+## Artefaktbestand und onchain Nutzung
+
+- SITES zählt unterschiedliche belegte Site-Projekte. Neue CIDs oder Versionen
+  desselben Projekts erhöhen den Zähler nicht. Aktuelle Version und belegter
+  kanonischer URL bleiben sichtbar; keinen Hostnamen aus dem Label konstruieren.
+- CONTRACTS zählt eindeutige bestätigte `(chain_id, address)`-Deployments.
+  Proxy und Implementation bleiben unterschiedliche Adressen. TOKENS ist der
+  verifizierte Token-Teilbestand dieser Contracts. `18 contracts / 4 tokens`
+  bedeutet vier Tokens innerhalb der 18, nicht 22 Deployments. Site- und
+  Contract-Zahlen werden ebenfalls nicht zu einer beliebigen Gesamtzahl addiert.
+- Eine Site wird anhand ihrer belegten Deployment-Konfiguration mit Contracts
+  verknüpft. Die Zeile zeigt deren Aktivität als `LINKED ACTIVE` oder
+  `LINKED QUIET`. Contract-Aufrufe beweisen nicht, dass das Frontend benutzt
+  wurde. Auch eine veröffentlichte Site ohne onchain Funktion kann genutzt
+  werden; hier lautet ihr Zustand `NO ONCHAIN LINK`, nicht ungenutzt.
+- CONTRACT-Nutzung braucht eine geprüfte, versionsgebundene Anwendungsregel,
+  etwa `Registered`, `Claimed` oder `Deposited`, und erfolgreiche kanonische
+  Transaktionen bzw. passende Events. Deployment, Admin-Setup, Approvals und
+  bloße Code-Existenz sind keine Anwendungsnutzung. Gescheiterte Versuche
+  werden nicht zu erfolgreichen Anwendungen. `eth_call`-Lesezugriffe sind
+  nicht als onchain Historie beobachtbar.
+- TOKEN-Nutzung zeigt belegte Utility-Aktionen wie Einlösungen, Zugangs-Claims
+  oder verbrauchte Credits am nachgewiesenen Consumer. Ein einfacher Transfer,
+  Holder-Anstieg oder eine Verteilung belegt keine solche Nutzung. Swaps,
+  Handelsvolumen, Preis und P/L bleiben ausgeschlossen. Unklassifizierte
+  Aktivität wird nicht automatisch als Nicht-Trading-Nutzung gezählt.
+- Jede Metrik zeigt ihre Einheit, Chain, Zeitfenster und Abdeckung: etwa
+  `27 registrations / 9 addresses / 24h`. Adressen sind keine Menschen; die
+  Menge hängt vom belegten Actor-Feld ab, nicht pauschal vom Relayer oder
+  `tx.from`. Owner-/Testaktivität ist nicht automatisch organische Nachfrage.
+- Site, Token und Contract dürfen denselben Beleg verlinken. Gemeinsame Events
+  werden anhand ihrer Chain-/Receipt-/Log-Identität dedupliziert, auch beim
+  Delegieren durch Proxies. Ein einheitlicher Aktivitäts- oder Nutzergesamtwert
+  über unterschiedliche Anwendungen wird nicht erfunden.
+
+| Signal | Beleg und Bedeutung |
+|---|---|
+| ACTIVE | Mindestens eine bestätigte relevante Anwendungsaktion im ausgewiesenen Fenster; bei lückenhafter Historie ist der Zähler nur eine Untergrenze |
+| QUIET | Null passende Aktionen bei vollständiger Abdeckung des Fensters und gültiger Anwendungsregel; keine Aussage über andere Nutzung |
+| FIRST SEEN | Erste beobachtete relevante Nutzung seit dem dokumentierten Trackingbeginn; kein Anspruch auf erste Nutzung seit Deployment |
+| NO DATA | Unvollständige Beobachtung ohne positiven Beleg oder fehlende verifizierte Anwendungsregel; kein Nullwert |
+| NO ONCHAIN LINK | Nach abgeschlossener Zuordnungsprüfung keine belegte Verknüpfung der Site zu einem onchain Nutzungspfad; bei noch offener Prüfung gilt NO DATA |
+
+Bei Sites wird ACTIVE/QUIET immer mit `LINKED` qualifiziert. Eine identische
+Contract-Aktivität wird nicht mehreren Frontends als eigener Traffic zugeschrieben.
+Positive Signale, ruhige Fenster und Datenlücken sind keine Security- oder
+Qualitätsbewertungen. Keine Trendpfeile ohne zwei vergleichbare vollständige
+Fenster. Reorgs, Receipt-Status, Code-/Proxywechsel und abgelaufene Interpretationen
+sind vor einer späteren Datenanbindung zu behandeln. Alle Beobachtungen tragen
+Blockgrenzen und einen eigenen Aktualisierungszeitpunkt.
 
 ## Zählregeln
 
@@ -73,6 +133,8 @@ Wallet-Abdeckung und Endpoint-Payloads wurden für dieses Mockup nicht gemessen.
 | `GET /oracle/requests/:id` und `/attestation` | Oracle-Verlauf, Panel-Ergebnis, Attestation | Anfrage, Attestation und Consumer-Ausführung getrennt |
 | `GET /schedules?owner=:wallet` | Paginierte eigene Schedules | Fremde Top-ups zusätzlich über Zahlungsbelege erfassen |
 | `GET /schedules/:id` | Zustand, verbleibende Runs und jüngste Ausführungen | `latest` enthält höchstens 50 Runs |
+| `GET /sites`, `/sites/:id`, Site-/Launch-/Workflow-Links | Site-Projekt, Veröffentlichung und Zuordnung zum eigenen Auftrag | Liste der neuesten 100, kein persönlicher Gesamtkatalog und keine Nutzungsstatistik; kanonischen URL aus tatsächlichem Artefakt lesen |
+| Keyless RPC-Receipts, Logs und geprüfte anwendungsspezifische Getter | Onchain Nutzungsbelege und Regeln pro Deployment/Consumer | Keine universelle Nutzungs-API; vollständige Fenster und Quellen pro Chain vor Integration prüfen |
 
 Freie Checks, ungesendete Entwürfe und ausschließlich lokale Aktivitäten haben
 keine zugesagte öffentliche Wallet-Historie. Von Contracts oder Relays bezahlte
@@ -87,6 +149,12 @@ Agent-Earnings-Quellen werden für diese Ansicht nicht benötigt oder angeboten.
 `SwarmClient` in `data/surf_swarm_client.py` besitzt bereits Job-, Workflow-,
 Launch- und Oracle-Leser. `surf_work_reader.py` zeigt begrenzte Detail-Joins.
 Eine vollständige Wallet-Order-Historie ist damit noch nicht vorhanden.
+`SwarmClient.fetch_sites` und die Deployment-/Artifact-Joins liefern weitere
+Katalogbausteine. Die vorhandenen Token-Marktleser sind keine Quelle für diese
+Nutzungssignale. Die geprüften NFT-Adapter zeigen versionsgebundene Event-/State-
+Interpretation, decken aber nicht automatisch alle Contract-Arten oder Chains ab.
+Eine allgemeine Non-Trading-Nutzungsquelle ist in dieser Entwurfsrunde nicht
+nachgewiesen; bis zu einer geeigneten Regel bleibt ein Artefakt `NO DATA`.
 
 Das Design übernimmt die zwölf Rack-Karten der AGENT-Ansicht, ihre großen
 Ziffern und RECORD-Tabelle. Alternativen reduzieren die Hero-Anzahl zugunsten
@@ -102,9 +170,12 @@ haben getrennte Zeitstempel. Wallet-Wechsel isolieren Daten und abbrechbare
 Reads anhand ihrer Identität. Boardroom-Kompaktkarte und Detailansicht behalten
 getrennte, begrenzte Ladebudgets.
 
-Zeitraum steuert Aktivitäten und Summen. Aktuelle Auftragszustände beziehen sich
-auf die gefundenen Aufträge dieses Zeitraums. Typ-/Statusfilter betreffen die Liste; Überschrift und Treffer-
-zahl machen das sichtbar. Quellenabdeckung bleibt lesbar, API-Fehlerzustände
+`Orders [30D]` steuert Aufträge, Zahlungen und ihre aktuellen Zustände.
+`Assets [ALL KNOWN]` zeigt alle bislang belegten Outputs eigener Aufträge,
+einschließlich älterer Ergebnisse. `Usage [24H]` steuert deren onchain Messfenster,
+standardmäßig für alle belegten Akteure. Diese Bereiche sind sichtbar getrennt.
+Typ-/Statusfilter betreffen die Liste; Überschrift und Trefferzahl machen das
+sichtbar. Quellenabdeckung bleibt lesbar, API-Fehlerzustände
 intern; noch ungelesene große Ziffern bleiben entsprechend den aktuellen
 Projektregeln leer. Keine falschen Null-Fakten, keine Loader pro Karte.
 
