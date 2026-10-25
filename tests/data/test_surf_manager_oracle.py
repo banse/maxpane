@@ -160,6 +160,21 @@ def seed_index(manager, *, complete=True, newest='2026-09-23T21:00:00Z'):
     return index
 
 
+async def test_agent_counts_do_not_rescan_history_for_proven_non_request_attempts(tmp_path):
+    fake = Oracle()
+    manager = _manager(tmp_path, fake, clock=FakeClock(NOW))
+    manager._agent_active = True
+    manager.record_launches_only = True  # No oracle detail rows need refreshing.
+    prior = seed_index(manager)
+    try:
+        for stamp in (NOW, NOW + 601):
+            await manager._pool_swarm_oracle(fake.seat, 420, stamp)
+        assert fake.oracle_calls == []
+        assert manager.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX).payload == prior
+    finally:
+        await manager.close()
+
+
 async def test_shipped_reads_bulk_chains_outside_record_window_only_while_agent_active(tmp_path):
     fake = Oracle(2)
     for row in fake.seat['work']:

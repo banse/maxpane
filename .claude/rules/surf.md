@@ -417,7 +417,10 @@ LAUNCHES/JOBS and ORACLE/JOBS show distinct attempted production jobs. Their
 inner percentage is accepted distinct jobs divided by that same category total;
 any accepted contribution accepts the job once. Testnets are excluded. Legacy
 accepted-only histories and incomplete chain/membership evidence cannot supply
-a denominator. Zero jobs has no acceptance percentage. Failed-only attempts
+a denominator. A complete oracle-request index covering every attempt of a job
+can prove that the job has no oracle request; it is excluded from production
+oracle counts without assigning it a chain. Unknown chains, ambiguous identities,
+undated attempts and attempts newer than coverage remain unknown. Zero jobs has no acceptance percentage. Failed-only attempts
 participate in membership freshness. OWNER uses `wallet_text` with IMD's
 `/wallet/<address>` route, retaining ENS text and the full-address copy action.
 RUNTIME update colors retain their existing current/outdated/unknown transitions.
@@ -434,8 +437,10 @@ outer footer. Its tooltip retains the ordered teammate list. NODES partitions ac
 work rows into oracle, launches and other, with oracle precedence and `work by type`
 on the inner bottom border. Launch membership comes from validated live launch IDs
 and chain IDs in `/jobs/{id}`; `work[].launch` is only intent and cannot prove membership.
-Up to 64 unique non-oracle jobs are read per seat cycle, four concurrent reads at a
-time, unknown jobs first, with failed reads rotated so they cannot starve later jobs.
+Membership reads have a 24-request/eight-second budget per seat cycle, including
+workflow and contract followups, with at most four concurrent jobs. Within each
+fairness turn, missing/legacy evidence precedes cached visible jobs, including
+after restart; failed reads rotate so they cannot starve later jobs.
 Cancelling the seat task cancels every in-flight batch read. Membership refreshes after 600 seconds,
 including terminal jobs, and retains at most 400 points for 48 hours. Until every
 candidate is checked, launches/other stay unknown and oracle remains visible. Hover
@@ -988,6 +993,14 @@ source and loading state; the former cross-card footer swap is removed.
 SIGNALS displays the fired detector count first (`0 SIGNALS`, `3 SIGNALS`),
 with one green cell per signal when that complete bar fits. Zero requires all
 detectors known; missing detector evidence stays `— SIGNALS`.
+Boardroom offers all eleven detector inputs through `SurfCardSignals`, owned by
+`SurfCardReader`: chain/nonces, logs, wallet activity, launchpad getters, decoys,
+swap history and launch lists, alongside the nonce-matched channel reader.
+Each task has the existing 12-second card-read deadline, source TTL and failure
+backoff. History cannot block cheap getters; its client checkpoints survive
+cancellation for a later retry. Projection reuses `_readings` / `_signal_keys`
+and their persisted baselines. The aggregate clock is the oldest contributing
+observation, never the repaint time or a hidden dashboard's last full read.
 Per the owner's 2026-10-14 display adjustment, the boardroom omits automatic stale
 and unavailable text. Cached figures remain visible, missing figures use `—`, and
 source states/clocks remain in internal snapshots and card tooltips. All boardroom card
@@ -1044,8 +1057,11 @@ AGENT outer footers track their assigned worker activity independently:
 orange BUSY with a full green bar; gray IDLE drains green to orange over 24 hours,
 then orange to empty over hours 24–72. Offline is red OFF with empty segments.
 Offline AGENT inner subtitles use the assigned token's cached `/seats` status,
-falling back to `offline` when no usable status has been read. Other seats' detail
-cannot supply the label; this projection introduces no additional requests.
+falling back to `offline` when no usable status has been read. Boardroom offers
+one bounded `/seats/<token>` read per unique assigned token (at most four) on its
+own card clock, without the AGENT enrichment fan-out. Completion backfills idle
+anchors from `submittedAt` while preserving worker observation clocks. Reassignment
+cancels retired identities; other seats' detail cannot supply the label or anchor.
 Every successful workers read refreshes activity evidence even when content is unchanged;
 failed/stale/unknown evidence has no live bar. Persisted per-token stop history is validated
 on load. Cached own-work `submittedAt` can seed or advance an idle anchor when

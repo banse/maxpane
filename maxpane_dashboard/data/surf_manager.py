@@ -7150,7 +7150,8 @@ class SurfManager:
         index_prior = self.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX)
         index = sw.coerce_oracle_index(getattr(index_prior, "payload", None)) or sw.empty_oracle_index()
         oracle_jobs = set(agent_work.oracle_candidates(seat, include_attempts=True)) if self._agent_active else set()
-        missing_chains = oracle_jobs - index.get('chains', {}).keys()
+        missing_chains = (oracle_jobs - index.get('chains', {}).keys()
+                          - agent_card_sources.oracle_absent(seat, index))
         previous_jobs, previous_attempt = self._oracle_chain_attempt or (None, 0)
         chain_due = bool(missing_chains) and (not index['complete']
             or previous_jobs != oracle_jobs or now-previous_attempt >= agent_card_sources.TTL)
@@ -7854,6 +7855,8 @@ class SurfManager:
         out['quote'] = self._quote_source(self.cache.get_last_good(SLOT_ETH_USD), now)
         out["signals"] = {"read_ts": stamp, "state": "unavailable" if stamp is None else
                           "stale" if degraded or now - stamp > self.poll_interval else "ok"}
+        if self._hub_active:
+            out["signals"] = self._card_reader.signal_source(now=now)
         return out
 
     def _hub_pool4_price_direction(self, data: dict, sources: dict) -> str | None:
@@ -7992,6 +7995,8 @@ class SurfManager:
                     swarm_working_now=o.get("working_now"), swarm_accepted_today=o.get("accepted_24h"),
                     swarm_services_up=o.get("services"))
         launchpad = getattr(self.cache.get_last_good(SLOT_LAUNCHPAD), "payload", None)
+        if self._hub_active:
+            data.update(self._card_reader.signal_snapshot(data, now=now))
         family_sources = self._hub_card_sources(data)
         market = getattr(self.cache.get_last_good(SLOT_MARKET), "payload", None)
         data["surfboard_footer"] = hub.footer(market, family_sources["market"], sources["overview"], now=now)
@@ -8157,7 +8162,9 @@ class SurfManager:
             data=data, channel=payloads[SOURCE_CHANNEL], activity=payloads[SOURCE_ACTIVITY],
             market=payloads[SOURCE_MARKET], launchpad=payloads[SOURCE_LAUNCHPAD],
             boards=payloads[SOURCE_NFT], sources=sources, now=now,
-            signal_read_ts=self._last_full_read_ts, poll_interval=self.poll_interval,
+            signal_read_ts=(self._card_reader.signal_source(now=now)['read_ts']
+                            if self._hub_active else self._last_full_read_ts),
+            poll_interval=self.poll_interval,
             wallet_count=len(DEV_WALLETS))
         projected = (data.get('surf_news_hero') or {}).get('market')
         if projected is not None:

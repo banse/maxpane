@@ -7,7 +7,7 @@ from maxpane_dashboard.data import surf_agent_earnings as earnings
 from maxpane_dashboard.data import surf_agent_work as work
 from maxpane_dashboard.data.surf_cache import SLOT_AGENT_EARNINGS, SLOT_AGENT_WORK, SLOT_SWARM_ORACLE_INDEX
 from maxpane_dashboard.data.surf_news_hero import _stamp, source
-from maxpane_dashboard.data.surf_swarm import coerce_oracle_index
+from maxpane_dashboard.data.surf_swarm import coerce_oracle_index, match_requests, seat_work_rows
 
 TTL = 600
 WORK_REQUEST_BUDGET, WORK_SECONDS = 24, 8
@@ -15,6 +15,21 @@ WORK_REQUEST_BUDGET, WORK_SECONDS = 24, 8
 
 class _BudgetExhausted(Exception):
     pass
+
+
+def oracle_absent(seat, index):
+    """A complete request history must cover every attempt before proving absence."""
+    jobs = {}
+    candidates = set(work.oracle_candidates(seat, include_attempts=True))
+    for row in seat_work_rows(seat):
+        job, stamp = parse_job_id(row['job_id']), row['submitted_ts']
+        if job not in candidates:
+            continue
+        previous = jobs.get(job, stamp)
+        jobs[job] = max(previous, stamp) if previous is not None and stamp is not None else None
+    _, _, absent = match_requests(index, [dict(job_id=job, submitted_ts=stamp)
+                                         for job, stamp in jobs.items()])
+    return absent
 
 
 def coerce_earnings(value, now):
@@ -40,7 +55,7 @@ class AgentCardSources:
         oracle = coerce_oracle_index(getattr(self.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX), 'payload', None)) or {}
         return dict(earnings=coerce_earnings(getattr(self.cache.get_last_good(SLOT_AGENT_EARNINGS), 'payload', None), now),
                     work=work.coerce_points(getattr(self.cache.get_last_good(SLOT_AGENT_WORK), 'payload', None), now),
-                    oracle_chains=oracle.get('chains', {}),
+                    oracle_chains=oracle.get('chains', {}), oracle_index=oracle,
                     earnings_failed=set(self.earnings_failed), work_failed=set(self.work_failed),
                     pending=set(self.pending))
 
@@ -82,7 +97,9 @@ class AgentCardSources:
         self.work_failed.intersection_update(candidates)
         due = work.due(seat, points, now, cap=len(candidates), include_attempts=True)
         priority = set(priority_jobs) & set(candidates)
-        due.sort(key=lambda job: (self.work_attempts.get(job, 0), job not in priority, job not in accepted, job in points))
+        due.sort(key=lambda job: (self.work_attempts.get(job, 0),
+                                 job in points and 'shipped' in points[job],
+                                 job not in priority, job not in accepted))
         remaining = WORK_REQUEST_BUDGET
         async def read(method, identity):
             nonlocal remaining
@@ -146,7 +163,8 @@ def project(capture, seat, *, now):
     if earned and (accepted is None or any(parse_job_id(row.get('jobId')) is None for row in accepted)):
         earned.update(earned=None, earned_24h=None, worked_on=None, worked_on_24h=None, worked_recent=None)
     points = capture.get('work', {})
-    nodes = work.summarize(seat, points, now, oracle_chains=capture.get('oracle_chains'))
+    nodes = work.summarize(seat, points, now, oracle_chains=capture.get('oracle_chains'),
+                           oracle_absent=oracle_absent(seat, capture.get('oracle_index')))
     jobs = work.record_candidates(seat)
     stamps = [points[job]['read_ts'] for job in jobs if job in points]
     membership = source(min(stamps, default=None), now=now, ttl=TTL,

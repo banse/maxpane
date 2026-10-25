@@ -1,5 +1,46 @@
 # Surf data loading — execution and follow-ups
 
+## 2026-10-25 AGENT counts and Boardroom assigned seats
+
+The [card-data fix plan](surf_agent_card_data_fix_plan.md) records the source trace
+and live verification. LAUNCHES prioritizes missing historical membership after
+restart. ORACLE excludes only jobs whose every attempt is covered by a complete
+request index that proves no request exists. Boardroom reads its four assigned
+seats independently and seeds activity anchors without changing worker clocks.
+
+Live 149x45 renders show #420 LAUNCHES 19 / 94.74% and ORACLE 3,328 / 96.45%.
+A fresh Boardroom cache loaded #3, #7, #420 and #650 with their own idle bars,
+without opening detail. Other card families have their own source offers.
+
+The owner selected all eleven native detectors for the ONCHAIN FEED SIGNALS footer.
+The implementation supplies their inputs from Boardroom's own bounded refresh path;
+unknown source evidence remains unknown rather than becoming a quiet detector.
+The offline all-eleven case passes through the real manager/card projection. Live,
+ten detectors and all four seats loaded in 12.75 seconds. HOT COIN history hit its
+12-second deadline and remained unknown through the 64.99-second sample; the
+180-second history backoff retains checkpoint resumption for later polls. No
+requests continued after deactivation. Further live history completion was not
+claimed from this sample.
+
+Validation: the final affected/composing run passed 493 tests; twelve existing assertions
+failed. Fast guards passed 128 with the existing TOKENS CSS failure. All thirteen
+failures reproduced in a separate exact `eeed46e5` archive: eight obsolete
+`never paired` captions, two obsolete `ERC-8004 #--` captions, two Tab-navigation
+expectations predating SWORN, and the TOKENS CSS block boundary. They remain a
+test-maintenance follow-up; no production regression was found in that comparison.
+All twelve documentation pins passed. Eight targeted mutations were killed and
+restored. Final independent review: **Approved**. The reviewer killed three
+additional mutations across the count/seat and detector changes, and confirmed
+actual client history checkpoints survive cancellation without publishing partial
+history. No full suite was run.
+
+Minor review follow-up: the duplicate-attempt boundary regression in
+`test_surf_agent_card_sources.py` appends the decisive newer/undated row last.
+When this test file is next touched, add reversed ordering: a last-row-wins mutation
+survives the existing eight-case boundary test, although production correctly uses
+the latest timestamp and treats any undated attempt as unknown. The reviewer also
+independently killed incomplete-index and refreshed-worker-clock mutations.
+
 ## 2026-10-24 ONCHAIN continuous loading and feed flicker
 
 ONCHAIN's announcement widget rebuilt its entire row tree on age-only reader

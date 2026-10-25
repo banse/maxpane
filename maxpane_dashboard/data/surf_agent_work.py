@@ -188,15 +188,16 @@ def record_rows(rows, points, *, now, failed=()) -> list[dict]:
     return result
 
 
-def _summarize_rows(rows, points, chains):
+def _summarize_rows(rows, points, chains, absent):
     """Oracle work has precedence; never classify unread jobs as other."""
     if rows is None:
         return dict(oracle=None, launches=None, other=None, known_jobs=None, total_jobs=None)
     oracle_jobs = {parse_job_id(row.get('jobId')) for row in rows
                    if row['nodeKey'] in SWARM_ORACLE_NODE_KEYS}
-    oracle = (sum(chains[job] in _ORACLE_MAINNETS for job in oracle_jobs)
+    requests = oracle_jobs - absent
+    oracle = (sum(chains[job] in _ORACLE_MAINNETS for job in requests)
               if None not in oracle_jobs and all(type(chains.get(job)) is int
-                  and chains[job] in _ORACLE_MAINNETS | _ORACLE_TESTNETS for job in oracle_jobs) else None)
+                  and chains[job] in _ORACLE_MAINNETS | _ORACLE_TESTNETS for job in requests) else None)
     nonoracle = [row for row in rows if row['nodeKey'] not in SWARM_ORACLE_NODE_KEYS]
     jobs = [job for job in _candidate_jobs(rows) if job not in oracle_jobs]
     # A missing job ID cannot be fetched, but must still make coverage incomplete.
@@ -210,10 +211,11 @@ def _summarize_rows(rows, points, chains):
                 known_jobs=known, total_jobs=len(jobs)+missing)
 
 
-def summarize(seat: object, points: object, now: float, *, oracle_chains=None) -> dict:
+def summarize(seat: object, points: object, now: float, *, oracle_chains=None, oracle_absent=()) -> dict:
     """Accepted and all-attempt distinct jobs share production and membership rules."""
     points = coerce_points(points, now)
     chains = oracle_chains if isinstance(oracle_chains, Mapping) else {}
+    absent = {job for job in oracle_absent if parse_job_id(job) is not None and job not in chains}
     accepted = accepted_rows(seat)
     rows = seat.get('work') if isinstance(seat, Mapping) else None
     # Legacy work lists contain accepted attempts only, so their denominator is unknown.
@@ -225,6 +227,6 @@ def summarize(seat: object, points: object, now: float, *, oracle_chains=None) -
         # Category is a job fact: unsuccessful nodes still establish oracle precedence.
         accepted_ids = {parse_job_id(row.get('jobId')) for row in accepted or []}
         accepted = [row for row in rows if parse_job_id(row.get('jobId')) in accepted_ids]
-    accepted = _summarize_rows(accepted, points, chains)
-    total = _summarize_rows(rows, points, chains)
+    accepted = _summarize_rows(accepted, points, chains, absent)
+    total = _summarize_rows(rows, points, chains, absent)
     return dict(accepted, launches_total=total['launches'], oracle_total=total['oracle'])

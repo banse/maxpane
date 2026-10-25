@@ -82,11 +82,11 @@ The whitelist is defined by consumed facts, not by the name of a collector.
 
 | Card | Eligible input | Excluded destination work |
 |---|---|---|
-| ONCHAIN FEED | Existing announce channel items/replies | Full activity, NFT and event-history collectors |
+| ONCHAIN FEED / SIGNALS | Channel items/replies plus all eleven detector inputs: chain state/nonces, bounded decoded logs and wallet activity, launchpad getters/decoys/swap history, one validated launch list | Full dashboard cycle, NFT statistics and launch-detail enrichment |
 | BUILT BY SWARM | `/swarm` (`fetch_overview`), `/steps/hourly` summary facts | Completed-job detail walk and launch evidence |
 | WORK IN PROGRESS | Overview job-state counts; bounded workflow/job list when needed | Work tree hydration and individual job reads |
 | ORACLES | One request-list summary | Selected request, answer and provenance detail reads |
-| FLEET / AGENT cards | Workers, contributors, seat-record summaries | Agent record pages, earnings, ENS and runtime enrichment |
+| FLEET / AGENT cards | Workers, contributors, seat-record summaries; at most four assigned `/seats/<token>` responses for status and own-work timestamps | Agent record enrichment, earnings, ENS and runtime enrichment |
 | POOL4 | Verified identity discovery and exact state/price getters the card consumes | Staker, flow, burn, receipt and historical scans |
 | TOKENS | Catalogue plus volume/market inputs consumed by the card | Candles, trades, full token detail and wallet position reads |
 | NFTS | Proven collection summary; bounded discovery with per-deployment code, receipt and ERC-165 proof | Mint rules, source retrieval, token samples and selected collection detail |
@@ -94,8 +94,14 @@ The whitelist is defined by consumed facts, not by the name of a collector.
 Unobserved summary facts stay unknown; a card cannot borrow an unverified claim
 or present an incomplete list as a verified global count. Reuse completed full
 board evidence in summary projections, but do not refresh that evidence from
-BOARDROOM. A summary-specific collector may reuse the existing transport,
+BOARDROOM unless it supplies an eligible input listed above. A summary-specific collector may reuse the existing transport,
 decoders and cache slots without calling the full board collector.
+
+SIGNALS uses independent source tasks with a 12-second deadline each, source TTLs
+and failure backoff. Cheap getters publish independently of historical reads;
+interrupted launchpad history retains client checkpoints for a later bounded retry.
+The existing eleven detector functions and baselines remain authoritative. Unknown
+inputs remain unknown, and passive projection cannot renew source observation times.
 
 ## Decisions and tradeoffs
 

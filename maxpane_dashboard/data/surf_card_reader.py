@@ -8,8 +8,12 @@ from maxpane_dashboard.analytics import surf_pool4_depth
 from maxpane_dashboard.analytics.surf_work import workflow_is_open
 from maxpane_dashboard.analytics.surfboard import count
 from maxpane_dashboard.data import surf_work as work
+from maxpane_dashboard.data import surf_swarm as swarm
+from maxpane_dashboard.data import surfboard_activity as activity
+from maxpane_dashboard.data.surf_card_signals import SurfCardSignals
 from maxpane_dashboard.data.surf_cache import (
     SLOT_CHANNEL, SLOT_ETH_USD, SLOT_MARKET, SLOT_POOL4, TIER_MEDIUM,
+    SLOT_SWARM_SEAT, SLOT_SURFBOARD_ACTIVITY,
     TIER_TTL_SECONDS, TIER_FAILURE_BACKOFF_SECONDS,
 )
 
@@ -39,11 +43,24 @@ class SurfCardReader:
         self.pool_failed = False
         self.medium_due = {}
         self.discovery = None
+        self.signals = SurfCardSignals(self)
 
     def offer(self, *, force=False):
         now = self.manager._clock()
-        for name, read in (('work', self._work), ('current', self._current), ('pool4', self._pool), ('feed', self._feed),
-                           ('market', self._market)):
+        seats = {f'seat:{token}': token for token in self.manager.get_hub_seats() if token is not None}
+        for name in list(self.tasks):
+            if name.startswith('seat:') and name not in seats:
+                task = self.tasks.pop(name)
+                if not task.done():
+                    task.cancel()
+                    self.manager._retired_reads.add(task)
+        self.attempts = {name: stamp for name, stamp in self.attempts.items()
+                         if not name.startswith('seat:') or name in seats or now - stamp < 30}
+        reads = self.signals.readers(force=force)
+        reads += [('work', self._work), ('current', self._current), ('pool4', self._pool),
+                 ('feed', self._feed), ('market', self._market)]
+        reads += [(name, lambda token=token: self._seat(token)) for name, token in seats.items()]
+        for name, read in reads:
             task = self.tasks.get(name)
             if task is not None and not task.done():
                 continue
@@ -68,6 +85,32 @@ class SurfCardReader:
     async def wait_pending(self):
         if self.tasks:
             await asyncio.gather(*self.tasks.values(), return_exceptions=True)
+
+    async def _seat(self, token):
+        """Only assigned identity/status and work timestamps; no AGENT fan-out."""
+        manager = self.manager
+        raw = await manager.swarm_client.fetch_seat(token)
+        state = swarm.seat_state(raw, token)
+        if (state is None or manager._closing or not manager._hub_active
+                or token not in manager.get_hub_seats()):
+            return
+        now = float(manager._clock())
+        prior = manager.cache.get_last_good(SLOT_SWARM_SEAT)
+        slot = swarm.coerce_seat_slot(getattr(prior, 'payload', None), now=now) or {'seats': {}}
+        seats = slot['seats']
+        point = dict(state=state, seat=raw if state == 'ok' else None)
+        previous = seats.get(str(token))
+        if previous is None or any(previous[key] != value for key, value in point.items()):
+            seats[str(token)] = dict(point, read_ts=now)
+        elif next(iter(seats)) != str(token):
+            seats[str(token)] = dict(previous, seen_ts=now)
+        slot = swarm.coerce_seat_slot(slot, now=now)
+        if prior is None or prior.payload != slot:
+            manager.cache.store_last_good(SLOT_SWARM_SEAT, slot, ts=now)
+        observed = manager.cache.get_last_good(SLOT_SURFBOARD_ACTIVITY)
+        seeded = activity.with_records(getattr(observed, 'payload', None), slot, now=now)
+        if seeded is not None and seeded != observed.payload:
+            manager.cache.store_last_good(SLOT_SURFBOARD_ACTIVITY, seeded, ts=observed.ts)
 
     async def _work(self):
         """Count complete workflow lists, resuming bounded scans between polls."""
@@ -159,14 +202,14 @@ class SurfCardReader:
                       partial=True, details_loaded=None, details_expected=None)
         return result
 
-    async def _medium(self, slot, read):
+    async def _medium(self, slot, read, *, force=False):
         """Per-source clocks: card reads cannot satisfy a hidden detail tier."""
         now = self.manager._clock()
         entry = self.manager.cache.get_last_good(slot)
         ttl = TIER_TTL_SECONDS[TIER_MEDIUM]
-        if entry is not None and 0 <= now - entry.ts < ttl:
+        if not force and entry is not None and 0 <= now - entry.ts < ttl:
             return
-        if now < self.medium_due.get(slot, -1e20):
+        if not force and now < self.medium_due.get(slot, -1e20):
             return
         # Set before awaiting, so cancellation/timeout also respects backoff.
         self.medium_due[slot] = now + TIER_FAILURE_BACKOFF_SECONDS[TIER_MEDIUM]
@@ -175,8 +218,25 @@ class SurfCardReader:
             self.medium_due[slot] = self.manager._clock() + ttl
 
     async def _feed(self):
-        await self._medium(SLOT_CHANNEL, lambda: self.manager._pool_channel(
-            {TIER_MEDIUM}, self.manager._clock(), None))
+        await self.signals.wait_chain()
+        nonce = self.signals.nonce()
+        cached = self.manager.cache.get_last_good(SLOT_CHANNEL)
+        moved = nonce is not None and nonce != (getattr(cached, 'payload', None) or {}).get('nonce')
+        async def read():
+            try:
+                result = await self.manager._pool_channel({TIER_MEDIUM}, self.manager._clock(), nonce)
+            except BaseException:
+                self.signals.failed.add('feed')
+                raise
+            (self.signals.failed.discard if result is not None else self.signals.failed.add)('feed')
+            return result
+        await self._medium(SLOT_CHANNEL, read, force=moved and 'feed' not in self.signals.failed)
+
+    def signal_snapshot(self, data, *, now):
+        return self.signals.snapshot(data, now=now)
+
+    def signal_source(self, *, now):
+        return self.signals.source(now=now)
 
     async def _market(self):
         from maxpane_dashboard.data.surf_cache import TIER_MEDIUM, SLOT_LAUNCHPAD

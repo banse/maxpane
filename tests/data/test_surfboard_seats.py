@@ -161,7 +161,7 @@ def test_one_unknown_worker_does_not_erase_another_assigned_tokens_positive_work
 def test_mismatched_outcome_identity_never_relabels_another_seats_acceptance():
     outcome = hub.seat_outcome(hub.normalize_records(capture('records')),420)
     rows = agent_cards(hub.cards({}, {},now=100,agent_seats=[dict(token_id=1836,outcome=outcome)]+[{}]*3))
-    assert 'acceptance unavailable' in rows[0]['detail']
+    assert 'acceptance —' in rows[0]['detail']
     assert '95.9%' not in rows[0]['detail']
 
 
@@ -231,3 +231,170 @@ async def test_late_a_detail_read_or_failure_cannot_paint_b_or_change_assignment
     assert agent_cards(after['surfboard_cards']) == agent_cards(before['surfboard_cards'])
     assert m.cache.get_last_good(SLOT_SWARM_SEAT).payload['seats']['516']['read_ts'] == clock.now
     await m.close()
+
+
+def boardroom_reads(m, clock):
+    from tests.data.test_surfboard_activity import NOW, seat_records
+    from tests.surf_swarm_fixtures import swarm_capture_v3
+    clock.now = NOW
+    raw = swarm_capture_v3('workers')
+    raw['workers'] = [raw['workers'][0]]
+    raw['count'] = 1
+    raw['workers'][0]['seat']['tokenId'] = '420'
+    raw['workers'][0]['working'] = 0
+    m.swarm_client.fetch_workers = AsyncMock(return_value=raw)
+    m.swarm_client.fetch_contributors = AsyncMock(return_value=swarm_capture_v3('contributors'))
+    m.swarm_client.fetch_seat = AsyncMock(side_effect=lambda token: dict(
+        seat_records(token=token)['seats'][str(token)]['seat'], status='revoked' if token == 7 else 'active'))
+    m._pool_swarm_seat = AsyncMock(side_effect=AssertionError('Boardroom offered agent detail fanout'))
+    m.set_active_view('surfboard')
+
+
+@pytest.mark.parametrize('first', ['workers', 'seats'])
+async def test_cold_boardroom_hydrates_each_assignment_without_opening_agent(manager, first):
+    m, clock = manager
+    boardroom_reads(m, clock)
+    m.set_hub_seats([420, 7, 420, None])
+    m.set_seat(516)
+    release = asyncio.Event()
+    if first == 'workers':
+        read_seat = m.swarm_client.fetch_seat.side_effect
+        async def wait_for_workers(token):
+            await release.wait()
+            return read_seat(token)
+        m.swarm_client.fetch_seat.side_effect = wait_for_workers
+    else:
+        read_workers = m.swarm_client.fetch_workers.return_value
+        async def wait_for_seats():
+            await release.wait()
+            return read_workers
+        m.swarm_client.fetch_workers.side_effect = wait_for_seats
+    try:
+        await m.fetch_hub_snapshot()
+        await (m._swarm_board_task if first == 'workers' else m._card_reader.wait_pending())
+        release.set()
+        await asyncio.gather(m._swarm_board_task, m._card_reader.wait_pending())
+        cards = agent_cards(m.get_hub_snapshot()['surfboard_cards'])
+        assert cards[0]['numerator'] == cards[2]['numerator'] == 72000
+        assert cards[1]['secondary'] == 'revoked'
+        assert [call.args[0] for call in m.swarm_client.fetch_seat.await_args_list] == [420, 7]
+        assert m._seat_saved == 516 and m._swarm_seat_task is None
+        m._pool_swarm_seat.assert_not_awaited()
+        m.get_hub_snapshot()
+        await m.fetch_hub_snapshot()
+        await m._card_reader.wait_pending()
+        assert m.swarm_client.fetch_seat.await_count == 2
+    finally:
+        await m.close()
+
+
+async def test_boardroom_four_concurrent_reads_merge_each_seat_and_preserve_cached_sibling(manager):
+    from tests.data.test_surfboard_activity import seat_records
+    m, clock = manager
+    boardroom_reads(m, clock)
+    prior = seat_records(token=516)
+    m.cache.store_last_good(SLOT_SWARM_SEAT, prior, ts=clock.now)
+    m.set_hub_seats([420, 7, 3, 0])
+    entered = {token: asyncio.Event() for token in m.get_hub_seats()}
+    release = {token: asyncio.Event() for token in m.get_hub_seats()}
+    read_seat = m.swarm_client.fetch_seat.side_effect
+    async def ordered(token):
+        entered[token].set()
+        await release[token].wait()
+        return read_seat(token)
+    m.swarm_client.fetch_seat.side_effect = ordered
+    try:
+        await m.fetch_hub_snapshot()
+        await asyncio.gather(*(event.wait() for event in entered.values()))
+        for token in (7, 0, 420, 3):
+            clock.now += 1
+            release[token].set()
+            await m._card_reader.tasks[f'seat:{token}']
+            point = m.cache.get_last_good(SLOT_SWARM_SEAT).payload['seats'][str(token)]
+            assert point['seat']['tokenId'] == str(token) and point['read_ts'] == clock.now
+        assert set(m.cache.get_last_good(SLOT_SWARM_SEAT).payload['seats']) == {'516', '420', '7', '3', '0'}
+        m.set_hub_seats([None] * 4)
+        await m.fetch_hub_snapshot()
+        await m._card_reader.wait_pending()
+        assert m.swarm_client.fetch_seat.await_count == 4
+        assert all(card['status'] == 'empty' for card in agent_cards(m.get_hub_snapshot()['surfboard_cards']))
+    finally:
+        await m.close()
+
+
+async def test_boardroom_assignment_change_cancels_old_read_and_starts_new_without_wait(manager):
+    m, clock = manager
+    boardroom_reads(m, clock)
+    started, cancelled = asyncio.Event(), asyncio.Event()
+    release = asyncio.Event()
+    initial = m.swarm_client.fetch_seat.side_effect
+    async def blocked(token):
+        if token == 420:
+            started.set()
+            try:
+                await release.wait()
+            finally:
+                cancelled.set()
+        return initial(token)
+    m.swarm_client.fetch_seat.side_effect = blocked
+    m.set_hub_seats([420, None, None, None])
+    try:
+        await m.fetch_hub_snapshot()
+        await started.wait()
+        m.set_hub_seats([7, None, None, None])
+        await m.fetch_hub_snapshot()
+        await m._card_reader.wait_pending()
+        assert cancelled.is_set()
+        assert agent_cards(m.get_hub_snapshot()['surfboard_cards'])[0]['secondary'] == 'revoked'
+        assert set(m.cache.get_last_good(SLOT_SWARM_SEAT).payload['seats']) == {'7'}
+        assert m._seat_saved == 420
+    finally:
+        release.set()
+        await m.close()
+
+
+@pytest.mark.parametrize('failure', [None, 'mismatched', 'raised'])
+async def test_boardroom_failed_seat_read_retains_own_last_good_and_backoff(manager, failure):
+    m, clock = manager
+    boardroom_reads(m, clock)
+    m.set_hub_seats([7, None, None, None])
+    try:
+        await m.fetch_hub_snapshot()
+        await asyncio.gather(m._swarm_board_task, m._card_reader.wait_pending())
+        old = deepcopy(m.cache.get_last_good(SLOT_SWARM_SEAT).payload)
+        clock.now += 30
+        m.swarm_client.fetch_seat.side_effect = RuntimeError('offline') if failure == 'raised' else None
+        m.swarm_client.fetch_seat.return_value = (dict(old['seats']['7']['seat'], tokenId='420')
+                                                 if failure == 'mismatched' else None)
+        await m.fetch_hub_snapshot()
+        await m._card_reader.wait_pending()
+        assert m.cache.get_last_good(SLOT_SWARM_SEAT).payload == old
+        assert agent_cards(m.get_hub_snapshot()['surfboard_cards'])[0]['secondary'] == 'revoked'
+        await m.fetch_hub_snapshot()
+        await m._card_reader.wait_pending()
+        assert m.swarm_client.fetch_seat.await_count == 2
+    finally:
+        await m.close()
+
+
+async def test_leaving_boardroom_cancels_assigned_reads_without_cache_or_detail_work(manager):
+    m, clock = manager
+    boardroom_reads(m, clock)
+    started, cancelled = asyncio.Event(), asyncio.Event()
+    async def blocked(token):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+    m.swarm_client.fetch_seat.side_effect = blocked
+    try:
+        await m.fetch_hub_snapshot()
+        await started.wait()
+        m.set_active_view(None)
+        await m.drain_reads()
+        assert cancelled.is_set()
+        assert m.cache.get_last_good(SLOT_SWARM_SEAT) is None
+        m._pool_swarm_seat.assert_not_awaited()
+    finally:
+        await m.close()

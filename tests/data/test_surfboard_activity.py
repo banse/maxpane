@@ -54,6 +54,33 @@ def test_cold_idle_recovers_recent_own_work_without_using_acceptance_or_feedback
     assert activity.project(payload, TOKEN, now=NOW + 120)["remaining"] == 71880
 
 
+def test_late_record_backfill_keeps_worker_source_clocks_and_newer_stop():
+    observed = activity.observe(None, workers(0), now=NOW)
+    records = seat_records()
+    records['seats'][str(TOKEN)]['read_ts'] = NOW + 10
+    seeded = activity.with_records(observed, records, now=NOW + 10)
+    assert (seeded['attempt_ts'], seeded['read_ts'], seeded['ok']) == (NOW, NOW, True)
+    assert activity.project(seeded, TOKEN, now=NOW + 10)['remaining'] == 71990
+    assert observed['seats'][str(TOKEN)]['stopped_ts'] is None
+    assert activity.with_records(stopped(), records, now=NOW + 10)['seats'][str(TOKEN)]['stopped_ts'] == NOW
+
+
+@pytest.mark.parametrize('kind', ['failed', 'stale', 'busy', 'unknown', 'newer-work'])
+def test_late_record_backfill_cannot_invent_live_idle_evidence(kind):
+    observed = activity.observe(None, workers(1 if kind == 'busy' else None if kind == 'unknown' else 0), now=NOW)
+    if kind == 'failed':
+        observed = activity.observe(observed, None, now=NOW + 1)
+    records = seat_records(worked=NOW + 5 if kind == 'newer-work' else NOW - 14400)
+    records['seats'][str(TOKEN)]['read_ts'] = NOW + 10
+    now = NOW + 301 if kind == 'stale' else NOW + 10
+    seeded = activity.with_records(observed, records, now=now)
+    assert (seeded['attempt_ts'], seeded['read_ts'], seeded['ok']) == (observed['attempt_ts'], observed['read_ts'], observed['ok'])
+    result = activity.project(seeded, TOKEN, now=now)
+    assert result['state'] == {'failed':'stale', 'stale':'stale', 'busy':'busy', 'unknown':'unavailable', 'newer-work':'idle'}[kind]
+    if kind in ('unknown', 'newer-work'):
+        assert result['remaining'] is None
+
+
 @pytest.mark.parametrize('newest, read_ts', [(NOW + 3600, NOW), (NOW - 600, NOW - 1200)])
 def test_invalid_newest_submission_does_not_hide_valid_recent_work(newest, read_ts):
     records = seat_records()

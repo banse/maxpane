@@ -72,6 +72,36 @@ def coerce(payload: object, *, now: float) -> dict | None:
             "ok": payload["ok"], "complete": complete, "seats": _bounded(seats)}
 
 
+def _recorded_work(seat_records: object, now: float) -> dict:
+    recorded = {}
+    records = coerce_seat_slot(seat_records, now=now) or {"seats": {}}
+    for token, record in records["seats"].items():
+        worked = max((row["submitted_ts"] for row in seat_work_rows(record["seat"])
+                      if _stamp(row["submitted_ts"], min(now, record["read_ts"]))), default=None)
+        if worked is not None:
+            recorded[int(token)] = worked
+    return recorded
+
+
+def with_records(prior: object, seat_records: object, *, now: float) -> dict | None:
+    """Backfill idle anchors without turning a seat read into a workers observation."""
+    source = coerce(prior, now=now)
+    if source is None or source['read_ts'] is None or not source['ok']:
+        return source
+    for token, worked in _recorded_work(seat_records, now).items():
+        # Work newer than the presence evidence needs the next workers read.
+        if worked > source['read_ts']:
+            continue
+        key = str(token)
+        point = source['seats'].get(key)
+        if point is None and source['complete']:
+            point = dict(state='idle', known=True, stopped_ts=None, seen_ts=source['read_ts'])
+        if point is not None and point['known'] and point['state'] == 'idle':
+            point['stopped_ts'] = max(worked, point['stopped_ts'] or 0.0)
+            source['seats'][key] = point
+    return coerce(source, now=now)
+
+
 def observe(prior: object, workers: object, *, now: float, seat_records: object = None) -> dict:
     """Fold one normalized workers read (None means failure) into seat history.
 
@@ -93,13 +123,7 @@ def observe(prior: object, workers: object, *, now: float, seat_records: object 
     if source is None:
         return result
 
-    recorded = {}
-    records = coerce_seat_slot(seat_records, now=now) or {"seats": {}}
-    for token, record in records["seats"].items():
-        worked = max((row["submitted_ts"] for row in seat_work_rows(record["seat"])
-                      if _stamp(row["submitted_ts"], min(now, record["read_ts"]))), default=None)
-        if worked is not None:
-            recorded[int(token)] = worked
+    recorded = _recorded_work(seat_records, now)
     result["read_ts"] = float(now)
     complete = source["count"] == len(source["workers"]) and not source["malformed_tokens"]
     groups: dict[int, list] = {}
@@ -181,4 +205,4 @@ def meter(observed: dict, live_state: object, *, now: float) -> dict:
     return result
 
 
-__all__ = ["observe", "coerce", "project", "meter"]
+__all__ = ["observe", "with_records", "coerce", "project", "meter"]

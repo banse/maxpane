@@ -74,6 +74,34 @@ async def test_nft_hub_active_offer_passive_projection_and_close_order(manager):
     assert order == ['nft', 'swarm']
 
 
+async def test_boardroom_projects_all_detectors_with_their_own_source_clock(manager, monkeypatch):
+    from unittest.mock import Mock
+    from maxpane_dashboard.analytics.surf_signals import SIGNAL_NAMES
+
+    m, clock = manager
+    signal_data = {f'sig_{name}_state': 'ok' for name in SIGNAL_NAMES}
+    signal_data['sig_post_state'] = 'fired'
+    signal_snapshot = Mock(return_value=signal_data)
+    signal_source = Mock(return_value={'state': 'ok', 'read_ts': clock.now - 10})
+    monkeypatch.setattr(m._card_reader, 'signal_snapshot', signal_snapshot, raising=False)
+    monkeypatch.setattr(m._card_reader, 'signal_source', signal_source, raising=False)
+    m._last_full_read_ts = 1.0
+    m.set_active_view('surfboard')
+    try:
+        data = m.get_hub_snapshot()
+        card = next(row for row in data['surfboard_cards'] if row['key'] == 'announce')
+        assert card['numerator'] == 1
+        assert card['denominator'] == len(SIGNAL_NAMES)
+        assert '11/11 detectors known' in card['detail']
+        assert data['surf_news_hero']['signals']['read_ts'] == clock.now - 10
+        assert m._hub_card_sources(data)['signals'] == signal_source.return_value
+        signal_snapshot.assert_called_once()
+        m._cycle.assert_not_awaited()
+        assert not m._card_reader.tasks
+    finally:
+        await m.close()
+
+
 async def test_nft_lazy_manager_borrows_shared_swarm_once(manager, monkeypatch):
     m, clock = manager
     existing = m._nft_manager

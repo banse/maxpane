@@ -475,3 +475,60 @@ def test_total_job_membership_clock_includes_failed_only_launch_jobs():
     data, meta = sources.project(capture, raw, now=NOW)
     assert data['_agent_nodes']['launches'] == 1 and data['_agent_nodes']['launches_total'] is None
     assert meta['agent_work'] == dict(state='partial', read_ts=NOW)
+
+
+def test_complete_oracle_history_excludes_unlinked_old_attempts_and_keeps_capture_frozen(reader):
+    r, _, _ = reader
+    raw = dict(seat(), work=[
+        dict(jobId=JOB, nodeKey='oracle_assess', status='accepted', submittedAt='2026-10-13T10:00:00Z'),
+        dict(jobId=FRONTEND, nodeKey='oracle_assess', status='pending', submittedAt='2026-09-23T19:34:56Z'),
+        dict(jobId=FRONTEND, nodeKey='oracle_assess', status='pending', submittedAt='2026-09-23T17:09:17Z')])
+    index = dict(jobs={JOB: WORKFLOW}, newest='2026-10-14T10:00:00Z',
+                 oldest='2026-09-19T03:18:11Z', complete=True, chains={JOB: 1})
+    r.cache.store_last_good(sources.SLOT_SWARM_ORACLE_INDEX, index, ts=NOW)
+    frozen = r.capture(NOW)
+    index['complete'] = False
+    got = sources.project(frozen, raw, now=NOW)[0]['_agent_nodes']
+    assert got['oracle'] == got['oracle_total'] == 1
+    assert got['launches_total'] == 0
+    assert sources.oracle_absent(raw, frozen['oracle_index']) == {FRONTEND}
+
+
+@pytest.mark.parametrize('change', ['incomplete', 'newer', 'missing_time', 'duplicate_newer',
+                                  'duplicate_missing_time', 'duplicate_nonoracle_newer',
+                                  'ambiguous', 'unknown_chain'])
+def test_incomplete_or_conflicting_oracle_evidence_cannot_be_excluded(reader, change):
+    r, _, _ = reader
+    attempt = dict(jobId=FRONTEND, nodeKey='oracle_assess', status='pending',
+                   submittedAt='2026-09-23T19:34:56Z')
+    raw = dict(seat(), work=[dict(jobId=JOB, nodeKey='oracle_assess', status='accepted'), attempt])
+    index = dict(jobs={JOB: WORKFLOW}, newest='2026-10-14T10:00:00Z',
+                 oldest='2026-09-19T03:18:11Z', complete=True, chains={JOB: 1})
+    if change == 'incomplete': index['complete'] = False
+    if change == 'newer': attempt['submittedAt'] = '2026-10-15T10:00:00Z'
+    if change == 'missing_time': attempt['submittedAt'] = None
+    if change.startswith('duplicate_'):
+        raw['work'].append(dict(attempt,
+            nodeKey='build' if change == 'duplicate_nonoracle_newer' else 'oracle_assess',
+            submittedAt=(None if change.endswith('missing_time') else '2026-10-15T10:00:00Z')))
+    if change == 'ambiguous': index['jobs'][FRONTEND] = None
+    if change == 'unknown_chain': index['jobs'][FRONTEND] = FRONTEND
+    r.cache.store_last_good(sources.SLOT_SWARM_ORACLE_INDEX, index, ts=NOW)
+    frozen = r.capture(NOW)
+    assert sources.oracle_absent(raw, frozen['oracle_index']) == set()
+    got = sources.project(frozen, raw, now=NOW)[0]['_agent_nodes']
+    assert got['oracle'] == 1 and got['oracle_total'] is None
+
+
+async def test_restart_reads_missing_history_before_rechecking_visible_cached_jobs(reader, monkeypatch):
+    r, _, swarm = reader
+    monkeypatch.setattr(sources, 'WORK_REQUEST_BUDGET', 1)
+    raw = dict(seat(), work=seat()['work'] + [dict(jobId=FRONTEND, nodeKey='build', status='pending')])
+    r.cache.store_last_good(sources.SLOT_AGENT_WORK,
+        {JOB: dict(read_ts=NOW-601, launched=True, shipped=True, chain_id=1)}, ts=NOW-601)
+    fixture = swarm.fetch_job.return_value
+    swarm.fetch_job.side_effect = lambda job: dict(fixture, id=job)
+    await r._work(raw, NOW, priority_jobs=[JOB])
+    swarm.fetch_job.assert_awaited_once_with(FRONTEND)
+    got = sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']
+    assert got['launches'] == 1 and got['launches_total'] == 2
