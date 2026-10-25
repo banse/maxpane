@@ -26,6 +26,7 @@ from textual.widgets import DataTable, Static
 from maxpane_dashboard.themes import THEMES
 from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import PanelBase
+from maxpane_dashboard.widgets.sparkline_common import build_sparkline
 from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, NewsHeroCard
 from scripts.surf_start_demo import parse_size
 
@@ -51,7 +52,7 @@ def mock_snapshot():
         if i >= 78:
             amount = (Decimal(4), Decimal(4), Decimal(4), Decimal(4), Decimal(5), Decimal("5.5"))[i - 78]
         orders.append(dict(id=f"demo-order-{i + 1:03}", action=action, name=f"Demo request {i + 1}",
-                           timestamp=MOCK_TIME.timestamp() - 172800 - i * 600,
+                           timestamp=MOCK_TIME.timestamp() - 172800 - i * 27800,
                            payment_state="settled" if settled else "failed", paid_imd=amount,
                            refund_imd=Decimal("0.5") if i in (20, 21) else Decimal(0),
                            outcome=default_outcomes[action] if settled else "not admitted",
@@ -146,11 +147,11 @@ def hero_records(snapshot, view):
     orders, assets = snapshot["orders"], snapshot["artifacts"]
     counts = Counter(row["action"] for row in orders)
     specs = (
-        ("requests", "REQUESTS", "ORDERS", "30D / observed", len(orders), "paid + attempts"),
-        ("jobs", "JOBS", "REQUESTS", "32 new / 10 cont", counts["job.open"] + counts["job.continue"], "30 days"),
-        ("workflows", "WORKFLOWS", "REQUESTS", "30 days", counts["workflow.open"], "10 shipped"),
-        ("launches", "LAUNCHES", "REQUESTS", "30 days", counts["launch.open"], "6 deployed"),
-        ("oracles", "ORACLES", "REQUESTS", "30 days", counts["oracle.request"], "14 attested"),
+        ("requests", "REQUESTS", "ORDERS", "paid 62.5 IMD", len(orders), "paid + attempts"),
+        ("jobs", "JOBS", "REQUESTS", "all: 5 in flight", counts["job.open"] + counts["job.continue"], "32 new / 10 cont"),
+        ("workflows", "WORKFLOWS", "REQUESTS", "10 sites, 8 linked", counts["workflow.open"], "10 shipped"),
+        ("launches", "LAUNCHES", "REQUESTS", "18 ctr / 4 tokens", counts["launch.open"], "6 deployed"),
+        ("oracles", "ORACLES", "REQUESTS", "all: 4 follow-ups", counts["oracle.request"], "14 attested"),
         ("schedules", "SCHEDULES", "REQUESTS", "2 new / 4 topups", counts["schedule.create"] + counts["schedule.topup"], "not run count"),
         ("sites", "SITES", "PROJECTS", "ALL KNOWN", sum(a["kind"] == "SITE" for a in assets), "8 linked"),
         ("contracts", "CONTRACTS", "DEPLOYED", "6 usage rules", sum(a["kind"] != "SITE" for a in assets), "incl. 4 tokens"),
@@ -159,7 +160,7 @@ def hero_records(snapshot, view):
         ("paid", "PAID", "IMD", "78 settled", sum(r["paid_imd"] for r in orders), "refunds 1.0 IMD"),
         ("attention", "ATTENTION", "REQUESTS", "follow-ups", sum(r["follow_up"] for r in orders), "2 blocked + 2"),
     )
-    indices = range(12) if view == "overview" else (0, 6, 7, 8, 10, 11)
+    indices = range(6) if view == "overview" else (0, 6, 7, 8, 10, 11)
     return tuple(HeroRecord(f"{view}-{key}", title, heading, footer, digits=str(value), subtitle=subtitle,
                             read_ts=MOCK_TIME.timestamp())
                  for key, title, heading, footer, value, subtitle in (specs[i] for i in indices))
@@ -169,8 +170,86 @@ def literal(value, style=""):
     return Text(flatten(str(value)), style=style)
 
 
+def wallet_metrics(snapshot):
+    """Observed requests and contract identities; linked sites never add usage."""
+    orders, assets = snapshot["orders"], snapshot["artifacts"]
+    by_id = {a["id"]: a for a in assets}
+    daily = [0] * 30
+    start = MOCK_TIME.timestamp() - 30 * 86400
+    states = dict.fromkeys(("Completed", "In flight", "Exceptions", "Not admitted"), 0)
+    for order in orders:
+        day = int((order["timestamp"] - start) // 86400)
+        if 0 <= day < 30:
+            daily[day] += 1
+        state = ("Not admitted" if order["payment_state"] != "settled" else
+                 "In flight" if order["in_flight"] else
+                 "Exceptions" if order["outcome"] in ("blocked", "failed", "paused") else "Completed")
+        states[state] += 1
+    signals = dict.fromkeys(("Active", "Quiet", "Unknown"), 0)
+    for artifact in assets:
+        if artifact["kind"] == "SITE":
+            continue
+        signal = usage_signal(artifact, by_id)
+        signals["Quiet" if signal == "QUIET" else "Unknown" if signal == "NO DATA" else "Active"] += 1
+    paid = sum((r["paid_imd"] for r in orders), Decimal(0))
+    refunded = sum((r["refund_imd"] for r in orders), Decimal(0))
+    rules = [a["usage"] for a in assets if a["kind"] != "SITE" and a["usage"]]
+    return dict(daily=daily, states=states, signals=signals, paid=paid, refunded=refunded,
+                rules=len(rules), complete=sum(u["complete"] for u in rules),
+                net_paid=paid - refunded, settled=sum(r["payment_state"] == "settled" for r in orders))
+
+
+def meter(value, total, width=12, color="bright_green"):
+    filled = round(width * value / total) if total else 0
+    return Text.assemble(("█" * filled, color), ("░" * (width - filled), "dim"))
+
+
+def insight_texts(snapshot):
+    metrics = wallet_metrics(snapshot)
+    total = len(snapshot["orders"])
+    activity = Text(f"{total} observed requests\n", style="bold")
+    activity.append(build_sparkline(metrics["daily"], width=30) + "\n", style="bright_green")
+    activity.append("09-25 → 10-25 UTC\n", style="dim")
+    activity.append(f"Peak {max(metrics['daily'])}/day · last 24h {metrics['daily'][-1]}\n")
+    activity.append("Each bar = 24 hours\nSampled request history", style="dim")
+    states = Text()
+    for label, count in metrics["states"].items():
+        states.append(f"{label:13}")
+        states.append(meter(count, total, color="yellow" if label == "Exceptions" else "bright_green"))
+        states.append(f" {count:2}\n")
+    states.append("4 open follow-ups\nMutually exclusive states", style="dim")
+    onchain = Text()
+    for label, count in metrics["signals"].items():
+        onchain.append(f"{label:9}")
+        onchain.append(meter(count, sum(metrics["signals"].values()), color="dim" if label == "Unknown" else "bright_green"))
+        onchain.append(f" {count:2}\n")
+    contracts = sum(metrics["signals"].values())
+    onchain.append("18 contracts incl. 4 tokens\n", style="dim")
+    onchain.append(f"{metrics['rules']}/{contracts} rules   ")
+    onchain.append(meter(metrics["rules"], contracts))
+    onchain.append(f"\n{metrics['complete']}/{metrics['rules']} complete ")
+    onchain.append(meter(metrics["complete"], metrics["rules"]))
+    payments = Text(f"Paid       {metrics['paid']:>5} IMD\nRefunded   {metrics['refunded']:>5} IMD\n")
+    payments.append(f"Net paid   {metrics['net_paid']:>5} IMD\n", style="bold")
+    payments.append(meter(metrics["settled"], total, width=28))
+    payments.append(f"\n{metrics['settled']} settled / {total - metrics['settled']} unsettled\n")
+    payments.append("30D · refunds counted separately", style="dim")
+    return dict(activity=activity, **{"request-states": states}, onchain=onchain, payments=payments)
+
+
+class InsightPanel(PanelBase):
+    """A small diagram, sparkline or meter panel using the shared panel frame."""
+
+    def __init__(self, title, content, **kwargs):
+        super().__init__(**kwargs)
+        self.TITLE, self.content = title, content
+
+    def compose_body(self):
+        yield Static(self.content, id=f"{self.id}-content", classes="insight-content")
+
+
 class CreatedPanel(PanelBase):
-    TITLE = "CREATED / 28 rows · 10 sites + 18 contracts (includes 4 tokens)"
+    TITLE = "CREATED / 28 · 10 sites + 18 contracts (incl. 4 tokens)"
 
     def compose_body(self):
         yield DataTable(id=f"{self.id.removesuffix('-created')}-assets", cursor_type="row", zebra_stripes=True)
@@ -191,15 +270,6 @@ class DetailPanel(PanelBase):
             yield Static(Text(), id="artifact-detail")
 
 
-class ContextPanel(PanelBase):
-    TITLE = "REQUESTS / PAYMENTS · 30D"
-
-    def compose_body(self):
-        yield Static(Text("42 jobs / 12 workflows / 8 launches\n16 oracles / 6 schedule actions\n"
-                          "5 in flight / 4 request follow-ups\n\n"
-                          "78 settled / 6 unsettled attempts\nPaid 62.5 IMD / refunded 1.0 IMD"), id="detail-context")
-
-
 class SurfWalletDemo(App):
     TITLE = "WALLET / SWARM · DEMO DATA"
     CSS_PATH = Path(__file__).resolve().parent.parent / "maxpane_dashboard/themes/minimal.tcss"
@@ -213,15 +283,21 @@ class SurfWalletDemo(App):
     #layout { height: 1fr; min-height: 43; min-width: 145; padding: 1 1; }
     #overview, #detail { height: 1fr; }
     .heroes { grid-size: 6; grid-columns: 1fr; grid-rows: 9; grid-gutter: 1 1; margin-bottom: 1; }
-    #overview-heroes { height: 19; }
-    #detail-heroes { height: 9; }
+    #overview-heroes, #detail-heroes { height: 9; }
     .scopes { height: 1; color: $text-muted; }
-    .coverage { height: 1; margin-bottom: 1; color: $text-muted; }
+    .coverage { height: 1; color: $text-muted; }
     .panel-title { height: 1; text-wrap: nowrap; }
     DataTable { height: 1fr; min-height: 4; scrollbar-gutter: stable; }
-    #overview-created { height: 1fr; min-height: 10; }
+    #insights { height: 8; margin-bottom: 1; grid-size: 4; grid-columns: 1fr; grid-gutter: 0 1; }
+    #insights InsightPanel { height: 8; }
+    .insight-content { height: auto; padding: 0 1; text-wrap: nowrap; }
+    #request-states, #onchain, #payments { border-left: solid $panel; }
+    #overview-body { height: 1fr; min-height: 14; }
+    #overview-created { width: 2fr; height: 1fr; margin-right: 1; }
+    #overview-context { width: 1fr; min-width: 44; border-left: solid $panel; }
+    #artifact-path { height: 8; }
+    #followups { height: 6; }
     #overview-record { height: 6; }
-    #overview-money, #overview-selected { height: 1; padding: 0 1; color: $text-muted; }
     #detail-body { height: 1fr; min-height: 27; }
     #detail-left { width: 58%; margin-right: 1; }
     #detail-created { height: 1fr; min-height: 13; }
@@ -247,6 +323,12 @@ class SurfWalletDemo(App):
         self.theme = "matrix"
 
     def compose(self) -> ComposeResult:
+        insights = insight_texts(self.snapshot)
+        followups = Text()
+        for r in self.snapshot["orders"]:
+            if r["follow_up"]:
+                followups.append(f"! {flatten(r['name']):24} ", style="yellow")
+                followups.append(flatten(r["outcome"]) + "\n")
         yield Static(Text("WALLET / SWARM · <demo-wallet> · DEMO DATA · 2026-10-25 12:00 UTC"), id="demo-title")
         with ScrollableContainer(id="viewport"):
             with Vertical(id="layout"):
@@ -254,10 +336,16 @@ class SurfWalletDemo(App):
                     yield Grid(*(NewsHeroCard(r) for r in hero_records(self.snapshot, "overview")), id="overview-heroes", classes="heroes")
                     yield Static(Text(SCOPES), classes="scopes")
                     yield Static(Text(COVERAGE), classes="coverage")
-                    yield CreatedPanel(id="overview-created")
+                    with Grid(id="insights"):
+                        for key, title in (("activity", "REQUEST ACTIVITY / 30D"), ("request-states", "REQUEST STATUS / 84"),
+                                           ("onchain", "ONCHAIN USE / 24H"), ("payments", "PAYMENTS / IMD")):
+                            yield InsightPanel(title, insights[key], id=key)
+                    with Horizontal(id="overview-body"):
+                        yield CreatedPanel(id="overview-created")
+                        with Vertical(id="overview-context"):
+                            yield InsightPanel("SELECTED / ONCHAIN PATH", Text(), id="artifact-path")
+                            yield InsightPanel("ATTENTION / 4 OPEN FOLLOW-UPS", followups, id="followups")
                     yield RecordPanel(id="overview-record")
-                    yield Static(Text("PAYMENTS / 30D · 78 settled / 6 unsettled · paid 62.5 IMD · refunded 1.0 IMD"), id="overview-money")
-                    yield Static(Text(), id="overview-selected")
                 with Vertical(id="detail"):
                     yield Grid(*(NewsHeroCard(r) for r in hero_records(self.snapshot, "detail")), id="detail-heroes", classes="heroes")
                     yield Static(Text(SCOPES), classes="scopes")
@@ -265,7 +353,7 @@ class SurfWalletDemo(App):
                     with Horizontal(id="detail-body"):
                         with Vertical(id="detail-left"):
                             yield CreatedPanel(id="detail-created")
-                            yield ContextPanel(id="detail-context-panel")
+                            yield InsightPanel("REQUESTS / PAYMENTS · 30D", insights["payments"], id="detail-context-panel")
                         yield DetailPanel(id="selected-panel")
         yield Static(Text(), id="demo-footer")
 
@@ -274,7 +362,7 @@ class SurfWalletDemo(App):
             table = self.query_one(f"#{mode}-assets", DataTable)
             columns = (("TYPE", 9), ("OUTPUT", 20), ("CHAIN", 5))
             if mode == "overview":
-                columns += (("ONCHAIN USE / 24H", 43),)
+                columns += (("ONCHAIN USE / 24H", 23),)
             columns += (("SIGNAL", 16),)
             for label, width in columns:
                 table.add_column(label, width=width)
@@ -283,7 +371,7 @@ class SurfWalletDemo(App):
                 color = "green" if "ACTIVE" in signal or signal == "FIRST SEEN" else "dim"
                 values = [literal(a["kind"]), literal(a["name"]), literal(a["chain"])]
                 if mode == "overview":
-                    values.append(literal(usage_text(a, self.by_id)))
+                    values.append(literal(usage_text(a, self.by_id).split(" / ")[0]))
                 table.add_row(*values, literal(signal, color), key=a["id"])
         orders = self.query_one("#orders", DataTable)
         for label, width in (("WHEN UTC", 11), ("ACTION", 18), ("OBJECT", 20), ("PAYMENT", 10), ("RESULT", 20)):
@@ -370,10 +458,18 @@ class SurfWalletDemo(App):
             lines += ["", "Linked contract evidence only:", "frontend origin not proven."]
         lines += ["", "DEMO DATA · no live chain reads"]
         self.query_one("#artifact-detail", Static).update(Text("\n".join(flatten(line) for line in lines)))
-        selected = f"SELECTED: {a['name']} · {signal}"
+        path = Text(f"{flatten(a['name'])} / {a['kind']}\n", style="bold")
+        path.append(f"├─ order {a['order_id']}\n", style="dim")
+        target = (source["name"] if source else "no linked contract" if a["binding_checked"] else "link not verified") if a["kind"] == "SITE" else a["chain"] + " contract"
+        path.append(f"└─ {flatten(target)}\n", style="bright_green" if source else "dim")
+        path.append(f"   └─ {usage_text(a, self.by_id).split(' / ')[0]}\n")
+        actors = f"{usage['actors']} addresses · " if usage and usage["count"] and usage["actors"] is not None else ""
+        path.append(actors + signal + "\n")
         if a["kind"] == "SITE" and source:
-            selected += f" · linked {source['name']}; frontend origin not proven"
-        self.query_one("#overview-selected", Static).update(literal(selected))
+            path.append("frontend origin not proven", style="dim")
+        else:
+            path.append("Enter: rule, coverage and evidence", style="dim")
+        self.query_one("#artifact-path-content", Static).update(path)
         self.query_one("#detail-scroll").scroll_home(animate=False)
 
 

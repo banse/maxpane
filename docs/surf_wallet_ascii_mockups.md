@@ -1,6 +1,6 @@
-# WALLET / SWARM — drei ASCII-Entwürfe für den Boardroom
+# WALLET / SWARM — ausgewählte A/B-Ansichten und Chronik-Alternative
 
-Stand: 2026-10-25. **ASCII-Entwürfe; A/B für die isolierte DEMO ausgewählt.** Die Wallet als
+Stand: 2026-10-25. **A/B-Dichteüberarbeitung für die isolierte DEMO.** Die Wallet als
 Nutzerin des Schwarms: Aufträge, Zahlungen, Ergebnisse und die onchain Nutzung
 der daraus entstandenen Sites, Contracts und Tokens. Agent-Details und Trading
 bleiben ausgeschlossen. Die AGENT-Ansicht liefert ausschließlich die optische
@@ -11,8 +11,8 @@ Sessions oder HTTP-Verfügbarkeit als Nutzungssignal. Eine Site zeigt lediglich
 die onchain Aktivität ihrer nachweislich verknüpften Contracts. Das beweist
 keinen Besuch oder Aufruf über das Frontend.
 
-Alle Zahlen, Namen, Zeiten und Beziehungen sind **DEMO**. Jede Skizze passt
-rechnerisch in 149×45; keine gemessenen Produktions-Pins. Die ausführbare
+Alle Zahlen, Namen, Zeiten und Beziehungen sind **DEMO**. Die Skizzen zeigen
+die Anordnung für das Ziel 149×45; sie sind keine gemessenen Produktions-Pins. Die ausführbare
 Vorschau steht in `scripts/surf_wallet_demo.py`, ihre Spezifikation in
 [surf_wallet_PRD.md](surf_wallet_PRD.md).
 [Datengrundlagen und Signalregeln](surf_wallet_game_mechanics.md).
@@ -20,7 +20,8 @@ Vorschau steht in `scripts/surf_wallet_demo.py`, ihre Spezifikation in
 ## Gemeinsame Darstellung
 
 - Sechs gleich breite Rack Cards pro Reihe, neutrale Rahmen, dunkle Insets,
-  große grüne Ziffern. A behält zwölf Karten wie die AGENT-Ansicht.
+  große grüne Ziffern. A und B haben jeweils nur eine Reihe mit sechs Karten.
+  Die frühere zweite A-Reihe entfällt; ihre Werte bleiben in Fußzeilen und Widgets.
 - `Orders [30D]` gilt für gefundene Requests und Zahlungen. `Assets [ALL KNOWN]`
   umfasst alle belegten Outputs eigener Aufträge, auch ältere. `Usage [24H]`
   misst deren Anwendungsaktionen aller beobachtbaren Akteure. Quellenabdeckung
@@ -37,8 +38,9 @@ Vorschau steht in `scripts/surf_wallet_demo.py`, ihre Spezifikation in
 - Alle sichtbaren Werte laden ohne Detailbesuch; vorhandene Daten derselben
   Wallet bleiben erhalten. Unbekannte Daten sind keine Nullwerte. Große Ziffern
   bleiben vor dem ersten Read leer, Tabellen zeigen `--` mit sachlichem Kontext.
-- Alle Tasten sind Vorschläge, keine implementierten Bindings. Adressen haben
-  Copy-/Explorer-Aktionen, Sites einen belegten URL. Nur lesende Navigation.
+- A/B zeigen nur vorhandene Navigation: Pfeile wählen, Enter öffnet B, Escape
+  kehrt zu A zurück, q beendet die DEMO. Externe Belege sind Platzhalter ohne
+  Copy-/Explorer-Aktionen. Die historische C-Alternative zeigt spätere Vorschläge.
 
 ## Signale
 
@@ -92,108 +94,117 @@ Credits wurde zuerst im seit 10-24 12:00 geführten Tracking beobachtet. Site-Ze
 spiegeln dieselben Registry-/Vault-Belege, keine zusätzlichen Aktionen. Alle
 Verknüpfungen, Regelabdeckungen und Metriken sind reine Beispieldaten.
 
-## A — Wallet Rack mit Created-Übersicht
+## A — eine Kartenreihe, darunter Nutzungs- und Statuswidgets
 
-Zwölf Hero Cards über den erzeugten Artefakten und ihrem onchain Nutzungssignal.
-Aufträge, Zahlungsübersicht und ausgewähltes Ergebnis bleiben darunter erreichbar.
+Die Nutzerkorrektur ersetzt die zweite Hero-Reihe durch unterschiedlich lesbare
+Widgets: Verlauf, Verteilungen, Zahlungsübersicht und einen Beziehungspfad.
+Die sechs großen Zähler bleiben Orientierung; ihre Fußzeilen übernehmen passende
+Nebenzahlen. Die konkrete Fußzeilenverteilung wird am gerenderten Textual-Layout
+geprüft. Globale Werte tragen ihren eigenen Scope.
 
 ```text
-WALLET / SWARM | <wallet> [copy] [explorer] | ETH / BASE / RH
-DEMO DATA | 2026-10-25 12:00 UTC | usage = onchain application actions; site traffic is not measured
+WALLET / SWARM | <demo-wallet> | DEMO DATA | 2026-10-25 12:00 UTC
 
 +- REQUESTS ----------+ +- JOBS --------------+ +- WORKFLOWS ---------+ +- LAUNCHES ----------+ +- ORACLES -----------+ +- SCHEDULES ---------+
-|    OBSERVED / 30D   | |       REQUESTS      | |       REQUESTS      | |       REQUESTS      | |       REQUESTS      | |       REQUESTS      |
+|    ORDERS / 30D     | |    REQUESTS / 30D   | |    REQUESTS / 30D   | |    REQUESTS / 30D   | |    REQUESTS / 30D   | |    REQUESTS / 30D   |
 |                     | |                     | |                     | |                     | |                     | |                     |
 |        _            | |            _        | |            _        | |          _          | |            _        | |          _          |
 |       |_| |_|       | |       |_|  _|       | |         |  _|       | |         |_|         | |         | |_        | |         |_          |
 |       |_|   |       | |         | |_        | |         | |_        | |         |_|         | |         | |_|       | |         |_|         |
-|                     | |                     | |                     | |                     | |                     | |                     |
-|   paid + attempts   | |32 open / 10 continue| |      10 shipped     | |      6 deployed     | |     14 attested     | | 2 creates / 4 topups|
+|   paid + attempts   | |  32 new / 10 cont   | |     10 shipped      | |      6 deployed     | |     14 attested     | |    not run count    |
+|   paid 62.5 IMD     | | 5 in flight / all   | | 10 sites / ALL KNOWN| |18 ctr incl. 4 tokens| |4 follow-ups / all   | | 2 new / 4 topups     |
 +---------------------+ +---------------------+ +---------------------+ +---------------------+ +---------------------+ +---------------------+
+Orders 30D | Assets ALL KNOWN | Usage 24H / ALL ACTORS | ETH / BASE / RH
+Coverage: latest 100 orders / Intake partial | usage rules 6/18 contracts (2/4 tokens) | complete windows 4/6
 
-+- SITES -------------+ +- CONTRACTS ---------+ +- TOKENS ------------+ +- IN FLIGHT ---------+ +- PAID --------------+ +- ATTENTION ---------+
-|    KNOWN PROJECTS   | |  DEPLOYED ADDRESSES | |  DEPLOYED ADDRESSES | |   LINKED REQUESTS   | |      IMD / 30D      | | OPEN REQUEST ISSUES |
-|                     | |                     | |                     | |                     | |                     | |                     |
-|            _        | |            _        | |                     | |          _          | |     _   _     _     | |                     |
-|         | | |       | |         | |_|       | |         |_|         | |         |_          | |    |_   _|   |_     | |         |_|         |
-|         | |_|       | |         | |_|       | |           |         | |          _|         | |    |_| |_  .  _|    | |           |         |
-|                     | |                     | |                     | |                     | |                     | |                     |
-|   8 onchain links   | |    6 usage rules    | | subset of contracts | |   excludes blocked  | |   refunds 1.0 IMD   | | 2 blocked / 2 other |
-+---------------------+ +---------------------+ +---------------------+ +---------------------+ +---------------------+ +---------------------+
+REQUEST ACTIVITY / 30D               REQUEST STATUS                      ONCHAIN USE / 24H                   PAYMENTS / 30D
+                                    exclusive request buckets           18 contracts incl. 4 tokens
+     |     |     ||                  Labeled bars from all 84 orders      ACTIVE + FIRST SEEN   #### 4        Paid          62.5 IMD
+   | |   | |  || ||                  Current state / count / proportion  QUIET                 #    1        Refunded       1.0 IMD
+ __|_|___|_|__||_||_____              Running is separate from blocked    NO DATA               ############# 13
+ fixed daily order counts            Four follow-up flags shown below    Rules                  6/18          Settled        78 / 84
+ start ---------------- end          No order counted twice              Complete rule windows  4/6           [##################..]
+ 84 observed / no live history        No inferred success rate            Linked sites add no extra usage      6 unsettled attempts
 
-Orders [30D]  Assets [ALL KNOWN]  Usage [24H / ALL ACTORS]  Chain [ALL]  Search [___________________]
-Coverage: orders latest 100 | Intake partial | usage rules 6/18 contracts (incl. 2/4 tokens) | complete 24h windows 4/6
-
-CREATED / outputs of this wallet's requests | tokens are included in CONTRACTS
-TYPE       OUTPUT               CHAIN   ONCHAIN USE / 24H                           SIGNAL
----------- -------------------- ------- ------------------------------------------ ----------------
->SITE      Atlas portal         BASE    Registry: 27 registrations / 9 addrs       LINKED ACTIVE
- SITE      Harbor portal        ETH     Vault: 0 deposits                          LINKED QUIET
- CONTRACT  Atlas Registry       BASE    27 registrations / 9 addrs                 ACTIVE
- CONTRACT  Harbor Vault         ETH     0 deposits                                 QUIET
- TOKEN     Harbor Credits       BASE    4 redemptions / 3 addrs                    FIRST SEEN
- TOKEN     Signal Access        RH      --                                         NO DATA
-
-RECORD: 10-25 11:42 job.continue / Atlas v2 / paid / working | 10:18 oracle.request / paid / attested
-PAYMENTS / 30D: 78 settled / 6 unsettled attempts | 62.5 IMD paid | 1.0 IMD refunded
-SELECTED: Atlas portal -> <site-url> [open] -> Base <contract> [copy] [explorer] | frontend origin not proven
-Signals describe application events; linked site rows do not count those events again.
-Tab created/requests | Enter detail | / search | f filters | i wallet | x evidence | Esc boardroom
+CREATED / 28 rows: 10 sites + 18 contracts, including 4 tokens                                        SELECTED RELATIONSHIP
+TYPE      OUTPUT              CHAIN  ONCHAIN USE / 24H       SIGNAL                                  Atlas portal
+>SITE     Atlas portal        BASE   27 registrations        LINKED ACTIVE                            order -> site -> Atlas Registry
+ SITE     Harbor portal       ETH    0 deposits              LINKED QUIET                             27 registrations / 9 addresses
+ CONTRACT Atlas Registry      BASE   27 registrations        ACTIVE                                   Shared contract evidence;
+ CONTRACT Harbor Vault        ETH    0 deposits              QUIET                                    frontend origin not proven.
+ TOKEN    Harbor Credits      BASE   4 redemptions           FIRST SEEN
+ TOKEN    Signal Access       RH     --                      NO DATA                                  OPEN FOLLOW-UPS / 4
+ SITE     Cedar handbook      --     --                      NO ONCHAIN LINK                          ! blocked request
+ ... internal scrolling: all 28 artifacts                                                             ! blocked request
+                                                                                                      ! failed delivery
+                                                                                                      ! paused schedule
+RECORD / 84 observed requests, newest first
+WHEN UTC      ACTION             OBJECT          PAYMENT       RESULT
+10-25 11:42   job.continue       Atlas v2        settled       working
+10-25 10:18   oracle.request     Check release   settled       attested
+10-25 09:45   launch.open        Harbor          settled       deployed
+arrows select | Enter artifact detail | Tab records | Esc/q quit | DEMO DATA / no external actions
 ```
 
-**Vorteil:** Aufträge und daraus entstandene Ergebnisse stehen direkt im vertrauten Rack.
-**Nachteil:** Der sichtbare Request-Verlauf ist kürzer; RECORD bleibt separat anwählbar.
+Die Statusbalken werden aus der vorhandenen Fixture berechnet; dieser Entwurf
+legt keine neue Bedeutung für „erfolgreich“ fest. Onchain-Balken zählen
+Contract-Identitäten, keine Summe unterschiedlicher Events oder Akteuradressen.
+Im Beispiel sind vier Contracts positiv, einer nach vollständig gelesenem
+Fenster ruhig und dreizehn ohne ausreichende Nutzungsdaten. FIRST SEEN gehört
+zum positiven Teil, bleibt am einzelnen Artefakt aber eigenständig sichtbar.
+
+**Vorteil:** Verlauf, laufende Arbeit und Datenabdeckung sind auf einen Blick
+lesbar, während Liste und Record erreichbar bleiben.
+**Abwägung:** Die kompakte Tabelle zeigt die Aktionseinheit; Akteuradressen und
+vollständige Belege stehen am ausgewählten Artefakt beziehungsweise in B.
 
 ## B — Created Explorer mit Nutzungsdetails
 
-Sechs Hero Cards, links die erzeugten Sites, Contracts und Tokens. Rechts stehen
-Zuordnung, onchain Anwendungsmetrik, Zeitfenster und Belege der Auswahl.
+Eine Reihe mit sechs Karten bleibt bestehen. Links die Liste, rechts die
+vollständigen Artefaktdetails; unter der Liste ersetzt das Zahlungswidget den
+bisherigen reinen Textblock. Enter/Escape behalten die gemeinsame Artefakt-ID.
 
 ```text
-WALLET / SWARM | <wallet> [copy] [explorer] | ETH / BASE / RH
-DEMO DATA | 2026-10-25 12:00 UTC | usage = onchain application actions; site traffic is not measured
+WALLET / SWARM | <demo-wallet> | DEMO DATA | 2026-10-25 12:00 UTC
 
-+- REQUESTS ----------+ +- SITES -------------+ +- CONTRACTS ---------+ +- TOKENS ------------+ +- PAID --------------+ +- ATTENTION ---------+
-|    OBSERVED / 30D   | |    KNOWN PROJECTS   | |  DEPLOYED ADDRESSES | |  DEPLOYED ADDRESSES | |      IMD / 30D      | | OPEN REQUEST ISSUES |
++-- REQUESTS ---------+ +-- SITES ------------+ +-- CONTRACTS --------+ +-- TOKENS -----------+ +-- PAID -------------+ +-- ATTENTION --------+
+|    ORDERS / 30D     | |    KNOWN PROJECTS   | |      DEPLOYED       | |      DEPLOYED       | |      IMD / 30D      | |   OPEN FOLLOW-UPS   |
 |                     | |                     | |                     | |                     | |                     | |                     |
 |        _            | |            _        | |            _        | |                     | |     _   _     _     | |                     |
 |       |_| |_|       | |         | | |       | |         | |_|       | |         |_|         | |    |_   _|   |_     | |         |_|         |
 |       |_|   |       | |         | |_|       | |         | |_|       | |           |         | |    |_| |_  .  _|    | |           |         |
-|                     | |                     | |                     | |                     | |                     | |                     |
-|   paid + attempts   | |   8 onchain links   | |    6 usage rules    | | subset of contracts | |   refunds 1.0 IMD   | | 2 blocked / 2 other |
+|   paid + attempts   | |      8 linked       | |    incl. 4 tokens   | |    in contracts     | |   refunds 1.0 IMD   | |    2 blocked + 2    |
+|    30D / observed   | |      ALL KNOWN      | |     6 usage rules   | |      ALL KNOWN      | |     78 settled      | |     follow-ups      |
 +---------------------+ +---------------------+ +---------------------+ +---------------------+ +---------------------+ +---------------------+
+Orders 30D | Assets ALL KNOWN | Usage 24H / ALL ACTORS | ETH / BASE / RH
+Coverage: latest 100 orders / Intake partial | usage rules 6/18 (2/4 tokens) | complete windows 4/6
 
-Orders [30D]  Assets [ALL KNOWN]  Usage [24H / ALL ACTORS]  Chain [ALL]  Search [___________________]
-Coverage: orders latest 100 | Intake partial | usage rules 6/18 contracts (incl. 2/4 tokens) | complete 24h windows 4/6
+CREATED / all 28 artifacts                                                            SELECTED ARTIFACT
+TYPE       OUTPUT               CHAIN   SIGNAL                                        Atlas portal / SITE / BASE
+>SITE      Atlas portal         BASE    LINKED ACTIVE                                 Order      <demo-order>
+ SITE      Harbor portal        ETH     LINKED QUIET                                  Project    <demo-project>
+ CONTRACT  Atlas Registry       BASE    ACTIVE                                        Version    <demo-version>
+ CONTRACT  Harbor Vault         ETH     QUIET                                         Linked     Atlas Registry
+ TOKEN     Harbor Credits       BASE    FIRST SEEN
+ TOKEN     Signal Access        RH      NO DATA                                       ONCHAIN USE / 24H
+ SITE      Cedar handbook       --      NO ONCHAIN LINK                               27 registrations / 9 addresses
+ ... internal scrolling                                                               Rule       <demo-rule>
+                                                                                       Window     complete / <demo-blocks>
+PAYMENTS / 30D                                                                         Latest     <demo-observation>
+Paid       62.5 IMD                                                                    Evidence   <demo-receipt>
+Refunded    1.0 IMD
+78 settled / 6 unsettled attempts                                                      Linked contract evidence only.
+[##################..]                                                                Frontend origin not proven.
 
-CREATED / known outputs of this wallet                                                  SELECTED / Atlas portal
-TYPE       OUTPUT              CHAIN  SIGNAL                                            ------------------------------------------------------
-> SITE     Atlas portal        BASE   LINKED ACTIVE                                     Site        <site-url> [open]
-  SITE     Harbor portal       ETH    LINKED QUIET                                      Request     <order> [open]
-  CONTRACT Atlas Registry      BASE   ACTIVE                                            Workflow    <workflow> [open]
-  CONTRACT Harbor Vault        ETH    QUIET                                             Version     <site-version>
-  TOKEN    Harbor Credits      BASE   FIRST SEEN
-  TOKEN    Signal Access       RH     NO DATA                                           LINKED ONCHAIN USE / 24H
-                                                                                        Base / Atlas Registry
-REQUESTS / 30D                                                                          <contract> [copy] [explorer]
-42 jobs / 12 workflows / 8 launches / 16 oracles / 6 schedule actions                   27 registrations / 9 actor addresses
-Atlas v2       job.continue    paid      working                                        Last action 11:32 UTC
-Atlas site     workflow.open   paid      blocked: hosting                               Window complete / <from-block>..<to-block>
-Daily check    schedule.topup  paid      3 runs added                                   Rule        <version> [details]
-
-PAYMENTS / 30D                                                                          LINKED ACTIVE
-78 settled / 6 unsettled attempts                                                       Activity belongs to the linked contract.
-Paid 62.5 IMD / Refunded 1.0 IMD                                                        Use through this frontend is not proven.
-
-4 request follow-ups | usage gaps are not counted as request failures                   Site and contract share the same event evidence.
-
-Tab section | up/down select | Enter detail | / search | f filters | i wallet | x evidence | Esc boardroom
+arrows select | Tab pane | Esc overview | q quit | DEMO DATA / no external actions
 ```
 
-**Vorteil:** Beste Prüfbarkeit der Nutzung eines einzelnen Ergebnisses.
-**Nachteil:** Weniger Hero-Zähler für die einzelnen Auftragstypen.
+**Vorteil:** Einzelne Artefakte bleiben nachvollziehbar; die Zahlungsdarstellung
+verwendet denselben Widget-Baustein wie A.
+**Abwägung:** Die Übersicht der Auftragstypen steht in A; B priorisiert das
+gewählte Artefakt und seine Belege.
 
-## C — Requests und onchain Nutzung als Chronik
+## C — historische, nicht ausgewählte Chronik-Alternative
 
 Die Timeline verbindet Beauftragung, Lieferung und später beobachtete Anwendung.
 REQUEST und ONCHAIN USE bleiben ausdrücklich unterschiedliche Ereignistypen.
@@ -253,8 +264,10 @@ Ergebnisse bleiben gleichberechtigt sichtbar. C ist eine alternative Chronik.
 Die Nutzungsregeln brauchen später eigene Quellen- und Abdeckungsprüfungen;
 fehlende Regeln bleiben NO DATA. Kein automatischer Rückgriff auf Trading-Daten.
 
-A als Startansicht und B als Artefakt-Detailmodus sind ausgewählt und als
-isolierte Textual-DEMO umgesetzt; C bleibt ein nicht umgesetzter Entwurf.
+A als Startansicht und B als Artefakt-Detailmodus bleiben ausgewählt. Die
+aktuelle Überarbeitung verwendet eine Kartenreihe und die oben gezeigten
+Widgets; der frühere Zwölf-Karten-Stand ist abgelöst. C bleibt ein nicht
+umgesetzter historischer Entwurf.
 Start: `.venv/bin/python scripts/surf_wallet_demo.py`. Enter öffnet das
 ausgewählte Artefakt in B, Escape kehrt mit gleicher Auswahl zu A zurück.
 Der Mock nutzt feste Scope-Beschriftungen statt nicht implementierter Filter

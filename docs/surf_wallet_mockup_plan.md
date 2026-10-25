@@ -1,126 +1,176 @@
-# WALLET / SWARM — A/B Textual mockup plan
+# WALLET / SWARM — A/B density revision plan
 
-Date: 2026-10-25. Owner choice: A start view, B artifact detail mode. This plan
-implements the isolated DEMO specified in `surf_wallet_PRD.md`; proposal C and
-live data integration are outside scope. Tier 2 because this is a new interactive
-body; expected below 1,000 production lines, one implementation package, final
-review only. No intermediate task review or separate planning workspace.
+Date: 2026-10-25. Owner choice remains A start view, B artifact detail mode.
+Revision 2 implements the feedback: **“space should be used more efficiently,
+and more widgets, not just cards and tables, only 1 row of cards.”** The isolated
+DEMO boundary remains; proposal C and live integration are outside scope.
+Tier 2 because new demo-local widgets are introduced; expected below 1,000
+production lines, one implementation package, final review only. No separate
+planning workspace or intermediate task review.
+
+## Design decision
+
+Two approaches were considered: compress the existing cards/tables, or replace
+the second card row with different visual tools. Compression alone keeps the
+same information hierarchy and does not satisfy the request for more widgets.
+Use the mixed-widget layout: one six-card rack, then a sparkline, labeled bars,
+a payment breakdown and a selected relationship diagram. Keep the existing
+matrix palette, monospace typography and neutral panel frames; green represents
+observed usage, yellow draws attention to follow-ups. Do not change shared theme
+files. Explicit labels carry meaning without reliance on color alone.
+
+The current PRD and selected ASCII A/B sections are authoritative. The old
+12-card render and its checks are historical evidence, not acceptance of this
+revision. Root determines exact heights from the rendered 149×45 composition.
 
 ## Ownership and dependencies
 
 | Owner | Files and responsibility | Dependency |
 |---|---|---|
-| Planner | New `docs/surf_wallet_PRD.md`, this new plan | Existing mechanics, ASCII A/B and owner selection |
-| Root implementer | New `scripts/surf_wallet_demo.py`, new `tests/screens/test_surf_wallet_demo.py` | PRD and plan complete |
-| Root coordinator | Existing `docs/surf_wallet_ascii_mockups.md` and `docs/surf_wallet_game_mechanics.md` selection/status updates; verification result in this plan | Working preview and measured evidence |
-| Final reviewer | Read-only review of this task's diff; reversible mutation only | Owner-size preview shown and scoped checks passed |
+| Planner | `docs/surf_wallet_PRD.md`, this plan, `docs/surf_wallet_ascii_mockups.md`, `docs/surf_wallet_game_mechanics.md` | Owner feedback and approved A/B semantics |
+| Root implementer | `scripts/surf_wallet_demo.py`, `tests/screens/test_surf_wallet_demo.py` | Current density design contract |
+| Root coordinator | Actual verification and preview paths in this plan; final measured wording in the four docs | Working render and scoped tests |
+| Final reviewer | Review of the six-file diff; reversible mutation only | Owner-size previews shown and checks complete |
 
-This is one coupled package. Its fixture, state and rendering share stable
-identities, so no parallel code edits are needed. Preserve concurrent changes;
-do not touch any unlisted production file or shared component. A required shared
-edit is a scope issue to report to root, not permission to broaden the package.
+This is one coupled code package. The planner's four documentation files and
+root's two code/test files are disjoint and may progress in parallel. Preserve
+concurrent edits; do not touch unlisted production files, registry, data models,
+shared widgets or themes. No additional dependencies or general dashboard
+framework. A shared-file requirement is a scope issue, not permission to expand.
 
-## Work package: standalone demo
+## Work package: denser standalone demo
 
-### 1. Fixture contract and regression tests
+### 1. Distribution semantics and regression tests
 
-Create the focused tests first. Define stable artifact IDs, deterministic order,
-payment and artifact populations, fixed time windows and per-artifact usage
-facts. Derive visible counts from the complete mock population. The 4 tokens
-are included within the 18 contracts, and the 10 site projects are independent
-of the number of delivered workflows. Include all eight required cases from
-the PRD and all 28 artifact rows, not only the six rows in the ASCII sketch.
+First update the relevant tests to fail on the old twelve-card layout and absent
+widgets. Keep the existing deterministic 84 orders, 28 artifacts and exact money.
+Derive a daily request series from timestamps and an exclusive request-status
+partition. Name the bucket rule; payment state, execution outcome and follow-up
+flag are different facts. Status bar counts must sum to 84 without counting a
+request twice. The four open follow-ups remain their own list.
 
-Acceptance: failing tests initially demonstrate missing demo behavior; fixture
-checks prove the 84-request partition, 78/6 payment partition, exact 62.5/1.0
-amounts, outcome counts, 10/18/4 artifact populations and coverage relationships.
-Unknown and incomplete histories do not become zero. Linked sites refer to the
-same usage evidence as their contracts.
+Derive onchain signal counts from the 18 contract identities, including tokens
+once and excluding linked site mirrors. Rule and complete-window coverage remain
+separate measurements. Positive partial history is active evidence with a lower
+bound; incomplete zero is unknown. Do not sum different application units or
+actor addresses across contracts. Payment amounts remain Decimal-derived;
+settled/unsettled bars count attempts while paid/refunded values show IMD.
 
-### 2. A/B composition and navigation
+Acceptance: tests prove the distributions reconcile to their named populations,
+series bins use the fixed window, money remains 62.5 paid / 1.0 refunded, and
+no existing unknown/zero, subset or site-attribution behavior changes.
 
-Follow `scripts/surf_agent_hero_demo.py` for the twelve-card rack/export pattern
-and `scripts/surf_oracles_demo.py` for table/detail selection. Reuse unchanged
-`HeroRecord` and `NewsHeroCard`; use existing panels and markup-safety helpers.
-Keep a single selected artifact identity and separate overview scroll state.
-Compose A with two rows of six heroes and B with one row of six; do not create
-a generic dashboard framework or production registry entries.
+### 2. One hero row and mixed overview widgets
 
-Acceptance: start A, Enter opens the selected artifact in B, B arrows update all
-details, Escape returns A retaining the current identity, and Escape A / q exit.
-Only implemented controls appear in the footer. Scopes can be fixed captions
-rather than nonfunctional selectors. Detail pages preserve metric units,
-coverage, FIRST SEEN meaning and LINKED site wording. No trading or agent data.
+Reuse unchanged `HeroRecord`, `NewsHeroCard`, `PanelBase` and appropriate shared
+sparkline helpers. A keeps REQUESTS/JOBS/WORKFLOWS/LAUNCHES/ORACLES/SCHEDULES.
+Move secondary values into short, scope-labeled footers and widgets. A compact
+four-column band contains request activity, request status, onchain usage and
+payments. Its target height is eight rows; measure rather than infer fit.
 
-### 3. Geometry and offline exports
+Below, place CREATED beside a selected-artifact relationship diagram and the
+four open request follow-ups. The table takes roughly two thirds of the width.
+Keep a compact RECORD below. The diagram follows the selected artifact and makes
+linked-contract evidence, unknown mappings and static-site absence distinct.
+Use literal sanitized Rich Text at rendering boundaries. Every displayed number
+must come from a fixture fact or derived count; no decorative fake chart data.
 
-Make all cards nine rows high, six equal columns per row within one cell, with
-shared edges and a one-row gap in A. Keep CREATED plus compact RECORD/payment
-facts visible in A at 149×45. B must expose the artifact list and details side
-by side with independently reachable overflowing content. Preserve outer scroll
-at 100×30 and restore geometry when returning to 149×45.
+Acceptance: exactly six aligned nine-row cards, full footers, all four insights,
+selected diagram and follow-up list are visible at 149×45 without outer overflow.
+CREATED retains all 28 rows through internal scrolling, RECORD all 84 orders.
+Only implemented controls appear in the footer; no filters or links are added.
 
-Implement `--export`, `--size`, `--view` and `--select` exactly as in the PRD.
-Use explicit placeholders for external IDs/URLs, not plausible live-looking
-receipts. The app must not access the network, user config/cache, browser or
-real clipboard. No background process or server command.
+### 3. Preserve B and navigation; replace its context paragraph
 
-Acceptance: composited output contains all expected titles, whole digit glyphs,
-units, DEMO marker, coverage and selected detail; no card overlap or off-screen
-right edge at the owner size. SVG exports deterministically reflect mode and
-selection; invalid CLI input fails clearly.
+B retains its one row of six cards and left-list/right-detail split. Reuse the
+payments widget below its list instead of the plain context paragraph. Keep all
+existing artifact details, evidence placeholders and usage qualifications.
+
+Acceptance: A starts by default; Enter opens B at the same ID; B arrows update
+all selected content; Escape returns to the same current ID in A with sensible
+scroll restoration. Both modes remain reachable at 100×30 and recover at 149×45.
+CLI exports and invalid-input handling remain unchanged. No network, config,
+cache, clipboard or browser side effects and no live Boardroom integration.
 
 ## Verification sequence
 
-1. During implementation, run only the relevant cases in
-   `tests/screens/test_surf_wallet_demo.py`. Use headless Textual Pilot and real
-   `render_strips()` content/regions, not source-string or markup-string checks.
-   Await observable state instead of fixed wall-clock sleeps.
-2. Offline guards refuse network and intercept config/cache, browser and real
-   clipboard access. Exercise all artifact types; verify unknown vs zero,
-   static-site semantics, no site traffic claim, shared evidence, A/B identity,
-   scrolling, resize recovery and export behavior.
-3. Export overview, linked-site detail, token FIRST SEEN detail, NO DATA and
-   static-site detail at 149×45. Inspect actual rasterized SVGs and show the
-   owner at least overview and detail. Do this before final review. This is an
-   explicitly fictional mock, so no live rendering or production pin claim.
-4. Prove one meaningful assertion catches a reversible geometry or selection
-   regression using `scripts/mutate.py`. Name the test that reddens and restore
-   by inverse edit. Do not mutate unrelated files.
-5. Before commit, run the touched/composing demo test file once as a whole,
-   required docpins and fast guards. This standalone app's composing file is
-   its own demo test; production screen suites and full repository suite are
-   unnecessary. No mount/registry checks unless the approved scope changes.
-
-Commands from the repository root:
+1. During editing run only named tests for changed distributions, geometry or
+   selection in `tests/screens/test_surf_wallet_demo.py`. Test actual composited
+   rows and regions, not just content strings. Await observable state.
+2. Preserve offline guards and existing fixture/detail cases. Include partial
+   positive and partial zero evidence in aggregate usage checks. Verify every
+   fixed-height widget's final line and all labels remain visible.
+3. Export A and B at 149×45 plus an unknown/static selection. Inspect rasterized
+   SVGs and show the actual renders before final review. This is a fixture DEMO;
+   it does not certify live sources or production layout pins.
+4. Use `scripts/mutate.py` for one named distribution or geometry regression and
+   prove the test reddens; restore byte for byte by inverse edit.
+5. Before commit run the touched/composing demo test file once, docpins and fast
+   guards. The standalone app composes itself; no production screen suites,
+   registry checks or full repository suite are needed.
 
 ```bash
 .venv/bin/python -m pytest tests/screens/test_surf_wallet_demo.py -q
 .venv/bin/python -m pytest -m docpin tests/test_surf_registration.py tests/test_curator_registration.py -q
 .venv/bin/python -m pytest -m 'guard and not mounts_app' tests -q
-.venv/bin/python scripts/surf_wallet_demo.py --export /tmp/surf-wallet-overview.svg --size 149x45 --view overview
-.venv/bin/python scripts/surf_wallet_demo.py --export /tmp/surf-wallet-detail.svg --size 149x45 --view detail --select site-atlas
+env -u NO_COLOR .venv/bin/python scripts/surf_wallet_demo.py --export /tmp/surf-wallet-overview.svg --size 149x45 --view overview
+env -u NO_COLOR .venv/bin/python scripts/surf_wallet_demo.py --export /tmp/surf-wallet-detail.svg --size 149x45 --view detail --select site-atlas
 ```
-
-`site-atlas` is the stable Atlas portal ID. Run export commands sequentially
-when they share rendering state. The script without `--export` is the
-interactive preview command.
 
 ## Final review and completion
 
-Root dispatches one final reviewer after the renders and scoped checks. Include
-the exact `CLAUDE.md` reviewer contract, task-owned diff and named risks: A/B
-selection, unknown vs zero, token subset, site attribution and external side
-effects. No package review, no repository crawl, no full suite. One fix wave for
-Critical/Important findings; scoped re-review only if that wave changes code.
-File Minor findings without expanding the mock.
+Root dispatches one final reviewer with the exact `CLAUDE.md` reviewer contract,
+the six-file diff and named risks: one-row geometry, derived distributions,
+unknown/zero and coverage, subset/deduplication, A/B selection and side effects.
+No package review, repository crawl or full suite. One fix wave for Critical or
+Important findings; scoped re-review only if production code changes. File
+Minor findings without expanding scope. Commit only task-owned files; no push.
 
-Root records actual verification and preview paths, updates the existing design
-documents with the selected A/B implementation state and commits only task-owned
-files. No push. The final handoff must state DEMO-only status and the command to
-run the preview. API integration and Boardroom entry remain pending user feedback.
+Root records actual revision-2 measurements, checks, preview paths and review
+below. Final handoff includes the demo run command and distinguishes this
+preview from future live sources and a Boardroom entry point.
 
-## Execution record
+## Revision 2 execution record
+
+Implemented the single-row overview and four insight widgets, selected-artifact
+diagram and four follow-ups in the existing standalone script. Daily fixture
+timestamps now span the fixed 30D window; counts, request identities, amounts
+and artifact evidence are unchanged. Request states partition 84 orders as
+67 completed, 5 in flight, 6 exceptions and 6 not admitted. Follow-up flags are
+a separate four-item set. Onchain bars count 4 positive, 1 quiet and 13 unknown
+contract identities, plus 6/18 rules and 4/6 complete windows.
+
+TDD began with the missing metrics helper and twelve-card layout. The final
+focused file passes **13 tests in 6.94 s**: semantics, exact money, whole card
+footers, composited widget labels/bars, selected diagrams (including static and
+unresolved site mappings), A/B identity, 100×30 scroll/resize recovery and SVG
+exports. At 149×45 the overview exposes eleven artifact rows, previously seven,
+with no outer scrolling. Both modes retain one six-card row. No production pin,
+shared widget, theme, source or registration surface changed.
+
+Mutation proof: allowing linked sites into the contract signal population was
+KILLED by `test_widgets_partition_requests_and_count_contract_evidence_once`;
+the tool restored the file. Required docpins: **12 passed**, 121 deselected.
+Fast guards: **128 passed, 1 pre-existing failure**, 16,842 deselected. This is
+the same SWARM TOKENS section-extraction failure reproduced against HEAD in
+revision 1; its test, theme and screen remain unchanged against current HEAD.
+No full suite was run.
+
+Exported and inspected `/tmp/maxpane-wallet-dense-{overview,detail,token,unknown,static}.png`
+and matching SVGs using `env -u NO_COLOR` and local `resvg_py`/Menlo. The rendered
+overview/detail and additional mapping cases were shown before final review.
+Independent final review: **Approved, no findings**. The reviewer inspected
+both updated previews and verified ten focused cases covering composited
+layout, artifact mappings, A/B identity, resize and unknown/zero semantics.
+Replacing exception outcomes with follow-up flags was KILLED by
+`test_widgets_partition_requests_and_count_contract_evidence_once`; the source
+was restored byte for byte. The review left no additional working-tree changes.
+
+## Historical revision 1 execution record
+
+The following records commit `e109b1ec`, the original twelve-card overview.
+It is retained as provenance and does not certify revision 2.
+
 
 Implemented in `scripts/surf_wallet_demo.py` (405 lines) with the isolated
 composing tests in `tests/screens/test_surf_wallet_demo.py`. The first test run

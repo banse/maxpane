@@ -3,6 +3,9 @@
 Date: 2026-10-25. Stage: **isolated Textual DEMO**, before live integration.
 The owner selected: **“A als Startansicht, B als Artefakt-Detailmodus.”**
 This document fixes the selected preview; proposal C is not implemented.
+Revision 2 follows the owner's rendered-preview feedback: **“space should be
+used more efficiently, and more widgets, not just cards and tables, only 1 row
+of cards.”** Secondary totals move into card footers and compact widgets.
 
 ## Goal and authority
 
@@ -30,20 +33,37 @@ additional dependencies. A Boardroom entry point is future integration work.
 
 ## A — start view
 
-At 149 columns × 45 rows, two rows of six nine-row rack cards appear above a
-selectable CREATED table. The rows share column boundaries with a one-row gap.
+At 149 columns × 45 rows, show **one row of six nine-row rack cards**:
+REQUESTS 84, JOBS 42, WORKFLOWS 12, LAUNCHES 8, ORACLES 16 and SCHEDULES 6.
 Keep the existing dark inset, neutral frame, green digits and clear units.
+There is no second hero row. Its information remains visible in short card
+footers and the widgets: 10 sites / 8 linked, 18 contracts including 4 tokens,
+5 in flight, paid 62.5 IMD / refunded 1.0 IMD and 4 request follow-ups. A footer
+must label its scope clearly; global counts are not outcomes of the card's
+request category, and ALL KNOWN artifacts are not restricted to 30D orders.
 
-| Row | Cards in order |
+A compact four-column insights band replaces the second row:
+
+| Widget | Representation and acceptance |
 |---|---|
-| 1 | REQUESTS 84; JOBS 42; WORKFLOWS 12; LAUNCHES 8; ORACLES 16; SCHEDULES 6 |
-| 2 | SITES 10; CONTRACTS 18; TOKENS 4; IN FLIGHT 5; PAID 62.5 IMD; ATTENTION 4 |
+| Request activity | Daily sparkline derived from the 84 orders in the fixed 30D window; visible period, count and a readable scale/context; no invented trend or live history |
+| Request status | Labeled proportional bars from mutually exclusive request-state buckets; their counts reconcile to all 84 orders; follow-up flags are not an extra additive bucket |
+| Onchain usage | Contract-identity signal and rule/window-coverage bars; count the 18 contracts once, including their 4-token subset; linked sites add no events or extra contracts |
+| Payments | Paid and refunded amounts shown separately with a settlement bar for 78 settled / 6 unsettled attempts; amounts remain exact and are not a trading or performance metric |
 
-CREATED shows type, artifact name, chain, onchain activity metric and signal.
-All artifacts remain reachable through internal scrolling; the six illustrative
-ASCII rows are not the whole dataset. Preserve a compact recent RECORD, payment
-summary and selected-artifact context below the table. A visible count describes
-the displayed population without summing sites, contracts and token subsets.
+Below, CREATED takes roughly two thirds of the width. It shows type, artifact
+name, chain, compact onchain activity metric and signal. Its remaining third
+shows a selected-artifact relationship diagram and the four named open request
+follow-ups. The diagram follows the same selected ID as B and distinguishes a
+linked site's contract evidence from use through its frontend. Unknown/static
+cases explain the missing relationship without inventing a path.
+
+All 28 artifacts remain reachable through internal scrolling. Preserve a compact
+recent RECORD below this area. A visible count describes the displayed population
+without summing sites, contracts and token subsets. Use the recovered space for
+readable information, with no decorative empty panels or duplicate large totals.
+Measure the final widget heights and column allocation in the compositor; the
+target insights-band height is eight rows, not a production layout pin.
 
 Scopes are explicit: orders 30D, assets ALL KNOWN, usage 24H / ALL ACTORS.
 The mock may present these as fixed captions. It must not advertise unimplemented
@@ -53,8 +73,10 @@ search, filters, wallet switching, refresh or external-link actions as controls.
 
 One row of six nine-row cards: REQUESTS 84, SITES 10, CONTRACTS 18, TOKENS 4,
 PAID 62.5 IMD, ATTENTION 4. Below it, the artifact list is on the left and the
-selected artifact's details are on the right. Request/payment context stays
-available beneath the list. The right pane scrolls internally when needed.
+selected artifact's details are on the right. The shared compact payments widget
+replaces the plain request/payment paragraph beneath the list. The right pane
+scrolls internally when needed. B keeps its existing single hero row; it does
+not gain another row to accommodate the new overview widgets.
 
 Details show artifact identity/type/chain; its own order and project/launch or
 workflow relation; site version or deployed contract; usage rule and consumer
@@ -139,9 +161,12 @@ the standalone app directly; no server or background process is needed.
 
 ## Acceptance boundary
 
-The preview succeeds when A and B render coherently at 149×45, all named cases
+The preview succeeds when A and B render coherently at 149×45 with only one
+hero row each and no outer overflow, all named cases
 are inspectable, navigation retains identity, narrow layouts remain reachable,
-demo totals agree, and no external side effect occurs. Export and inspect both
+demo totals and visual distributions agree, and no external side effect occurs.
+The new plots, bars, relationship diagram and follow-up list must be composited
+and readable alongside CREATED and RECORD. Export and inspect both
 views and the unknown/static-site cases. This certifies a fictional preview,
 not live data completeness, production layout pins or deployment readiness.
 

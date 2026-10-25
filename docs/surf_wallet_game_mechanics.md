@@ -1,6 +1,8 @@
 # WALLET / Boardroom — Entwurfsgrundlage
 
 Stand: 2026-10-25. Recherche und ausgewählte A/B-Vorschau mit DEMO-Daten.
+Aktuelle Layoutkorrektur: eine Hero-Reihe, ergänzt durch Verlauf, Statusbalken,
+Zahlungswidget, Beziehungspfad und offene Auftragsprobleme.
 Die isolierte Textual-DEMO liegt in `scripts/surf_wallet_demo.py`; keine
 Produktionsintegration und keine Wallet-/RPC-Datenanbindung.
 MY CONTRACTS ist zurückgestellt. Der Nutzer möchte eine Wallet-Übersicht im
@@ -158,10 +160,35 @@ Interpretation, decken aber nicht automatisch alle Contract-Arten oder Chains ab
 Eine allgemeine Non-Trading-Nutzungsquelle ist in dieser Entwurfsrunde nicht
 nachgewiesen; bis zu einer geeigneten Regel bleibt ein Artefakt `NO DATA`.
 
-Das Design übernimmt die zwölf Rack-Karten der AGENT-Ansicht, ihre großen
-Ziffern und RECORD-Tabelle. Alternativen reduzieren die Hero-Anzahl zugunsten
-von Auftragsdetails, Zahlungsbelegen oder mehr Chronikplatz. Zielgröße 149×45;
-ASCII-Abmessungen sind kein gemessener Textual-Layout-Pin.
+Das Design übernimmt den Stil der Rack-Karten und ihre großen Ziffern aus der
+AGENT-Ansicht. Nach der gerenderten Vorschau verlangt der Nutzer effizientere
+Raumnutzung, mehr unterschiedliche Widgets und nur eine Kartenreihe. A behält
+sechs Karten für REQUESTS, JOBS, WORKFLOWS, LAUNCHES, ORACLES und SCHEDULES.
+Die zweite Reihe entfällt. Site-/Contract-/Tokenzahlen, laufende Aufträge,
+Zahlungsbeträge und offene Punkte bleiben in Fußzeilen und Widgets lesbar.
+
+Unter den Karten zeigt A vier kompakte Widgets: tägliche beobachtete Requests
+als Sparkline, disjunkte Auftragszustände als Balken, Onchain-Nutzung und deren
+Abdeckung als Contract-Verteilung sowie Zahlungen und Erstattungen mit einer
+Settlement-Verteilung. Die Statusverteilung zählt jeden der 84 Demo-Requests
+genau einmal; Follow-up-Markierungen sind eine separate Sicht und kein weiterer
+additiver Zustand. Ein Trend der beobachteten Requests ist keine Aussage über
+die Vollständigkeit einer späteren begrenzten API-Historie.
+
+Die Onchain-Verteilung zählt nur die 18 Contract-Identitäten, Tokens inklusive.
+Vier haben positive Nutzungsbelege (einschließlich FIRST SEEN), einer ist nach
+vollständigem Fenster QUIET und dreizehn sind NO DATA. Die acht verknüpften
+Sites erhöhen diese Zahlen nicht. Regelabdeckung (6/18) und vollständige
+Regelfenster (4/6) bleiben getrennt; ein teilweise gelesenes positives Fenster
+kann ACTIVE sein, ein teilweise gelesenes Nullfenster nicht QUIET.
+
+CREATED steht neben dem Beziehungspfad des ausgewählten Artefakts und vier
+benannten offenen Auftragsproblemen; RECORD bleibt darunter. Der Pfad zeigt
+Auftrag, Artefakt und gegebenenfalls verknüpften Contract, ohne daraus
+Frontend-Traffic abzuleiten. B behält seine eine Kartenreihe und den Explorer;
+unter der Liste ersetzt dasselbe Zahlungswidget den bisherigen Textblock.
+Zielgröße 149×45, bei 100×30 erreichbar durch Scrollen. ASCII-Abmessungen sind
+kein gemessener Textual-Layout-Pin; die genaue Aufteilung wird gerendert geprüft.
 
 ## Laden und Bedienung
 

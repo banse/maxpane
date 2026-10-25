@@ -8,7 +8,7 @@ from rich.color import Color
 from textual.widgets import DataTable
 
 from scripts.surf_wallet_demo import (
-    SurfWalletDemo, export_demo, hero_records, mock_snapshot, usage_signal, usage_text,
+    SurfWalletDemo, export_demo, hero_records, mock_snapshot, usage_signal, usage_text, wallet_metrics,
 )
 from maxpane_dashboard.widgets.surf.news_hero import NewsHeroCard
 from tests.screens.test_surf_news_hero_demo import painted
@@ -61,8 +61,22 @@ def test_complete_demo_fixture_counts_and_money_are_consistent():
     assert sum(bool(a["usage"] and a["usage"]["complete"]) for a in assets if a["kind"] != "SITE") == 4
     counts = {r.title: r.digits for r in hero_records(snapshot, "overview")}
     assert counts == dict(REQUESTS="84", JOBS="42", WORKFLOWS="12", LAUNCHES="8",
-                         ORACLES="16", SCHEDULES="6", SITES="10", CONTRACTS="18",
-                         TOKENS="4", **{"IN FLIGHT": "5", "PAID": "62.5", "ATTENTION": "4"})
+                         ORACLES="16", SCHEDULES="6")
+
+
+def test_widgets_partition_requests_and_count_contract_evidence_once():
+    snapshot = mock_snapshot()
+    metrics = wallet_metrics(snapshot)
+    assert len(metrics["daily"]) == 30 and sum(metrics["daily"]) == 84
+    assert metrics["states"] == {"Completed": 67, "In flight": 5, "Exceptions": 6, "Not admitted": 6}
+    assert sum(metrics["states"].values()) == 84
+    assert metrics["signals"] == {"Active": 4, "Quiet": 1, "Unknown": 13}
+    assert sum(metrics["signals"].values()) == 18  # sites and token subsets never add evidence
+    assert metrics["net_paid"] == Decimal("61.5")
+    assert (metrics["rules"], metrics["complete"]) == (6, 4)
+    # A missing observation must move a contract to unknown, not quiet.
+    next(a for a in snapshot["artifacts"] if a["id"] == "contract-vault")["usage"] = None
+    assert wallet_metrics(snapshot)["signals"] == {"Active": 4, "Quiet": 0, "Unknown": 14}
 
 
 def test_usage_distinguishes_unknown_zero_partial_and_linked_evidence():
@@ -90,9 +104,8 @@ async def test_overview_rack_and_tables_fit_owner_terminal():
         await pilot.pause()
         app = pilot.app
         cards = list(app.query("#overview NewsHeroCard"))
-        assert len(cards) == 12 and {c.region.height for c in cards} == {9}
-        assert cards[6].region.y == cards[0].region.bottom + 1
-        assert [c.region.x for c in cards[:6]] == [c.region.x for c in cards[6:]]
+        assert len(cards) == 6 and {c.region.height for c in cards} == {9}
+        assert len({c.region.y for c in cards}) == 1
         assert max(c.region.width for c in cards) - min(c.region.width for c in cards) <= 1
         for c in cards:
             output = painted(app, c)
@@ -105,13 +118,28 @@ async def test_overview_rack_and_tables_fit_owner_terminal():
         table = app.query_one("#overview-assets", DataTable)
         assert table.row_count == 28
         assert app.query_one("#orders", DataTable).row_count == 84
+        widgets = [app.query_one(f"#{name}") for name in ("activity", "request-states", "onchain", "payments")]
+        assert len({w.region.y for w in widgets}) == 1
+        assert all(l.region.right <= r.region.x for l, r in zip(widgets, widgets[1:]))
+        assert app.query_one("#overview-assets").region.height >= 10
+        assert any(c in painted(app, widgets[0]) for c in "▁▂▃▄▅▆▇█")
+        for widget in widgets[1:]:
+            assert "█" in painted(app, widget)
+        for name, texts in {
+            "request-states": ("Completed", "67", "In flight", "5", "Exceptions", "Not admitted"),
+            "onchain": ("Active", "4", "Quiet", "1", "Unknown", "13", "4/6 complete"),
+            "payments": ("62.5 IMD", "1.0 IMD", "61.5 IMD", "78 settled / 6 unsettled"),
+            "artifact-path": ("Atlas portal", "Atlas Registry", "27 registrations", "frontend origin not proven"),
+            "followups": ("Atlas site", "blocked", "failed", "paused"),
+        }.items():
+            assert all(t in painted(app, app.query_one(f"#{name}")) for t in texts)
         output = painted(app)
         for text in ("DEMO DATA", "Orders 30D", "Assets ALL KNOWN", "Usage 24H",
                      "CREATED", "RECORD", "LINKED ACTIVE", "FIRST SEEN", "NO DATA", "1.0 IMD"):
             assert text in output
         for forbidden in ("SEATS", "WORKERS", "EFFORT", "ACCEPTED", "VISITORS", "P/L"):
             assert forbidden not in output
-        assert app.query_one("#overview-selected").region.bottom <= app.query_one("#demo-footer").region.y
+        assert app.query_one("#overview-record").region.bottom <= app.query_one("#demo-footer").region.y
         viewport = app.query_one("#viewport")
         assert not viewport.max_scroll_x and not viewport.max_scroll_y
 
@@ -119,7 +147,7 @@ async def test_overview_rack_and_tables_fit_owner_terminal():
 @pytest.mark.parametrize("identity, expected", [
     ("site-atlas", "LINKED ACTIVE"), ("contract-vault", "QUIET"),
     ("token-credits", "FIRST SEEN"), ("token-access", "NO DATA"),
-    ("site-static", "NO ONCHAIN LINK"),
+    ("site-static", "NO ONCHAIN LINK"), ("site-unresolved", "NO DATA"),
 ])
 async def test_artifact_detail_and_escape_keep_exact_identity(identity, expected):
     async with SurfWalletDemo(selected_id=identity).run_test(size=(149, 45)) as pilot:
@@ -151,6 +179,12 @@ async def test_artifact_detail_and_escape_keep_exact_identity(identity, expected
         assert app.view == "overview" and app.selected_id == identity
         table = app.query_one("#overview-assets", DataTable)
         assert table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value == identity
+        diagram = painted(app, app.query_one("#artifact-path"))
+        assert expected in diagram and app.by_id[identity]["name"] in diagram
+        if identity == "site-static":
+            assert "no linked contract" in diagram
+        if identity == "site-unresolved":
+            assert "link not verified" in diagram
 
 
 async def test_detail_selection_changes_and_returns_without_index_reset():
@@ -181,7 +215,7 @@ async def test_narrow_scroll_and_restore_reach_both_modes():
             assert vp.max_scroll_x > 0 and vp.max_scroll_y > 0
             vp.scroll_to(x=vp.max_scroll_x, y=0, animate=False)
             await pilot.pause()
-            assert "ATTENTION" in painted(pilot.app)
+            assert ("SCHEDULES" if view == "overview" else "ATTENTION") in painted(pilot.app)
             vp.scroll_to(x=0, y=vp.max_scroll_y, animate=False)
             await pilot.pause()
             assert "RECORD" in painted(pilot.app) if view == "overview" else "REQUESTS" in painted(pilot.app)
