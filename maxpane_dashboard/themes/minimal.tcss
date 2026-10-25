@@ -2352,7 +2352,7 @@ SurfScreen #surf-pool4-user-body {
 
 SurfScreen #surf-pool4-user-middle {
     height: 1fr;
-    min-height: 12;
+    min-height: 16;
     padding: 0 0;
 }
 
@@ -2366,7 +2366,7 @@ SurfPool4UStakers {
 SurfScreen #surf-pool4-user-rail {
     width: 1fr;
     height: 1fr;
-    min-height: 12;
+    min-height: 16;
     padding: 0 0;
     overflow-y: auto;
     scrollbar-size: 1 1;

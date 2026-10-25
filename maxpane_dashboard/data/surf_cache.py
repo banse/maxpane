@@ -185,6 +185,7 @@ SLOT_ACTIVITY = "activity"    # Blockscout dev tx pages
 SLOT_LAUNCHPAD = "launchpad"  # factory/hook/executor getters + log aggregates
 SLOT_POOL4 = "pool4"          # discovery + hook/vault/dripper getters + flow logs
 SLOT_POOL4_STAKERS = "pool4_stakers"  # the sIMD Transfer fold's last-good
+SLOT_POOL4_BURN = "pool4_burn_pipeline"  # independently observed executor and Base stages
 SLOT_SWARM_LAUNCHES = "swarm_launches"
 SLOT_SWARM_LAUNCH_FACTS = "swarm_launch_facts"
 SLOT_SWARM_LAUNCH_CONTRIBUTION = "swarm_launch_contribution"
@@ -222,6 +223,7 @@ SLOTS: tuple[str, ...] = (
     SLOT_ACTIVITY,
     SLOT_LAUNCHPAD,
     SLOT_POOL4,
+    SLOT_POOL4_BURN,
     # Not a ninth degraded *group* -- PRD 7.3: `SOURCE_POOL4` ("p4") is the
     # eighth and last name the title row has room for. This slot exists so the
     # staker fold can serve last-good behind its own stale marker; it folds
@@ -1503,6 +1505,7 @@ __all__ = [
     "SLOT_ETH_USD",
     "SLOT_NFT",
     "SLOT_POOL4",
+    "SLOT_POOL4_BURN",
     "SLOT_POOL4_STAKERS",
     "SLOT_SWARM",
     "SLOT_SWARM_JOBS_SEEN",

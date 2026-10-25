@@ -1,0 +1,33 @@
+{
+  "captured": "2026-10-25",
+  "endpoint": "https://base.rpc.blxrbdn.com",
+  "chain_id": "0x2105",
+  "head": {
+    "number": "0x3298362",
+    "hash": "0xad0c9b8c653f9545ab30f697dc1d74c3c9f70b9b9a8ce170e8e9125a16e50d3f",
+    "timestamp": "0x6add63a7"
+  },
+  "positive_log": {
+    "address": "0xf9d7cbf5bef2f5c9ba93a70f31ddca6457716793",
+    "topics": [
+      "0x0ae17d4615863c9cd831849f15f074aebe0227ef5a9804d6c7691e96f255378b",
+      "0x000000000000000000000000cefdb5f635bfc913d12e6eac3738e92b1681bd65",
+      "0x000000000000000000000000ff0c532fdb8cd566ae169c1cb157ff2bdc83e105"
+    ],
+    "data": "0x",
+    "blockHash": "0x3af7ed799b3b153eb869d950e087f581ad1711423a779a9baeaeeaf5da4c2eb2",
+    "blockNumber": "0x328ba29",
+    "blockTimestamp": "0x6adbd135",
+    "transactionHash": "0x20ac03d566a07e8dfe434fd4ffc376d9b5d9a345b58578f7e331a6913a0c25f1",
+    "transactionIndex": "0x15",
+    "logIndex": "0x9",
+    "removed": false
+  },
+  "empty_window": {
+    "from_block": 53012259,
+    "to_block": 53052258,
+    "address": "0xf9d7cbf5bef2f5c9ba93a70f31ddca6457716793",
+    "topic": "0x0ae17d4615863c9cd831849f15f074aebe0227ef5a9804d6c7691e96f255378b",
+    "result": []
+  }
+}

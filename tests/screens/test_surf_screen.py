@@ -529,6 +529,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "pool4_as_of_hhmm": "pool4_as_of_hhmm",
     },
     "SurfPool4UBurn": {
+        "pool4_burn_pipeline": "pool4_burn_pipeline",
         # Shared with RECENT FLOW, which renders the same rows as a log:
         # two questions off one read, not two copies of one read.
         "pool4_flow": "pool4_flow",
@@ -568,6 +569,7 @@ SURF_WIDGET_SIGNATURES: dict[str, dict[str, str]] = {
         "pool4_as_of_hhmm": "pool4_as_of_hhmm",
     },
     "SurfPool4Split": {
+        "pool4_burn_pipeline": "pool4_burn_pipeline",
         "pool4_network": "pool4_network",
         "pool4_measured_inference_pct": "pool4_measured_inference_pct",
         "pool4_measured_burn_pct": "pool4_measured_burn_pct",

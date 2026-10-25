@@ -1169,3 +1169,58 @@ by exact node ID from this round's final affected-file check, not silently fixed
 The scoped review closes its Critical explorer-link finding. Its Important
 source-availability acceptance blocker remains explicitly open. Live dashboard
 render, Claude verification and full suite remain outside this round.
+
+## 2026-10-25 — executor pipeline layout
+
+After the live market and protocol previews at 149×45, the market boundary is
+148×42. Four executor lines make BURN & SUPPLY eight painted lines; its upper
+section needs 16 rows while the lower leaderboard/ladder retains its 12-row
+floor. The market is complete at 42 and scrolls with a marker at 41. The
+protocol remains 138×44: pipeline rows pair when they fit, and the twelve-lever
+HATCHES/VAULT column still binds height.
+
+Positive, empty, incomplete and maximum uint256 observations were measured at
+both full-layout pins. The market height mutants 42→41 and 42→43 were killed by
+`test_the_market_height_pin_is_the_two_rows_floors`; `scripts/mutate.py`
+restored the source byte for byte. Eight composited combined-pin cases pass.
+The live preview's existing DRIP QUEUE card label elision at 149 columns is
+outside this change; it remains a separate follow-up.
+
+
+The independent reader now follows the freshly verified hook's current executor.
+Queue, recent bridge and verified Base burn keep separate source clocks; Base
+completion requires the receipt event plus matching transfer to zero. The live
+cold pipeline completed in 31.66 seconds without visiting Launchpad; narrow reads
+measured 0.326/2.637/20.127 seconds for queue/bridge/Base. The dedicated Base budget
+is 30 seconds; queue and bridge remain 12 seconds. The public Base log fallback
+was checked against both a positive event and an empty page, with matching
+finalized header evidence in the committed fixture.
+
+Final review found one Important deadline edge: a newly observed executor could
+be lost when its later configuration call timed out. The fix returns only the
+already observed invalidation evidence, performs no further I/O, and retains
+manager generation guards. The original reproduction and four scoped checks
+passed re-review. The deterministic deadline regression and its mutation also
+passed; the mutation was killed. No Critical findings or open implementation
+findings remain from that review.
+
+Existing unrelated verification debt: the TOKENS stylesheet guard includes the
+SWORN tail, and the widget analytics allowlist omits the unchanged
+`swarm_latest` import. Both reproduce from HEAD; this change does not repair them.
+
+
+Verification of the complete touched/composing UI set produced 943 passes and
+13 failures. Four were new test-fixture expectations: three renamed zero-value
+labels and a dispatch fixture that omitted the new pipeline. All four were
+corrected and their focused checks pass. The other nine failures reproduce in
+an isolated archive of baseline `1c095020`: stale key-binding/legacy-hero
+expectations, the widget analytics allowlist, an old outage warning, a padded
+clip probe and two unavailable-hero width expectations. They are existing test
+maintenance, not new pipeline failures. Fast guards passed 128 with the existing
+TOKENS/SWORN-tail guard excluded by exact node ID. Documentation pins passed 12.
+No full repository suite was run. Current review evidence and command outputs
+are in `/tmp/maxpane-pool4-review/`; committed public RPC fixtures remain the
+reproducible source evidence.
+
+The final whole-file data/cache/manager run passed **675 tests**, including the
+deadline fix and all independent POOL4 lifecycle checks.

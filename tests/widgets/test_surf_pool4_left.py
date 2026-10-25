@@ -34,6 +34,7 @@ from maxpane_dashboard.data.surf_models import (
     POOL4_FLOW_LIMIT,
     POOL4_FLOW_SIDES,
     POOL4_KEYS,
+    POOL4_BURN_KEYS,
     POOL4_NETWORKS,
     SURF_ROW_KEYS,
 )
@@ -485,7 +486,7 @@ def test_the_split_signature_covers_its_share_of_the_contract() -> None:
         assert names, method
         for name in names:
             assert name.startswith("pool4_"), name
-            assert name in POOL4_KEYS, name
+            assert name in POOL4_KEYS + POOL4_BURN_KEYS, name
         assert any(
             p.kind is p.VAR_KEYWORD
             for p in inspect.signature(method).parameters.values()
@@ -839,7 +840,7 @@ async def test_a_pair_reflows_at_its_own_boundary_in_both_directions() -> None:
     a reflow is not a loss.
     """
     def paired(lines):
-        return any("burned" in line and "rewarded" in line for line in lines)
+        return any("settled" in line and "rewarded" in line for line in lines)
 
     boundary = None
     for width in range(30, 90):
@@ -875,7 +876,7 @@ async def test_each_group_reflows_at_its_own_width_and_not_the_panels_widest() -
     """
     lines, text = await _split(size=(50, 40))          # the rail's own width
 
-    assert any("burned" in line and "rewarded" in line for line in lines)
+    assert any("settled" in line and "rewarded" in line for line in lines)
     assert any("fees" in line and "retained" in line for line in lines)
     # ...and the group that does not fit is reflowed, not shed.
     assert not any("unsettled burn" in line and "unsettled stakers" in line
@@ -896,7 +897,7 @@ async def test_the_counter_lines_do_not_move_the_pair_boundary() -> None:
     async def boundary(**extra):
         for width in range(30, 90):
             lines, _t = await _split(size=(width, 40), **extra)
-            if any("burned" in line and "rewarded" in line for line in lines):
+            if any("settled" in line and "rewarded" in line for line in lines):
                 return width
         raise AssertionError("the pair never fitted on one line")
 
@@ -1095,7 +1096,7 @@ async def test_a_reconciled_control_is_reported_quietly_and_not_hoisted() -> Non
     assert COUNTER_WORDS["reconciled"] in text
     assert COUNTER_ALERT not in text
     assert COUNTER_NOT_ESTABLISHED not in text
-    assert _index_of(lines, "counters ") > _index_of(lines, "burned")
+    assert _index_of(lines, "counters ") > _index_of(lines, "settled")
 
 
 @pytest.mark.asyncio
@@ -1361,7 +1362,7 @@ async def test_the_pair_that_fits_the_rail_costs_one_row_and_not_two() -> None:
     one line each.
     """
     lines, _text = await _split(size=(50, 40))
-    burned = [line for line in lines if "burned" in line]
+    burned = [line for line in lines if line.strip().startswith("settled ")]
     fees = [line for line in lines if "fees" in line]
     assert len(burned) == 1 and "rewarded" in burned[0]
     assert len(fees) == 1 and "retained" in fees[0]

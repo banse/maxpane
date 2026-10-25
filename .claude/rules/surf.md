@@ -90,6 +90,18 @@ is registered there, bound by the layout test. Surf's `e` and curator's `e` (exp
 two `l`s, are separate bindings on separate screens. The feed threads replies behind an
 expand/collapse toggle, with NEW REPLY on the rail so a collapsed thread still announces itself.
 
+POOL4's two native views independently collect `pool4_burn_pipeline`. Hook totals
+are settled allocation; the flow rate is allocation activity; supply percentages
+use Ethereum wrapper supply. Executor queue, latest bridge send, and latest verified
+Base receiver burn have separate observation times. Shared-executor events are not
+POOL4-only totals or a one-to-one bridge/burn pairing. History covers explicit recent
+finalized block windows, not lifetime totals. A Base burn requires a successful
+receipt containing both receiver `BurnExecuted` and token `Transfer(receiver, zero)`.
+Empty complete windows differ from unread data. Configuration changes invalidate
+incompatible retained stages; failed reads preserve source clocks. Queue and bridge
+have 12-second budgets; Base has its own 30-second budget. These readers never depend
+on visiting Launchpad. Source clocks and coverage remain in each panel's tooltip.
+
 ## LAUNCHPAD rack hero (`l`)
 
 `surf_launchpad_hero` projects the existing launchpad slot and current ETH/USD

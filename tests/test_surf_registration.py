@@ -1428,6 +1428,7 @@ _NON_NUMERIC_KEYS = frozenset(
         # word `unavailable` -- a checker that only compared the `None` word
         # would have passed the defect this key fixes.
         "pool4_stakers_state",
+        "pool4_burn_pipeline",  # structured independent source clocks and receipt evidence
         # -- the `s` SWARM body (2026-09-16; eight v1 keys retired in WP7 of
         # the swarm v2 plan, 2026-09-21) ------------------------------------
         #
@@ -2102,7 +2103,7 @@ _POOL4_ZERO_PROBES: dict[str, str] = {
     # forbidden thing is a *failed read* rendering as that number, and under
     # a full outage the key is None, so the sentence must be absent.
     "pool4_split_drift_bps": "drift 0.00 bps",
-    "pool4_total_burned": "burned 0 IMD ·",
+    "pool4_total_burned": "settled 0 IMD ·",
     "pool4_total_rewarded": "rewarded 0 IMD",
     "pool4_total_fee_token": "fees 0 IMD",
     "pool4_retained_eth": "retained 0.0000 ETH",
@@ -2114,8 +2115,8 @@ _POOL4_ZERO_PROBES: dict[str, str] = {
     "pool4_cap_floor": "floor    0 IMD",
     "pool4_floor_distance": "vs floor 0 IMD",
     "pool4_floor_distance_pct": "· +0.0%",
-    "pool4_burned_supply_pct": "burned   0.00%",
-    "pool4_total_supply": "of 0 IMD",
+    "pool4_burned_supply_pct": "settled  0.00%",
+    "pool4_total_supply": "of 0 ETH IMD",
     "pool4_eth_in_pool": "pool     0.000000 ETH",
     "pool4_position_liquidity": "· L 0",
     "pool4_current_tick": "tick     0 ·",

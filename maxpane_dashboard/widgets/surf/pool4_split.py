@@ -209,6 +209,7 @@ from maxpane_dashboard.widgets.markup_safety import safe_markup
 from rich.cells import cell_len
 
 from maxpane_dashboard.widgets.surf._fmt import DASH, EMDASH, as_float, fmt_imd
+from ._burn_pipeline import pipeline_lines, pipeline_tooltip
 from maxpane_dashboard.widgets.surf._pool4 import (
     join_lines,
     parse_line,
@@ -778,7 +779,7 @@ def _body_lines(payload: dict, width: int) -> list[tuple[str, str, bool]]:
         lines.append((drift_style, drift_text, False))
 
     pairs = [
-        (f"burned {_exact(payload.get('total_burned'))} IMD",
+        (f"settled {_exact(payload.get('total_burned'))} IMD",
          f"rewarded {_exact(payload.get('total_rewarded'))} IMD"),
         (f"fees {_exact(payload.get('total_fee_token'))} IMD",
          f"retained {_eth(payload.get('retained_eth'))} ETH"),
@@ -807,6 +808,8 @@ def _body_lines(payload: dict, width: int) -> list[tuple[str, str, bool]]:
         f"last claim block {_block(payload.get('last_claim_block'))}",
         True,
     ))
+
+    lines.extend(("dim", line, True) for line in pipeline_lines(payload.get("pipeline"), width=width))
 
     # Stripped, not merely escaped: an escaped ``[/x]`` still paints the
     # literal ``[/x]`` once Rich unescapes it for display, and a persisted
@@ -869,6 +872,7 @@ class SurfPool4Split(Vertical):
         pool4_distributor_held_nodes=None,
         pool4_distributor_held_bonding=None,
         pool4_as_of_hhmm=None,
+        pool4_burn_pipeline=None,
         **_kwargs,
     ) -> None:
         """Refresh the panel.  Signature frozen by
@@ -911,8 +915,10 @@ class SurfPool4Split(Vertical):
             "distributor_held_nodes": pool4_distributor_held_nodes,
             "distributor_held_bonding": pool4_distributor_held_bonding,
             "as_of": pool4_as_of_hhmm,
+            "pipeline": pool4_burn_pipeline,
             "seen": True,
         }
+        self.tooltip = pipeline_tooltip(pool4_burn_pipeline)
         self._render_view()
 
     def on_resize(self, _event=None) -> None:

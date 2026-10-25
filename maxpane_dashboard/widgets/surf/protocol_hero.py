@@ -41,7 +41,7 @@ def protocol_records(payload: dict | None) -> tuple[HeroRecord, ...]:
                       read_ts=_number(source.get("read_ts")), accent=state == "ok")
         if key in ("totals", "inventory", "unsettled", "delivery"):
             columns = {
-                "totals": (("burned", "burned", ""), ("rewarded", "rewarded", ""), ("fees", "fees", "")),
+                "totals": (("settled", "burned", ""), ("rewarded", "rewarded", ""), ("fees", "fees", "")),
                 "inventory": (("cap", "cap", ""), ("reserve", "reserve", ""), ("headroom", "headroom", "")),
                 "unsettled": (("burn", "burn", ""), ("rewards", "rewards", "")),
                 "delivery": (("queued", "queued", ""), ("ready", "ready", ""), ("cap", "per_day", "/d")),

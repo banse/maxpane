@@ -262,7 +262,7 @@ HEADER_CELLS = {
     "age": "AGE",
     "side": "SIDE",
     "size": "SIZE",
-    "burn": "BURNED",
+    "burn": "ALLOC.",
     "stakers": "STAKERS",
     "fee": "INFERENCE",
 }

@@ -77,7 +77,7 @@ async def test_six_approved_cards_have_equal_geometry_and_visible_values():
         assert len({card.region.y for card in cards}) == 1
         assert all(left.region.right < right.region.x for left, right in zip(cards, cards[1:]))
         rows = {
-            "totals": (("burned", "33.3k"), ("rewarded", "5.9k"), ("fees", "3.8k")),
+            "totals": (("settled", "33.3k"), ("rewarded", "5.9k"), ("fees", "3.8k")),
             "inventory": (("cap", "840k"), ("reserve", "835k"), ("headroom", "5k")),
             "split": (("staking", "30%"), ("nodes", "30%"), ("bonding*", "40%")),
             "unsettled": (("burn", "120"), ("rewards", "21")),
@@ -108,7 +108,7 @@ async def test_zero_fallback_and_negative_headroom_survive_unavailable_refresh()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        assert any("burned" in row and "0" in row for row in painted(app, "totals").splitlines())
+        assert any("settled" in row and "0" in row for row in painted(app, "totals").splitlines())
         assert any("rewarded" in row and "0" in row for row in painted(app, "totals").splitlines())
         assert "-5k" in painted(app, "inventory")
         assert "0/d" in painted(app, "delivery")
@@ -228,7 +228,7 @@ async def test_invalid_reads_retain_last_values_and_leave_source_clock_unknown(b
         await pilot.pause()
         text = painted(pilot.app, "totals")
         assert "33.3k" in text and "stale" not in text and "--:--" in str(pilot.app.query_one("#hero-totals").tooltip)
-        assert any("burned" in row and "33.3k" in row for row in text.splitlines())
+        assert any("settled" in row and "33.3k" in row for row in text.splitlines())
         assert "reconciled" not in painted(pilot.app, "checks")
 
 

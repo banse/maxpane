@@ -43,6 +43,7 @@ from maxpane_dashboard.screens.surf import (
     SURF_FULL_LAYOUT_COLUMNS,
 )
 from tests.screens._sweeps import boundary_set
+from tests.widgets.test_surf_pool4_pipeline import pipeline
 from maxpane_dashboard.widgets.surf import (
     SurfHero,
     SurfNewsHero,
@@ -999,6 +1000,9 @@ _POOL4_HEIGHT_PAYLOADS = {
         pool4_hatches=_pool4_hatch_payload(12)["pool4_hatches"]
     ),
 }
+_POOL4_HEIGHT_PAYLOADS.update({"pipeline-" + state: (lambda state=state: _mainnet_pool4_payload(
+    pool4_hatches=_pool4_hatch_payload(12)["pool4_hatches"],
+    pool4_burn_pipeline=pipeline(state))) for state in ("ok", "empty", "partial", "wide")})
 
 
 @pytest.mark.parametrize("payload_name", sorted(_POOL4_HEIGHT_PAYLOADS))

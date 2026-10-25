@@ -912,7 +912,7 @@ async def test_the_burn_panel_draws_its_sparkline_and_names_its_window() -> None
     assert "/day over 11h" in out
     # Label/value columns since 2026-09-12: the label owns the left column and
     # the number follows it, rather than the number carrying its own noun.
-    assert f"{pad('retired', BURN_LABEL_COLS)}26.3K · 0.12% of supply" in out
+    assert f"{pad('settled', BURN_LABEL_COLS)}26.3K · 0.12% of ETH supply" in out
     assert POOL4_FLOW_LIMIT == 25
 
 
@@ -926,7 +926,7 @@ async def test_unread_flow_and_a_quiet_window_are_different_sentences() -> None:
     assert BURN_EMPTY_LINE not in unread
     # The totals were read and are still shown: one dead key must not black out
     # the whole panel.
-    assert f"{pad('retired', BURN_LABEL_COLS)}26.3K" in unread
+    assert f"{pad('settled', BURN_LABEL_COLS)}26.3K" in unread
 
     _, quiet = await _burn(**dict(BURN_KW, pool4_flow=[]))
     assert BURN_EMPTY_LINE in quiet
@@ -940,7 +940,7 @@ async def test_a_wholly_unread_panel_says_so_once() -> None:
         pool4_burned_supply_pct=None, pool4_total_supply=None,
     )
     assert BURN_UNAVAILABLE_LINE in out
-    assert out.count("retired") == 0
+    assert out.count("settled") == 0
 
 
 @pytest.mark.asyncio

@@ -1369,6 +1369,10 @@ SURF_POOL4_FULL_LAYOUT_COLUMNS = 138
 #: thirteen chrome rows remain. At 43 the worst case still scrolls and
 #: advertises taller. Contract links, all twelve levers, the VAULT floor
 #: and the independently measured 138-column width remain unchanged.
+#: 2026-10-25: the executor queue and two destination stages fit as two
+#: paired lines in THE SPLIT. Positive, empty, partial and maximum uint256
+#: payloads remain whole at 138×44 and scroll at 43 rows; the twelve-lever
+#: HATCHES/VAULT column remains the 31-row binder after the live 149×45 preview.
 SURF_POOL4_FULL_LAYOUT_ROWS = 44
 
 #: The ``4`` POOL4 MARKET body's own full-layout width, swept in situ on
@@ -1625,7 +1629,13 @@ SURF_POOL4_USER_FULL_LAYOUT_COLUMNS = 148
 #: Live 149×45 preview preceded the new sweep:149×37 loses the ladder
 #: caption and marks taller;149×38 restores the full ladder and body.
 #: Native row floors remain unchanged.
-SURF_POOL4_USER_FULL_LAYOUT_ROWS = 38
+#:
+#: 2026-10-25: executor-wide queue, bridge and Base evidence add four BURN
+#: rows. After the live 149×45 preview, positive, empty, partial and maximum
+#: uint256 payloads measured whole at 42 and scrolling at 41. The upper row
+#: now needs 16 rows; the staker/ladder floor remains 12. Thirteen chrome
+#: rows plus those floors and their separating margin require 42 rows.
+SURF_POOL4_USER_FULL_LAYOUT_ROWS = 42
 
 #: The ``s`` SWARM body's own width. Set at 93 on 2026-09-16 when the body
 #: was first wired; 128, 115, 95 and 116 across the 2026-09-17 review rounds
@@ -3350,7 +3360,7 @@ class SurfScreen(SurfDashboardScreen):
     }
     SurfScreen #surf-pool4-user-middle {
         height: 1fr;
-        min-height: 12;
+        min-height: 16;
     }
     SurfScreen SurfPool4UStakers {
         width: 1fr;
@@ -3361,7 +3371,7 @@ class SurfScreen(SurfDashboardScreen):
     SurfScreen #surf-pool4-user-rail {
         width: 1fr;
         height: 1fr;
-        min-height: 12;
+        min-height: 16;
         overflow-y: auto;
         scrollbar-size: 1 1;
         scrollbar-gutter: stable;
@@ -4951,6 +4961,7 @@ class SurfScreen(SurfDashboardScreen):
         # half an hour older than it.
         try:
             self._update_panel(SurfPool4Split,
+                pool4_burn_pipeline=data.get("pool4_burn_pipeline"),
                 pool4_network=data.get("pool4_network"),
                 pool4_measured_inference_pct=data.get(
                     "pool4_measured_inference_pct"
@@ -5198,6 +5209,7 @@ class SurfScreen(SurfDashboardScreen):
 
         try:
             self._update_panel(SurfPool4UBurn,
+                pool4_burn_pipeline=data.get("pool4_burn_pipeline"),
                 # Shared with RECENT FLOW, which renders the same rows as a
                 # log. Reuse of a KEY, not of a widget: two questions off one
                 # read, where folding a second copy into the payload would

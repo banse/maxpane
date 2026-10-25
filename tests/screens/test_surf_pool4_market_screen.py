@@ -101,6 +101,8 @@ def _with_market_projection(payload):
 
 
 def _frozen_payload(**overrides):
+    from tests.widgets.test_surf_pool4_pipeline import pipeline
+    overrides.setdefault("pool4_burn_pipeline", pipeline())
     payload = _base_frozen_payload(**overrides)
     return payload if "surf_pool4_hero" in overrides else _with_market_projection(payload)
 

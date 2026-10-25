@@ -202,6 +202,7 @@ from maxpane_dashboard.data.surf_cache import (
     coerce_eth_usd_slot,
     SLOT_NFT,
     SLOT_POOL4,
+    SLOT_POOL4_BURN,
     SLOT_POOL4_STAKERS,
     SLOT_SWARM,
     SLOT_SWARM_JOBS_SEEN,
@@ -1066,6 +1067,7 @@ class SurfManager:
         client: Any = None,
         cache: Any = None,
         pool4_client: Any = None,
+        pool4_burn_client: Any = None,
         swarm_client: Any = None,
         npm_client: Any = None,
         earnings_client: Any = None,
@@ -1085,6 +1087,10 @@ class SurfManager:
         self.pool4_client = (
             pool4_client if pool4_client is not None else Pool4Client()
         )
+        self._pool4_burn_client = pool4_burn_client
+        self._pool4_burn_binding = None
+        self._pool4_burn_generation = 0
+        self._pool4_burn_attempts = {}
         #: The swarm control plane's own client, on the same injection
         #: contract as ``client``/``pool4_client``: a test double stands in
         #: here or the real, keyless ``SwarmClient`` opens a live socket on
@@ -3354,6 +3360,7 @@ class SurfManager:
             hook_addr = POOL4_SEPOLIA_HOOK
             token_addr = POOL4_SEPOLIA_TOKEN
 
+        self._offer_pool4_burn(network, hook_addr)
         client = self.pool4_client
         bundle = await self._guard(
             lambda: client.fetch_state_bundle(hook_addr, network=network, token_addr=token_addr),
@@ -3484,6 +3491,152 @@ class SurfManager:
             logger.debug("SURF pool4 sweep found nothing new; marker left alone")
         self.cache.mark_fetched(TIER_POOL4, now)
         return {"ok": True, "network": network, "payload": payload, "changed": changed}
+
+    def _pool4_burn_snapshot(self):
+        entry = self.cache.get_last_good(SLOT_POOL4_BURN)
+        payload = getattr(entry, 'payload', None)
+        if not isinstance(payload, dict) or not isinstance(payload.get('identity'), dict):
+            return None
+        identity = payload['identity']
+        addresses = ('hook', 'executor', 'token', 'oft', 'receiver', 'base_token')
+        if (identity.get('network') != POOL4_NETWORK_MAINNET or identity.get('dst_eid') != 30184
+                or any(not isinstance(identity.get(key), str)
+                       or not re.fullmatch(r'0x[0-9a-fA-F]{40}', identity[key]) for key in addresses)):
+            return None
+        clean = {'identity': copy.deepcopy(identity)}
+        for name in ('queue', 'bridge', 'base_burn'):
+            stage = payload.get(name)
+            if not isinstance(stage, dict):
+                continue
+            stamp = stage.get('read_ts')
+            if type(stamp) not in (int, float) or not 0 <= stamp <= self._clock():
+                continue
+            if stage.get('state') not in ('ok', 'partial'):
+                continue
+            if name == 'queue':
+                point = stage
+                ints = ('block', 'amount_wei', 'min_bridge_wei', 'bridge_amount_wei', 'decimals')
+            else:
+                if (type(stage.get('complete')) is not bool
+                        or type(stage.get('from_block')) is not int
+                        or type(stage.get('to_block')) is not int
+                        or not 0 <= stage['from_block'] <= stage['to_block']):
+                    continue
+                point = stage.get('event')
+                if point is None:
+                    clean[name] = copy.deepcopy(stage)
+                    continue
+                if not isinstance(point, dict) or not isinstance(point.get('tx'), str) or not re.fullmatch(r'0x[0-9a-fA-F]{64}', point['tx']):
+                    continue
+                ints = ('block', 'log_index', 'timestamp', 'amount_wei', 'decimals')
+            if (any(type(point.get(key)) is not int or not 0 <= point[key] < 2**256 for key in ints)
+                    or point['decimals'] > 255):
+                continue
+            clean[name] = copy.deepcopy(stage)
+        return clean
+
+    def _cancel_pool4_burn_history(self):
+        """Retire identity-bound scans before offering their successors."""
+        for stage in ('bridge', 'base_burn'):
+            task = self._hub_source_tasks.pop('native_burn_' + stage, None)
+            if task is not None and not task.done():
+                task.cancel()
+                self._retired_reads.add(task)
+            self._pool4_burn_attempts.pop(stage, None)
+        if self._pool4_burn_client is not None:
+            self._pool4_burn_client.clear()
+
+    def _offer_pool4_burn(self, network, hook):
+        """Only a freshly adjudicated hook may nominate this narrow reader."""
+        if self._closing or self._active_view not in ('pool4', 'pool4_user'):
+            return
+        binding = (network, str(hook).lower())
+        prior = self._pool4_burn_snapshot()
+        prior_binding = ((prior['identity'].get('network'), prior['identity'].get('hook', '').lower())
+                         if prior else None)
+        if binding != self._pool4_burn_binding:
+            self._pool4_burn_generation += 1
+            self._pool4_burn_binding = binding
+            self._cancel_pool4_burn_history()
+            queue_task = self._hub_source_tasks.pop('native_burn_queue', None)
+            if queue_task is not None and not queue_task.done():
+                queue_task.cancel()
+                self._retired_reads.add(queue_task)
+            self._pool4_burn_attempts.clear()
+            if prior_binding != binding:
+                self.cache.store_last_good(SLOT_POOL4_BURN, {}, ts=self._clock())
+                prior = None
+        if network != POOL4_NETWORK_MAINNET:
+            return
+        if self._pool4_burn_client is None:
+            from .surf_pool4_burn import Pool4BurnClient
+            self._pool4_burn_client = Pool4BurnClient(self.pool4_client, clock=self._clock)
+        self._offer_pool4_burn_stage('queue', binding)
+        if prior is not None:
+            self._offer_pool4_burn_stage('bridge', prior['identity'])
+            self._offer_pool4_burn_stage('base_burn', prior['identity'])
+
+    def _offer_pool4_burn_stage(self, stage, identity):
+        key = 'native_burn_' + stage
+        running = self._hub_source_tasks.get(key)
+        if running is not None and not running.done():
+            return
+        now = self._clock()
+        attempt = self._pool4_burn_attempts.get(stage)
+        if attempt is not None and now - attempt[0] < attempt[1]:
+            return
+        self._pool4_burn_attempts[stage] = (now, 60.)
+        generation = self._pool4_burn_generation
+        view = self._active_view
+
+        async def collect():
+            client = self._pool4_burn_client
+            try:
+                read = (lambda: client.fetch_queue(*identity)) if stage == 'queue' else (
+                    lambda: getattr(client, 'fetch_' + stage)(identity))
+                # Measured cold Base window: ~20s for eight pages plus
+                # independent empty proofs. It never delays the queue.
+                result = await asyncio.wait_for(self._guard(read, key), 30. if stage == 'base_burn' else 12.)
+                if (generation != self._pool4_burn_generation or view != self._active_view
+                        or self._closing or not isinstance(result, dict)):
+                    return
+                prior = self._pool4_burn_snapshot() or {}
+                if stage == 'queue':
+                    observed = result.get('observed_identity')
+                    previous = prior.get('identity')
+                    if (isinstance(observed, dict) and isinstance(previous, dict)
+                            and any(value != previous.get(key) for key, value in observed.items())):
+                        # A proved configuration change invalidates retained
+                        # evidence even when the new destination is unsupported.
+                        self._pool4_burn_generation += 1
+                        self._cancel_pool4_burn_history()
+                        self.cache.store_last_good(SLOT_POOL4_BURN, {}, ts=self._clock())
+                        return
+                    current = result.get('identity')
+                    if not isinstance(current, dict) or (current.get('network'), current.get('hook', '').lower()) != identity:
+                        return
+                    if not isinstance(result.get('queue'), dict):
+                        return
+                    if current != prior.get('identity'):
+                        self._pool4_burn_generation += 1
+                        self._cancel_pool4_burn_history()
+                        prior = {'identity': current}
+                    prior['queue'] = result['queue']
+                else:
+                    if prior.get('identity') != identity:
+                        return
+                    prior[stage] = result
+                self.cache.store_last_good(SLOT_POOL4_BURN, prior, ts=self._clock())
+                self._pool4_burn_attempts[stage] = (self._clock(), 30. if stage == 'queue' else 90.)
+                if stage == 'queue':
+                    self._offer_pool4_burn_stage('bridge', prior['identity'])
+                    self._offer_pool4_burn_stage('base_burn', prior['identity'])
+            except asyncio.TimeoutError:
+                pass  # Retain the source's last-good value and observation time.
+            finally:
+                self.save_cache()
+
+        self._hub_source_tasks[key] = asyncio.create_task(collect())
 
     async def _pool4_logs(
         self, hook_addr: str, head_block: Any, network: str, hook: Any = None
@@ -7602,6 +7755,7 @@ class SurfManager:
         sources = self._hub_source_tasks
         native_market = sources.get('native_market')
         native_protocol = sources.get('native_protocol')
+        burn_tasks = tuple(sources.get('native_burn_' + stage) for stage in ('queue', 'bridge', 'base_burn'))
         tokens = getattr(self, '_swarm_tokens_manager', None)
         token_tasks = getattr(tokens, '_tasks', {})
         groups = {
@@ -7609,9 +7763,9 @@ class SurfManager:
                           self._swarm_launches_task, sources.get('overview')),
             'launchpad': (self._full_task, self._launchpad_task, native_market),
             'pool4': (self._full_task, self._pool4_task, self._pool4_stakers_task,
-                      native_market, native_protocol),
+                      native_market, native_protocol, *burn_tasks),
             'pool4_user': (self._full_task, self._pool4_task, self._pool4_stakers_task,
-                           native_market, native_protocol),
+                           native_market, native_protocol, *burn_tasks),
             'swarm': (self._full_task, self._swarm_task, self._swarm_scores_task,
                       self._swarm_launches_task, sources.get('overview'), sources.get('hourly')),
             'agent': (self._full_task, self._swarm_task, self._swarm_scores_task,
@@ -7640,6 +7794,8 @@ class SurfManager:
         """Cancel the previous scope, retaining observations and shared clients."""
         if view == self._active_view:
             return
+        self._pool4_burn_generation += 1
+        self._pool4_burn_attempts.clear()
         self._active_view = view
         names = ('_full_task', '_launchpad_task', '_pool4_task', '_pool4_stakers_task',
                  '_swarm_task', '_swarm_launches_task', '_swarm_scores_task',
@@ -7910,6 +8066,7 @@ class SurfManager:
     def _project_hub(self, base: dict | None = None, *, refresh_legacy: bool = True) -> dict[str, Any]:
         """Capture independent slots synchronously; never await between families."""
         data = dict(base if base is not None else self._last_full_payload or self._blank_payload())
+        data['pool4_burn_pipeline'] = self._pool4_burn_snapshot()
         now = float(self._clock())
         if refresh_legacy:
             swarm_entry = self.cache.get_last_good(SLOT_SWARM)
@@ -8296,6 +8453,10 @@ class SurfManager:
                 self._spawn_launchpad(tiers, now, **current)
                 self._offer_native_read('market', self._card_reader._market)
             elif view in ('pool4', 'pool4_user'):
+                # Once adjudicated in this session, poll the hook's current
+                # executor independently of the slower hook/log/channel sweep.
+                if self._pool4_burn_binding is not None:
+                    self._offer_pool4_burn(*self._pool4_burn_binding)
                 self._spawn_pool4_stakers(tiers, now)
                 async def protocol():
                     await self._pool_channel({TIER_MEDIUM}, now, None)

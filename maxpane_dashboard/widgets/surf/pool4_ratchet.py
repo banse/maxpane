@@ -427,13 +427,13 @@ class SurfPool4Ratchet(Vertical):
             )
         )
 
-        burned = f"{_fmt_pct(p.get('burned_supply_pct'))} of supply"
+        burned = f"{_fmt_pct(p.get('burned_supply_pct'))} of ETH supply"
         if full:
             burned = (
                 f"{_fmt_pct(p.get('burned_supply_pct'))} of "
-                f"{_fmt_imd_compact(p.get('total_supply'))} IMD"
+                f"{_fmt_imd_compact(p.get('total_supply'))} ETH IMD"
             )
-        markup.append(_row("burned", burned))
+        markup.append(_row("settled", burned))
 
         pool = f"{_fmt_eth(p.get('eth_in_pool'))} ETH"
         if full:

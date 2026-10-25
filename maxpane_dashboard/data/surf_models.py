@@ -1479,6 +1479,20 @@ POOL4_STAKERS_KEYS: tuple[str, ...] = (
     "pool4_stakers_network",    # str | None — network of this independent slot
 )
 
+# Independent executor/bridge/destination evidence; never shares the hook's clock.
+POOL4_BURN_KEYS = ("pool4_burn_pipeline",)
+POOL4_BURN_FIELDS = {
+    "identity": ("network", "hook", "executor", "token", "oft", "dst_eid", "receiver", "base_token"),
+    "queue": ("state", "read_ts", "block", "amount_wei", "min_bridge_wei", "bridge_amount_wei", "decimals"),
+    "bridge": ("state", "read_ts", "from_block", "to_block", "complete", "event"),
+    "base_burn": ("state", "read_ts", "from_block", "to_block", "complete", "event"),
+}
+POOL4_BURN_EVENT_FIELDS = ("tx", "block", "log_index", "timestamp", "amount_wei", "decimals")
+POOL4_BURN_WIDGET_SIGNATURES = {
+    "SurfPool4UBurn": {"pool4_burn_pipeline": "pool4_burn_pipeline"},
+    "SurfPool4Split": {"pool4_burn_pipeline": "pool4_burn_pipeline"},
+}
+
 # Dashboard 9: all values are plain data. Unknown lists are None, empty reads [].
 SURFBOARD_KEYS = ("surfboard_cards", "surfboard_overview", "surfboard_events",
                   "surfboard_hourly", "surfboard_sources", "surfboard_footer")
@@ -2078,6 +2092,7 @@ SURF_KEYS: tuple[str, ...] = (
     # The staker sweep rides beside them on its own tier and its own slot, so
     # it is its own tuple rather than nine more members of the one above.
     *POOL4_STAKERS_KEYS,
+    *POOL4_BURN_KEYS,
     # ---- signals: three new detectors, state/detail/age each ----------------
     "sig_decoy_state",
     "sig_decoy_detail",

@@ -258,7 +258,7 @@ def test_newest_as_of_is_the_freshest_successful_read(tmp_path):
     # (SLOT_SWARM_ORACLE_INDEX) are also independent last-good slots.
     # Selected-job detail (SLOT_SWARM_JOB_DETAIL) is a separate popup slot.
     # The selected seat's IMD rewards (SLOT_SWARM_SEAT_REWARDS, F-S5, 2026-10-02).
-    assert len(SLOTS) == 35  # includes independent ETH/USD, AGENT and launch contribution slots
+    assert len(SLOTS) == 36  # includes independent ETH/USD, AGENT, contribution and POOL4 burn slots
 
 
 def test_store_last_good_rejects_none_and_keeps_the_original_entry(tmp_path):

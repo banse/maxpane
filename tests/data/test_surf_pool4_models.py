@@ -34,6 +34,7 @@ from maxpane_dashboard.data.surf_models import (
     POOL4_NETWORKS,
     POOL4_REWARD_PATHS,
     POOL4_STAKERS_KEYS,
+    POOL4_BURN_KEYS,
     SURF_KEYS,
     SURF_ROW_KEYS,
     Pool4Discovery,
@@ -1395,6 +1396,7 @@ POOL4_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     # ``test_every_pool4_key_has_at_least_one_renderer`` still has something
     # to say about it. Dropping it without the move would orphan the key.
     "SurfPool4Split": (
+        "pool4_burn_pipeline",
         "pool4_network",
         "pool4_measured_inference_pct", "pool4_measured_burn_pct",
         "pool4_measured_stakers_pct", "pool4_reward_share_bps",
@@ -1503,7 +1505,7 @@ POOL4_USER_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     # that no pool4 panel anywhere elides a clock to ``as_of_hhmm``.
     "SurfPool4UStakers": (
         "pool4_stakers", "pool4_staker_count", "pool4_staker_top3_pct",
-        "pool4_stakers_as_of_hhmm",
+        "pool4_stakers_as_of_hhmm", "pool4_stakers_network",
         # Why the panel has no rows, when it has none (2026-09-12). The four
         # above come off one slot and are ``None`` together, so nothing here
         # could separate the detached fold's first tick from a failed sweep.
@@ -1513,6 +1515,7 @@ POOL4_USER_WIDGET_SIGNATURES: dict[str, tuple[str, ...]] = {
     # ``pool4_flow`` is shared with RECENT FLOW, which renders the same rows
     # as a log: two questions off one read, not two copies of one read.
     "SurfPool4UBurn": (
+        "pool4_burn_pipeline",
         "pool4_flow", "pool4_total_burned", "pool4_burned_supply_pct",
         "pool4_total_supply", "pool4_network", "pool4_as_of_hhmm",
     ),
@@ -1560,7 +1563,7 @@ def test_every_pool4_key_has_at_least_one_renderer() -> None:
         rendered |= set(kwargs)
     for kwargs in POOL4_USER_WIDGET_SIGNATURES.values():
         rendered |= set(kwargs)
-    orphans = sorted((set(POOL4_KEYS) | set(POOL4_STAKERS_KEYS)) - rendered)
+    orphans = sorted((set(POOL4_KEYS) | set(POOL4_STAKERS_KEYS) | set(POOL4_BURN_KEYS)) - rendered)
     assert not orphans, f"pool4 keys with no renderer: {orphans}"
 
 
@@ -1573,7 +1576,7 @@ def test_no_market_widget_kwarg_is_missing_from_the_payload() -> None:
     check one function up: STAKERS legitimately takes four long-tier keys,
     and it is the only panel on either body that reaches across tiers.
     """
-    population = set(POOL4_KEYS) | set(POOL4_STAKERS_KEYS)
+    population = set(POOL4_KEYS) | set(POOL4_STAKERS_KEYS) | set(POOL4_BURN_KEYS)
     for widget, kwargs in POOL4_USER_WIDGET_SIGNATURES.items():
         unbacked = sorted(set(kwargs) - population)
         assert not unbacked, f"{widget} takes keys not in the contract: {unbacked}"
@@ -1621,7 +1624,7 @@ def test_no_pool4_widget_kwarg_is_missing_from_the_payload() -> None:
     raises nothing, because the screen splats and ``**_kwargs`` swallows.
     """
     for widget, kwargs in POOL4_WIDGET_SIGNATURES.items():
-        unbacked = sorted(set(kwargs) - set(POOL4_KEYS))
+        unbacked = sorted(set(kwargs) - set(POOL4_KEYS) - set(POOL4_BURN_KEYS))
         assert not unbacked, f"{widget} takes keys not in the contract: {unbacked}"
 
 

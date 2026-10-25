@@ -1,6 +1,6 @@
 """WP10 -- the `4` POOL4 MARKET body's own measured layout.
 
-The rack integration changes the current boundary to 148×38.
+The executor pipeline changes the current boundary to 148×42.
 The VAULT's partial holder count binds width; the nine-row hero binds the
 three extra rows. Source/value payloads have independent stable width onsets,
 including measured grid-rounding islands below those onsets. STAKERS retains
@@ -134,6 +134,7 @@ from maxpane_dashboard.widgets.surf.pool4u_depth import (
 # and a pin measured against a private fixture is a pin measured against
 # nothing the rest of the suite can see.
 from tests.screens._sweeps import boundary_set
+from tests.widgets.test_surf_pool4_pipeline import pipeline
 from tests.screens.test_surf_screen import (
     TALLER_HINT,
     _css_clipped_lines,
@@ -151,7 +152,7 @@ from tests.screens.test_surf_screen import (
 #: next door: a test that aliased the screen's constant would compare a
 #: number against itself and pin nothing.
 MEASURED_MARKET_COLUMNS = 148
-MEASURED_MARKET_ROWS = 38
+MEASURED_MARKET_ROWS = 42
 MARKET_BODY_COLUMNS = 119
 
 #: How many address rows ``SurfPool4UStakers`` painted at the body's pinned
@@ -218,9 +219,11 @@ MARKET_FLOW_NEED = 52
 #: SIGNALS is 5 rather than 7 for two separate reasons a day apart -- the
 #: state-summary line went first, the clock second -- and neither is
 #: recoverable from this table alone, which is why the pin is swept.
+#: 2026-10-25: four independent executor lines take BURN from four to eight
+#: painted lines. The surrounding blank row is still CSS, not counted here.
 FIXED_PANEL_LINES = {
     SurfPool4RackHero: 9,
-    SurfPool4UBurn: 4,
+    SurfPool4UBurn: 8,
     SurfPool4USignals: 5,
     SurfPool4UDepth: 8,
 }
@@ -678,6 +681,8 @@ def _hero_source_payload(state):
 
 MARKET_PAYLOADS.update({"hero-" + state: (lambda state=state: _hero_source_payload(state))
                         for state in ("partial", "stale", "unavailable")})
+MARKET_PAYLOADS.update({"pipeline-" + state: (lambda state=state: _mainnet_pool4_payload(
+    pool4_burn_pipeline=pipeline(state))) for state in ("ok", "empty", "partial", "wide")})
 
 
 async def _render(payload, size):
@@ -1073,8 +1078,8 @@ _HEIGHT_SWEEP = [
     for r in boundary_set(SURF_POOL4_USER_FULL_LAYOUT_ROWS, 24, 46)
 ] + [
     (name, r)
-    for name in ("mainnet", "widest")
-    for r in boundary_set(SURF_POOL4_USER_FULL_LAYOUT_ROWS, 32, 42)
+    for name in ("mainnet", "widest", "pipeline-ok", "pipeline-empty", "pipeline-partial", "pipeline-wide")
+    for r in boundary_set(SURF_POOL4_USER_FULL_LAYOUT_ROWS, 36, 46)
 ]
 
 
