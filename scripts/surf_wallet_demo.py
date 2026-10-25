@@ -28,6 +28,7 @@ from maxpane_dashboard.widgets.markup_safety import flatten
 from maxpane_dashboard.widgets.panels import PanelBase
 from maxpane_dashboard.widgets.sparkline_common import build_sparkline
 from maxpane_dashboard.widgets.surf.news_hero import HeroRecord, NewsHeroCard
+from maxpane_dashboard.widgets.surfboard.rack import meter_text
 from scripts.surf_start_demo import parse_size
 
 
@@ -201,7 +202,10 @@ def wallet_metrics(snapshot):
 
 def meter(value, total, width=12, color="bright_green"):
     filled = round(width * value / total) if total else 0
-    return Text.assemble(("█" * filled, color), ("░" * (width - filled), "dim"))
+    # Keep the existing quantization; labels already sit beside the shared AUX meter.
+    prefix = len("AUX ")
+    bar = meter_text({"key": "wallet", "numerator": filled, "denominator": width}, width=width + prefix).plain[prefix:]
+    return Text.assemble((bar[:filled], color), (bar[filled:], "dim"))
 
 
 def insight_texts(snapshot):

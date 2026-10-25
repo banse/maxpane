@@ -124,7 +124,9 @@ async def test_overview_rack_and_tables_fit_owner_terminal():
         assert app.query_one("#overview-assets").region.height >= 10
         assert any(c in painted(app, widgets[0]) for c in "▁▂▃▄▅▆▇█")
         for widget in widgets[1:]:
-            assert "█" in painted(app, widget)
+            output = painted(app, widget)
+            assert "▰" in output and "▱" in output
+            assert "█" not in output and "░" not in output
         for name, texts in {
             "request-states": ("Completed", "67", "In flight", "5", "Exceptions", "Not admitted"),
             "onchain": ("Active", "4", "Quiet", "1", "Unknown", "13", "4/6 complete"),
@@ -156,6 +158,8 @@ async def test_artifact_detail_and_escape_keep_exact_identity(identity, expected
         await pilot.pause()
         app = pilot.app
         assert app.view == "detail" and app.selected_id == identity
+        payment = painted(app, app.query_one("#detail-context-panel"))
+        assert "▰" * 26 + "▱" * 2 in payment
         cards = list(app.query("#detail NewsHeroCard"))
         assert len(cards) == 6 and {c.region.height for c in cards} == {9}
         assert len({c.region.y for c in cards}) == 1
