@@ -1,6 +1,6 @@
 # WALLET / SWARM — drei ASCII-Entwürfe für den Boardroom
 
-Stand: 2026-10-25. **Nur ASCII-Design, keine Implementierung.** Die Wallet als
+Stand: 2026-10-25. **ASCII-Entwürfe; A/B für die isolierte DEMO ausgewählt.** Die Wallet als
 Nutzerin des Schwarms: Aufträge, Zahlungen, Ergebnisse und die onchain Nutzung
 der daraus entstandenen Sites, Contracts und Tokens. Agent-Details und Trading
 bleiben ausgeschlossen. Die AGENT-Ansicht liefert ausschließlich die optische
@@ -12,8 +12,10 @@ die onchain Aktivität ihrer nachweislich verknüpften Contracts. Das beweist
 keinen Besuch oder Aufruf über das Frontend.
 
 Alle Zahlen, Namen, Zeiten und Beziehungen sind **DEMO**. Jede Skizze passt
-rechnerisch in 149×45; keine gemessenen Textual-Pins und keine ausführbare
-Vorschau. [Datengrundlagen und Signalregeln](surf_wallet_game_mechanics.md).
+rechnerisch in 149×45; keine gemessenen Produktions-Pins. Die ausführbare
+Vorschau steht in `scripts/surf_wallet_demo.py`, ihre Spezifikation in
+[surf_wallet_PRD.md](surf_wallet_PRD.md).
+[Datengrundlagen und Signalregeln](surf_wallet_game_mechanics.md).
 
 ## Gemeinsame Darstellung
 
@@ -251,5 +253,10 @@ Ergebnisse bleiben gleichberechtigt sichtbar. C ist eine alternative Chronik.
 Die Nutzungsregeln brauchen später eigene Quellen- und Abdeckungsprüfungen;
 fehlende Regeln bleiben NO DATA. Kein automatischer Rückgriff auf Trading-Daten.
 
-Erst nach Auswahl folgt ein isoliertes Textual-Mock mit DEMO-Daten. Diese
-Entwürfe lesen keine Walletdaten und implementieren keine App-Funktion.
+A als Startansicht und B als Artefakt-Detailmodus sind ausgewählt und als
+isolierte Textual-DEMO umgesetzt; C bleibt ein nicht umgesetzter Entwurf.
+Start: `.venv/bin/python scripts/surf_wallet_demo.py`. Enter öffnet das
+ausgewählte Artefakt in B, Escape kehrt mit gleicher Auswahl zu A zurück.
+Der Mock nutzt feste Scope-Beschriftungen statt nicht implementierter Filter
+und inline DEMO-Belege statt externer Link-/Copy-Aktionen. Er liest keine
+Walletdaten und ist noch nicht in den Boardroom eingebunden.

@@ -1,6 +1,8 @@
 # WALLET / Boardroom — Entwurfsgrundlage
 
-Stand: 2026-10-25. Nur Recherche und ASCII-Preview, keine Implementierung.
+Stand: 2026-10-25. Recherche und ausgewählte A/B-Vorschau mit DEMO-Daten.
+Die isolierte Textual-DEMO liegt in `scripts/surf_wallet_demo.py`; keine
+Produktionsintegration und keine Wallet-/RPC-Datenanbindung.
 MY CONTRACTS ist zurückgestellt. Der Nutzer möchte eine Wallet-Übersicht im
 Boardroom, ähnlich der AGENT-Ansicht, über ihre Swarm-Aktivitäten ohne Trading.
 Die Vorschläge stehen in `surf_wallet_ascii_mockups.md`.
@@ -181,5 +183,8 @@ Projektregeln leer. Keine falschen Null-Fakten, keine Loader pro Karte.
 
 Adressen erhalten Copy-/Explorer-Aktionen, Ergebnisse Links zu Job, Launch,
 Site oder Receipt. MaxPane bleibt keyless und ausschließlich lesend. Alle
-Mockup-Werte sind DEMO. Erst nach Auswahl folgen PRD und Implementierungsplan;
-dieser Entwurf fügt keine Screen-Registrierung, RPC-Quelle oder Wallet-Aktion hinzu.
+Mockup-Werte sind DEMO. Die gewählte A/B-Vorschau ist durch `surf_wallet_PRD.md`
+und `surf_wallet_mockup_plan.md` spezifiziert. Der Standalone-Mock verwendet
+ausdrückliche Beleg-Platzhalter ohne externe Aktionen; echte Address-/Explorer-
+Interaktionen gehören zur späteren Datenintegration. Keine Screen-Registrierung,
+RPC-Quelle oder Wallet-Aktion wird dem Produktionsdashboard hinzugefügt.
