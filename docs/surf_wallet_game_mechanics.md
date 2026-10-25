@@ -8,24 +8,25 @@ Die Vorschläge stehen in `surf_wallet_ascii_mockups.md`.
 ## Aufgabe und Betrachtungsbereich
 
 Eine ausgewählte öffentliche Wallet beantwortet drei Fragen: Was habe ich
-beauftragt, was wurde daraus, und was haben die mir zugeordneten Agents
-geleistet? Finanzbewegungen erklären die Nutzung: tatsächliche Zahlungen,
-Rückerstattungen und erhaltene Rewards bleiben getrennt. Kein kombinierter
-Aktivitäts- oder Gewinnzähler vermischt diese Einheiten.
+beauftragt, was habe ich dafür bezahlt, und was wurde daraus? Tatsächliche
+Zahlungen und Rückerstattungen bleiben getrennt. Agent-Details, Seats,
+Worker-Status, geleistete Arbeit, Rechenaufwand und Agent-Rewards sind auf
+ausdrücklichen Nutzerwunsch vollständig außerhalb dieser Ansicht. Die
+AGENT-Ansicht ist ausschließlich die visuelle Vorlage.
 
-Vorgeschlagener Einstieg: WALLET-Karte im Boardroom oder der OWNER einer
-AGENT-Ansicht. Ein Wallet-Wechsel betrifft die gesamte Ansicht. Ein neues
+Vorgeschlagener Einstieg: WALLET-Karte im Boardroom. Ein Wallet-Wechsel betrifft
+die gesamte Ansicht. Ein neues
 Tastenkürzel ist noch nicht vergeben. Es geht um eine Wallet, nicht automatisch
 um alle Adressen, die derselbe Mensch kontrolliert. Kettenübergreifende
 Verbindungen brauchen Belege; eine gleiche Adresse allein beweist keine
 identische Smart-Account-Kontrolle auf verschiedenen Chains.
 
 Enthalten sind Jobs, Fortsetzungen, Workflows, Launches, Oracle-Anfragen,
-Schedules und Top-ups samt belegten Ergebnissen. Eigene Seats und Agent-Arbeit
-haben einen eigenen Bereich und ein sichtbares Rollenmerkmal. Belegte
-nichtmarktbezogene Protokollaktionen, beispielsweise Pairing, Reward-Claims
-oder Stake/Unstake, können im Aktivitätsverlauf erscheinen, sobald ihre Quelle
-und Zuordnung geprüft sind. Sie sind keine bereits zugesagte Datenintegration.
+Schedules und Top-ups samt belegten Ergebnissen. Weitere ausdrücklich von der
+Wallet ausgelöste nichtmarktbezogene Swarm-Protokollaktionen können im Verlauf
+erscheinen, sobald ihre Quelle und Zuordnung geprüft sind. Dies erweitert den
+Entwurf nicht um Agent-Betrieb oder eine allgemeine Wallet-Portfolioanalyse.
+Weitere Aktionstypen sind keine bereits zugesagte Datenintegration.
 Trades, Kurscharts, P/L und LP-/Staking-Positionsanalysen gehören nicht hinein.
 Ein Swap in derselben Transaktion wird dadurch nicht als Swarm-Aktion übernommen.
 
@@ -40,9 +41,9 @@ Ein Swap in derselben Transaktion wird dadurch nicht als Swarm-Aktion übernomme
   seines Jobs, Workflows, Launches oder Oracle-Requests. Bezahlt bedeutet weder
   geliefert noch deployt oder attestiert. Auch eine Attestation beweist noch
   keinen erfolgreichen Consumer-Callback.
-- Direkte Wallet-Aktionen, automatisch ausgeführte Schedule-Runs, zugeordnete
-  Ergebnisse und Agent-Arbeit sind eigene Zeilentypen. Die Chronik darf diese
-  gemeinsam zeigen; der Rollentext muss sie unterscheidbar halten.
+- Direkte Wallet-Aktionen, Zahlungen, automatisch ausgeführte Schedule-Runs und
+  zugeordnete Ergebnisse sind eigene Zeilentypen. Verknüpfte Ereignisse dienen
+  als Kontext der Wallet-Nutzung, nicht als zusätzliche direkte Wallet-Aktionen.
 - Ein Schedule-Top-up ist eine Aktion des Zahlers. Ein fremder Schedule wird
   dadurch nicht sein eigener. Runs werden am Schedule verknüpft, nicht jedem
   Geldgeber als selbst ausgelöste Anfrage zugerechnet.
@@ -50,14 +51,10 @@ Ein Swap in derselben Transaktion wird dadurch nicht als Swarm-Aktion übernomme
   Order-/Request-Verknüpfung einmal gezählt. Eine Transaktion kann mehrere
   Intake-Events enthalten. Chain, Contract, Request-ID und Log-Index gehören
   zur Identität; Hash oder Textähnlichkeit allein reichen nicht.
-- SEATS bezeichnet heutige Zuordnung. ACCEPTED und EFFORT brauchen historische
-  Wallet-Zuordnung zur Zeit der Arbeit. Heutiger Besitz erlaubt keine Übernahme
-  der gesamten Seat-Lebenszeit. Frühere Seats und mehrere Agent-Bindings bleiben
-  für eine historische Sicht relevant. Fehlender Nachweis bleibt eine Lücke.
 - PAID summiert belegte gezahlte Beträge je Asset und Chain, ohne fehlgeschlagene
-  Versuche. Refunds, Gas und erhaltene Zahlungen sind separat. RECEIVED braucht
-  tatsächliche Protokollzahlungen an diese Wallet; Allocation oder Claim-Proof
-  allein genügt nicht. Keine Summierung der anteiligen REWARDS aus Agent-Karten.
+  Versuche. PAYMENTS zählt die zugehörigen bestätigten Zahlungen. REFUNDS zeigt
+  belegte Rückzahlungen zu diesen Aufträgen separat; Gas bleibt ebenfalls
+  separat. Passive Reward-Zuflüsse und Allocations gehören nicht in diese Ansicht.
 - ATTENTION umfasst klar benannte, deduplizierte Probleme im geladenen Bestand,
   etwa blockierte Arbeit, verweigerte Admission oder fehlgeschlagene Zahlungen.
   Normales Pending ist kein Fehler. Keine willkürliche Erfolgsquote über Rollen.
@@ -76,42 +73,37 @@ Wallet-Abdeckung und Endpoint-Payloads wurden für dieses Mockup nicht gemessen.
 | `GET /oracle/requests/:id` und `/attestation` | Oracle-Verlauf, Panel-Ergebnis, Attestation | Anfrage, Attestation und Consumer-Ausführung getrennt |
 | `GET /schedules?owner=:wallet` | Paginierte eigene Schedules | Fremde Top-ups zusätzlich über Zahlungsbelege erfassen |
 | `GET /schedules/:id` | Zustand, verbleibende Runs und jüngste Ausführungen | `latest` enthält höchstens 50 Runs |
-| `GET /seats/owners`, `/seats/records`, `/seats/:id` | Aktuelle Eigentümer, Seat-Zähler, paginierte Arbeit (`workBefore`) | Aktuelle Owner-Abfrage ist keine Besitzhistorie; Summary bis zu zehn Minuten gecacht |
-| `GET /workers`, `/contributors` | Aktuelle Worker, Geräte und Aufwand | Keine Wallet-Lebenszeitstatistik ohne historische Zuordnung |
-| `GET /wallets/:address/earnings` | Paginierte Launch-Earnings, `limit` 1–200 und `before` | Allocation-/Claim-Zustand nicht ohne Transferbeleg zu RECEIVED umdeuten |
 
 Freie Checks, ungesendete Entwürfe und ausschließlich lokale Aktivitäten haben
 keine zugesagte öffentliche Wallet-Historie. Von Contracts oder Relays bezahlte
 Requests gehören nur mit explizitem Beleg in eine verknüpfte Rolle, nicht als
 direkt von der gewählten Wallet bezahlt. Callback-Ziel oder heutiger Contract-
-Owner allein ist kein solcher Beleg. Begrenzte APIs, fehlende Archive und
-unvollständige Besitzhistorie verhindern vorerst die Zusage „alle jemals“.
+Owner allein ist kein solcher Beleg. Begrenzte APIs und fehlende Archive
+verhindern vorerst die Zusage „alle jemals“. Seat-, Worker-, Contributor- und
+Agent-Earnings-Quellen werden für diese Ansicht nicht benötigt oder angeboten.
 
 ## Bestehende MaxPane-Bausteine
 
 `SwarmClient` in `data/surf_swarm_client.py` besitzt bereits Job-, Workflow-,
-Launch-, Oracle- und Seat-Leser. `surf_work_reader.py` zeigt begrenzte Detail-
-Joins. Eine vollständige Wallet-Order-Historie ist damit noch nicht vorhanden.
-`surf_agent_earnings.py` unterscheidet Allocation-/Claim-Zustände; seine
-Token-Zeilen sind keine summierbaren IMD-Einnahmen. `swarm_agent_hero.py` erklärt
-die anteilige Owner-Reward-Anzeige der Agent-Karte, die hier nicht addiert wird.
+Launch- und Oracle-Leser. `surf_work_reader.py` zeigt begrenzte Detail-Joins.
+Eine vollständige Wallet-Order-Historie ist damit noch nicht vorhanden.
 
 Das Design übernimmt die zwölf Rack-Karten der AGENT-Ansicht, ihre großen
 Ziffern und RECORD-Tabelle. Alternativen reduzieren die Hero-Anzahl zugunsten
-von Auftrag-/Agent-Trennung oder mehr Chronikplatz. Zielgröße 149×45;
+von Auftragsdetails, Zahlungsbelegen oder mehr Chronikplatz. Zielgröße 149×45;
 ASCII-Abmessungen sind kein gemessener Textual-Layout-Pin.
 
 ## Laden und Bedienung
 
 Alle sichtbaren Karten laden eigenständig beim Öffnen der Wallet-Ansicht.
-Die Übersicht darf keinen vorherigen Besuch einer Agent- oder Auftragsdetail-
-Ansicht brauchen. Retained Cache für dieselbe Wallet erscheint sofort; Reads
+Die Übersicht darf keinen vorherigen Besuch einer Auftragsdetail-Ansicht
+brauchen. Retained Cache für dieselbe Wallet erscheint sofort; Reads
 haben getrennte Zeitstempel. Wallet-Wechsel isolieren Daten und abbrechbare
 Reads anhand ihrer Identität. Boardroom-Kompaktkarte und Detailansicht behalten
 getrennte, begrenzte Ladebudgets.
 
-Zeitraum steuert Aktivitäten und Summen. Aktuelle Seat-/Worker-Zahlen sind
-ausdrücklich NOW. Typ-/Rollenfilter betreffen die Liste; Überschrift und Treffer-
+Zeitraum steuert Aktivitäten und Summen. Aktuelle Auftragszustände beziehen sich
+auf die gefundenen Aufträge dieses Zeitraums. Typ-/Statusfilter betreffen die Liste; Überschrift und Treffer-
 zahl machen das sichtbar. Quellenabdeckung bleibt lesbar, API-Fehlerzustände
 intern; noch ungelesene große Ziffern bleiben entsprechend den aktuellen
 Projektregeln leer. Keine falschen Null-Fakten, keine Loader pro Karte.
