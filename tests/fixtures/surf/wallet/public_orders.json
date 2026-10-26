@@ -1,0 +1,197 @@
+{
+  "provenance": "Public IMD API capture 2026-10-26; job prose/nodes and unrelated launch fields trimmed.",
+  "orders": {
+    "payer": "0x887b86b6b6957f7bbea88b8cefd392f39236a88c",
+    "count": 5,
+    "orders": [
+      {
+        "orderId": "e9fa39c2-cb75-4825-9af5-7c0101411cb0",
+        "action": "job.open",
+        "status": "admitted",
+        "createdAt": "2026-10-25T04:08:40.060Z",
+        "paidAt": "2026-10-25T04:10:07.000Z",
+        "payment": {
+          "status": "confirmed",
+          "transactionHash": "0xbf6f1c555ceb1512f3b143b917e725123604cf0c632edb48fd60068ed28d132d",
+          "reason": null
+        },
+        "result": {
+          "jobId": "a6591c35-19e0-409b-b299-dc388acb497d",
+          "kind": "job",
+          "launch": false,
+          "resultUrl": "/jobs/a6591c35-19e0-409b-b299-dc388acb497d/result",
+          "statusUrl": "/jobs/a6591c35-19e0-409b-b299-dc388acb497d"
+        }
+      },
+      {
+        "orderId": "b0ab94f3-ba65-4153-a19b-29d8fdfb0b4d",
+        "action": "launch.open",
+        "status": "admitted",
+        "createdAt": "2026-10-24T16:22:39.975Z",
+        "paidAt": "2026-10-24T16:29:38.000Z",
+        "payment": {
+          "status": "confirmed",
+          "transactionHash": "0x9baa838e06ca0fc03d94787c0789747d612de7788bae5ef4f357d2f3a9aa3038",
+          "reason": null
+        },
+        "result": {
+          "jobId": "c9f8f46a-f406-4ad9-8fce-d9eb11a6d61a",
+          "kind": "job",
+          "launch": true,
+          "resultUrl": "/jobs/c9f8f46a-f406-4ad9-8fce-d9eb11a6d61a/result",
+          "statusUrl": "/jobs/c9f8f46a-f406-4ad9-8fce-d9eb11a6d61a"
+        }
+      },
+      {
+        "orderId": "b3bb7834-19c9-41e3-aafe-ae36c00fd383",
+        "action": "launch.open",
+        "status": "admitted",
+        "createdAt": "2026-10-23T23:59:45.893Z",
+        "paidAt": "2026-10-24T00:00:27.000Z",
+        "payment": {
+          "status": "confirmed",
+          "transactionHash": "0xa4832deeaea0637d842513864f00cee3f5f72622f4e5924efda3de0d9bfda6d7",
+          "reason": null
+        },
+        "result": {
+          "jobId": "0b8ab633-6dd6-43ea-bf84-5edf3731bb25",
+          "kind": "job",
+          "launch": true,
+          "resultUrl": "/jobs/0b8ab633-6dd6-43ea-bf84-5edf3731bb25/result",
+          "statusUrl": "/jobs/0b8ab633-6dd6-43ea-bf84-5edf3731bb25"
+        }
+      },
+      {
+        "orderId": "cbef7e27-c424-4027-8e74-689e1ec46ea1",
+        "action": "job.continue",
+        "status": "admitted",
+        "createdAt": "2026-10-23T21:57:11.152Z",
+        "paidAt": "2026-10-23T21:57:51.000Z",
+        "payment": {
+          "status": "confirmed",
+          "transactionHash": "0x1dc2618fffd1e7c88c06e9a6bff8881d9df7ea31cea27dd6cd2280988c8ad2e9",
+          "reason": null
+        },
+        "result": {
+          "continues": "6889442f-768a-4b4f-b0c3-5d281269839f",
+          "jobId": "545ed900-ef42-4381-9457-a275ce15b21e",
+          "kind": "job",
+          "resultUrl": "/jobs/545ed900-ef42-4381-9457-a275ce15b21e/result",
+          "statusUrl": "/jobs/545ed900-ef42-4381-9457-a275ce15b21e"
+        }
+      },
+      {
+        "orderId": "ebb74f55-df4f-4a1a-851f-ff8597152f16",
+        "action": "job.open",
+        "status": "admitted",
+        "createdAt": "2026-10-23T20:55:11.343Z",
+        "paidAt": "2026-10-23T20:55:51.000Z",
+        "payment": {
+          "status": "confirmed",
+          "transactionHash": "0x73e8886833c29bec0760f6c3f2e89497ed24b5cd8591579e55a01c0f08fb967a",
+          "reason": null
+        },
+        "result": {
+          "jobId": "6889442f-768a-4b4f-b0c3-5d281269839f",
+          "kind": "job",
+          "launch": false,
+          "resultUrl": "/jobs/6889442f-768a-4b4f-b0c3-5d281269839f/result",
+          "statusUrl": "/jobs/6889442f-768a-4b4f-b0c3-5d281269839f"
+        }
+      }
+    ]
+  },
+  "job": {
+    "id": "c9f8f46a-f406-4ad9-8fce-d9eb11a6d61a",
+    "state": "completed",
+    "createdAt": "2026-10-24T16:29:38.500Z",
+    "updatedAt": "2026-10-24T17:45:42.781Z",
+    "paidBy": "0x887b86b6b6957f7bbea88b8cefd392f39236a88c",
+    "parentJobId": null,
+    "project": {
+      "id": "c9f8f46a-f406-4ad9-8fce-d9eb11a6d61a",
+      "head": "c9f8f46a-f406-4ad9-8fce-d9eb11a6d61a",
+      "running": null,
+      "versions": [
+        {
+          "jobId": "c9f8f46a-f406-4ad9-8fce-d9eb11a6d61a",
+          "state": "completed"
+        }
+      ]
+    },
+    "site": null,
+    "launch": {
+      "requested": true,
+      "kind": "evm_contracts",
+      "id": "8b2a6990-f0d5-4a2a-b9bc-e21446e48967",
+      "status": "live",
+      "chainId": 1
+    },
+    "delivery": {
+      "repoUrl": "https://github.com/identity-md-launches/launch-2547-imd-burn-tracker-static",
+      "pullRequestUrl": "https://github.com/identity-md-launches/launch-2547-imd-burn-tracker-static/pull/1",
+      "commit": "27ca7358eabdcde4f1c896368eb984fac5ed078f",
+      "deliveredAt": "2026-10-24T17:46:10.386Z",
+      "media": null
+    },
+    "objective": "IMD Burn tracker"
+  },
+  "launch": {
+    "id": "8b2a6990-f0d5-4a2a-b9bc-e21446e48967",
+    "number": null,
+    "name": null,
+    "status": "live",
+    "kind": "evm_contracts",
+    "chainId": 1,
+    "artifacts": [
+      {
+        "role": "other",
+        "name": "BurnTracker",
+        "address": "0x6585f6987205f5f5216d4b8c6d15624269e47009",
+        "creationCodeHash": "e1269ae8a143f4617a40d8ba2384e509057b83b266ec43b9cb1481577a1909ad",
+        "txHash": "0xee859d588e8ec10d41fdb0d6e41293103193f9db773d24359fdc9c2d8d067834",
+        "blockNumber": 26264095,
+        "verifiedAt": "2026-10-24T17:49:55.517Z",
+        "verifyFailure": null
+      }
+    ],
+    "attestation": {
+      "manifest": {
+        "kind": "evm_contracts",
+        "notes": "Deploy only BurnTracker on Ethereum mainnet. Constructor arguments, in order: launch payer as owner ($owner), IMD Intake v2, existing IMD asset, right-zero-padded bytes32 strings job.open@job-1 and job.continue@job-1, cooldown 86400 seconds, staleAfter 172800 seconds. The constructor stores the continuation template as bodyPrefix and bodySuffix; no initialization call or ETH funding is required. The owner approves IMD and calls open(bytes) to commission the site, with BurnTracker recorded as its payer. After completion and cooldown, anyone can fund a continuation using the exact authenticated result.json and a maximum price; callers cannot change the stored objective. The owner controls the template, actions, Intake/asset, timing, recovery, hash adoption and token withdrawals; ownership transfer requires acceptance. No token, pool or additional application contract is deployed.",
+        "contracts": [
+          {
+            "contract": "BurnTracker",
+            "constructorArgs": [
+              "$owner",
+              "0x000000000000000000000000a43e6f75ee006411f79ac1c84120606c2330de82",
+              "0x000000000000000000000000d34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+              "0x6a6f622e6f70656e406a6f622d31000000000000000000000000000000000000",
+              "0x6a6f622e636f6e74696e7565406a6f622d310000000000000000000000000000",
+              "0x0000000000000000000000000000000000000000000000000000000000015180",
+              "0x000000000000000000000000000000000000000000000000000000000002a300"
+            ]
+          }
+        ]
+      },
+      "sourceCommit": null,
+      "contracts": [
+        {
+          "name": "BurnTracker",
+          "path": "src/BurnTracker.sol",
+          "abiHash": "2255e150838fff5402b1e6ffc7c7f7fad9ca0d80db497ac6d44cc0a3add051c1",
+          "opcodes": {
+            "callcode": false,
+            "delegatecall": false,
+            "selfdestruct": false
+          },
+          "metadataHash": "aa7d6dd7fd2a310c8756e6a469ab50131311fecf5093d5025550753f2fe18cce",
+          "creationCodeHash": "e1269ae8a143f4617a40d8ba2384e509057b83b266ec43b9cb1481577a1909ad",
+          "deployedCodeHash": "aa4e4dd780ad57d36041f0e919451ba7536d78f07173a5ba093f1792b493d1a1",
+          "creationCodeBytes": 19336,
+          "deployedCodeBytes": 17314
+        }
+      ]
+    }
+  }
+}

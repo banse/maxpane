@@ -118,4 +118,6 @@ class WalletInputScreen(Screen):
 
     def on_key(self, event) -> None:
         if event.key == "escape":
+            event.stop()
+            event.prevent_default()
             self.dismiss(None)

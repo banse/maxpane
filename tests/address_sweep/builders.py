@@ -55,6 +55,8 @@ from maxpane_dashboard.screens.surfboard import (
 )
 from maxpane_dashboard.screens.ttt import TTTScreen
 from maxpane_dashboard.screens.sworn_screen import SwornScreen
+from maxpane_dashboard.screens.surf_wallet import (SurfWalletScreen,
+    SURF_WALLET_FULL_LAYOUT_COLUMNS, SURF_WALLET_FULL_LAYOUT_ROWS)
 from maxpane_dashboard.screens.surf_nft import (
     SurfNftScreen, SURF_NFT_FULL_LAYOUT_COLUMNS, SURF_NFT_FULL_LAYOUT_ROWS,
 )
@@ -886,7 +888,29 @@ def _sworn_app():
     return _CopyHarness(SwornScreen(_PayloadManager(_sworn_payload())))
 
 
+def _wallet_payload():
+    from tests.widgets.test_surf_wallet import snapshot
+    value = snapshot()
+    value['wallet'] = '0x' + '3' * 40
+    value['orders'][0]['name'] = '0x' + '4' * 40
+    value['artifacts'][2].update(chain='BASE', chain_id=8453)
+    return {'wallet_snapshot': value}
+
+
+def _wallet_app():
+    return _CopyHarness(SurfWalletScreen(_PayloadManager(_wallet_payload())))
+
+
 CASES: tuple[SweepCase, ...] = (
+    SweepCase(
+        name='surf_wallet', screen_class=SurfWalletScreen,
+        build=_wallet_app, payload=_wallet_payload, pins=((SURF_WALLET_FULL_LAYOUT_COLUMNS,SURF_WALLET_FULL_LAYOUT_ROWS),),
+        views=((), ('down','enter'), ('down','down','enter')),
+        seeded=('0x'+'1'*40, '0x'+'2'*40, '0x'+'3'*40, '0x'+'4'*40),
+        unlinked=('0x'+'4'*40,),
+        explorer=ETHEREUM, explorers=(ETHEREUM,BASE), rows_pick_explorer=True,
+        explorer_for={'0x'+'1'*40:BASE, '0x'+'2'*40:BASE, '0x'+'3'*40:ETHEREUM},
+    ),
     SweepCase(
         name='sworn', screen_class=SwornScreen, build=_sworn_app,
         payload=_sworn_payload, views=((), ('enter',)),

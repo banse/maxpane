@@ -802,3 +802,34 @@ async def test_activation_bootstrap_runs_catalogue_despite_setter_started_readme
     finally:
         finish.set()
         await runtime.close()
+
+async def test_wallet_child_factory_is_retained_on_reader_and_seeded_explicitly():
+    calls, parents = [], []
+    class Wallet(Manager):
+        def __init__(self, wallet):
+            super().__init__(calls); self.wallet=wallet
+        def set_wallet(self, address): self.wallet=address
+        def get_snapshot(self): return {'wallet_snapshot':{'wallet':self.wallet}}
+        async def fetch_and_compute(self): return self.get_snapshot()
+    class Parent(Manager):
+        def wallet_manager(self, wallet=None):
+            self.record('wallet child'); self.child=Wallet(wallet); return self.child
+        async def close(self):
+            await self.child.close(); await super().close()
+    def factory():
+        value=Parent(calls); parents.append(value); return value
+    runtime=ReaderRuntime(); parent=runtime.register('parent',factory)
+    child=parent.wallet_manager('first')
+    assert parent.wallet_manager('ignored') is child and not calls
+    try:
+        child.set_active_view('wallet')
+        await eventually(lambda: child.get_snapshot()=={'wallet_snapshot':{'wallet':'first'}})
+        assert child.wallet=='first'
+        assert child.set_wallet('second') and child.get_snapshot() is None
+        await eventually(lambda: child.get_snapshot()=={'wallet_snapshot':{'wallet':'second'}})
+        assert parents[0].child.wallet=='second'
+    finally:
+        await runtime.close()
+    assert sum(name=='wallet child' for name,_ in calls)==1
+    assert sum(name=='close' for name,_ in calls)==2
+    assert len({thread for _,thread in calls})==1

@@ -74,6 +74,7 @@ class SurfboardScreen(SurfDashboardScreen):
     BINDINGS = [
         Binding("w", "work", "Work in progress", show=False),
         Binding("n", "nfts", "NFTs", show=False),
+        Binding("u", "wallet_usage", "Wallet / Swarm", show=False),
         Binding("g", "workflows", "Workflow guide", show=False),
         Binding("p", "protocol", "Protocol", show=False),
         Binding("ctrl+o", "oracles", "Oracles", show=False),
@@ -112,6 +113,7 @@ class SurfboardScreen(SurfDashboardScreen):
         self._cached_hub_snapshot = None
         self._last_hub_snapshot = None
         self._nft_view_state = {}
+        self._wallet_view_state = {}
         self._workflow_guide_manager = None
         self._workflow_guide_view_state = {}
         self._entry_pending = False
@@ -226,7 +228,7 @@ class SurfboardScreen(SurfDashboardScreen):
             rack.set_loading_animation(busy and self.is_current, self._card_loading_frame)
 
     def _prime_status_bar(self, bar: StatusBar) -> None:
-        bar.set_key_hints("arrows · enter · n NFTs · p protocol · w work · / cmd · esc")
+        bar.set_key_hints("arrows · enter · u wallet · n NFTs · p protocol · w work · / cmd · esc")
 
     def _update_title(self, data: dict) -> None:
         self._last_hub_snapshot = data
@@ -254,11 +256,11 @@ class SurfboardScreen(SurfDashboardScreen):
             (" · " + " · ".join(hints) if hints else "") + self.loading_suffix)
         heading = self.query_one("#surfboard-title", Static)
         width = heading.content_size.width
-        left, right = "↑ ↓ ← → to navigate cards", "↵ to open selected dashboard"
+        left, right = "↑ ↓ ← → to navigate cards", "↵ open dashboard · u wallet"
         # Equal side widths keep the title centered, with the same gap on each side.
         side = max(len(left), len(right))
         if 2 * side + title.cell_len + 4 > width:
-            left, right = "↑ ↓ ← → navigate", "↵ open dashboard"
+            left, right = "↑ ↓ ← → navigate", "↵ open · u wallet"
             side = max(len(left), len(right))
         if 2 * side + title.cell_len + 4 <= width:
             gap = max(1, (width - 2 * side - title.cell_len) // 4)
@@ -337,6 +339,13 @@ class SurfboardScreen(SurfDashboardScreen):
             from maxpane_dashboard.screens.surf_nft import SurfNftScreen
             self.app.push_screen(SurfNftScreen(self._data_manager.nft_manager(),
                                              view_state=self._nft_view_state))
+
+    def action_wallet_usage(self) -> None:
+        if not isinstance(self.focused, Input):
+            from maxpane_dashboard.screens.surf_wallet import SurfWalletScreen
+            wallet = self._wallet_view_state.get('wallet', self._wallet)
+            self.app.push_screen(SurfWalletScreen(self._data_manager.wallet_manager(wallet),
+                                                  view_state=self._wallet_view_state))
 
     def action_protocol(self) -> None:
         if not isinstance(self.focused, Input):

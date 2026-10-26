@@ -642,6 +642,9 @@ class ReaderHandle:
     def swarm_tokens_manager(self):
         return self._child('swarm_tokens_manager')
 
+    def wallet_manager(self, wallet=None):
+        return self._child('wallet_manager', wallet, metadata={'wallet': wallet})
+
     def portfolio_manager(self, wallet=None):
         return self._child('portfolio_manager', wallet, metadata={'wallet': wallet})
 

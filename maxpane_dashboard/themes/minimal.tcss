@@ -3105,6 +3105,14 @@ SurfboardScreen #surfboard-viewport { height: 1fr; padding: 1 0; overflow: auto 
 
 /* END SURF NFT Explorer */
 
+/* SURF Wallet */
+
+
+    SurfWalletScreen {background: $background; color: $text;}
+    SurfWalletScreen #wallet-header {height: 1; color: $text-muted; content-align: center middle;}
+    SurfWalletScreen WalletBody {height: 1fr;}
+/* END SURF Wallet */
+
 /* WORKFLOW GUIDE */
 WorkflowGuideScreen {background: $background; color: $text;}
     WorkflowGuideScreen #workflow-title {height: 1; margin: 1 1 0 1; text-wrap: nowrap;}
@@ -3177,6 +3185,8 @@ SwarmTokensScreen SwarmTokensFilterEditor { display: none; }
 /* SWORN Explorer */
 SwornScreen {background: $background; color: $text;}
 SwornScreen > SwornExplorer {height: 1fr; padding: 0 1;}
+
+
 
 /* PORTFOLIO mock screen */
 PortfolioScreen #st-body { min-height: 34; }

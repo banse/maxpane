@@ -1321,6 +1321,12 @@ class SurfManager:
                 await nft_manager.close()
             except Exception as exc:
                 logger.debug('closing the NFT adapter failed: %s', exc)
+        wallet_manager = getattr(self, '_wallet_manager', None)
+        if wallet_manager is not None:
+            try:
+                await wallet_manager.close()
+            except Exception as exc:
+                logger.debug('closing the WALLET adapter failed: %s', exc)
         await self._oracles_reader.close()
         await self._work_reader.close()
         await self._launch_contribution_reader.close()
@@ -5796,6 +5802,18 @@ class SurfManager:
         if getattr(self, '_nft_manager', None) is None:
             self._nft_manager = SurfNftManager(swarm=self.swarm_client, clock=self._clock)
         return self._nft_manager
+
+    def wallet_manager(self, wallet=None):
+        """Retain the explicit wallet catalogue; all transports remain parent-owned."""
+        from pathlib import Path
+        from maxpane_dashboard.data.surf_wallet_manager import SurfWalletManager
+        from maxpane_dashboard.data.surf_wallet_evidence import SurfWalletEvidence
+        if getattr(self, '_wallet_manager', None) is None:
+            evidence = SurfWalletEvidence(swarm=self.swarm_client,
+                clients={chain: self._launch_rpc_client(chain) for chain in (1, 8453, 4663)})
+            self._wallet_manager = SurfWalletManager(swarm=self.swarm_client, evidence=evidence,
+                wallet=wallet or '', clock=self._clock, cache_path=Path.home()/'.maxpane'/'surf_wallet.json')
+        return self._wallet_manager
 
     def portfolio_manager(self, wallet=None):
         """Retain the explicit session wallet and borrow the single market provider."""

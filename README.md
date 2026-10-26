@@ -61,6 +61,15 @@ the four lower AGENT cards keep their independently saved seats.
 In BOARDROOM, press `1`–`4` or click the matching `'1'`–`'4'` in an AGENT
 card header to edit that slot's seat. Digits remain ordinary text while an input is focused.
 
+Press `u` in BOARDROOM for **WALLET / SWARM**: the selected wallet's direct
+requests, payments and created sites/contracts/tokens, with onchain usage only.
+It starts with the configured wallet (`--wallet` takes precedence); `w` changes
+it, `r` refreshes, Enter opens an artifact, and Escape returns detail → overview
+→ BOARDROOM. The API supplies the latest 100 requests; retained artifacts are
+labelled ALL KNOWN. Amounts require receipt evidence, refunds remain unknown,
+and usage requires a reviewed application rule. A linked site's contract
+activity does not prove frontend traffic. Agents and trading are excluded.
+
 The **NFTS** card below ONCHAIN FEED opens the NFT Explorer; `n` opens it directly.
 The previous **PROTOCOL** view remains available with `p` in the BOARDROOM and
 `e` inside SURF. These letters remain ordinary text when an input is focused.

@@ -1,0 +1,13 @@
+[
+  {
+    "id": "burntracker-refresh-v1",
+    "chain_id": 1,
+    "address": "0x6585f6987205f5f5216d4b8c6d15624269e47009",
+    "runtime_hash": "0xaa4e4dd780ad57d36041f0e919451ba7536d78f07173a5ba093f1792b493d1a1",
+    "topic": "0x25ef2d56b6da97a702f7177d0aa59a54c0c67233c454db99ce832aa17a973bbe",
+    "unit": "refresh requests",
+    "source": "https://github.com/identity-md-launches/launch-2547-imd-burn-tracker-static/blob/27ca7358eabdcde4f1c896368eb984fac5ed078f/src/BurnTracker.sol",
+    "event": "Ordered(bytes32 indexed requestId, uint8 kind, address indexed payer, uint256 amount, string parentJobId)",
+    "kind": 2
+  }
+]

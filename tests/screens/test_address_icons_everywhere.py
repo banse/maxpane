@@ -1118,6 +1118,16 @@ async def test_every_rendered_address_carries_an_icon_that_copies_it_and_a_link_
             seen_links: set[tuple] = set()
             for x, y, name, link_kind, link_value, url in links:
                 if name is None or link_kind is None or link_value is None:
+                    if case.name == 'surf_wallet':
+                        from maxpane_dashboard.widgets.surf_wallet import WalletBody
+                        from maxpane_dashboard.widgets.surf_nft.detail import source_url
+                        action=(app.screen.get_style_at(x,y).meta or {}).get('@click')
+                        match=re.fullmatch(r'screen\.open_wallet_source\((\d+)\)',str(action))
+                        sources=app.screen.query_one(WalletBody).source_links
+                        index=int(match.group(1)) if match else -1
+                        if (0 <= index < len(sources) and url == sources[index]
+                                and source_url(url) == url and url in _strings_in(served)):
+                            continue
                     if case.name == 'surf_nft':
                         from maxpane_dashboard.widgets.surf_nft import NftSummary
                         from maxpane_dashboard.widgets.surf_nft.detail import source_url
