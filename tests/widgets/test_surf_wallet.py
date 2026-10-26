@@ -250,7 +250,7 @@ async def test_payment_assets_stay_separate_and_are_scroll_reachable():
 
 
 @pytest.mark.asyncio
-async def test_compositor_full_frames_and_metadata_at_owner_size():
+async def test_compositor_full_frames_without_global_info_rows_at_owner_size():
     async with WalletApp(snapshot()).run_test(size=(149, 45)) as pilot:
         body = pilot.app.query_one(WalletBody)
         await pilot.pause()
@@ -264,8 +264,12 @@ async def test_compositor_full_frames_and_metadata_at_owner_size():
                 assert len(lines) == 9
                 assert "╭" in lines[0] and "╮" in lines[0]
                 assert "╰" in lines[-1] and "╯" in lines[-1]
-            assert "Orders 30D" in painted(pilot.app)
-            assert "Coverage:" in painted(pilot.app)
+            assert "Orders 30D" not in painted(pilot.app)
+            assert "Coverage:" not in painted(pilot.app)
+            assert "ONCHAIN USE / 24H" in painted(pilot.app)
+            content = body.query_one("#wallet-insights" if view == "overview" else "#wallet-detail-body")
+            heroes = body.query_one(f"#wallet-{view} .wallet-heroes")
+            assert content.region.y == heroes.region.bottom + 1
             assert body.query_one(f"#wallet-{view}-assets", DataTable).region.bottom < 44
 
 
@@ -342,7 +346,8 @@ async def test_layout_boundary_matches_whole_viewport(size, scroll_x, scroll_y):
             assert (viewport.max_scroll_x > 0) is scroll_x
             assert (viewport.max_scroll_y > 0) is scroll_y
             output = painted(pilot.app)
-            assert "Coverage:" in output and "Usage 24H" in output
+            assert "Coverage:" not in output and "Orders 30D" not in output
+            assert "CREATED /" in output and "ONCHAIN USE / 24H" in output
             assert "Esc overview" in output
             if not scroll_x and not scroll_y:
                 for card in body.query_one(f"#wallet-{view}").query(NewsHeroCard):

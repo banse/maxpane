@@ -76,7 +76,6 @@ class WalletBody(Vertical):
     WalletBody #wallet-layout { height: 1fr; min-height: 43; min-width: 145; padding: 1 1; }
     WalletBody #wallet-overview, WalletBody #wallet-detail { height: 1fr; }
     WalletBody .wallet-heroes { height: 9; grid-size: 6; grid-columns: 1fr; grid-rows: 9; grid-gutter: 1 1; margin-bottom: 1; }
-    WalletBody .wallet-scopes, WalletBody .wallet-coverage { height: 1; color: $text-muted; text-wrap: nowrap; }
     WalletBody .panel-title { height: 1; text-wrap: nowrap; }
     WalletBody DataTable { height: 1fr; min-height: 4; scrollbar-gutter: stable; }
     WalletBody .wallet-empty { height: 1; padding: 0 1; color: $text-muted; }
@@ -123,8 +122,6 @@ class WalletBody(Vertical):
             with Vertical(id="wallet-layout"):
                 with Vertical(id="wallet-overview"):
                     yield Grid(*(NewsHeroCard(record) for record in hero_records(empty, "overview")), classes="wallet-heroes")
-                    yield Static(Text("Orders 30D · Assets ALL KNOWN · Usage 24H / ALL ACTORS · ETH / BASE / RH"), classes="wallet-scopes")
-                    yield Static(Text("Coverage: --"), classes="wallet-coverage")
                     with Grid(id="wallet-insights"):
                         for key, title in (("activity", "REQUEST ACTIVITY / 30D"), ("states", "REQUEST STATUS / 30D"),
                                            ("onchain", "ONCHAIN USE / 24H"), ("payments", "PAYMENTS / 30D")):
@@ -137,8 +134,6 @@ class WalletBody(Vertical):
                     yield WalletRecord(id="wallet-overview-record")
                 with Vertical(id="wallet-detail"):
                     yield Grid(*(NewsHeroCard(record) for record in hero_records(empty, "detail")), classes="wallet-heroes")
-                    yield Static(Text("Orders 30D · Assets ALL KNOWN · Usage 24H / ALL ACTORS · ETH / BASE / RH"), classes="wallet-scopes")
-                    yield Static(Text("Coverage: --"), classes="wallet-coverage")
                     with Horizontal(id="wallet-detail-body"):
                         with Vertical(id="wallet-detail-left"):
                             yield WalletCreated(id="wallet-detail-created")
@@ -192,10 +187,6 @@ class WalletBody(Vertical):
             title = "ONCHAIN USE / 24H" + (f" · {usage_clock}Z" if usage_clock != "--" else "") if key == "onchain" else None
             self.query_one(f"#wallet-{key}", WalletInsight).set_content(content, title=title)
         self.query_one("#wallet-detail-payments", WalletInsight).set_content(contents["payments"])
-        coverage = "Coverage: " + " · ".join(flatten(item) for item in metrics["coverage"] or ["--"])
-        for widget in self.query(".wallet-coverage"):
-            widget.update(literal(clip(coverage, max(30, self.size.width-4))))
-            widget.tooltip = literal(coverage)
         artifacts = self.snapshot.get("artifacts")
         self.by_id = {row["id"]: row for row in artifacts or []}
         if artifacts is not None and self.selected_id not in self.by_id:
