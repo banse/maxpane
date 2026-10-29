@@ -1,6 +1,99 @@
 # HANDOVER — current session and open maintenance backlog
 
-## Current session handoff — 2026-10-17
+## Current session handoff — 2026-10-30: POOL4 Observatory
+
+The owner explicitly asked to save this state for a later session. The website
+and requested chart backfill are published; remaining data work is listed below.
+Parent checkout: `/Users/banse/codex/maxpane`, branch `feature/surf-rpc-budget`
+(parent implementation HEAD when saved: `3d38e5cf`). The terminal UI was not
+changed by the website work. Earlier handoffs below remain historical context.
+
+### Published site and source
+
+- Private website: https://pool4-observatory.rockywhale65.chatgpt.site
+- Source: `sites/pool4-observatory/`, an **independent nested Git repository**.
+  Latest pushed/deployed commit: `e7c27b3a7b9b36473688d1045f2609a6487d1357`.
+  Initial website commit: `e4c2eb78e8293e63cac2802bef1eb5f533962365`.
+- Sites project: `appgprj_6ae3c422c7e88191a7616c150f4acd85`; preserve this ID
+  and its owner-private audience. Deployment `appgdep_6ae3d02537a88191b965c2f6e466717c`
+  succeeded. Version:
+  `appgprj_6ae3c422c7e88191a7616c150f4acd85~appgver_26404886b78881919ecbcad5a8a4069e`.
+- Buildless HTML/CSS/JS with local SVG charts, token-route flowchart, event
+  timeline, accounting view and explicit source dates. Start with the site's
+  `README.md`, `PRODUCT.md`, `DESIGN.md`, and [the original plan](docs/pool4_web_plan.md).
+
+### Data and verification
+
+Both reserve and reference-price charts contain **504 archive samples** covering
+requested hourly times from 2026-10-09 to finalized 2026-10-29 22:33:59 UTC,
+including a final endpoint sample. All hourly slots were recovered. Actual block
+timestamps can precede the requested hour by up to 13 seconds; the first plotted
+point is 2026-10-08 23:59:59 UTC. Finalized endpoint: block **26301416**, hash
+`0xc03acf5c4a7fd300d88ffd5f014b45b44e6d4f4198b430c39cda24e55c3c517c`.
+The snapshot was generated at 2026-10-29 22:57:58 UTC.
+
+`scripts/backfill_history.py` reads `tokensInPool()` and combines the pinned
+hookless IMD/ETH reference price with ETH/USDC at the **same historical block**,
+valuing USDC at $1. It records raw values, block hashes and provider provenance,
+paces/retries public RPCs, supports checkpoints, and refuses partial history.
+First/middle/latest samples matched a second provider. Other source clocks,
+balances, 27 retained events, independent bridge/burn evidence and null P&L were
+preserved. Hourly state samples are not a complete transaction ledger.
+
+Validation: 20 offline tests passed; independent review approved with no findings
+and recomputed all samples. Batch-order and reversed-price mutations were caught
+and reversed. Local browser checks passed at 1440×1000 and 390×844, including
+24-hour/all filters and keyboard inspection; no local console errors or page
+overflow. Native Sites confirmed publication. The automated browser reached the
+private site's expected sign-in gate, so post-deployment authenticated rendering
+was not tested. Screenshots: `output/playwright/pool4-web/backfill-desktop.png`
+and `backfill-mobile.png`. The owned preview server is stopped.
+
+### Resume commands and outstanding work
+
+From the MaxPane root, run `.venv/bin/python -m unittest discover -s
+sites/pool4-observatory/tests -v` for the focused checks. Preview with
+`python3 -m http.server 8874 --bind 127.0.0.1 --directory sites/pool4-observatory/dist`.
+The site's README gives the export/backfill sequence and Sites handles publication.
+Exporting alone replaces chart history with the smaller collector cache, so run
+the backfill afterward. The completed checkpoint was
+`/tmp/pool4-backfill-20261029.json`; it is temporary and not required to resume.
+Use a new checkpoint filename for a new finalized endpoint. The committed public
+snapshot contains the durable historical evidence.
+
+- Automatic collection/publication is **not enabled**; this was a one-time backfill.
+- Protocol/pool P&L is the user's chosen scope and remains **unavailable** pending
+  matched-block treasury NAV, current LP assets/accrued fees and owner capital
+  adjustments. Never substitute price return, reserve change or burn totals.
+- Complete swap/transfer history and all independently timed token legs still
+  need indexing; the current timeline contains the 27 retained events.
+- Minor UI follow-up: trader/pool IMD labels sit close to flowchart node borders.
+- The originally proposed second terminal view has not been built; the user
+  redirected the work to the website first.
+
+### SwarmLab and knowledge capture
+
+Read-only check: `/Users/banse/codex/swarmlab/imd/burntracker` at `354e7a2`.
+Its saved global burn history has 1,152 daily rows through 2026-10-25; 80 shared
+executor bridge rows end October 23. It has no reserve or price history. Executor
+burns are inferred as bridged totals minus receiver balances; the PoolManager
+source category includes other Uniswap v4 swaps. Neither establishes exclusive
+POOL4 destruction. No SwarmLab files were changed.
+
+IMD lessons are committed locally in `/Library/Vibes/imdb`, branch
+`lessons/pool4-history-20261029`: accounting `2de97e3`, archive coverage `55e7b6b`.
+They were captured in an isolated clone and fetched into that branch because
+unrelated unfinished KB pages blocked map regeneration. They are **not merged
+into KB main or pushed**. Preserve the existing KB drafts.
+
+Preserve unrelated parent untracked files: `.codex/`, `.venv311/`, `.worktrees/`
+and `docs/codex_swarm_launches_*`. Do not stage `sites/` as a parent gitlink or
+flatten its independent repository. The site repository is clean at its deployed
+commit; parent Git intentionally sees the site directory as untracked.
+
+---
+
+## Historical session handoff — 2026-10-17
 
 Working directory: `/Users/banse/codex/maxpane`; branch:
 `feature/surfboard-hub-9`. The approved mandatory data-loading work is complete;
