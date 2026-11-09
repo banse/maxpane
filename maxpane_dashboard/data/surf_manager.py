@@ -1330,6 +1330,12 @@ class SurfManager:
         await self._oracles_reader.close()
         await self._work_reader.close()
         await self._launch_contribution_reader.close()
+        swarm_portfolio_manager = getattr(self, '_swarm_portfolio_manager', None)
+        if swarm_portfolio_manager is not None:
+            try:
+                await swarm_portfolio_manager.close()
+            except Exception as exc:
+                logger.debug('closing the Swarm Portfolio adapter failed: %s', exc)
         portfolio_manager = getattr(self, '_portfolio_manager', None)
         if portfolio_manager is not None:
             try:
@@ -5821,6 +5827,13 @@ class SurfManager:
         if getattr(self, '_portfolio_manager', None) is None:
             self._portfolio_manager = PortfolioManager(self.swarm_tokens_manager(), wallet, clock=self._clock)
         return self._portfolio_manager
+
+    def swarm_portfolio_manager(self, wallet=None):
+        """Keep the scan-backed portfolio and its explicit session wallet."""
+        from maxpane_dashboard.data.swarm_portfolio_manager import SwarmPortfolioManager
+        if getattr(self, '_swarm_portfolio_manager', None) is None:
+            self._swarm_portfolio_manager = SwarmPortfolioManager(wallet, clock=self._clock)
+        return self._swarm_portfolio_manager
 
     def swarm_tokens_source_revision(self):
         return tuple(self.cache.get_last_good(slot) for slot in

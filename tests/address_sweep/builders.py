@@ -73,6 +73,9 @@ from maxpane_dashboard.screens.swarm_token_detail import (
     SwarmTokenScreen, SWARM_TOKEN_FULL_LAYOUT_COLUMNS, SWARM_TOKEN_FULL_LAYOUT_ROWS,
 )
 from maxpane_dashboard.data.portfolio_demo import DemoPortfolioManager, demo_snapshot as portfolio_snapshot
+from maxpane_dashboard.screens.swarm_portfolio import (
+    SwarmPortfolioScreen, SWARM_PORTFOLIO_FULL_LAYOUT_COLUMNS, SWARM_PORTFOLIO_FULL_LAYOUT_ROWS,
+)
 from maxpane_dashboard.screens.portfolio import (
     PortfolioScreen, PORTFOLIO_FULL_LAYOUT_COLUMNS, PORTFOLIO_FULL_LAYOUT_ROWS,
 )
@@ -825,6 +828,27 @@ def _portfolio_app() -> App:
 _TOKEN_CONTRACTS = ('0x'+'a1'*20, '0x'+'b2'*20, '0x'+'c3'*20)
 
 
+def _swarm_portfolio_payload():
+    from copy import deepcopy
+    from tests.widgets.test_swarm_portfolio import portfolio_snapshot as swarm_snapshot
+    payload = swarm_snapshot()
+    original = payload['assets'][0]
+    payload.update(wallet=_PORTFOLIO_WALLET, assets=[], rewards=[])
+    for i, (chain, contract) in enumerate(zip((1, 8453, 4663), _TOKEN_CONTRACTS)):
+        asset = deepcopy(original)
+        asset.update(id=f'{chain}:{contract}', chain_id=chain, token_address=contract,
+                     symbol=f'TOKEN{i}', name=f'Token {i}')
+        payload['assets'].append(asset)
+    payload['standings'] = [dict(id='standing', chain_id=1,
+        contract_address=_TOKEN_CONTRACTS[0], name='Eligibility',
+        fields=[dict(name='member', value='yes')], sites=[])]
+    return payload
+
+
+def _swarm_portfolio_app() -> App:
+    return _CopyHarness(SwarmPortfolioScreen(_PayloadManager(_swarm_portfolio_payload())))
+
+
 def _portfolio_live_payload():
     snapshot = portfolio_snapshot(_PORTFOLIO_WALLET)
     snapshot['is_mock'] = False
@@ -945,6 +969,16 @@ CASES: tuple[SweepCase, ...] = (
         seeded=('0x' + 'ab' * 20, '0x' + 'cd' * 20, '0x' + 'ef' * 20,
                 _SURF_PROSE, _SWARM_CONTRACT), explorer=ETHEREUM,
         pins=((SWARM_TOKEN_FULL_LAYOUT_COLUMNS, SWARM_TOKEN_FULL_LAYOUT_ROWS),),
+    ),
+    SweepCase(
+        name='swarm_portfolio', screen_class=SwarmPortfolioScreen,
+        build=_swarm_portfolio_app, payload=_swarm_portfolio_payload,
+        views=((), ('enter',), ('down', 'enter'), ('down', 'down', 'enter')),
+        seeded=(_PORTFOLIO_WALLET, *_TOKEN_CONTRACTS), explorer=ETHEREUM,
+        explorers=(ETHEREUM, BASE, ROBINHOOD), rows_pick_explorer=True,
+        explorer_for={_PORTFOLIO_WALLET: ETHEREUM,
+                      **dict(zip(_TOKEN_CONTRACTS, (ETHEREUM, BASE, ROBINHOOD)))},
+        pins=((SWARM_PORTFOLIO_FULL_LAYOUT_COLUMNS, SWARM_PORTFOLIO_FULL_LAYOUT_ROWS),),
     ),
     SweepCase(
         name="portfolio_live", screen_class=PortfolioScreen,

@@ -51,7 +51,7 @@ async def test_boardroom_heading_contains_navigation_and_preserves_content_geome
             heading_text = rows[0].text
             left = '↑ ↓ ← → to navigate cards'
             title = 'IMD BOARDROOM'
-            right = '↵ to open selected dashboard'
+            right = '↵ open · o portfolio · u wallet'
             assert heading_text.index(left) < heading_text.index(title) < heading_text.index(right)
             assert 'arrow keys' not in heading_text
             empty_card = app.hub.query_one('#surfboard-card-agent-4', SurfboardCard)

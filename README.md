@@ -152,12 +152,30 @@ The isolated, deterministic **MOCK DATA** demo remains available without network
 .venv/bin/python -m maxpane_dashboard.demos.swarm_tokens
 ```
 
-### PORTFOLIO — wallet holdings and claims
+### PORTFOLIO — holdings, stakes and rewards
 
-The Portfolio view remains available as the standalone preview below. Its former
-boardroom card is now **WORK IN PROGRESS**.
+Press `o` from Boardroom for the portfolio overview. Six cards show total value,
+wallet holdings, staked principal, unclaimed rewards, NFTs and owned IDMD seats.
+Below them are allocation, holdings, rewards, stakes, selected-token utilities,
+NFT inventory and eligibility. Enter opens the native token-inventory popup;
+its selected token shows the value breakdown, sale coverage and source evidence.
+Close it with X, Space or Escape. Use `w` for a wallet, `/` to search, `f` for
+filters, and `r` to request a new scan.
 
-The overview shows swarm-token holdings, verified ready claims and linked IMD
+The keyless [reference scanner](https://imd.vibingco.de/portfolio) discovers
+Swarm assets on Ethereum, Base and Robinhood. A token's held, staked and reward
+amounts share one upstream valuation; filters retain those allocations. Total
+value includes unclaimed rewards once and excludes NFTs, seats and utility TVL.
+Rewards retain ready, locked, pending or unknown readiness. Values are estimates,
+not guaranteed net proceeds; first-leg sale coverage does not certify the entire
+exit route. The scan time and chain blocks remain visible. Automatic polling uses
+the source's cache; only `r` requests a fresh scan, subject to its rate limits.
+This is a discovered Swarm portfolio, without portfolio history or P/L.
+
+The earlier portfolio remains available as the standalone preview below. Its
+former Boardroom card remains **WORK IN PROGRESS**.
+
+That earlier overview shows swarm-token holdings, verified ready claims and linked IMD
 agents. It shares SWARM TOKENS' catalogue, quotes, market activity, price charts
 and IMD/ETH launch liquidity. Ethereum, Base and Robinhood balances use actual
 onchain decimals. Partial discovery, unsupported chains, failed reads and stale

@@ -1037,7 +1037,15 @@ and trade readers are unchanged.
 The inset footer shows positive `x new` from the eligible canonical last-24-hour population.
 Per the owner, no partial/stale/clock labels appear there; the literal tooltip retains coverage
 and source clocks. Known zero-new text remains hidden on TOKENS and ONCHAIN FEED.
-Portfolio opens its existing preview. FLEET opens LEADERBOARD and shows a neutral STATS
+Boardroom `o` opens `SwarmPortfolioScreen` with a retained, wallet-scoped public
+scan manager. The six-card overview includes holdings, stakes, unclaimed rewards,
+NFTs, seats and eligibility. Enter opens the native `RecordDetailScreen` token
+inventory/detail popup; it reads an immutable snapshot without fetching. `w`
+selects a wallet, `r` explicitly requests a fresh upstream scan, and ordinary
+polls use the upstream cache. Combined token valuations are apportioned once;
+NFTs, seats and contract TVL never enter total value. The legacy portfolio preview
+and manager remain separate. The WIP card and `p` Protocol binding stay in place.
+FLEET opens LEADERBOARD and shows a neutral STATS
 inset with contributor tokens, occupied working slots (`jobs`) and worker capacity.
 Its inner footer shows canonical seat-record acceptance percentage; zero attempts
 remain unknown. Each source retains its own state and clock in hover, alongside the

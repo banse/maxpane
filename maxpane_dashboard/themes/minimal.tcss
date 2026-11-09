@@ -3141,6 +3141,12 @@ WorkflowGuideScreen {background: $background; color: $text;}
     WorkflowGuideScreen .workflow-panel-content {height: auto; width: 100%;}
 /* END WORKFLOW GUIDE */
 
+/* SWARM Portfolio */
+SwarmPortfolioScreen {background: $background; color: $text;}
+SwarmPortfolioScreen #portfolio-header {height: 1; color: $text-muted; content-align: center middle; text-wrap: nowrap; text-overflow: ellipsis;}
+SwarmPortfolioScreen SwarmPortfolioOverview {height: 1fr;}
+/* END SWARM Portfolio */
+
 /* SWARM TOKEN detail screen */
 SwarmTokenScreen { background: $background; color: $text; }
     SwarmTokenScreen #token-title { height: 1; text-align: center; color: $text-muted;

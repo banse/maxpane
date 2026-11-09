@@ -75,6 +75,7 @@ class SurfboardScreen(SurfDashboardScreen):
         Binding("w", "work", "Work in progress", show=False),
         Binding("n", "nfts", "NFTs", show=False),
         Binding("u", "wallet_usage", "Wallet / Swarm", show=False),
+        Binding("o", "portfolio", "Portfolio", show=False),
         Binding("g", "workflows", "Workflow guide", show=False),
         Binding("p", "protocol", "Protocol", show=False),
         Binding("ctrl+o", "oracles", "Oracles", show=False),
@@ -114,6 +115,7 @@ class SurfboardScreen(SurfDashboardScreen):
         self._last_hub_snapshot = None
         self._nft_view_state = {}
         self._wallet_view_state = {}
+        self._portfolio_view_state = {}
         self._workflow_guide_manager = None
         self._workflow_guide_view_state = {}
         self._entry_pending = False
@@ -228,7 +230,7 @@ class SurfboardScreen(SurfDashboardScreen):
             rack.set_loading_animation(busy and self.is_current, self._card_loading_frame)
 
     def _prime_status_bar(self, bar: StatusBar) -> None:
-        bar.set_key_hints("arrows · enter · u wallet · n NFTs · p protocol · w work · / cmd · esc")
+        bar.set_key_hints("arrows · enter · o portfolio · u wallet · n NFTs · p protocol · w work · / cmd · esc")
 
     def _update_title(self, data: dict) -> None:
         self._last_hub_snapshot = data
@@ -256,11 +258,11 @@ class SurfboardScreen(SurfDashboardScreen):
             (" · " + " · ".join(hints) if hints else "") + self.loading_suffix)
         heading = self.query_one("#surfboard-title", Static)
         width = heading.content_size.width
-        left, right = "↑ ↓ ← → to navigate cards", "↵ open dashboard · u wallet"
+        left, right = "↑ ↓ ← → to navigate cards", "↵ open · o portfolio · u wallet"
         # Equal side widths keep the title centered, with the same gap on each side.
         side = max(len(left), len(right))
         if 2 * side + title.cell_len + 4 > width:
-            left, right = "↑ ↓ ← → navigate", "↵ open · u wallet"
+            left, right = "↑ ↓ ← → navigate", "↵ open · o portfolio"
             side = max(len(left), len(right))
         if 2 * side + title.cell_len + 4 <= width:
             gap = max(1, (width - 2 * side - title.cell_len) // 4)
@@ -350,6 +352,15 @@ class SurfboardScreen(SurfDashboardScreen):
     def action_protocol(self) -> None:
         if not isinstance(self.focused, Input):
             self.app.open_surf_mode(MODE_POOL4)
+
+    def action_portfolio(self) -> None:
+        if not isinstance(self.focused, Input):
+            from maxpane_dashboard.screens.swarm_portfolio import SwarmPortfolioScreen
+            from maxpane_dashboard import config
+            wallet = self._wallet or config.get_wallet()
+            self.app.push_screen(SwarmPortfolioScreen(
+                self._data_manager.swarm_portfolio_manager(wallet),
+                view_state=self._portfolio_view_state))
 
     def action_workflows(self) -> None:
         if not isinstance(self.focused, Input):
