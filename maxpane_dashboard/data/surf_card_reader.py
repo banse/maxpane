@@ -7,6 +7,7 @@ from copy import deepcopy
 from maxpane_dashboard.analytics import surf_pool4_depth
 from maxpane_dashboard.analytics.surf_work import workflow_is_open
 from maxpane_dashboard.analytics.surfboard import count
+from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.data import surf_work as work
 from maxpane_dashboard.data import surf_oracles as oracle
 from maxpane_dashboard.data import surf_swarm as swarm
@@ -44,6 +45,11 @@ class SurfCardReader:
         self.research_rows = None
         self.research_ts = None
         self.research_failed = False
+        self.research_agents = None
+        self.research_agents_ts = None
+        self._research_agent_requests = None
+        self._research_agents_next = 0
+        self._research_standings = {}
         self.pool = {}
         self.pool_ts = None
         self.pool_failed = False
@@ -77,7 +83,7 @@ class SurfCardReader:
 
     async def _guard(self, read, name):
         try:
-            async with asyncio.timeout(12):
+            async with asyncio.timeout(30 if name == 'research' else 12):
                 await read()
         except asyncio.CancelledError:
             raise
@@ -143,16 +149,100 @@ class SurfCardReader:
             return
         self.research_rows, self.research_ts = rows, started
         self.research_failed = False
+        identities = {(row['id'], row['job_id']) for row in rows}
+        if identities != self._research_agent_requests:
+            self.research_agents, self.research_agents_ts = None, None
+            self._research_standings.clear()
+        self._research_agent_requests = identities
+        if not rows:
+            self.research_agents, self.research_agents_ts = 0, started
+            return
+        if started < self._research_agents_next:
+            return
+        self.research_agents = None
+        try:
+            result = await self._research_agents(rows)
+            if result is not None:
+                self.research_agents, self.research_agents_ts = result
+        finally:
+            # Standing is rate-limited. Space complete attempts, including failures.
+            self._research_agents_next = self.manager._clock() + 60
+
+    async def _research_agents(self, requests):
+        """Resume bounded standing reads; count only with coverage of every busy seat."""
+        jobs = {row['job_id'] for row in requests}
+        client = self.manager.swarm_client
+        if (None in jobs or not callable(getattr(client, 'fetch_seat_standing', None))
+                or not callable(getattr(client, 'fetch_overview', None))):
+            return None
+
+        def roster(raw):
+            if not isinstance(raw, dict): return None
+            seats, health, stamp = raw.get('seats'), raw.get('health'), raw.get('at')
+            if (not isinstance(seats, dict) or len(seats) > 10000
+                    or not isinstance(health, dict) or health.get('reachable') is not True
+                    or type(stamp) not in (int, float)
+                    or not 0 <= self.manager._clock() - stamp / 1000 <= 30):
+                return None
+            busy, seen = set(), set()
+            for key, row in seats.items():
+                token = swarm._served_token(key)
+                if (token is None or token in seen or not isinstance(row, dict)
+                        or swarm._served_token(row.get('tokenId')) != token
+                        or type(row.get('working')) is not bool):
+                    return None
+                seen.add(token)
+                if row['working']: busy.add(token)
+            return busy
+
+        # The full /swarm seat map includes assignments that /workers omits.
+        # health.workingNow describes a different population; it is not a roster total.
+        before = roster(await client.fetch_overview())
+        if before is None: return None
+        now = self.manager._clock()
+        cached = self._research_standings
+        for token in list(cached):
+            if token not in before or not 0 <= now - cached[token][1] <= 300:
+                cached.pop(token)
+        # Missing seats first, then the oldest observations. Larger rosters resume
+        # next poll rather than returning a permanently unavailable count.
+        selected = sorted(before, key=lambda token: (cached.get(token, (None, -1e20))[1], token))[:32]
+        gate = asyncio.Semaphore(4)
+        async def read(token):
+            async with gate:
+                return await client.fetch_seat_standing(token)
+        details = await asyncio.gather(*(read(token) for token in selected))
+        for token, raw in zip(selected, details):
+            cached.pop(token, None)
+            if not isinstance(raw, dict) or swarm._served_token(raw.get('tokenId')) != token: continue
+            stamp = swarm._ts(raw.get('at'))
+            standing = raw.get('standing')
+            if (stamp is None or not 0 <= self.manager._clock() - stamp <= 60
+                    or not isinstance(standing, dict)): continue
+            running = standing.get('running')
+            if not isinstance(running, list) or count(standing.get('working')) != len(running): continue
+            identities = {parse_job_id(row.get('jobId')) if isinstance(row, dict) else None for row in running}
+            if None not in identities:
+                cached[token] = (identities, stamp)
+        # New busy seats must also have an observation before we can publish a total.
+        after = roster(await client.fetch_overview())
+        if after is None or not after.issubset(cached): return None
+        observed = min((cached[token][1] for token in after), default=self.manager._clock())
+        if not 0 <= self.manager._clock() - observed <= 300: return None
+        return sum(bool(cached[token][0] & jobs) for token in after), observed
 
     def _research_snapshot(self):
         fresh = (self.research_ts is not None and not self.research_failed
                  and 0 <= self.manager._clock() - self.research_ts <= 60)
         rows = self.research_rows if fresh else None
         chains = {row['chain_id'] for row in rows or []}
+        stamp = self.research_ts
+        if self.research_agents is not None and self.research_agents_ts is not None:
+            stamp = min(stamp, self.research_agents_ts)
         return dict(state='ok' if rows is not None else 'unavailable',
                     count=len(rows) if rows is not None else None,
                     chains=len(chains) if rows is not None and None not in chains else None,
-                    read_ts=self.research_ts)
+                    read_ts=stamp)
 
     async def _current(self):
         """Recent jobs, one resumable older page, and at most 24 fresh details."""
@@ -257,6 +347,11 @@ class SurfCardReader:
                          for job in self.current_jobs.values())
             facts.update(oracle_agents=None if oracle else 0,
                          reason='API does not expose a complete live panel' if oracle else 'Complete current jobs; no oracle running')
+        if facts['research']['state'] == 'ok':
+            agents_fresh = self.research_agents_ts is not None and 0 <= now - self.research_agents_ts <= 300
+            facts['oracle_agents'] = self.research_agents if agents_fresh else None
+            facts['reason'] += ('; Research agents: distinct assigned seats, complete busy-seat coverage at the observation time'
+                                if facts['oracle_agents'] is not None else '; Research worker standing coverage incomplete')
         return facts
 
     def work_snapshot(self, source):

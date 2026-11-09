@@ -1869,3 +1869,39 @@ tests have existing colour/navigation expectations. The guard failure is the
 previously recorded SWARM TOKENS CSS slice that includes the SWORN block. Keep
 these outside this data-correctness fix and repair when their respective files
 are next maintained.
+
+## RESEARCH assigned-agent count — 2026-11-09
+
+The footer now counts distinct seats whose standing `running` assignments match
+active research job IDs. The full `/swarm.seats` busy roster supplies coverage;
+`/workers` can omit assigned seats, and `health.workingNow` is not an equivalent
+roster total. A submitted job node with `live: null` can still have an assignment
+in standing, so node state and submitted panel members cannot supply this count.
+
+Standing reads resume in batches of at most 32, with four concurrent requests and
+at least 60 seconds between completed attempts, including failures. Larger
+rosters fill over multiple polls. Coverage must include every busy seat in the
+latest roster; failed reads remain unknown. Observations expire after five minutes,
+and the tooltip preserves the oldest observation time. Request identity changes
+invalidate prior coverage. No layout pins or model keys changed.
+
+Live verification at 149×45 covered 75 busy seats after three batches (141 seconds)
+and rendered 1 research job / 1 assigned agent / 1 chain. The matching standing
+assignment was seat 1548 for job `31a2cf4d-24f7-4fe8-8a31-f9437c520182`.
+These are recorded assignments, not proof a model process is currently executing.
+The RESEARCH card used public live data; other preview cards used retained cache.
+
+Validation: 24 focused checks passed; the whole touched/composing run passed 600
+with the same 17 pre-existing reader harness failures documented above. Fast
+guards passed 130 with the existing SWARM TOKENS/SWORN CSS slice failure;
+documentation pins passed 12. Six controller mutations were killed and restored.
+The reviewer independently passed the 24 checks and killed/restored an oldest-time
+mutation. Its one Important test-fixture finding was corrected by reusing the
+captured standing response; no production fix or scoped re-review was needed.
+No full suite ran.
+
+Filed Minor capacity limit: at 129 stable busy seats and a 90-second batch cadence,
+the five-minute expiry prevents full coverage (reviewer reproduced ten rounds,
+maximum 128 covered seats). Such a roster remains unknown. Raising the rate or
+age bounds would trade API limits against freshness and needs separate work;
+this implementation does not promise completion for every possible roster size.

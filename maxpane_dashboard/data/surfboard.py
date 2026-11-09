@@ -576,7 +576,8 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          "RESEARCH · assessing requests from filtered active-query coverage"
          + f" · {_value(assessing)} assessing · {_value(chains)} chains"
          + f" · read {hhmm(research.get('read_ts'))}"
-         + f" · agents read {hhmm(current_work.get('read_ts'))} · {current_work.get('reason') or 'Current node coverage incomplete'}"
+         + f" · agents read {hhmm(research.get('read_ts') if oracle_state == 'ok' else current_work.get('read_ts'))}"
+         + f" · {current_work.get('reason') or 'Current node coverage incomplete'}"
          + " · Enter to open", "oracles")
     result[-1].update(meter_kind="oracles", meter_state=oracle_state, numerator=chains, denominator=assessing,
                      status=("assessing" if assessing else "idle") if oracle_state == "ok" else oracle_state)

@@ -333,6 +333,13 @@ class SwarmClient(OwnedHttpClient):
         """Live device envelope through the shared host pool and pacing."""
         return await self._dict("/workers")
 
+    async def fetch_seat_standing(self, token: int) -> dict[str, Any] | None:
+        """Current running assignments; skip the unrelated dispatch queue check."""
+        if type(token) is not int or token < 0:
+            return None
+        body = await self._get(f'/seats/{token:d}/standing', params={'queue': '0'})
+        return body if isinstance(body, dict) else None
+
     async def fetch_contributors(self) -> dict[str, Any] | None:
         """Per-device lifetime counters, including served envelope totals."""
         return await self._dict("/contributors")

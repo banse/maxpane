@@ -1,0 +1,104 @@
+{
+  "captured_at": "2026-11-09T17:13:00Z",
+  "source": "https://api.imd.fun",
+  "note": "Selected three seats and standing fields from live reads; health.workingNow reduced to 1 to reproduce its different population from the two busy seats. Test clocks are aligned explicitly.",
+  "requests": [
+    {
+      "id": "2f058f1e-ffd6-4b68-a779-fcf0a775b035",
+      "status": "assessing",
+      "question": "What is the total number of wheel passes recorded by Squeekchain for rounds 3294, 3295, 3296, 3297, 3298 and 3299 (each round lasts 600 seconds and round 0 began at Unix time 1791847200), as published at https://sepolia.squeekchain.com? Answer as a single uint256 equal to the sum of the six published PASSES values. If any of the six rounds has not been published as settled, the question is unanswerable; never answer 0 for missing data.",
+      "chainId": 1,
+      "window": {
+        "toBlock": 26345310,
+        "fromBlock": 26338131,
+        "toBlockHash": "0x38c006d6c590b66e5dc34c699a31b5fe07444c1b4b340c1a6302e328a7bc2f9a"
+      },
+      "answerType": "uint256",
+      "jobId": "31a2cf4d-24f7-4fe8-8a31-f9437c520182",
+      "signer": null,
+      "attestedAt": null,
+      "createdAt": "2026-11-05T01:23:33.933Z",
+      "updatedAt": "2026-11-05T01:23:34.002Z",
+      "failure": null
+    }
+  ],
+  "standings": {
+    "1548": {
+      "tokenId": "1548",
+      "at": "2026-11-09T17:13:13.875Z",
+      "standing": {
+        "working": 1,
+        "running": [
+          {
+            "jobId": "31a2cf4d-24f7-4fe8-8a31-f9437c520182",
+            "objective": "What is the total number of wheel passes recorded by Squeekchain for rounds 3294, 3295, 3296, 3297, 3298 and 3299 (each round lasts 600 seconds and round 0 began at Unix time 1791847200), as published at https://sepolia.squeekchain.com? Answer as a single uint256 equal to the sum of the six publishe",
+            "nodeKey": "oracle_assess",
+            "role": "implement",
+            "since": "2026-11-05T01:29:48.986Z"
+          }
+        ]
+      }
+    },
+    "143": {
+      "tokenId": "143",
+      "at": "2026-11-09T17:13:12.620Z",
+      "standing": {
+        "working": 1,
+        "running": [
+          {
+            "jobId": "cc45e1a7-047f-45d9-a5df-0b65be9cc03c",
+            "objective": "Move this network's entry on Paradigm's AMM fee challenge (paradigm.xyz/puzzles/amm) into the top 10 by training learned fee policies on a fast market replica. Base HA = T (RS2 plus a per-run toxicity anchor) plus a learned 13-8-2 fee correction: +1.257 se 0.062 over T on 512 fresh real-engine seeds",
+            "nodeKey": "item_b10_0005",
+            "role": "implement",
+            "since": "2026-11-09T16:18:25.875Z"
+          }
+        ]
+      }
+    }
+  },
+  "roster": {
+    "at": 1794244275683,
+    "health": {
+      "reachable": true,
+      "workingNow": 1
+    },
+    "seats": {
+      "1548": {
+        "tokenId": 1548,
+        "agentId": "50971",
+        "attempts": 2530,
+        "accepted": 2378,
+        "rejected": 17,
+        "failed": 57,
+        "pending": 78,
+        "last": "2026-11-09T16:57:24.605Z",
+        "working": true,
+        "queued": 0
+      },
+      "143": {
+        "tokenId": 143,
+        "agentId": "51136",
+        "attempts": 1407,
+        "accepted": 1360,
+        "rejected": 9,
+        "failed": 13,
+        "pending": 25,
+        "last": "2026-11-09T16:18:27.372Z",
+        "working": true,
+        "queued": 0
+      },
+      "1322": {
+        "tokenId": 1322,
+        "agentId": "51097",
+        "attempts": 990,
+        "accepted": 939,
+        "rejected": 7,
+        "failed": 5,
+        "pending": 39,
+        "last": "2026-11-07T03:23:35.618Z",
+        "working": false,
+        "queued": 0
+      }
+    }
+  }
+}
