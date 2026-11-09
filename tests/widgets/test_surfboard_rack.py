@@ -129,7 +129,7 @@ async def test_oracles_card_counts_digits_tone_and_unknown_reset(size):
             strips = card_strips(app, card)
             top = next(i for i, strip in enumerate(strips) if '┌' in strip.text)
             left, right = strips[top].text.index('┌'), strips[top].text.index('┐')
-            assert '⊙ ORACLES' in strips[0].text
+            assert '⊙ RESEARCH' in strips[0].text
             assert strips[top].text.strip('│┌┐─ ') == 'JOBS'
             for strip, expected in zip(strips[top+1:top+4], glyphs):
                 assert strip.text[left+1:right].strip() == expected.strip()
@@ -370,7 +370,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.x > cards[6].region.x
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
-        for label in ("ONCHAIN FEED", "BUILT BY SWARM", "AGENT", "FLEET", "ORACLES", "POOL4",
+        for label in ("ONCHAIN FEED", "LAUNCHES", "AGENT", "SWARM", "RESEARCH", "POOL4",
                       "NFTS", "WIP", "TOKENS", "EMPTY SEAT"):
             assert label in text
 
@@ -473,7 +473,7 @@ async def test_swarm_history_footer_stretches_on_resize_and_keeps_unknown_left()
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
             assert footer.text == f"╰─ 24H {chart} ─╯"
-            assert str(card.border_title) == "⊙ BUILT BY SWARM"
+            assert str(card.border_title) == "⊙ LAUNCHES"
         next(row for row in payload['surfboard_cards'] if row['key'] == 'swarm')['points'] = None
         app.hub.query_one(SurfboardRack).update_data(**payload)
         await pilot.pause()

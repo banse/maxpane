@@ -31,9 +31,9 @@ RED = "red"
 
 # Fixed rack identities; the four agent cards carry independent assignments.
 SLOTS = (
-    ("announce", "ONCHAIN FEED", 0, 0), ("swarm", "BUILT BY SWARM", 0, 1),
-    ("work", "WIP", 0, 2), ("oracles", "ORACLES", 0, 3),
-    ("pool4", "POOL4", 0, 4), ("board", "FLEET", 0, 5),
+    ("announce", "ONCHAIN FEED", 0, 0), ("swarm", "LAUNCHES", 0, 1),
+    ("work", "WIP", 0, 2), ("oracles", "RESEARCH", 0, 3),
+    ("pool4", "POOL4", 0, 4), ("board", "SWARM", 0, 5),
     ("surf-nft", "NFTS", 1, 0), ("swarm-tokens", "TOKENS", 1, 5),
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
