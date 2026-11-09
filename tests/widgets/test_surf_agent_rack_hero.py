@@ -174,14 +174,14 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         assert cards[6].region.y - cards[0].region.bottom == 1
         for key, words in {
             "seat": ("AGENT", "SEAT", "swarming", "ERC-8004 #8127"),
-            "accepted": ("JOBS", "ACCEPTED", "96%"),
+            "accepted": ("JOBS", "ACCEPTED WORK", "96%"),
             "effort": ("HOURS", "1.8M tokens"),
             "rewards": ("IMD", "$120.82"),
             "rank": ("POSITION", "of 1,024", "↑ 2"),
             "status": ("WORKER", "reviewing", "BUSY", "▰"),
             "owner": ("WALLET", "example.eth ⧉", "paired"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "model… +1", "high"),
-            "models": ("ORACLE", "JOBS", "75%"),
+            "models": ("RESEARCH", "JOBS", "75%"),
             "earnings": ("EARNINGS", "TOKENS", "12 shipped"),
             "collab": ("SEATS", "collaborators"),
             "nodes": ("LAUNCHES", "JOBS", "85%"),
@@ -198,7 +198,7 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
         # 420 and 960, asserted as digit glyphs that actually reach the terminal.
         assert "  ╵╰─╴╰─╯" in painted(app, "seat")
         assert "╶─╯╰─╯╰─╯" in painted(app, "accepted")
-        assert strips(app, "accepted")[0].text.strip("╭─╮ ⊙") == "ACCEPTED"
+        assert strips(app, "accepted")[0].text.strip("╭─╮ ⊙") == "ACCEPTED WORK"
         assert strips(app, "accepted")[2].text.split("┌")[1].split("┐")[0].strip("─ ") == "JOBS"
         assert strips(app, "nodes")[0].text.strip("╭─╮ ⊙") == "LAUNCHES"
 
@@ -296,7 +296,7 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
         assert "no attempts" in painted(app, "accepted") and "0%" not in painted(app, "accepted")
         assert "model" in painted(app, "runtime") and "none" in painted(app, "runtime")
         assert "not advertised" in str(app.query_one("#hero-runtime").tooltip)
-        assert "ORACLE" in painted(app, "models") and "collaborators" in painted(app, "collab")
+        assert "RESEARCH" in painted(app, "models") and "collaborators" in painted(app, "collab")
         assert "0 shipped" in painted(app, "earnings")
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=None)
         await pilot.pause()
@@ -510,7 +510,7 @@ async def test_owner_researched_shipped_runtime_outer_footers_stay_blank_in_ever
                 if state in ("unknown_seat", "stale_unknown_seat") and key == "owner":
                     assert "never paired" in painted(pilot.app, key)
             if state in ("ok", "partial", "stale"):
-                for key, word in (("owner", "paired"), ("models", "ORACLE"), ("nodes", "LAUNCHES"), ("runtime", "high")):
+                for key, word in (("owner", "paired"), ("models", "RESEARCH"), ("nodes", "LAUNCHES"), ("runtime", "high")):
                     assert word in painted(pilot.app, key)
 
 
@@ -734,7 +734,7 @@ async def test_researched_uses_production_oracle_count_independently_of_models()
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             text = painted(app, "models")
-            assert strips(app, "models")[0].text.strip("╭─╮ ⊙") == "ORACLE"
+            assert strips(app, "models")[0].text.strip("╭─╮ ⊙") == "RESEARCH"
             assert "JOBS" in strips(app, "models")[2].text
             assert all(any(glyph in row.text for row in body_rows(app, "models")) for glyph in glyphs), text
             assert strips(app, "models")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("100%" if state == "ok" else "0%")
@@ -968,7 +968,7 @@ async def test_job_cards_show_total_digits_and_acceptance_percentages_independen
             data['nodes'].update(launches=accepted, launches_total=total, oracle=accepted, oracle_total=total)
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
-            for key, title in (('nodes', 'LAUNCHES'), ('models', 'ORACLE')):
+            for key, title in (('nodes', 'LAUNCHES'), ('models', 'RESEARCH')):
                 rendered = strips(app, key)
                 assert rendered[0].text.strip('╭─╮ ⊙') == title
                 assert rendered[2].text.split('┌')[1].split('┐')[0].strip('─ ') == 'JOBS'

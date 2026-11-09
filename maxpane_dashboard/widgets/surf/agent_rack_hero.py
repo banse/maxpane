@@ -63,9 +63,9 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
     for key, title, heading, footer in (
         ("seat", "AGENT", "SEAT", "ERC-8004 #--"),
         ("status", "STATUS", "WORKER", "UNKNOWN"),
-        ("accepted", "ACCEPTED", "JOBS", ""),
+        ("accepted", "ACCEPTED WORK", "JOBS", ""),
         ("nodes", "LAUNCHES", "JOBS", ""),
-        ("models", "ORACLE", "JOBS", ""),
+        ("models", "RESEARCH", "JOBS", ""),
         ("effort", "EFFORT", "HOURS", ""),
         ("runtime", "RUNTIME", "SOFTWARE", ""),
         ("owner", "OWNER", "WALLET", ""),
