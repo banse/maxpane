@@ -370,7 +370,7 @@ async def test_four_rows_and_twelve_slots_keep_terminal_in_middle_three_rows():
         assert terminal.region.x > cards[6].region.x
         assert terminal.region.right < cards[7].region.x
         text = painted(pilot.app)
-        for label in ("ONCHAIN FEED", "LAUNCHES", "AGENT", "SWARM", "RESEARCH", "POOL4",
+        for label in ("ONCHAIN FEED", "SHIPPED", "AGENT", "SWARM", "RESEARCH", "POOL4",
                       "NFTS", "WIP", "TOKENS", "EMPTY SEAT"):
             assert label in text
 
@@ -473,7 +473,7 @@ async def test_swarm_history_footer_stretches_on_resize_and_keeps_unknown_left()
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
             assert footer.text == f"╰─ 24H {chart} ─╯"
-            assert str(card.border_title) == "⊙ LAUNCHES"
+            assert str(card.border_title) == "⊙ SHIPPED"
         next(row for row in payload['surfboard_cards'] if row['key'] == 'swarm')['points'] = None
         app.hub.query_one(SurfboardRack).update_data(**payload)
         await pilot.pause()
