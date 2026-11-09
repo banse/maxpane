@@ -25,7 +25,7 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         assert len(cards) == 12 and {card.region.height for card in cards} == {9}
         text = _region_text(pilot.app, hero)
         for expected in ("AGENT", "SEAT", "96%", "ERC-8004 #8127", "$120.82", "example.eth ⧉",
-                         "EARNINGS", "4 new", "LAUNCHES", "ORACLE"):
+                         "EARNINGS", "513 total", "LAUNCHES", "ORACLE"):
             assert expected in text
         assert 'implementing' in _region_text(pilot.app, hero.query_one('#hero-status'))
         assert "paid " not in _region_text(pilot.app, hero.query_one('#hero-rewards'))
@@ -67,7 +67,7 @@ async def test_agent_rack_replaces_both_old_rows_and_preserves_record_filter(wid
         screen._data_manager._payload = dict(data, surf_agent_hero=changed)
         await screen._do_refresh()
         await pilot.pause()
-        assert "ERC-8004 #--" in _region_text(pilot.app, hero.query_one("#hero-seat"))
+        assert "ERC-8004" not in _region_text(pilot.app, hero.query_one("#hero-seat"))
         assert hero.query_one('#hero-seat').data.digits == '7'
         assert "example.eth" not in _region_text(pilot.app, hero.query_one("#hero-owner"))
         assert "96%" in _region_text(pilot.app, hero)

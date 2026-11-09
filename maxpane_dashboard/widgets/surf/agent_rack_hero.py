@@ -154,7 +154,7 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["accent"] = False
         elif key == "earnings":
             fields["digits"] = _count(count(section.get("earned")))
-            fields["subtitle"] = _count(count(section.get("earned_24h"))) + " new"
+            fields["subtitle"] = _count(count(section.get("wallet_total"))) + " total"
             fields["accent"] = False
         elif key == "collab":
             fields["digits"] = _digits(section.get("count"))
@@ -380,10 +380,12 @@ class AgentRackCard(Pool4HeroCard):
             tip.append(f"\n{_count(count(source.get('accepted')))} / {_count(count(source.get('attempts')))} · {_face(source.get('percent'), 1)}%")
         elif record.key == "earnings":
             recent, worked = (count(source.get(key)) for key in ("earned_24h", "worked_on_24h"))
+            total = count(source.get('wallet_total'))
             tip.append(f"\nDistinct token assets linked to this agent's accepted work: {_count(count(source.get('earned')))} total."
+                       f"\nWallet total (mainnet only): {_count(total)}; includes builder, swarm and early rewards."
                        f"\nLast 24h: {_count(recent)} earned; {_count(worked)} worked on by this agent."
-                       "\nUses each token's earliest launch/earned timestamp. Counts require this agent's accepted work and a builder reward for its current owner.")
-            if recent is None or worked is None:
+                       "\nRecent counts use each token's earliest launch/earned timestamp. Seat-specific counts require this agent's accepted work and a builder reward for its current owner.")
+            if total is None or recent is None or worked is None:
                 tip.append("\n-- means unknown.")
             if is_address(source.get("owner")):
                 tip.append("\n").append_text(address_text(source["owner"], explorer=EXPLORER))

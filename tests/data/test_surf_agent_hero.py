@@ -100,11 +100,12 @@ def test_premium_share_counts_actual_known_models_and_reports_coverage(snapshot)
 def test_earnings_preserves_read_state_without_exposing_cached_values_as_live(snapshot, state):
     snapshot['sources']['earnings'] = dict(state=state, read_ts=NOW-30 if state in ('failed', 'ok') else None)
     snapshot['data']['_agent_earnings'] = dict(earned=12, worked_on=2, earned_24h=4,
-                                             worked_on_24h=1, worked_recent=True)
+                                             worked_on_24h=1, worked_recent=True, wallet_total=513)
     result = hero.project(**snapshot)['earnings']
     assert result['state'] == state
     assert result['state'] in SURF_AGENT_HERO_STATES
     assert result['earned'] == (12 if state == 'ok' else None)
+    assert result['wallet_total'] == (513 if state == 'ok' else None)
     assert result['worked_on_24h'] == (1 if state == 'ok' else None)
 
 
@@ -296,13 +297,14 @@ def test_bad_source_clocks_cannot_publish_values(snapshot, source, sections, sta
 def test_invalid_and_impossible_counts_never_turn_into_zero(snapshot, bad):
     snapshot['data']['swarm_seat_outcome'].update(accepted=bad, attempts=3)
     snapshot['data']['swarm_seat_contrib'].update(wall_clock_s=bad, output_tokens=bad)
-    snapshot['data']['_agent_earnings'] = dict(earned=bad, worked_on=0, earned_24h=1, worked_on_24h=bad, worked_recent=False)
+    snapshot['data']['_agent_earnings'] = dict(earned=bad, worked_on=0, earned_24h=1, worked_on_24h=bad, worked_recent=False, wallet_total=bad)
     snapshot['sources']['earnings'] = dict(state='ok', read_ts=NOW-25)
     result = hero.project(**snapshot)
     assert result['accepted']['accepted'] is result['accepted']['percent'] is None
     assert result['effort']['hours'] is result['effort']['output_tokens'] is None
     assert result['earnings']['earned'] is None and result['earnings']['earned_24h'] == 1
     assert result['earnings']['worked_on_24h'] is None
+    assert result['earnings']['wallet_total'] is None
     snapshot['data']['swarm_seat_outcome']['accepted'] = 4
     result = hero.project(**snapshot)
     assert result['accepted']['accepted'] is result['accepted']['percent'] is None

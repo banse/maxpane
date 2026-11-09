@@ -205,7 +205,7 @@ class NewsHeroCard(LoadingCard):
             textual = data.key in ('runtime', 'owner', 'seat', 'status') or bool(re.search(
                 r'^venue |--:--|\b(?:paid|paired|worked|work|since|until|to)\b', value, re.I))
             numeric = not textual and (bool(MISSING.fullmatch(value.strip())) or bool(re.search(
-                r'[%$#/=]|(?:--|—|-)[dhms]\b|\b(?:of|known|new|cached|other|working|building|agents?|tokens?|jobs?|'
+                r'[%$#/=]|(?:--|—|-)[dhms]\b|\b(?:of|known|new|total|cached|other|working|building|agents?|tokens?|jobs?|'
                 r'accepted|attempts|online|wallets?|models?|chains?|workflows?|collaborators?|collections?|records?|IMD|ETH|USD|24h)\b',
                 value, re.I)))
             return self._values.field(field, value, numeric=numeric, literal=not textual and not numeric)

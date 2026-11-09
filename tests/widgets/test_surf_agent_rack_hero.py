@@ -32,7 +32,7 @@ def payload():
                      checked_ts=1791775800., fleet_daemon="v1.2", fleet_count=900, fleet_total=966, daemon_differs=False,
                      connected_ts=1791774000.),
         models=dict(source, rows=[dict(model="model A", effort="high"), dict(model="model B", effort="medium")]),
-        earnings=dict(source, earned=12, worked_on=7, earned_24h=4, worked_on_24h=2, worked_recent=True,
+        earnings=dict(source, wallet_total=513, earned=12, worked_on=7, earned_24h=4, worked_on_24h=2, worked_recent=True,
                       owner="0x0000000000000000000000000000000000000001"),
         collab=dict(source, count=12, rows=[dict(token_id=527, shared_jobs=84), dict(token_id=1, shared_jobs=52)]),
         nodes=dict(source, oracle=120, oracle_total=160, launches=340, launches_total=400, other=500, known_jobs=840, total_jobs=840,
@@ -182,7 +182,7 @@ async def test_approved_twelve_cards_form_two_equal_rows_with_live_facts():
             "owner": ("WALLET", "example.eth ⧉", "paired"),
             "runtime": ("codex", "v1.2.3", "daemon", "v1.2", "model… +1", "high"),
             "models": ("ORACLE", "JOBS", "75%"),
-            "earnings": ("EARNINGS", "TOKENS", "4 new"),
+            "earnings": ("EARNINGS", "TOKENS", "513 total"),
             "collab": ("SEATS", "collaborators"),
             "nodes": ("LAUNCHES", "JOBS", "85%"),
         }.items():
@@ -289,7 +289,7 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
     data["models"]["rows"] = []
     data["nodes"].update(rows=[], oracle=0, oracle_total=0, launches=0, launches_total=0, other=0, known_jobs=0, total_jobs=0)
     data["collab"].update(count=0, rows=[])
-    data["earnings"].update(earned=0, worked_on=0, earned_24h=0, worked_on_24h=0, worked_recent=False)
+    data["earnings"].update(earned=0, worked_on=0, earned_24h=0, worked_on_24h=0, worked_recent=False, wallet_total=0)
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
@@ -297,7 +297,7 @@ async def test_zero_empty_and_unknown_facts_are_distinct_then_refresh_clears_eve
         assert "model" in painted(app, "runtime") and "none" in painted(app, "runtime")
         assert "not advertised" in str(app.query_one("#hero-runtime").tooltip)
         assert "ORACLE" in painted(app, "models") and "collaborators" in painted(app, "collab")
-        assert "0 new" in painted(app, "earnings")
+        assert "0 total" in painted(app, "earnings")
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=None)
         await pilot.pause()
         assert all("loading" not in painted(app, key) and "unavailable" not in painted(app, key) for key in data)
@@ -807,7 +807,7 @@ async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
         await pilot.pause()
         app = pilot.app
         text = painted(app, "earnings")
-        assert "TOKENS" in text and "4 new" in text
+        assert "TOKENS" in text and "513 total" in text
         assert "╶┴╴╰─╴" in text  # tall 12
         green = Color.parse(app.get_css_variables()["accent"]).get_truecolor()
         assert border_color(app, "earnings") == border_color(app, "accepted")
@@ -819,21 +819,21 @@ async def test_earnings_counts_distinct_tokens_with_neutral_highlighting():
             assert border_color(app, "earnings") == border_color(app, "accepted")
             for key in ("seat", "rewards", "rank", "status"):
                 assert border_color(app, key) == green
-        data["earnings"].update(earned=None, worked_on=None, earned_24h=None, worked_on_24h=None, state="partial")
+        data["earnings"].update(earned=None, worked_on=None, earned_24h=None, worked_on_24h=None, wallet_total=None, state="partial")
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
         text = painted(app, "earnings")
-        assert "4 new" in text
-        assert "-- new" not in text
+        assert "513 total" in text
+        assert "-- total" not in text
 
 
-@pytest.mark.parametrize("new,worked", [(4, 2), (4, 0), (4, None), (0, 0), (None, None), (None, 2)])
-async def test_earnings_inner_footer_shows_new_tokens_from_last_24h(new, worked):
+@pytest.mark.parametrize("total,new,worked", [(513, 4, 2), (0, 4, 0), (513, 4, None), (0, 0, 0), (None, None, None), (None, None, 2)])
+async def test_earnings_inner_footer_shows_wallet_production_total(total, new, worked):
     data = payload()
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
-        data["earnings"].update(earned_24h=new, worked_on_24h=worked)
+        data["earnings"].update(wallet_total=total, earned_24h=new, worked_on_24h=worked)
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
         footer = strips(app, "earnings")[-1].text
@@ -841,11 +841,13 @@ async def test_earnings_inner_footer_shows_new_tokens_from_last_24h(new, worked)
         assert "CLAIMED" not in painted(app, "earnings")
         inner_footer = next(row.text for row in strips(app, "earnings") if "└" in row.text)
         caption = inner_footer.split("└", 1)[1].split("┘", 1)[0].strip("─ ")
-        assert caption == f"{new if new is not None else 4} new"
+        assert caption == f"{total if total is not None else 513} total"
+        assert app.query_one("#hero-earnings").data.digits == "12"
         assert "worked on" not in painted(app, "earnings")
         tooltip = str(app.query_one("#hero-earnings").tooltip)
         assert "this agent's accepted work" in tooltip
-        assert "owner's wallet:" not in tooltip
+        assert f"Wallet total (mainnet only): {total if total is not None else '--'}" in tooltip
+        assert "includes builder, swarm and early rewards" in tooltip
         assert "earliest launch/earned timestamp" in tooltip
         assert f"Last 24h: {new if new is not None else '--'} earned" in tooltip
         assert f"{worked if worked is not None else '--'} worked on by this agent" in tooltip
@@ -855,7 +857,7 @@ async def test_earnings_inner_footer_shows_new_tokens_from_last_24h(new, worked)
 
 async def test_earnings_keeps_exact_hover_counts_and_blank_footer_across_resize():
     data = payload()
-    data["earnings"].update(earned=4096, worked_on=4096, earned_24h=4096, worked_on_24h=4096)
+    data["earnings"].update(earned=4096, worked_on=4096, earned_24h=4096, worked_on_24h=4096, wallet_total=4096)
     async with Harness(data).run_test(size=(132, 45)) as pilot:
         await pilot.pause()
         app = pilot.app
@@ -863,11 +865,34 @@ async def test_earnings_keeps_exact_hover_counts_and_blank_footer_across_resize(
         assert not footer.strip("╰─╯ ")
         tooltip = str(app.query_one("#hero-earnings").tooltip)
         assert "Last 24h: 4,096 earned" in tooltip and "4,096 worked on by this agent" in tooltip
-        assert "4,096 new" in painted(app, "earnings")
+        assert "4,096 total" in painted(app, "earnings")
         await pilot.resize_terminal(211, 45)
         await pilot.pause()
         assert not strips(app, "earnings")[-1].text.strip("╰─╯ ")
-        assert "4,096 new" in painted(app, "earnings")
+        assert "4,096 total" in painted(app, "earnings")
+
+
+async def test_wallet_total_unknown_retention_and_owner_reset():
+    data = payload()
+    data['earnings'].update(wallet_total=None, state='unavailable')
+    async with Harness(data).run_test(size=(134, 29)) as pilot:
+        app = pilot.app
+        hero = app.query_one(SurfSwarmAgentRackHero)
+        await pilot.pause()
+        assert '0 total' in painted(app, 'earnings')
+        data['earnings'].update(wallet_total=513, state='ok')
+        hero.update_data(surf_agent_hero=data)
+        await pilot.pause()
+        assert '513 total' in painted(app, 'earnings')
+        data['earnings'].update(wallet_total=None, state='failed')
+        hero.update_data(surf_agent_hero=data)
+        await pilot.pause()
+        assert '513 total' in painted(app, 'earnings')
+        data['owner']['address'] = '0x' + '2' * 40
+        hero.update_data(surf_agent_hero=data)
+        await pilot.pause()
+        assert '0 total' in painted(app, 'earnings')
+        assert '513 total' not in painted(app, 'earnings')
 
 
 def test_agent_card_states_match_declared_contract():
@@ -889,7 +914,7 @@ async def test_removed_outer_captions_stay_empty_across_source_states_and_recove
             await pilot.pause()
             for key in keys:
                 assert not strips(app, key)[-1].text.strip("╰─╯ "), (key, state)
-        assert "4 new" in painted(app, "earnings")
+        assert "513 total" in painted(app, "earnings")
         assert "$120.82" in painted(app, "rewards")
         assert "last paid " in str(app.query_one("#hero-rewards").tooltip)
         assert "#527 x84" in str(app.query_one("#hero-collab").tooltip)

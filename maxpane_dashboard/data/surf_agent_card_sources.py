@@ -1,7 +1,7 @@
 """Selected-agent token earnings and job membership, with independent read clocks."""
 import asyncio
 
-from maxpane_dashboard.analytics.surf_launch_checks import address
+from maxpane_dashboard.analytics.surf_launch_checks import address, is_production
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.data import surf_agent_earnings as earnings
 from maxpane_dashboard.data import surf_agent_work as work
@@ -159,6 +159,9 @@ def project(capture, seat, *, now):
     elif owner in capture.get('earnings_failed', set()):
         earned_source['state'] = 'failed'
     earned = earnings.summarize(point['rows'], work.accepted_job_ids(seat), now) if point else {}
+    if point is not None:
+        earned['wallet_total'] = len({(row['chain_id'], row['token_address']) for row in point['rows']
+                                     if is_production(dict(chainId=row['chain_id']))})
     accepted = work.accepted_rows(seat)
     if earned and (accepted is None or any(parse_job_id(row.get('jobId')) is None for row in accepted)):
         earned.update(earned=None, earned_24h=None, worked_on=None, worked_on_24h=None, worked_recent=None)

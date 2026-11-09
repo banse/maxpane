@@ -362,24 +362,21 @@ more than three show two plus `+N more`.
 Its tooltip retains every raw model/effort pair. An empty served list says
 `not advertised`; an unread list is unknown. RECORD's model is what actually ran.
 EARNINGS replaces FEEDBACK. Its TOKENS digits count distinct `(chainId, tokenAddress)`
-assets in the owner's public explorer earned table. The outer footer is `x new worked on`
-when a known positive number of distinct tokens earned in the rolling last 24 hours
-involved the selected agent's accepted builder work. Otherwise it shows `x new`,
-using the total distinct tokens earned in that window.
-The inner `x worked on` intersects builder allocations
-with this selected seat's accepted job IDs. Green means one of those assets launched
-less than 24 hours ago. Wallet-wide totals are labeled as such on hover. Unknown work
-identity cannot become zero worked-on assets. Legitimate held rows without a token
-address are excluded; malformed or truncated tables fail the whole read.
-Legacy `early` cuts count toward earned assets, but only `builder` cuts establish
-worked-on assets. Raw claim fields remain cache-compatible and do not affect the
-visible summary. Recent counts use each asset's earliest launch/earned timestamp;
-later duplicate rows cannot make an old token new. Include age zero and exclude
-exactly 24 hours and future timestamps. Missing dates preserve unknown recent
-counts unless a known old date excludes that asset. Unknown work identity keeps
-the selected-agent subset unknown. Footers compact only when needed; hover keeps
-exact counts, date semantics and unknown-state explanations. Narrow EARNINGS
-footers compact the number and use `x worked on` when the full wording does not fit.
+assets with a builder allocation for the current owner and an accepted job for the
+selected seat. The inner footer is `x total`: distinct wallet-wide earned token
+assets on the existing production networks (Ethereum, Base, Robinhood), including
+builder, swarm and early rewards. Testnets and unrecognized networks are excluded
+from this footer. Work-status uncertainty cannot hide an independently known wallet
+total. The outer footer stays blank and the inset remains neutral.
+The tooltip distinguishes the seat-specific number from the wallet/mainnet total.
+Legitimate held rows without a token address are excluded; malformed or truncated
+tables fail the whole read. Raw claim fields remain cache-compatible and do not
+change these counts. Recent-work metadata remains available on hover and uses each
+asset's earliest timestamp: duplicate rows cannot make an old token new. Missing
+dates preserve unknown recent counts unless a known old date excludes that asset.
+The footer retains its last observed total for the same identity on a failed read;
+a new identity resets that presentation memory. Unread numeric captions use the
+existing display fallback, while source facts remain unknown.
 An active earnings read shows `◌ loading`, even when older values are cached;
 a recorded fetch failure uses the `failed` AGENT state and shows red `load failed`.
 Unread or cancelled first reads remain `unavailable` without claiming failure.

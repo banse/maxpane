@@ -45,7 +45,7 @@ async def test_success_clocks_distinct_assets_and_selected_seat_join(reader):
     r, earnings, swarm = reader
     await r.read(seat(), NOW)
     data, meta = sources.project(r.capture(NOW), seat(), now=NOW)
-    assert data['_agent_earnings'] == dict(earned=1, worked_on=1, earned_24h=1, worked_on_24h=1, worked_recent=True)
+    assert data['_agent_earnings'] == dict(earned=1, worked_on=1, earned_24h=1, worked_on_24h=1, worked_recent=True, wallet_total=1)
     assert data['_agent_nodes'] == dict(oracle=0, launches=1, other=0, known_jobs=1, total_jobs=1, launches_total=1, oracle_total=0)
     assert meta['earnings']['read_ts'] == meta['agent_work']['read_ts'] == NOW
     await r.read(seat(), NOW+1)
@@ -58,6 +58,23 @@ async def test_success_clocks_distinct_assets_and_selected_seat_join(reader):
     assert data['_agent_earnings']['worked_on_24h'] == 0
     data, meta = sources.project(r.capture(NOW), seat('0x'+'9'*40), now=NOW)
     assert data['_agent_earnings'] == {} and meta['earnings']['state'] == 'unavailable'
+
+
+@pytest.mark.parametrize('accepted_work', [None, [], [dict(jobId=JOB, nodeKey='build', status='accepted')]])
+def test_wallet_total_counts_distinct_production_assets_independently_of_seat_work(accepted_work):
+    row = earned()[0]
+    rows = [row, dict(row), dict(row, chain_id=8453, builder=False),
+            dict(row, chain_id=4663, builder=False, claimed=None),
+            dict(row, token_address='0x'+'2'*40, builder=False),
+            *[dict(row, chain_id=chain) for chain in (11155111, 84532, 46630, 999999)]]
+    capture = dict(earnings={OWNER: dict(read_ts=NOW, rows=rows)})
+    raw = dict(seat(), work=accepted_work)
+    data, _ = sources.project(capture, raw, now=NOW)
+    assert data['_agent_earnings']['wallet_total'] == 4
+    assert data['_agent_earnings']['earned'] == (None if accepted_work is None else 0 if not accepted_work else 5)
+    assert sources.project(capture, seat('0x'+'9'*40), now=NOW)[0]['_agent_earnings'] == {}
+    capture['earnings'][OWNER]['rows'] = []
+    assert sources.project(capture, raw, now=NOW)[0]['_agent_earnings']['wallet_total'] == 0
 
 
 async def test_membership_reads_failed_attempt_jobs_without_reclassifying_nodes(reader):
@@ -256,11 +273,13 @@ async def test_manager_selected_read_persistence_and_switch_never_borrow_other_o
         await manager._pool_swarm_seat(420, NOW)
         hero = manager._project_hub()['surf_agent_hero']
         assert hero['earnings']['earned'] == hero['earnings']['worked_on'] == 1
+        assert hero['earnings']['wallet_total'] == 1
         assert hero['earnings']['earned_24h'] == hero['earnings']['worked_on_24h'] == 1
         assert 'claimed' not in hero['earnings']
         assert hero['nodes']['launches'] == 1
         manager.set_seat(7)
         assert manager._project_hub()['surf_agent_hero']['earnings']['earned'] is None
+        assert manager._project_hub()['surf_agent_hero']['earnings']['wallet_total'] is None
         manager.save_cache()
         loaded = SurfCache(path=manager._cache_path, clock=lambda: NOW)
         loaded.load(slot_coercers={SLOT_AGENT_EARNINGS: lambda value: sources.coerce_earnings(value, NOW),

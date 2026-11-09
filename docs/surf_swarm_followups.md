@@ -1805,3 +1805,31 @@ passed. The 124 fast guards and 12 documentation pins passed; no full suite ran.
 Live preview at 149×45 showed no startup notifications and rendered a
 demonstration toast using an existing public production launch. No actual
 new-launch event was observed during that preview.
+
+## AGENT earnings wallet total — 2026-11-09
+
+The EARNINGS inner footer now shows `x total` for distinct earned assets on
+Ethereum, Base and Robinhood, including shared/early allocations. Testnets are
+excluded. Seat-specific central digits keep their existing accepted-work scope.
+The public-data render at 149×45 showed 33 centrally and `513 total` below.
+Existing reads/cache are reused; source failures retain the displayed total,
+while an owner change resets it. No layout pin changed.
+
+Validation: 639 focused/composing checks passed; fast guards passed 129.
+Three failures reproduced independently from an isolated archive of baseline
+`a96b2c83`, and remain outside this footer change:
+
+- `test_widget_modules_import_no_data_layer_and_no_analytics`: the existing
+  `swarm_latest` import of `surf_launch_checks` is absent from the test allowlist.
+- `test_board_keys_are_exact_before_finalization_and_survive_cold_start`: its
+  expected keys omit the existing `swarm_launch_read_ts` signal metadata.
+- `test_screen_css_agrees_with_application_stylesheet`: its SWARM TOKENS slice
+  also includes the following SWORN Explorer CSS block.
+
+All three deliberate regressions were caught: removing the production-network
+filter, reverting the footer to its recent count, and removing total-caption
+retention. No full suite was run. The touched composing test's old `#--` identity
+placeholder assertion now follows the existing blank-placeholder convention.
+
+Final review: Approved, no findings. The reviewer independently passed 13
+focused checks and killed/restored a separate total-retention mutation.

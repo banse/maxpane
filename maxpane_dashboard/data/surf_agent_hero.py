@@ -275,6 +275,7 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
         worked_on=count(earned.get('worked_on')), earned_24h=count(earned.get('earned_24h')),
         worked_on_24h=count(earned.get('worked_on_24h')),
         worked_recent=earned.get('worked_recent') if type(earned.get('worked_recent')) is bool else None,
+        wallet_total=count(earned.get('wallet_total')),
         owner=owner['address'])
     work = _mapping(data.get('_agent_nodes'))
     nodes = _detail_facts(detail,
