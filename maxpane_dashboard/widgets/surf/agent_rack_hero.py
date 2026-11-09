@@ -153,8 +153,8 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["subtitle"] = (flatten(rows[0].get("effort")) or "--") if rows else "" if rows == [] else "--"
             fields["accent"] = False
         elif key == "earnings":
-            fields["digits"] = _count(count(section.get("earned")))
-            fields["subtitle"] = _count(count(section.get("wallet_total"))) + " total"
+            fields["digits"] = _count(count(section.get("wallet_total")))
+            fields["subtitle"] = _count(count(section.get("earned"))) + " shipped"
             fields["accent"] = False
         elif key == "collab":
             fields["digits"] = _digits(section.get("count"))
@@ -184,6 +184,12 @@ class AgentRackCard(Pool4HeroCard):
         self.owner_text = Text()
         super().__init__(record)
         self.styles.border_subtitle_align = "center"
+
+    def _present_record(self, record):
+        if record.key == "earnings":
+            record = replace(record, subtitle=self._values.field(
+                "shipped-caption", record.subtitle, numeric=True))
+        return super()._present_record(record)
 
     def _fit_content(self, record):
         if record.key == "owner":
@@ -381,8 +387,8 @@ class AgentRackCard(Pool4HeroCard):
         elif record.key == "earnings":
             recent, worked = (count(source.get(key)) for key in ("earned_24h", "worked_on_24h"))
             total = count(source.get('wallet_total'))
-            tip.append(f"\nDistinct token assets linked to this agent's accepted work: {_count(count(source.get('earned')))} total."
-                       f"\nWallet total (mainnet only): {_count(total)}; includes builder, swarm and early rewards."
+            tip.append(f"\nWallet total (mainnet only): {_count(total)}; includes builder, swarm and early rewards."
+                       f"\nShipped: {_count(count(source.get('earned')))} distinct token assets linked to this agent's accepted work."
                        f"\nLast 24h: {_count(recent)} earned; {_count(worked)} worked on by this agent."
                        "\nRecent counts use each token's earliest launch/earned timestamp. Seat-specific counts require this agent's accepted work and a builder reward for its current owner.")
             if total is None or recent is None or worked is None:

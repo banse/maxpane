@@ -362,20 +362,21 @@ more than three show two plus `+N more`.
 Its tooltip retains every raw model/effort pair. An empty served list says
 `not advertised`; an unread list is unknown. RECORD's model is what actually ran.
 EARNINGS replaces FEEDBACK. Its TOKENS digits count distinct `(chainId, tokenAddress)`
-assets with a builder allocation for the current owner and an accepted job for the
-selected seat. The inner footer is `x total`: distinct wallet-wide earned token
-assets on the existing production networks (Ethereum, Base, Robinhood), including
-builder, swarm and early rewards. Testnets and unrecognized networks are excluded
-from this footer. Work-status uncertainty cannot hide an independently known wallet
-total. The outer footer stays blank and the inset remains neutral.
+wallet-wide earned token assets on the existing production networks (Ethereum,
+Base, Robinhood), including builder, swarm and early rewards.
+Testnets and unrecognized networks are excluded
+from these digits. The inner footer is `x shipped`: distinct assets with a builder
+allocation for the current owner and an accepted job for the selected seat.
+Work-status uncertainty cannot hide an independently known wallet total.
+The outer footer stays blank and the inset remains neutral.
 The tooltip distinguishes the seat-specific number from the wallet/mainnet total.
 Legitimate held rows without a token address are excluded; malformed or truncated
 tables fail the whole read. Raw claim fields remain cache-compatible and do not
 change these counts. Recent-work metadata remains available on hover and uses each
 asset's earliest timestamp: duplicate rows cannot make an old token new. Missing
 dates preserve unknown recent counts unless a known old date excludes that asset.
-The footer retains its last observed total for the same identity on a failed read;
-a new identity resets that presentation memory. Unread numeric captions use the
+The digits and footer retain their last observed values for the same identity on a
+failed read; a new identity resets that presentation memory. Unread numeric captions use the
 existing display fallback, while source facts remain unknown.
 An active earnings read shows `◌ loading`, even when older values are cached;
 a recorded fetch failure uses the `failed` AGENT state and shows red `load failed`.
