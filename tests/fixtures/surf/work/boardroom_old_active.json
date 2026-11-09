@@ -1,0 +1,732 @@
+{
+  "read_ts": 1794233791.3788033,
+  "source": "https://api.imd.fun",
+  "executing": 1,
+  "jobs": [
+    {
+      "id": "29c2ae39-6235-4a50-a7fc-f66c1b5a8925",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T13:48:36.209Z",
+      "updatedAt": "2026-11-09T13:51:01.058Z"
+    },
+    {
+      "id": "a6aff663-90d5-4b45-bfd2-410246a8b8f4",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T13:32:16.077Z",
+      "updatedAt": "2026-11-09T13:34:24.513Z"
+    },
+    {
+      "id": "33241488-8fce-47a1-92a1-d09b077d60bf",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T11:26:43.478Z",
+      "updatedAt": "2026-11-09T11:35:47.899Z"
+    },
+    {
+      "id": "cf2aaf3a-6430-4bc9-8c46-57da4eac22b2",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-11-09T11:02:26.215Z",
+      "updatedAt": "2026-11-09T11:08:02.982Z"
+    },
+    {
+      "id": "e53c727f-d11f-4536-a22f-40a3f981d117",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T10:26:00.232Z",
+      "updatedAt": "2026-11-09T10:28:26.565Z"
+    },
+    {
+      "id": "e12ab85b-9bfb-4bc9-8800-5ffc91dbfcdd",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-09T10:22:27.617Z",
+      "updatedAt": "2026-11-09T10:56:28.804Z"
+    },
+    {
+      "id": "38f20e1f-7cd4-4507-a23f-8b4d629c43a4",
+      "state": "completed",
+      "template": "skill:site-content-check",
+      "createdAt": "2026-11-09T09:36:55.877Z",
+      "updatedAt": "2026-11-09T09:39:51.562Z"
+    },
+    {
+      "id": "b4378582-87c3-492f-972a-84c147d4d386",
+      "state": "blocked",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T07:26:31.095Z",
+      "updatedAt": "2026-11-09T07:43:40.867Z"
+    },
+    {
+      "id": "9b07ef48-8ec7-4e5a-bd9f-ac4e2eb48e69",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T05:47:52.475Z",
+      "updatedAt": "2026-11-09T05:49:57.800Z"
+    },
+    {
+      "id": "8dad1cf6-10d2-4c6a-97ce-5b9bb399863e",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T05:47:49.069Z",
+      "updatedAt": "2026-11-09T05:50:14.343Z"
+    },
+    {
+      "id": "3cee9f3b-ffe5-45b1-95c4-031a6a2df2d0",
+      "state": "blocked",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T05:38:15.655Z",
+      "updatedAt": "2026-11-09T06:16:37.345Z"
+    },
+    {
+      "id": "075257eb-c908-48d6-ad6a-c779a0016cd9",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-11-09T05:03:32.907Z",
+      "updatedAt": "2026-11-09T05:15:13.257Z"
+    },
+    {
+      "id": "282fbc03-197f-467b-8c2b-d982758183e8",
+      "state": "completed",
+      "template": "goal",
+      "createdAt": "2026-11-09T04:48:26.904Z",
+      "updatedAt": "2026-11-09T06:24:21.285Z"
+    },
+    {
+      "id": "918a6e46-edff-4120-b70f-6e3182d6e287",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T03:19:34.314Z",
+      "updatedAt": "2026-11-09T03:22:23.963Z"
+    },
+    {
+      "id": "8e0f661b-4686-4c56-bd9f-1b8a4b78eceb",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T03:06:38.709Z",
+      "updatedAt": "2026-11-09T03:09:15.349Z"
+    },
+    {
+      "id": "cdef90ed-87b4-402b-9de0-dab4830c4bfb",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T03:03:08.044Z",
+      "updatedAt": "2026-11-09T03:19:42.913Z"
+    },
+    {
+      "id": "0bbb961b-a4df-4747-88d0-8e69e7d2c2e6",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T02:09:36.512Z",
+      "updatedAt": "2026-11-09T03:06:42.658Z"
+    },
+    {
+      "id": "659dd68c-79cc-46f6-8d75-7ce9fca8ad5e",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-09T00:10:41.395Z",
+      "updatedAt": "2026-11-09T00:12:19.132Z"
+    },
+    {
+      "id": "4974929a-c357-4a05-bdf9-1188e81a0512",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T23:56:04.359Z",
+      "updatedAt": "2026-11-08T23:57:49.845Z"
+    },
+    {
+      "id": "f74b66f4-7824-454c-a1ba-bc6ff7cb3c06",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:47:51.847Z",
+      "updatedAt": "2026-11-08T23:01:57.998Z"
+    },
+    {
+      "id": "4da42478-3f02-4cba-bd28-835c1dbacce6",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:41:15.497Z",
+      "updatedAt": "2026-11-08T22:44:07.224Z"
+    },
+    {
+      "id": "f5534833-a765-45fd-adc0-edc13de19543",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:34:11.269Z",
+      "updatedAt": "2026-11-08T22:38:12.761Z"
+    },
+    {
+      "id": "6108b716-5c6b-4a2f-a09a-dc6848a33875",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-11-08T22:14:53.950Z",
+      "updatedAt": "2026-11-09T00:11:26.320Z"
+    },
+    {
+      "id": "195b69a1-93fe-4997-bc18-8e3573307df9",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:03:32.547Z",
+      "updatedAt": "2026-11-08T22:04:39.527Z"
+    },
+    {
+      "id": "a7a4e826-c788-49e0-9118-04d6c8cad6ef",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:03:32.530Z",
+      "updatedAt": "2026-11-08T22:04:24.961Z"
+    },
+    {
+      "id": "15e3d39a-4f5c-4827-994d-7301624fe7b8",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:03:27.751Z",
+      "updatedAt": "2026-11-08T22:04:38.882Z"
+    },
+    {
+      "id": "77a394fd-9046-4ce2-a639-16fbe18dc7e9",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:03:27.750Z",
+      "updatedAt": "2026-11-08T22:04:56.339Z"
+    },
+    {
+      "id": "f0163faa-d0b2-4f6d-b6ad-3c8447483f6a",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:03:22.679Z",
+      "updatedAt": "2026-11-08T22:04:33.760Z"
+    },
+    {
+      "id": "655671fb-b105-4ea7-ac7b-62e0e583fc40",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:03:22.640Z",
+      "updatedAt": "2026-11-08T22:04:31.895Z"
+    },
+    {
+      "id": "364f6af2-d7c0-4fd4-8466-6f491eaff435",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:03:17.504Z",
+      "updatedAt": "2026-11-08T22:04:24.944Z"
+    },
+    {
+      "id": "6367e505-898e-41b2-85e7-7564d04ea130",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:03:17.481Z",
+      "updatedAt": "2026-11-08T22:04:24.865Z"
+    },
+    {
+      "id": "5b86fcc2-bb77-4c02-8c26-8b84a53310d6",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:03:12.808Z",
+      "updatedAt": "2026-11-08T22:04:28.186Z"
+    },
+    {
+      "id": "faa80e22-3704-4e0f-9dfd-b5d03532eb75",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T22:03:12.760Z",
+      "updatedAt": "2026-11-08T22:04:14.204Z"
+    },
+    {
+      "id": "985d7221-b6fb-420d-8d06-3cfd7204206d",
+      "state": "completed",
+      "template": "goal",
+      "createdAt": "2026-11-08T21:58:57.793Z",
+      "updatedAt": "2026-11-08T23:21:33.800Z"
+    },
+    {
+      "id": "d4495c66-e45a-412f-b8df-84b7a298c9da",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T21:39:08.639Z",
+      "updatedAt": "2026-11-08T21:53:03.764Z"
+    },
+    {
+      "id": "81de6bc1-8458-493d-a84c-74690954579e",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-11-08T21:35:24.810Z",
+      "updatedAt": "2026-11-09T00:18:21.817Z"
+    },
+    {
+      "id": "eb72880e-2916-43aa-86a7-4f2b16d245cc",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T20:40:33.783Z",
+      "updatedAt": "2026-11-08T21:01:42.577Z"
+    },
+    {
+      "id": "95c18303-8b9a-437f-bc4e-76dc544ced01",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T20:13:08.304Z",
+      "updatedAt": "2026-11-08T21:15:02.122Z"
+    },
+    {
+      "id": "9343630c-2e4b-4f96-a9f1-d01c0e90f0da",
+      "state": "completed",
+      "template": "skill:site-content-check",
+      "createdAt": "2026-11-08T19:35:49.815Z",
+      "updatedAt": "2026-11-08T19:40:58.864Z"
+    },
+    {
+      "id": "4f4b3589-a20f-4d5e-a281-9a8e242842fc",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T17:59:57.378Z",
+      "updatedAt": "2026-11-08T18:02:07.419Z"
+    },
+    {
+      "id": "e64e1149-e582-4058-afdd-d41f6f53789c",
+      "state": "completed",
+      "template": "goal",
+      "createdAt": "2026-11-08T17:53:40.868Z",
+      "updatedAt": "2026-11-09T06:31:41.738Z"
+    },
+    {
+      "id": "fee44163-9c52-422a-a624-9abf2e17950f",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-11-08T17:47:49.560Z",
+      "updatedAt": "2026-11-08T18:28:13.651Z"
+    },
+    {
+      "id": "88a680a7-7435-41f4-96a6-8f848cb5ff0f",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-11-08T17:12:28.170Z",
+      "updatedAt": "2026-11-08T17:34:32.860Z"
+    },
+    {
+      "id": "d5c1a3c6-05de-41d1-8755-0300eff6af3f",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-11-08T17:03:48.234Z",
+      "updatedAt": "2026-11-08T18:38:19.588Z"
+    },
+    {
+      "id": "efe4216c-ce44-494b-b263-13269da7dee6",
+      "state": "completed",
+      "template": "skill:token-logo",
+      "createdAt": "2026-11-08T17:03:21.889Z",
+      "updatedAt": "2026-11-08T17:04:46.711Z"
+    },
+    {
+      "id": "cc71e04f-5bf4-4e5f-92c3-d64916193e95",
+      "state": "completed",
+      "template": "skill:token-logo",
+      "createdAt": "2026-11-08T16:59:39.995Z",
+      "updatedAt": "2026-11-08T17:05:57.270Z"
+    },
+    {
+      "id": "c5817201-3aff-4836-b2dc-859e99723149",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-11-08T16:38:23.589Z",
+      "updatedAt": "2026-11-08T16:58:52.052Z"
+    },
+    {
+      "id": "e378a1e3-8f1d-467a-a5a6-c902adeafd16",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T16:33:01.216Z",
+      "updatedAt": "2026-11-08T17:44:14.461Z"
+    },
+    {
+      "id": "bd5bbe08-c53b-411c-b7dc-79c7f20151bc",
+      "state": "completed",
+      "template": "skill:scaffold-project",
+      "createdAt": "2026-11-08T16:23:30.340Z",
+      "updatedAt": "2026-11-08T18:29:24.270Z"
+    },
+    {
+      "id": "65181261-89e4-4416-aacd-3af6d31014ac",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-11-08T16:22:14.557Z",
+      "updatedAt": "2026-11-08T16:27:25.353Z"
+    },
+    {
+      "id": "8db87b39-a81f-4657-b72d-43cc8dc2cac8",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T16:22:14.346Z",
+      "updatedAt": "2026-11-08T16:23:17.219Z"
+    },
+    {
+      "id": "268d9b25-5312-415e-92dd-62292f792154",
+      "state": "completed",
+      "template": "goal",
+      "createdAt": "2026-11-08T16:08:19.642Z",
+      "updatedAt": "2026-11-08T18:55:29.939Z"
+    },
+    {
+      "id": "00b9cdc8-ba3c-4c13-b71e-6c4103f564ff",
+      "state": "completed",
+      "template": "goal",
+      "createdAt": "2026-11-08T15:55:28.304Z",
+      "updatedAt": "2026-11-08T16:08:55.229Z"
+    },
+    {
+      "id": "8201e6f4-65db-4f2d-85d9-0d4abd21abb7",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T15:27:59.713Z",
+      "updatedAt": "2026-11-08T15:55:42.415Z"
+    },
+    {
+      "id": "a8b139bb-0c43-4739-a57a-c97037ff52e0",
+      "state": "completed",
+      "template": "skill:build-contract-project",
+      "createdAt": "2026-11-08T15:03:41.118Z",
+      "updatedAt": "2026-11-08T15:41:31.201Z"
+    },
+    {
+      "id": "5fbc6b93-a194-47e2-b209-273ded672ee2",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-11-08T14:50:52.069Z",
+      "updatedAt": "2026-11-08T17:01:33.059Z"
+    },
+    {
+      "id": "d408cc2e-c04b-47c7-9988-17be462f2896",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T13:39:48.326Z",
+      "updatedAt": "2026-11-08T13:52:06.847Z"
+    },
+    {
+      "id": "e85f8146-fd06-4f09-a2d5-6db9b36a08ef",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T13:22:20.085Z",
+      "updatedAt": "2026-11-08T13:23:24.650Z"
+    },
+    {
+      "id": "f269c469-2111-476f-a609-8f8d97f70b29",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T13:16:40.550Z",
+      "updatedAt": "2026-11-08T14:28:08.586Z"
+    },
+    {
+      "id": "bd726daf-d61a-4e7e-bbb6-d81e4f3f788d",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T12:35:45.109Z",
+      "updatedAt": "2026-11-08T12:37:39.877Z"
+    },
+    {
+      "id": "0276d2e9-0663-4d8f-9e1f-3a5e2a2856a5",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T12:35:33.402Z",
+      "updatedAt": "2026-11-08T12:37:52.166Z"
+    },
+    {
+      "id": "273c27ed-f694-4a03-b9b4-ee5451ea4633",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T11:36:20.267Z",
+      "updatedAt": "2026-11-08T11:50:43.864Z"
+    },
+    {
+      "id": "183f526f-aef2-4f9c-ba66-fbb4ed85ce92",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T11:26:49.067Z",
+      "updatedAt": "2026-11-08T11:44:56.276Z"
+    },
+    {
+      "id": "5abbe64a-5fa9-4bd5-8bb7-1a71d89599b2",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T11:10:03.681Z",
+      "updatedAt": "2026-11-08T11:49:13.924Z"
+    },
+    {
+      "id": "58215430-a94f-4226-a593-6e430e3a02d2",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T11:08:07.222Z",
+      "updatedAt": "2026-11-08T11:10:00.660Z"
+    },
+    {
+      "id": "b4ea3cb2-b6fe-4b58-9642-cb50d104b3a2",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T10:27:55.449Z",
+      "updatedAt": "2026-11-08T11:14:49.304Z"
+    },
+    {
+      "id": "8c2f3489-1625-4e4b-805e-66cabdde9fee",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T10:14:10.228Z",
+      "updatedAt": "2026-11-08T12:49:51.470Z"
+    },
+    {
+      "id": "0fa0d526-bcb6-44ec-be0b-e26654070c1f",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T09:59:55.563Z",
+      "updatedAt": "2026-11-08T10:02:46.027Z"
+    },
+    {
+      "id": "f9f9b313-51d3-4f85-b0f1-170af3955c47",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T09:59:43.973Z",
+      "updatedAt": "2026-11-08T10:02:17.421Z"
+    },
+    {
+      "id": "99199abb-d929-46f5-8e83-4f38874a440b",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T09:58:20.192Z",
+      "updatedAt": "2026-11-08T11:53:18.203Z"
+    },
+    {
+      "id": "c02ed31e-6134-44be-bcf8-a08b3b628873",
+      "state": "blocked",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T09:39:29.311Z",
+      "updatedAt": "2026-11-08T09:45:41.890Z"
+    },
+    {
+      "id": "408eca81-53e2-4b9b-afb5-7890fd69dbd9",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T09:24:11.717Z",
+      "updatedAt": "2026-11-08T09:34:14.129Z"
+    },
+    {
+      "id": "f9a14fbe-569d-444e-b658-769b2ff40998",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-11-08T08:45:16.700Z",
+      "updatedAt": "2026-11-08T09:38:54.632Z"
+    },
+    {
+      "id": "d65073e0-b431-436f-8a76-58043488a37f",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T07:36:24.795Z",
+      "updatedAt": "2026-11-08T07:39:50.847Z"
+    },
+    {
+      "id": "3c7de646-4d13-45f5-ba32-3c57c559d8e8",
+      "state": "completed",
+      "template": "shape:chain",
+      "createdAt": "2026-11-08T07:30:04.661Z",
+      "updatedAt": "2026-11-08T09:39:49.305Z"
+    },
+    {
+      "id": "246067b7-d425-4585-8392-1bc972691c84",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T05:12:21.902Z",
+      "updatedAt": "2026-11-08T05:13:56.454Z"
+    },
+    {
+      "id": "fe63c797-d99e-40be-91e0-92d331c981d4",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T05:08:07.132Z",
+      "updatedAt": "2026-11-08T05:09:56.880Z"
+    },
+    {
+      "id": "5eb56815-ce4b-42d4-a9ed-b4e6c871d51e",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T04:08:38.555Z",
+      "updatedAt": "2026-11-08T04:43:31.219Z"
+    },
+    {
+      "id": "a7be7028-861c-4b54-b882-f31f1f2292a6",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T03:33:08.452Z",
+      "updatedAt": "2026-11-08T04:02:07.627Z"
+    },
+    {
+      "id": "b7fd99d8-31ac-4482-ad29-d3dfd6095e80",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T02:36:55.844Z",
+      "updatedAt": "2026-11-08T03:21:31.284Z"
+    },
+    {
+      "id": "75dc26d1-bfa3-43e3-a957-74a7d5f733b0",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T02:34:18.489Z",
+      "updatedAt": "2026-11-08T03:13:12.428Z"
+    },
+    {
+      "id": "c0084327-66de-48e6-9cbf-f7b29045a373",
+      "state": "completed",
+      "template": "skill:site-content-check",
+      "createdAt": "2026-11-08T02:31:40.205Z",
+      "updatedAt": "2026-11-08T02:34:52.572Z"
+    },
+    {
+      "id": "3a0e85d3-1fb8-465a-849f-1babb3e4c433",
+      "state": "completed",
+      "template": "goal",
+      "createdAt": "2026-11-08T02:15:13.384Z",
+      "updatedAt": "2026-11-08T08:48:52.508Z"
+    },
+    {
+      "id": "5ec6cdb2-743d-444e-9c73-a4c7cc6eee19",
+      "state": "completed",
+      "template": "goal",
+      "createdAt": "2026-11-08T02:15:13.050Z",
+      "updatedAt": "2026-11-08T03:52:13.267Z"
+    },
+    {
+      "id": "f6f4f291-17db-45e8-8063-a633b0397d31",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-08T02:00:39.131Z",
+      "updatedAt": "2026-11-08T02:02:11.376Z"
+    },
+    {
+      "id": "3f8539ac-d327-494f-9f07-acf232e54e08",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T00:47:43.888Z",
+      "updatedAt": "2026-11-08T01:59:05.098Z"
+    },
+    {
+      "id": "866e7d4b-d380-4faa-b6a7-bf1900cacbdb",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-11-08T00:07:58.209Z",
+      "updatedAt": "2026-11-08T00:39:17.812Z"
+    },
+    {
+      "id": "a53d4d19-6024-428a-8a82-2b30ba42d0b7",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T00:03:04.003Z",
+      "updatedAt": "2026-11-08T00:31:43.518Z"
+    },
+    {
+      "id": "d0b96b3e-8f54-4e3e-8c48-a62177ce7861",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-08T00:00:04.658Z",
+      "updatedAt": "2026-11-08T00:46:05.912Z"
+    },
+    {
+      "id": "8c4819cd-ead2-45a0-a2fb-9972f93a0617",
+      "state": "completed",
+      "template": "skill:create-image",
+      "createdAt": "2026-11-07T23:40:03.723Z",
+      "updatedAt": "2026-11-07T23:45:35.035Z"
+    },
+    {
+      "id": "59525403-f0b4-4e12-bc0f-eee415506e72",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-11-07T23:05:53.411Z",
+      "updatedAt": "2026-11-07T23:57:33.120Z"
+    },
+    {
+      "id": "b0cace70-55fd-4fae-9139-e9230bd6c701",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-11-07T22:25:19.175Z",
+      "updatedAt": "2026-11-07T23:02:17.306Z"
+    },
+    {
+      "id": "26c163d3-9eb1-47a1-8e53-3a6a722c187c",
+      "state": "completed",
+      "template": "skill:oracle-assess",
+      "createdAt": "2026-11-07T22:17:42.757Z",
+      "updatedAt": "2026-11-07T22:20:53.549Z"
+    },
+    {
+      "id": "65f86840-da51-4885-99fa-15856cea54c5",
+      "state": "completed",
+      "template": "skill:build-website",
+      "createdAt": "2026-11-07T22:14:19.976Z",
+      "updatedAt": "2026-11-07T23:16:56.002Z"
+    },
+    {
+      "id": "818ad4d5-fdd9-457d-95cb-5bfc57d111e4",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-11-07T22:09:51.014Z",
+      "updatedAt": "2026-11-07T22:17:14.473Z"
+    },
+    {
+      "id": "d2f6b891-e1aa-4b1f-b724-4324eab9df1b",
+      "state": "completed",
+      "template": "skill:research-report",
+      "createdAt": "2026-11-07T22:07:07.817Z",
+      "updatedAt": "2026-11-07T22:09:34.249Z"
+    },
+    {
+      "id": "816e04aa-c543-4a9d-9043-06371bdb3be6",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-11-07T21:48:26.398Z",
+      "updatedAt": "2026-11-07T22:23:10.721Z"
+    },
+    {
+      "id": "fcdbdb02-03e6-44be-be47-329cef67f9b2",
+      "state": "completed",
+      "template": "audit",
+      "createdAt": "2026-11-07T20:48:44.267Z",
+      "updatedAt": "2026-11-07T21:26:25.863Z"
+    },
+    {
+      "id": "e158af6b-f4db-4a6f-badf-2fba45361435",
+      "state": "completed",
+      "template": "skill:build-contract-project",
+      "createdAt": "2026-11-07T20:37:08.291Z",
+      "updatedAt": "2026-11-07T20:58:20.301Z"
+    },
+    {
+      "id": "d6a02a23-d721-400d-92c9-cbcd1b67cbec",
+      "state": "completed",
+      "template": "goal",
+      "createdAt": "2026-11-07T20:19:11.516Z",
+      "updatedAt": "2026-11-07T21:58:23.134Z"
+    }
+  ],
+  "old_job": {
+    "id": "31a2cf4d-24f7-4fe8-8a31-f9437c520182",
+    "state": "executing",
+    "template": "skill:oracle-assess",
+    "createdAt": "2026-11-05T01:23:33.933Z",
+    "updatedAt": "2026-11-05T01:23:33.933Z",
+    "nodes": [
+      {
+        "key": "oracle_assess",
+        "state": "submitted",
+        "updatedAt": "2026-11-05T01:33:14.164Z",
+        "live": null
+      }
+    ]
+  },
+  "requests": [
+    {
+      "id": "2f058f1e-ffd6-4b68-a779-fcf0a775b035",
+      "status": "assessing",
+      "jobId": "31a2cf4d-24f7-4fe8-8a31-f9437c520182",
+      "chainId": 1,
+      "createdAt": "2026-11-05T01:23:33.933Z",
+      "updatedAt": "2026-11-05T01:23:34.002Z"
+    }
+  ]
+}

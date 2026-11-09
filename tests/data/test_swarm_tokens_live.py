@@ -504,6 +504,7 @@ async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads(
     try:
         assert manager.catalogue_summary() == {
             'count': None, 'state': 'unavailable', 'as_of': None, 'latest_launches': None,
+            'shipped': dict(count=None, state='unavailable', as_of=None),
             'turnover': dict(value=None, state='unavailable', known=0, total=None, as_of=None),
             'volume': {'points': None, 'state': 'unavailable', 'known': 0, 'total': 0,
                        'as_of': None, 'until': 0},
@@ -514,6 +515,7 @@ async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads(
         await manager.wait_pending()
         summary = manager.catalogue_summary()
         assert {key: summary[key] for key in ('count', 'state', 'as_of')} == {'count': 3, 'state': 'ok', 'as_of': 1000.}
+        assert summary['shipped'] == dict(count=3, state='ok', as_of=1000.)
         assert len(summary['latest_launches']) == 3
         assert all(row['age_s'] is None for row in summary['latest_launches'])  # future fixture dates
         assert set(manager._tasks) == {'catalogue'}
@@ -523,9 +525,33 @@ async def test_hub_catalogue_summary_agrees_with_dashboard_without_market_reads(
         assert summary['state'] == dashboard['sources']['catalogue']['state']
         now[0] += 301
         assert manager.catalogue_summary() == dict(summary, state='stale',
+                                                   shipped=dict(summary['shipped'], state='stale'),
                                                    ranking=dict(summary['ranking'], state='stale'))
         manager._complete = False
         assert manager.catalogue_summary()['state'] == 'partial'
+        assert manager.catalogue_summary()['shipped'] == dict(count=3, state='partial', as_of=1000.)
+    finally:
+        await manager.close()
+
+
+async def test_hub_shipped_counts_canonical_production_deployments_including_inactive():
+    raw = rows()  # Three deployments, one undeployed launch and one testnet token.
+    raw[0]['status'] = 'abandoned'
+    alias = dict(deepcopy(raw[1]), id='aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+                 launchNumber=1300, status='retired')
+    base = dict(deepcopy(raw[1]), id='bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb',
+                launchNumber=1301, chainId=8453)
+    manager = SwarmTokensManager(Source(), client=Pages([base, alias, *raw]), market=Market(), clock=lambda:1000.)
+    try:
+        manager.offer_catalogue()
+        await manager.wait_pending()
+        summary = manager.catalogue_summary()
+        assert summary['shipped'] == dict(count=4, state='ok', as_of=1000.)
+        assert summary['count'] == 3  # The existing live-market scope remains unchanged.
+        assert len(summary['latest_launches']) == 3
+        assert set(manager._tasks) == {'catalogue'}
+        assert manager.client.calls == [None]
+        assert manager.surf.catalogues == []
     finally:
         await manager.close()
 
@@ -589,6 +615,7 @@ async def test_hub_latest_launches_sort_deduplicate_and_distinguish_empty():
         assert [r['symbol'] for r in latest] == ['SPEPEToken', 'SwarmCoreToken', 'MonkeyToken']
         manager._catalogue = []
         assert manager.catalogue_summary()['latest_launches'] == []
+        assert manager.catalogue_summary()['shipped'] == dict(count=0, state='ok', as_of=1791676800.)
     finally:
         await manager.close()
 

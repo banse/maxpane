@@ -8,6 +8,7 @@ from maxpane_dashboard.analytics import surf_pool4_depth
 from maxpane_dashboard.analytics.surf_work import workflow_is_open
 from maxpane_dashboard.analytics.surfboard import count
 from maxpane_dashboard.data import surf_work as work
+from maxpane_dashboard.data import surf_oracles as oracle
 from maxpane_dashboard.data import surf_swarm as swarm
 from maxpane_dashboard.data import surfboard_activity as activity
 from maxpane_dashboard.data.surf_card_signals import SurfCardSignals
@@ -38,6 +39,11 @@ class SurfCardReader:
         self.current_ts = None
         self.current_failed = False
         self.current_complete = False
+        self.current_expected = None
+        self._current_before = None
+        self.research_rows = None
+        self.research_ts = None
+        self.research_failed = False
         self.pool = {}
         self.pool_ts = None
         self.pool_failed = False
@@ -57,7 +63,7 @@ class SurfCardReader:
         self.attempts = {name: stamp for name, stamp in self.attempts.items()
                          if not name.startswith('seat:') or name in seats or now - stamp < 30}
         reads = self.signals.readers(force=force)
-        reads += [('work', self._work), ('current', self._current), ('pool4', self._pool),
+        reads += [('work', self._work), ('research', self._research), ('current', self._current), ('pool4', self._pool),
                  ('feed', self._feed), ('market', self._market)]
         reads += [(name, lambda token=token: self._seat(token)) for name, token in seats.items()]
         for name, read in reads:
@@ -80,6 +86,8 @@ class SurfCardReader:
                 self.pool_failed = True
             elif name == 'current':
                 self.current_failed = True
+            elif name == 'research':
+                self.research_failed = True
             log.debug('Boardroom %s retained last observation: %s', name, exc)
 
     async def wait_pending(self):
@@ -121,8 +129,33 @@ class SurfCardReader:
                 self.workflows = sum(states)
                 self.workflows_ts = stamp
 
+    async def _research(self):
+        """An independent active-request read; a full page cannot prove a total."""
+        started = self.manager._clock()
+        raw = await self.manager.swarm_client.fetch_oracle_requests(limit=500, status='assessing')
+        if not isinstance(raw, list) or len(raw) >= 500:
+            self.research_failed = True
+            return
+        rows = [oracle._row(row, self.manager._clock()) for row in raw]
+        if (any(row is None or row['status'] != 'assessing' for row in rows)
+                or len({row['id'] for row in rows}) != len(rows)):
+            self.research_failed = True
+            return
+        self.research_rows, self.research_ts = rows, started
+        self.research_failed = False
+
+    def _research_snapshot(self):
+        fresh = (self.research_ts is not None and not self.research_failed
+                 and 0 <= self.manager._clock() - self.research_ts <= 60)
+        rows = self.research_rows if fresh else None
+        chains = {row['chain_id'] for row in rows or []}
+        return dict(state='ok' if rows is not None else 'unavailable',
+                    count=len(rows) if rows is not None else None,
+                    chains=len(chains) if rows is not None and None not in chains else None,
+                    read_ts=self.research_ts)
+
     async def _current(self):
-        """One recent page plus at most 24 active details; no history or hidden board."""
+        """Recent jobs, one resumable older page, and at most 24 fresh details."""
         client = self.manager.swarm_client
         fence = client._monotonic()
         raw = await client.fetch_jobs(limit=100)
@@ -139,9 +172,37 @@ class SurfCardReader:
                 complete = False
             else:
                 rows[row['id']] = row
-        identities = list(dict.fromkeys(
-            [key for key in self.current_jobs if key not in rows]
-            + [key for key, row in rows.items() if row['state'] == 'executing']))
+        research_ids = ([row['job_id'] for row in self.research_rows if row['job_id']]
+                        if self._research_snapshot()['state'] == 'ok' else [])
+        def active_ids():
+            return list(dict.fromkeys(
+                [key for key in self.current_jobs if key not in rows] + research_ids
+                + [key for key, row in rows.items() if row['state'] == 'executing']))
+        # A job can remain executing long after it falls out of recent history.
+        # Candidates may already be terminal. Only verified executing coverage
+        # can suppress the next bounded history read.
+        next_before = self._current_before
+        if (len(raw) == 100 and self.current_expected is not None and self.current_expected > 0
+                and (not self.current_complete or len(self.current_jobs) != self.current_expected)):
+            before = self._current_before or raw[-1].get('createdAt')
+            boundary = swarm._ts(before)
+            tail = await client.fetch_jobs(limit=500, before=before) if boundary is not None else None
+            decoded = [work._job(item, self.manager._clock()) for item in tail[:500]] if isinstance(tail, list) else []
+            valid = (isinstance(tail, list) and len(tail) <= 500 and all(
+                row is not None and row['created_ts'] is not None and row['created_ts'] < boundary
+                for row in decoded))
+            valid = valid and len({row['id'] for row in decoded}) == len(decoded)
+            if valid:
+                valid = all(left['created_ts'] >= right['created_ts'] for left, right in zip(decoded, decoded[1:]))
+            if valid:
+                for row in decoded:
+                    if row['id'] in rows and rows[row['id']] != row:
+                        complete = False
+                    rows[row['id']] = row
+                next_before = tail[-1]['createdAt'] if len(tail) == 500 else None
+            else:
+                complete = False
+        identities = active_ids()
         complete &= len(identities) <= 24
         reads = await asyncio.gather(*(client.read_job_detail(key, fresh_after=fence)
                                       for key in identities[:24]))
@@ -160,6 +221,8 @@ class SurfCardReader:
                     nodes=[dict(key=node['key'], state=node['state']) for node in row['nodes']])
             else:
                 jobs.pop(identity, None)
+        if complete:
+            self._current_before = next_before
         self.current_jobs = jobs
         self.current_ts = min(stamps, default=self.manager._clock())
         self.current_complete = complete
@@ -170,6 +233,7 @@ class SurfCardReader:
         now = self.manager._clock()
         overview = (source.get('payload') or {}).get('overview') or {}
         expected = count((overview.get('job_states') or {}).get('executing'))
+        self.current_expected = expected
         source_ts = source.get('read_ts')
         fresh = (self.current_ts is not None and 0 <= now - self.current_ts <= 60
                  and type(source_ts) in (int, float) and 0 <= now - source_ts <= 60
@@ -177,7 +241,8 @@ class SurfCardReader:
                  and source.get('state') == 'ok' and not self.current_failed)
         complete = fresh and self.current_complete and expected == len(self.current_jobs)
         facts = dict(state='ok' if complete else 'partial' if fresh else 'stale' if self.current_ts else 'unavailable',
-                     read_ts=self.current_ts, node_counts=None, oracle_agents=None,
+                     read_ts=self.current_ts, node_counts=None, oracle_agents=None, waiting_jobs=None,
+                     research=self._research_snapshot(),
                      jobs_loaded=len(self.current_jobs), jobs_expected=expected,
                      reason='Current node coverage incomplete')
         if complete:
@@ -185,6 +250,8 @@ class SurfCardReader:
                      if node['state'] == 'working']
             facts['node_counts'] = dict(Counter(node['key'].replace('-', '_').split('_', 1)[0]
                                                for node in nodes))
+            facts['waiting_jobs'] = sum(not any(node['state'] == 'working' for node in job['nodes'])
+                                        for job in self.current_jobs.values())
             oracle = any(job['template'] is None or 'oracle' in job['template'].lower()
                          or any('oracle' in node['key'].lower() for node in job['nodes'])
                          for job in self.current_jobs.values())

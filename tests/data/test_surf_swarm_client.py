@@ -721,6 +721,29 @@ async def test_oracle_query_and_detail_use_exact_urls_with_rotation():
         assert len(calls) == 3
 
 
+@pytest.mark.parametrize('before', [None, '2026-11-05T01:23:33.933Z'])
+async def test_oracle_assessing_filter_preserves_pagination(before):
+    calls = []
+    expected = {'limit': '100', 'status': 'assessing'}
+    if before is not None:
+        expected['before'] = before
+    def handler(request):
+        calls.append(request)
+        assert request.method == 'GET'
+        assert request.url.path == '/oracle/requests'
+        assert dict(request.url.params) == expected
+        return httpx.Response(200, json={'requests': []})
+    async with _client(handler, inter_call_delay=0) as client:
+        assert await client.fetch_oracle_requests(limit=100, before=before, status='assessing') == []
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize('status', ['', 'attested', 'assessing,blocked', 'assessing\n', True, 1, [], {}])
+async def test_oracle_invalid_status_filter_makes_no_request(status):
+    async with _client(_no_network, inter_call_delay=0) as client:
+        assert await client.fetch_oracle_requests(limit=100, status=status) is None
+
+
 @pytest.mark.parametrize('limit,before', [(True,None),(0,None),(501,None),('200',None),(200,''),(200,'yesterday'),(200,True),(200,'2026-09-23T20:00:00Z\n')])
 async def test_oracle_invalid_parameters_make_no_request(limit,before):
     def handler(request):

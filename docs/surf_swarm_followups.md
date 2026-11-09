@@ -1833,3 +1833,39 @@ placeholder assertion now follows the existing blank-placeholder convention.
 
 Final review: Approved, no findings. The reviewer independently passed 13
 focused checks and killed/restored a separate total-retention mutation.
+
+## Boardroom active counts — 2026-11-09
+
+SHIPPED now counts canonical production token deployments, including inactive
+tokens and excluding testnets/aliases. Its inner footer shows new launches in
+24 hours; the existing outer chart still represents accepted steps. WIP reports
+verified working nodes or waiting jobs, with neutral styling while waiting.
+RESEARCH counts a separate filtered assessing-request read. Missing current
+counts stay blank/dashed locally instead of being replaced by zero or a previous
+activity count. Native request history and shared card fallbacks remain unchanged.
+
+Bounded job discovery resumes one older page per poll until verified executing
+coverage matches the global total. Research request IDs seed candidates, but a
+terminal candidate cannot suppress discovery. Detail failure/cancellation leaves
+the history cursor unchanged so newly discovered identities are retried.
+
+Live render at 149×45: 524 shipped tokens, 2 new, WIP 1 / 1 waiting, RESEARCH 1 /
+unknown agents / 1 chain. These are dated observations, not production constants.
+The independent final review raised two Important paging findings; both were
+fixed in one wave and approved on scoped re-review. Three new cases failed before
+the fixes and passed afterward. Five controller mutations plus the reviewer's
+cancellation mutation were killed and restored byte for byte.
+
+Validation: client 199, token catalogue 57, pure card projection 248 and composing
+manager 98 checks passed. The final reader/manager run passed 129 with 17 existing
+reader-harness failures. The 20 height-boundary cases passed after updating their
+expected TOKENS and unknown captions. Fast guards passed 129 with one existing
+CSS failure; documentation pins passed 12. No full suite ran.
+
+Residual failures were independently reproduced on the prior implementation:
+17 current-reader tests use outdated workflow/get_hub_seats harnesses; one RPC
+budget test has the same missing get_hub_seats seam; 39 Boardroom widget/screen
+tests have existing colour/navigation expectations. The guard failure is the
+previously recorded SWARM TOKENS CSS slice that includes the SWORN block. Keep
+these outside this data-correctness fix and repair when their respective files
+are next maintained.

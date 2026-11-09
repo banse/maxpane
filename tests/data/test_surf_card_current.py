@@ -13,6 +13,150 @@ from maxpane_dashboard.data.surf_card_reader import SurfCardReader
 from maxpane_dashboard.data.surf_swarm_client import JobDetailRead
 
 
+@pytest.fixture
+def older_active():
+    raw = json.loads(Path('tests/fixtures/surf/work/boardroom_old_active.json').read_text())
+    clock = SimpleNamespace(now=raw['read_ts'])
+    client = SimpleNamespace(_monotonic=lambda: clock.now,
+        fetch_jobs=AsyncMock(side_effect=[raw['jobs'], [raw['old_job']]]),
+        fetch_oracle_requests=AsyncMock(return_value=raw['requests']))
+    async def detail(identity, *, fresh_after=None):
+        assert identity == raw['old_job']['id']
+        return JobDetailRead(deepcopy(raw['old_job']), clock.now, clock.now, None, False)
+    client.read_job_detail = AsyncMock(side_effect=detail)
+    reader = SurfCardReader(SimpleNamespace(_clock=lambda: clock.now, swarm_client=client))
+    source = dict(state='ok', read_ts=clock.now,
+                  payload=dict(overview=dict(job_states=dict(executing=1))))
+    reader.current_work(source)
+    return reader, raw, source, clock, client
+
+
+async def test_current_discovers_old_submitted_job_outside_recent_page(older_active):
+    reader, raw, source, clock, client = older_active
+    await reader._current()
+    facts = reader.current_work(source)
+    assert facts['state'] == 'ok'
+    assert facts['node_counts'] == {}
+    assert facts['waiting_jobs'] == 1
+    assert client.fetch_jobs.await_args_list[1].kwargs == dict(
+        limit=500, before=raw['jobs'][-1]['createdAt'])
+
+
+async def test_current_history_resumes_one_page_per_poll(older_active):
+    reader, raw, source, clock, client = older_active
+    boundary = datetime.fromisoformat(raw['jobs'][-1]['createdAt']).timestamp()
+    tail = [dict(raw['jobs'][-1], id=f'aaaaaaaa-aaaa-4aaa-8aaa-{i:012d}', state='completed',
+                 createdAt=datetime.fromtimestamp(boundary - i - 1, timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'))
+            for i in range(500)]
+    client.fetch_jobs.side_effect = [raw['jobs'], tail, raw['jobs'], [raw['old_job']]]
+    await reader._current()
+    assert reader.current_work(source)['node_counts'] is None
+    assert client.fetch_jobs.await_count == 2
+    await reader._current()
+    assert reader.current_work(source)['waiting_jobs'] == 1
+    assert client.fetch_jobs.await_args_list[-1].kwargs == dict(limit=500, before=tail[-1]['createdAt'])
+
+
+async def test_terminal_research_job_does_not_block_active_history_discovery(older_active):
+    reader, raw, source, clock, client = older_active
+    terminal = dict(raw['old_job'], id=raw['jobs'][0]['id'], state='completed')
+    client.fetch_oracle_requests.return_value = [dict(raw['requests'][0], jobId=terminal['id'])]
+    async def page(*, limit, before=None):
+        return raw['jobs'] if before is None else [raw['old_job']]
+    async def detail(identity, *, fresh_after=None):
+        payload = terminal if identity == terminal['id'] else raw['old_job']
+        return JobDetailRead(payload, clock.now, clock.now, None, False)
+    client.fetch_jobs.side_effect = page
+    client.read_job_detail.side_effect = detail
+    await reader._research()
+    for _ in range(3):
+        await reader._current()
+    assert reader.current_work(source)['waiting_jobs'] == 1
+    assert any(call.kwargs.get('before') for call in client.fetch_jobs.await_args_list)
+
+
+@pytest.mark.parametrize('failure', ['failed', 'cancelled'])
+async def test_discovered_job_detail_failure_does_not_skip_its_page(older_active, failure):
+    reader, raw, source, clock, client = older_active
+    old = raw['old_job']
+    boundary = datetime.fromisoformat(old['createdAt']).timestamp()
+    tail = [old] + [dict(old, id=f'aaaaaaaa-aaaa-4aaa-8aaa-{i:012d}', state='completed',
+                        createdAt=datetime.fromtimestamp(boundary - i - 1, timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'))
+                   for i in range(499)]
+    client.fetch_jobs.side_effect = [raw['jobs'], tail, raw['jobs'], tail]
+    client.read_job_detail.side_effect = [asyncio.CancelledError() if failure == 'cancelled' else
+        JobDetailRead(None, None, clock.now, None, False),
+        JobDetailRead(old, clock.now, clock.now, None, False)]
+    if failure == 'cancelled':
+        with pytest.raises(asyncio.CancelledError):
+            await reader._current()
+    else:
+        await reader._current()
+    assert reader._current_before is None
+    await reader._current()
+    assert reader.current_work(source)['waiting_jobs'] == 1
+    assert client.fetch_jobs.await_args_list[1] == client.fetch_jobs.await_args_list[3]
+    assert client.read_job_detail.await_count == 2
+
+
+@pytest.mark.parametrize('failure', ['unavailable', 'nonadvancing', 'duplicate', 'malformed', 'oversized'])
+async def test_current_bad_history_retries_without_claiming_complete(older_active, failure):
+    reader, raw, source, clock, client = older_active
+    old = raw['old_job']
+    tail = {'unavailable': None, 'nonadvancing': [raw['jobs'][0]], 'duplicate': [old, old],
+            'malformed': [{}], 'oversized': [old] * 501}[failure]
+    client.fetch_jobs.side_effect = [raw['jobs'], tail, raw['jobs'], [old]]
+    await reader._current()
+    assert reader.current_work(source)['node_counts'] is None
+    await reader._current()
+    assert reader.current_work(source)['waiting_jobs'] == 1
+    assert client.fetch_jobs.await_args_list[1] == client.fetch_jobs.await_args_list[3]
+
+
+async def test_filtered_research_finds_old_request_and_seeds_job_discovery(older_active):
+    reader, raw, source, clock, client = older_active
+    client.fetch_jobs.side_effect = [raw['jobs'], []]  # Only the filtered request names the job.
+    await reader._research()
+    await reader._current()
+    facts = reader.current_work(source)
+    assert facts['research']['count'] == 1
+    assert facts['research']['chains'] == 1
+    assert facts['research']['state'] == 'ok'
+    assert facts['waiting_jobs'] == 1
+    client.fetch_oracle_requests.assert_awaited_once_with(limit=500, status='assessing')
+    assert client.fetch_jobs.await_count == 2
+    client.read_job_detail.assert_awaited_once_with(raw['old_job']['id'], fresh_after=clock.now)
+    assert facts['oracle_agents'] is None
+    clock.now += 61
+    assert reader.current_work(source)['research']['count'] is None
+
+
+@pytest.mark.parametrize('failure', ['unavailable', 'duplicate', 'wrong_status', 'full_page', 'malformed'])
+async def test_research_incomplete_reads_never_prove_zero(older_active, failure):
+    reader, raw, source, clock, client = older_active
+    await reader._research()
+    row = raw['requests'][0]
+    client.fetch_oracle_requests.return_value = {
+        'unavailable': None, 'duplicate': [row, row],
+        'wrong_status': [dict(row, status='attested')],
+        'full_page': [dict(row, id=f'aaaaaaaa-aaaa-4aaa-8aaa-{i:012d}') for i in range(500)],
+        'malformed': [{}],
+    }[failure]
+    await reader._research()
+    assert reader.current_work(source)['research']['count'] is None
+
+
+async def test_research_real_zero_and_cancelled_read(older_active):
+    reader, raw, source, clock, client = older_active
+    client.fetch_oracle_requests.return_value = []
+    await reader._research()
+    assert reader.current_work(source)['research']['count'] == 0
+    client.fetch_oracle_requests.side_effect = asyncio.CancelledError
+    with pytest.raises(asyncio.CancelledError):
+        await reader._guard(reader._research, 'research')
+    assert reader.current_work(source)['research']['read_ts'] == clock.now
+
+
 @pytest.mark.parametrize('status,expected', [
     ('executing', 1), ('completed', 0), ('paused', 0), ('blocked', 0),
     ('future-state', None),

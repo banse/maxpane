@@ -237,14 +237,15 @@ async def test_inactive_or_closing_hub_does_not_offer_work(manager):
         await m.close()
 
 
-async def test_hub_oracles_share_list_native_detail_and_retained_failure_clock(manager):
+async def test_hub_research_is_independent_of_native_history_and_failure_clock(manager):
     m, clock = manager
     raw = json.loads(Path('tests/fixtures/surf/oracles/captured.json').read_text())
+    active = json.loads(Path('tests/fixtures/surf/work/boardroom_old_active.json').read_text())
     clock.now = raw['read_ts']
     entered, release = asyncio.Event(), asyncio.Event()
-    async def requests(*, limit):
+    async def requests(*, limit, status=None):
         entered.set(); await release.wait()
-        return raw['requests']
+        return active['requests'] if status == 'assessing' else raw['requests']
     m.swarm_client.fetch_oracle_requests = AsyncMock(side_effect=requests)
     m.swarm_client.fetch_oracle_detail = AsyncMock(side_effect=lambda key: raw['details'].get(key))
     m.set_hub_active(True)
@@ -256,31 +257,33 @@ async def test_hub_oracles_share_list_native_detail_and_retained_failure_clock(m
         await m.fetch_hub_snapshot()
         assert m._oracles_reader.task is task
         release.set(); await task
+        await m._card_reader.tasks['research']
         m.swarm_client.fetch_oracle_detail.assert_not_awaited()
         second = await m.fetch_hub_snapshot()
         card = next(c for c in second['surfboard_cards'] if c['key'] == 'oracles')
-        assert card['denominator'] == len(second['surf_oracles']['rows']) == 100
-        assert card['primary'] == str(sum(r['status'] == 'assessing' for r in second['surf_oracles']['rows']))
-        assert card['secondary'] == '— agents' and card['meter_state'] == 'partial'
+        assert len(second['surf_oracles']['rows']) == 100
+        assert card['denominator'] == 1 and card['primary'] == '1'
+        assert card['secondary'] == '— agents' and card['meter_state'] == 'ok'
         m.set_oracles_active(True); m.set_hub_active(False)
         m._offer_full = lambda _: pytest.fail('unrelated collection in oracle mode')
         native = await m.fetch_and_compute()
         assert native['surf_oracles']['rows'] == second['surf_oracles']['rows']
         await m._oracles_reader.task
-        m.swarm_client.fetch_oracle_requests.assert_awaited_once_with(limit=100)
+        m.swarm_client.fetch_oracle_requests.assert_any_await(limit=100)
+        m.swarm_client.fetch_oracle_requests.assert_any_await(limit=500, status='assessing')
         m.swarm_client.fetch_oracle_detail.assert_awaited_once()
-        clock.now += 60
+        clock.now += 61
         raw['requests'] = None
         await m.fetch_and_compute(); await m._oracles_reader.task
         stale = m._project_hub()
         retained = next(c for c in stale['surfboard_cards'] if c['key'] == 'oracles')
         assert stale['surf_oracles']['read_ts'] == raw['read_ts']
-        assert retained['primary'] == card['primary']
-        assert retained['meter_state'] == retained['status'] == 'stale'
+        assert retained['primary'] == '—'
+        assert retained['meter_state'] == retained['status'] == 'unavailable'
         assert retained['secondary'] == '— agents'
         clock.now += 119
         await m.fetch_and_compute()
-        assert m.swarm_client.fetch_oracle_requests.await_count == 2
+        assert m.swarm_client.fetch_oracle_requests.await_count == 3
     finally:
         await m.close()
 
@@ -994,11 +997,11 @@ async def test_hub_snapshot_offers_only_market_reads_without_awaiting_them(manag
 
 
 @pytest.mark.parametrize('source,expected', [
-    ('overview', {'swarm'}), ('hourly', {'swarm'}),
+    ('overview', set()), ('hourly', {'swarm'}),
     ('records', {'agent'}), ('supply', set()),
-    ('work', {'work'}), ('oracles', {'oracles'}),
+    ('work', {'work'}), ('oracles', set()), ('research', {'oracles'}),
     ('workers', {'board', 'agent'}), ('pool4', {'pool4'}),
-    ('catalogue', {'swarm-tokens'}), ('markets', {'swarm-tokens'}),
+    ('catalogue', {'swarm', 'swarm-tokens'}), ('markets', {'swarm-tokens'}),
     ('volume', {'swarm-tokens'}), ('history', set()),
     ('full', {'announce', 'pool4'}),
 ])
@@ -1017,6 +1020,8 @@ async def test_hub_loading_tracks_only_relevant_unfinished_reads(manager, source
         m._hub_source_tasks[source] = task
     elif source in ('work', 'oracles'):
         getattr(m, f'_{source}_reader').task = task
+    elif source == 'research':
+        m._card_reader.tasks['research'] = task
     elif source in ('catalogue', 'markets', 'volume', 'history'):
         m._swarm_tokens_manager._tasks[source] = task
     else:

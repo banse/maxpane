@@ -12,6 +12,32 @@ class RackApp(App):
         yield SurfboardRack(id="rack")
 
 
+@pytest.mark.parametrize('key,caption', [('work', 'working'), ('oracles', 'agents'), ('swarm', 'new')])
+async def test_current_activity_unknown_never_becomes_zero_or_previous_count(key, caption):
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        card = pilot.app.query_one(f'#surfboard-card-{key}', SurfboardCard)
+        for value in ('—', '3', '—', '0'):
+            card.set_data(dict(primary='1', secondary=f'{value} {caption}', status='idle'))
+            await pilot.pause()
+            painted = '\n'.join(row.text for row in card_strips(pilot.app, card))
+            assert f'{value} {caption}' in painted
+            if value == '—':
+                assert f'0 {caption}' not in painted and f'3 {caption}' not in painted
+
+
+async def test_waiting_wip_uses_neutral_frame_and_shipped_uses_tokens_heading():
+    async with RackApp().run_test(size=(149, 45)) as pilot:
+        work = pilot.app.query_one('#surfboard-card-work', SurfboardCard)
+        work.set_data(dict(primary='1', secondary='1 waiting', status='idle'))
+        shipped = pilot.app.query_one('#surfboard-card-swarm', SurfboardCard)
+        shipped.set_data(dict(primary='935', secondary='3 new', status='active'))
+        await pilot.pause()
+        assert '1 waiting' in '\n'.join(row.text for row in card_strips(pilot.app, work))
+        assert 'TOKENS' in '\n'.join(row.text for row in card_strips(pilot.app, shipped))
+        edge = inset_border_color(next(row for row in card_strips(pilot.app, work) if '┌' in row.text))
+        assert edge != Color.parse(pilot.app.get_css_variables()['accent'])
+
+
 def inset_border_color(strip):
     return next(segment.style.color for segment in strip if '┌' in segment.text)
 
@@ -177,7 +203,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
                   pilot.app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
         top = next(i for i, strip in enumerate(strips) if "┌" in strip.text)
         left, right = strips[top].text.index("┌"), strips[top].text.index("┐")
-        assert " AGENTS " in strips[top].text
+        assert " TOKENS " in strips[top].text
         assert "ONLINE" not in strips[top].text
         assert strips[top + 4].text[left:right + 1] == "└" + " 27 working ".center(right - left - 1, "─") + "┘"
         for strip, row in zip(strips[top + 1:top + 4], expected):
@@ -193,7 +219,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         work = rack.query_one('#surfboard-card-work', SurfboardCard)
         assert strips[-1].text == f"╰─ 24H {chart} ─╯"
         assert '0 workflows' in card_strips(pilot.app, work)[-1].text
-        header = next(segment for segment in strips[top] if "AGENTS" in segment.text)
+        header = next(segment for segment in strips[top] if "TOKENS" in segment.text)
         assert not header.style.bold
         assert header.style.color == inset_border_color(strips[top])
 

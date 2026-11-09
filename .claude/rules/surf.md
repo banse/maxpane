@@ -1171,10 +1171,20 @@ legacy snapshots migrate with empty projects and partial coverage until refreshe
 Creation age never claims execution duration. Current node state controls activity,
 even when an older verdict says accepted. Job and workflow states have separate meanings.
 
-The boardroom replaces PORTFOLIO with WORK IN PROGRESS. WIP uses JOBS digits,
-a current working-node caption and an outer original-workflow count. BUILT BY
-SWARM keeps its own 24H chart. Missing current activity stays unknown; positive
-job counts retain the green inset. Click/Enter opens Work, Escape returns.
+The boardroom replaces PORTFOLIO with WORK IN PROGRESS. WIP uses unfinished JOBS
+digits, a verified working-node caption (or `N waiting` when complete details have
+no working node), and an outer original-workflow count. Only working nodes activate
+the inset; waiting work stays neutral. Current discovery refreshes known active IDs,
+seeds IDs from fresh assessing requests, and resumes at most one older job page per
+poll when the global executing count is not covered. Fresh detail/count agreement
+still gates completeness. RESEARCH uses an independent `status=assessing` read;
+a full, failed, malformed or aged page cannot prove a total. Live panel membership
+remains unknown without complete evidence. SHIPPED counts canonical production token
+deployments, including inactive tokens, with TOKENS digits and `N new` in the inner
+footer; a partial catalogue shows a lower bound. Its outer 24H chart still counts
+accepted steps, as explained on hover. Unknown current counts/captions stay blank
+or dashed locally in Boardroom, including after an earlier known observation.
+Click/Enter opens Work, Escape returns. See `docs/boardroom_active_counts_spec.md`.
 
 The upper WORKFLOWS tree groups projects → workflows → their jobs → steps.
 Default 24H includes every job/workflow status whose latest valid created/updated

@@ -493,7 +493,19 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     if points is not None:
         spark_detail+=f" · range {min(points):,}–{max(points):,} · until {hhmm(hourly.get('until'))}"
         if not any(points):spark_detail+=" · quiet 24h"
-    card("swarm","SWARM",_value(overview.get("agents_online")," online"),_value(overview.get("working_now")," working"),spark_detail,"swarm",points=points,source="overview")
+    shipped = (tokens_catalogue or {}).get('shipped') or {}
+    shipped_total = count(shipped.get('count'))
+    shipped_state = shipped.get('state', 'unavailable')
+    shipped_text = _value(shipped_total)
+    if shipped_total is not None and shipped_state == 'partial':
+        shipped_text = '≥' + shipped_text
+    new_tokens = count(((tokens_catalogue or {}).get('ranking') or {}).get('total'))
+    card("swarm", "SHIPPED", shipped_text, _value(new_tokens, " new"),
+         "SHIPPED · distinct deployed production tokens, including inactive deployments"
+         + f" · catalogue read {hhmm(shipped.get('as_of'))}"
+         + " · inner footer: tokens launched in 24h · " + spark_detail,
+         "swarm", points=points)
+    result[-1]['status'] = ('active' if new_tokens else 'idle') if shipped_state == 'ok' else shipped_state
     if agent_seats is None:
         agent_seats = [dict(token_id=(data.get('swarm_seat_selected') or {}).get('token_id'),
                             live=data.get('swarm_seat_live'), outcome=data.get('swarm_seat_outcome'))] + [{}]*3
@@ -554,32 +566,20 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
                             f" · completed jobs read {hhmm((sources.get('overview') or {}).get('read_ts'))}"
                             " · successfully completed jobs; excludes cancelled, blocked and executing"
                             " · 365-day years, whole days only")
-    oracles = data.get("surf_oracles") or {}
-    oracle_rows = oracles.get("rows")
-    loaded = len(oracle_rows) if isinstance(oracle_rows, list) else None
-    chain_ids = [row.get('chain_id') for row in oracle_rows or []]
-    chains = (len(set(chain_ids)) if loaded is not None
-              and all(type(chain) is int and chain > 0 for chain in chain_ids) else None)
-    counts = Counter(row['status'] for row in oracle_rows) if loaded is not None else Counter()
-    assessing, attested = (counts['assessing'], counts['attested']) if loaded is not None else (None, None)
-    oracle_state = oracles.get("state", "unavailable") if loaded is not None else "unavailable"
-    if oracle_state == "ok" and oracles.get("partial"):
-        oracle_state = "partial"
-    count_names = sorted(set(counts) - {"assessing", "attested"} | {"disagreed", "blocked"})
     current_work = current_work or {}
+    research = current_work.get('research') or {}
+    assessing, chains = count(research.get('count')), count(research.get('chains'))
+    oracle_state = research.get('state', 'unavailable')
     agents = count(current_work.get('oracle_agents'))
     subtitle = f'{agents:,} agents' if agents is not None else '— agents'
-    card("oracles", "ORACLES", f"{assessing:,}" if assessing is not None else "—", subtitle,
-         f"ORACLES · newest {ORACLE_PAGE_LIMIT} requests · counts from loaded rows"
-         + f" · {_value(loaded)} loaded · {_value(assessing)} assessing · {_value(attested)} attested"
-         + f" · {_value(chains)} chains"
-         + (" · " + " · ".join(f"{counts[state]:,} {state}" for state in count_names)
-            if loaded is not None else "")
-         + f" · {'partial · ' if oracle_state == 'partial' else ''}read {hhmm(oracles.get('read_ts'))}"
+    card("oracles", "RESEARCH", f"{assessing:,}" if assessing is not None else "—", subtitle,
+         "RESEARCH · assessing requests from filtered active-query coverage"
+         + f" · {_value(assessing)} assessing · {_value(chains)} chains"
+         + f" · read {hhmm(research.get('read_ts'))}"
          + f" · agents read {hhmm(current_work.get('read_ts'))} · {current_work.get('reason') or 'Current node coverage incomplete'}"
          + " · Enter to open", "oracles")
-    result[-1].update(meter_kind="oracles", meter_state=oracle_state, numerator=chains, denominator=loaded,
-                     status=("assessing" if assessing else "idle") if oracle_state in ("ok", "partial") else oracle_state)
+    result[-1].update(meter_kind="oracles", meter_state=oracle_state, numerator=chains, denominator=assessing,
+                     status=("assessing" if assessing else "idle") if oracle_state == "ok" else oracle_state)
     price = number(data.get("pool4_price_usd"))
     change = data.get("imd_change_24h_pct")
     valid_change = type(change) in (int, float) and number(abs(change)) is not None
@@ -663,17 +663,20 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     state = work.get("state", "unavailable")
     node_counts = current_work.get('node_counts')
     top = min(node_counts, key=lambda key: (-node_counts[key], key)) if node_counts else None
-    subtitle = f'{node_counts[top]:,} {top}' if top else '0 working' if node_counts == {} or jobs == 0 else '— working'
+    waiting = count(current_work.get('waiting_jobs'))
+    subtitle = (f'{node_counts[top]:,} {top}' if top else f'{waiting:,} waiting' if waiting
+                else '0 working' if node_counts == {} or jobs == 0 else '— working')
     card("work", "WORK IN PROGRESS", f"{jobs:,}" if jobs is not None else "—", subtitle,
          "WORK IN PROGRESS · " + " · ".join(f"{_value(summary[key])} {key}" for key in SURF_WORK_SUMMARY_KEYS)
          + f" · loaded {_value(work.get('jobs_loaded'))} jobs · {_value(work.get('workflows_loaded'))} workflows"
          + f" · {_value(work.get('details_loaded'))}/{_value(work.get('details_expected'))} details"
          + f" · current nodes {_value(current_work.get('jobs_loaded'))}/{_value(current_work.get('jobs_expected'))} jobs"
          + f" · nodes read {hhmm(current_work.get('read_ts'))}"
+         + f" · {_value(waiting)} unfinished jobs without a working node"
          + (" · partial" if work.get("partial") else "")
          + f" · read {hhmm(work.get('read_ts'))} · Enter to open", "work")
     result[-1].update(work_summary=summary, meter_kind="work", meter_state=state,
-                     status=("active" if jobs else "idle") if state == "ok" and jobs is not None else
+                     status=("active" if node_counts else "idle") if state == "ok" and jobs is not None else
                      "stale" if state == "stale" else "unavailable")
     return result
 

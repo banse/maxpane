@@ -293,9 +293,12 @@ class SwarmClient(OwnedHttpClient):
         body = await self._get(path)
         return body if isinstance(body, dict) else None
 
-    async def fetch_oracle_requests(self, *, limit: int, before: str | None = None) -> list[dict] | None:
-        """Oracle pagination alone accepts query parameters; [] is a real empty."""
+    async def fetch_oracle_requests(self, *, limit: int, before: str | None = None,
+                                    status: str | None = None) -> list[dict] | None:
+        """One oracle page, optionally assessing only; [] is a real empty."""
         if type(limit) is not int or not 1 <= limit <= 500:
+            return None
+        if status is not None and status != 'assessing':
             return None
         if before is not None and (not isinstance(before, str) or re.fullmatch(
                 r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z", before) is None):
@@ -303,6 +306,8 @@ class SwarmClient(OwnedHttpClient):
         params = {"limit": str(limit)}
         if before is not None:
             params["before"] = before
+        if status is not None:
+            params["status"] = status
         body = await self._get("/oracle/requests", params=params)
         rows = body.get("requests") if isinstance(body, dict) else None
         return rows if isinstance(rows, list) else None

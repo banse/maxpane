@@ -502,11 +502,12 @@ class SwarmTokensManager:
         return result
 
     def catalogue_summary(self, source=None):
-        """Cached live-token summary, plus volume across all launch statuses."""
+        """Cached live-token summary and shipped deployments across all statuses."""
         now = self._clock()
         source = source or {}
         tokens = self._tokens(source, now)
         catalogue = self._catalogue_source(tokens, source, now)
+        shipped = self._tokens(source, now, include_inactive=True)
         latest = None
         if tokens is not None:
             latest = []
@@ -517,6 +518,8 @@ class SwarmTokensManager:
                                                                 'liquidity_state', 'paired_symbol')}))
         return {'count': len(tokens) if tokens is not None else None,
                 'state': catalogue['state'], 'as_of': catalogue['as_of'], 'latest_launches': latest,
+                'shipped': dict(count=len(shipped) if shipped is not None else None,
+                                state=catalogue['state'], as_of=catalogue['as_of']),
                 'volume': self._volume_summary(source, now, catalogue),
                 'turnover': self._turnover_summary(source, now, catalogue),
                 'ranking': self._ranking_summary(source, now, catalogue)}

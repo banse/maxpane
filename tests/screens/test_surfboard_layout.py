@@ -493,10 +493,10 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                     assert "╶╮ ╭─╮╭─╮" in text
                 else:
                     assert "╶─┐" in text
-                caption = '0 agents' if card['secondary'] == '— agents' else card['secondary']
+                caption = card['secondary']
                 if kind == 'unavailable':
                     assert not lines[top + 4][left + 1:right].strip('─ ')
-                    assert '0 chains' in text
+                    assert '— chains' in text
                 else:
                     assert caption in text
                 continue
@@ -528,7 +528,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 continue
             if card["key"] == "swarm":
                 text = r["card_text"]["swarm"]
-                assert "AGENTS" in text and "AGENTS ONLINE" not in text, r
+                assert "TOKENS" in text and "AGENTS ONLINE" not in text, r
                 if kind == 'unavailable':
                     assert not any(row.strip() for row in body), r
                 else:

@@ -8236,13 +8236,12 @@ class SurfManager:
         tokens = getattr(self, '_swarm_tokens_manager', None)
         reads = {
             'announce': (self._card_reader.tasks.get('feed'), self._full_task),
-            'swarm': (sources.get('overview'), sources.get('hourly')),
+            'swarm': ((tokens._tasks.get('catalogue'),) if tokens else ()) + (sources.get('hourly'),),
             'pool4': (self._card_reader.tasks.get('pool4'), self._full_task, self._pool4_task),
             'board': (self._swarm_board_task,),
             'agent': (self._swarm_board_task, sources.get('records')),
             'work': (self._card_reader.tasks.get('work'), self._card_reader.tasks.get('current'), sources.get('overview')) if self._hub_active else (self._work_reader.task,),
-            'oracles': (() if self._oracles_reader._reading_detail else (self._oracles_reader.task,))
-                       + ((self._card_reader.tasks.get('current'),) if self._hub_active else ()),
+            'oracles': (self._card_reader.tasks.get('research'), self._card_reader.tasks.get('current')),
             'swarm-tokens': tuple(tokens._tasks.get(name) for name in ('catalogue', 'markets', 'volume')) if tokens else (),
         }
         for card in data['surfboard_cards']:

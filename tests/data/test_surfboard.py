@@ -118,51 +118,52 @@ def test_unknown_detector_prevents_a_false_zero_bar():
     assert cards[0]['numerator'] is cards[0]['denominator'] is None
 
 
-@pytest.mark.parametrize('state,partial,rows,primary,secondary,status,meter', [
-    ('unavailable', False, None, '—', '— agents', 'unavailable', 'unavailable'),
-    ('ok', False, [], '0', '— agents', 'idle', 'ok'),
-    ('ok', False, ['assessing', 'attested', 'mismatch'], '1', '— agents', 'assessing', 'ok'),
-    ('ok', True, ['assessing'] * 7 + ['attested'] * 86 + ['blocked'] * 7,
-     '7', '— agents', 'assessing', 'partial'),
-    ('stale', True, ['assessing', 'attested'], '1', '— agents', 'stale', 'stale'),
-])
-def test_oracle_card_counts_only_loaded_rows_and_retains_source_state(
-        state, partial, rows, primary, secondary, status, meter):
-    snapshot = dict(state=state, partial=partial, read_ts=900 if rows is not None else None,
-                    rows=[dict(status=s, chain_id=1 if i % 2 == 0 else 8453) for i, s in enumerate(rows)] if rows is not None else None)
-    cards = {row['key']: row for row in hub.cards(dict(surf_oracles=snapshot), {}, now=1000)}
-    row = cards['oracles']
-    assert 'launchpad' not in cards
-    assert row['title'] == 'ORACLES' and row['destination'] == 'oracles'
-    assert (row['primary'], row['secondary'], row['status']) == (primary, secondary, status)
-    assert row['meter_kind'] == 'oracles' and row['meter_state'] == meter
-    assert row['numerator'] == (min(len(rows), 2) if rows is not None else None)
-    assert row['denominator'] == (len(rows) if rows is not None else None)
-    assert 'newest 100' in row['detail']
-    assert 'stale' not in row['detail'] and 'unavailable' not in row['detail']
-    if meter == 'partial':
-        assert 'partial' in row['detail']
-    if rows is not None:
-        assert f'read {hub.hhmm(900)}' in row['detail']
-        for name in set(rows):
-            assert f'{rows.count(name)} {name}' in row['detail']
+def test_shipped_counts_deployed_tokens_instead_of_online_agents():
+    catalogue = dict(shipped=dict(count=935, state='ok', as_of=990), ranking=dict(total=3))
+    rows = hub.cards(dict(surfboard_overview=dict(agents_online=1035, working_now=7)),
+                     {}, now=1000, tokens_catalogue=catalogue)
+    card = next(row for row in rows if row['key'] == 'swarm')
+    assert (card['primary'], card['secondary']) == ('935', '3 new')
+    assert 'production' in card['detail'] and 'inactive' in card['detail']
+    catalogue['shipped']['state'] = 'partial'
+    assert next(row for row in hub.cards({}, {}, now=1000, tokens_catalogue=catalogue)
+                if row['key'] == 'swarm')['primary'] == '≥935'
 
 
-@pytest.mark.parametrize('chain_ids,expected', [
-    ([1, 1, 8453], 2), ([4663], 1), ([], 0), ([1, None], None),
-    ([1, True], None), ([1, '8453'], None), ([1, 0], None),
+def test_wip_waiting_is_not_working_and_research_uses_active_query():
+    current = dict(node_counts={}, waiting_jobs=1, oracle_agents=None,
+                   research=dict(count=1, chains=1, state='ok', read_ts=990))
+    data = dict(surf_work=dict(state='ok', summary=dict(jobs=1)),
+                surf_oracles=dict(state='ok', rows=[dict(status='attested', chain_id=8453)]))
+    rows = {row['key']: row for row in hub.cards(data, {}, now=1000, current_work=current)}
+    assert (rows['work']['primary'], rows['work']['secondary'], rows['work']['status']) == ('1', '1 waiting', 'idle')
+    assert (rows['oracles']['primary'], rows['oracles']['numerator']) == ('1', 1)
+    assert 'filtered' in rows['oracles']['detail']
+    current['research'] = dict(count=None, chains=None, state='unavailable')
+    rows = {row['key']: row for row in hub.cards(data, {}, now=1000, current_work=current)}
+    assert rows['oracles']['primary'] == '—'
+
+
+@pytest.mark.parametrize('count,chains,state,primary,status', [
+    (None, None, 'unavailable', '—', 'unavailable'),
+    (0, 0, 'ok', '0', 'idle'), (1, 1, 'ok', '1', 'assessing'),
+    (7, 3, 'ok', '7', 'assessing'),
 ])
-def test_oracle_card_counts_distinct_known_chains(chain_ids, expected):
-    snapshot = dict(state='ok', partial=False, rows=[
-        dict(status='assessing', chain_id=chain) for chain in chain_ids])
-    card = next(row for row in hub.cards(dict(surf_oracles=snapshot), {}, now=1000)
-                if row['key'] == 'oracles')
-    assert card['numerator'] == expected
+def test_research_card_uses_complete_filtered_count_not_recent_history(count, chains, state, primary, status):
+    research = dict(count=count, chains=chains, state=state, read_ts=900)
+    snapshot = dict(state='ok', partial=False, rows=[dict(status='assessing', chain_id=8453)] * 10)
+    row = next(row for row in hub.cards(dict(surf_oracles=snapshot), {}, now=1000,
+        current_work=dict(research=research)) if row['key'] == 'oracles')
+    assert row['title'] == 'RESEARCH' and row['destination'] == 'oracles'
+    assert (row['primary'], row['secondary'], row['status']) == (primary, '— agents', status)
+    assert (row['numerator'], row['denominator'], row['meter_state']) == (chains, count, state)
+    assert 'filtered' in row['detail']
+    assert f'read {hub.hhmm(900)}' in row['detail']
 
 
 @pytest.mark.parametrize('jobs,workflows,status,subtitle', [
-    (5, 1, 'active', '— working'), (0, 0, 'idle', '0 working'),
-    (12, 3, 'active', '— working'),
+    (5, 1, 'idle', '— working'), (0, 0, 'idle', '0 working'),
+    (12, 3, 'idle', '— working'),
 ])
 def test_work_card_projects_loaded_counts(jobs, workflows, status, subtitle):
     summary = dict(jobs=jobs, workflows=workflows, seats=9, build=5, review=4, blocked=11)
@@ -329,9 +330,10 @@ def test_corrupt_persisted_hourly_timestamp_is_rejected_even_with_matching_hash(
 def test_swarm_stale_hourly_retains_chart_and_discloses_both_read_clocks():
     sources={'overview':{'state':'ok','read_ts':200},'hourly':{'state':'stale','read_ts':100}}
     data={'surfboard_overview':{'agents_online':1,'working_now':0},'surfboard_hourly':{'points':[1]*8,'until':99}}
-    card=next(c for c in hub.cards(data,sources,now=200) if c['key']=='swarm')
+    catalogue={'shipped': {'count': 1, 'state': 'ok', 'as_of': 200}}
+    card=next(c for c in hub.cards(data,sources,now=200,tokens_catalogue=catalogue) if c['key']=='swarm')
     assert card['status']=='stale' and card['points']==[1]*8
-    assert 'overview read '+hub.hhmm(200) in card['detail']
+    assert 'catalogue read '+hub.hhmm(200) in card['detail']
     assert 'hourly · read '+hub.hhmm(100) in card['detail']
     assert 'stale' not in card['detail']
 
