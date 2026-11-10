@@ -53,7 +53,7 @@ class PortfolioHeroCard(Pool4HeroCard):
                                 'Net proceeds are not guaranteed. · as of ' + hhmm(data.read_ts, unknown='—'))
 
     def _footer(self):
-        self.border_subtitle = ''
+        self.border_subtitle = Text(flatten(self.data.footer), style='dim')
 
     def _present_record(self, data):
         return data
@@ -83,7 +83,8 @@ def hero_records(metrics=None, snapshot=None):
         digits = '' if value is None else (f'{int(value):,}' if value >= 100 or float(value).is_integer() else f'{value:.2f}')
         if len(digits) > 7:
             digits = _quantity(value)
-        yield HeroRecord('pf-' + key, title, heading, '', subtitle=subtitle,
+        heading, footer = ('', heading) if key in ('total', 'wallet', 'staked', 'unclaimed') else (heading, '')
+        yield HeroRecord('pf-' + key, title, heading, footer, subtitle=subtitle,
                          digits=digits, accent=False,
                          state=snapshot.get('seats_state' if key == 'seats' else 'state') or 'loading',
                          read_ts=snapshot.get('seats_as_of' if key == 'seats' else 'as_of'))
@@ -156,8 +157,8 @@ class PortfolioEvidence(PanelBase):
 class SwarmPortfolioOverview(VerticalScroll):
     DEFAULT_CSS = '''
     SwarmPortfolioOverview {height: 1fr; overflow: auto auto; scrollbar-gutter: stable; padding: 1 1;}
-    SwarmPortfolioOverview #pf-layout {min-width: 143; height: 1fr; min-height: 34;}
-    SwarmPortfolioOverview #pf-heroes {height: 9; grid-size: 6 1; grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1;}
+    SwarmPortfolioOverview #pf-layout {min-width: 143; height: 1fr; min-height: 35;}
+    SwarmPortfolioOverview #pf-heroes {height: 9; margin-bottom: 1; grid-size: 6 1; grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1;}
     SwarmPortfolioOverview #pf-filter-editor {height: 1fr; min-height: 25; display: none;}
     SwarmPortfolioOverview #pf-panels {height: 1fr; min-height: 25; grid-size: 2 3; grid-columns: 3fr 2fr; grid-rows: 9fr 8fr 6fr; grid-gutter: 1 1;}
     SwarmPortfolioOverview PortfolioTable, SwarmPortfolioOverview PortfolioEvidence {height: 1fr; min-height: 5;}

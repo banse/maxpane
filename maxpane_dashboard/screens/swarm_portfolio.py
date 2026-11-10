@@ -32,19 +32,20 @@ from maxpane_dashboard.widgets.portfolio.filter import PortfolioFilterEditor
 #: The widest left table is NFT inventory, with 73 columns inside 83.
 #: Table token/name budgets include both cells of the shared copy icon.
 #: Addresses and linked names retain their copy and chain-explorer actions.
-#: Header/alignment refinement measured 2026-11-10 after the live 149-by-45 preview.
+#: Card-footer refinement measured 2026-11-10 after the live 149-by-45 preview.
 #: The filter summary shares the one-line HOLDINGS title; long queries ellipsize.
-#: The content floor is 34 rows inside two rows of body padding.
+#: One blank row separates the cards from the panel titles and filter editor.
+#: The content floor is 35 rows inside two rows of body padding.
 #: The title and shared status footer each consume one terminal row.
-#: The first whole vertical viewport is 38 terminal rows.
+#: The first whole vertical viewport is 39 terminal rows.
 #: The broad height probe started at 30 rows and continued through 48.
-#: The permanent boundary set covers 24, 37, 38, 39 and 50 rows.
-#: At 37 rows the body has exactly one row of vertical extent.
-#: At 147 by 38 neither outer scroll direction has remaining extent.
+#: The permanent boundary set covers 24, 38, 39, 40 and 50 rows.
+#: At 38 rows the body has exactly one row of vertical extent.
+#: At 147 by 39 neither outer scroll direction has remaining extent.
 #: The width was rechecked from 125 through 155 and remains 147.
 #: The native filter editor replaces the panel area with the same 25-row floor.
 #: The panel rows share extra height at 9:8:6, preserving their minimum content.
-#: At 149 by 45 the panel area is 32 rows and the NFT table is six rows tall.
+#: At 149 by 45 the panel area is 31 rows and the NFT table is six rows tall.
 #: Tables leave exactly one blank row before the status bar at 45 and 60 rows.
 #: At 80 by 24 its fields use the shared two-column compact editor layout.
 #: Below either boundary the header reports actual viewport overflow.
@@ -56,7 +57,7 @@ from maxpane_dashboard.widgets.portfolio.filter import PortfolioFilterEditor
 #: The popup keeps the native 110-column frame and its own internal scrolling.
 #: No application-wide or existing dashboard minimum changes here.
 SWARM_PORTFOLIO_FULL_LAYOUT_COLUMNS = 147
-SWARM_PORTFOLIO_FULL_LAYOUT_ROWS = 38
+SWARM_PORTFOLIO_FULL_LAYOUT_ROWS = 39
 
 
 class SwarmPortfolioScreen(SurfDashboardScreen):

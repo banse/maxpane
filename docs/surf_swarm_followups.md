@@ -1985,3 +1985,24 @@ Fast guards passed 130 with the previously recorded SWARM TOKENS/SWORN CSS-slice
 failure. Review: Approved, no findings; six focused checks passed and removal of
 the full filter tooltip was killed by the long-search regression test. The
 review mutation was restored byte for byte.
+
+## Portfolio outer card captions — 2026-11-10
+
+The first four cards move their inner-box headings to the outer card footers;
+their inner headings are blank and USD remains under the digits. NFTS and SEATS
+keep their existing inner labels and empty outer footers. A single blank row now
+separates the card rack from the table headers or native filter editor.
+
+The keyless public-data preview at 149×45 was shown before hardening. The first
+whole viewport is now 147×39, measured across 125–155 columns and 30–48 rows.
+Tables continue to grow with the terminal and leave one blank row before the
+status bar. Five deliberate regressions were killed and restored: labels kept
+inside, missing outer captions, missing rack gap, and the height pin ±1. Source
+facts, observation timestamps and valuation arithmetic are unchanged. No full
+suite ran.
+
+Validation: 46 touched/composing checks and 12 documentation pins passed. Fast
+guards passed 130 with the previously recorded SWARM TOKENS/SWORN CSS-slice
+failure. Review: Approved, no findings; six focused checks passed and moving the
+NFTS heading too was killed by the first-four-card test. The mutation was restored
+byte for byte.

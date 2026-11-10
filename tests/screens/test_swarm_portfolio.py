@@ -105,24 +105,31 @@ async def test_partial_source_labels_are_hidden_without_changing_source_facts():
         assert 'partial' not in painted(app).lower()
 
 
-async def test_cards_swap_inner_labels_and_remove_allocation_and_outer_footer_text():
+async def test_first_four_card_labels_move_from_inner_headers_to_outer_footers():
     app = PortfolioApp()
     async with app.run_test(size=(149,45)) as pilot:
         await app.screen._do_refresh()
         await pilot.pause()
         assert not app.screen.query('#pf-allocation')
         assert 'ALLOCATION' not in painted(app)
-        expected = (('total', 'combined value', 'USD'), ('wallet', '1 tokens', 'USD'),
-                    ('staked', '0 positions', 'USD'), ('unclaimed', '1 rewards', 'USD'),
-                    ('nfts', 'OWNED', '0 collections'), ('seats', 'OWNED', 'Identity.md'))
-        for key, heading, caption in expected:
+        expected = (('total', '', 'USD', 'combined value'), ('wallet', '', 'USD', '1 tokens'),
+                    ('staked', '', 'USD', '0 positions'), ('unclaimed', '', 'USD', '1 rewards'),
+                    ('nfts', 'OWNED', '0 collections', ''), ('seats', 'OWNED', 'Identity.md', ''))
+        for key, heading, caption, outer in expected:
             card = app.screen.query_one('#hero-pf-' + key)
             lines = [strip.crop(card.region.x, card.region.right).text
                      for strip in app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
             header = next(line for line in lines if '┌' in line)
             footer = next(line for line in lines if '└' in line)
-            assert heading in header and caption in footer
-            assert not any(character.isalnum() for character in lines[-1])
+            assert caption in footer
+            if heading:
+                assert heading in header
+            else:
+                assert not any(character.isalnum() for character in header)
+            if outer:
+                assert outer in lines[-1]
+            else:
+                assert not any(character.isalnum() for character in lines[-1])
             if key == 'seats':
                 assert 'NFTs' not in footer
                 assert card.styles.padding == app.screen.query_one('#hero-pf-nfts').styles.padding
@@ -185,6 +192,10 @@ async def test_tables_expand_to_leave_one_blank_row_above_status_bar():
             nft = screen.query_one('#pf-nfts-table')
             evidence = screen.query_one('#pf-evidence-scroll')
             status = screen.query_one(SurfStatusBar)
+            cards = screen.query_one('#pf-heroes')
+            holdings_title = screen.query_one('#pf-holdings-table').parent.query_one('.panel-title')
+            assert holdings_title.region.y - cards.region.bottom == 1
+            assert not screen._compositor.render_strips()[cards.region.bottom].text.strip()
             assert status.region.y - nft.region.bottom == 1
             assert status.region.y - evidence.region.bottom == 1
             assert not screen._compositor.render_strips()[status.region.y - 1].text.strip()
