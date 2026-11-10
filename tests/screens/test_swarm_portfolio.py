@@ -125,9 +125,13 @@ async def test_first_four_card_labels_move_from_inner_headers_to_outer_footers()
             if heading:
                 assert heading in header
             else:
-                assert not any(character.isalnum() for character in header)
+                border = header[header.index('┌') + 1:header.index('┐')]
+                assert set(border) == {'─'}
             if outer:
                 assert outer in lines[-1]
+                left = lines[-1].index(outer)
+                right = card.region.width - left - len(outer)
+                assert abs(left - right) <= 1
             else:
                 assert not any(character.isalnum() for character in lines[-1])
             if key == 'seats':

@@ -64,6 +64,14 @@ class PortfolioHeroCard(Pool4HeroCard):
     def _subtitle_value(self, value):
         return value
 
+    def render(self):
+        text = super().render()
+        if not self.data.heading:
+            header, newline, body = text.plain.partition('\n')
+            # Equal-width replacement preserves the shared renderer's styles.
+            text.plain = header.replace(' ', '─') + newline + body
+        return text
+
 
 def hero_records(metrics=None, snapshot=None):
     metrics, snapshot = metrics or {}, snapshot or {}
@@ -159,6 +167,7 @@ class SwarmPortfolioOverview(VerticalScroll):
     SwarmPortfolioOverview {height: 1fr; overflow: auto auto; scrollbar-gutter: stable; padding: 1 1;}
     SwarmPortfolioOverview #pf-layout {min-width: 143; height: 1fr; min-height: 35;}
     SwarmPortfolioOverview #pf-heroes {height: 9; margin-bottom: 1; grid-size: 6 1; grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1;}
+    SwarmPortfolioOverview PortfolioHeroCard {border-subtitle-align: center;}
     SwarmPortfolioOverview #pf-filter-editor {height: 1fr; min-height: 25; display: none;}
     SwarmPortfolioOverview #pf-panels {height: 1fr; min-height: 25; grid-size: 2 3; grid-columns: 3fr 2fr; grid-rows: 9fr 8fr 6fr; grid-gutter: 1 1;}
     SwarmPortfolioOverview PortfolioTable, SwarmPortfolioOverview PortfolioEvidence {height: 1fr; min-height: 5;}
