@@ -74,8 +74,9 @@ async def test_overview_paints_approved_sections_and_keeps_unknown_unknown():
         await pilot.pause()
         output = painted(pilot.app)
         for label in ('TOTAL VALUE', 'WALLET', 'STAKED', 'UNCLAIMED', 'NFTS', 'SEATS',
-                      'HOLDINGS', 'UNCLAIMED REWARDS', 'STAKES', 'TOKEN UTILITIES', 'NFT INVENTORY', 'SEATS & ELIGIBILITY'):
+                      'HOLDINGS', 'UNCLAIMED REWARDS', 'STAKES', 'NFT INVENTORY', 'SEATS & ELIGIBILITY'):
             assert label in output
+        assert 'TOKEN UTILITIES' not in output
         assert 'ALPHA' in output and '37%' in output and '$700' in output
         empty = {key: None for key in portfolio_snapshot()}
         empty.update(wallet='0x' + '56' * 20, state='loading')
@@ -86,6 +87,34 @@ async def test_overview_paints_approved_sections_and_keeps_unknown_unknown():
         assert '0 tokens' not in output
         assert 'Seats  —' in output
         assert overview.query_one('#hero-pf-total').data.digits == ''
+
+
+async def test_first_four_cards_paint_active_frames_and_digits_only(monkeypatch):
+    from rich.color import Color
+    monkeypatch.delenv('NO_COLOR', raising=False)
+    async with OverviewApp().run_test(size=(149,45)) as pilot:
+        app = pilot.app
+        app.query_one(SwarmPortfolioOverview).update_data(snapshot=portfolio_snapshot())
+        await pilot.pause()
+        green = Color.parse(app.get_css_variables()['accent']).get_truecolor()
+        digit_color = app.ansi_theme.ansi_colors[2]
+        for key in ('total', 'wallet', 'staked', 'unclaimed', 'nfts', 'seats'):
+            card = app.query_one('#hero-pf-' + key)
+            rows = [strip.crop(card.region.x, card.region.right)
+                    for strip in app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+            top = next(index for index, row in enumerate(rows) if '┌' in row.text)
+            active = key in ('total', 'wallet', 'staked', 'unclaimed')
+            frames = [segment for segment in rows[top] if '┌' in segment.text]
+            assert frames and all((segment.style.color.get_truecolor() == green) == active for segment in frames)
+            if active:
+                bottom = rows[top + 4]
+                usd = bottom.crop(bottom.text.index('USD'), bottom.text.index('USD') + 3)
+                assert all(segment.style.color.get_truecolor() == green for segment in usd)
+                left, right = rows[top].text.index('┌'), rows[top].text.index('┐')
+                digits = [segment for row in rows[top + 1:top + 4]
+                          for segment in row.crop(left + 1, right) if segment.text.strip()]
+                assert digits and all(segment.style.color.get_truecolor() == digit_color for segment in digits)
+                assert all(segment.style.color.get_truecolor() != green for segment in rows[-1] if segment.text.strip())
 
 
 async def test_inspector_is_native_popup_and_preserves_safe_address_actions():

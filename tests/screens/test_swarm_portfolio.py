@@ -213,9 +213,13 @@ async def test_tables_expand_to_leave_one_blank_row_above_status_bar():
             await pilot.resize_terminal(149,height)
             await pilot.pause()
             screen = app.screen
-            tables = list(screen.query(DataTable))
+            tables = [table for table in screen.query(DataTable) if table.parent.display]
             nft = screen.query_one('#pf-nfts-table')
             evidence = screen.query_one('#pf-evidence-scroll')
+            assert 'TOKEN UTILITIES' not in painted(app)
+            assert not screen.query_one('#pf-utilities-table').parent.display
+            assert evidence.parent.region.y == screen.query_one('#pf-stakes-table').parent.region.y
+            assert evidence.parent.region.right == screen.query_one('#pf-rewards-table').parent.region.right
             status = screen.query_one(SurfStatusBar)
             cards = screen.query_one('#pf-heroes')
             holdings_title = screen.query_one('#pf-holdings-table').parent.query_one('.panel-title')
@@ -357,12 +361,13 @@ async def test_measured_portfolio_width_is_the_first_whole_viewport(kind):
             assert ('‹ widen' in title) == (not whole)
             heroes = list(body.query_one('#pf-heroes').children)
             assert all(card.region.height == 9 for card in heroes)
-            assert all(table.virtual_size.width <= table.scrollable_content_region.width for table in body.query(DataTable))
+            assert all(table.virtual_size.width <= table.scrollable_content_region.width
+                       for table in body.query(DataTable) if table.parent.display)
             if whole:
                 assert heroes[-1].region.right <= body.scrollable_content_region.right
                 line = app.screen._compositor.render_strips()[heroes[0].region.y].text
                 assert line.count('╮') == 6
-                for label in ('SOURCE','JOINED','TOKEN IDS','SEATS & ELIGIBILITY'):
+                for label in ('SOURCE','TOKEN IDS','SEATS & ELIGIBILITY'):
                     assert label in painted(app)
                 assert 'Identity.md' in painted(app)
 
@@ -413,7 +418,7 @@ async def test_both_boundaries_and_smaller_terminal_keep_all_corners_reachable()
         assert body.max_scroll_x == body.max_scroll_y == 0
 
 
-@pytest.mark.parametrize('panel,collection', [('rewards','rewards'),('stakes','positions'),('utilities','utilities'),('nfts','nfts')])
+@pytest.mark.parametrize('panel,collection', [('rewards','rewards'),('stakes','positions'),('nfts','nfts')])
 async def test_each_panel_keeps_its_selected_record_across_popup_return_and_reordering(panel,collection):
     app = PortfolioApp()
     row = dict(asset_id=app.manager.snapshot['assets'][0]['id'],chain_id=1,

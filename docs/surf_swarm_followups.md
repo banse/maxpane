@@ -2028,3 +2028,25 @@ guards passed 130 with the previously recorded SWARM TOKENS/SWORN CSS-slice
 failure. Review: Approved, no findings; four focused checks passed and accepting
 duplicate IMD references was killed by the reference-validation test. The review
 mutation was restored byte for byte. No full suite ran.
+
+## Portfolio active cards and eligibility space — 2026-11-11
+
+TOKEN UTILITIES is hidden in the overview; its scan data and inspector support
+remain available. SEATS & ELIGIBILITY spans both lower rows of the right column,
+starting beside STAKES and ending beside NFT INVENTORY. It keeps its scrolling,
+one-character text inset and one blank row above the status bar. The first four
+cards reuse the shared active frame, caption and digit colors; NFTS and SEATS
+keep their neutral colors, and all outer card captions remain centered and dim.
+
+The public-data preview at 149×45 was shown before hardening. It used the
+endpoint's retained 537-asset scan and independently refreshed seats. Eligibility
+is now 19 rows tall. Broad probes across 125–155 columns and 30–48 rows confirm
+the existing 147×39 viewport boundary; the visible tables keep their geometry.
+
+Validation: 47 touched/composing checks and 12 documentation pins passed. Four
+deliberate visibility, row-span and color regressions were killed and restored.
+Fast guards passed 130 with the previously recorded SWARM TOKENS/SWORN CSS-slice
+failure. Review: Approved, no findings; three focused checks passed, hidden
+utilities stay outside the focus chain, and reverting the panel order was caught
+by the layout check. The review mutation was restored byte for byte. No full
+suite ran.

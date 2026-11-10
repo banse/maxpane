@@ -45,6 +45,10 @@ from maxpane_dashboard.widgets.portfolio.filter import PortfolioFilterEditor
 #: The width was rechecked from 125 through 155 and remains 147.
 #: The native filter editor replaces the panel area with the same 25-row floor.
 #: The panel rows share extra height at 9:8:6, preserving their minimum content.
+#: On 2026-11-11 TOKEN UTILITIES was hidden and eligibility spans the lower right.
+#: It shares the STAKES top and NFT inventory bottom, reclaiming the row gap too.
+#: At 149 by 45 eligibility grows to 19 rows; the visible tables retain their size.
+#: Broad probes over 125-155 columns and 30-48 rows still measure 147 by 39.
 #: At 149 by 45 the panel area is 31 rows and the NFT table is six rows tall.
 #: Tables leave exactly one blank row before the status bar at 45 and 60 rows.
 #: At 80 by 24 its fields use the shared two-column compact editor layout.

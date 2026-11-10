@@ -96,7 +96,7 @@ def hero_records(metrics=None, snapshot=None):
             digits = _quantity(value)
         heading, footer = ('', heading) if key in ('total', 'wallet', 'staked', 'unclaimed') else (heading, '')
         yield HeroRecord('pf-' + key, title, heading, footer, subtitle=subtitle,
-                         digits=digits, accent=False,
+                         digits=digits, accent=key in ('total', 'wallet', 'staked', 'unclaimed'),
                          state=snapshot.get('seats_state' if key == 'seats' else 'state') or 'loading',
                          read_ts=snapshot.get('seats_as_of' if key == 'seats' else 'as_of'))
 
@@ -174,6 +174,8 @@ class SwarmPortfolioOverview(VerticalScroll):
     SwarmPortfolioOverview #pf-filter-editor {height: 1fr; min-height: 25; display: none;}
     SwarmPortfolioOverview #pf-panels {height: 1fr; min-height: 25; grid-size: 2 3; grid-columns: 3fr 2fr; grid-rows: 9fr 8fr 6fr; grid-gutter: 1 1;}
     SwarmPortfolioOverview PortfolioTable, SwarmPortfolioOverview PortfolioEvidence {height: 1fr; min-height: 5;}
+    SwarmPortfolioOverview #pf-utilities {display: none;}
+    SwarmPortfolioOverview PortfolioEvidence {row-span: 2;}
     SwarmPortfolioOverview PortfolioTable > .panel-title {height: 1; text-wrap: nowrap; text-overflow: ellipsis;}
     SwarmPortfolioOverview DataTable {height: 1fr; min-height: 2; scrollbar-gutter: stable;}
     SwarmPortfolioOverview #pf-evidence-scroll {height: 1fr; scrollbar-gutter: stable;}
@@ -201,9 +203,9 @@ class SwarmPortfolioOverview(VerticalScroll):
                 yield PortfolioTable('holdings', 'HOLDINGS', (('TOKEN',14),('CHAIN',5),('WALLET',10),('WALLET $',10),('TOTAL $',10),('SALE',7)))
                 yield PortfolioTable('rewards', 'UNCLAIMED REWARDS', (('TOKEN',11),('STATE',7),('AMOUNT',8),('VALUE',8),('SOURCE',10)))
                 yield PortfolioTable('stakes', 'STAKES', (('POSITION',18),('CHAIN',5),('STAKED',10),('VALUE',10),('PENDING',10),('APR',7)))
-                yield PortfolioTable('utilities', 'TOKEN UTILITIES', (('SELECTED TOKEN',17),('KIND',12),('ROLE',10),('JOINED',6)))
-                yield PortfolioTable('nfts', 'NFT INVENTORY', (('COLLECTION',24),('CHAIN',5),('OWNED',8),('TOKEN IDS',28)))
+                yield PortfolioTable('utilities', 'TOKEN UTILITIES', (('SELECTED TOKEN',17),('KIND',12),('ROLE',10),('JOINED',6)), id='pf-utilities')
                 yield PortfolioEvidence()
+                yield PortfolioTable('nfts', 'NFT INVENTORY', (('COLLECTION',24),('CHAIN',5),('OWNED',8),('TOKEN IDS',28)))
 
     def on_mount(self):
         self.update_data(snapshot=self.snapshot)
