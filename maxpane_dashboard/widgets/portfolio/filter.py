@@ -13,12 +13,23 @@ class PortfolioFilterEditor(SwarmTokensFilterEditor):
                  ('Newest first', 'newest'), ('Token A–Z', 'symbol')),
     }
 
+    def __init__(self, *args, scan=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.scan = scan
+        if scan:
+            self.SELECT_OPTIONS = {
+                'chain': (('All chains', 'any'), ('Ethereum', '1'), ('Base', '8453'), ('Robinhood', '4663')),
+                'sale': (('Hide no-sale', 'any'), ('Show no-sale', 'show')),
+                'sort': (('Value ↓', 'any'), ('Token A–Z', 'symbol')),
+            }
+
     def compose(self):
         yield self.error_line()
         with Grid(classes='filter-groups'):
-            for label, field in (('CHAIN', 'chain'), ('ASSETS', 'assets'),
-                                 ('LIQUIDITY', 'liquidity'), ('SORT', 'sort')):
+            fields = (('CHAIN', 'chain'), ('SALE', 'sale'), ('SORT', 'sort')) if self.scan else (
+                ('CHAIN', 'chain'), ('ASSETS', 'assets'), ('LIQUIDITY', 'liquidity'), ('SORT', 'sort'))
+            for label, field in fields:
                 yield self.select_group(label, field)
-        yield self.titled_group('SEARCH', Input(placeholder='Token, name or launch #',
+        yield self.titled_group('SEARCH', Input(placeholder='Token, name or address' if self.scan else 'Token, name or launch #',
                                                compact=True, id='filter-query', classes='filter-field'))
         yield self.actions()

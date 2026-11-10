@@ -1905,3 +1905,32 @@ the five-minute expiry prevents full coverage (reviewer reproduced ten rounds,
 maximum 128 covered seats). Such a roster remains unknown. Raising the rate or
 age bounds would trade API limits against freshness and needs separate work;
 this implementation does not promise completion for every possible roster size.
+
+## Portfolio native filtering — 2026-11-10
+
+Removed generated partial labels from the scan cards, tooltips and claim coverage
+copy. Neutral observation times remain; source states and valuation data are
+unchanged. The domain sale state displays as `limited` when no percentage exists.
+The permanent select/search bar is now a compact FILTER summary. `f` opens the
+existing native editor in place of the tables; Apply commits the draft, Reset
+only resets the draft, and Esc cancels. `/` opens the editor at Search. Filtering
+remains local, and the legacy Portfolio editor keeps its default configuration.
+
+The public-data preview at 149×45 used the endpoint's retained 537-asset scan
+(23:00 observation) and separately refreshed seats. This was not a new valuation
+read. The compact summary saves two rows: the measured whole-viewport boundary
+is now 147×42, with broad width 125–155 and height 30–48 probes. The native editor
+uses the shared compact layout at 80×24, with keyboard access to Apply and Reset.
+
+Validation: 59 composing checks passed. All nine failures in the legacy
+`tests/screens/test_portfolio.py` reproduced in an isolated archive of unchanged
+HEAD: missing PortfolioHero.render_box, obsolete held-value/coverage labels,
+wallet-prompt expectations, and their height/width cases. Fast guards passed 130
+with the previously recorded SWARM TOKENS/SWORN CSS-slice failure. Five deliberate
+regressions were killed and restored: partial badge, cancel committing the draft,
+ignored chain selection, and the height pin one row too low or high. No full
+suite ran. These legacy failures remain outside this change.
+
+Documentation pins passed 12. Final review: Approved, no findings; five focused
+checks passed, including legacy filter compatibility, and a separate
+reset-commits-draft mutation was killed and restored byte for byte.

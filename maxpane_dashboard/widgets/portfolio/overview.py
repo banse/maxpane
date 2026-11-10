@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from rich.text import Text
-from textual.containers import Grid, Horizontal, Vertical, VerticalScroll
+from textual.containers import Grid, Vertical, VerticalScroll
 from textual.message import Message
-from textual.widgets import DataTable, Input, Select, Static
+from textual.widgets import DataTable, Static
 
 from maxpane_dashboard.analytics.swarm_portfolio import project
 from maxpane_dashboard.widgets.address import ICON_COLS, address_prose, address_text
@@ -16,6 +16,7 @@ from maxpane_dashboard.widgets.rowfit import clip
 from maxpane_dashboard.widgets.surf.news_hero import HeroRecord
 from maxpane_dashboard.widgets.surf.pool4_hero import Pool4HeroCard
 from maxpane_dashboard.widgets.swarm_tokens import _quantity, _usd
+from .filter import PortfolioFilterEditor
 
 #: Scan assets carry their own chain IDs; the API reads Ethereum and Robinhood.
 EXPLORER = for_chain_id
@@ -35,7 +36,10 @@ def token_cell(row, width=14, *, contract=False):
 
 def sale_text(row):
     value = row.get('sellable_pct')
-    return f'{value:.0f}%' if isinstance(value, (int, float)) else flatten(row.get('sell_state')) or '—'
+    if isinstance(value, (int, float)):
+        return f'{value:.0f}%'
+    state = flatten(row.get('sell_state'))
+    return 'limited' if state == 'partial' else state or '—'
 
 
 class PortfolioHeroCard(Pool4HeroCard):
@@ -43,9 +47,13 @@ class PortfolioHeroCard(Pool4HeroCard):
 
     def set_record(self, data):
         super().set_record(data)
+        self.tooltip = Text(flatten(data.title) + ' · as of ' + hhmm(data.read_ts, unknown='—'))
         if data.key == 'pf-total':
             self.tooltip = Text('Source estimate of combined wallet, stake and reward proceeds. '
                                 'Net proceeds are not guaranteed. · as of ' + hhmm(data.read_ts, unknown='—'))
+
+    def _footer(self):
+        self.border_subtitle = Text(hhmm(self.data.read_ts) if self.data.read_ts is not None else '', style='dim')
 
     def _present_record(self, data):
         return data
@@ -151,11 +159,8 @@ class SwarmPortfolioOverview(VerticalScroll):
     SwarmPortfolioOverview #pf-layout {min-width: 143; height: auto;}
     SwarmPortfolioOverview #pf-heroes {height: 9; grid-size: 6 1; grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1;}
     SwarmPortfolioOverview #pf-allocation {height: 2; padding: 0 1;}
-    SwarmPortfolioOverview #pf-controls {height: 3; margin-bottom: 1;}
-    SwarmPortfolioOverview #pf-search {width: 1fr;}
-    SwarmPortfolioOverview #pf-chain {width: 21;}
-    SwarmPortfolioOverview #pf-sort {width: 22;}
-    SwarmPortfolioOverview #pf-sale {width: 25;}
+    SwarmPortfolioOverview #pf-filter-summary {height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted; text-wrap: nowrap; text-overflow: ellipsis;}
+    SwarmPortfolioOverview #pf-filter-editor {height: 25; display: none;}
     SwarmPortfolioOverview #pf-panels {height: 25; grid-size: 2 3; grid-columns: 3fr 2fr; grid-rows: 9 8 6; grid-gutter: 1 1;}
     SwarmPortfolioOverview PortfolioTable, SwarmPortfolioOverview PortfolioEvidence {height: 1fr; min-height: 5;}
     SwarmPortfolioOverview DataTable {height: 1fr; min-height: 2; scrollbar-gutter: stable;}
@@ -180,14 +185,8 @@ class SwarmPortfolioOverview(VerticalScroll):
                 for record in hero_records():
                     yield PortfolioHeroCard(record)
             yield Static(Text('ALLOCATION  —'), id='pf-allocation')
-            with Horizontal(id='pf-controls'):
-                yield Select([('All chains', 'all'), ('Ethereum', '1'), ('Base', '8453'), ('Robinhood', '4663')],
-                             value=self.view_state.get('chain', 'all'), allow_blank=False, id='pf-chain')
-                yield Input(value=self.view_state.get('query', ''), placeholder='/ search tokens or addresses', id='pf-search')
-                yield Select([('Value ↓', 'value'), ('Token A–Z', 'symbol')],
-                             value=self.view_state.get('sort', 'value'), allow_blank=False, id='pf-sort')
-                yield Select([('Hide no-sale', False), ('Show no-sale', True)],
-                             value=self.view_state.get('show_no_sale', False), allow_blank=False, id='pf-sale')
+            yield Static(Text('FILTER'), id='pf-filter-summary')
+            yield PortfolioFilterEditor(scan=True, id='pf-filter-editor')
             with Grid(id='pf-panels'):
                 yield PortfolioTable('holdings', 'HOLDINGS', (('TOKEN',14),('CHAIN',5),('WALLET',10),('WALLET $',10),('TOTAL $',10),('SALE',7)))
                 yield PortfolioTable('rewards', 'UNCLAIMED REWARDS', (('TOKEN',11),('STATE',7),('AMOUNT',8),('VALUE',8),('SOURCE',10)))
@@ -222,6 +221,13 @@ class SwarmPortfolioOverview(VerticalScroll):
             panel.update_rows(rows, self.selected_id if panel.kind == 'holdings' else None)
         self._allocation(metrics)
         self._evidence(metrics)
+        chain = {'all': 'All chains', '1': 'Ethereum', '8453': 'Base', '4663': 'Robinhood'}[filters['chain']]
+        sort = 'Token A–Z' if filters['sort'] == 'symbol' else 'Value ↓'
+        sale = 'Show no-sale' if filters['show_no_sale'] else 'Hide no-sale'
+        text = Text(f'FILTER · {chain} · {sort} · {sale}')
+        if filters['query']:
+            text.append(' · search: ' + clip(flatten(filters['query']), 40))
+        self.query_one('#pf-filter-summary', Static).update(text)
 
     def _allocation(self, metrics):
         parts = [('Wallet','wallet_usd','green'),('Staked','staked_usd','cyan'),('Rewards','unclaimed_usd','yellow')]
@@ -250,12 +256,9 @@ class SwarmPortfolioOverview(VerticalScroll):
                     ', '.join('#'+str(value) for value in seats) if seats else 'None')
         if self.snapshot.get('seats_as_of') is not None:
             text.append(' · as of '+hhmm(self.snapshot['seats_as_of']))
-        coverage = self.snapshot.get('coverage') or {}
         text.append('\nRead  '+(hhmm(self.snapshot.get('as_of')) if self.snapshot.get('as_of') else '—'))
         for chain in self.snapshot.get('chains') or []:
             text.append(f" · {chain_name(chain.get('chain_id'))} #{chain.get('block') or '—'}")
-        if coverage.get('claims_complete') is False:
-            text.append(' · claims partial', style='yellow')
         standings = self.projection.get('standings')
         for row in standings or []:
             text.append('\n')
@@ -266,17 +269,6 @@ class SwarmPortfolioOverview(VerticalScroll):
         if not standings:
             text.append('\nEligibility  —' if standings is None else '\nNo recorded standings')
         self.query_one('#pf-evidence', Static).update(text)
-
-    def on_select_changed(self, event):
-        key = {'pf-chain':'chain','pf-sort':'sort','pf-sale':'show_no_sale'}.get(event.select.id)
-        if key and event.value != Select.BLANK:
-            self.view_state[key] = event.value
-            self._project()
-
-    def on_input_changed(self, event):
-        if event.input.id == 'pf-search':
-            self.view_state['query'] = event.value
-            self._project()
 
     def on_data_table_row_highlighted(self, event):
         if event.data_table.id != 'pf-holdings-table':

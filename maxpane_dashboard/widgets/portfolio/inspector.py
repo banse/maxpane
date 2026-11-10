@@ -140,7 +140,7 @@ class SwarmPortfolioInspector(RecordDetailScreen):
         line('', 'Source estimate; first-leg sale coverage only. Net proceeds not guaranteed.')
         line('Total', _usd(row.get('total_usd')))
         line('First-leg sale', sale_text(row))
-        line('Sale state', row.get('sell_state'))
+        line('Sale state', sale_text({'sell_state': row.get('sell_state')}))
         line('Token', address_text(row.get('token_address') or row.get('contract_address'), explorer=explorer))
         if row.get('name'):
             line('Name', row['name'])
@@ -187,9 +187,6 @@ class SwarmPortfolioInspector(RecordDetailScreen):
         for chain in snapshot.get('chains') or []:
             if chain.get('chain_id') == row.get('chain_id'):
                 line('Block', chain.get('block'))
-        coverage = snapshot.get('coverage') or {}
-        line('Claims', 'complete' if coverage.get('claims_complete') is True else
-             'partial' if coverage.get('claims_complete') is False else 'unknown')
         line('Source', link('imd.vibingco.de/portfolio', 'https://imd.vibingco.de/portfolio'))
         for key, value in (row.get('source') or {}).items():
             line(key.replace('_',' ').title(), link('Source', value) if key.endswith('url') else value)

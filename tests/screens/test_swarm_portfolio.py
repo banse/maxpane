@@ -4,13 +4,14 @@ from pathlib import Path
 
 import pytest
 from textual.app import App
-from textual.widgets import DataTable, Input
+from textual.widgets import DataTable, Input, Select
 
 from maxpane_dashboard.screens.swarm_portfolio import (
     SwarmPortfolioScreen, SWARM_PORTFOLIO_FULL_LAYOUT_COLUMNS, SWARM_PORTFOLIO_FULL_LAYOUT_ROWS,
 )
 from maxpane_dashboard.widgets.portfolio.overview import SwarmPortfolioOverview
 from maxpane_dashboard.widgets.portfolio.inspector import SwarmPortfolioInspector
+from maxpane_dashboard.widgets.portfolio.filter import PortfolioFilterEditor
 from tests.widgets.test_swarm_portfolio import portfolio_snapshot, painted
 from tests.screens._sweeps import boundary_set
 
@@ -68,9 +69,11 @@ async def test_search_is_local_and_wallet_change_clears_previous_positions():
         screen = pilot.app.screen
         await screen._do_refresh()
         await pilot.press('slash')
-        search = screen.query_one('#pf-search', Input)
+        search = screen.query_one('#filter-query', Input)
         assert search.has_focus
         search.value = 'does-not-match'
+        assert not screen._view_state.get('query')
+        await pilot.click('#filter-apply')
         await pilot.pause()
         assert screen.query_one('#pf-holdings-table', DataTable).row_count == 1
         assert 'ALPHA' not in painted(pilot.app)
@@ -79,6 +82,87 @@ async def test_search_is_local_and_wallet_change_clears_previous_positions():
         await pilot.pause()
         assert 'ALPHA' not in painted(pilot.app)
         assert screen.query_one('#hero-pf-total').data.digits == ''
+
+
+async def test_partial_source_labels_are_hidden_without_changing_source_facts():
+    from maxpane_dashboard.widgets.fmt import hhmm
+    app = PortfolioApp()
+    app.manager.snapshot['state'] = 'partial'
+    app.manager.snapshot['coverage']['claims_complete'] = False
+    async with app.run_test(size=(149,45)) as pilot:
+        await app.screen._do_refresh()
+        await pilot.pause()
+        assert 'partial' not in painted(app).lower()
+        card = app.screen.query_one('#hero-pf-wallet')
+        assert card.data.state == 'partial'
+        footer = app.screen._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right).text
+        assert hhmm(app.manager.snapshot['as_of']) in footer
+        assert 'partial' not in card.tooltip.plain.lower()
+        app.screen.query_one('#pf-holdings-table', DataTable).focus()
+        await pilot.press('enter')
+        assert isinstance(app.screen, SwarmPortfolioInspector)
+        assert 'partial' not in painted(app).lower()
+
+
+async def test_native_filter_editor_applies_cancels_and_resets_only_its_draft():
+    app = PortfolioApp()
+    async with app.run_test(size=(149,45)) as pilot:
+        screen = app.screen
+        await screen._do_refresh()
+        body = screen.query_one(SwarmPortfolioOverview)
+        assert not screen.query('#pf-controls')
+        assert 'FILTER' in painted(app) and 'All chains' in painted(app)
+        await pilot.press('f')
+        editor = screen.query_one(PortfolioFilterEditor)
+        assert editor.display and not screen.query_one('#pf-panels').display
+        assert 'APPLY FILTER' in painted(app) and 'RESET ALL' in painted(app)
+        assert 'f apply' in painted(app) and 'Esc cancel' in painted(app)
+        editor.query_one('#filter-chain', Select).value = '8453'
+        editor.query_one('#filter-sort', Select).value = 'symbol'
+        editor.query_one('#filter-sale', Select).value = 'show'
+        editor.query_one('#filter-query', Input).value = 'ALPHA'
+        await pilot.click('#filter-apply')
+        assert body.view_state['chain'] == '8453'
+        assert body.view_state['sort'] == 'symbol' and body.view_state['show_no_sale'] is True
+        assert body.projection['holdings'] == []
+        assert not editor.display and screen.query_one('#pf-holdings-table').has_focus
+        await screen._do_refresh()
+        assert body.projection['holdings'] == []
+        await pilot.press('f')
+        await pilot.click('#filter-reset-all')
+        assert body.view_state['chain'] == '8453'
+        assert editor.values()['chain'] == 'any'
+        await pilot.press('escape')
+        assert not editor.display and body.view_state['chain'] == '8453'
+        await pilot.press('f')
+        assert editor.values()['chain'] == '8453'
+        await pilot.click('#filter-reset-all')
+        await pilot.click('#filter-apply')
+        assert body.view_state['chain'] == 'all' and body.view_state['query'] == ''
+        assert body.view_state['sort'] == 'value' and body.view_state['show_no_sale'] is False
+        assert len(body.projection['holdings']) == 1
+        assert app.manager.refresh_requests == 0
+
+
+async def test_compact_filter_editor_keeps_keyboard_apply_and_cancel_reachable():
+    app = PortfolioApp()
+    async with app.run_test(size=(80,24)) as pilot:
+        await app.screen._do_refresh()
+        await pilot.press('slash')
+        editor = app.screen.query_one(PortfolioFilterEditor)
+        assert editor.has_class('compact-filter')
+        await pilot.press('f', 'w', 'r')
+        assert editor.query_one('#filter-query', Input).value == 'fwr'
+        editor.query_one('#filter-apply').focus()
+        await pilot.pause()
+        assert 'APPLY FILTER' in painted(app)
+        await pilot.press('enter')
+        assert app.view_state['query'] == 'fwr'
+        assert not editor.display
+        await pilot.press('slash')
+        editor.query_one('#filter-query', Input).value = 'cancel this'
+        await pilot.press('escape')
+        assert not editor.display and app.view_state['query'] == 'fwr'
 
 
 async def test_second_holding_survives_refresh_and_modal_return():

@@ -9,6 +9,7 @@ from maxpane_dashboard.widgets.address import address_text
 from maxpane_dashboard.widgets.fmt import hhmm
 from maxpane_dashboard.widgets.portfolio.overview import SwarmPortfolioOverview, EXPLORER
 from maxpane_dashboard.widgets.portfolio.inspector import SwarmPortfolioInspector
+from maxpane_dashboard.widgets.portfolio.filter import PortfolioFilterEditor
 
 
 #: Measured 2026-11-09 after the live 149-by-45 overview and popup were shown.
@@ -30,13 +31,18 @@ from maxpane_dashboard.widgets.portfolio.inspector import SwarmPortfolioInspecto
 #: The widest left table is NFT inventory, with 73 columns inside 83.
 #: Table token/name budgets include both cells of the shared copy icon.
 #: Addresses and linked names retain their copy and chain-explorer actions.
-#: The content floor is 40 rows inside two rows of body padding.
+#: Native filter refinement measured 2026-11-10 after the live overview/editor preview.
+#: The compact summary replaces the four-row control block with two rows.
+#: The content floor is 38 rows inside two rows of body padding.
 #: The title and shared status footer each consume one terminal row.
-#: The first whole vertical viewport is 44 terminal rows.
+#: The first whole vertical viewport is 42 terminal rows.
 #: The broad height probe started at 30 rows and continued through 48.
-#: The permanent boundary set covers 24, 43, 44, 45 and 50 rows.
-#: At 43 rows the body has exactly one row of vertical extent.
-#: At 147 by 44 neither outer scroll direction has remaining extent.
+#: The permanent boundary set covers 24, 41, 42, 43 and 50 rows.
+#: At 41 rows the body has exactly one row of vertical extent.
+#: At 147 by 42 neither outer scroll direction has remaining extent.
+#: The width was rechecked from 125 through 155 and remains 147.
+#: The native filter editor replaces the 25-row panel area, retaining its floor.
+#: At 80 by 24 its fields use the shared two-column compact editor layout.
 #: Below either boundary the header reports actual viewport overflow.
 #: Horizontal overflow can add a scrollbar row and light both hints.
 #: At 80 by 24 the four body corners remain reachable by scrolling.
@@ -46,7 +52,7 @@ from maxpane_dashboard.widgets.portfolio.inspector import SwarmPortfolioInspecto
 #: The popup keeps the native 110-column frame and its own internal scrolling.
 #: No application-wide or existing dashboard minimum changes here.
 SWARM_PORTFOLIO_FULL_LAYOUT_COLUMNS = 147
-SWARM_PORTFOLIO_FULL_LAYOUT_ROWS = 44
+SWARM_PORTFOLIO_FULL_LAYOUT_ROWS = 42
 
 
 class SwarmPortfolioScreen(SurfDashboardScreen):
@@ -66,6 +72,7 @@ class SwarmPortfolioScreen(SurfDashboardScreen):
         super().__init__(manager, poll_interval, name=name, **kwargs)
         self._view_state = view_state if isinstance(view_state, dict) else {}
         self._title_data = {}
+        self._filter_open = False
 
     def compose(self):
         yield Static(Text('PORTFOLIO'), id='portfolio-header')
@@ -90,6 +97,8 @@ class SwarmPortfolioScreen(SurfDashboardScreen):
         wallet = data.get('wallet')
         text = Text('PORTFOLIO · ')
         body = self.query_one(SwarmPortfolioOverview)
+        if self._filter_open:
+            self.query_one(PortfolioFilterEditor).styles.width = body.scrollable_content_region.width
         if body.max_scroll_x > 0:
             text.append('‹ widen · ')
         if body.max_scroll_y > 0:
@@ -100,7 +109,8 @@ class SwarmPortfolioScreen(SurfDashboardScreen):
         else:
             text.append('w to choose wallet')
         text.append(' · as of '+(hhmm(data.get('as_of')) if data.get('as_of') else '—'))
-        text.append(' · w wallet · f filters · / search · Enter inspect · Esc back')
+        text.append(' · f apply · Esc cancel · Tab fields' if self._filter_open else
+                    ' · w wallet · f filters · / search · Enter inspect · Esc back')
         self.query_one('#portfolio-header', Static).update(text)
 
     def on_swarm_portfolio_overview_inspect(self, event):
@@ -108,10 +118,50 @@ class SwarmPortfolioScreen(SurfDashboardScreen):
         self.app.push_screen(SwarmPortfolioInspector(event.row, event.snapshot, record_kind=event.record_kind))
 
     def action_filters(self):
-        self.query_one('#pf-chain', Select).focus()
+        if self._filter_open:
+            self._apply_filter()
+            return
+        editor = self.query_one(PortfolioFilterEditor)
+        editor.set_values(dict(chain=self._view_state.get('chain', 'any'),
+                               sort=self._view_state.get('sort', 'any'),
+                               sale='show' if self._view_state.get('show_no_sale') else 'any',
+                               query=self._view_state.get('query', '')))
+        self._show_filter(True)
+        self.call_after_refresh(lambda: editor.query_one(Select).focus())
+
+    def _show_filter(self, editing):
+        self._filter_open = editing
+        self.query_one('#pf-panels').display = not editing
+        self.query_one(PortfolioFilterEditor).display = editing
+        bar = self.query_one(SurfStatusBar)
+        if editing:
+            bar.set_key_hints('f apply · esc cancel · tab fields · APPLY FILTER / RESET ALL')
+        else:
+            self._prime_status_bar(bar)
+            self.call_after_refresh(self.query_one(SwarmPortfolioOverview).focus_selection)
+        self.call_after_refresh(self._chrome)
+
+    def _apply_filter(self):
+        values = self.query_one(PortfolioFilterEditor).values()
+        self._view_state.update(chain='all' if values['chain'] == 'any' else values['chain'],
+                                sort='value' if values['sort'] == 'any' else values['sort'],
+                                show_no_sale=values['sale'] == 'show', query=values['query'].strip())
+        self.query_one(SwarmPortfolioOverview)._project()
+        self._show_filter(False)
+
+    def on_swarm_tokens_filter_apply_requested(self, event):
+        event.stop()
+        if self._filter_open:
+            self._apply_filter()
+
+    def on_swarm_tokens_filter_reset_requested(self, event):
+        event.stop()
+        self.query_one(PortfolioFilterEditor).set_values({})
 
     def action_search(self):
-        self.query_one('#pf-search', Input).focus()
+        if not self._filter_open:
+            self.action_filters()
+        self.call_after_refresh(lambda: self.query_one('#filter-query', Input).focus())
 
     def action_set_wallet(self):
         self.app.push_screen(WalletInputScreen(), callback=self._wallet_entered)
@@ -130,7 +180,7 @@ class SwarmPortfolioScreen(SurfDashboardScreen):
         self.action_refresh()
 
     def action_back(self):
-        if isinstance(self.focused, (Input, Select)):
-            self.query_one(SwarmPortfolioOverview).focus_selection()
+        if self._filter_open:
+            self._show_filter(False)
         else:
             self.app.pop_screen()
