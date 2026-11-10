@@ -66,6 +66,13 @@ class PortfolioHeroCard(Pool4HeroCard):
     def _subtitle_value(self, value):
         return value
 
+    def _inner_footer(self, subtitle, inside, frame, value_ink):
+        footer = super()._inner_footer(subtitle, inside, frame, value_ink)
+        if self.data.accent and subtitle.strip() == 'USD':
+            start = footer.plain.index('USD')
+            footer.stylize('green', start, start + 3)
+        return footer
+
     def render(self):
         text = super().render()
         if not self.data.heading:

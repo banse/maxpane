@@ -109,7 +109,7 @@ async def test_first_four_cards_paint_active_frames_and_digits_only(monkeypatch)
             if active:
                 bottom = rows[top + 4]
                 usd = bottom.crop(bottom.text.index('USD'), bottom.text.index('USD') + 3)
-                assert all(segment.style.color.get_truecolor() == green for segment in usd)
+                assert all(segment.style.color.get_truecolor() == digit_color for segment in usd)
                 left, right = rows[top].text.index('┌'), rows[top].text.index('┐')
                 digits = [segment for row in rows[top + 1:top + 4]
                           for segment in row.crop(left + 1, right) if segment.text.strip()]
