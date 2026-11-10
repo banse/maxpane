@@ -2,6 +2,11 @@
 from copy import deepcopy
 import math
 
+# Pure copies bound to the source address and bucket contract by agreement tests.
+IMD_REFERENCE = (1, '0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7')
+IMD_QUANTITY_FIELDS = ('wallet_quantity', 'staked_quantity', 'ready_quantity',
+                       'locked_quantity', 'pending_quantity', 'unknown_reward_quantity')
+
 
 def _known(value):
     return type(value) in (int, float) and math.isfinite(value) and value >= 0
@@ -11,6 +16,31 @@ def _sum(rows, key):
     values = [row.get(key) for row in rows]
     valid = [value for value in values if _known(value)]
     return sum(valid) if valid or not values else None
+
+
+def imd_equivalent(snapshot, total_usd):
+    """Equivalent at the scan's average IMD sale quote, not an IMD purchase quote."""
+    if not _known(total_usd):
+        return None
+    references = [row for row in snapshot.get('assets') or []
+                  if type(row.get('chain_id')) is int
+                  and (row['chain_id'], str(row.get('token_address')).lower()) == IMD_REFERENCE]
+    if len(references) != 1:
+        return None
+    reference = references[0]
+    quantities = [reference.get(key) for key in IMD_QUANTITY_FIELDS]
+    quoted_usd = reference.get('total_usd')
+    if (reference.get('sell_state') != 'full' or not all(_known(value) for value in quantities)
+            or not _known(quoted_usd) or quoted_usd <= 0):
+        return None
+    quantity = sum(quantities)
+    if not _known(quantity) or quantity <= 0:
+        return None
+    rate = quoted_usd / quantity
+    if not _known(rate) or rate <= 0:
+        return None
+    value = total_usd / rate
+    return value if _known(value) else None
 
 
 def project(snapshot, chain='all', query='', show_no_sale=False, sort='value'):

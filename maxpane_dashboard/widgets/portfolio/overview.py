@@ -6,7 +6,7 @@ from textual.containers import Grid, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import DataTable, Static
 
-from maxpane_dashboard.analytics.swarm_portfolio import project
+from maxpane_dashboard.analytics.swarm_portfolio import imd_equivalent, project
 from maxpane_dashboard.widgets.address import ICON_COLS, address_prose, address_text
 from maxpane_dashboard.widgets.explorer import for_chain_id
 from maxpane_dashboard.widgets.fmt import hhmm
@@ -51,6 +51,8 @@ class PortfolioHeroCard(Pool4HeroCard):
         if data.key == 'pf-total':
             self.tooltip = Text('Source estimate of combined wallet, stake and reward proceeds. '
                                 'Net proceeds are not guaranteed. · as of ' + hhmm(data.read_ts, unknown='—'))
+            if data.footer:
+                self.tooltip.append("\nIMD equivalent uses this scan's quoted value per Ethereum IMD; not a purchase quote.")
 
     def _footer(self):
         self.border_subtitle = Text(flatten(self.data.footer), style='dim')
@@ -75,11 +77,12 @@ class PortfolioHeroCard(Pool4HeroCard):
 
 def hero_records(metrics=None, snapshot=None):
     metrics, snapshot = metrics or {}, snapshot or {}
+    total_imd = imd_equivalent(snapshot, metrics.get('total_usd'))
     def count(key):
         value = metrics.get(key)
         return f'{value:,}' if isinstance(value, int) else '—'
     definitions = (
-        ('total', 'TOTAL VALUE', 'known value' if metrics.get('partial') else 'combined value', 'total_usd', 'USD'),
+        ('total', 'TOTAL VALUE', '≈' + _quantity(total_imd) + ' IMD' if total_imd is not None else '', 'total_usd', 'USD'),
         ('wallet', 'WALLET', count('holding_count') + ' tokens', 'wallet_usd', 'USD'),
         ('staked', 'STAKED', count('position_count') + ' positions', 'staked_usd', 'USD'),
         ('unclaimed', 'UNCLAIMED', count('claim_count') + ' rewards', 'unclaimed_usd', 'USD'),

@@ -1,0 +1,29 @@
+{
+  "as_of": 1794348019,
+  "_provenance": {
+    "source": "https://imd.vibingco.de/portfolio/api/scan",
+    "wallet": "0x887b86b6b6957f7bbea88b8cefd392f39236a88c",
+    "observed": "2026-11-11",
+    "note": "Canonical Ethereum IMD asset from the retained public scan; source values unchanged."
+  },
+  "asset": {
+    "id": "1:0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+    "chain_id": 1,
+    "token_address": "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+    "symbol": "IMD",
+    "sell_state": "full",
+    "total_usd": 2518.7962726347896,
+    "wallet_quantity": 2.16468274459321,
+    "wallet_usd": 5.424934313027346,
+    "staked_quantity": 1000.3934285563096,
+    "staked_usd": 2507.0965482852107,
+    "ready_quantity": 0,
+    "ready_usd": 0,
+    "locked_quantity": 0,
+    "locked_usd": 0,
+    "pending_quantity": 2.3712079872927423,
+    "pending_usd": 5.942509407310982,
+    "unknown_reward_quantity": 0.13258817581480983,
+    "unknown_reward_usd": 0.3322806292404907
+  }
+}

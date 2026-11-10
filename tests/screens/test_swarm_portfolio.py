@@ -112,7 +112,7 @@ async def test_first_four_card_labels_move_from_inner_headers_to_outer_footers()
         await pilot.pause()
         assert not app.screen.query('#pf-allocation')
         assert 'ALLOCATION' not in painted(app)
-        expected = (('total', '', 'USD', 'combined value'), ('wallet', '', 'USD', '1 tokens'),
+        expected = (('total', '', 'USD', ''), ('wallet', '', 'USD', '1 tokens'),
                     ('staked', '', 'USD', '0 positions'), ('unclaimed', '', 'USD', '1 rewards'),
                     ('nfts', 'OWNED', '0 collections', ''), ('seats', 'OWNED', 'Identity.md', ''))
         for key, heading, caption, outer in expected:
@@ -137,6 +137,27 @@ async def test_first_four_card_labels_move_from_inner_headers_to_outer_footers()
             if key == 'seats':
                 assert 'NFTs' not in footer
                 assert card.styles.padding == app.screen.query_one('#hero-pf-nfts').styles.padding
+
+
+async def test_total_footer_uses_unfiltered_imd_reference_and_clears_when_quote_is_missing():
+    app = PortfolioApp()
+    reference = json.loads((Path(__file__).parents[1] / 'fixtures/portfolio_scan/imd-reference.json').read_text())
+    app.manager.snapshot['assets'].append(reference['asset'])
+    app.view_state['query'] = 'ALPHA'
+    async with app.run_test(size=(149,45)) as pilot:
+        await app.screen._do_refresh()
+        await pilot.pause()
+        card = app.screen.query_one('#hero-pf-total')
+        assert card.data.digits == '750'
+        footer = app.screen._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right).text
+        assert '≈299.3 IMD' in footer
+        assert "scan's quoted" in card.tooltip.plain
+        assert 'known value' not in painted(app) and 'combined value' not in painted(app)
+        app.manager.snapshot['assets'].pop()
+        await app.screen._do_refresh()
+        await pilot.pause()
+        footer = app.screen._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right).text
+        assert 'IMD' not in footer and card.data.digits == '750'
 
 
 async def test_eligibility_content_and_wrapped_lines_align_with_the_header():

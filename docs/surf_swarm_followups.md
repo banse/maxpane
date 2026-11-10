@@ -2006,3 +2006,25 @@ guards passed 130 with the previously recorded SWARM TOKENS/SWORN CSS-slice
 failure. Review: Approved, no findings; six focused checks passed and moving the
 NFTS heading too was killed by the first-four-card test. The mutation was restored
 byte for byte.
+
+## Portfolio total in IMD — 2026-11-11
+
+TOTAL VALUE now uses its centered outer footer for the approximate IMD equivalent
+of the displayed USD total. The reference is the same scan's canonical Ethereum
+IMD aggregate sale value divided by its complete wallet, stake and reward
+quantity. This is a sale-quote equivalent, not a spot price or purchase quote;
+the tooltip explains the method. Filters change the displayed total but retain
+the unfiltered reference. A missing, ambiguous or incomplete IMD quote leaves
+the footer blank. No network call or data-contract key was added.
+
+The public-data preview at 149×45 showed `≈1.1K IMD` below the existing USD digits,
+using the endpoint's retained 23:00 scan and independently refreshed seats. The
+committed reference fixture retains that scan's original values and provenance.
+All seven deliberate conversion, identity, missing-value and display regressions
+were killed and restored byte for byte. Layout pins are unchanged.
+
+Validation: 77 touched/composing checks and 12 documentation pins passed. Fast
+guards passed 130 with the previously recorded SWARM TOKENS/SWORN CSS-slice
+failure. Review: Approved, no findings; four focused checks passed and accepting
+duplicate IMD references was killed by the reference-validation test. The review
+mutation was restored byte for byte. No full suite ran.
