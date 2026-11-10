@@ -76,7 +76,7 @@ def hero_records(metrics=None, snapshot=None):
         ('staked', 'STAKED', count('position_count') + ' positions', 'staked_usd', 'USD'),
         ('unclaimed', 'UNCLAIMED', count('claim_count') + ' rewards', 'unclaimed_usd', 'USD'),
         ('nfts', 'NFTS', 'OWNED', 'nft_count', count('nft_collections') + ' collections'),
-        ('seats', 'SEATS', 'OWNED', 'seats_count', 'Identity.md NFTs'),
+        ('seats', 'SEATS', 'OWNED', 'seats_count', 'Identity.md'),
     )
     for key, title, heading, metric, subtitle in definitions:
         value = metrics.get(metric)
@@ -156,16 +156,15 @@ class PortfolioEvidence(PanelBase):
 class SwarmPortfolioOverview(VerticalScroll):
     DEFAULT_CSS = '''
     SwarmPortfolioOverview {height: 1fr; overflow: auto auto; scrollbar-gutter: stable; padding: 1 1;}
-    SwarmPortfolioOverview #pf-layout {min-width: 143; height: 1fr; min-height: 36;}
+    SwarmPortfolioOverview #pf-layout {min-width: 143; height: 1fr; min-height: 34;}
     SwarmPortfolioOverview #pf-heroes {height: 9; grid-size: 6 1; grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1;}
-    SwarmPortfolioOverview #hero-pf-seats {padding: 0;}
-    SwarmPortfolioOverview #pf-filter-summary {height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted; text-wrap: nowrap; text-overflow: ellipsis;}
     SwarmPortfolioOverview #pf-filter-editor {height: 1fr; min-height: 25; display: none;}
     SwarmPortfolioOverview #pf-panels {height: 1fr; min-height: 25; grid-size: 2 3; grid-columns: 3fr 2fr; grid-rows: 9fr 8fr 6fr; grid-gutter: 1 1;}
     SwarmPortfolioOverview PortfolioTable, SwarmPortfolioOverview PortfolioEvidence {height: 1fr; min-height: 5;}
+    SwarmPortfolioOverview PortfolioTable > .panel-title {height: 1; text-wrap: nowrap; text-overflow: ellipsis;}
     SwarmPortfolioOverview DataTable {height: 1fr; min-height: 2; scrollbar-gutter: stable;}
     SwarmPortfolioOverview #pf-evidence-scroll {height: 1fr; scrollbar-gutter: stable;}
-    SwarmPortfolioOverview #pf-evidence {height: auto;}
+    SwarmPortfolioOverview #pf-evidence {height: auto; padding: 0 1;}
     '''
 
     class Inspect(Message):
@@ -184,7 +183,6 @@ class SwarmPortfolioOverview(VerticalScroll):
             with Grid(id='pf-heroes'):
                 for record in hero_records():
                     yield PortfolioHeroCard(record)
-            yield Static(Text('FILTER'), id='pf-filter-summary')
             yield PortfolioFilterEditor(scan=True, id='pf-filter-editor')
             with Grid(id='pf-panels'):
                 yield PortfolioTable('holdings', 'HOLDINGS', (('TOKEN',14),('CHAIN',5),('WALLET',10),('WALLET $',10),('TOTAL $',10),('SALE',7)))
@@ -222,10 +220,13 @@ class SwarmPortfolioOverview(VerticalScroll):
         chain = {'all': 'All chains', '1': 'Ethereum', '8453': 'Base', '4663': 'Robinhood'}[filters['chain']]
         sort = 'Token A–Z' if filters['sort'] == 'symbol' else 'Value ↓'
         sale = 'Show no-sale' if filters['show_no_sale'] else 'Hide no-sale'
-        text = Text(f'FILTER · {chain} · {sort} · {sale}')
+        text = Text('HOLDINGS  ', style='bold')
+        text.append(f'FILTER · {chain} · {sort} · {sale}', style='not bold dim')
         if filters['query']:
-            text.append(' · search: ' + clip(flatten(filters['query']), 40))
-        self.query_one('#pf-filter-summary', Static).update(text)
+            text.append(' · search: ' + flatten(filters['query']), style='not bold dim')
+        title = self.query_one('#pf-holdings-table').parent.query_one('.panel-title', Static)
+        title.update(text)
+        title.tooltip = text
 
     def _evidence(self, metrics):
         text = Text('Seats  ', style='dim')

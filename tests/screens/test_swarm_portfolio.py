@@ -114,7 +114,7 @@ async def test_cards_swap_inner_labels_and_remove_allocation_and_outer_footer_te
         assert 'ALLOCATION' not in painted(app)
         expected = (('total', 'combined value', 'USD'), ('wallet', '1 tokens', 'USD'),
                     ('staked', '0 positions', 'USD'), ('unclaimed', '1 rewards', 'USD'),
-                    ('nfts', 'OWNED', '0 collections'), ('seats', 'OWNED', 'Identity.md NFTs'))
+                    ('nfts', 'OWNED', '0 collections'), ('seats', 'OWNED', 'Identity.md'))
         for key, heading, caption in expected:
             card = app.screen.query_one('#hero-pf-' + key)
             lines = [strip.crop(card.region.x, card.region.right).text
@@ -123,6 +123,52 @@ async def test_cards_swap_inner_labels_and_remove_allocation_and_outer_footer_te
             footer = next(line for line in lines if '└' in line)
             assert heading in header and caption in footer
             assert not any(character.isalnum() for character in lines[-1])
+            if key == 'seats':
+                assert 'NFTs' not in footer
+                assert card.styles.padding == app.screen.query_one('#hero-pf-nfts').styles.padding
+
+
+async def test_eligibility_content_and_wrapped_lines_align_with_the_header():
+    from maxpane_dashboard.widgets.portfolio.overview import PortfolioEvidence
+    app = PortfolioApp()
+    app.manager.snapshot = layout_snapshot('live_capture')
+    async with app.run_test(size=(149,45)) as pilot:
+        await app.screen._do_refresh()
+        await pilot.pause()
+        panel = app.screen.query_one(PortfolioEvidence)
+        strips = app.screen._compositor.render_strips()
+        title = strips[panel.region.y].crop(panel.region.x, panel.region.right).text
+        assert title.startswith(' SEATS & ELIGIBILITY')
+        content = app.screen.query_one('#pf-evidence')
+        lines = [strip.crop(panel.region.x, panel.region.right).text
+                 for strip in strips[content.region.y:min(content.region.bottom, panel.region.bottom)]]
+        assert len([line for line in lines if line.strip()]) >= 3
+        for line in lines:
+            if line.strip():
+                assert line.startswith(' ') and line[1] != ' '
+
+
+async def test_filter_summary_shares_holdings_header_row_and_stays_on_one_line():
+    from textual.widgets import Static
+    app = PortfolioApp()
+    async with app.run_test(size=(149,45)) as pilot:
+        await app.screen._do_refresh()
+        await pilot.pause()
+        body = app.screen.query_one(SwarmPortfolioOverview)
+        table = app.screen.query_one('#pf-holdings-table')
+        title = table.parent.query_one('.panel-title', Static)
+        assert not app.screen.query('#pf-filter-summary')
+        strip = app.screen._compositor.render_strips()[title.region.y].text
+        assert strip.index('HOLDINGS') < strip.index('FILTER') < strip.index('All chains')
+        assert table.region.y - title.region.y == 2
+        body.view_state.update(query='[bold] ' + 'long search ' * 10)
+        body._project()
+        await pilot.pause()
+        strip = app.screen._compositor.render_strips()[title.region.y].text
+        assert 'HOLDINGS' in strip and 'FILTER' in strip and '[bold]' in strip
+        assert title.region.height == 1
+        assert table.region.y - title.region.y == 2
+        assert ('long search ' * 10).strip() in title.tooltip.plain
 
 
 async def test_tables_expand_to_leave_one_blank_row_above_status_bar():
@@ -282,7 +328,7 @@ async def test_measured_portfolio_width_is_the_first_whole_viewport(kind):
                 assert line.count('╮') == 6
                 for label in ('SOURCE','JOINED','TOKEN IDS','SEATS & ELIGIBILITY'):
                     assert label in painted(app)
-                assert 'Identity.md NFTs' in painted(app)
+                assert 'Identity.md' in painted(app)
 
 
 @pytest.mark.sweep

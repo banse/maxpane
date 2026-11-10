@@ -1961,3 +1961,27 @@ Fast guards passed 130 with the already recorded SWARM TOKENS/SWORN CSS-slice
 failure. Review: Approved, no findings; six focused checks passed, and restoring
 SEATS side padding was killed by the width-boundary test and restored byte for
 byte. The full requested caption is therefore covered at the minimum width.
+
+## Portfolio header and eligibility alignment — 2026-11-10
+
+The SEATS caption is now `Identity.md` and its inner-box padding matches the
+other cards again. Per the owner's clarified order, the filter summary follows
+HOLDINGS on the same title row. Long search text ellipsizes on that single row;
+the tooltip retains the complete sanitized summary. The existing filter editor
+and local filtering behavior are unchanged. Eligibility content, including
+wrapped lines, has the same one-character left inset as its header.
+
+The keyless public-data render at 149×45 was shown before layout hardening. It
+uses the endpoint's retained 23:00 scan and independently refreshed seats. The
+removed summary row reduces the whole-viewport boundary to 147×38. Broad probes
+covered 125–155 columns and 30–48 rows; tables still fill the available height
+and leave one blank row before the status bar. Seven deliberate regressions were
+killed and restored: old SEATS caption, unequal card padding, missing eligibility
+inset, reversed header order, wrapped search, and the height pin ±1. No full suite
+ran.
+
+Validation: all 46 touched/composing checks and 12 documentation pins passed.
+Fast guards passed 130 with the previously recorded SWARM TOKENS/SWORN CSS-slice
+failure. Review: Approved, no findings; six focused checks passed and removal of
+the full filter tooltip was killed by the long-search regression test. The
+review mutation was restored byte for byte.
