@@ -96,12 +96,56 @@ async def test_partial_source_labels_are_hidden_without_changing_source_facts():
         card = app.screen.query_one('#hero-pf-wallet')
         assert card.data.state == 'partial'
         footer = app.screen._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right).text
-        assert hhmm(app.manager.snapshot['as_of']) in footer
+        assert hhmm(app.manager.snapshot['as_of']) not in footer
+        assert hhmm(app.manager.snapshot['as_of']) in card.tooltip.plain
         assert 'partial' not in card.tooltip.plain.lower()
         app.screen.query_one('#pf-holdings-table', DataTable).focus()
         await pilot.press('enter')
         assert isinstance(app.screen, SwarmPortfolioInspector)
         assert 'partial' not in painted(app).lower()
+
+
+async def test_cards_swap_inner_labels_and_remove_allocation_and_outer_footer_text():
+    app = PortfolioApp()
+    async with app.run_test(size=(149,45)) as pilot:
+        await app.screen._do_refresh()
+        await pilot.pause()
+        assert not app.screen.query('#pf-allocation')
+        assert 'ALLOCATION' not in painted(app)
+        expected = (('total', 'combined value', 'USD'), ('wallet', '1 tokens', 'USD'),
+                    ('staked', '0 positions', 'USD'), ('unclaimed', '1 rewards', 'USD'),
+                    ('nfts', 'OWNED', '0 collections'), ('seats', 'OWNED', 'Identity.md NFTs'))
+        for key, heading, caption in expected:
+            card = app.screen.query_one('#hero-pf-' + key)
+            lines = [strip.crop(card.region.x, card.region.right).text
+                     for strip in app.screen._compositor.render_strips()[card.region.y:card.region.bottom]]
+            header = next(line for line in lines if '┌' in line)
+            footer = next(line for line in lines if '└' in line)
+            assert heading in header and caption in footer
+            assert not any(character.isalnum() for character in lines[-1])
+
+
+async def test_tables_expand_to_leave_one_blank_row_above_status_bar():
+    from maxpane_dashboard.screens.surf_loading import SurfStatusBar
+    app = PortfolioApp()
+    app.manager.snapshot = layout_snapshot('live_capture')
+    async with app.run_test(size=(149,45)) as pilot:
+        previous = None
+        for height in (45,60):
+            await pilot.resize_terminal(149,height)
+            await pilot.pause()
+            screen = app.screen
+            tables = list(screen.query(DataTable))
+            nft = screen.query_one('#pf-nfts-table')
+            evidence = screen.query_one('#pf-evidence-scroll')
+            status = screen.query_one(SurfStatusBar)
+            assert status.region.y - nft.region.bottom == 1
+            assert status.region.y - evidence.region.bottom == 1
+            assert not screen._compositor.render_strips()[status.region.y - 1].text.strip()
+            heights = [table.region.height for table in tables]
+            if previous:
+                assert all(after > before for before, after in zip(previous, heights))
+            previous = heights
 
 
 async def test_native_filter_editor_applies_cancels_and_resets_only_its_draft():
@@ -238,6 +282,7 @@ async def test_measured_portfolio_width_is_the_first_whole_viewport(kind):
                 assert line.count('╮') == 6
                 for label in ('SOURCE','JOINED','TOKEN IDS','SEATS & ELIGIBILITY'):
                     assert label in painted(app)
+                assert 'Identity.md NFTs' in painted(app)
 
 
 @pytest.mark.sweep
@@ -254,10 +299,10 @@ async def test_measured_portfolio_height_is_the_first_whole_viewport(kind):
             assert whole == (height >= SWARM_PORTFOLIO_FULL_LAYOUT_ROWS)
             title = app.screen._compositor.render_strips()[0].text
             assert ('‹ taller' in title) == (not whole)
-            assert body.query_one('#pf-panels').region.height == 25
-            assert body.query_one('#pf-nfts-table').region.height == 4
+            assert body.query_one('#pf-panels').region.height >= 25
+            assert body.query_one('#pf-nfts-table').region.height >= 4
             if whole:
-                assert body.query_one('#pf-panels').region.bottom <= body.scrollable_content_region.bottom
+                assert body.query_one('#pf-panels').region.bottom == body.scrollable_content_region.bottom
                 assert 'NFT INVENTORY' in painted(app) and 'SEATS & ELIGIBILITY' in painted(app)
 
 

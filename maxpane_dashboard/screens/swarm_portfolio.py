@@ -18,7 +18,7 @@ from maxpane_dashboard.widgets.portfolio.filter import PortfolioFilterEditor
 #: The sweep also uses a representative snapshot, extreme labels and values,
 #: an unread loading snapshot and a successfully empty wallet observation.
 #: All five payload classes have the same outer geometry.
-#: Six nine-row rack cards precede allocation, filters and three panel rows.
+#: Six nine-row rack cards precede filters and three panel rows.
 #: The inner layout is 143 columns wide at its floor.
 #: Its own two padding cells and the reserved two-cell scrollbar gutter count.
 #: The first whole horizontal viewport is 147 terminal columns.
@@ -26,22 +26,26 @@ from maxpane_dashboard.widgets.portfolio.filter import PortfolioFilterEditor
 #: The permanent boundary set covers 120, 146, 147, 148 and 160 columns.
 #: At 146 columns the body has exactly one column of horizontal extent.
 #: At 147 columns the rightmost SEATS frame is wholly inside the viewport.
+#: The SEATS inset has no side padding so Identity.md NFTs fits at that width.
 #: Every installed table header and column fits at that boundary.
 #: The rewards table needs 54 columns and has 55 after its own gutter.
 #: The widest left table is NFT inventory, with 73 columns inside 83.
 #: Table token/name budgets include both cells of the shared copy icon.
 #: Addresses and linked names retain their copy and chain-explorer actions.
-#: Native filter refinement measured 2026-11-10 after the live overview/editor preview.
-#: The compact summary replaces the four-row control block with two rows.
-#: The content floor is 38 rows inside two rows of body padding.
+#: Footer/spacing refinement measured 2026-11-10 after the live 149-by-45 preview.
+#: The allocation line is removed and the compact filter summary takes two rows.
+#: The content floor is 36 rows inside two rows of body padding.
 #: The title and shared status footer each consume one terminal row.
-#: The first whole vertical viewport is 42 terminal rows.
+#: The first whole vertical viewport is 40 terminal rows.
 #: The broad height probe started at 30 rows and continued through 48.
-#: The permanent boundary set covers 24, 41, 42, 43 and 50 rows.
-#: At 41 rows the body has exactly one row of vertical extent.
-#: At 147 by 42 neither outer scroll direction has remaining extent.
+#: The permanent boundary set covers 24, 39, 40, 41 and 50 rows.
+#: At 39 rows the body has exactly one row of vertical extent.
+#: At 147 by 40 neither outer scroll direction has remaining extent.
 #: The width was rechecked from 125 through 155 and remains 147.
-#: The native filter editor replaces the 25-row panel area, retaining its floor.
+#: The native filter editor replaces the panel area with the same 25-row floor.
+#: The panel rows share extra height at 9:8:6, preserving their minimum content.
+#: At 149 by 45 the panel area is 30 rows and the NFT table is six rows tall.
+#: Tables leave exactly one blank row before the status bar at 45 and 60 rows.
 #: At 80 by 24 its fields use the shared two-column compact editor layout.
 #: Below either boundary the header reports actual viewport overflow.
 #: Horizontal overflow can add a scrollbar row and light both hints.
@@ -52,7 +56,7 @@ from maxpane_dashboard.widgets.portfolio.filter import PortfolioFilterEditor
 #: The popup keeps the native 110-column frame and its own internal scrolling.
 #: No application-wide or existing dashboard minimum changes here.
 SWARM_PORTFOLIO_FULL_LAYOUT_COLUMNS = 147
-SWARM_PORTFOLIO_FULL_LAYOUT_ROWS = 42
+SWARM_PORTFOLIO_FULL_LAYOUT_ROWS = 40
 
 
 class SwarmPortfolioScreen(SurfDashboardScreen):

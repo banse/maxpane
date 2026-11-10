@@ -53,7 +53,7 @@ class PortfolioHeroCard(Pool4HeroCard):
                                 'Net proceeds are not guaranteed. · as of ' + hhmm(data.read_ts, unknown='—'))
 
     def _footer(self):
-        self.border_subtitle = Text(hhmm(self.data.read_ts) if self.data.read_ts is not None else '', style='dim')
+        self.border_subtitle = ''
 
     def _present_record(self, data):
         return data
@@ -71,12 +71,12 @@ def hero_records(metrics=None, snapshot=None):
         value = metrics.get(key)
         return f'{value:,}' if isinstance(value, int) else '—'
     definitions = (
-        ('total', 'TOTAL VALUE', 'USD', 'total_usd', 'known value' if metrics.get('partial') else 'combined value'),
-        ('wallet', 'WALLET', 'USD', 'wallet_usd', count('holding_count') + ' tokens'),
-        ('staked', 'STAKED', 'USD', 'staked_usd', count('position_count') + ' positions'),
-        ('unclaimed', 'UNCLAIMED', 'USD', 'unclaimed_usd', count('claim_count') + ' rewards'),
+        ('total', 'TOTAL VALUE', 'known value' if metrics.get('partial') else 'combined value', 'total_usd', 'USD'),
+        ('wallet', 'WALLET', count('holding_count') + ' tokens', 'wallet_usd', 'USD'),
+        ('staked', 'STAKED', count('position_count') + ' positions', 'staked_usd', 'USD'),
+        ('unclaimed', 'UNCLAIMED', count('claim_count') + ' rewards', 'unclaimed_usd', 'USD'),
         ('nfts', 'NFTS', 'OWNED', 'nft_count', count('nft_collections') + ' collections'),
-        ('seats', 'SEATS', 'OWNED', 'seats_count', 'IDMD seats'),
+        ('seats', 'SEATS', 'OWNED', 'seats_count', 'Identity.md NFTs'),
     )
     for key, title, heading, metric, subtitle in definitions:
         value = metrics.get(metric)
@@ -156,12 +156,12 @@ class PortfolioEvidence(PanelBase):
 class SwarmPortfolioOverview(VerticalScroll):
     DEFAULT_CSS = '''
     SwarmPortfolioOverview {height: 1fr; overflow: auto auto; scrollbar-gutter: stable; padding: 1 1;}
-    SwarmPortfolioOverview #pf-layout {min-width: 143; height: auto;}
+    SwarmPortfolioOverview #pf-layout {min-width: 143; height: 1fr; min-height: 36;}
     SwarmPortfolioOverview #pf-heroes {height: 9; grid-size: 6 1; grid-columns: 1fr; grid-rows: 9; grid-gutter: 0 1;}
-    SwarmPortfolioOverview #pf-allocation {height: 2; padding: 0 1;}
+    SwarmPortfolioOverview #hero-pf-seats {padding: 0;}
     SwarmPortfolioOverview #pf-filter-summary {height: 1; padding: 0 1; margin-bottom: 1; color: $text-muted; text-wrap: nowrap; text-overflow: ellipsis;}
-    SwarmPortfolioOverview #pf-filter-editor {height: 25; display: none;}
-    SwarmPortfolioOverview #pf-panels {height: 25; grid-size: 2 3; grid-columns: 3fr 2fr; grid-rows: 9 8 6; grid-gutter: 1 1;}
+    SwarmPortfolioOverview #pf-filter-editor {height: 1fr; min-height: 25; display: none;}
+    SwarmPortfolioOverview #pf-panels {height: 1fr; min-height: 25; grid-size: 2 3; grid-columns: 3fr 2fr; grid-rows: 9fr 8fr 6fr; grid-gutter: 1 1;}
     SwarmPortfolioOverview PortfolioTable, SwarmPortfolioOverview PortfolioEvidence {height: 1fr; min-height: 5;}
     SwarmPortfolioOverview DataTable {height: 1fr; min-height: 2; scrollbar-gutter: stable;}
     SwarmPortfolioOverview #pf-evidence-scroll {height: 1fr; scrollbar-gutter: stable;}
@@ -184,7 +184,6 @@ class SwarmPortfolioOverview(VerticalScroll):
             with Grid(id='pf-heroes'):
                 for record in hero_records():
                     yield PortfolioHeroCard(record)
-            yield Static(Text('ALLOCATION  —'), id='pf-allocation')
             yield Static(Text('FILTER'), id='pf-filter-summary')
             yield PortfolioFilterEditor(scan=True, id='pf-filter-editor')
             with Grid(id='pf-panels'):
@@ -219,7 +218,6 @@ class SwarmPortfolioOverview(VerticalScroll):
             if panel.kind == 'utilities' and rows is not None:
                 rows = [row for row in rows if row.get('asset_id') == self.selected_id]
             panel.update_rows(rows, self.selected_id if panel.kind == 'holdings' else None)
-        self._allocation(metrics)
         self._evidence(metrics)
         chain = {'all': 'All chains', '1': 'Ethereum', '8453': 'Base', '4663': 'Robinhood'}[filters['chain']]
         sort = 'Token A–Z' if filters['sort'] == 'symbol' else 'Value ↓'
@@ -228,26 +226,6 @@ class SwarmPortfolioOverview(VerticalScroll):
         if filters['query']:
             text.append(' · search: ' + clip(flatten(filters['query']), 40))
         self.query_one('#pf-filter-summary', Static).update(text)
-
-    def _allocation(self, metrics):
-        parts = [('Wallet','wallet_usd','green'),('Staked','staked_usd','cyan'),('Rewards','unclaimed_usd','yellow')]
-        total = metrics.get('total_usd')
-        line = Text('ALLOCATION  ', style='dim')
-        if isinstance(total, (int,float)) and total > 0:
-            for _, key, color in parts:
-                value = metrics.get(key)
-                if isinstance(value, (float,int)):
-                    line.append('━' * max(0, round(value / total * 28)), style=color)
-        else:
-            line.append('—')
-        for label, key, color in parts:
-            line.append(f'  {label} {_usd(metrics.get(key))}', style=color)
-        hidden = metrics.get('hidden_count')
-        if hidden:
-            line.append(f' · {hidden} no-sale hidden', style='dim')
-        if metrics.get('partial'):
-            line.append(' · known values only', style='yellow')
-        self.query_one('#pf-allocation', Static).update(line)
 
     def _evidence(self, metrics):
         text = Text('Seats  ', style='dim')

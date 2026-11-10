@@ -1934,3 +1934,30 @@ suite ran. These legacy failures remain outside this change.
 Documentation pins passed 12. Final review: Approved, no findings; five focused
 checks passed, including legacy filter compatibility, and a separate
 reset-commits-draft mutation was killed and restored byte for byte.
+
+## Portfolio card labels and table height — 2026-11-10
+
+Removed the allocation line and all outer card footer text. Observation times
+remain in tooltips, the screen header and source evidence. The first four inner
+boxes now place their former footer above the value and USD below it. SEATS uses
+the exact inner caption `Identity.md NFTs`; its inset drops side padding to keep
+that caption whole at the existing minimum width. Source facts are unchanged.
+
+The three table rows share all remaining height at 9:8:6, with their existing
+minimum sizes. NFT inventory and eligibility end one blank row above the status
+bar at 149×45 and 149×60. The native filter editor shares the same growing area.
+The public preview showed the source's retained 537-asset scan (23:00 observation)
+and independently refreshed seats. This is a display change, not a new valuation.
+
+The measured whole-viewport boundary is 147×40 after removing the allocation
+line. Broad probes covered 125–155 columns and 30–48 rows; narrow-screen scrolling
+and the native filter editor remain available. Seven deliberate regressions were
+killed and restored: allocation return, outer timestamps, reversed wallet labels,
+old SEATS caption, fixed table height, and the height pin one row in either
+direction. No full suite ran.
+
+Validation: all 44 touched/composing checks and 12 documentation pins passed.
+Fast guards passed 130 with the already recorded SWARM TOKENS/SWORN CSS-slice
+failure. Review: Approved, no findings; six focused checks passed, and restoring
+SEATS side padding was killed by the width-boundary test and restored byte for
+byte. The full requested caption is therefore covered at the minimum width.
