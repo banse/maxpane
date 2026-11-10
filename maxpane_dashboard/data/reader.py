@@ -648,6 +648,9 @@ class ReaderHandle:
     def portfolio_manager(self, wallet=None):
         return self._child('portfolio_manager', wallet, metadata={'wallet': wallet})
 
+    def swarm_portfolio_manager(self, wallet=None):
+        return self._child('swarm_portfolio_manager', wallet, metadata={'wallet': wallet})
+
     def token_detail_manager(self, token):
         from maxpane_dashboard.data.swarm_token_detail import SwarmTokenDetailManager
         # A selected detail owns its own lifecycle, while borrowing the real
