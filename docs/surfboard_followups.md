@@ -1,5 +1,34 @@
 # Surfboard follow-ups
 
+## Completion counts and retained reload values — 2026-11-11
+
+SHIPPED now uses the overview's live-launch count and the complete workflow
+catalogue's completed/superseded count. WIP uses distinct busy seats in the full
+roster. Numeric card observations survive incomplete reloads; source facts and
+observation times remain unchanged. Actual zero replaces prior values.
+Live 149×45 preview and 143×37 boundary checks are in
+`boardroom_completion_counts_plan.md`.
+
+The composing run's 77 residual failures also reproduce at unchanged `66cc5126`:
+
+- `tests/data/test_surf_models.py`: 2 older contract assertions omit existing keys.
+- `tests/data/test_surf_card_current.py`: 17 obsolete fake-manager method expectations.
+- `tests/data/test_surf_card_rpc_budget.py`: 1 fake manager lacks `get_hub_seats`.
+- `tests/widgets/test_surfboard_rack.py`: 30 earlier color/structure expectations.
+- `tests/widgets/test_surfboard_card_activity.py`: 18 retired footer/card expectations.
+- `tests/screens/test_surfboard_layout.py`: 7 existing palette expectations.
+- `tests/screens/test_surfboard_screen.py`: 2 old navigation assertions expect SURF
+  where current routing opens SWORN.
+
+The existing TOKENS/SWORN stylesheet-slice guard also fails. No unrelated
+production behavior was changed to satisfy these checks. Exact baseline results
+are `/tmp/boardroom-counts-baseline.xml`; the new decoder, count, retention and
+screen-refresh checks pass. Update these harnesses when their behavior is next
+touched; this change does not require a broader suite run.
+
+Final review approved without findings; five focused checks and an independent
+cache-hash mutation passed. No new follow-up was introduced by this change.
+
 ## CR800 cross-dashboard corrections — 2026-10-23
 
 See `cr_800d0be3_delivery.md` for all nine notes, live captures and validation.

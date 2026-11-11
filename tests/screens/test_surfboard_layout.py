@@ -95,6 +95,34 @@ async def test_fleet_stats_acceptance_and_duration_survive_refresh(size):
         assert card.data['destination'] == 'board'
 
 
+@pytest.mark.parametrize('size', [(143, 37), (149, 45)])
+async def test_completion_captions_and_digits_survive_incomplete_screen_refresh(size):
+    payload = hub_payload()
+    shipped = next(row for row in payload['surfboard_cards'] if row['key'] == 'swarm')
+    work = next(row for row in payload['surfboard_cards'] if row['key'] == 'work')
+    shipped.update(primary='939', secondary='163 workflows')
+    work.update(primary='4', secondary='15 working')
+    app = HubHarness(payload)
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        def painted(key):
+            card = app.hub.query_one(f'#surfboard-card-{key}', SurfboardCard)
+            return [strip.crop(card.region.x, card.region.right).text for strip in
+                    app.hub._compositor.render_strips()[card.region.y:card.region.bottom]]
+        original = {key: painted(key) for key in ('swarm', 'work')}
+        assert 'LAUNCHES' in '\n'.join(original['swarm'])
+        assert '163 workflows' in '\n'.join(original['swarm'])
+        assert '15 working' in '\n'.join(original['work'])
+        for row in (shipped, work):
+            row.update(primary='—', secondary='—', status='loading')
+        await app.hub._do_refresh()
+        await pilot.pause()
+        for key in original:
+            assert painted(key) == original[key]
+        for row in (shipped, work):
+            assert row['primary'] == '—'
+
+
 @pytest.mark.parametrize("signals", [0, 1, 4, 9, 11, None])
 async def test_news_signal_footer_counts_segments_and_fills_width_on_resize(signals):
     payload = hub_payload()
@@ -493,10 +521,10 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                     assert "╶╮ ╭─╮╭─╮" in text
                 else:
                     assert "╶─┐" in text
-                caption = card['secondary']
+                caption = card['secondary'].replace('—', '0')
                 if kind == 'unavailable':
                     assert not lines[top + 4][left + 1:right].strip('─ ')
-                    assert '— chains' in text
+                    assert '0 chains' in text
                 else:
                     assert caption in text
                 continue
@@ -528,7 +556,7 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 continue
             if card["key"] == "swarm":
                 text = r["card_text"]["swarm"]
-                assert "TOKENS" in text and "AGENTS ONLINE" not in text, r
+                assert "LAUNCHES" in text and "AGENTS ONLINE" not in text, r
                 if kind == 'unavailable':
                     assert not any(row.strip() for row in body), r
                 else:

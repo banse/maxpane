@@ -47,8 +47,11 @@ from maxpane_dashboard.intro.matrix import DURATION
 #: measuring 95 columns at the pin and 99 at 149×45.
 #: NFTS and TOKENS retain equal inset padding. NFTS shows native collection digits,
 #: building inset footer and build/open outer counts; token arrows stay right-aligned.
-#: WIP keeps bright job digits and the leading current node category. Its outer footer
-#: shows the active original-workflow count; BUILT BY SWARM keeps its 24H history.
+#: WIP keeps job digits and a busy-seat count; its outer footer counts open workflows.
+#: SHIPPED shows LAUNCHES with completed workflows inside and 24H history below.
+#: Rechecked 2026-11-11 after live 149×45 preview: 939 launches / 163 workflows and
+#: 15 working fit at 143×37. Boundary samples span 110–160 columns and 25–55 rows;
+#: 142×45 scrolls, 143×45 clears; 143×36 scrolls both axes and 144×36 only vertically.
 #: FLEET shows STATS: tokens/jobs/capacity with an acceptance-rate footer.
 #: Rechecked 2026-10-21 after live preview: 143×37 is unchanged. The title occupies
 #: its original top row; navigation now flanks the title with symmetric spacing.

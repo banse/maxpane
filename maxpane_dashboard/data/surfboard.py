@@ -141,6 +141,22 @@ def _event_details(item: dict, seats: object, owners: dict[int, str], holdings: 
     return details
 
 
+def _working_seats(seats):
+    """The full seat map counts identities, independently of daemon/node totals."""
+    if not isinstance(seats, dict):
+        return None
+    identities = set()
+    busy = 0
+    for key, row in seats.items():
+        token = sw._served_token(key)
+        if (token is None or token in identities or not isinstance(row, dict)
+                or sw._served_token(row.get('tokenId')) != token or type(row.get('working')) is not bool):
+            return None
+        identities.add(token)
+        busy += row['working']
+    return busy
+
+
 def normalize_overview(raw: object) -> dict | None:
     if not isinstance(raw, dict) or not isinstance(raw.get("health"), dict) or not isinstance(raw.get("counts"), dict) or not isinstance(raw.get("events"), list):
         return None
@@ -155,6 +171,8 @@ def normalize_overview(raw: object) -> dict | None:
     out["jobs"] = count(counts.get("jobs"))
     out["inference_tokens"] = count(counts.get("inferenceTokens"))
     out["tasks_in_progress"] = count(counts.get("tasksInProgress"))
+    out["launches_live"] = count(counts.get("launchesLive"))
+    out["working_seats"] = _working_seats(raw.get("seats"))
     states = counts.get("jobStates")
     if not isinstance(states, dict) or any(not isinstance(k, str) or count(v) is None for k, v in states.items()):
         return None
@@ -259,11 +277,13 @@ def coerce_source(value: object, name: str, *, now: float) -> dict | None:
 
 def _coerce_overview(payload: dict) -> dict | None:
     o, events = payload.get("overview"), payload.get("events")
-    if isinstance(o, dict) and "inference_tokens" not in o:
-        o = dict(o, inference_tokens=None)
+    if isinstance(o, dict):
+        o = dict(o)
+        for key in ("inference_tokens", "launches_live", "working_seats"):
+            o.setdefault(key, None)
     if not isinstance(o, dict) or set(o) != set(SURFBOARD_OVERVIEW_FIELDS) or not isinstance(events, list) or len(events) > 60:
         return None
-    for key in ("agents_online", "working_now", "accepted_24h", "jobs_24h", "oracles_24h", "seats_enrolled", "jobs", "tasks_in_progress", "inference_tokens"):
+    for key in ("agents_online", "working_now", "accepted_24h", "jobs_24h", "oracles_24h", "seats_enrolled", "jobs", "tasks_in_progress", "inference_tokens", "launches_live", "working_seats"):
         if o[key] is not None and count(o[key]) is None:
             return None
     if not isinstance(o["services"], dict) or set(o["services"]) != {"verifier", "publisher", "deployer"}:
@@ -493,19 +513,16 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     if points is not None:
         spark_detail+=f" · range {min(points):,}–{max(points):,} · until {hhmm(hourly.get('until'))}"
         if not any(points):spark_detail+=" · quiet 24h"
-    shipped = (tokens_catalogue or {}).get('shipped') or {}
-    shipped_total = count(shipped.get('count'))
-    shipped_state = shipped.get('state', 'unavailable')
-    shipped_text = _value(shipped_total)
-    if shipped_total is not None and shipped_state == 'partial':
-        shipped_text = '≥' + shipped_text
-    new_tokens = count(((tokens_catalogue or {}).get('ranking') or {}).get('total'))
-    card("swarm", "SHIPPED", shipped_text, _value(new_tokens, " new"),
-         "SHIPPED · distinct deployed production tokens, including inactive deployments"
-         + f" · catalogue read {hhmm(shipped.get('as_of'))}"
-         + " · inner footer: tokens launched in 24h · " + spark_detail,
-         "swarm", points=points)
-    result[-1]['status'] = ('active' if new_tokens else 'idle') if shipped_state == 'ok' else shipped_state
+    current_work = current_work or {}
+    shipped_total = count(overview.get('launches_live'))
+    completed_workflows = count(current_work.get('completed_workflows'))
+    card("swarm", "SHIPPED", _value(shipped_total), _value(completed_workflows, " workflows"),
+         "SHIPPED · completed launches: live launches reported by the swarm"
+         + " · successfully completed workflows, including superseded releases"
+         + f" · workflows read {hhmm(current_work.get('workflows_read_ts'))} · " + spark_detail,
+         "swarm", points=points, source='overview')
+    if result[-1]['status'] == 'active':
+        result[-1]['status'] = 'idle' if shipped_total is not None else 'unavailable'
     if agent_seats is None:
         agent_seats = [dict(token_id=(data.get('swarm_seat_selected') or {}).get('token_id'),
                             live=data.get('swarm_seat_live'), outcome=data.get('swarm_seat_outcome'))] + [{}]*3
@@ -566,7 +583,6 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
                             f" · completed jobs read {hhmm((sources.get('overview') or {}).get('read_ts'))}"
                             " · successfully completed jobs; excludes cancelled, blocked and executing"
                             " · 365-day years, whole days only")
-    current_work = current_work or {}
     research = current_work.get('research') or {}
     assessing, chains = count(research.get('count')), count(research.get('chains'))
     oracle_state = research.get('state', 'unavailable')
@@ -662,22 +678,22 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     summary = {key: count((work.get("summary") or {}).get(key)) for key in SURF_WORK_SUMMARY_KEYS}
     jobs, workflows = summary["jobs"], summary["workflows"]
     state = work.get("state", "unavailable")
-    node_counts = current_work.get('node_counts')
-    top = min(node_counts, key=lambda key: (-node_counts[key], key)) if node_counts else None
+    working_seats = count(overview.get('working_seats'))
     waiting = count(current_work.get('waiting_jobs'))
-    subtitle = (f'{node_counts[top]:,} {top}' if top else f'{waiting:,} waiting' if waiting
-                else '0 working' if node_counts == {} or jobs == 0 else '— working')
+    subtitle = f'{working_seats:,} working' if working_seats is not None else '— working'
     card("work", "WORK IN PROGRESS", f"{jobs:,}" if jobs is not None else "—", subtitle,
          "WORK IN PROGRESS · " + " · ".join(f"{_value(summary[key])} {key}" for key in SURF_WORK_SUMMARY_KEYS)
          + f" · loaded {_value(work.get('jobs_loaded'))} jobs · {_value(work.get('workflows_loaded'))} workflows"
          + f" · {_value(work.get('details_loaded'))}/{_value(work.get('details_expected'))} details"
          + f" · current nodes {_value(current_work.get('jobs_loaded'))}/{_value(current_work.get('jobs_expected'))} jobs"
          + f" · nodes read {hhmm(current_work.get('read_ts'))}"
+         + " · working agents: distinct busy seats in the full swarm roster"
+         + f" · agents read {hhmm((sources.get('overview') or {}).get('read_ts'))}"
          + f" · {_value(waiting)} unfinished jobs without a working node"
          + (" · partial" if work.get("partial") else "")
          + f" · read {hhmm(work.get('read_ts'))} · Enter to open", "work")
     result[-1].update(work_summary=summary, meter_kind="work", meter_state=state,
-                     status=("active" if node_counts else "idle") if state == "ok" and jobs is not None else
+                     status=("active" if working_seats else "idle") if state == "ok" and jobs is not None else
                      "stale" if state == "stale" else "unavailable")
     return result
 

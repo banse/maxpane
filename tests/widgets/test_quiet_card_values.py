@@ -145,18 +145,20 @@ async def test_top_seat_change_cannot_inherit_the_old_leaders_stats():
         assert '42 accepted' not in face(pilot.app, card) and '80%' not in face(pilot.app, card)
 
 
-async def test_explicit_empty_boardroom_primary_clears_the_previous_observation():
+async def test_empty_boardroom_primary_keeps_the_previous_observation():
     card = SurfboardCard('work', 'WIP', 0, 0)
     card.set_data(dict(primary='12', status='active'))
     async with Cards(card).run_test(size=(30, 12)) as pilot:
+        original = face(pilot.app, card).splitlines()
+        top = next(i for i, row in enumerate(original) if '┌' in row)
         card.set_data(dict(primary='', status='idle'))
         await pilot.pause()
         rows = face(pilot.app, card).splitlines()
-        top = next(i for i, row in enumerate(rows) if '┌' in row)
-        assert all(not row.strip('│ ') for row in rows[top+1:top+4])
+        assert rows[top+1:top+4] == original[top+1:top+4]
         card.set_data(dict(primary='—', status='loading'))
         await pilot.pause()
-        assert card._display_data['primary'] == ''
+        assert face(pilot.app, card).splitlines()[top+1:top+4] == original[top+1:top+4]
+        assert card.data['primary'] == '—'
 
 
 async def test_market_caption_keeps_its_observed_change_when_factory_shape_changes():

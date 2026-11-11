@@ -1642,7 +1642,8 @@ SURFBOARD_FOOTER_FIELDS = ("market_value_usd", "market_basis", "market_state", "
                           "inference_tokens", "overview_state", "overview_read_ts", "provider_ts", "as_of")
 SURFBOARD_OVERVIEW_FIELDS = ("agents_online", "working_now", "accepted_24h", "jobs_24h",
                            "oracles_24h", "seats_enrolled", "jobs", "job_states",
-                           "tasks_in_progress", "services", "owners", "inference_tokens")
+                           "tasks_in_progress", "services", "owners", "inference_tokens",
+                           "launches_live", "working_seats")
 SURFBOARD_EVENT_FIELDS = ("key", "timestamp", "kind", "job_id", "token_id", "agent_id",
                         "role", "step", "state", "objective", "details")
 SURFBOARD_COMMAND_LIMIT = 512

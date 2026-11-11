@@ -351,26 +351,23 @@ class SurfboardCard(LoadingCard, can_focus=True):
             primary = primary or '\n'.join(f'★ {name} — IMD' for name in ('burned', 'rewarded', 'fees'))
             data['primary'] = self._values.field((prefix, 'primary'), primary, numeric=True)
         else:
-            missing = data.get('primary') is None or primary == 'unavailable' and key != 'announce' or (bool(MISSING.fullmatch(primary)) and
+            missing = data.get('primary') is None or primary in ('', 'unavailable') and key != 'announce' or (bool(MISSING.fullmatch(primary)) and
                                        (key != 'announce' or data.get('status') in (None, 'loading', 'unavailable')))
-            data['primary'] = ('' if missing else primary) if key in ('work', 'oracles') else (
-                self._values.retain((prefix, 'primary'), primary, missing=missing) or '')
+            data['primary'] = self._values.retain((prefix, 'primary'), primary, missing=missing) or ''
         secondary = flatten(data.get('secondary'))
-        count_label = {'work': 'working', 'oracles': 'agents', 'surf-nft': 'building'}.get(key)
+        count_label = {'work': 'working', 'oracles': 'agents', 'swarm': 'workflows', 'surf-nft': 'building'}.get(key)
         if count_label and MISSING.fullmatch(secondary):
             secondary += ' ' + count_label
-        data['secondary'] = secondary if key in ('work', 'oracles', 'swarm') else self._values.field((prefix, 'secondary'), secondary, numeric=True)
+        data['secondary'] = (self._values.retain((prefix, 'secondary'), secondary, missing=True) or ''
+                             if key != 'announce' and secondary in ('', 'unavailable') else
+                             self._values.field((prefix, 'secondary'), secondary, numeric=True))
         for name in ('numerator', 'denominator', 'share_price'):
-            if key == 'oracles':
-                continue
             data[name] = self._values.retain((prefix, name), data.get(name), missing=not _number(data.get(name)))
         for name, fields in (('fleet_summary', ('tokens', 'jobs', 'capacity', 'accept_rate')),
                              ('work_summary', ('workflows',)), ('nft_summary', ('building', 'mint_open'))):
             summary = data.setdefault(name, {}) or {}
             data[name] = summary
             for field in fields:
-                if key == 'work' and name == 'work_summary':
-                    continue
                 value = self._values.retain((prefix, name, field), summary.get(field), missing=not (_number(summary.get(field)) and (summary[field] <= 100 if field == 'accept_rate' else summary[field] == int(summary[field]))))
                 summary[field] = value if value is not None else 0
         if key == 'swarm-tokens':
@@ -398,7 +395,7 @@ class SurfboardCard(LoadingCard, can_focus=True):
             footer = meter_text(self._display_footer, width)
         numeric = self._display_footer.get('key') in ('work', 'oracles', 'surf-nft', 'pool4', 'swarm-tokens', 'protocol')
         # Keep rich meter styles while replacing missing values.
-        if MISSING.search(footer.plain) and self.key not in ('work', 'oracles'):
+        if MISSING.search(footer.plain):
             if numeric:
                 footer = Text(self._values.field('meter', footer.plain, numeric=True), style=MUTED)
             else:
@@ -491,7 +488,7 @@ class SurfboardCard(LoadingCard, can_focus=True):
         numeric_readout = False
         rows = [("", False), (primary, not muted), (secondary, False)]
         if self.key in ("swarm", "launchpad", "oracles", "pool4", "work", "surf-nft") or self.seat_slot is not None:
-            label = " SEAT " if self.seat_slot is not None else {"swarm": " TOKENS ",
+            label = " SEAT " if self.seat_slot is not None else {"swarm": " LAUNCHES ",
                      "launchpad": " COINS ", "oracles": " JOBS ",
                      "pool4": " IMD PRICE ", "work": " JOBS ", "surf-nft": " COLLECTIONS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
@@ -557,7 +554,7 @@ class SurfboardCard(LoadingCard, can_focus=True):
         body.append("┌" + clip(label, inside).center(inside, "─") + "┐\n", style=border_inset)
         if label and (start := body.plain.find(label.strip())) >= 0:
             body.stylize(Style(bold=False), start, start + len(label.strip()))
-        count_label = {'work': 'working', 'oracles': 'agents', 'surf-nft': 'building'}.get(self.key)
+        count_label = {'work': 'working', 'oracles': 'agents', 'swarm': 'workflows', 'surf-nft': 'building'}.get(self.key)
         if count_label and secondary.strip() in ('-', '--', '—'):
             secondary += ' ' + count_label
         bottom = f" {self.count_caption(Text(secondary)).plain} " if label else ""

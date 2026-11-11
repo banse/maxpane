@@ -32,6 +32,7 @@ class SurfCardReader:
         self.tasks = {}
         self.attempts = {}
         self.workflows = None
+        self.completed_workflows = None
         self.workflows_ts = None
         self._workflow_before = None
         self._workflow_states = {}
@@ -133,6 +134,7 @@ class SurfCardReader:
             states = [workflow_is_open(row.get('status')) for row in rows]
             if None not in states:
                 self.workflows = sum(states)
+                self.completed_workflows = sum(row.get('status') in ('completed', 'superseded') for row in rows)
                 self.workflows_ts = stamp
 
     async def _research(self):
@@ -332,6 +334,7 @@ class SurfCardReader:
         complete = fresh and self.current_complete and expected == len(self.current_jobs)
         facts = dict(state='ok' if complete else 'partial' if fresh else 'stale' if self.current_ts else 'unavailable',
                      read_ts=self.current_ts, node_counts=None, oracle_agents=None, waiting_jobs=None,
+                     completed_workflows=self.completed_workflows, workflows_read_ts=self.workflows_ts,
                      research=self._research_snapshot(),
                      jobs_loaded=len(self.current_jobs), jobs_expected=expected,
                      reason='Current node coverage incomplete')

@@ -118,25 +118,27 @@ def test_unknown_detector_prevents_a_false_zero_bar():
     assert cards[0]['numerator'] is cards[0]['denominator'] is None
 
 
-def test_shipped_counts_deployed_tokens_instead_of_online_agents():
+def test_shipped_counts_live_launches_and_completed_workflows_not_token_contracts():
     catalogue = dict(shipped=dict(count=935, state='ok', as_of=990), ranking=dict(total=3))
-    rows = hub.cards(dict(surfboard_overview=dict(agents_online=1035, working_now=7)),
-                     {}, now=1000, tokens_catalogue=catalogue)
+    data = dict(surfboard_overview=dict(agents_online=1035, working_now=7, launches_live=285))
+    current = dict(completed_workflows=218, workflows_read_ts=980)
+    rows = hub.cards(data, {'overview': dict(state='ok', read_ts=990)}, now=1000,
+                     tokens_catalogue=catalogue, current_work=current)
     card = next(row for row in rows if row['key'] == 'swarm')
-    assert (card['primary'], card['secondary']) == ('935', '3 new')
-    assert 'production' in card['detail'] and 'inactive' in card['detail']
-    catalogue['shipped']['state'] = 'partial'
-    assert next(row for row in hub.cards({}, {}, now=1000, tokens_catalogue=catalogue)
-                if row['key'] == 'swarm')['primary'] == '≥935'
+    assert (card['primary'], card['secondary']) == ('285', '218 workflows')
+    assert 'superseded' in card['detail'] and hub.hhmm(980) in card['detail']
+    unknown = next(row for row in hub.cards({}, {}, now=1000, tokens_catalogue=catalogue)
+                   if row['key'] == 'swarm')
+    assert (unknown['primary'], unknown['secondary']) == ('—', '—')
 
 
 def test_wip_waiting_is_not_working_and_research_uses_active_query():
     current = dict(node_counts={}, waiting_jobs=1, oracle_agents=None,
                    research=dict(count=1, chains=1, state='ok', read_ts=990))
-    data = dict(surf_work=dict(state='ok', summary=dict(jobs=1)),
+    data = dict(surf_work=dict(state='ok', summary=dict(jobs=1)), surfboard_overview=dict(working_seats=0),
                 surf_oracles=dict(state='ok', rows=[dict(status='attested', chain_id=8453)]))
     rows = {row['key']: row for row in hub.cards(data, {}, now=1000, current_work=current)}
-    assert (rows['work']['primary'], rows['work']['secondary'], rows['work']['status']) == ('1', '1 waiting', 'idle')
+    assert (rows['work']['primary'], rows['work']['secondary'], rows['work']['status']) == ('1', '0 working', 'idle')
     assert (rows['oracles']['primary'], rows['oracles']['numerator']) == ('1', 1)
     assert 'filtered' in rows['oracles']['detail']
     current['research'] = dict(count=None, chains=None, state='unavailable')
@@ -162,7 +164,7 @@ def test_research_card_uses_complete_filtered_count_not_recent_history(count, ch
 
 
 @pytest.mark.parametrize('jobs,workflows,status,subtitle', [
-    (5, 1, 'idle', '— working'), (0, 0, 'idle', '0 working'),
+    (5, 1, 'idle', '— working'), (0, 0, 'idle', '— working'),
     (12, 3, 'idle', '— working'),
 ])
 def test_work_card_projects_loaded_counts(jobs, workflows, status, subtitle):
@@ -192,13 +194,16 @@ def test_work_card_preserves_stale_and_unknown_counts_without_false_zero():
     assert all(value is None for value in unknown['work_summary'].values())
 
 
-@pytest.mark.parametrize('counts,expected', [
-    ({'build': 3, 'audit': 2}, '3 build'), ({'build': 1, 'audit': 2}, '2 audit'),
-    ({'build': 2, 'audit': 2}, '2 audit'), ({}, '0 working'), (None, '— working'),
+@pytest.mark.parametrize('agents,expected', [
+    (7, '7 working'), (1, '1 working'), (0, '0 working'), (None, '— working'),
 ])
-def test_work_footer_uses_current_node_majority_with_deterministic_ties(counts, expected):
-    rows = hub.cards({}, {}, now=1000, current_work=dict(node_counts=counts, read_ts=900))
-    assert next(row for row in rows if row['key'] == 'work')['secondary'] == expected
+def test_work_footer_counts_busy_seats_not_items_or_daemons(agents, expected):
+    data = dict(surfboard_overview=dict(working_seats=agents, working_now=29),
+                surf_work=dict(state='ok', summary=dict(jobs=5)))
+    rows = hub.cards(data, {}, now=1000, current_work=dict(node_counts={'item':13}, read_ts=900))
+    card = next(row for row in rows if row['key'] == 'work')
+    assert card['secondary'] == expected
+    assert card['status'] == ('active' if agents else 'idle')
 
 
 @pytest.mark.parametrize('agents,expected', [(0, '0 agents'), (7, '7 agents'), (None, '— agents')])
@@ -329,11 +334,12 @@ def test_corrupt_persisted_hourly_timestamp_is_rejected_even_with_matching_hash(
 
 def test_swarm_stale_hourly_retains_chart_and_discloses_both_read_clocks():
     sources={'overview':{'state':'ok','read_ts':200},'hourly':{'state':'stale','read_ts':100}}
-    data={'surfboard_overview':{'agents_online':1,'working_now':0},'surfboard_hourly':{'points':[1]*8,'until':99}}
-    catalogue={'shipped': {'count': 1, 'state': 'ok', 'as_of': 200}}
-    card=next(c for c in hub.cards(data,sources,now=200,tokens_catalogue=catalogue) if c['key']=='swarm')
+    data={'surfboard_overview':{'launches_live':1},'surfboard_hourly':{'points':[1]*8,'until':99}}
+    work={'completed_workflows':2,'workflows_read_ts':190}
+    card=next(c for c in hub.cards(data,sources,now=200,current_work=work) if c['key']=='swarm')
     assert card['status']=='stale' and card['points']==[1]*8
-    assert 'catalogue read '+hub.hhmm(200) in card['detail']
+    assert 'overview read '+hub.hhmm(200) in card['detail']
+    assert 'workflows read '+hub.hhmm(190) in card['detail']
     assert 'hourly · read '+hub.hhmm(100) in card['detail']
     assert 'stale' not in card['detail']
 
