@@ -23,11 +23,27 @@ async def test_refusing_card_and_retained_state_survive_screen_refresh(setup,siz
         def strips():
             return [s.crop(card.region.x,card.region.right) for s in app.hub._compositor.render_strips()[card.region.y:card.region.bottom]]
         painted='\n'.join(s.text for s in strips())
-        assert 'NOT ACCEPTING' in painted and '0 of 1' in painted
+        assert 'NOT ACCEPTING' in painted and '0 of 1' not in painted
         assert 'OFF' not in painted and 'active' not in painted
-        caption=next(s for s in strips()[-1] if 'NOT ACCEPTING' in s.text)
-        # Textual's border caption promotes ANSI yellow to its bright counterpart.
-        assert caption.style.color.get_truecolor()==Color.parse('bright_yellow').get_truecolor()
+        box_bottom=next(s for s in strips() if '└' in s.text)
+        caption=next(s for s in box_bottom if 'NOT ACCEPTING' in s.text)
+        orange=Color.parse('#ff9f43').get_truecolor()
+        assert caption.style.color.get_truecolor()==orange
+        assert next(s for s in strips()[0] if '╭' in s.text).style.color.get_truecolor()==orange
+        assert next(s for row in strips() for s in row if '┌' in s.text).style.color.get_truecolor()==orange
+        top=next(i for i,row in enumerate(strips()) if '┌' in row.text)
+        left,right=strips()[top].text.index('┌'),strips()[top].text.index('┐')
+        digit=next(s for row in strips()[top+1:top+4] for s in row.crop(left+1,right) if s.text.strip())
+        assert digit.style.color.get_truecolor()==card.rich_style.color.get_truecolor(app.ansi_theme)
+        assert strips()[-1].text.count('▰')==card.region.width-9
+        assert next(s for s in strips()[-1] if 'NA' in s.text).style.color.get_truecolor()==orange
+        bar=next(s for s in strips()[-1] if '▰' in s.text)
+        assert bar.style.color.get_truecolor()==Color.parse('red').get_truecolor(app.ansi_theme)
+        card.focus();await pilot.pause()
+        for width in (size[0]+12,size[0]):
+            await pilot.resize_terminal(width,size[1]);await pilot.pause()
+            assert strips()[-1].text.count('▰')==card.region.width-9
+            assert next(s for s in strips()[0] if '╭' in s.text).style.color.get_truecolor()==orange
         original=[s.text for s in strips()]
         reader.manager.swarm_client.fetch_seat_standing.return_value=None
         await reader._presence(650)
@@ -35,13 +51,15 @@ async def test_refusing_card_and_retained_state_survive_screen_refresh(setup,siz
         await app.hub._do_refresh();await pilot.pause()
         assert [s.text for s in strips()]==original
         assert card.data['status']=='stale'
-        assert not any(c in strips()[-1].text for c in '▰▱')
+        assert 'NA' in strips()[-1].text and '▰' in strips()[-1].text
         raw['standing']['working']=1
         reader.manager.swarm_client.fetch_seat_standing.return_value=raw
         await reader._presence(650)
         row.update(project(reader,now[0]));await app.hub._do_refresh();await pilot.pause()
         assert '1 of 1' in '\n'.join(s.text for s in strips())
         assert 'BUSY' in strips()[-1].text and '▰' in strips()[-1].text
+        assert 'NOT ACCEPTING' not in '\n'.join(s.text for s in strips())
+        assert next(s for s in strips()[0] if '╭' in s.text).style.color.get_truecolor()!=orange
         assert 'accepting work: no' in str(card.tooltip)
         raw['standing']['working']=0;raw['presence']['acceptingWork']=True
         await reader._presence(650)
@@ -62,3 +80,8 @@ async def test_refusing_card_and_retained_state_survive_screen_refresh(setup,siz
         await reader._presence(650)
         row.update(project(reader,now[0]));await app.hub._do_refresh();await pilot.pause()
         assert 'offline' in '\n'.join(s.text for s in strips()) and 'OFF' in strips()[-1].text
+        row.update(token_id=None,primary='',secondary='type in',status='empty',meter_state='empty')
+        await app.hub._do_refresh();await pilot.pause()
+        assert 'NOT ACCEPTING' not in '\n'.join(s.text for s in strips())
+        assert 'NA' not in strips()[-1].text
+        assert next(s for s in strips()[0] if '╭' in s.text).style.color.get_truecolor()!=orange

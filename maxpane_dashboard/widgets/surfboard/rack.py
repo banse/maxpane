@@ -28,6 +28,7 @@ GREEN = "green"
 MUTED = "dim"
 AMBER = "yellow"
 RED = "red"
+ORANGE = "#ff9f43"
 
 # Fixed rack identities; the four agent cards carry independent assignments.
 SLOTS = (
@@ -81,35 +82,6 @@ def _token_preview(rows, width, style, value_style, render_value=None):
     return lines
 
 
-def _fleet_preview(summary, width, style, value_style, render_value=None):
-    """Three fixed rows, with only observed values in the leaderboard ink."""
-    values = []
-    for key in ('tokens', 'jobs', 'capacity'):
-        value = summary.get(key)
-        values.append((fmt_compact(value) if key == 'tokens' else f'{value:,}')
-                      if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else '—')
-    lines = []
-    for label, value in zip(('tokens', 'jobs', 'capacity'), values):
-        if label == 'tokens' and cell_len(label) + cell_len(value) + 3 > width:
-            value = f"{summary['tokens']:.2e}"
-        if label == 'capacity' and cell_len(label) + cell_len(value) + 3 > width:
-            label = 'cap.'
-        prefix = label + ' '
-        available = max(0, width - 2 - cell_len(prefix))
-        fitted, lost = fit_prose(value, available, style=value_style if value != '—' else style)
-        if render_value is not None:
-            fitted = render_value(fitted)
-        fitted.align('right', available)
-        line = Text(clip(prefix, max(0, width-2)), style=style).append_text(fitted)
-        lines.append((padded_inner_row(line, width), lost or cell_len(prefix) + 3 > width))
-    return lines
-
-
-def _fleet_accept_rate(summary):
-    rate = summary.get('accept_rate')
-    return f'{rate:.2f}%' if _number(rate) and rate <= 100 else '—'
-
-
 def _protocol_footer(card, width):
     share = flatten(card.get('secondary'))
     text = share.removesuffix(' of supply') + ' burned' if share.endswith('% of supply') else '—'
@@ -131,8 +103,10 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
-    if key in AGENT_KEYS and (state == 'not_accepting' or card.get('meter_kind') == 'presence'):
-        label = {'not_accepting': 'NOT ACCEPTING', 'busy': 'BUSY', 'idle': 'IDLE', 'offline': 'OFF'}.get(state, '')
+    if key in AGENT_KEYS and state == 'not_accepting':
+        return Text('NA ', style=ORANGE).append('▰' * (8 if width is None else max(0, width-3)), style=RED)
+    if key in AGENT_KEYS and card.get('meter_kind') == 'presence':
+        label = {'busy': 'BUSY', 'idle': 'IDLE', 'offline': 'OFF'}.get(state, '')
         return Text(label, style=MUTED if status == 'idle' else AMBER)
     if key == "surf-nft":
         summary = card.get("nft_summary") or {}
@@ -298,6 +272,7 @@ class SurfboardCard(LoadingCard, can_focus=True):
         if self.seat_slot is not None:
             self.data["seat_slot"] = self.seat_slot
             self.data.setdefault("token_id", None)
+            self.styles.border = ('round', ORANGE) if self.data.get('meter_state') == 'not_accepting' else None
         if self.key == "surf-nft":
             self.data["destination"] = "surf-nft"
             self.data.setdefault("detail", "NFTS · observed collections · Enter to open")
@@ -331,6 +306,8 @@ class SurfboardCard(LoadingCard, can_focus=True):
         self._display_footer = (self._display_data if self.footer_data is self.data else
                                 self._present_data(self.footer_data, 'footer'))
         self.tooltip = Text(self.detail)
+        if self.data.get('meter_state') == 'not_accepting':
+            self.tooltip.append('\n' + flatten(self.data.get('secondary')))
         if self.key == "board":
             summary = self.data.get("fleet_summary") or {}
             model = flatten(summary.get("model"))
@@ -472,9 +449,12 @@ class SurfboardCard(LoadingCard, can_focus=True):
         inset = Style.parse(palette["accent"] if color == GREEN else color) + Style(bgcolor=palette["background"])
         border_inset = (Style.parse(MUTED) + Style(bgcolor=palette["background"])
                         if color == AMBER else inset)
-        if self.key in ("protocol", "surf-nft", "board", "pool4"):
+        if self.seat_slot is not None and data.get('meter_state') == 'not_accepting':
+            border_inset = Style(color=ORANGE, bgcolor=palette['background'])
+            secondary = 'NOT ACCEPTING'
+        elif self.key in ("protocol", "surf-nft", "pool4"):
             border_inset = Style.parse(MUTED) + Style(bgcolor=palette["background"])
-        elif self.key == "work":
+        elif self.key in ("work", "board"):
             active = status == 'active'
             border_inset = Style.parse(palette["accent"] if active else MUTED) + Style(bgcolor=palette["background"])
         elif self.key == "announce" and status == "active":
@@ -484,16 +464,18 @@ class SurfboardCard(LoadingCard, can_focus=True):
         label_style, value_style, readout_style = inner_styles(
             palette, active=border_inset.color in (Style.parse(palette['accent']).color, Style.parse(GREEN).color),
             frame_color=border_inset.color, ansi_theme=self.app.ansi_theme, text_color=self.rich_style.color)
+        if self.seat_slot is not None and data.get('meter_state') == 'not_accepting':
+            readout_style = label_style
         label = ""
         marker, marker_ink = _price_indicator(self._price_direction)
         marker_width = 0
         native_digits = False
         numeric_readout = False
         rows = [("", False), (primary, not muted), (secondary, False)]
-        if self.key in ("swarm", "launchpad", "oracles", "pool4", "work", "surf-nft") or self.seat_slot is not None:
+        if self.key in ("swarm", "launchpad", "oracles", "pool4", "work", "surf-nft", "board") or self.seat_slot is not None:
             label = " SEAT " if self.seat_slot is not None else {"swarm": " LAUNCHES ",
                      "launchpad": " COINS ", "oracles": " JOBS ",
-                     "pool4": " IMD PRICE ", "work": " JOBS ", "surf-nft": " COLLECTIONS "}[self.key]
+                     "pool4": " IMD PRICE ", "work": " JOBS ", "surf-nft": " COLLECTIONS ", "board": " AGENTS "}[self.key]
             count = primary.removesuffix(" online") if self.key == "swarm" else primary.removeprefix("IDMD #")
             digits = count.replace(",", "")
             if self.key == "pool4":
@@ -545,10 +527,6 @@ class SurfboardCard(LoadingCard, can_focus=True):
             prose_style = Style(color=self.rich_style.color, bgcolor=palette["background"], dim=False)
             preview = [(padded_inner_row(line, inside), False)
                        for line in _post_preview(primary, max(0, inside-2), prose_style)]
-        elif self.key == "board":
-            summary = data.get("fleet_summary") or {}
-            label, secondary = " STATS ", _fleet_accept_rate(summary)
-            preview = _fleet_preview(summary, inside, label_style, value_style, self.loading_value)
         elif self.key == "swarm-tokens":
             label = " LATEST "
             preview = _token_preview(ranking.get("latest"), inside,

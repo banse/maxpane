@@ -1,5 +1,23 @@
 # Surfboard follow-ups
 
+## Agent refusal face and SWARM count face — 2026-11-11
+
+NOT ACCEPTING now occupies the orange inner footer, with orange inner/outer
+borders and neutral seat digits. The outer orange NA label and full red bar
+indicate refusal; they survive a failed refresh with the prior source clock.
+Busy-but-refusing remains BUSY. SWARM now displays online agents and distinct
+working seats from the overview, with active colors only for fresh positive work.
+Its worked-duration footer and runtime metadata remain intact.
+
+The live preview, unchanged 143x37 boundary and four caught mutations are recorded
+in `boardroom_agent_faces_plan.md`. Changed/composing checks passed 522 cases after
+one old title assertion was corrected; all 39 residual failures and one guard
+failure reproduce at e9c621af. They are the previously documented palette,
+retired card-structure, navigation and TOKENS/SWORN CSS-slice debt. Fast guards
+passed 130 checks; doc pins passed 12.
+Final review approved without findings; ten named checks passed and the
+independent freshness mutation was caught and restored. No new follow-up remains.
+
 ## Selected-agent presence — 2026-11-11
 
 Boardroom agent cards now read selected-seat standing independently. A connected

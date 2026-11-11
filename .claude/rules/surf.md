@@ -1045,18 +1045,18 @@ selects a wallet, `r` explicitly requests a fresh upstream scan, and ordinary
 polls use the upstream cache. Combined token valuations are apportioned once;
 NFTs, seats and contract TVL never enter total value. The legacy portfolio preview
 and manager remain separate. The WIP card and `p` Protocol binding stay in place.
-FLEET opens LEADERBOARD and shows a neutral STATS
-inset with contributor tokens, occupied working slots (`jobs`) and worker capacity.
-Its inner footer shows canonical seat-record acceptance percentage; zero attempts
-remain unknown. Each source retains its own state and clock in hover, alongside the
-previous runtime, daemon and model metadata. Labels are white and values green;
-the frame and percentage stay neutral. Large counts use compact notation only as
-needed to preserve the inset corners. Its centered outer footer is
+SWARM opens LEADERBOARD and shows an AGENTS inset: native digits for the overview's
+online-agent total, with distinct working seats in the `x working` inner footer.
+It uses the same full-roster working-seat count as WIP, never worker-list length
+or daemon/job counts. Fresh positive work activates the green palette; zero,
+stale and unknown states are neutral. Valid values survive reloads and actual zero
+replaces them. Runtime, daemon and model metadata retain their clocks in hover.
+Whole-number fallback preserves counts too wide for native digits. Its centered outer footer is
 `worked Ny Nw Nd`, using the complete contributor
 summary's `wall_clock_ms` across all devices. Whole days are split into 365-day years,
 seven-day weeks and days; remaining hours are discarded. The existing meter fields
 carry `meter_kind=duration`, milliseconds in `numerator` and no denominator. Unknown
-time is `worked —`; known zero is `worked 0y 0w 0d`. FLEET has no activity label or bar.
+time is `worked —`; known zero is `worked 0y 0w 0d`. SWARM has no activity label or bar.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
 footer is centered `Identity.md`. Three-line gaps below NFTS and TOKENS separate them
 from the AGENT seats; regular-weight キープ / ビルディング use the same dim dashboard
@@ -1076,10 +1076,13 @@ orange BUSY with a full green bar; gray IDLE drains green to orange over 24 hour
 then orange to empty over hours 24–72. Offline is red OFF with empty segments.
 AGENT presence/readiness comes from selected-seat standing, never enrollment
 status or absence from `/workers`. Connected seats refusing new work display
-NOT ACCEPTING; positive work remains BUSY with readiness in the tooltip. Direct
+NOT ACCEPTING in the orange inner footer, with orange inner/outer borders and
+neutral seat digits. The outer footer is orange NA plus a full red bar: a refusal
+indicator retained on failed refreshes, not measured activity. The orange override
+clears on state or identity changes. Positive work remains BUSY with readiness in the tooltip. Direct
 disconnection or a stale heartbeat proves OFF. Independent standing reads run
 at most once per minute per selected token, including forced refreshes. Failed
-reads retain the prior observation and its time without painting a live bar;
+reads retain the prior observation and its time without painting a live activity bar;
 fresh positive worker evidence remains a fallback. Retirement clears presence
 and rejects late results, including remove/re-add races. Boardroom also offers
 one bounded `/seats/<token>` read per unique assigned token (at most four) on its

@@ -590,14 +590,18 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     effort_facts, worker_facts, rate_facts = (board_hero.get(key) or {} for key in ('effort', 'workers', 'rate'))
     fleet.update(tokens=count(effort_facts.get('tokens')), jobs=count((overview.get('job_states') or {}).get('completed')),
                  capacity=count(worker_facts.get('capacity')), accept_rate=number(rate_facts.get('percent')))
-    card("board", "FLEET", "", "",
-         f"FLEET · workers read {hhmm(fleet['read_ts'])}"
+    online, working = count(overview.get('agents_online')), count(overview.get('working_seats'))
+    overview_state = (sources.get('overview') or {}).get('state', 'unavailable')
+    card("board", "SWARM", _value(online), f'{working:,} working' if working is not None else '— working',
+         f"SWARM · {_value(online)} online agents · {_value(working)} distinct working seats"
+         f" · workers read {hhmm(fleet['read_ts'])}"
          f" · runtime metadata {_value(fleet['runtime_known'])}/{_value(fleet['online'])} online seats"
          " · each distinct seat counts once per runtime; both counts in each"
          " · current advertised model and effort; daemon builds combined by base version"
          + " · daemon versions " + (", ".join(row['value'] for row in sw._mix(
-             worker['daemon'] for worker in workers['workers'])) if workers is not None else "—"), "board")
-    result[-1].update(fleet_summary=fleet, status='idle' if fleet['state'] == 'ok' else fleet['state'],
+             worker['daemon'] for worker in workers['workers'])) if workers is not None else "—"), "board", source='overview')
+    status = ('active' if working else 'idle') if working is not None else 'unavailable'
+    result[-1].update(fleet_summary=fleet, status=status if overview_state == 'ok' else overview_state,
                       meter_state=fleet['state'])
     worked_ms = count((data.get('swarm_board_summary') or {}).get('wall_clock_ms'))
     result[-1].update(meter_kind='duration', numerator=worked_ms, denominator=None)

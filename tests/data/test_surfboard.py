@@ -6,6 +6,21 @@ from maxpane_dashboard.data import surfboard as hub
 ROOT=Path(__file__).parents[1]/'fixtures/surf/swarm/hub'
 def capture(name):return json.loads((ROOT/(name+'.json')).read_text())
 
+@pytest.mark.parametrize('working,state,expected', [(6,'ok','active'),(0,'ok','idle'),
+    (6,'stale','stale'),(None,'ok','unavailable'),(6,'unavailable','unavailable')])
+def test_swarm_face_counts_online_agents_and_distinct_working_seats(working,state,expected):
+    overview = hub.normalize_overview(capture('overview'))['overview']
+    overview.update(working_seats=working, working_now=99)
+    data = dict(surfboard_overview=overview, swarm_board_summary={'wall_clock_ms':86400000})
+    row = next(c for c in hub.cards(data, {'overview':dict(state=state,read_ts=100)}, now=100,
+        workers=fleet_workers(), worker_source=dict(state='stale',read_ts=90)) if c['key']=='board')
+    assert row['primary'] == '864'
+    assert row['secondary'] == (f'{working} working' if working is not None else '— working')
+    assert row['status'] == expected and row['title'] == 'SWARM'
+    assert row['numerator'] == 86400000 and row['meter_kind'] == 'duration'
+    assert row['fleet_summary']['state'] == 'stale'
+    assert 'overview read' in row['detail']
+
 @pytest.mark.parametrize('name',['bad_partition','duplicate_records','missing_records','malformed_records'])
 def test_outcome_snapshot_rejected_whole(name):
     assert hub.normalize_records(capture(name)) is None
@@ -257,7 +272,7 @@ def test_fleet_ignores_canonical_rank_and_selected_seat():
     data=dict(swarm_board_rows=list(reversed(rows)),swarm_board_summary=summary,
               swarm_seat_selected={'token_id':1836},swarm_seat_outcome=hub.seat_outcome(records,1836))
     before = fleet_card(fleet_workers(), data=data)
-    assert before['title'] == 'FLEET' and before['destination'] == 'board'
+    assert before['title'] == 'SWARM' and before['destination'] == 'board'
     assert 'accepted jobs' not in before['detail'] and 'top #' not in before['detail']
     for missing in (None, []):
         data['swarm_board_rows'] = missing
@@ -663,7 +678,7 @@ def test_agent_activity_colors_do_not_govern_fleet(selected_busy, top_busy):
                worker_source=dict(state='ok', read_ts=100))}
     assert rows['agent']['status'] == ('working' if selected_busy else 'idle')
     assert rows['agent']['meter_state'] == ('busy' if selected_busy else 'idle')
-    assert rows['board']['status'] == 'idle' and rows['board']['meter_state'] == 'ok'
+    assert rows['board']['status'] == 'unavailable' and rows['board']['meter_state'] == 'ok'
 
 
 @pytest.mark.parametrize('selected_offline', [False, True])
@@ -677,7 +692,7 @@ def test_offline_identity_for_selected_seat_does_not_govern_fleet(selected_offli
     rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed, workers=fleet_workers(),
                worker_source=dict(state='ok', read_ts=100))}
     assert rows['agent']['status'] == rows['agent']['meter_state'] == ('unavailable' if selected_offline else 'idle')
-    assert rows['board']['status'] == 'idle' and rows['board']['meter_state'] == 'ok'
+    assert rows['board']['status'] == 'unavailable' and rows['board']['meter_state'] == 'ok'
 
 
 def test_worker_absence_does_not_prove_offline_or_rewrite_activity_history():
@@ -848,8 +863,8 @@ def test_fleet_runtime_shares_use_distinct_online_seats_and_deduplicate_devices(
     assert facts == dict(codex_percent=pytest.approx(100/3), claude_percent=100, daemon='0.1.2',
         model='model-b', effort='medium', online=3, runtime_known=3, state='ok', read_ts=900,
         tokens=None, jobs=None, capacity=None, accept_rate=None)
-    assert card['destination'] == 'board' and card['title'] == 'FLEET'
-    assert card['status'] == 'idle'
+    assert card['destination'] == 'board' and card['title'] == 'SWARM'
+    assert card['status'] == 'unavailable'
     assert all(text in card['detail'] for text in ('3/3', 'online seats', 'both', 'advertised', '0.1.2+first'))
     assert workers == before
 

@@ -10,7 +10,7 @@ def hub_payload(kind="normal"):
         ("announce", "SURFBOARD", "dashboard", "You can now deploy via the swarm on rh and mainnet. More networks soon.", "7 new replies", 4, 11),
         ("swarm", "SWARM", "swarm", "863 online", "9 working", None, None),
         ("agent", "AGENT", "agent", "IDMD #420", "0 of 3 slots", 43200, 86400),
-        ("board", "FLEET", "board", "52.5%", "astra 6 xhigh", None, None),
+        ("board", "SWARM", "board", "863", "9 working", None, None),
         ("oracles", "ORACLES", "oracles", "7", "— agents", 2, 100),
         ("pool4", "POOL4", "pool4_user", "7.90", "USD", None, None),
         ("surf-nft", "NFTS", "surf-nft", "20", "3 building", None, None),
@@ -21,7 +21,7 @@ def hub_payload(kind="normal"):
         cards.append(dict(key=key, title=title, destination=destination,
                           seat_slot=0 if key == "agent" else None,
                           token_id=420 if key == "agent" else None,
-                          status="experimental" if key == "protocol" else "assessing" if key == "oracles" else "idle" if key == "agent" else "working" if key == "board" else "active",
+                          status="experimental" if key == "protocol" else "assessing" if key == "oracles" else "idle" if key == "agent" else "active",
                           primary=primary, secondary=secondary, token_ranking=None, fleet_summary=None,
                           nft_summary=(dict(deployed=20, building=3, mint_open=15, partial=True, observed_at=STAMP)
                                        if key == 'surf-nft' else None),
@@ -85,7 +85,7 @@ def hub_payload(kind="normal"):
         next(card for card in cards if card["key"] == "announce").update(
             primary="You can now deploy via the swarm on rh and mainnet. " * 4, secondary="99,999 new replies")
         next(card for card in cards if card["key"] == "board").update(
-            fleet_summary=dict(fleet_summary, codex_percent=100., claude_percent=100.,
+            primary='99,999', secondary='99,999 working', fleet_summary=dict(fleet_summary, codex_percent=100., claude_percent=100.,
                                daemon='100.22.33', model='claude-opus-5-5', effort='medium',
                                tokens=999999999999999, jobs=99999, capacity=999999, accept_rate=100.))
         next(card for card in cards if card["key"] == "oracles").update(

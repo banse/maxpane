@@ -52,7 +52,9 @@ from maxpane_dashboard.intro.matrix import DURATION
 #: Rechecked 2026-11-11 after live 149×45 preview: 939 launches / 163 workflows and
 #: 15 working fit at 143×37. Boundary samples span 110–160 columns and 25–55 rows;
 #: 142×45 scrolls, 143×45 clears; 143×36 scrolls both axes and 144×36 only vertically.
-#: FLEET shows STATS: tokens/jobs/capacity with an acceptance-rate footer.
+#: SWARM shows AGENTS digits and working-seat counts; the worked-duration footer remains.
+#: Live 2026-11-11: 1,053 agents / 17 working and orange NOT ACCEPTING / NA-red-bar
+#: fit at 143×37 and 149×45. Eleven boundary samples retain the existing scroll onsets.
 #: Rechecked 2026-10-21 after live preview: 143×37 is unchanged. The title occupies
 #: its original top row; navigation now flanks the title with symmetric spacing.
 #: Normal, stress, unavailable and wide payloads fit at 143×37 and 149×45.

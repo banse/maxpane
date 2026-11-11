@@ -70,7 +70,7 @@ async def test_boardroom_heading_contains_navigation_and_preserves_content_geome
 
 
 @pytest.mark.parametrize('size', [(146, 37), (149, 45)])
-async def test_fleet_stats_acceptance_and_duration_survive_refresh(size):
+async def test_swarm_agents_working_and_duration_survive_refresh(size):
     payload = hub_payload()
     app = HubHarness(payload)
     async with app.run_test(size=size) as pilot:
@@ -80,18 +80,16 @@ async def test_fleet_stats_acceptance_and_duration_survive_refresh(size):
             return '\n'.join(strip.crop(card.region.x, card.region.right).text for strip in
                              app.hub._compositor.render_strips()[card.region.y:card.region.bottom])
         output = painted()
-        assert all(text in output for text in ('STATS', 'tokens', '189.1B', 'jobs', '14,206',
-                                              'capacity', '1,500', '95.84%', 'worked 1y 32w 3d'))
+        assert all(text in output for text in ('AGENTS', '9 working', 'worked 1y 32w 3d'))
         assert 'top model' not in output and 'TOP AGENTS' not in output
         bottom = next(line for line in output.splitlines() if '└' in line)
-        assert '┘' in bottom and '95.84%' in bottom
-        facts = next(row for row in payload['surfboard_cards'] if row['key'] == 'board')['fleet_summary']
-        facts.update(tokens=5000000, jobs=12, capacity=2000, accept_rate=96.25)
+        assert '┘' in bottom and '9 working' in bottom
+        facts = next(row for row in payload['surfboard_cards'] if row['key'] == 'board')
+        facts.update(primary='2,000', secondary='12 working')
         await app.hub._do_refresh()
         await pilot.pause()
         output = painted()
-        assert '5.0M' in output and '96.25%' in output
-        assert '2,000' in output and 'worked 1y 32w 3d' in output
+        assert '12 working' in output and 'worked 1y 32w 3d' in output
         assert card.data['destination'] == 'board'
 
 
@@ -502,15 +500,11 @@ async def test_height_boundary_keeps_card_content_or_advertises_scroll(kind, hei
                 continue
             if card["key"] == "board":
                 text = r["card_text"]["board"]
-                assert "STATS" in text
-                assert all(label in text for label in ('tokens', 'jobs'))
-                assert 'capacity' in text or 'cap.' in text
-                assert 'top model' not in text and 'TOP AGENTS' not in text
+                assert "AGENTS" in text and "STATS" not in text
                 if kind == "unavailable":
-                    assert [row.split() for row in body] == [['tokens', '0'], ['jobs', '0'], ['capacity', '0']]
-                    assert '0.00%' in text and "unavailable" not in text
+                    assert not any(row.strip() for row in body)
                 else:
-                    assert ('100.00%' if kind == 'stress' else '95.84%') in text
+                    assert ('99,999 working' if kind == 'stress' else '9 working') in text
                 continue
             if card["key"] == "oracles":
                 text = r["card_text"]["oracles"]
