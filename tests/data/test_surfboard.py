@@ -284,7 +284,7 @@ def test_nft_card_keeps_unknown_zero_and_partial_counts_separate(summary, primar
 @pytest.mark.parametrize('state,working,capacity,slots,status', [
     ('working', 2, 3, '2 of 3 slots', 'working'),
     ('idle', 0, 3, '0 of 3 slots', 'idle'),
-    ('offline', 0, 0, 'offline', 'offline'),
+    ('offline', 0, 0, '— of — slots', 'unavailable'),
     ('paused', 0, 3, '0 of 3 slots', 'idle'),
     ('paused', 1, 3, '1 of 3 slots', 'working'),
     ('working', 0, 3, '0 of 3 slots', 'idle'),
@@ -638,7 +638,7 @@ def test_fleet_duration_is_independent_of_selected_and_top_agent_activity():
     rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed)}
     assert rows['board']['meter_state'] == 'unavailable'
     assert rows['board']['numerator'] == 1614366561 and rows['board']['denominator'] is None
-    assert rows['agent']['meter_state'] == 'idle' and rows['agent']['numerator'] is None
+    assert rows['agent']['meter_state'] == 'unavailable' and rows['agent']['numerator'] is None
     observed = activity.observe(observed, workers(0), now=200)
     observed = activity.observe(observed, workers(0), now=43400)
     rows = {c['key']: c for c in hub.cards(data, {}, now=43400, activity=observed)}
@@ -676,11 +676,11 @@ def test_offline_identity_for_selected_seat_does_not_govern_fleet(selected_offli
                                        live_state='idle' if selected_offline else 'offline')])
     rows = {c['key']: c for c in hub.cards(data, {}, now=100, activity=observed, workers=fleet_workers(),
                worker_source=dict(state='ok', read_ts=100))}
-    assert rows['agent']['status'] == rows['agent']['meter_state'] == ('offline' if selected_offline else 'idle')
+    assert rows['agent']['status'] == rows['agent']['meter_state'] == ('unavailable' if selected_offline else 'idle')
     assert rows['board']['status'] == 'idle' and rows['board']['meter_state'] == 'ok'
 
 
-def test_fresh_offline_changes_display_without_rewriting_activity_history():
+def test_worker_absence_does_not_prove_offline_or_rewrite_activity_history():
     from copy import deepcopy
     from tests.data.test_surfboard_activity import workers
     observed = hub.work_activity.observe(None, workers(1), now=100)
@@ -690,15 +690,15 @@ def test_fresh_offline_changes_display_without_rewriting_activity_history():
                 swarm_seat_live={'live_state':'offline'},
                 swarm_board_rows=[dict(rank=1, token_id=420, accepted=3253, live_state='offline')])
     row = next(c for c in hub.cards(data, {}, now=300, activity=observed) if c['key'] == 'agent')
-    assert row['meter_state'] == row['status'] == 'offline'
-    assert (row['numerator'], row['denominator']) == (86300, 86400)
-    assert 'activity offline' in row['detail'] and 'workers read '+hub.hhmm(200) in row['detail']
+    assert row['meter_state'] == row['status'] == 'unavailable'
+    assert (row['numerator'], row['denominator']) == (None, 86400)
+    assert 'activity idle' in row['detail'] and 'workers read '+hub.hhmm(200) in row['detail']
     assert 'observed stop '+hub.hhmm(200) in row['detail']
     assert observed == before
 
 
 @pytest.mark.parametrize('failure, expected', [
-    ('stale', 'stale'), ('failed', 'stale'), ('incomplete', 'unavailable'),
+    ('stale', 'unavailable'), ('failed', 'unavailable'), ('incomplete', 'unavailable'),
     ('unknown', 'unavailable'), ('missing', 'unavailable'),
 ])
 def test_uncertain_activity_never_certifies_offline_for_agent(failure, expected):
@@ -973,7 +973,7 @@ def test_agent_card_hides_stale_activity_in_tooltip(monkeypatch):
     from maxpane_dashboard.data import surfboard
     monkeypatch.setattr(surfboard.work_activity, 'project', lambda *args, **kwargs:
                         dict(state='stale', remaining=None, as_of=1000, stopped_ts=None))
-    rows = surfboard.cards({}, {}, now=2000, agent_seats=[{'token_id': 3}])
+    rows = surfboard.cards({}, {}, now=2000, agent_seats=[{'token_id': 3, 'live': {'live_state': 'idle'}}])
     agent = next(row for row in rows if row.get('token_id') == 3)
     assert agent['meter_state'] == 'stale'
     assert 'stale' not in agent['detail']

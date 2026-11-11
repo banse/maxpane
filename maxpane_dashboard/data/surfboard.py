@@ -538,6 +538,18 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
         if outcome.get('token_id') != token:
             outcome = {}
         live = seat.get('live') if isinstance(seat.get('live'), dict) else {}
+        presence = seat.get('presence') or {}
+        if presence.get('token_id') != token:
+            presence = {}
+        observed = work_activity.project(activity, token, now=now)
+        worker_seen = live.get('live_state') in ('idle', 'working', 'paused')
+        worker_known = worker_seen and observed['state'] in ('idle', 'busy')
+        retained = bool(presence) and presence.get('state') != 'ok'
+        use_presence = bool(presence) and (not retained or not worker_known)
+        if use_presence:
+            live = presence
+        elif not worker_seen:
+            live = {}  # Absence from /workers cannot prove disconnection or zero capacity.
         acceptance = outcome.get('accept_rate')
         active,capacity=count(live.get('working')),count(live.get('max_concurrency'))
         live_state=live.get('live_state')
@@ -547,15 +559,32 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
             slot_text=f'{active:,} working'  # Oracle work may exceed maxConcurrency.
         acceptance_text=(f'{acceptance:.1%} accepted' if acceptance is not None else
                          'no submitted record' if outcome.get('listed') is False else 'acceptance —')
+        presence_label = 'standing' if use_presence else 'workers'
+        presence_time = hhmm(presence.get('read_ts')) if use_presence else data.get('swarm_workers_as_of_hhmm') or '—'
         card(key,'AGENT',f'IDMD #{token}',slot_text,
              f"{acceptance_text} · summary cache ≤10m"
-             f" · workers {live_state or '—'} · as of {data.get('swarm_workers_as_of_hhmm') or '—'}",
+             f" · {presence_label} {live_state or '—'} · as of {presence_time}",
              'agent',source='records')
         result[-1].update(seat_slot=slot, token_id=token)
         activity_meter(token, live_state)
-        if result[-1]['status'] == 'offline':
-            api_status = seat.get('api_status')
-            result[-1]['secondary'] = api_status.strip() if isinstance(api_status, str) and api_status.strip() else 'offline'
+        if use_presence:
+            state = live['live_state']
+            result[-1].update(status='stale' if retained else state,
+                              meter_state='busy' if state == 'working' else state)
+            if retained:
+                result[-1]['meter_kind'] = 'presence'
+            elif state == 'idle' and (observed['state'] != 'idle' or observed['remaining'] is None):
+                result[-1].update(meter_kind='presence', numerator=None)
+            if state == 'offline':
+                result[-1]['secondary'] = 'offline'
+        elif not worker_known:
+            state = 'stale' if worker_seen and observed['state'] == 'stale' else 'unavailable'
+            result[-1].update(status=state, meter_state=state, numerator=None)
+        if presence:
+            accepting = {True: 'yes', False: 'no', None: 'unknown'}.get(presence.get('accepting_work'))
+            result[-1]['detail'] += (f" · standing read {hhmm(presence.get('read_ts'))}"
+                                     f" · accepting work: {accepting}"
+                                     + (' · last observed presence' if retained else ''))
     fleet = fleet_summary(workers, worker_source)
     board_hero = data.get('surf_leaderboard_hero') or {}
     effort_facts, worker_facts, rate_facts = (board_hero.get(key) or {} for key in ('effort', 'workers', 'rate'))

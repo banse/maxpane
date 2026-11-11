@@ -6577,6 +6577,7 @@ class SurfManager:
                 or any(token is not None and hub.seat_token(token) is None for token in tokens)):
             raise ValueError('four valid Surfboard seat assignments required')
         self._hub_seats = tuple(tokens)
+        self._card_reader.sync_presence()
 
     def set_seat(self, token: str | int | None) -> None:
         """Select ``token`` for the AGENT detail view, leaving rack assignments alone.
@@ -8191,10 +8192,8 @@ class SurfManager:
         channel_entry = self.cache.get_last_good(SLOT_CHANNEL)
         channel = getattr(channel_entry, "payload", None) or {}
         workers = sw.coerce_workers_slot(getattr(workers_entry, 'payload', None))
-        seat_points = (sw.coerce_seat_slot(getattr(self.cache.get_last_good(SLOT_SWARM_SEAT), 'payload', None),
-                                         now=now) or {}).get('seats', {})
         agent_seats = [dict(token_id=assigned, live=sw._seat_live_from_slot(workers, assigned),
-                            api_status=((seat_points.get(str(assigned)) or {}).get('seat') or {}).get('status'),
+                            presence=self._card_reader.presence_snapshot(assigned),
                             outcome=hub.seat_outcome(sources['records']['payload'], assigned))
                        for assigned in self._hub_seats]
         if workers is not None and (workers['count'] != len(workers['workers']) or workers['malformed_tokens']):

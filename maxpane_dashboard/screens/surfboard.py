@@ -61,6 +61,8 @@ from maxpane_dashboard.intro.matrix import DURATION
 #: Settled geometry refreshes Textual's scrollbar decision after resizing, so
 #: repeated short/tall transitions retain reachable edges and honest title hints.
 #: App-wide width stays 143.
+#: Rechecked 2026-11-11 for standing-based AGENT states: NOT ACCEPTING and 0 of 1
+#: fit at 143×37 and live 149×45; the 110–160 by 25–55 boundary samples are unchanged.
 SURFBOARD_FULL_LAYOUT_COLUMNS = 143
 SURFBOARD_FULL_LAYOUT_ROWS = 37
 

@@ -131,6 +131,9 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     """Width-fitted meters and history; missing values never imply zero."""
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
+    if key in AGENT_KEYS and (state == 'not_accepting' or card.get('meter_kind') == 'presence'):
+        label = {'not_accepting': 'NOT ACCEPTING', 'busy': 'BUSY', 'idle': 'IDLE', 'offline': 'OFF'}.get(state, '')
+        return Text(label, style=MUTED if status == 'idle' else AMBER)
     if key == "surf-nft":
         summary = card.get("nft_summary") or {}
         shown = lambda value: str(int(value)) if _number(value) and value == int(value) else "—"

@@ -53,14 +53,14 @@ def test_each_assigned_card_uses_its_own_activity_capacity_and_outcomes():
     rows = agent_cards(hub.cards({}, {'records':hub.source_envelope(records,100)}, now=100,
                                 agent_seats=assignments, activity=observed))
     assert [r['token_id'] for r in rows] == [420,1836,0,None]
-    assert [r['status'] for r in rows] == ['working','idle','offline','empty']
-    assert [r['secondary'] for r in rows[:3]] == ['1 of 2 slots','0 of 4 slots','offline']
+    assert [r['status'] for r in rows] == ['working','idle','unavailable','empty']
+    assert [r['secondary'] for r in rows[:3]] == ['1 of 2 slots','0 of 4 slots','— of — slots']
     assert '95.9% accepted' in rows[0]['detail'] and '100.0% accepted' in rows[1]['detail']
     assert 'no submitted record' in rows[2]['detail']
     assert [r['destination'] for r in rows] == ['agent','agent','agent',None]
     assert observed == before
     old = agent_cards(hub.cards({}, {}, now=401, agent_seats=assignments,activity=observed))
-    assert [r['meter_state'] for r in old] == ['stale','stale','stale','empty']
+    assert [r['meter_state'] for r in old] == ['stale','stale','unavailable','empty']
 
 
 async def test_manager_assignments_are_memory_only_and_survive_transient_selection(manager, monkeypatch):
@@ -87,7 +87,7 @@ async def test_manager_projects_every_saved_token_from_shared_sources_without_re
     m.set_seat(516)
     rows = agent_cards(m._project_hub()['surfboard_cards'])
     assert [r['token_id'] for r in rows] == [420,1836,0,None]
-    assert [r['status'] for r in rows] == ['working','idle','offline','empty']
+    assert [r['status'] for r in rows] == ['working','idle','unavailable','empty']
     assert '95.9% accepted' in rows[0]['detail'] and '100.0% accepted' in rows[1]['detail']
     m.set_hub_seats([None]*4)
     assert all(r['status']=='empty' for r in agent_cards(m._project_hub()['surfboard_cards']))
@@ -110,8 +110,10 @@ async def test_incomplete_workers_cannot_give_absent_assigned_seat_zero_capacity
     await m.close()
 
 
-async def test_offline_cards_use_each_seats_cached_api_status(manager):
+async def test_enrollment_status_does_not_override_each_seats_runtime_presence(manager):
     from tests.surf_swarm_fixtures import swarm_seat_capture
+    from tests.data.test_surfboard_presence import captured
+    from datetime import datetime, timezone
     m, clock = manager
     read = workers()
     m.cache.store_last_good(SLOT_SWARM_WORKERS, read, ts=clock.now)
@@ -123,9 +125,21 @@ async def test_offline_cards_use_each_seats_cached_api_status(manager):
     m.cache.store_last_good(SLOT_SWARM_SEAT, dict(seats=points), ts=clock.now)
     m.set_hub_seats([7, 420, 3, 7])
     m.set_seat(420)
+    m._hub_active = True
+    standings = {}
+    for token in (7, 420, 3):
+        raw = captured()
+        raw.update(tokenId=str(token), at=datetime.fromtimestamp(clock.now, timezone.utc).isoformat())
+        if token == 420: raw['presence'] = {'connected':False}
+        if token == 3: raw['presence'].update(acceptingWork=True, maxConcurrency=3)
+        standings[token] = raw
+    m.swarm_client.fetch_seat_standing = AsyncMock(side_effect=lambda token: standings[token])
+    await asyncio.gather(*(m._card_reader._presence(token) for token in standings))
     rows = agent_cards(m._project_hub()['surfboard_cards'])
-    assert [row['secondary'] for row in rows] == ['revoked', 'suspended', 'offline', 'revoked']
-    assert all(row['status'] == row['meter_state'] == 'offline' for row in rows)
+    assert [row['secondary'] for row in rows] == ['0 of 1 slots', 'offline', '0 of 3 slots', '0 of 1 slots']
+    assert [row['status'] for row in rows] == ['not_accepting', 'offline', 'idle', 'not_accepting']
+    m.set_hub_seats([None]*4)
+    assert m._card_reader.presence_snapshot(7) is None
     m.swarm_client.fetch_seat_records.assert_not_awaited()
     assert m._swarm_seat_task is None
     await m.close()
@@ -149,10 +163,11 @@ def test_reassignment_and_duplicate_slots_reuse_only_the_named_tokens_stop_histo
 
 
 def test_one_unknown_worker_does_not_erase_another_assigned_tokens_positive_work():
+    from maxpane_dashboard.data import surf_swarm as sw
     read = evidence()
     read['workers'][0]['working'] = None
     read['workers'][1]['working'] = 2
-    assigned = [dict(token_id=t) for t in (420,1836,None,None)]
+    assigned = [dict(token_id=t, live=sw._seat_live_from_slot(read, t)) for t in (420,1836,None,None)]
     rows = agent_cards(hub.cards({}, {},now=100,activity=activity.observe(None,read,now=100),agent_seats=assigned))
     assert [r['meter_state'] for r in rows] == ['unavailable','busy','empty','empty']
     assert rows[0]['secondary'] == '— of — slots'
@@ -276,7 +291,7 @@ async def test_cold_boardroom_hydrates_each_assignment_without_opening_agent(man
         await asyncio.gather(m._swarm_board_task, m._card_reader.wait_pending())
         cards = agent_cards(m.get_hub_snapshot()['surfboard_cards'])
         assert cards[0]['numerator'] == cards[2]['numerator'] == 72000
-        assert cards[1]['secondary'] == 'revoked'
+        assert cards[1]['secondary'] == '— of — slots'
         assert [call.args[0] for call in m.swarm_client.fetch_seat.await_args_list] == [420, 7]
         assert m._seat_saved == 516 and m._swarm_seat_task is None
         m._pool_swarm_seat.assert_not_awaited()
@@ -345,7 +360,7 @@ async def test_boardroom_assignment_change_cancels_old_read_and_starts_new_witho
         await m.fetch_hub_snapshot()
         await m._card_reader.wait_pending()
         assert cancelled.is_set()
-        assert agent_cards(m.get_hub_snapshot()['surfboard_cards'])[0]['secondary'] == 'revoked'
+        assert agent_cards(m.get_hub_snapshot()['surfboard_cards'])[0]['secondary'] == '— of — slots'
         assert set(m.cache.get_last_good(SLOT_SWARM_SEAT).payload['seats']) == {'7'}
         assert m._seat_saved == 420
     finally:
@@ -369,7 +384,7 @@ async def test_boardroom_failed_seat_read_retains_own_last_good_and_backoff(mana
         await m.fetch_hub_snapshot()
         await m._card_reader.wait_pending()
         assert m.cache.get_last_good(SLOT_SWARM_SEAT).payload == old
-        assert agent_cards(m.get_hub_snapshot()['surfboard_cards'])[0]['secondary'] == 'revoked'
+        assert agent_cards(m.get_hub_snapshot()['surfboard_cards'])[0]['secondary'] == '— of — slots'
         await m.fetch_hub_snapshot()
         await m._card_reader.wait_pending()
         assert m.swarm_client.fetch_seat.await_count == 2

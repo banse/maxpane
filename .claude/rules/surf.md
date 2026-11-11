@@ -1074,8 +1074,14 @@ remain effort/receipts; workers remain presence; detail responses never overwrit
 AGENT outer footers track their assigned worker activity independently:
 orange BUSY with a full green bar; gray IDLE drains green to orange over 24 hours,
 then orange to empty over hours 24–72. Offline is red OFF with empty segments.
-Offline AGENT inner subtitles use the assigned token's cached `/seats` status,
-falling back to `offline` when no usable status has been read. Boardroom offers
+AGENT presence/readiness comes from selected-seat standing, never enrollment
+status or absence from `/workers`. Connected seats refusing new work display
+NOT ACCEPTING; positive work remains BUSY with readiness in the tooltip. Direct
+disconnection or a stale heartbeat proves OFF. Independent standing reads run
+at most once per minute per selected token, including forced refreshes. Failed
+reads retain the prior observation and its time without painting a live bar;
+fresh positive worker evidence remains a fallback. Retirement clears presence
+and rejects late results, including remove/re-add races. Boardroom also offers
 one bounded `/seats/<token>` read per unique assigned token (at most four) on its
 own card clock, without the AGENT enrichment fan-out. Completion backfills idle
 anchors from `submittedAt` while preserving worker observation clocks. Reassignment

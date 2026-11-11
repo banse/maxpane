@@ -1,5 +1,30 @@
 # Surfboard follow-ups
 
+## Selected-agent presence — 2026-11-11
+
+Boardroom agent cards now read selected-seat standing independently. A connected
+seat refusing new work shows `NOT ACCEPTING` with its observed slot counts;
+worker-list absence and enrollment status no longer produce false OFF labels.
+Failed reads retain original observations without a live activity bar. Per-token
+epochs reject retired responses, including remove/re-add races; forced refresh
+cannot exceed one standing read per minute per selected token.
+
+Live rendering confirmed seat 650 as `0 of 1` / `NOT ACCEPTING`, with the three
+other seats' idle counts unchanged. See `boardroom_agent_presence_plan.md` for
+the fixture, mutation and boundary evidence. The changed/composing checks passed
+656 cases after updating three obsolete evidence assumptions. The 57 remaining
+failures and one guard failure all reproduce at unchanged `c8d3d4bf`; they are
+the reader-fake, palette, retired card structure and navigation debt listed below.
+Fast guards passed 130 checks; doc pins passed 12. No unrelated behavior was
+changed to satisfy baseline failures.
+
+The final review's BUSY-to-IDLE footer-retention finding was fixed: fresh IDLE
+without an activity anchor displays a gray IDLE label, while existing idle
+history continues to decay normally. The composited regression fails before
+the fix; all 24 focused checks pass afterward.
+Scoped re-review verified the finding ADDRESSED and killed the inverse mutation
+at both terminal sizes. No new follow-up remains for this correction.
+
 ## Completion counts and retained reload values — 2026-11-11
 
 SHIPPED now uses the overview's live-launch count and the complete workflow

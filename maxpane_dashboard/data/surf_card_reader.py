@@ -26,6 +26,31 @@ def _field(value, name):
     return value.get(name) if isinstance(value, dict) else getattr(value, name, None)
 
 
+def _presence_point(raw, token, now):
+    if not isinstance(raw, dict) or swarm._served_token(raw.get('tokenId')) != token:
+        return None
+    stamp = swarm._ts(raw.get('at'))
+    presence, standing = raw.get('presence'), raw.get('standing')
+    if (stamp is None or not 0 <= now - stamp <= 60 or not isinstance(presence, dict)
+            or not isinstance(standing, dict) or type(presence.get('connected')) is not bool):
+        return None
+    accepting = presence.get('acceptingWork')
+    working, capacity = count(standing.get('working')), count(presence.get('maxConcurrency'))
+    if not presence['connected']:
+        state = 'offline'
+    else:
+        if type(presence.get('stale')) is not bool:
+            return None
+        if presence['stale']:
+            state = 'offline'
+        elif type(accepting) is not bool or working is None or capacity is None:
+            return None
+        else:
+            state = 'working' if working else 'idle' if accepting else 'not_accepting'
+    return dict(token_id=token, read_ts=stamp, live_state=state, working=working,
+                max_concurrency=capacity, accepting_work=accepting if type(accepting) is bool else None)
+
+
 class SurfCardReader:
     def __init__(self, manager):
         self.manager = manager
@@ -51,6 +76,9 @@ class SurfCardReader:
         self._research_agent_requests = None
         self._research_agents_next = 0
         self._research_standings = {}
+        self._presence_epochs = {}
+        self._presence_points = {}
+        self._presence_failed = set()
         self.pool = {}
         self.pool_ts = None
         self.pool_failed = False
@@ -60,7 +88,9 @@ class SurfCardReader:
 
     def offer(self, *, force=False):
         now = self.manager._clock()
+        self.sync_presence()
         seats = {f'seat:{token}': token for token in self.manager.get_hub_seats() if token is not None}
+        presence = {f'presence:{token}': token for token in self._presence_epochs}
         for name in list(self.tasks):
             if name.startswith('seat:') and name not in seats:
                 task = self.tasks.pop(name)
@@ -68,14 +98,17 @@ class SurfCardReader:
                     task.cancel()
                     self.manager._retired_reads.add(task)
         self.attempts = {name: stamp for name, stamp in self.attempts.items()
-                         if not name.startswith('seat:') or name in seats or now - stamp < 30}
+                         if not name.startswith(('seat:', 'presence:')) or name in seats or name in presence or now - stamp < 60}
         reads = self.signals.readers(force=force)
         reads += [('work', self._work), ('research', self._research), ('current', self._current), ('pool4', self._pool),
                  ('feed', self._feed), ('market', self._market)]
         reads += [(name, lambda token=token: self._seat(token)) for name, token in seats.items()]
+        reads += [(name, lambda token=token: self._presence(token)) for name, token in presence.items()]
         for name, read in reads:
             task = self.tasks.get(name)
             if task is not None and not task.done():
+                continue
+            if name in presence and now - self.attempts.get(name, -1e20) < 60:
                 continue
             if not force and now - self.attempts.get(name, -1e20) < 30:
                 continue
@@ -100,6 +133,46 @@ class SurfCardReader:
     async def wait_pending(self):
         if self.tasks:
             await asyncio.gather(*self.tasks.values(), return_exceptions=True)
+
+    def sync_presence(self):
+        """Retire identities synchronously, including requests which ignore cancellation."""
+        selected = {token for token in self.manager.get_hub_seats() if token is not None}
+        for token in self._presence_epochs.keys() - selected:
+            self._presence_epochs.pop(token)
+            self._presence_points.pop(token, None)
+            self._presence_failed.discard(token)
+            task = self.tasks.pop(f'presence:{token}', None)
+            if task is not None and not task.done():
+                task.cancel()
+                self.manager._retired_reads.add(task)
+        for token in selected:
+            self._presence_epochs.setdefault(token, object())
+
+    async def _presence(self, token):
+        self.sync_presence()
+        epoch = self._presence_epochs.get(token)
+        if epoch is None:
+            return
+        point = None
+        try:
+            raw = await self.manager.swarm_client.fetch_seat_standing(token)
+            point = _presence_point(raw, token, self.manager._clock())
+        finally:
+            if (self._presence_epochs.get(token) is epoch and self.manager._hub_active
+                    and not self.manager._closing):
+                prior = self._presence_points.get(token)
+                if point is not None and (prior is None or point['read_ts'] >= prior['read_ts']):
+                    self._presence_points[token] = point
+                    self._presence_failed.discard(token)
+                else:
+                    self._presence_failed.add(token)
+
+    def presence_snapshot(self, token):
+        point = self._presence_points.get(token)
+        if point is None or token not in self.manager.get_hub_seats():
+            return None
+        fresh = token not in self._presence_failed and 0 <= self.manager._clock() - point['read_ts'] <= 120
+        return dict(deepcopy(point), state='ok' if fresh else 'stale')
 
     async def _seat(self, token):
         """Only assigned identity/status and work timestamps; no AGENT fan-out."""

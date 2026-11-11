@@ -1,0 +1,133 @@
+{
+  "capture_note": "Public standing GETs with queue=0, 2026-11-11. Payloads trimmed to presence/state fields; no values invented.",
+  "standings": {
+    "3": {
+      "tokenId": "3",
+      "at": "2026-11-11T00:26:58.232Z",
+      "server": {
+        "version": "0.1.0+06df2058",
+        "presenceWindowMs": 120000
+      },
+      "standing": {
+        "consecutiveFailures": 0,
+        "lastFailedAt": null,
+        "pausedUntil": null,
+        "pausedFor": null,
+        "pausedByOwnerAt": null,
+        "breaker": {
+          "failures": 3,
+          "cooldownMs": 900000
+        },
+        "working": 0,
+        "running": [],
+        "recentFailures": []
+      },
+      "presence": {
+        "connected": true,
+        "acceptingWork": true,
+        "stale": false,
+        "maxConcurrency": 3,
+        "lastHeartbeatAt": "2026-11-11T00:26:24.279Z"
+      },
+      "enrollment": {
+        "status": "active"
+      }
+    },
+    "7": {
+      "tokenId": "7",
+      "at": "2026-11-11T00:26:58.326Z",
+      "server": {
+        "version": "0.1.0+06df2058",
+        "presenceWindowMs": 120000
+      },
+      "standing": {
+        "consecutiveFailures": 0,
+        "lastFailedAt": null,
+        "pausedUntil": null,
+        "pausedFor": null,
+        "pausedByOwnerAt": null,
+        "breaker": {
+          "failures": 3,
+          "cooldownMs": 900000
+        },
+        "working": 0,
+        "running": [],
+        "recentFailures": []
+      },
+      "presence": {
+        "connected": true,
+        "acceptingWork": true,
+        "stale": false,
+        "maxConcurrency": 4,
+        "lastHeartbeatAt": "2026-11-11T00:26:28.904Z"
+      },
+      "enrollment": {
+        "status": "active"
+      }
+    },
+    "420": {
+      "tokenId": "420",
+      "at": "2026-11-11T00:26:58.326Z",
+      "server": {
+        "version": "0.1.0+06df2058",
+        "presenceWindowMs": 120000
+      },
+      "standing": {
+        "consecutiveFailures": 0,
+        "lastFailedAt": null,
+        "pausedUntil": null,
+        "pausedFor": null,
+        "pausedByOwnerAt": null,
+        "breaker": {
+          "failures": 3,
+          "cooldownMs": 900000
+        },
+        "working": 0,
+        "running": [],
+        "recentFailures": []
+      },
+      "presence": {
+        "connected": true,
+        "acceptingWork": true,
+        "stale": false,
+        "maxConcurrency": 3,
+        "lastHeartbeatAt": "2026-11-11T00:26:40.997Z"
+      },
+      "enrollment": {
+        "status": "active"
+      }
+    },
+    "650": {
+      "tokenId": "650",
+      "at": "2026-11-11T00:26:58.232Z",
+      "server": {
+        "version": "0.1.0+06df2058",
+        "presenceWindowMs": 120000
+      },
+      "standing": {
+        "consecutiveFailures": 0,
+        "lastFailedAt": null,
+        "pausedUntil": null,
+        "pausedFor": null,
+        "pausedByOwnerAt": null,
+        "breaker": {
+          "failures": 3,
+          "cooldownMs": 900000
+        },
+        "working": 0,
+        "running": [],
+        "recentFailures": []
+      },
+      "presence": {
+        "connected": true,
+        "acceptingWork": false,
+        "stale": false,
+        "maxConcurrency": 1,
+        "lastHeartbeatAt": "2026-11-11T00:26:16.325Z"
+      },
+      "enrollment": {
+        "status": "active"
+      }
+    }
+  }
+}
