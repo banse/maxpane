@@ -1053,6 +1053,11 @@ or daemon/job counts. Both totals include RESEARCH's assigned agents; they are
 overlapping scopes, not additive categories. Fresh positive work activates the green palette; zero,
 stale and unknown states are neutral. Valid values survive reloads and actual zero
 replaces them. Runtime, daemon and model metadata retain their clocks in hover.
+During pending reads, each card retains its complete last displayed body and
+footer, including status colors. Completion projects the latest snapshot before
+repainting; a busy-to-idle metadata change also projects when its payload revision
+did not change. Completed idle/failure states still apply. Raw source facts and
+timestamps continue updating; seat identity changes clear prior display memory.
 Whole-number fallback preserves counts too wide for native digits. SWARM's outer
 footer is the 24H accepted-step sparkline. SHIPPED's centered outer footer is
 `worked Ny Nw Nd`, using the complete contributor

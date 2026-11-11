@@ -267,8 +267,6 @@ class SurfboardCard(LoadingCard, can_focus=True):
     def set_data(self, data, *, footer_data=None):
         self.data = dict(data) if isinstance(data, dict) else {}
         self.data.update(key=self.key, title=self.title)
-        if self.key == 'pool4' and self.data.get('status') != 'loading':
-            self._price_direction = {'active': 'up', 'falling': 'down'}.get(self.data.get('status'))
         if self.seat_slot is not None:
             self.data["seat_slot"] = self.seat_slot
             self.data.setdefault("token_id", None)
@@ -304,6 +302,8 @@ class SurfboardCard(LoadingCard, can_focus=True):
         self._display_data = self._present_data(self.data, 'body')
         self._display_footer = (self._display_data if self.footer_data is self.data else
                                 self._present_data(self.footer_data, 'footer'))
+        if self.key == 'pool4' and self._display_data.get('status') != 'loading':
+            self._price_direction = {'active': 'up', 'falling': 'down'}.get(self._display_data.get('status'))
         self.tooltip = Text(self.detail)
         if self.data.get('meter_state') == 'not_accepting':
             self.tooltip.append('\n' + flatten(self.data.get('secondary')))
@@ -323,6 +323,10 @@ class SurfboardCard(LoadingCard, can_focus=True):
 
     def _present_data(self, raw, prefix):
         """Remember named display fields without changing the source snapshot."""
+        if self._card_loading or raw.get('status') == 'loading':
+            previous = self._values.retain((prefix, 'snapshot'), None, missing=True)
+            if previous is not None:
+                return previous
         data = deepcopy(raw)
         key = data.get('key')
         primary = '' if data.get('primary') is None else str(data['primary'])
@@ -363,6 +367,8 @@ class SurfboardCard(LoadingCard, can_focus=True):
                     row[field] = self._values.retain((prefix, 'token', identity, field), value, missing=missing)
         # Histories remain observations; no fabricated zero points.
         data['points'] = self._values.retain((prefix, 'points'), data.get('points'), missing=data.get('points') is None)
+        if raw.get('status') not in (None, 'loading'):
+            self._values.retain((prefix, 'snapshot'), data)
         return data
 
     def _update_meter(self):

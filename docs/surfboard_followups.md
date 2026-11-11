@@ -1,5 +1,25 @@
 # Surfboard follow-ups
 
+## Stable card appearance through refresh — 2026-11-11
+
+Loaded card bodies and footers now retain their complete presentation, including
+status colors, during pending reads. The completed snapshot applies together;
+completion metadata without a new payload revision still triggers a local paint.
+Source facts/clocks remain unchanged, seat changes reset presentation memory, and
+completed idle/zero/failure states still apply. No projection starts on teardown.
+
+Live verification retained all twelve card faces through actual source TTL
+expiry, then applied fresh public data. See `boardroom_refresh_display_plan.md`.
+Final review approved with no blocking findings: nine named cases and the
+independent identity mutation passed. The composing run passed 161 cases; all
+39 residual failures and the one guard failure reproduce at 4e4b0dc4. Other guards:
+130 passed; doc pins: 12 passed.
+
+Minor follow-up: measure responsiveness if an unrelated slow read holds the whole
+view busy before considering independent card updates. This is the intentional
+retention policy, with no observed starvation or lost updates; do not add a new
+publication path without measured need.
+
 ## POOL4 order and muted NA footer — 2026-11-11
 
 POOL4 is now the final top-row card, after SHIPPED, with matching keyboard

@@ -36,6 +36,7 @@ async def test_current_activity_retains_last_valid_digits_and_counts_through_rel
             if key == 'work': assert '4 workflows' in painted
             if key == 'oracles': assert '2 chains' in painted
             assert incoming['primary'] == value and card.data['primary'] == value
+        card.set_card_loading(False, 0)
         card.set_data(dict(original, primary='0', secondary=f'0 {caption}', numerator=0,
                            work_summary={'workflows':0}))
         await pilot.pause()

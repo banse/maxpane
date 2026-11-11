@@ -237,15 +237,24 @@ class SurfboardScreen(SurfDashboardScreen):
     def _loading_view(self):
         return "surfboard"
 
-    def _set_loading(self, busy):
+    def _set_loading(self, busy, *, snapshot_ready=False):
+        completed = self._loading_busy and not busy
         super()._set_loading(busy)
         for rack in self.query(SurfboardRack):
             rack.set_loading_animation(busy and self.is_current, self._card_loading_frame)
+        if (completed and not snapshot_ready and self._scope_active
+                and self.is_current and not self._refresh_in_flight):
+            # Read the completed snapshot before changing any card's appearance.
+            self._loading_projection = True
+            self.start_refresh()
 
     def _prime_status_bar(self, bar: StatusBar) -> None:
         bar.set_key_hints("arrows · enter · o portfolio · u wallet · n NFTs · p protocol · w work · / cmd · esc")
 
     def _update_title(self, data: dict) -> None:
+        # Snapshot statuses may age while reads run; latch card presentation
+        # before PANELS receives that intermediate projection.
+        self._set_loading(self._reads_pending(), snapshot_ready=True)
         self._last_hub_snapshot = data
         self.post_message(SurfLaunchesUpdated(self, data))
         self._age_captured = self._age_clock()
