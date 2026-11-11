@@ -46,8 +46,13 @@ def _presence_point(raw, token, now):
         return None
     stamp = swarm._ts(raw.get('at'))
     presence, standing = raw.get('presence'), raw.get('standing')
-    if (stamp is None or not 0 <= now - stamp <= 60 or not isinstance(presence, dict)
-            or not isinstance(standing, dict) or type(presence.get('connected')) is not bool):
+    if stamp is None or not 0 <= now - stamp <= 60 or not isinstance(standing, dict):
+        return None
+    # A valid standing reply explicitly uses null when no device is connected.
+    # An omitted/malformed field or failed request still means unknown.
+    if 'presence' in raw and presence is None:
+        presence = {'connected': False}
+    if not isinstance(presence, dict) or type(presence.get('connected')) is not bool:
         return None
     accepting = presence.get('acceptingWork')
     working, capacity = count(standing.get('working')), count(presence.get('maxConcurrency'))

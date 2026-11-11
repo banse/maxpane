@@ -45,7 +45,7 @@ async def test_connected_refusing_seat_is_not_offline(setup):
     assert raw == captured()
 
 
-@pytest.mark.parametrize('change,state', [('idle','idle'),('busy','working'),('refusing_busy','working'),('disconnected','offline'),('heartbeat','offline')])
+@pytest.mark.parametrize('change,state', [('idle','idle'),('busy','working'),('refusing_busy','working'),('disconnected','offline'),('absent','offline'),('heartbeat','offline')])
 async def test_direct_presence_drives_state_without_worker_membership(setup,change,state):
     reader, raw, now, _ = setup
     if change=='idle':raw['presence']['acceptingWork']=True
@@ -53,6 +53,8 @@ async def test_direct_presence_drives_state_without_worker_membership(setup,chan
         raw['standing']['working']=2
         raw['presence']['acceptingWork']=change=='busy'
     if change=='disconnected':raw['presence']={'connected':False}
+    # Public standing for offline seats 3/420 returned explicit null on 2026-11-11.
+    if change=='absent':raw['presence']=None
     if change=='heartbeat':raw['presence']['stale']=True
     await reader._presence(650)
     card=project(reader,now[0])
@@ -69,7 +71,7 @@ async def test_missing_worker_row_without_standing_is_unknown(setup):
     assert card['secondary']=='— of — slots'
 
 
-@pytest.mark.parametrize('bad',['failure','identity','boolean','count','capacity','old','future'])
+@pytest.mark.parametrize('bad',['failure','identity','boolean','count','capacity','old','future','missing_presence','malformed_presence'])
 async def test_bad_read_preserves_observation_and_clock_without_live_bar(setup,bad):
     reader,raw,now,_=setup
     await reader._presence(650)
@@ -83,6 +85,8 @@ async def test_bad_read_preserves_observation_and_clock_without_live_bar(setup,b
     if bad=='capacity':raw['presence']['maxConcurrency']=-1
     if bad=='old':raw['at']=captured()['at']
     if bad=='future':raw['at']=datetime.fromtimestamp(now[0]+10,timezone.utc).isoformat()
+    if bad=='missing_presence':raw.pop('presence')
+    if bad=='malformed_presence':raw['presence']=[]
     await reader._presence(650)
     after=reader.presence_snapshot(650)
     assert after['read_ts']==before['read_ts'] and after['working']==0
@@ -143,6 +147,28 @@ async def test_public_idle_seats_keep_their_counts_and_snapshot_is_copied(setup)
         assert (snapshot['live_state'],snapshot['working'],snapshot['max_concurrency'])==('idle',0,capacity)
         snapshot['working']=99
         assert reader.presence_snapshot(token)['working']==0
+
+
+@pytest.mark.parametrize('token', [3, 420])
+async def test_explicit_absent_presence_paints_offline_instead_of_zero_capacity(setup, token):
+    from tests.widgets.test_surfboard_rack import RackApp, SurfboardCard, card_strips
+    reader, _, now, selected = setup
+    raw = captured(token)
+    raw['presence'] = None  # Observed public offline form; not a missing field.
+    now[0] = sw._ts(raw['at']); selected[0] = token
+    reader.manager.swarm_client.fetch_seat_standing.return_value = raw
+    await reader._presence(token)
+    row = next(c for c in hub.cards({}, {}, now=now[0], agent_seats=[dict(
+        token_id=token, presence=reader.presence_snapshot(token))]) if c['key']=='agent')
+    assert reader.presence_snapshot(token)['max_concurrency'] is None
+    async with RackApp().run_test(size=(149,45)) as pilot:
+        card = pilot.app.query_one('#surfboard-card-agent', SurfboardCard)
+        card.set_data(row)
+        await pilot.pause()
+        painted = '\n'.join(s.text for s in card_strips(pilot.app, card))
+        assert 'offline' in painted and 'OFF' in painted
+        assert '0 of 0' not in painted
+        assert '▱' in painted and '▰' not in painted
 
 
 async def test_fresh_positive_worker_can_replace_retained_standing(setup):
