@@ -135,7 +135,7 @@ async def test_hub_work_summary_does_not_hydrate_the_detail_board(manager):
         await asyncio.gather(*m._hub_source_tasks.values())
         await m._card_reader.wait_pending()
         card = next(c for c in m.get_hub_snapshot()['surfboard_cards'] if c['key'] == 'work')
-        assert card['primary'] == '4'  # Global counter, not the two sampled active jobs.
+        assert card['primary'] == '—'  # A partial active set cannot prove launch coverage.
         assert card['work_summary']['build'] is None
         assert m._work_reader.task is None
         m.swarm_client.fetch_jobs.assert_awaited_once_with(limit=100)
@@ -237,7 +237,7 @@ async def test_inactive_or_closing_hub_does_not_offer_work(manager):
         await m.close()
 
 
-async def test_hub_research_is_independent_of_native_history_and_failure_clock(manager):
+async def test_hub_oracle_history_cannot_stand_in_for_complete_research_jobs(manager):
     m, clock = manager
     raw = json.loads(Path('tests/fixtures/surf/oracles/captured.json').read_text())
     active = json.loads(Path('tests/fixtures/surf/work/boardroom_old_active.json').read_text())
@@ -262,8 +262,8 @@ async def test_hub_research_is_independent_of_native_history_and_failure_clock(m
         second = await m.fetch_hub_snapshot()
         card = next(c for c in second['surfboard_cards'] if c['key'] == 'oracles')
         assert len(second['surf_oracles']['rows']) == 100
-        assert card['denominator'] == 1 and card['primary'] == '1'
-        assert card['secondary'] == '— agents' and card['meter_state'] == 'ok'
+        assert card['denominator'] is None and card['primary'] == '—'
+        assert card['secondary'] == '— agents' and card['meter_state'] != 'ok'
         m.set_oracles_active(True); m.set_hub_active(False)
         m._offer_full = lambda _: pytest.fail('unrelated collection in oracle mode')
         native = await m.fetch_and_compute()

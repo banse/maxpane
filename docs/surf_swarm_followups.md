@@ -2050,3 +2050,28 @@ failure. Review: Approved, no findings; three focused checks passed, hidden
 utilities stay outside the focus chain, and reverting the panel order was caught
 by the layout check. The review mutation was restored byte for byte. No full
 suite ran.
+
+## Boardroom job categories — 2026-11-11
+
+WIP now counts verified executing launch jobs (including explicit workflow stages).
+RESEARCH combines goal/report/research and oracle jobs, once per job ID. Standalone
+site, code and audit jobs are outside both categories. Each footer uses matching
+assignments from the same complete busy-roster standing observations; SWARM keeps
+all categories. A standing observation predating a new job cannot prove zero agents.
+
+Live verification found six executing jobs: four goals, one old oracle and one
+standalone site. The rendered cards showed WIP 0 and RESEARCH 5 at 149 x 45.
+Current discovery and last-valid refresh presentation remain unchanged.
+
+Validation: 430 touched/composing checks passed. Seventeen existing card-reader
+harness failures (missing fake-manager methods) and the existing TOKENS/SWORN CSS
+slice failure were reproduced on unchanged 0c4d5d6b. Guards otherwise passed 130;
+documentation pins passed 12. Final targeted checks passed 17 after the observation
+clock safeguard. Four decoder/coverage/deduplication mutations were killed. No full
+suite ran. Baseline evidence: /tmp/boardroom-category-baseline.xml.
+
+Final review found no production defect and one fixture-convention issue. The
+single fix wave moved synthetic roster/standing responses into the committed
+fixture; all 16 category cases passed afterward. Seven reviewer cases passed,
+including refresh retention, and the observation-time mutation was killed.
+No production changed in the fix wave, so no scoped re-review was required.

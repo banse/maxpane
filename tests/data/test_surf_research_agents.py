@@ -50,7 +50,7 @@ async def test_same_seat_multiple_assignments_counts_once(setup):
     assert reader.current_work({})['oracle_agents'] == 1
 
 
-async def test_research_agents_are_included_in_wip_and_swarm_totals(setup):
+async def test_oracle_only_observation_does_not_supply_category_totals(setup):
     from maxpane_dashboard.data import surfboard as hub
     reader, raw, client, clock = setup
     await reader._research()
@@ -60,10 +60,10 @@ async def test_research_agents_are_included_in_wip_and_swarm_totals(setup):
                 surf_work=dict(state='ok',summary={'jobs':1}))
     rows = {c['key']: c for c in hub.cards(data, {'overview':dict(state='ok',read_ts=clock[0])},
         now=clock[0], current_work=reader.current_work({}))}
-    assert rows['work']['secondary'] == rows['board']['secondary'] == '2 working'
-    assert rows['oracles']['secondary'] == '1 agents'
-    assert all('includes research' in rows[k]['detail'] for k in ('work','board'))
-    assert 'subset of total working agents' in rows['oracles']['detail']
+    assert rows['board']['secondary'] == '2 working'
+    assert rows['work']['secondary'] == '— working'
+    assert rows['oracles']['primary'] == '—'
+    assert rows['oracles']['secondary'] == '— agents'
 
 
 @pytest.mark.parametrize('failure', ['roster_missing','seat_identity','working','old_roster',
@@ -146,7 +146,9 @@ async def test_research_card_paints_count_and_uses_its_own_observation_time(setu
     from tests.widgets.test_surfboard_rack import RackApp, SurfboardCard, card_strips
     reader, raw, client, clock = setup
     await reader._research()
-    facts = reader.current_work({})
+    reader.current_jobs = {raw['requests'][0]['jobId']:dict(family='research',template='skill:oracle-assess',nodes=[],created_ts=clock[0]-1)}
+    reader.current_ts, reader.current_complete = clock[0], True
+    facts = reader.current_work(dict(state='ok',read_ts=clock[0],payload=dict(overview=dict(job_states=dict(executing=1)))))
     row = next(row for row in cards({}, {}, now=clock[0], current_work=facts) if row['key'] == 'oracles')
     assert 'agents read ' + hhmm(clock[0]) in row['detail']
     async with RackApp().run_test(size=(149,45)) as pilot:

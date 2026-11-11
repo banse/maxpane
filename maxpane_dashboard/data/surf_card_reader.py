@@ -26,6 +26,21 @@ def _field(value, name):
     return value.get(name) if isinstance(value, dict) else getattr(value, name, None)
 
 
+def _job_family(raw):
+    """Explicit job purpose; a continuation's parent or prose proves no launch."""
+    launch, workflow = raw.get('launch'), raw.get('workflow')
+    if isinstance(workflow, dict) and parse_job_id(workflow.get('id')) is not None:
+        return 'launch'
+    if not isinstance(launch, dict) or type(launch.get('requested')) is not bool:
+        return None
+    if launch['requested']:
+        return 'launch'
+    if (parse_job_id(raw.get('oracleRequestId')) is not None
+            or raw.get('template') in ('goal', 'research', 'skill:research-report', 'skill:oracle-assess')):
+        return 'research'
+    return 'other' if isinstance(raw.get('template'), str) and workflow is None else None
+
+
 def _presence_point(raw, token, now):
     if not isinstance(raw, dict) or swarm._served_token(raw.get('tokenId')) != token:
         return None
@@ -76,6 +91,7 @@ class SurfCardReader:
         self._research_agent_requests = None
         self._research_agents_next = 0
         self._research_standings = {}
+        self._busy_assignments = None
         self._presence_epochs = {}
         self._presence_points = {}
         self._presence_failed = set()
@@ -228,10 +244,12 @@ class SurfCardReader:
         if identities != self._research_agent_requests:
             self.research_agents, self.research_agents_ts = None, None
             self._research_standings.clear()
+            self._busy_assignments = None
         self._research_agent_requests = identities
         if not rows:
             self.research_agents, self.research_agents_ts = 0, started
-            return
+            if not self.current_jobs:
+                return
         if started < self._research_agents_next:
             return
         self.research_agents = None
@@ -245,6 +263,7 @@ class SurfCardReader:
 
     async def _research_agents(self, requests):
         """Resume bounded standing reads; count only with coverage of every busy seat."""
+        self._busy_assignments = None
         jobs = {row['job_id'] for row in requests}
         client = self.manager.swarm_client
         if (None in jobs or not callable(getattr(client, 'fetch_seat_standing', None))
@@ -304,6 +323,7 @@ class SurfCardReader:
         if after is None or not after.issubset(cached): return None
         observed = min((cached[token][1] for token in after), default=self.manager._clock())
         if not 0 <= self.manager._clock() - observed <= 300: return None
+        self._busy_assignments = ({token: cached[token][0].copy() for token in after}, observed)
         return sum(bool(cached[token][0] & jobs) for token in after), observed
 
     def _research_snapshot(self):
@@ -382,7 +402,8 @@ class SurfCardReader:
                 continue
             stamps.append(read.observed_at)
             if row['state'] == 'executing':
-                jobs[identity] = dict(template=row['template'],
+                jobs[identity] = dict(template=row['template'], family=_job_family(read.payload),
+                    created_ts=row['created_ts'],
                     nodes=[dict(key=node['key'], state=node['state']) for node in row['nodes']])
             else:
                 jobs.pop(identity, None)
@@ -411,6 +432,7 @@ class SurfCardReader:
                      research=self._research_snapshot(),
                      jobs_loaded=len(self.current_jobs), jobs_expected=expected,
                      reason='Current node coverage incomplete')
+        facts['job_groups'] = self._job_groups(complete, facts['state'])
         if complete:
             nodes = [node for job in self.current_jobs.values() for node in job['nodes']
                      if node['state'] == 'working']
@@ -430,14 +452,32 @@ class SurfCardReader:
                                 if facts['oracle_agents'] is not None else '; Research worker standing coverage incomplete')
         return facts
 
+    def _job_groups(self, complete, state):
+        """Partition only a certified active set; assignments use the same busy roster."""
+        complete = complete and all(job.get('family') is not None for job in self.current_jobs.values())
+        assignments = self._busy_assignments
+        if assignments is not None and not 0 <= self.manager._clock() - assignments[1] <= 300:
+            assignments = None
+        groups = {}
+        for family in ('launch', 'research'):
+            identities = {key for key, job in self.current_jobs.items() if job.get('family') == family}
+            observed = assignments is not None and all(
+                self.current_jobs[key].get('created_ts') is not None
+                and self.current_jobs[key]['created_ts'] <= assignments[1] for key in identities)
+            agents = (sum(bool(running & identities) for running in assignments[0].values())
+                      if complete and observed else None)
+            groups[family] = dict(count=len(identities) if complete else None,
+                agents=0 if complete and not identities else agents,
+                state='ok' if complete else 'partial' if state == 'ok' else state,
+                read_ts=self.current_ts, agents_read_ts=assignments[1] if assignments else None)
+        return groups
+
     def work_snapshot(self, source):
-        payload = source.get('payload') or {}
-        overview = payload.get('overview') or {}
-        jobs = (overview.get('job_states') or {}).get('executing')
+        launch = self.current_work(source)['job_groups']['launch']
         result = work.project(None, now=self.manager._clock())
-        result['summary'].update(jobs=jobs, workflows=self.workflows)
-        result.update(state=source.get('state', 'unavailable'), read_ts=source.get('read_ts'),
-                      partial=True, details_loaded=None, details_expected=None)
+        result['summary'].update(jobs=launch['count'], seats=launch['agents'], workflows=self.workflows)
+        result.update(state=launch['state'], read_ts=launch['read_ts'],
+                      partial=launch['state'] != 'ok', details_loaded=None, details_expected=None)
         return result
 
     async def _medium(self, slot, read, *, force=False):

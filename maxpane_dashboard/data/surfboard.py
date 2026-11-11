@@ -617,18 +617,20 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
                             f" · completed jobs read {hhmm((sources.get('overview') or {}).get('read_ts'))}"
                             " · successfully completed jobs; excludes cancelled, blocked and executing"
                             " · 365-day years, whole days only")
-    research = current_work.get('research') or {}
-    assessing, chains = count(research.get('count')), count(research.get('chains'))
+    research = (current_work.get('job_groups') or {}).get('research') or {}
+    assessing = count(research.get('count'))
+    chains = count((current_work.get('research') or {}).get('chains'))
     oracle_state = research.get('state', 'unavailable')
-    agents = count(current_work.get('oracle_agents'))
+    agents = count(research.get('agents'))
     subtitle = f'{agents:,} agents' if agents is not None else '— agents'
     card("oracles", "RESEARCH", f"{assessing:,}" if assessing is not None else "—", subtitle,
-         "RESEARCH · assessing requests from filtered active-query coverage"
-         " · subset of total working agents shown in WIP and SWARM; do not add"
-         + f" · {_value(assessing)} assessing · {_value(chains)} chains"
+         "RESEARCH · executing goals, reports, research panels and oracle jobs"
+         " · complete active-job coverage; distinct assigned seats in this category"
+         + f" · {_value(assessing)} jobs · {_value(chains)} oracle chains"
          + f" · read {hhmm(research.get('read_ts'))}"
-         + f" · agents read {hhmm(research.get('read_ts') if oracle_state == 'ok' else current_work.get('read_ts'))}"
-         + f" · {current_work.get('reason') or 'Current node coverage incomplete'}"
+         + f" · agents read {hhmm(research.get('agents_read_ts'))}"
+         + (' · complete busy-seat standing coverage' if agents is not None
+            else ' · category assignment coverage incomplete')
          + " · Enter to open", "oracles")
     result[-1].update(meter_kind="oracles", meter_state=oracle_state, numerator=chains, denominator=assessing,
                      status=("assessing" if assessing else "idle") if oracle_state == "ok" else oracle_state)
@@ -713,8 +715,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     summary = {key: count((work.get("summary") or {}).get(key)) for key in SURF_WORK_SUMMARY_KEYS}
     jobs, workflows = summary["jobs"], summary["workflows"]
     state = work.get("state", "unavailable")
-    working_seats = count(overview.get('working_seats'))
-    waiting = count(current_work.get('waiting_jobs'))
+    working_seats = summary['seats']
     subtitle = f'{working_seats:,} working' if working_seats is not None else '— working'
     card("work", "WORK IN PROGRESS", f"{jobs:,}" if jobs is not None else "—", subtitle,
          "WORK IN PROGRESS · " + " · ".join(f"{_value(summary[key])} {key}" for key in SURF_WORK_SUMMARY_KEYS)
@@ -722,10 +723,9 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          + f" · {_value(work.get('details_loaded'))}/{_value(work.get('details_expected'))} details"
          + f" · current nodes {_value(current_work.get('jobs_loaded'))}/{_value(current_work.get('jobs_expected'))} jobs"
          + f" · nodes read {hhmm(current_work.get('read_ts'))}"
-         + " · working agents: distinct busy seats in the full swarm roster; includes research"
-         + " · all executing jobs, including research jobs"
-         + f" · agents read {hhmm((sources.get('overview') or {}).get('read_ts'))}"
-         + f" · {_value(waiting)} unfinished jobs without a working node"
+         + " · executing launch jobs and launch-workflow stages only"
+         + " · working agents: distinct seats assigned to those jobs"
+         + f" · agents read {hhmm(((current_work.get('job_groups') or {}).get('launch') or {}).get('agents_read_ts'))}"
          + (" · partial" if work.get("partial") else "")
          + f" · read {hhmm(work.get('read_ts'))} · Enter to open", "work")
     result[-1].update(work_summary=summary, meter_kind="work", meter_state=state,

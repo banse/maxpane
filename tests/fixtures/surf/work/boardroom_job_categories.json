@@ -1,0 +1,1726 @@
+{
+  "source": "https://api.imd.fun/jobs/{id}",
+  "captured_at": "2026-11-11",
+  "note": "Trimmed public details. Tests explicitly alter states or identities for lifecycle and assignment scenarios.",
+  "rows": [
+    {
+      "label": "goal",
+      "job": {
+        "id": "51eb88fe-2113-4148-a771-9443d4abb201",
+        "state": "executing",
+        "template": "goal",
+        "createdAt": "2026-11-10T23:11:22.139Z",
+        "updatedAt": "2026-11-11T02:22:10.622Z",
+        "launch": {
+          "requested": false,
+          "kind": null,
+          "id": null,
+          "status": null,
+          "chainId": null
+        },
+        "oracleRequestId": null,
+        "workflow": null,
+        "parentJobId": null,
+        "nodes": [
+          {
+            "key": "item_b01_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b02_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b03_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b04_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b06_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b06_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b06_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b06_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b07_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b07_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b07_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b07_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b08_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0005",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0006",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0007",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0008",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0009",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0010",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0011",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0012",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0013",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0014",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0015",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0016",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0017",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0018",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0019",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0020",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0021",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0022",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0023",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0024",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0025",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0026",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0027",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0028",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0029",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0030",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0031",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0032",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0005",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0006",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0007",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0008",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0009",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0010",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0011",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0012",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0013",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0014",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0015",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0016",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0017",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0018",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0019",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0020",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b11_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b11_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b11_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b11_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b12_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b12_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b12_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b12_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b13_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b14_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b14_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b14_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b14_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b14_0005",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b15_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b15_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b15_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b15_0004",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b15_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b16_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b16_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b16_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b16_0004",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b16_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b17_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b17_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b17_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b17_0004",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b17_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b18_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b18_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b18_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b18_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b18_0005",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b19_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b19_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b19_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b19_0004",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b19_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b20_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b20_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b20_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b20_0004",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b20_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b21_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b21_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b21_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b21_0004",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b21_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b22_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b23_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b24_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b24_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b24_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b24_0004",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b24_0005",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b25_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b25_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b25_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b25_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b26_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b26_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b26_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b26_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b27_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b27_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b27_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b27_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b28_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b28_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b28_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b28_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b28_0005",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b29_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b29_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b29_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b29_0004",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b29_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b30_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b30_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b30_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b30_0004",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b30_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b31_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b31_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b31_0003",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b31_0004",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b31_0005",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b32_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b32_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "merge_b09_01",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "merge_b09_02",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "merge_b10_01",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "merge_b10_02",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "merge_r1_01",
+            "state": "working",
+            "role": "implement"
+          },
+          {
+            "key": "merge_r1_02",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_004",
+            "state": "accepted",
+            "role": "implement"
+          }
+        ]
+      }
+    },
+    {
+      "label": "goal-old",
+      "job": {
+        "id": "9275f86f-4c1c-4851-9ca6-b7bc99291b6b",
+        "state": "executing",
+        "template": "goal",
+        "createdAt": "2026-11-10T03:15:43.374Z",
+        "updatedAt": "2026-11-10T10:16:59.184Z",
+        "launch": {
+          "requested": false,
+          "kind": null,
+          "id": null,
+          "status": null,
+          "chainId": null
+        },
+        "oracleRequestId": null,
+        "workflow": null,
+        "parentJobId": null,
+        "nodes": [
+          {
+            "key": "item_b01_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b02_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b02_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b02_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b03_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b03_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b03_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b03_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b04_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b04_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b04_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b04_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b05_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b05_0002",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b06_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b06_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b07_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b07_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b08_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b08_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b09_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b10_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b11_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b11_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b12_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b12_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b12_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b13_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b13_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b13_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b14_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b14_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b15_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b16_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b17_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b17_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b18_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b19_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b19_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b20_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b20_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b20_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b21_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b21_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b22_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b23_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b23_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b23_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b24_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b25_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b26_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b26_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b26_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b26_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b26_0005",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b27_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b27_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b27_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b27_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b27_0005",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b28_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b28_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b28_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b28_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b29_0001",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "item_b30_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b30_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b31_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b31_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b31_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b31_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b32_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b32_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b32_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b33_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b33_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b33_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b33_0004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b34_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b34_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b35_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b35_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b35_0003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b36_0001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "item_b36_0002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "judge",
+            "state": "accepted",
+            "role": "review"
+          },
+          {
+            "key": "merge_r1_01",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "merge_r1_02",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "merge_r1_03",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "merge_r1_04",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_001",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_002",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_003",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_004",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_005",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_006",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_007",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_008",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_009",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "orchestrate_010",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "writeup",
+            "state": "accepted",
+            "role": "implement"
+          }
+        ]
+      }
+    },
+    {
+      "label": "oracle",
+      "job": {
+        "id": "31a2cf4d-24f7-4fe8-8a31-f9437c520182",
+        "state": "executing",
+        "template": "skill:oracle-assess",
+        "createdAt": "2026-11-05T01:23:33.933Z",
+        "updatedAt": "2026-11-05T01:23:33.933Z",
+        "launch": {
+          "requested": false,
+          "kind": null,
+          "id": null,
+          "status": null,
+          "chainId": null
+        },
+        "oracleRequestId": "2f058f1e-ffd6-4b68-a779-fcf0a775b035",
+        "workflow": null,
+        "parentJobId": null,
+        "nodes": [
+          {
+            "key": "oracle_assess",
+            "state": "submitted",
+            "role": "implement"
+          }
+        ]
+      }
+    },
+    {
+      "label": "site",
+      "job": {
+        "id": "92f9fecc-f7e5-4ab7-a53e-6bd2f01f7ea3",
+        "state": "executing",
+        "template": "shape:chain",
+        "createdAt": "2026-11-11T02:38:36.337Z",
+        "updatedAt": "2026-11-11T02:38:36.337Z",
+        "launch": {
+          "requested": false,
+          "kind": null,
+          "id": null,
+          "status": null,
+          "chainId": null
+        },
+        "oracleRequestId": null,
+        "workflow": null,
+        "parentJobId": "b0179cf4-2def-4ce4-89d3-e9a9ec630bfc",
+        "nodes": [
+          {
+            "key": "import_site",
+            "state": "verifying",
+            "role": "implement"
+          },
+          {
+            "key": "refine_project",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "site_content_check",
+            "state": "waiting",
+            "role": "review"
+          }
+        ]
+      }
+    },
+    {
+      "label": "report",
+      "job": {
+        "id": "e51811c9-a0d7-4603-91d2-fdc591ccfcad",
+        "state": "completed",
+        "template": "skill:research-report",
+        "createdAt": "2026-11-11T00:29:47.551Z",
+        "updatedAt": "2026-11-11T00:32:19.627Z",
+        "launch": {
+          "requested": false,
+          "kind": null,
+          "id": null,
+          "status": null,
+          "chainId": null
+        },
+        "oracleRequestId": null,
+        "workflow": null,
+        "parentJobId": null,
+        "nodes": [
+          {
+            "key": "research_report",
+            "state": "accepted",
+            "role": "implement"
+          }
+        ]
+      }
+    },
+    {
+      "label": "launch-contracts",
+      "job": {
+        "id": "f672522a-c16f-4528-9ef1-f18bec5d5a2a",
+        "state": "completed",
+        "template": "shape:chain",
+        "createdAt": "2026-11-10T20:51:02.260Z",
+        "updatedAt": "2026-11-10T22:06:45.291Z",
+        "launch": {
+          "requested": true,
+          "kind": "evm_contracts",
+          "id": "39040c55-d808-46e5-a452-982dc13b7a35",
+          "status": "live",
+          "chainId": 4663
+        },
+        "oracleRequestId": null,
+        "workflow": null,
+        "parentJobId": null,
+        "nodes": [
+          {
+            "key": "audit_economics",
+            "state": "accepted",
+            "role": "review"
+          },
+          {
+            "key": "audit_flow",
+            "state": "accepted",
+            "role": "review"
+          },
+          {
+            "key": "audit_judge",
+            "state": "accepted",
+            "role": "review"
+          },
+          {
+            "key": "audit_math",
+            "state": "accepted",
+            "role": "review"
+          },
+          {
+            "key": "audit_permissions",
+            "state": "accepted",
+            "role": "review"
+          },
+          {
+            "key": "build_contract_project",
+            "state": "accepted",
+            "role": "implement"
+          },
+          {
+            "key": "manifest",
+            "state": "accepted",
+            "role": "integrate"
+          },
+          {
+            "key": "write_foundry_tests",
+            "state": "accepted",
+            "role": "tests"
+          }
+        ]
+      }
+    },
+    {
+      "label": "launch-project",
+      "job": {
+        "id": "9c8dba79-d85e-442b-b655-733a7cd7ce08",
+        "state": "blocked",
+        "template": "shape:chain",
+        "createdAt": "2026-11-10T16:42:31.903Z",
+        "updatedAt": "2026-11-10T17:51:53.742Z",
+        "launch": {
+          "requested": true,
+          "kind": "evm_project",
+          "id": null,
+          "status": null,
+          "chainId": 8453
+        },
+        "oracleRequestId": null,
+        "workflow": null,
+        "parentJobId": null,
+        "nodes": [
+          {
+            "key": "audit_economics",
+            "state": "waiting",
+            "role": "review"
+          },
+          {
+            "key": "audit_flow",
+            "state": "waiting",
+            "role": "review"
+          },
+          {
+            "key": "audit_imported_code",
+            "state": "accepted",
+            "role": "review"
+          },
+          {
+            "key": "audit_judge",
+            "state": "waiting",
+            "role": "review"
+          },
+          {
+            "key": "audit_math",
+            "state": "waiting",
+            "role": "review"
+          },
+          {
+            "key": "audit_permissions",
+            "state": "waiting",
+            "role": "review"
+          },
+          {
+            "key": "build_contract_project",
+            "state": "failed",
+            "role": "implement"
+          },
+          {
+            "key": "manifest",
+            "state": "waiting",
+            "role": "integrate"
+          },
+          {
+            "key": "write_foundry_tests",
+            "state": "waiting",
+            "role": "tests"
+          }
+        ]
+      }
+    },
+    {
+      "label": "workflow-frontend",
+      "job": {
+        "id": "d5c1a3c6-05de-41d1-8755-0300eff6af3f",
+        "state": "completed",
+        "template": "shape:chain",
+        "createdAt": "2026-11-08T17:03:48.234Z",
+        "updatedAt": "2026-11-08T18:38:19.588Z",
+        "launch": {
+          "requested": false,
+          "kind": null,
+          "id": null,
+          "status": null,
+          "chainId": null
+        },
+        "oracleRequestId": null,
+        "workflow": {
+          "id": "689e7d7c-fb32-4043-9731-26681329ffbb",
+          "status": "completed"
+        },
+        "parentJobId": "5fbc6b93-a194-47e2-b209-273ded672ee2",
+        "nodes": [
+          {
+            "key": "design_critic",
+            "state": "accepted",
+            "role": "review"
+          },
+          {
+            "key": "frontend_for_contract",
+            "state": "accepted",
+            "role": "implement"
+          }
+        ]
+      }
+    }
+  ],
+  "assignment_scenario": {
+    "note": "Synthetic roster and standing bodies joining captured job IDs. Four seats: two research, one launch, one unrelated site; tests explicitly add a cross-category assignment.",
+    "roster": {
+      "at": 1794398400000,
+      "health": {
+        "reachable": true
+      },
+      "seats": {
+        "7": {
+          "tokenId": 7,
+          "working": true
+        },
+        "8": {
+          "tokenId": 8,
+          "working": true
+        },
+        "9": {
+          "tokenId": 9,
+          "working": true
+        },
+        "10": {
+          "tokenId": 10,
+          "working": true
+        }
+      }
+    },
+    "standings": {
+      "7": {
+        "tokenId": 7,
+        "at": "2026-11-11T12:00:00+00:00",
+        "standing": {
+          "working": 2,
+          "running": [
+            {
+              "jobId": "51eb88fe-2113-4148-a771-9443d4abb201"
+            },
+            {
+              "jobId": "31a2cf4d-24f7-4fe8-8a31-f9437c520182"
+            }
+          ]
+        }
+      },
+      "8": {
+        "tokenId": 8,
+        "at": "2026-11-11T12:00:00+00:00",
+        "standing": {
+          "working": 1,
+          "running": [
+            {
+              "jobId": "51eb88fe-2113-4148-a771-9443d4abb201"
+            }
+          ]
+        }
+      },
+      "9": {
+        "tokenId": 9,
+        "at": "2026-11-11T12:00:00+00:00",
+        "standing": {
+          "working": 1,
+          "running": [
+            {
+              "jobId": "f672522a-c16f-4528-9ef1-f18bec5d5a2a"
+            }
+          ]
+        }
+      },
+      "10": {
+        "tokenId": 10,
+        "at": "2026-11-11T12:00:00+00:00",
+        "standing": {
+          "working": 1,
+          "running": [
+            {
+              "jobId": "92f9fecc-f7e5-4ab7-a53e-6bd2f01f7ea3"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

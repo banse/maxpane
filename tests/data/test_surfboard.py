@@ -147,16 +147,17 @@ def test_shipped_counts_live_launches_and_completed_workflows_not_token_contract
     assert (unknown['primary'], unknown['secondary']) == ('—', '—')
 
 
-def test_wip_waiting_is_not_working_and_research_uses_active_query():
+def test_wip_waiting_is_not_working_and_research_uses_category_coverage():
     current = dict(node_counts={}, waiting_jobs=1, oracle_agents=None,
-                   research=dict(count=1, chains=1, state='ok', read_ts=990))
-    data = dict(surf_work=dict(state='ok', summary=dict(jobs=1)), surfboard_overview=dict(working_seats=0),
+                   research=dict(chains=1),
+                   job_groups=dict(research=dict(count=1, state='ok', read_ts=990)))
+    data = dict(surf_work=dict(state='ok', summary=dict(jobs=1, seats=0)), surfboard_overview=dict(working_seats=20),
                 surf_oracles=dict(state='ok', rows=[dict(status='attested', chain_id=8453)]))
     rows = {row['key']: row for row in hub.cards(data, {}, now=1000, current_work=current)}
     assert (rows['work']['primary'], rows['work']['secondary'], rows['work']['status']) == ('1', '0 working', 'idle')
     assert (rows['oracles']['primary'], rows['oracles']['numerator']) == ('1', 1)
-    assert 'filtered' in rows['oracles']['detail']
-    current['research'] = dict(count=None, chains=None, state='unavailable')
+    assert 'complete active-job coverage' in rows['oracles']['detail']
+    current['job_groups']['research'] = dict(count=None, state='unavailable')
     rows = {row['key']: row for row in hub.cards(data, {}, now=1000, current_work=current)}
     assert rows['oracles']['primary'] == '—'
 
@@ -166,21 +167,21 @@ def test_wip_waiting_is_not_working_and_research_uses_active_query():
     (0, 0, 'ok', '0', 'idle'), (1, 1, 'ok', '1', 'assessing'),
     (7, 3, 'ok', '7', 'assessing'),
 ])
-def test_research_card_uses_complete_filtered_count_not_recent_history(count, chains, state, primary, status):
+def test_research_card_uses_complete_category_count_not_oracle_history(count, chains, state, primary, status):
     research = dict(count=count, chains=chains, state=state, read_ts=900)
     snapshot = dict(state='ok', partial=False, rows=[dict(status='assessing', chain_id=8453)] * 10)
     row = next(row for row in hub.cards(dict(surf_oracles=snapshot), {}, now=1000,
-        current_work=dict(research=research)) if row['key'] == 'oracles')
+        current_work=dict(research=dict(chains=chains), job_groups=dict(research=research))) if row['key'] == 'oracles')
     assert row['title'] == 'RESEARCH' and row['destination'] == 'oracles'
     assert (row['primary'], row['secondary'], row['status']) == (primary, '— agents', status)
     assert (row['numerator'], row['denominator'], row['meter_state']) == (chains, count, state)
-    assert 'filtered' in row['detail']
+    assert 'complete active-job coverage' in row['detail']
     assert f'read {hub.hhmm(900)}' in row['detail']
 
 
 @pytest.mark.parametrize('jobs,workflows,status,subtitle', [
-    (5, 1, 'idle', '— working'), (0, 0, 'idle', '— working'),
-    (12, 3, 'idle', '— working'),
+    (5, 1, 'active', '9 working'), (0, 0, 'active', '9 working'),
+    (12, 3, 'active', '9 working'),
 ])
 def test_work_card_projects_loaded_counts(jobs, workflows, status, subtitle):
     summary = dict(jobs=jobs, workflows=workflows, seats=9, build=5, review=4, blocked=11)
@@ -213,8 +214,8 @@ def test_work_card_preserves_stale_and_unknown_counts_without_false_zero():
     (7, '7 working'), (1, '1 working'), (0, '0 working'), (None, '— working'),
 ])
 def test_work_footer_counts_busy_seats_not_items_or_daemons(agents, expected):
-    data = dict(surfboard_overview=dict(working_seats=agents, working_now=29),
-                surf_work=dict(state='ok', summary=dict(jobs=5)))
+    data = dict(surfboard_overview=dict(working_seats=29, working_now=29),
+                surf_work=dict(state='ok', summary=dict(jobs=5, seats=agents)))
     rows = hub.cards(data, {}, now=1000, current_work=dict(node_counts={'item':13}, read_ts=900))
     card = next(row for row in rows if row['key'] == 'work')
     assert card['secondary'] == expected
@@ -224,10 +225,12 @@ def test_work_footer_counts_busy_seats_not_items_or_daemons(agents, expected):
 @pytest.mark.parametrize('agents,expected', [(0, '0 agents'), (7, '7 agents'), (None, '— agents')])
 def test_oracle_footer_never_uses_request_or_submitted_member_counts(agents, expected):
     rows = hub.cards(dict(surf_oracles=dict(rows=[dict(status='assessing', chain_id=1)])), {}, now=1000,
-                     current_work=dict(oracle_agents=agents, reason='live panel unknown', read_ts=900))
+                     current_work=dict(job_groups=dict(research=dict(agents=agents)),
+                                       reason='live panel unknown', read_ts=900))
     card = next(row for row in rows if row['key'] == 'oracles')
     assert card['secondary'] == expected
-    assert 'live panel unknown' in card['detail']
+    assert ('category assignment coverage incomplete' if agents is None else
+            'complete busy-seat standing coverage') in card['detail']
 
 
 @pytest.mark.parametrize('kind,age,expected', [

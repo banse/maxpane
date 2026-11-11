@@ -1048,7 +1048,7 @@ and manager remain separate. The WIP card and `p` Protocol binding stay in place
 The top row is ONCHAIN FEED, SWARM, WIP, RESEARCH, SHIPPED, POOL4; spatial keyboard
 navigation follows that order. SWARM opens LEADERBOARD and shows an AGENTS inset: native digits for the overview's
 online-agent total, with distinct working seats in the `x working` inner footer.
-It uses the same full-roster working-seat count as WIP, never worker-list length
+It uses the full-roster working-seat count, never worker-list length
 or daemon/job counts. Both totals include RESEARCH's assigned agents; they are
 overlapping scopes, not additive categories. Fresh positive work activates the green palette; zero,
 stale and unknown states are neutral. Valid values survive reloads and actual zero
@@ -1104,12 +1104,16 @@ on load. Cached own-work `submittedAt` can seed or advance an idle anchor when
 polling missed the work; a newer observed stop wins. Heartbeat, acceptance and
 feedback timestamps cannot reset it. Without either source, cold idle has a dash,
 not a full orange bar. The last green segment remains until the full 24h expires.
-WIP and RESEARCH use JOBS inner headings. WIP includes all executing jobs, including
-research, and its inner footer uses the same full-roster busy-seat total as SWARM.
-RESEARCH counts assessing requests and their distinct assigned seats only after
-complete standing coverage; incomplete evidence remains unknown. Independent
-observation times prohibit subtracting the displayed research count from WIP.
-Both preserve their primary job-count scopes. The card reader offers at most 24 fresh details
+WIP and RESEARCH use JOBS inner headings. WIP counts executing launch jobs, including
+explicit launch-workflow stages. RESEARCH counts executing goal/report/research and
+oracle jobs once per ID. Standalone sites, code and audits are not launch work merely
+because they are not research. Fresh detail coverage must agree with the global
+executing count before either category can publish a total or zero. Each footer
+counts distinct seats assigned to its category from the same complete busy-roster
+standing observations; SWARM includes all work types. Mixed assignments can put a
+seat in both categories. Never subtract independently timed totals. Incomplete
+coverage remains unknown; the existing display retains last valid values.
+The card reader offers at most 24 fresh details
 from one recent 100-job page every 30 seconds, retaining and revalidating known
 active IDs, with a 12-second timeout and cancellation when leaving BOARDROOM.
 Owner display override (2026-10-23): generated count footers render missing
@@ -1197,14 +1201,15 @@ legacy snapshots migrate with empty projects and partial coverage until refreshe
 Creation age never claims execution duration. Current node state controls activity,
 even when an older verdict says accepted. Job and workflow states have separate meanings.
 
-The boardroom replaces PORTFOLIO with WORK IN PROGRESS. WIP uses unfinished JOBS
-digits, a verified working-node caption (or `N waiting` when complete details have
-no working node), and an outer original-workflow count. Only working nodes activate
-the inset; waiting work stays neutral. Current discovery refreshes known active IDs,
+The boardroom replaces PORTFOLIO with WORK IN PROGRESS. WIP uses executing launch JOBS
+digits, a distinct assigned-seat working caption, and an outer original-workflow
+count. Assigned working seats activate the inset; waiting work stays neutral.
+Current discovery refreshes known active IDs,
 seeds IDs from fresh assessing requests, and resumes at most one older job page per
 poll when the global executing count is not covered. Fresh detail/count agreement
-still gates completeness. RESEARCH uses an independent `status=assessing` read;
-a full, failed, malformed or aged page cannot prove a total. Live panel membership
+still gates completeness. An independent `status=assessing` read seeds old oracle
+jobs and supplies oracle-chain context; it cannot alone count all research jobs.
+A full, failed, malformed or aged page cannot prove a total. Live panel membership
 remains unknown without complete evidence. SHIPPED counts canonical production token
 deployments, including inactive tokens, with TOKENS digits and `N new` in the inner
 footer; a partial catalogue shows a lower bound. Its outer 24H chart still counts
