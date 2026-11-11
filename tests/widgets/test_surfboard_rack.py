@@ -433,7 +433,7 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.move_focus("right")
         assert rack.focused_card == "swarm-tokens"
         rack.move_focus("up")
-        assert rack.focused_card == "board"
+        assert rack.focused_card == "swarm"
         rack.move_focus("left")
         assert rack.focused_card == "pool4"
         rack.move_focus("left")
@@ -515,8 +515,8 @@ async def test_swarm_history_footer_stretches_on_resize_and_keeps_unknown_left()
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
         card = app.hub.query_one("#surfboard-card-swarm", SurfboardCard)
-        for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
-                             (140, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
+        for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▅▆▆▇▇▇██"),
+                             (143, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)

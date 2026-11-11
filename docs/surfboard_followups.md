@@ -1,5 +1,25 @@
 # Surfboard follow-ups
 
+## Boardroom order and overlapping counts — 2026-11-11
+
+SWARM and SHIPPED exchanged positions, including spatial keyboard navigation.
+The NOT ACCEPTING card has normal outer framing; its orange inner box and NA
+label and red refusal bar remain. This supersedes the orange outer border below.
+
+WIP and SWARM both count distinct busy seats across the full roster; RESEARCH
+is a subset, not another population to add. A live audit found nine working
+seats, including research seat 1548. The count tooltips now explain the overlap;
+no arithmetic or source-clock changes were needed. Evidence, the live preview
+and unchanged layout boundary are in `boardroom_order_count_scope_plan.md`.
+
+The composing run passed 523 cases; four assertions referring to old card
+positions/widths were updated and checked separately. All 39 remaining failures
+and the one fast-guard failure reproduce at c2589c74. They remain the palette,
+retired card-structure, navigation and TOKENS/SWORN CSS-slice debt already listed
+below. Fast guards passed 130 checks; doc pins passed 12.
+Final review approved without findings; nine named cases passed, and an
+independent keyboard-row mutation was caught and restored. No new follow-up.
+
 ## Agent refusal face and SWARM count face — 2026-11-11
 
 NOT ACCEPTING now occupies the orange inner footer, with orange inner/outer

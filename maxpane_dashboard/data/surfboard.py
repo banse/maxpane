@@ -594,6 +594,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     overview_state = (sources.get('overview') or {}).get('state', 'unavailable')
     card("board", "SWARM", _value(online), f'{working:,} working' if working is not None else '— working',
          f"SWARM · {_value(online)} online agents · {_value(working)} distinct working seats"
+         " · total across all work types; includes research"
          f" · workers read {hhmm(fleet['read_ts'])}"
          f" · runtime metadata {_value(fleet['runtime_known'])}/{_value(fleet['online'])} online seats"
          " · each distinct seat counts once per runtime; both counts in each"
@@ -623,6 +624,7 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
     subtitle = f'{agents:,} agents' if agents is not None else '— agents'
     card("oracles", "RESEARCH", f"{assessing:,}" if assessing is not None else "—", subtitle,
          "RESEARCH · assessing requests from filtered active-query coverage"
+         " · subset of total working agents shown in WIP and SWARM; do not add"
          + f" · {_value(assessing)} assessing · {_value(chains)} chains"
          + f" · read {hhmm(research.get('read_ts'))}"
          + f" · agents read {hhmm(research.get('read_ts') if oracle_state == 'ok' else current_work.get('read_ts'))}"
@@ -720,7 +722,8 @@ def cards(data: dict, sources: dict, *, now: float, launchpad: dict | None = Non
          + f" · {_value(work.get('details_loaded'))}/{_value(work.get('details_expected'))} details"
          + f" · current nodes {_value(current_work.get('jobs_loaded'))}/{_value(current_work.get('jobs_expected'))} jobs"
          + f" · nodes read {hhmm(current_work.get('read_ts'))}"
-         + " · working agents: distinct busy seats in the full swarm roster"
+         + " · working agents: distinct busy seats in the full swarm roster; includes research"
+         + " · all executing jobs, including research jobs"
          + f" · agents read {hhmm((sources.get('overview') or {}).get('read_ts'))}"
          + f" · {_value(waiting)} unfinished jobs without a working node"
          + (" · partial" if work.get("partial") else "")

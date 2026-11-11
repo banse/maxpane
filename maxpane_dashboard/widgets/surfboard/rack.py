@@ -32,9 +32,9 @@ ORANGE = "#ff9f43"
 
 # Fixed rack identities; the four agent cards carry independent assignments.
 SLOTS = (
-    ("announce", "ONCHAIN FEED", 0, 0), ("swarm", "SHIPPED", 0, 1),
+    ("announce", "ONCHAIN FEED", 0, 0), ("board", "SWARM", 0, 1),
     ("work", "WIP", 0, 2), ("oracles", "RESEARCH", 0, 3),
-    ("pool4", "POOL4", 0, 4), ("board", "SWARM", 0, 5),
+    ("pool4", "POOL4", 0, 4), ("swarm", "SHIPPED", 0, 5),
     ("surf-nft", "NFTS", 1, 0), ("swarm-tokens", "TOKENS", 1, 5),
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
@@ -272,7 +272,6 @@ class SurfboardCard(LoadingCard, can_focus=True):
         if self.seat_slot is not None:
             self.data["seat_slot"] = self.seat_slot
             self.data.setdefault("token_id", None)
-            self.styles.border = ('round', ORANGE) if self.data.get('meter_state') == 'not_accepting' else None
         if self.key == "surf-nft":
             self.data["destination"] = "surf-nft"
             self.data.setdefault("detail", "NFTS · observed collections · Enter to open")

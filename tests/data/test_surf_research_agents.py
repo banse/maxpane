@@ -50,6 +50,22 @@ async def test_same_seat_multiple_assignments_counts_once(setup):
     assert reader.current_work({})['oracle_agents'] == 1
 
 
+async def test_research_agents_are_included_in_wip_and_swarm_totals(setup):
+    from maxpane_dashboard.data import surfboard as hub
+    reader, raw, client, clock = setup
+    await reader._research()
+    busy = hub._working_seats(raw['roster']['seats'])
+    assert busy == 2
+    data = dict(surfboard_overview=dict(working_seats=busy, agents_online=100),
+                surf_work=dict(state='ok',summary={'jobs':1}))
+    rows = {c['key']: c for c in hub.cards(data, {'overview':dict(state='ok',read_ts=clock[0])},
+        now=clock[0], current_work=reader.current_work({}))}
+    assert rows['work']['secondary'] == rows['board']['secondary'] == '2 working'
+    assert rows['oracles']['secondary'] == '1 agents'
+    assert all('includes research' in rows[k]['detail'] for k in ('work','board'))
+    assert 'subset of total working agents' in rows['oracles']['detail']
+
+
 @pytest.mark.parametrize('failure', ['roster_missing','seat_identity','working','old_roster',
     'standing_missing','identity','truncated','bad_job','old_standing','roster_changed'])
 async def test_incomplete_roster_never_claims_an_agent_count(setup, failure):

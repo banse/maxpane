@@ -309,10 +309,15 @@ async def test_nft_fleet_and_four_agent_seats_have_expected_positions():
         assert tokens.region.y == nft.region.y
         assert oracles.region.y == pool4.region.y == work.region.y == fleet.region.y
         assert oracles.region.right < pool4.region.x
-        assert pool4.region.right < fleet.region.x
-        assert fleet.region.x == tokens.region.x and fleet.region.bottom < tokens.region.y
-        assert work.region.y == rack.query_one('#surfboard-card-swarm').region.y
-        assert rack.query_one('#surfboard-card-swarm').region.right < work.region.x
+        shipped = rack.query_one('#surfboard-card-swarm')
+        assert pool4.region.right < shipped.region.x
+        assert shipped.region.x == tokens.region.x and shipped.region.bottom < tokens.region.y
+        assert work.region.y == shipped.region.y
+        assert fleet.region.right < work.region.x
+        rack.focus_card('board');await pilot.press('right');await pilot.pause()
+        assert rack.focused_card == 'work'
+        rack.focus_card('swarm');await pilot.press('left');await pilot.pause()
+        assert rack.focused_card == 'pool4'
         assert work.region.right < oracles.region.x
         assert agent.region.x == nft.region.x
         assert bay.region.x == tokens.region.x and bay.region.y == agent.region.y
@@ -441,7 +446,7 @@ async def test_owner_size_preserves_all_twelve_slots_and_three_row_terminal(kind
     assert r["cards"]["agent-3"].bottom == r["cards"]["agent-4"].bottom <= r["terminal"].bottom
     assert r["cards"]["surf-nft"].right < r["terminal"].x < r["terminal"].right < r["cards"]["swarm-tokens"].x
     assert sorted(r["cards"], key=lambda key: (r["cards"][key].y, r["cards"][key].x)) == [
-        "announce", "swarm", "work", "oracles", "pool4", "board",
+        "announce", "board", "work", "oracles", "pool4", "swarm",
         "surf-nft", "swarm-tokens", "agent", "agent-2", "agent-3", "agent-4"]
     for title in ("ONCHAIN FEED", "SHIPPED", "AGENT", "SWARM", "RESEARCH", "POOL4", "NFTS",
                   "TOKENS", "WIP", "EMPTY SEAT", "type in"):
@@ -691,10 +696,10 @@ async def test_boardroom_uses_full_width_equal_columns_and_keeps_grid_aligned_on
                 assert card.region.height == 9
                 assert '‹' not in str(card.border_title)
             terminal = rack.query_one(SurfboardTerminal)
-            assert terminal.region.x == rack.query_one('#surfboard-card-swarm').region.x
+            assert terminal.region.x == rack.query_one('#surfboard-card-board').region.x
             assert terminal.region.right == rack.query_one('#surfboard-card-pool4').region.right
             assert terminal.region.width == sum(expected[1:5]) + 3
-            assert rack.region.right == rack.query_one('#surfboard-card-board').region.right
+            assert rack.region.right == rack.query_one('#surfboard-card-swarm').region.right
             strips = app.hub._compositor.render_strips()
             for key, label_id, word in [('surf-nft', 'keep', 'キープ'),
                                         ('swarm-tokens', 'building', 'ビルディング')]:

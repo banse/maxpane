@@ -1045,10 +1045,12 @@ selects a wallet, `r` explicitly requests a fresh upstream scan, and ordinary
 polls use the upstream cache. Combined token valuations are apportioned once;
 NFTs, seats and contract TVL never enter total value. The legacy portfolio preview
 and manager remain separate. The WIP card and `p` Protocol binding stay in place.
-SWARM opens LEADERBOARD and shows an AGENTS inset: native digits for the overview's
+The top row is ONCHAIN FEED, SWARM, WIP, RESEARCH, POOL4, SHIPPED; spatial keyboard
+navigation follows that order. SWARM opens LEADERBOARD and shows an AGENTS inset: native digits for the overview's
 online-agent total, with distinct working seats in the `x working` inner footer.
 It uses the same full-roster working-seat count as WIP, never worker-list length
-or daemon/job counts. Fresh positive work activates the green palette; zero,
+or daemon/job counts. Both totals include RESEARCH's assigned agents; they are
+overlapping scopes, not additive categories. Fresh positive work activates the green palette; zero,
 stale and unknown states are neutral. Valid values survive reloads and actual zero
 replaces them. Runtime, daemon and model metadata retain their clocks in hover.
 Whole-number fallback preserves counts too wide for native digits. Its centered outer footer is
@@ -1076,10 +1078,10 @@ orange BUSY with a full green bar; gray IDLE drains green to orange over 24 hour
 then orange to empty over hours 24–72. Offline is red OFF with empty segments.
 AGENT presence/readiness comes from selected-seat standing, never enrollment
 status or absence from `/workers`. Connected seats refusing new work display
-NOT ACCEPTING in the orange inner footer, with orange inner/outer borders and
+NOT ACCEPTING in the orange inner footer, with an orange inner border and normal outer framing and
 neutral seat digits. The outer footer is orange NA plus a full red bar: a refusal
-indicator retained on failed refreshes, not measured activity. The orange override
-clears on state or identity changes. Positive work remains BUSY with readiness in the tooltip. Direct
+indicator retained on failed refreshes, not measured activity. Only NA is orange
+in the outer footer. Positive work remains BUSY with readiness in the tooltip. Direct
 disconnection or a stale heartbeat proves OFF. Independent standing reads run
 at most once per minute per selected token, including forced refreshes. Failed
 reads retain the prior observation and its time without painting a live activity bar;
@@ -1095,12 +1097,12 @@ on load. Cached own-work `submittedAt` can seed or advance an idle anchor when
 polling missed the work; a newer observed stop wins. Heartbeat, acceptance and
 feedback timestamps cannot reset it. Without either source, cold idle has a dash,
 not a full orange bar. The last green segment remains until the full 24h expires.
-WIP and ORACLES use JOBS inner headings. WIP's inner footer shows the most frequent
-currently working node category from a bounded fresh job-detail sample. A fresh
-overview count match is required before asserting complete coverage. ORACLES shows
-an internally unknown agent count unless complete current evidence proves no Oracle work;
-the public API does not establish a complete live competitor roster. Both preserve
-their primary job-count scopes. The card reader offers at most 24 fresh details
+WIP and RESEARCH use JOBS inner headings. WIP includes all executing jobs, including
+research, and its inner footer uses the same full-roster busy-seat total as SWARM.
+RESEARCH counts assessing requests and their distinct assigned seats only after
+complete standing coverage; incomplete evidence remains unknown. Independent
+observation times prohibit subtracting the displayed research count from WIP.
+Both preserve their primary job-count scopes. The card reader offers at most 24 fresh details
 from one recent 100-job page every 30 seconds, retaining and revalidating known
 active IDs, with a 12-second timeout and cancellation when leaving BOARDROOM.
 Owner display override (2026-10-23): generated count footers render missing

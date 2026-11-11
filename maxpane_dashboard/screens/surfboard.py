@@ -27,7 +27,7 @@ from maxpane_dashboard.intro.matrix import DURATION
 #: Six equal fractional columns fill the viewport, matching the AGENT board.
 #: At 149×45 every card is 24 columns wide, separated by one-cell gutters;
 #: widths at other terminal sizes differ by at most one rounding cell.
-#: The previous first-column/ORACLES transfer is removed. FLEET remains top-right,
+#: Top row: ONCHAIN FEED, SWARM, WIP, RESEARCH, POOL4, SHIPPED (2026-11-11).
 #: TOKENS sits below it; NFTS replaced PROTOCOL below ONCHAIN FEED on 2026-10-17.
 #: The viewport keeps vertical padding but no horizontal padding or idle gutter.
 #: Owner exception to the stable-gutter rule: the vertical scrollbar consumes
@@ -55,6 +55,8 @@ from maxpane_dashboard.intro.matrix import DURATION
 #: SWARM shows AGENTS digits and working-seat counts; the worked-duration footer remains.
 #: Live 2026-11-11: 1,053 agents / 17 working and orange NOT ACCEPTING / NA-red-bar
 #: fit at 143×37 and 149×45. Eleven boundary samples retain the existing scroll onsets.
+#: The SWARM/SHIPPED swap and normal NA outer frame retain those same boundaries;
+#: live 149×45 check showed 9 total working seats, including 1 research assignment.
 #: Rechecked 2026-10-21 after live preview: 143×37 is unchanged. The title occupies
 #: its original top row; navigation now flanks the title with symmetric spacing.
 #: Normal, stress, unavailable and wide payloads fit at 143×37 and 149×45.

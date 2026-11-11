@@ -29,7 +29,7 @@ async def test_refusing_card_and_retained_state_survive_screen_refresh(setup,siz
         caption=next(s for s in box_bottom if 'NOT ACCEPTING' in s.text)
         orange=Color.parse('#ff9f43').get_truecolor()
         assert caption.style.color.get_truecolor()==orange
-        assert next(s for s in strips()[0] if '╭' in s.text).style.color.get_truecolor()==orange
+        assert next(s for s in strips()[0] if '╭' in s.text).style.color.get_truecolor()!=orange
         assert next(s for row in strips() for s in row if '┌' in s.text).style.color.get_truecolor()==orange
         top=next(i for i,row in enumerate(strips()) if '┌' in row.text)
         left,right=strips()[top].text.index('┌'),strips()[top].text.index('┐')
@@ -43,7 +43,7 @@ async def test_refusing_card_and_retained_state_survive_screen_refresh(setup,siz
         for width in (size[0]+12,size[0]):
             await pilot.resize_terminal(width,size[1]);await pilot.pause()
             assert strips()[-1].text.count('▰')==card.region.width-9
-            assert next(s for s in strips()[0] if '╭' in s.text).style.color.get_truecolor()==orange
+            assert next(s for s in strips()[0] if '╭' in s.text).style.color.get_truecolor()!=orange
         original=[s.text for s in strips()]
         reader.manager.swarm_client.fetch_seat_standing.return_value=None
         await reader._presence(650)
