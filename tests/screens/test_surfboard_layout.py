@@ -70,17 +70,23 @@ async def test_boardroom_heading_contains_navigation_and_preserves_content_geome
 
 
 @pytest.mark.parametrize('size', [(146, 37), (149, 45)])
-async def test_swarm_agents_working_and_duration_survive_refresh(size):
+async def test_swarm_agents_and_swapped_footers_survive_refresh(size):
     payload = hub_payload()
     app = HubHarness(payload)
     async with app.run_test(size=size) as pilot:
         await pilot.pause()
         card = app.hub.query_one('#surfboard-card-board', SurfboardCard)
+        shipped = app.hub.query_one('#surfboard-card-swarm', SurfboardCard)
         def painted():
             return '\n'.join(strip.crop(card.region.x, card.region.right).text for strip in
                              app.hub._compositor.render_strips()[card.region.y:card.region.bottom])
         output = painted()
-        assert all(text in output for text in ('AGENTS', '9 working', 'worked 1y 32w 3d'))
+        assert all(text in output for text in ('AGENTS', '9 working', '24H'))
+        assert 'worked' not in output
+        def shipped_footer():
+            return app.hub._compositor.render_strips()[shipped.region.bottom-1].crop(
+                shipped.region.x, shipped.region.right).text
+        assert 'worked 1y 32w 3d' in shipped_footer()
         assert 'top model' not in output and 'TOP AGENTS' not in output
         bottom = next(line for line in output.splitlines() if '└' in line)
         assert '┘' in bottom and '9 working' in bottom
@@ -89,8 +95,23 @@ async def test_swarm_agents_working_and_duration_survive_refresh(size):
         await app.hub._do_refresh()
         await pilot.pause()
         output = painted()
-        assert '12 working' in output and 'worked 1y 32w 3d' in output
+        assert '12 working' in output and '24H' in output
+        assert 'worked 1y 32w 3d' in shipped_footer()
         assert card.data['destination'] == 'board'
+        assert shipped.data['destination'] == 'swarm'
+        history = next(row for row in payload['surfboard_cards'] if row['key'] == 'swarm')
+        old_chart = output.splitlines()[-1]
+        facts['numerator'], history['points'] = None, None
+        await app.hub._do_refresh()
+        await pilot.pause()
+        assert painted().splitlines()[-1] == old_chart
+        assert 'worked 1y 32w 3d' in shipped_footer()
+        facts['numerator'], history['points'] = 0, [0] * 8
+        await app.hub._do_refresh()
+        await pilot.pause()
+        assert 'worked 0y 0w 0d' in shipped_footer()
+        assert '24H ▁' in painted().splitlines()[-1]
+        assert facts['numerator'] == 0 and history['points'] == [0] * 8
 
 
 @pytest.mark.parametrize('size', [(143, 37), (149, 45)])

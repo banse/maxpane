@@ -239,7 +239,7 @@ async def test_swarm_inset_labels_and_centers_native_digits_or_whole_fallback(si
         assert footer.style.color.get_truecolor() == Color.parse(pilot.app.get_css_variables()["accent"]).get_truecolor()
         chart = "▁▁▂▂▃▃▄▅▅▆▆▇▇█" if size[0] == 149 else "▁▁▂▂▃▄▄▅▅▆▇▇█"
         work = rack.query_one('#surfboard-card-work', SurfboardCard)
-        assert strips[-1].text == f"╰─ 24H {chart} ─╯"
+        assert card_strips(pilot.app, rack.query_one("#surfboard-card-board"))[-1].text == f"╰─ 24H {chart} ─╯"
         assert '0 workflows' in card_strips(pilot.app, work)[-1].text
         header = next(segment for segment in strips[top] if "LAUNCHES" in segment.text)
         assert not header.style.bold
@@ -514,14 +514,14 @@ async def test_swarm_history_footer_stretches_on_resize_and_keeps_unknown_left()
     app = HubHarness(payload)
     async with app.run_test(size=(149, 45)) as pilot:
         await pilot.pause()
-        card = app.hub.query_one("#surfboard-card-swarm", SurfboardCard)
-        for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▅▆▆▇▇▇██"),
+        card = app.hub.query_one("#surfboard-card-board", SurfboardCard)
+        for width, chart in [(149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█"), (180, "▁▁▁▂▂▃▃▃▄▄▅▅▆▆▆▇▇██"),
                              (143, "▁▁▂▂▃▄▄▅▅▆▇▇█"), (149, "▁▁▂▂▃▃▄▅▅▆▆▇▇█")]:
             await pilot.resize_terminal(width, 45)
             await pilot.pause()
             footer = app.hub._compositor.render_strips()[card.region.bottom - 1].crop(card.region.x, card.region.right)
             assert footer.text == f"╰─ 24H {chart} ─╯"
-            assert str(card.border_title) == "⊙ SHIPPED"
+            assert str(card.border_title) == "⊙ SWARM"
         next(row for row in payload['surfboard_cards'] if row['key'] == 'swarm')['points'] = None
         app.hub.query_one(SurfboardRack).update_data(**payload)
         await pilot.pause()
@@ -544,13 +544,13 @@ async def test_swarm_and_wip_keep_their_footers_with_independent_sources(size):
     async with app.run_test(size=size) as pilot:
         await pilot.pause()
         rack = app.hub.query_one(SurfboardRack)
-        swarm = rack.query_one('#surfboard-card-swarm', SurfboardCard)
+        swarm = rack.query_one('#surfboard-card-board', SurfboardCard)
         work = rack.query_one('#surfboard-card-work', SurfboardCard)
         assert payload == original
-        assert swarm.data['primary'] == '863 online' and swarm.data['destination'] == 'swarm'
+        assert swarm.data['primary'] == '863' and swarm.data['destination'] == 'board'
         assert work.data['primary'] == '5' and work.data['destination'] == 'work'
-        assert swarm.data['points'] == list(range(8)) and work.data['points'] is None
-        assert str(swarm.tooltip) == sources['swarm']['detail']
+        assert swarm.footer_data['points'] == list(range(8)) and work.data['points'] is None
+        assert str(swarm.tooltip).endswith('Footer: ' + sources['swarm']['detail'])
         assert str(work.tooltip) == sources['work']['detail']
         swarm_footer = card_strips(app, swarm)[-1]
         work_footer = card_strips(app, work)[-1]

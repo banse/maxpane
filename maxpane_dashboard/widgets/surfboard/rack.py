@@ -555,8 +555,8 @@ class SurfboardCard(LoadingCard, can_focus=True):
             clipped |= _protocol_footer(data, max(0, self.region.width - 6))[1]
         if self._display_footer.get("key") == "work":
             clipped |= _work_footer(self._display_footer, max(0, self.region.width - 6))[1]
-        if self.key == "board":
-            clipped |= _fleet_footer(data, max(0, self.region.width - 6))[1]
+        if self._display_footer.get("key") == "board":
+            clipped |= _fleet_footer(self._display_footer, max(0, self.region.width - 6))[1]
         for index, (raw, bold) in enumerate(rows):
             style = (readout_style if numeric_readout or self.key == 'pool4' else label_style) + Style(bold=bold)
             if self.empty_seat:
@@ -717,7 +717,9 @@ class SurfboardRack(Grid):
     def update_data(self, surfboard_cards=None, surfboard_sources=None, **_kwargs):
         cards = {card["key"]: card for card in surfboard_cards if isinstance(card, dict) and isinstance(card.get("key"), str)} if isinstance(surfboard_cards, list) else {}
         for card in self.query(SurfboardCard):
-            card.set_data(cards.get(card.key))
+            footer_key = {"board": "swarm", "swarm": "board"}.get(card.key)
+            footer = cards.get(footer_key, {"key": footer_key}) if footer_key else None
+            card.set_data(cards.get(card.key), footer_data=footer)
 
     def focus_card(self, key=None):
         key = key or self.focused_card

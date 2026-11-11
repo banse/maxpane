@@ -1053,12 +1053,14 @@ or daemon/job counts. Both totals include RESEARCH's assigned agents; they are
 overlapping scopes, not additive categories. Fresh positive work activates the green palette; zero,
 stale and unknown states are neutral. Valid values survive reloads and actual zero
 replaces them. Runtime, daemon and model metadata retain their clocks in hover.
-Whole-number fallback preserves counts too wide for native digits. Its centered outer footer is
+Whole-number fallback preserves counts too wide for native digits. SWARM's outer
+footer is the 24H accepted-step sparkline. SHIPPED's centered outer footer is
 `worked Ny Nw Nd`, using the complete contributor
 summary's `wall_clock_ms` across all devices. Whole days are split into 365-day years,
 seven-day weeks and days; remaining hours are discarded. The existing meter fields
 carry `meter_kind=duration`, milliseconds in `numerator` and no denominator. Unknown
-time is `worked —`; known zero is `worked 0y 0w 0d`. SWARM has no activity label or bar.
+time is `worked —`; known zero is `worked 0y 0w 0d`. The rack exchanges these
+footer sources without changing either card's body, destination or source clocks.
 Empty AGENT insets use a borderless `seat number` input, centered ↑ and `type in`; their outer
 footer is centered `Identity.md`. Three-line gaps below NFTS and TOKENS separate them
 from the AGENT seats; regular-weight キープ / ビルディング use the same dim dashboard

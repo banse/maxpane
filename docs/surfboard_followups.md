@@ -1,5 +1,20 @@
 # Surfboard follow-ups
 
+## SWARM / SHIPPED footer exchange — 2026-11-11
+
+SWARM now carries the 24H accepted-step chart; SHIPPED carries the worked-duration
+footer. The existing `footer_data` path preserves body values, destinations,
+source clocks, hover provenance and last valid observations. Actual zero replaces
+the retained value. Duration clipping follows its new display location.
+Live render, boundary and review evidence: `boardroom_footer_swap_plan.md`.
+
+Final review approved without findings. Composing checks: 149 passed; 39 existing
+palette/navigation failures reproduce at e05c9f47. One additional parallel-only
+failure exposed the fake HubPayloadManager's missing `get_hub_snapshot` in the
+age timer; its named case passes serially. File that test-double correction with
+the existing harness maintenance, without altering production timing. The known
+TOKENS/SWORN guard failure remains; 130 other guards and 12 doc pins passed.
+
 ## Boardroom order and overlapping counts — 2026-11-11
 
 SWARM and SHIPPED exchanged positions, including spatial keyboard navigation.
