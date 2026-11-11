@@ -1,5 +1,20 @@
 # Surfboard follow-ups
 
+## POOL4 order and muted NA footer — 2026-11-11
+
+POOL4 is now the final top-row card, after SHIPPED, with matching keyboard
+navigation. NOT ACCEPTING retains the orange inner frame/caption and normal
+outer frame; its digits use the active-card green. Its outer footer is muted
+gray NA plus empty gray segments. This supersedes the previous NA styling below.
+The footer sources, values, polling and state transitions are unchanged.
+
+Live render, boundary and mutation evidence is in `boardroom_na_pool_order_plan.md`.
+Final review approved without findings; seven named cases passed. The composing
+run passed 151 cases; the one outdated POOL4 viewport assertion was corrected and
+both POOL4 cases passed afterward. All 39 residual failures and the one guard
+failure reproduce at c0a773a6; they remain the existing palette/navigation and
+CSS-slice maintenance. Fast guards: 130 passed; doc pins: 12 passed.
+
 ## SWARM / SHIPPED footer exchange — 2026-11-11
 
 SWARM now carries the 24H accepted-step chart; SHIPPED carries the worked-duration

@@ -34,15 +34,24 @@ async def test_refusing_card_and_retained_state_survive_screen_refresh(setup,siz
         top=next(i for i,row in enumerate(strips()) if '┌' in row.text)
         left,right=strips()[top].text.index('┌'),strips()[top].text.index('┐')
         digit=next(s for row in strips()[top+1:top+4] for s in row.crop(left+1,right) if s.text.strip())
-        assert digit.style.color.get_truecolor()==card.rich_style.color.get_truecolor(app.ansi_theme)
-        assert strips()[-1].text.count('▰')==card.region.width-9
-        assert next(s for s in strips()[-1] if 'NA' in s.text).style.color.get_truecolor()==orange
-        bar=next(s for s in strips()[-1] if '▰' in s.text)
-        assert bar.style.color.get_truecolor()==Color.parse('red').get_truecolor(app.ansi_theme)
+        active=app.hub.query_one('#surfboard-card-board',SurfboardCard)
+        active_rows=[s.crop(active.region.x,active.region.right) for s in
+                     app.hub._compositor.render_strips()[active.region.y:active.region.bottom]]
+        active_top=next(i for i,s in enumerate(active_rows) if '┌' in s.text)
+        active_digit=next(s for row in active_rows[active_top+1:active_top+4]
+                          for s in row.crop(left+1,right) if s.text.strip())
+        assert digit.style.color.get_truecolor()==active_digit.style.color.get_truecolor()
+        work=app.hub.query_one('#surfboard-card-work',SurfboardCard)
+        work_footer=app.hub._compositor.render_strips()[work.region.bottom-1].crop(work.region.x,work.region.right)
+        gray=next(s for s in work_footer if 'workflows' in s.text).style.color.get_truecolor()
+        assert strips()[-1].text.count('▱')==card.region.width-9 and '▰' not in strips()[-1].text
+        assert next(s for s in strips()[-1] if 'NA' in s.text).style.color.get_truecolor()==gray
+        bar=next(s for s in strips()[-1] if '▱' in s.text)
+        assert bar.style.color.get_truecolor()==gray
         card.focus();await pilot.pause()
         for width in (size[0]+12,size[0]):
             await pilot.resize_terminal(width,size[1]);await pilot.pause()
-            assert strips()[-1].text.count('▰')==card.region.width-9
+            assert strips()[-1].text.count('▱')==card.region.width-9
             assert next(s for s in strips()[0] if '╭' in s.text).style.color.get_truecolor()!=orange
         original=[s.text for s in strips()]
         reader.manager.swarm_client.fetch_seat_standing.return_value=None
@@ -51,7 +60,7 @@ async def test_refusing_card_and_retained_state_survive_screen_refresh(setup,siz
         await app.hub._do_refresh();await pilot.pause()
         assert [s.text for s in strips()]==original
         assert card.data['status']=='stale'
-        assert 'NA' in strips()[-1].text and '▰' in strips()[-1].text
+        assert 'NA' in strips()[-1].text and '▱' in strips()[-1].text
         raw['standing']['working']=1
         reader.manager.swarm_client.fetch_seat_standing.return_value=raw
         await reader._presence(650)

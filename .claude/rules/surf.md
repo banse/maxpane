@@ -1045,7 +1045,7 @@ selects a wallet, `r` explicitly requests a fresh upstream scan, and ordinary
 polls use the upstream cache. Combined token valuations are apportioned once;
 NFTs, seats and contract TVL never enter total value. The legacy portfolio preview
 and manager remain separate. The WIP card and `p` Protocol binding stay in place.
-The top row is ONCHAIN FEED, SWARM, WIP, RESEARCH, POOL4, SHIPPED; spatial keyboard
+The top row is ONCHAIN FEED, SWARM, WIP, RESEARCH, SHIPPED, POOL4; spatial keyboard
 navigation follows that order. SWARM opens LEADERBOARD and shows an AGENTS inset: native digits for the overview's
 online-agent total, with distinct working seats in the `x working` inner footer.
 It uses the same full-roster working-seat count as WIP, never worker-list length
@@ -1080,10 +1080,10 @@ orange BUSY with a full green bar; gray IDLE drains green to orange over 24 hour
 then orange to empty over hours 24–72. Offline is red OFF with empty segments.
 AGENT presence/readiness comes from selected-seat standing, never enrollment
 status or absence from `/workers`. Connected seats refusing new work display
-NOT ACCEPTING in the orange inner footer, with an orange inner border and normal outer framing and
-neutral seat digits. The outer footer is orange NA plus a full red bar: a refusal
-indicator retained on failed refreshes, not measured activity. Only NA is orange
-in the outer footer. Positive work remains BUSY with readiness in the tooltip. Direct
+NOT ACCEPTING in the orange inner footer, with an orange inner border, normal outer
+framing and the same green seat digits as active cards. The outer footer is muted
+gray NA plus empty gray segments: a refusal indicator retained on failed refreshes,
+not measured activity. Positive work remains BUSY with readiness in the tooltip. Direct
 disconnection or a stale heartbeat proves OFF. Independent standing reads run
 at most once per minute per selected token, including forced refreshes. Failed
 reads retain the prior observation and its time without painting a live activity bar;

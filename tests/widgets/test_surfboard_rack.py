@@ -356,7 +356,7 @@ async def test_card_activity_colors_update_from_current_counts():
             assert edge.style.color.get_truecolor()==expected
 
 
-@pytest.mark.parametrize('size',[(149,45),(140,36)])
+@pytest.mark.parametrize('size',[(149,45),(143,37)])
 @pytest.mark.parametrize('key,primary,secondary,label,expected,green,footer_text',[
     ('pool4','8.77','USD','IMD PRICE',
      ['╭─╮ ╶─┐╶─┐  ','├─┤   │  │ ↑','╰─╯•  ╵  ╵  '],False,'USD'),
@@ -433,9 +433,9 @@ async def test_all_agent_seats_focus_and_arrows_follow_new_geometry():
         rack.move_focus("right")
         assert rack.focused_card == "swarm-tokens"
         rack.move_focus("up")
-        assert rack.focused_card == "swarm"
-        rack.move_focus("left")
         assert rack.focused_card == "pool4"
+        rack.move_focus("left")
+        assert rack.focused_card == "swarm"
         rack.move_focus("left")
         assert rack.focused_card == "oracles"
         rack.move_focus("left")

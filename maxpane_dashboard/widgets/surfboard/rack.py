@@ -34,7 +34,7 @@ ORANGE = "#ff9f43"
 SLOTS = (
     ("announce", "ONCHAIN FEED", 0, 0), ("board", "SWARM", 0, 1),
     ("work", "WIP", 0, 2), ("oracles", "RESEARCH", 0, 3),
-    ("pool4", "POOL4", 0, 4), ("swarm", "SHIPPED", 0, 5),
+    ("swarm", "SHIPPED", 0, 4), ("pool4", "POOL4", 0, 5),
     ("surf-nft", "NFTS", 1, 0), ("swarm-tokens", "TOKENS", 1, 5),
     ("agent", "AGENT", 2, 0), ("agent-2", "AGENT", 2, 5),
     ("agent-3", "AGENT", 3, 0), ("agent-4", "AGENT", 3, 5),
@@ -104,7 +104,7 @@ def meter_text(card: dict, width: int | None = None) -> Text:
     key, status = card.get("key"), card.get("status")
     state = card.get("meter_state")
     if key in AGENT_KEYS and state == 'not_accepting':
-        return Text('NA ', style=ORANGE).append('▰' * (8 if width is None else max(0, width-3)), style=RED)
+        return Text('NA ' + '▱' * (8 if width is None else max(0, width-3)), style=MUTED)
     if key in AGENT_KEYS and card.get('meter_kind') == 'presence':
         label = {'busy': 'BUSY', 'idle': 'IDLE', 'offline': 'OFF'}.get(state, '')
         return Text(label, style=MUTED if status == 'idle' else AMBER)
@@ -464,7 +464,7 @@ class SurfboardCard(LoadingCard, can_focus=True):
             palette, active=border_inset.color in (Style.parse(palette['accent']).color, Style.parse(GREEN).color),
             frame_color=border_inset.color, ansi_theme=self.app.ansi_theme, text_color=self.rich_style.color)
         if self.seat_slot is not None and data.get('meter_state') == 'not_accepting':
-            readout_style = label_style
+            readout_style = value_style + Style(color=GREEN)
         label = ""
         marker, marker_ink = _price_indicator(self._price_direction)
         marker_width = 0
