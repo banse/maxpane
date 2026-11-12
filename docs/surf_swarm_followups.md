@@ -2075,3 +2075,12 @@ single fix wave moved synthetic roster/standing responses into the committed
 fixture; all 16 category cases passed afterward. Seven reviewer cases passed,
 including refresh retention, and the observation-time mutation was killed.
 No production changed in the fix wave, so no scoped re-review was required.
+
+## Neutral values on SWARM and POOL4 — 2026-11-12
+
+FLEET/RECEIPTS and POOL4 BURN & SUPPLY/SIGNALS now use normal white text for
+formerly dim values. Labels/headings and existing colored accents are preserved.
+See [the verification notes](neutral-widget-values-20261112.md). The compact ETH
+supply label finding was fixed and scoped re-review marked it ADDRESSED. No new
+review follow-ups; sixteen broader test failures reproduce on unchanged 9811749c
+(two paused-style, two LAUNCHPAD composition and twelve AGENT/record cases).

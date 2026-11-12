@@ -237,7 +237,8 @@ async def test_receipts_subheader_matches_fleet_bold_muted_title_style():
 
 
 @pytest.mark.parametrize('theme',['matrix','minimal'])
-async def test_counts_match_leaderboard_foreground_while_metadata_and_units_stay_neutral(theme):
+async def test_neutral_values_are_white_while_labels_and_colored_counts_stay_unchanged(theme, monkeypatch):
+    monkeypatch.delenv("NO_COLOR", raising=False)
     from rich.color import Color
     from maxpane_dashboard.themes import THEMES
     from maxpane_dashboard.widgets.surf.swarm_leaderboard import SurfSwarmLeaderboard
@@ -299,7 +300,12 @@ async def test_counts_match_leaderboard_foreground_while_metadata_and_units_stay
                 for offset,char in enumerate(value):
                     if not char.isspace():
                         style=app.screen.get_style_at(start+offset,y)
-                        assert style.color==neutral_color,(marker,value,style)
+                        if value in {'runtime','model','daemon','os','profile','slots',
+                                     'devices','accepted','rejected','turns','tokens','tokens/job'}:
+                            assert style.color == neutral_color, (marker,value,style)
+                        else:
+                            assert style.color == app.screen.rich_style.color, (marker,value,style)
+                            assert not style.dim, (marker,value,style)
         for marker in ('FLEET','RECEIPTS'):
             y=next(i for i,line in enumerate(lines) if line.strip().startswith(marker))
             for x,char in enumerate(lines[y]):

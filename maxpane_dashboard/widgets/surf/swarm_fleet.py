@@ -56,7 +56,7 @@ class SurfSwarmFleet(SignalsPanelBase):
             self.query_one(f'#surf-fleet-{name}').tooltip = None
             self.write_guarded(f'#surf-fleet-{name}',
                                lambda name=name: self._line(name, swarm_fleet, swarm_board_summary, swarm_contributors_as_of_hhmm),
-                               self._label(name) + Text('—', style='dim'))
+                               self._label(name) + Text('—', style='not dim'))
         self.query_one('#surf-fleet-paused-detail').display = bool(self._paused(swarm_fleet))
 
     def _room(self):
@@ -70,15 +70,15 @@ class SurfSwarmFleet(SignalsPanelBase):
         return Style(color=self.app.get_css_variables()['foreground'], bold=True, dim=False)
 
     def _item(self, name, count):
-        return Text().append(strip_tags(flatten(name)), style='dim').append(' ').append(fmt_int(count), style=self._number_style())
+        return Text().append(strip_tags(flatten(name)), style='not dim').append(' ').append(fmt_int(count), style=self._number_style())
 
     def _fit(self, label, parts, empty='none reported'):
         prefix = self._label(label) if label else Text()
         if not parts:
-            return prefix + Text(empty, style='dim')
+            return prefix + Text(empty, style='not dim')
         for keep in range(len(parts), -1, -1):
             values = parts[:keep] + ([Text(f'+{len(parts)-keep}', style=self._number_style())] if keep < len(parts) else [])
-            text = prefix + Text(' · ').join(values)
+            text = prefix + Text(' · ', style='not dim').join(values)
             if text.cell_len <= self._room():
                 return text
         text = Text(rowfit.clip(prefix.plain + f'+{len(parts)}', self._room()))
@@ -103,16 +103,16 @@ class SurfSwarmFleet(SignalsPanelBase):
             while sum(widths) > name_room:
                 widest = max(range(keep), key=widths.__getitem__)
                 widths[widest] -= 1
-            fitted = [Text(rowfit.clip(name, width), style='dim') + Text(' ' + count, style=self._number_style())
+            fitted = [Text(rowfit.clip(name, width), style='not dim') + Text(' ' + count, style=self._number_style())
                       for (name, count), width in zip(values, widths)]
-            return Text(label.ljust(label_width), style='dim') + Text(' · ').join(fitted) + suffix
+            return Text(label.ljust(label_width), style='dim') + Text(' · ', style='not dim').join(fitted) + suffix
         return Text(f'+{omitted + len(parts)}', style=self._number_style())
 
     def _group(self, label, parts, columns=1, limit=None):
         """Group metadata, reserving the last row's inline omission count."""
         shown = parts if limit is None else parts[:limit]
         if not shown:
-            return self._label(label) + Text('none reported', style='dim')
+            return self._label(label) + Text('none reported', style='not dim')
         lines = []
         for start in range(0, len(shown), columns):
             group = shown[start:start + columns]
@@ -130,7 +130,7 @@ class SurfSwarmFleet(SignalsPanelBase):
         rows = fleet.get('models') if isinstance(fleet, dict) else None
         prefix = self._label('model')
         if not isinstance(rows, list):
-            return prefix + Text('—', style='dim')
+            return prefix + Text('—', style='not dim')
         parts = []
         full = []
         for row in rows:
@@ -152,7 +152,7 @@ class SurfSwarmFleet(SignalsPanelBase):
 
     def _count(self, value, word='', compact=False):
         out = Text().append(fmt_compact(value) if compact else fmt_int(value), style=self._number_style())
-        return out.append(' ' + word, style='dim') if word else out
+        return out.append(' ' + word, style='not dim') if word else out
 
     def _wall_clock(self, ms):
         """Wall-clock time to the nearest hour; under half an hour, whole minutes
@@ -169,7 +169,7 @@ class SurfSwarmFleet(SignalsPanelBase):
             'devices': (get('devices'), [self._count(get('devices')),
                                          get('seats') is not None and self._count(get('seats'), 'seats')]),
             'accepted': (get('accepted'), [self._count(get('accepted')) + (
-                Text(' of ', style='dim') + self._count(get('attempts'))
+                Text(' of ', style='not dim') + self._count(get('attempts'))
                 if get('attempts') is not None else Text())]),
             'rejected': (get('rejected'), [self._count(get('rejected')),
                                            get('pending') is not None and self._count(get('pending'), 'pending')]),
@@ -182,7 +182,7 @@ class SurfSwarmFleet(SignalsPanelBase):
         }[name]
         label = 'tokens' if name == 'tokens-io' else name
         if first is None:
-            return self._label(label) + Text('—', style='dim')
+            return self._label(label) + Text('—', style='not dim')
         return self._fit(label, [part for part in parts if part])
 
     def _line(self, name, fleet, summary, clock):
@@ -192,17 +192,17 @@ class SurfSwarmFleet(SignalsPanelBase):
             return self._contributors(name, summary)
         if name == 'tokens':
             value = summary.get('tokens_per_completed_job') if isinstance(summary, dict) else None
-            return self._label('tokens/job') + (Text('—', style='dim') if value is None else
+            return self._label('tokens/job') + (Text('—', style='not dim') if value is None else
                                               self._count(value, '(served)'))
         if name == 'model':
             return self._model_lines(fleet)
         label = self._label(name)
         if not isinstance(fleet, dict):
-            return Text() if name == 'paused-detail' else label + Text('—', style='dim')
+            return Text() if name == 'paused-detail' else label + Text('—', style='not dim')
         if name in _MIXES:
             rows = fleet.get(_MIXES[name])
             if not isinstance(rows, list):
-                return label + Text('—', style='dim')
+                return label + Text('—', style='not dim')
             parts = [self._item(row.get('value'), row.get('count')) for row in rows if isinstance(row, dict)]
             self.query_one(f'#surf-fleet-{name}').tooltip = Text('\n').join(parts) if parts else None
             if name == 'profile':
@@ -212,8 +212,8 @@ class SurfSwarmFleet(SignalsPanelBase):
             return self._group(name, parts, columns=2, limit=2 if name == 'runtime' else None)
         paused = self._paused(fleet)
         if name == 'paused-detail':
-            parts = [Text(f"#{row['token_id']} until {hhmm(row['until_ts'])} ×{fmt_int(row['failures'])}") for row in paused]
+            parts = [Text(f"#{row['token_id']} until {hhmm(row['until_ts'])} ×{fmt_int(row['failures'])}", style='not dim') for row in paused]
             return self._fit('', parts, '')
         if not isinstance(fleet.get('paused'), list):
-            return label + Text('—', style='dim')
+            return label + Text('—', style='not dim')
         return label + (Text(fmt_int(len(paused)), style='bold red') if paused else Text('none', style='green'))

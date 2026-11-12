@@ -383,7 +383,7 @@ class SurfPool4UBurn(Vertical):
             joiner = " over " if tier == "full" else " "
             pace_text = f"{pace_text}{joiner}{fmt_age(window)}"
         gap = "  " if tier == "full" else " "
-        return f"{safe_markup(spark)}{gap}[dim]{safe_markup(pace_text)}[/]"
+        return f"{safe_markup(spark)}{gap}[not dim]{safe_markup(pace_text)}[/]"
 
     def _spark_line(self, tier: str) -> str:
         """The ``burn rate`` row, label column included at the full tier.
@@ -428,7 +428,7 @@ class SurfPool4UBurn(Vertical):
             cell = f"{shown} · {pct_shown} of ETH supply"
         else:
             cell = f"{shown} settled · {pct_shown} ETH"
-        return f"{self._label(ROW_LABELS[1], tier)}[dim]{safe_markup(cell)}[/]"
+        return f"{self._label(ROW_LABELS[1], tier)}[not dim]{safe_markup(cell)}[/]"
 
     def _supply_line(self, tier: str) -> str:
         supply = as_float(self._payload.get("total_supply"))
@@ -436,8 +436,8 @@ class SurfPool4UBurn(Vertical):
         if tier == "full":
             cell = f"{shown} IMD"
         else:
-            cell = f"ETH supply {shown}"
-        return f"{self._label(ROW_LABELS[2], tier)}[dim]{safe_markup(cell)}[/]"
+            return f"[dim]ETH supply[/] [not dim]{safe_markup(shown)}[/]"
+        return f"{self._label(ROW_LABELS[2], tier)}[not dim]{safe_markup(cell)}[/]"
 
     def _content_lines(self, tier: str) -> list[Text]:
         markup = [
@@ -445,8 +445,13 @@ class SurfPool4UBurn(Vertical):
             self._totals_line(tier),
             self._supply_line(tier),
         ]
-        return ([t for t in (parse_line(m) for m in markup) if t is not None]
-                + [Text(line, style="dim") for line in pipeline_lines(self._payload.get("pipeline"))])
+        lines = [t for t in (parse_line(m) for m in markup) if t is not None]
+        for index, line in enumerate(pipeline_lines(self._payload.get("pipeline"))):
+            text = Text(line, style="dim")
+            if index:
+                text.stylize("not dim", LABEL_COLS)
+            lines.append(text)
+        return lines
 
     def _render_view(self) -> None:
         try:

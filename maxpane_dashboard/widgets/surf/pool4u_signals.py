@@ -509,6 +509,7 @@ class SurfPool4USignals(Vertical):
     def _content_lines(self, tier: str) -> list[Text]:
         markup: list[str] = []
         for label, cell, style in self._cells(tier):
+            style = "not dim" if style == "dim" else style
             # Pad raw and escape after: ``pad`` measures terminal cells and an
             # escaped ``\\[`` is two characters for one cell, so escaping first
             # misaligns the column.
