@@ -96,6 +96,8 @@ def pool4_records(payload: dict | None) -> tuple[HeroRecord, ...]:
 class Pool4HeroCard(LocalSourceHeroCard):
     """Advertise lost content using the actual inset and border budgets."""
 
+    DEFAULT_CSS = "Pool4HeroCard { border-subtitle-align: center; }"
+
     def set_record(self, data):
         super().set_record(data)
         self._update_title()

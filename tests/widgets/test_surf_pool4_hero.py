@@ -78,6 +78,11 @@ async def test_approved_six_cards_preserve_equal_geometry_and_units():
             output = painted(app, key)
             assert all(value in output for value in values), output
             assert all(corner in output for corner in "┌┐└┘")
+            footer = output.splitlines()[-1]
+            label = app.query_one(f"#hero-{key}").data.footer
+            left = footer.index(label)
+            right = len(footer) - left - len(label)
+            assert abs(left - right) <= 1, footer
         for key, digits in (("price", "9.410"), ("rate", "7.964"), ("staking", "8.4"), ("bid", "18.60")):
             assert app.query_one(f"#hero-{key}").data.digits == digits
             assert any(character in painted(app, key) for character in "╭╮╴╷")
