@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.data.test_surf_agent_work import complete_history
 
 from maxpane_dashboard.data import surf_agent_card_sources as sources
 from maxpane_dashboard.data.surf_cache import SurfCache
@@ -44,19 +45,19 @@ def reader(tmp_path):
 async def test_success_clocks_distinct_assets_and_selected_seat_join(reader):
     r, earnings, swarm = reader
     await r.read(seat(), NOW)
-    data, meta = sources.project(r.capture(NOW), seat(), now=NOW)
+    data, meta = sources.project(r.capture(NOW), complete_history(seat()), now=NOW)
     assert data['_agent_earnings'] == dict(earned=1, worked_on=1, earned_24h=1, worked_on_24h=1, worked_recent=True, wallet_total=1)
-    assert data['_agent_nodes'] == dict(oracle=0, launches=1, other=0, known_jobs=1, total_jobs=1, launches_total=1, oracle_total=0)
+    assert data['_agent_nodes'] == dict(oracle=0, launches=1, other=0, known_jobs=1, total_jobs=1, launches_total=1, oracle_total=0, research=0, research_total=0)
     assert meta['earnings']['read_ts'] == meta['agent_work']['read_ts'] == NOW
     await r.read(seat(), NOW+1)
     assert earnings.fetch.await_count == swarm.fetch_job.await_count == 1
     other_seat = dict(seat(), work=[])
-    data, _ = sources.project(r.capture(NOW), other_seat, now=NOW)
+    data, _ = sources.project(r.capture(NOW), complete_history(other_seat), now=NOW)
     assert data['_agent_earnings']['earned'] == 0
     assert data['_agent_earnings']['worked_on'] == 0
     assert data['_agent_earnings']['earned_24h'] == 0
     assert data['_agent_earnings']['worked_on_24h'] == 0
-    data, meta = sources.project(r.capture(NOW), seat('0x'+'9'*40), now=NOW)
+    data, meta = sources.project(r.capture(NOW), complete_history(seat('0x'+'9'*40)), now=NOW)
     assert data['_agent_earnings'] == {} and meta['earnings']['state'] == 'unavailable'
 
 
@@ -69,12 +70,12 @@ def test_wallet_total_counts_distinct_production_assets_independently_of_seat_wo
             *[dict(row, chain_id=chain) for chain in (11155111, 84532, 46630, 999999)]]
     capture = dict(earnings={OWNER: dict(read_ts=NOW, rows=rows)})
     raw = dict(seat(), work=accepted_work)
-    data, _ = sources.project(capture, raw, now=NOW)
+    data, _ = sources.project(capture, complete_history(raw), now=NOW)
     assert data['_agent_earnings']['wallet_total'] == 4
     assert data['_agent_earnings']['earned'] == (None if accepted_work is None else 0 if not accepted_work else 5)
-    assert sources.project(capture, seat('0x'+'9'*40), now=NOW)[0]['_agent_earnings'] == {}
+    assert sources.project(capture, complete_history(seat('0x'+'9'*40)), now=NOW)[0]['_agent_earnings'] == {}
     capture['earnings'][OWNER]['rows'] = []
-    assert sources.project(capture, raw, now=NOW)[0]['_agent_earnings']['wallet_total'] == 0
+    assert sources.project(capture, complete_history(raw), now=NOW)[0]['_agent_earnings']['wallet_total'] == 0
 
 
 async def test_membership_reads_failed_attempt_jobs_without_reclassifying_nodes(reader):
@@ -84,7 +85,7 @@ async def test_membership_reads_failed_attempt_jobs_without_reclassifying_nodes(
     swarm.fetch_job.assert_awaited_once_with(JOB)
     capture = r.capture(NOW)
     assert capture['work'][JOB]['launched'] is True
-    assert sources.project(capture, raw, now=NOW)[0]['_agent_nodes']['launches'] == 0
+    assert sources.project(capture, complete_history(raw), now=NOW)[0]['_agent_nodes']['launches'] == 0
 
 
 async def test_failed_refresh_keeps_values_and_clocks_and_backoff(reader):
@@ -93,7 +94,7 @@ async def test_failed_refresh_keeps_values_and_clocks_and_backoff(reader):
     earnings.fetch.return_value = None
     swarm.fetch_job.return_value = None
     await r.read(seat(), NOW+601)
-    data, meta = sources.project(r.capture(NOW+601), seat(), now=NOW+601)
+    data, meta = sources.project(r.capture(NOW+601), complete_history(seat()), now=NOW+601)
     assert data['_agent_earnings']['earned'] == 1 and data['_agent_nodes']['launches'] == 1
     assert meta['earnings'] == dict(read_ts=NOW, state='failed')
     assert meta['agent_work'] == dict(read_ts=NOW, state='stale')
@@ -102,7 +103,7 @@ async def test_failed_refresh_keeps_values_and_clocks_and_backoff(reader):
     earnings.fetch.return_value = earned()
     r.clock = lambda: NOW+721
     await r.read(seat(), NOW+721)
-    assert sources.project(r.capture(NOW+721), seat(), now=NOW+721)[1]['earnings']['state'] == 'ok'
+    assert sources.project(r.capture(NOW+721), complete_history(seat()), now=NOW+721)[1]['earnings']['state'] == 'ok'
 
 
 @pytest.mark.parametrize('cached', [False, True])
@@ -121,13 +122,13 @@ async def test_pending_is_actual_owner_read_and_cancellation_clears_it(reader, c
     task = asyncio.create_task(r.read(seat(), NOW))
     await entered.wait()
     frozen = r.capture(NOW)
-    assert sources.project(frozen, seat(), now=NOW)[1]['earnings']['state'] == 'pending'
-    assert sources.project(frozen, seat('0x'+'9'*40), now=NOW)[1]['earnings']['state'] == 'unavailable'
+    assert sources.project(frozen, complete_history(seat()), now=NOW)[1]['earnings']['state'] == 'pending'
+    assert sources.project(frozen, complete_history(seat('0x'+'9'*40)), now=NOW)[1]['earnings']['state'] == 'unavailable'
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    assert sources.project(r.capture(NOW), seat(), now=NOW)[1]['earnings']['state'] == ('stale' if cached else 'unavailable')
-    assert sources.project(frozen, seat(), now=NOW)[1]['earnings']['state'] == 'pending'
+    assert sources.project(r.capture(NOW), complete_history(seat()), now=NOW)[1]['earnings']['state'] == ('stale' if cached else 'unavailable')
+    assert sources.project(frozen, complete_history(seat()), now=NOW)[1]['earnings']['state'] == 'pending'
 
 
 def test_cache_validation_is_per_owner_and_never_treats_invalid_rows_as_empty():
@@ -142,7 +143,7 @@ def test_cache_validation_is_per_owner_and_never_treats_invalid_rows_as_empty():
 def test_unknown_accepted_job_identity_does_not_claim_zero_earnings(work):
     capture = dict(earnings={OWNER: dict(read_ts=NOW, rows=earned())})
     raw = dict(seat(), work=work)
-    data, _ = sources.project(capture, raw, now=NOW)
+    data, _ = sources.project(capture, complete_history(raw), now=NOW)
     assert data['_agent_earnings']['earned'] is None
     assert data['_agent_earnings']['worked_on'] is None
     assert data['_agent_earnings']['earned_24h'] is None
@@ -160,11 +161,11 @@ def test_owner_change_rejoins_rewards_to_the_same_seat_not_the_new_wallet_total(
         new_owner: dict(read_ts=NOW, rows=[matched, unrelated]),
     })
     for owner in (OWNER, new_owner):
-        data, _ = sources.project(capture, seat(owner), now=NOW)
+        data, _ = sources.project(capture, complete_history(seat(owner)), now=NOW)
         assert data['_agent_earnings']['earned'] == 1
         assert data['_agent_earnings']['earned_24h'] == 1
     other_seat = dict(seat(new_owner), work=[])
-    data, _ = sources.project(capture, other_seat, now=NOW)
+    data, _ = sources.project(capture, complete_history(other_seat), now=NOW)
     assert data['_agent_earnings']['earned'] == data['_agent_earnings']['earned_24h'] == 0
 
 
@@ -198,13 +199,13 @@ async def test_membership_resumes_seat_history_with_bounded_reads_and_concurrenc
     swarm.fetch_job.side_effect = fetch
     await r.read(raw, NOW)
     assert swarm.fetch_job.await_count == 24
-    data, meta = sources.project(r.capture(NOW), raw, now=NOW)
+    data, meta = sources.project(r.capture(NOW), complete_history(raw), now=NOW)
     assert data['_agent_nodes']['launches_total'] is None
     await r.read(raw, NOW+1)
     assert swarm.fetch_job.await_count == 48
     await r.read(raw, NOW+2)
-    data, meta = sources.project(r.capture(NOW), raw, now=NOW)
-    assert data['_agent_nodes'] == dict(oracle=0, launches=53, other=0, known_jobs=53, total_jobs=53, launches_total=53, oracle_total=0)
+    data, meta = sources.project(r.capture(NOW), complete_history(raw), now=NOW)
+    assert data['_agent_nodes'] == dict(oracle=0, launches=53, other=0, known_jobs=53, total_jobs=53, launches_total=53, oracle_total=0, research=0, research_total=0)
     assert meta['agent_work'] == dict(state='ok', read_ts=NOW)
     assert peak == 4 and live == 0
     await r.read(raw, NOW+1)
@@ -316,8 +317,8 @@ async def test_frontend_contribution_follows_exact_workflow_without_changing_rec
                             dict(jobId=FRONTEND, nodeKey='review', status='accepted')])
     await r.read(raw, NOW)
     captured = r.capture(NOW)
-    assert captured['work'][FRONTEND] == dict(read_ts=NOW, launched=False, shipped=True, chain_id=chain)
-    assert sources.project(captured, raw, now=NOW)[0]['_agent_nodes']['launches'] == expected
+    assert captured['work'][FRONTEND] == dict(read_ts=NOW, launched=False, shipped=True, chain_id=chain, family="launch")
+    assert sources.project(captured, complete_history(raw), now=NOW)[0]['_agent_nodes']['launches'] == expected
     assert sources.work.record_rows([dict(job_id=FRONTEND, node_key='build')], captured['work'], now=NOW)[0]['launch_state'] == 'not_launched'
     swarm.fetch_workflow.assert_awaited_once_with(WORKFLOW)
     assert [call.args[0] for call in swarm.fetch_job.await_args_list] == [FRONTEND, JOB]
@@ -340,7 +341,7 @@ async def test_incomplete_frontend_links_never_claim_zero_and_preserve_previous_
     if failure == 'wrong_contract_workflow': contract['workflow'] = dict(id=FRONTEND)
     if failure == 'wrong_launch': workflow['launch']['id'] = FRONTEND
     await r.read(raw, NOW)
-    assert sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']['launches'] is None
+    assert sources.project(r.capture(NOW), complete_history(raw), now=NOW)[0]['_agent_nodes']['launches'] is None
     assert FRONTEND in r.work_failed
     # A later failed refresh retains an older, independently verified positive.
     r.cache.store_last_good(sources.SLOT_AGENT_WORK,
@@ -348,7 +349,7 @@ async def test_incomplete_frontend_links_never_claim_zero_and_preserve_previous_
     await r.read(raw, NOW)
     captured = r.capture(NOW)
     assert captured['work'][FRONTEND]['read_ts'] == NOW-601
-    assert sources.project(captured, raw, now=NOW)[0]['_agent_nodes']['launches'] == 1
+    assert sources.project(captured, complete_history(raw), now=NOW)[0]['_agent_nodes']['launches'] == 1
 
 
 async def test_workflow_without_a_launched_contract_is_a_verified_negative(reader):
@@ -360,26 +361,26 @@ async def test_workflow_without_a_launched_contract_is_a_verified_negative(reade
     swarm.fetch_workflow.return_value = workflow
     raw = dict(seat(), work=[dict(jobId=FRONTEND, nodeKey='build', status='accepted')])
     await r.read(raw, NOW)
-    assert sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']['launches'] == 0
+    assert sources.project(r.capture(NOW), complete_history(raw), now=NOW)[0]['_agent_nodes']['launches'] == 0
 
 
 async def test_legacy_membership_is_refreshed_immediately(reader):
     r, _, swarm = reader
     r.cache.store_last_good(sources.SLOT_AGENT_WORK, {JOB: dict(read_ts=NOW, launched=True)}, ts=NOW)
-    assert sources.project(r.capture(NOW), seat(), now=NOW)[0]['_agent_nodes']['launches'] is None
+    assert sources.project(r.capture(NOW), complete_history(seat()), now=NOW)[0]['_agent_nodes']['launches'] is None
     await r.read(seat(), NOW)
-    assert sources.project(r.capture(NOW), seat(), now=NOW)[0]['_agent_nodes']['launches'] == 1
+    assert sources.project(r.capture(NOW), complete_history(seat()), now=NOW)[0]['_agent_nodes']['launches'] == 1
     swarm.fetch_job.assert_awaited_once_with(JOB)
 
 
 def test_unknown_oracle_network_marks_membership_partial_independently_of_launch_coverage():
     raw = dict(seat(), work=seat()['work'] + [dict(jobId=FRONTEND, nodeKey='oracle_assess', status='accepted')])
-    capture = dict(work={JOB: dict(read_ts=NOW, launched=True, shipped=True, chain_id=1)})
-    data, meta = sources.project(capture, raw, now=NOW)
+    capture = dict(work={JOB: dict(read_ts=NOW, launched=True, shipped=True, chain_id=1, family="launch")})
+    data, meta = sources.project(capture, complete_history(raw), now=NOW)
     assert data['_agent_nodes']['launches'] == 1 and data['_agent_nodes']['oracle'] is None
     assert meta['agent_work']['state'] == 'partial'
     capture['oracle_chains'] = {FRONTEND: 1}
-    data, meta = sources.project(capture, raw, now=NOW)
+    data, meta = sources.project(capture, complete_history(raw), now=NOW)
     assert data['_agent_nodes']['oracle'] == 1 and meta['agent_work']['state'] == 'ok'
 
 
@@ -409,7 +410,7 @@ async def test_first_membership_batch_prioritizes_accepted_jobs_before_record_on
     fixture = swarm.fetch_job.return_value
     swarm.fetch_job.side_effect = lambda job: dict(fixture, id=job)
     await r.read(raw, NOW)
-    got = sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']
+    got = sources.project(r.capture(NOW), complete_history(raw), now=NOW)[0]['_agent_nodes']
     assert got['known_jobs'] == 24 and got['total_jobs'] == 59
     assert got['launches'] is None  # incomplete membership cannot certify the total
     reads = [call.args[0] for call in swarm.fetch_job.await_args_list]
@@ -462,7 +463,7 @@ async def test_frontend_membership_clock_never_refreshes_older_contract_evidence
     await r.read(raw, NOW)
     captured = r.capture(NOW)
     assert captured['work'][FRONTEND]['read_ts'] == NOW-100
-    assert sources.project(captured, raw, now=NOW)[1]['agent_work']['read_ts'] == NOW-100
+    assert sources.project(captured, complete_history(raw), now=NOW)[1]['agent_work']['read_ts'] == NOW-100
 
 
 def test_capture_uses_validated_frozen_oracle_chains_without_borrowing_seat_registration_chain(reader):
@@ -473,12 +474,12 @@ def test_capture_uses_validated_frozen_oracle_chains_without_borrowing_seat_regi
                  oldest='2026-10-14T10:00:00Z', complete=True, chains={FRONTEND: 11155111})
     r.cache.store_last_good(sources.SLOT_SWARM_ORACLE_INDEX, index, ts=NOW)
     frozen = r.capture(NOW)
-    assert sources.project(frozen, raw, now=NOW)[0]['_agent_nodes']['oracle'] == 0
+    assert sources.project(frozen, complete_history(raw), now=NOW)[0]['_agent_nodes']['oracle'] == 0
     index['chains'][FRONTEND] = 1
     assert frozen['oracle_chains'][FRONTEND] == 11155111
     index['chains'][FRONTEND] = True
     r.cache.store_last_good(sources.SLOT_SWARM_ORACLE_INDEX, index, ts=NOW)
-    assert sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']['oracle'] is None
+    assert sources.project(r.capture(NOW), complete_history(raw), now=NOW)[0]['_agent_nodes']['oracle'] is None
 
 
 def test_total_job_membership_clock_includes_failed_only_launch_jobs():
@@ -487,11 +488,11 @@ def test_total_job_membership_clock_includes_failed_only_launch_jobs():
     points = {job: dict(read_ts=stamp, launched=True, shipped=True, chain_id=1)
               for job, stamp in ((JOB, NOW), (other, NOW-601))}
     capture = dict(work=points, work_failed=set(), oracle_chains={})
-    data, meta = sources.project(capture, raw, now=NOW)
+    data, meta = sources.project(capture, complete_history(raw), now=NOW)
     assert data['_agent_nodes']['launches_total'] == 2
     assert meta['agent_work'] == dict(state='stale', read_ts=NOW-601)
     del points[other]
-    data, meta = sources.project(capture, raw, now=NOW)
+    data, meta = sources.project(capture, complete_history(raw), now=NOW)
     assert data['_agent_nodes']['launches'] == 1 and data['_agent_nodes']['launches_total'] is None
     assert meta['agent_work'] == dict(state='partial', read_ts=NOW)
 
@@ -507,7 +508,7 @@ def test_complete_oracle_history_excludes_unlinked_old_attempts_and_keeps_captur
     r.cache.store_last_good(sources.SLOT_SWARM_ORACLE_INDEX, index, ts=NOW)
     frozen = r.capture(NOW)
     index['complete'] = False
-    got = sources.project(frozen, raw, now=NOW)[0]['_agent_nodes']
+    got = sources.project(frozen, complete_history(raw), now=NOW)[0]['_agent_nodes']
     assert got['oracle'] == got['oracle_total'] == 1
     assert got['launches_total'] == 0
     assert sources.oracle_absent(raw, frozen['oracle_index']) == {FRONTEND}
@@ -535,7 +536,7 @@ def test_incomplete_or_conflicting_oracle_evidence_cannot_be_excluded(reader, ch
     r.cache.store_last_good(sources.SLOT_SWARM_ORACLE_INDEX, index, ts=NOW)
     frozen = r.capture(NOW)
     assert sources.oracle_absent(raw, frozen['oracle_index']) == set()
-    got = sources.project(frozen, raw, now=NOW)[0]['_agent_nodes']
+    got = sources.project(frozen, complete_history(raw), now=NOW)[0]['_agent_nodes']
     assert got['oracle'] == 1 and got['oracle_total'] is None
 
 
@@ -549,5 +550,36 @@ async def test_restart_reads_missing_history_before_rechecking_visible_cached_jo
     swarm.fetch_job.side_effect = lambda job: dict(fixture, id=job)
     await r._work(raw, NOW, priority_jobs=[JOB])
     swarm.fetch_job.assert_awaited_once_with(FRONTEND)
-    got = sources.project(r.capture(NOW), raw, now=NOW)[0]['_agent_nodes']
+    got = sources.project(r.capture(NOW), complete_history(raw), now=NOW)[0]['_agent_nodes']
     assert got['launches'] == 1 and got['launches_total'] == 2
+
+
+async def test_unread_launch_retry_precedes_stale_known_jobs_after_a_failed_offer(reader, monkeypatch):
+    r, _, swarm = reader
+    monkeypatch.setattr(sources, 'WORK_REQUEST_BUDGET', 1)
+    raw = dict(seat(), work=seat()['work'] + [dict(jobId=FRONTEND, nodeKey='build', status='pending')])
+    r.cache.store_last_good(sources.SLOT_AGENT_WORK,
+        {JOB: dict(read_ts=NOW-601, launched=True, shipped=True, chain_id=1)}, ts=NOW-601)
+    fixture = swarm.fetch_job.return_value
+    swarm.fetch_job.return_value = None
+    await r._work(raw, NOW)
+    swarm.fetch_job.return_value = dict(fixture, id=FRONTEND)
+    await r._work(raw, NOW)
+    assert [call.args[0] for call in swarm.fetch_job.await_args_list] == [FRONTEND, FRONTEND]
+    assert sources.project(r.capture(NOW), complete_history(raw), now=NOW)[0]['_agent_nodes']['launches_total'] == 2
+
+
+async def test_persistent_missing_jobs_cannot_starve_known_refresh_or_purpose_backfill(reader):
+    r, _, swarm = reader
+    jobs = [f'{index:08x}-034f-47b3-b204-318734811863' for index in range(24)]
+    raw = dict(seat(), work=[dict(jobId=job, nodeKey='build', status='accepted') for job in [*jobs, JOB]])
+    r.cache.store_last_good(sources.SLOT_AGENT_WORK,
+        {JOB: dict(read_ts=NOW-601, launched=True, shipped=True, chain_id=1)}, ts=NOW-601)
+    fixture = swarm.fetch_job.return_value
+    swarm.fetch_job.side_effect = lambda job: fixture if job == JOB else None
+    for _ in range(3):
+        before = swarm.fetch_job.await_count
+        await r._work(raw, NOW)
+        assert swarm.fetch_job.await_count - before <= sources.WORK_REQUEST_BUDGET
+    assert JOB in [call.args[0] for call in swarm.fetch_job.await_args_list]
+    assert r.capture(NOW)['work'][JOB]['family'] == 'launch'

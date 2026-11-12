@@ -20,7 +20,7 @@ NOW = 1_791_800_000
 def snapshot():
     seat = swarm_seat_capture('seat_420')
     data = swarm_agent_sources(420)
-    data.update(swarm_seat_selected=dict(token_id=420, selected_by='saved'),
+    data.update(_agent_accepted=dict(accepted=3253, attempts=3392), swarm_seat_selected=dict(token_id=420, selected_by='saved'),
                 swarm_seat_state='ok', swarm_seat_summary=sw.seat_summary_from_seat(seat),
                 swarm_seat_node_rows=sw.seat_node_rows(seat), swarm_seat_teammates=sw.seat_teammates(seat),
                 swarm_seat_rewards=dict(imd=12.84, usd=120.8244, seats=3), swarm_seat_rewards_state='ok',
@@ -41,7 +41,7 @@ def test_contract_canonical_arithmetic_and_independent_source_clocks(snapshot):
     for key, fields in SURF_AGENT_HERO_FIELDS.items():
         assert tuple(result[key]) == fields
         assert result[key]['state'] in SURF_AGENT_HERO_STATES
-    assert result['accepted'] == dict(state='ok', read_ts=NOW-60, listed=True,
+    assert result['accepted'] == dict(state='ok', read_ts=NOW-50, listed=True,
         accepted=3253, attempts=3392, percent=pytest.approx(95.90212264150944))
     assert result['effort'] == dict(state='ok', read_ts=NOW-80, listed=True,
         hours=pytest.approx(8.093120833333334), output_tokens=1215919,
@@ -142,9 +142,9 @@ def test_detail_states_leave_canonical_effort_and_worker_reads_independent(snaps
     snapshot['sources']['seat'] = dict(state='ok' if state == 'unknown_seat' else state, read_ts=NOW-50 if state == 'unknown_seat' else None)
     result = hero.project(**snapshot)
     assert result['seat']['token_id'] == 420
-    for key in ('owner', 'runtime', 'models', 'earnings', 'collab', 'nodes', 'rewards'):
+    for key in ('accepted', 'owner', 'runtime', 'models', 'earnings', 'collab', 'nodes', 'rewards'):
         assert result[key]['state'] == (state or 'unavailable')
-    for key in ('accepted', 'rank', 'effort'):
+    for key in ('rank', 'effort'):
         assert result[key] == before[key]
     assert result['status']['live_state'] == 'idle'
     assert result['status']['last_work_ts'] is None
@@ -153,28 +153,24 @@ def test_detail_states_leave_canonical_effort_and_worker_reads_independent(snaps
 def test_missing_selection_and_wrong_canonical_identity_never_borrow_another_seat(snapshot):
     snapshot['data']['swarm_seat_outcome']['token_id'] = 7
     result = hero.project(**snapshot)
-    assert result['accepted']['listed'] is result['accepted']['accepted'] is None
+    assert result['accepted']['accepted'] == 3253
     assert result['rank']['rank'] is None
     snapshot['data']['swarm_seat_selected'] = None
     assert all(card['state'] == 'empty' for card in hero.project(**snapshot).values())
 
 
-def test_real_zero_missing_counter_and_unlisted_remain_distinct(snapshot):
-    snapshot['data']['swarm_seat_outcome'].update(accepted=0, attempts=0, rank=None)
+def test_real_zero_missing_job_count_and_records_unlisted_remain_distinct(snapshot):
+    snapshot['data']['_agent_accepted'] = dict(accepted=0, attempts=0)
     result = hero.project(**snapshot)
-    assert result['accepted'] == dict(state='ok', read_ts=NOW-60, listed=True, accepted=0, attempts=0, percent=None)
-    snapshot['data']['swarm_seat_outcome']['accepted'] = None
+    assert result['accepted'] == dict(state='ok', read_ts=NOW-50, listed=True, accepted=0, attempts=0, percent=None)
+    snapshot['data']['_agent_accepted']['accepted'] = None
     assert hero.project(**snapshot)['accepted']['state'] == 'partial'
     snapshot['data']['swarm_seat_outcome']['listed'] = False
     snapshot['data']['swarm_seat_contrib']['listed'] = False
     result = hero.project(**snapshot)
-    assert result['accepted']['state'] == result['effort']['state'] == 'ok'
-    assert result['accepted']['listed'] is result['effort']['listed'] is False
+    assert result['accepted']['listed'] is True
+    assert result['effort']['listed'] is False
     assert result['accepted']['accepted'] is result['effort']['hours'] is None
-    snapshot['sources']['records']['state'] = 'partial'
-    snapshot['sources']['contributors']['state'] = 'partial'
-    result = hero.project(**snapshot)
-    assert result['accepted']['listed'] is result['effort']['listed'] is None
 
 
 def test_stale_sources_keep_values_and_independent_usd_gating(snapshot):
@@ -223,7 +219,7 @@ def test_unknown_lists_stay_unknown_and_empty_lists_are_real_negatives(snapshot)
     assert result['earnings']['earned'] is None
     summary.update(models=[], collaborators=0, review_status=dict(sent=0, submitted=0, queued=0))
     snapshot['data'].update(swarm_seat_teammates=[], swarm_seat_node_rows=[])
-    snapshot['data']['_agent_nodes'] = dict(oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0, launches_total=0, oracle_total=0)
+    snapshot['data']['_agent_nodes'] = dict(oracle=0, launches=0, other=0, known_jobs=0, total_jobs=0, launches_total=0, oracle_total=0, research=0, research_total=0)
     result = hero.project(**snapshot)
     assert result['models']['rows'] == result['collab']['rows'] == result['nodes']['rows'] == []
     assert result['models']['state'] == result['collab']['state'] == result['nodes']['state'] == 'ok'
@@ -280,7 +276,7 @@ def test_offline_paused_and_stale_activity_follow_boardroom_meter(snapshot):
 
 
 @pytest.mark.parametrize('source,sections', [
-    ('records', ('accepted', 'rank')), ('contributors', ('effort',)),
+    ('records', ('rank',)), ('contributors', ('effort',)),
     ('rewards', ('rewards',)), ('workers', ('status',)),
 ])
 @pytest.mark.parametrize('stamp', [None, True, -1, float('nan'), float('inf'), NOW+1])
@@ -295,7 +291,7 @@ def test_bad_source_clocks_cannot_publish_values(snapshot, source, sections, sta
 
 @pytest.mark.parametrize('bad', [None, True, -1, '3', float('nan'), float('inf')])
 def test_invalid_and_impossible_counts_never_turn_into_zero(snapshot, bad):
-    snapshot['data']['swarm_seat_outcome'].update(accepted=bad, attempts=3)
+    snapshot['data']['_agent_accepted'].update(accepted=bad, attempts=3)
     snapshot['data']['swarm_seat_contrib'].update(wall_clock_s=bad, output_tokens=bad)
     snapshot['data']['_agent_earnings'] = dict(earned=bad, worked_on=0, earned_24h=1, worked_on_24h=bad, worked_recent=False, wallet_total=bad)
     snapshot['sources']['earnings'] = dict(state='ok', read_ts=NOW-25)
@@ -305,7 +301,7 @@ def test_invalid_and_impossible_counts_never_turn_into_zero(snapshot, bad):
     assert result['earnings']['earned'] is None and result['earnings']['earned_24h'] == 1
     assert result['earnings']['worked_on_24h'] is None
     assert result['earnings']['wallet_total'] is None
-    snapshot['data']['swarm_seat_outcome']['accepted'] = 4
+    snapshot['data']['_agent_accepted']['accepted'] = 4
     result = hero.project(**snapshot)
     assert result['accepted']['accepted'] is result['accepted']['percent'] is None
 
@@ -379,9 +375,9 @@ def test_zero_reward_and_unavailable_reward_source_do_not_signal_recent_payment(
 
 
 @pytest.mark.parametrize('source,sections', [
-    ('records', ('accepted', 'rank')), ('contributors', ('effort',)),
+    ('records', ('rank',)), ('contributors', ('effort',)),
     ('workers', ('status',)), ('rewards', ('rewards',)),
-    ('seat', ('seat', 'owner', 'runtime', 'models', 'earnings', 'collab', 'nodes', 'rewards')),
+    ('seat', ('accepted', 'seat', 'owner', 'runtime', 'models', 'earnings', 'collab', 'nodes', 'rewards')),
 ])
 def test_first_source_read_keeps_pending_without_inventing_facts(snapshot, source, sections):
     snapshot['sources'][source] = dict(state='pending', read_ts=None)
@@ -393,7 +389,7 @@ def test_first_source_read_keeps_pending_without_inventing_facts(snapshot, sourc
                            ('status', 'working'), ('rewards', 'imd'), ('seat', 'agent_id')]:
         if section in sections:
             assert result[section][field] is None
-    if source != 'records':
+    if source != 'seat':
         assert result['accepted']['state'] == 'ok'
     if source != 'workers':
         assert result['status']['working'] == 0

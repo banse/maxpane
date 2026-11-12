@@ -13,3 +13,19 @@ and `identitymdcontrol-plane-production.up.railway.app`).
 These establish that a seat work row's launch *kind* is not evidence that
 the work was launched. Tests also use synthetic invalid/changed fields to
 exercise cache validation and state transitions without network access.
+
+2026-11-12 public captures (no keys; seat 420):
+
+- `63d64980…`: live production launch; `d3229638…`: independent audit.
+- `51eb88fe…`: goal; `bd06951d…`: research report. The full job responses are
+  unedited and retain their served templates, launch and workflow objects.
+- `seat-420-20261112.json.gz`: exact full `GET /seats/420` response, compressed.
+  3,453 submission rows; 3,301 accepted submissions; 3,297 accepted distinct jobs
+  out of 3,439 distinct attempted jobs. Independent paginated reads agreed.
+- `seat-420-context-20261112.json.gz`: normalized membership cache from the live
+  production reader and complete oracle-index coverage metadata. The job and
+  chain maps retain only this seat's candidate IDs. These are frozen inputs,
+  not expected results: the offline test independently projects all counters.
+  The four oracle-node jobs without a request are proven absent by the complete
+  index; they are not assumed to be testnet jobs. Launch-kind intent alone is
+  still insufficient: 53 intent-tagged jobs yield 23 verified production jobs.

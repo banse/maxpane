@@ -1572,7 +1572,7 @@ SURF_AGENT_HERO_FIELDS = {
     "earnings": ("state", "read_ts", "earned", "worked_on", "earned_24h", "worked_on_24h", "worked_recent", "wallet_total", "owner"),
     "collab": ("state", "read_ts", "count", "rows"),
     "nodes": ("state", "read_ts", "rows", "oracle", "launches", "other", "known_jobs", "total_jobs",
-              "launches_total", "oracle_total", "launch_state", "launch_read_ts"),
+              "launches_total", "oracle_total", "research", "research_total", "launch_state", "launch_read_ts"),
 }
 SURF_AGENT_HERO_MODEL_FIELDS = ("model", "effort")
 SURF_AGENT_HERO_COLLAB_FIELDS = ("token_id", "shared_jobs")

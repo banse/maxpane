@@ -1,6 +1,7 @@
 """Original workflow lifecycle shared by projections and local navigation."""
 
 from math import isfinite
+from maxpane_dashboard.analytics.surf_ids import parse_job_id
 
 
 def _timestamp(value):
@@ -33,3 +34,18 @@ def workflow_is_open(status: object) -> bool | None:
     if status in WORKFLOW_STOPPED | WORKFLOW_CLOSED:
         return False
     return None
+
+
+def job_family(raw):
+    """Explicit job purpose; a continuation's parent or prose proves no launch."""
+    launch, workflow = raw.get('launch'), raw.get('workflow')
+    if isinstance(workflow, dict) and parse_job_id(workflow.get('id')) is not None:
+        return 'launch'
+    if not isinstance(launch, dict) or type(launch.get('requested')) is not bool:
+        return None
+    if launch['requested']:
+        return 'launch'
+    if (parse_job_id(raw.get('oracleRequestId')) is not None
+            or raw.get('template') in ('goal', 'research', 'skill:research-report', 'skill:oracle-assess')):
+        return 'research'
+    return 'other' if isinstance(raw.get('template'), str) and workflow is None else None

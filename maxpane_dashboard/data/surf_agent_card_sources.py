@@ -49,7 +49,6 @@ class AgentCardSources:
         self.earnings_failed, self.work_failed, self.pending = set(), set(), set()
         self.attempts = {}
         self.work_attempts = {}
-        self._work_turn = 0
 
     def capture(self, now):
         oracle = coerce_oracle_index(getattr(self.cache.get_last_good(SLOT_SWARM_ORACLE_INDEX), 'payload', None)) or {}
@@ -97,8 +96,11 @@ class AgentCardSources:
         self.work_failed.intersection_update(candidates)
         due = work.due(seat, points, now, cap=len(candidates), include_attempts=True)
         priority = set(priority_jobs) & set(candidates)
-        due.sort(key=lambda job: (self.work_attempts.get(job, 0),
+        # Two attempts give missing history priority, then every candidate gets
+        # a turn before another retry round (including stale cached facts).
+        due.sort(key=lambda job: (self.work_attempts.get(job, 0) // 2,
                                  job in points and 'shipped' in points[job],
+                                 self.work_attempts.get(job, 0),
                                  job not in priority, job not in accepted))
         remaining = WORK_REQUEST_BUDGET
         async def read(method, identity):
@@ -108,8 +110,7 @@ class AgentCardSources:
             remaining -= 1
             return await method(identity)
         async def read_job(job):
-            self._work_turn += 1
-            self.work_attempts[job] = self._work_turn
+            self.work_attempts[job] = self.work_attempts.get(job, 0) + 1
             try:
                 observed = await read(self.swarm.read_job_detail, job)
                 stamp = observed.observed_at if observed is not None else None
@@ -172,7 +173,7 @@ def project(capture, seat, *, now):
     stamps = [points[job]['read_ts'] for job in jobs if job in points]
     membership = source(min(stamps, default=None), now=now, ttl=TTL,
                         failed=bool(set(jobs) & capture.get('work_failed', set())))
-    if (nodes['launches_total'] is None or nodes['oracle_total'] is None) and membership['state'] == 'ok':
+    if (nodes['launches_total'] is None or nodes['research_total'] is None) and membership['state'] == 'ok':
         membership['state'] = 'partial'
-    return (dict(_agent_earnings=earned, _agent_nodes=nodes),
+    return (dict(_agent_earnings=earned, _agent_nodes=nodes, _agent_accepted=work.job_counts(seat)),
             dict(earnings=earned_source, agent_work=membership))

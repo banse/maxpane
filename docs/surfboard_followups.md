@@ -1,5 +1,15 @@
 # Surfboard follow-ups
 
+## AGENT distinct job counters — 2026-11-12
+
+See `agent-job-counts-20261112.md` for the counted units, live seat 420 totals,
+request bounds and regression evidence. The eight existing never-paired RUNTIME
+caption assertions reproduce at unchanged cf9a07b7; retain them as harness/copy
+maintenance outside this counter fix. The existing TOKENS/SWORN CSS-slice guard
+also remains. No layout, navigation, worker configuration or paid operation changed.
+Final review approved both addressed findings. Final verification: 439 passed,
+eight baseline failures; seven mutation checks killed; 12 documentation pins passed.
+
 ## Stable card appearance through refresh — 2026-11-11
 
 Loaded card bodies and footers now retain their complete presentation, including

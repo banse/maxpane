@@ -222,12 +222,12 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
     if seat_token(outcome.get('token_id')) != token:
         outcome = {}
     listed = _listed(records, outcome)
-    accepted, attempts = (count(outcome.get(key)) if listed else None for key in ('accepted', 'attempts'))
+    jobs = _mapping(data.get('_agent_accepted'))
+    accepted, attempts = (count(jobs.get(key)) for key in ('accepted', 'attempts'))
     if accepted is not None and attempts is not None and accepted > attempts:
         accepted = None
-    acceptance = (_facts(records, listed=listed, accepted=accepted, attempts=attempts) if listed is not False
-                  else dict(records, listed=False, accepted=None, attempts=None))
-    fraction = ratio(accepted, attempts)
+    acceptance = _detail_facts(detail, listed=True, accepted=accepted, attempts=attempts)
+    fraction = ratio(acceptance['accepted'], acceptance['attempts'])
     acceptance['percent'] = 100 * fraction if fraction is not None else None
     rank = (_facts(records, listed=listed, rank=_positive(outcome.get('rank')), ranked_of=count(outcome.get('ranked_of')))
             if listed else dict(records, state=records['state'] if listed is False or records['state'] == 'pending' else 'unavailable',
@@ -280,7 +280,7 @@ def project(*, data: dict, sources: dict, now: float, activity=None) -> dict:
     work = _mapping(data.get('_agent_nodes'))
     nodes = _detail_facts(detail,
         rows=_rows(data.get('swarm_seat_node_rows'), dict(node_key=_text, accepted=count, attempts=count)),
-        **{key: count(work.get(key)) for key in ('oracle', 'launches', 'other', 'known_jobs', 'total_jobs', 'launches_total', 'oracle_total')})
+        **{key: count(work.get(key)) for key in ('oracle', 'launches', 'other', 'known_jobs', 'total_jobs', 'launches_total', 'oracle_total', 'research', 'research_total')})
     launch_source = _source(sources, 'agent_work', now)
     nodes.update(launch_state=launch_source['state'], launch_read_ts=launch_source['read_ts'])
     return dict(seat=seat, accepted=acceptance, effort=effort, rewards=rewards, rank=rank,

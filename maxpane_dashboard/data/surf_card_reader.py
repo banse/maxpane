@@ -5,7 +5,7 @@ from collections import Counter
 from copy import deepcopy
 
 from maxpane_dashboard.analytics import surf_pool4_depth
-from maxpane_dashboard.analytics.surf_work import workflow_is_open
+from maxpane_dashboard.analytics.surf_work import workflow_is_open, job_family as _job_family
 from maxpane_dashboard.analytics.surfboard import count
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
 from maxpane_dashboard.data import surf_work as work
@@ -24,21 +24,6 @@ log = logging.getLogger(__name__)
 
 def _field(value, name):
     return value.get(name) if isinstance(value, dict) else getattr(value, name, None)
-
-
-def _job_family(raw):
-    """Explicit job purpose; a continuation's parent or prose proves no launch."""
-    launch, workflow = raw.get('launch'), raw.get('workflow')
-    if isinstance(workflow, dict) and parse_job_id(workflow.get('id')) is not None:
-        return 'launch'
-    if not isinstance(launch, dict) or type(launch.get('requested')) is not bool:
-        return None
-    if launch['requested']:
-        return 'launch'
-    if (parse_job_id(raw.get('oracleRequestId')) is not None
-            or raw.get('template') in ('goal', 'research', 'skill:research-report', 'skill:oracle-assess')):
-        return 'research'
-    return 'other' if isinstance(raw.get('template'), str) and workflow is None else None
 
 
 def _presence_point(raw, token, now):

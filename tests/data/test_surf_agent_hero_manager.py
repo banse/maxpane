@@ -85,8 +85,10 @@ async def test_first_reads_show_loading_only_while_their_own_tasks_are_pending(a
         release.set()
         await task
         hero = m._project_hub()['surf_agent_hero']
-        for key in ('accepted', 'rank', 'effort', 'status'):
+        for key in ('rank', 'effort', 'status'):
             assert hero[key]['state'] == 'unavailable'
+        # ACCEPTED WORK is now sourced from the selected seat's job history.
+        assert hero['accepted']['state'] == hero['seat']['state'] == 'pending'
     finally:
         release.set()
         await task

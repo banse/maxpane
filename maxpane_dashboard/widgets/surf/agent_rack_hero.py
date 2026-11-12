@@ -161,11 +161,11 @@ def agent_records(payload: dict | None) -> tuple[HeroRecord, ...]:
             fields["subtitle"] = "collaborators"
             fields["accent"] = False
         elif key in ("nodes", "models"):
-            category = "launches" if key == "nodes" else "oracle"
+            category = "launches" if key == "nodes" else "research"
             accepted, total = count(section.get(category)), count(section.get(category + "_total"))
             fields["digits"] = _digits(total)
             valid = accepted is not None and total is not None and 0 <= accepted <= total and total > 0
-            fields["subtitle"] = f"{100 * accepted / total:.4g}%" if valid else "--%"
+            fields["subtitle"] = f"{100 * accepted / total:.4g}%" if valid else "" if total == 0 else "--%"
             fields["accent"] = False
         if state in ("unknown_seat", "stale_unknown_seat") and key not in ("models", "nodes", "runtime"):
             fields["subtitle"] = "never paired"
@@ -186,6 +186,8 @@ class AgentRackCard(Pool4HeroCard):
         self.styles.border_subtitle_align = "center"
 
     def _present_record(self, record):
+        if record.key in ('accepted', 'nodes', 'models'):
+            record = replace(record, subtitle=self._values.field('job-rate', record.subtitle))
         if record.key == "earnings":
             record = replace(record, subtitle=self._values.field(
                 "shipped-caption", record.subtitle, numeric=True))
@@ -339,8 +341,10 @@ class AgentRackCard(Pool4HeroCard):
         tip = Text(f"{record.title}{coverage} · as of {hhmm(record.read_ts, unknown='--:--')} local")
         rows = _rows(source)
         if record.key in ("nodes", "models"):
-            tip.append("\nDistinct jobs on production networks; testnets excluded.")
-            category = "launches" if record.key == "nodes" else "oracle"
+            tip.append("\nDistinct jobs; testnet launches and oracle requests excluded.")
+            tip.append("\nVerified live launches and linked workflow jobs." if record.key == 'nodes'
+                       else "\nOracle requests plus goal, research and report jobs.")
+            category = "launches" if record.key == "nodes" else "research"
             tip.append(f"\nAccepted / total jobs: {_count(count(source.get(category)))} / {_count(count(source.get(category + '_total')))}")
             tip.append(f"\nlaunch evidence known for {_count(count(source.get('known_jobs')))} of {_count(count(source.get('total_jobs')))} accepted non-oracle jobs")
             tip.append(f"\nlaunch reads · as of {hhmm(number(source.get('launch_read_ts')), unknown='--:--')} local")
@@ -383,6 +387,7 @@ class AgentRackCard(Pool4HeroCard):
             delta = _number(source.get("delta"), signed=True)
             tip.append("\nrank change " + (f"{delta:+g}" if delta is not None else "--"))
         elif record.key == "accepted":
+            tip.append("\nDistinct jobs with accepted work / all attempted jobs; each job counted once.")
             tip.append(f"\n{_count(count(source.get('accepted')))} / {_count(count(source.get('attempts')))} · {_face(source.get('percent'), 1)}%")
         elif record.key == "earnings":
             recent, worked = (count(source.get(key)) for key in ("earned_24h", "worked_on_24h"))

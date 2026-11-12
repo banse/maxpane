@@ -422,6 +422,18 @@ box tooltip is a literal `Text`: npm latest/version/check time, fleet reference/
 no new degraded group. Cached AGENT refreshes also offer the existing guarded
 runtime check, using the same eligibility, TTL and endpoints.
 
+Owner CR 2026-11-12: ACCEPTED WORK/JOBS counts distinct jobs with accepted
+contributions, divided by all distinct attempted jobs in the complete seat history.
+It uses the seat history's source clock; canonical submission totals still serve
+rank and other consumers. RESEARCH includes production oracle requests plus
+explicit goal/research/report jobs (chain-independent work needs no chain).
+Purpose is shared with Boardroom; old membership cache points backfill it.
+Unknown percentages retain the last valid rate, while zero jobs clears the rate.
+Missing membership gets up to two attempts before every candidate receives a turn
+in the next retry round, so cached refresh/backfill cannot starve. Existing request,
+concurrency and deadline bounds remain. Lifetime counters are required to certify
+a complete job history; an absent counter cannot prove a total.
+
 Owner CR round 800d0be3 (2026-10-23) overrides the older card names below:
 LAUNCHES/JOBS and ORACLE/JOBS show distinct attempted production jobs. Their
 inner percentage is accepted distinct jobs divided by that same category total;

@@ -1,5 +1,6 @@
 """Twelve AGENT rack cards: composited facts, source state and affordances."""
 import pytest
+from tests.data.test_surf_agent_work import complete_history
 from textual.app import App
 
 from maxpane_dashboard.themes import THEMES
@@ -35,7 +36,7 @@ def payload():
         earnings=dict(source, wallet_total=513, earned=12, worked_on=7, earned_24h=4, worked_on_24h=2, worked_recent=True,
                       owner="0x0000000000000000000000000000000000000001"),
         collab=dict(source, count=12, rows=[dict(token_id=527, shared_jobs=84), dict(token_id=1, shared_jobs=52)]),
-        nodes=dict(source, oracle=120, oracle_total=160, launches=340, launches_total=400, other=500, known_jobs=840, total_jobs=840,
+        nodes=dict(source, oracle=120, oracle_total=160, research=120, research_total=160, launches=340, launches_total=400, other=500, known_jobs=840, total_jobs=840,
                    rows=[dict(node_key="adversarial_review", accepted=500, attempts=510),
                                 dict(node_key="build_contract_project", accepted=340, attempts=360),
                                 dict(node_key="oracle_assess", accepted=120, attempts=130)]),
@@ -465,7 +466,7 @@ async def test_malformed_numbers_dates_and_nested_values_clear_old_facts_safely(
     data['status'].update(live_state='[/x]', meter_state='[/x]', last_work_ts=1e300, paused_until_ts=-2)
     data['runtime'].update(runtime='[/x]\x1b suspicious', daemon=None, devices=True, checked_ts=1e300)
     data['models']['rows'] = [None]
-    data['nodes'].update(rows=[False], oracle=True, oracle_total=True, launches=-1, launches_total=-1, other=float('nan'))
+    data['nodes'].update(rows=[False], oracle=True, oracle_total=True, research=True, research_total=True, launches=-1, launches_total=-1, other=float('nan'))
     async with Harness(payload()).run_test(size=(170, 45)) as pilot:
         await pilot.pause()
         pilot.app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
@@ -730,18 +731,18 @@ async def test_researched_uses_production_oracle_count_independently_of_models()
             ("partial", None, ("╭─╮", "│ │", "╰─╯")),
             ("pending", 999, ("╭─╮", "│ │", "╰─╯")),
         ):
-            data["nodes"].update(state=state, oracle=oracle, oracle_total=oracle)
+            data["nodes"].update(state=state, research=oracle, research_total=oracle)
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             text = painted(app, "models")
             assert strips(app, "models")[0].text.strip("╭─╮ ⊙") == "RESEARCH"
             assert "JOBS" in strips(app, "models")[2].text
             assert all(any(glyph in row.text for row in body_rows(app, "models")) for glyph in glyphs), text
-            assert strips(app, "models")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("100%" if state == "ok" else "0%")
+            assert strips(app, "models")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("100%" if state == "ok" else "")
             assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == "85%"
             card = app.query_one("#hero-models")
             assert card.data.state == state and card.data.read_ts == data["nodes"]["read_ts"]
-            assert "production networks; testnets excluded" in str(card.tooltip)
+            assert "testnet launches and oracle requests excluded" in str(card.tooltip)
 
 
 async def test_long_model_keeps_effort_visible_with_ellipsis_and_hover():
@@ -949,11 +950,11 @@ async def test_ship_counts_launch_jobs_and_labels_the_unit():
             assert "NODES" not in text and "work by type" not in text and "other" not in text
             for glyph in digits:
                 assert any(glyph in row.text for row in body_rows(app, "nodes")), text
-            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("0%" if values["launches"] == 0 else "100%")
+            assert strips(app, "nodes")[6].text.split("└")[1].split("┘")[0].strip("─ ") == ("" if values["launches"] == 0 else "100%")
             assert not strips(app, "nodes")[-1].text.strip("╰─╯ ")
             assert border_color(app, "nodes") == border_color(app, "accepted")
             tooltip = str(app.query_one("#hero-nodes").tooltip)
-            assert "Distinct jobs on production networks; testnets excluded." in tooltip
+            assert "Distinct jobs; testnet launches and oracle requests excluded." in tooltip
             assert f"launch evidence known for {values['known_jobs']} of {values['total_jobs']} accepted non-oracle jobs" in tooltip
             assert "attempts" not in tooltip
 
@@ -963,9 +964,9 @@ async def test_job_cards_show_total_digits_and_acceptance_percentages_independen
     async with Harness(data).run_test(size=(149, 45)) as pilot:
         app = pilot.app
         for accepted, total, caption in ((3, 4, '75%'), (0, 4, '0%'), (4, 4, '100%'),
-                                         (0, 0, '0%'), (None, 4, '0%'), (3, None, '0%'),
-                                         (5, 4, '0%'), (True, 4, '0%')):
-            data['nodes'].update(launches=accepted, launches_total=total, oracle=accepted, oracle_total=total)
+                                         (0, 0, ''), (None, 4, ''), (3, None, ''),
+                                         (5, 4, ''), (True, 4, '')):
+            data['nodes'].update(launches=accepted, launches_total=total, research=accepted, research_total=total)
             app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
             await pilot.pause()
             for key, title in (('nodes', 'LAUNCHES'), ('models', 'RESEARCH')):
@@ -981,7 +982,7 @@ async def test_job_cards_show_total_digits_and_acceptance_percentages_independen
         data['nodes'].update(state='pending', launches=3, launches_total=4)
         app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
         await pilot.pause()
-        assert '0%' in painted(app, 'nodes') and '--' not in body_rows(app, 'nodes')[1].text
+        assert '%' not in strips(app, 'nodes')[6].text and '--' not in body_rows(app, 'nodes')[1].text
         assert app.query_one('#hero-nodes').source_record.state == 'pending'
 
 
@@ -994,11 +995,25 @@ async def test_mixed_job_card_keeps_any_accepted_work_in_the_oracle_rate():
         for accepted_node, rejected_node in [('implement', 'oracle_assess'), ('oracle_assess', 'implement')]:
             rows = [row(LIVE, accepted_node), row(LIVE, rejected_node, 'rejected')]
             for ordered in (rows, list(reversed(rows))):
-                facts = summarize({'work': ordered}, {LIVE: point(True)}, NOW, oracle_chains={LIVE: 1})
+                facts = summarize(complete_history({'work': ordered}), {LIVE: point(True)}, NOW, oracle_chains={LIVE: 1})
                 data['nodes'].update(facts)
                 app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
                 await pilot.pause()
                 assert '100%' in strips(app, 'models')[6].text
                 assert 'Accepted / total jobs: 1 / 1' in str(app.query_one('#hero-models').tooltip)
                 assert 'Accepted / total jobs: 0 / 0' in str(app.query_one('#hero-nodes').tooltip)
-                assert '0%' in strips(app, 'nodes')[6].text
+                assert '%' not in strips(app, 'nodes')[6].text
+
+
+async def test_job_rate_is_blank_before_first_read_retained_during_reload_and_cleared_for_zero():
+    data = payload()
+    data['nodes'].update(launches=None, launches_total=None)
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        app = pilot.app
+        assert '%' not in strips(app, 'nodes')[6].text
+        for accepted, total, expected in ((2, 4, '50%'), (None, None, '50%'), (0, 0, '')):
+            data['nodes'].update(launches=accepted, launches_total=total)
+            app.query_one(SurfSwarmAgentRackHero).update_data(surf_agent_hero=data)
+            await pilot.pause()
+            caption = strips(app, 'nodes')[6].text.split('└')[1].split('┘')[0].strip('─ ')
+            assert caption == expected

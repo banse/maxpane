@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from math import isfinite
 
 from maxpane_dashboard.analytics.surf_ids import parse_job_id
+from maxpane_dashboard.analytics.surf_work import job_family
 from maxpane_dashboard.analytics.surf_launch_checks import is_production
 from maxpane_dashboard.data.surf_models import SWARM_ORACLE_NODE_KEYS
 
@@ -30,6 +31,27 @@ def accepted_rows(seat: object) -> list[dict] | None:
             return None
         rows.append(dict(item))
     return rows
+
+
+def job_counts(seat: object) -> dict:
+    """Count each job once, only from a complete, explicitly statused history."""
+    unknown = dict(accepted=None, attempts=None)
+    rows = seat.get('work') if isinstance(seat, Mapping) else None
+    if not isinstance(rows, list) or any(not isinstance(row, Mapping)
+            or parse_job_id(row.get('jobId')) is None
+            or row.get('status') not in ('accepted', 'pending', 'rejected', 'failed') for row in rows):
+        return unknown
+    for key, actual in (('attempts', len(rows)),
+                        ('accepted', sum(row['status'] == 'accepted' for row in rows))):
+        if type(seat.get(key)) is not int or seat[key] != actual:
+            return unknown
+    hashes = [row.get('submissionHash') for row in rows]
+    if any(value is not None for value in hashes) and (
+            any(not isinstance(value, str) or not value for value in hashes)
+            or len(set(hashes)) != len(rows)):
+        return unknown
+    return dict(accepted=len({row['jobId'] for row in rows if row['status'] == 'accepted'}),
+                attempts=len({row['jobId'] for row in rows}))
 
 
 def accepted_job_ids(seat: object) -> set[str]:
@@ -103,7 +125,7 @@ def membership_point(detail: object, job: str, now: float) -> dict | None:
             not isinstance(workflow, Mapping) or parse_job_id(workflow.get('id')) is None)):
         return None
     return dict(read_ts=now, launched=launched, chain_id=chain,
-                shipped=launched if launched or workflow is None else None)
+                shipped=launched if launched or workflow is None else None, family=job_family(detail))
 
 
 def workflow_contract(detail: object, workflow: object, job: str) -> str | None:
@@ -147,7 +169,8 @@ def coerce_points(value: object, now: float) -> dict:
     result = {}
     for job, point in value.items():
         if (parse_job_id(job) is None or not isinstance(point, Mapping)
-                or set(point) not in ({'read_ts', 'launched'}, {'read_ts', 'launched', 'chain_id', 'shipped'})
+                or set(point) not in ({'read_ts', 'launched'}, {'read_ts', 'launched', 'chain_id', 'shipped'},
+                    {'read_ts', 'launched', 'chain_id', 'shipped', 'family'})
                 or type(point['launched']) is not bool
                 or not _timestamp(point['read_ts'])
                 or not 0 <= now-point['read_ts'] <= MAX_AGE):
@@ -157,6 +180,8 @@ def coerce_points(value: object, now: float) -> dict:
                 or point['launched'] and not point['shipped']
                 or point['shipped'] and point['chain_id'] is None):
             continue
+        if 'family' in point and point['family'] not in (None, 'launch', 'research', 'other'):
+            continue
         result[job] = dict(point)
     return dict(sorted(result.items(), key=lambda item: (-item[1]['read_ts'], item[0]))[:MAX_POINTS])
 
@@ -165,7 +190,7 @@ def due(seat: object, points: object, now: float, cap: int = 12, *, include_atte
     """Read unknown jobs first; terminal jobs still refresh because they can deploy later."""
     points = coerce_points(points, now)
     jobs = [job for job in (record_candidates(seat) if include_attempts else candidates(seat))
-            if job not in points or 'shipped' not in points[job]
+            if job not in points or 'shipped' not in points[job] or points[job].get('family') is None
             or now-points[job]['read_ts'] >= REFRESH_AFTER]
     return sorted(jobs, key=lambda job: (job in points, points.get(job, {}).get('read_ts', 0)))[:cap]
 
@@ -191,7 +216,7 @@ def record_rows(rows, points, *, now, failed=()) -> list[dict]:
 def _summarize_rows(rows, points, chains, absent):
     """Oracle work has precedence; never classify unread jobs as other."""
     if rows is None:
-        return dict(oracle=None, launches=None, other=None, known_jobs=None, total_jobs=None)
+        return dict(oracle=None, launches=None, other=None, known_jobs=None, total_jobs=None, research=None)
     oracle_jobs = {parse_job_id(row.get('jobId')) for row in rows
                    if row['nodeKey'] in SWARM_ORACLE_NODE_KEYS}
     requests = oracle_jobs - absent
@@ -206,7 +231,10 @@ def _summarize_rows(rows, points, chains, absent):
     complete = not missing and known == len(jobs)
     launched = sum(points[job]['shipped'] and is_production(dict(chainId=points[job]['chain_id']))
                    for job in jobs) if complete else None
-    return dict(oracle=oracle, launches=launched,
+    research = (oracle + sum(points[job]['family'] == 'research' for job in jobs)
+                if oracle is not None and not missing and all(
+                    points.get(job, {}).get('family') is not None for job in jobs) else None)
+    return dict(oracle=oracle, launches=launched, research=research,
                 other=len(jobs)-launched if complete else None,
                 known_jobs=known, total_jobs=len(jobs)+missing)
 
@@ -223,10 +251,13 @@ def summarize(seat: object, points: object, now: float, *, oracle_chains=None, o
             or not isinstance(row.get('nodeKey'), str) or not row['nodeKey'].strip()
             or row.get('status') not in ('accepted', 'pending', 'rejected', 'failed') for row in rows):
         rows = None
+    if job_counts(seat)['attempts'] is None:
+        rows = None
     if rows is not None:
         # Category is a job fact: unsuccessful nodes still establish oracle precedence.
         accepted_ids = {parse_job_id(row.get('jobId')) for row in accepted or []}
         accepted = [row for row in rows if parse_job_id(row.get('jobId')) in accepted_ids]
     accepted = _summarize_rows(accepted, points, chains, absent)
     total = _summarize_rows(rows, points, chains, absent)
-    return dict(accepted, launches_total=total['launches'], oracle_total=total['oracle'])
+    return dict(accepted, launches_total=total['launches'], oracle_total=total['oracle'],
+                research_total=total['research'])
