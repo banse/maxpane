@@ -27,7 +27,7 @@ class LiveProvider:
             market_source='DexScreener', market_read_at=self.snapshot['as_of']-60,
             market_state='ok', liquidity_state='unknown')
         for row in self.snapshot['tokens'][:5]:
-            row['market_state'] = 'ok'
+            row.update(market_state='ok', market_read_at=self.snapshot['as_of']-60)
 
     async def fetch_and_compute(self):
         return deepcopy(self.snapshot)

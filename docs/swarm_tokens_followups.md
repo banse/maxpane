@@ -113,3 +113,25 @@ were detected. Review found a wide-Unicode wrapping defect; original-character
 cell measurement fixes it. The regression and reverse mutation cover both
 149×45 and 140×36. All 122 affected rendering/address checks passed after the fix;
 scoped re-review marked the finding ADDRESSED. No new unresolved findings.
+
+## Card reconciliation and spacing — 2026-11-12
+
+Cards and rankings now include retained observations with their original source
+clocks, matching ALL TOKENS. Active token polls refresh missing/stale liquidity
+for verified tokens in bounded batches of three, with the existing failure backoff
+and catalogue identity guard. Idle summary scrollbars are hidden; ALL TOKENS moves
+up one row and keeps one blank row above the footer. See
+[tokens-card-consistency-20261112.md](tokens-card-consistency-20261112.md).
+
+Three existing test failures were reproduced on unchanged HEAD `57e7bbc5`:
+`test_liquidity_hero_displays_imd_then_eth_and_marks_partial_totals` still expects
+`-- ETH` despite the shared card fallback convention; both parametrizations of
+`test_actual_pending_token_refresh_animates_shared_footer_then_clears` expect a
+private footer timer although the screen owns the shared animation phase.
+These test expectations remain follow-ups; this change does not alter shared
+card placeholders or loading animation.
+
+Final review approved with no blocking findings or new follow-ups. Verification:
+217 targeted tests passed (the three reproduced baseline failures above remain),
+131 fast guards, 12 documentation pins and eight independent review checks passed.
+The live render and six functional mutation checks are recorded in the plan.

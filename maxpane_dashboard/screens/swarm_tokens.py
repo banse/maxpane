@@ -5,6 +5,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import DataTable, Input, Select, Static
 
 from maxpane_dashboard.analytics.swarm_tokens import project_snapshot
+from maxpane_dashboard.analytics.swarm_tokens_hero import observed
 from maxpane_dashboard.screens.dashboard_screen import DashboardScreen, keys
 from maxpane_dashboard.screens.surf_loading import SurfDashboardScreen, SurfStatusBar
 from maxpane_dashboard.widgets.card_inner import LoadingCard
@@ -37,6 +38,12 @@ from maxpane_dashboard.widgets.swarm_tokens.filter import SwarmTokensFilterEdito
 #: At 146x33 the body scrolls and advertises taller; 34/35 fit. At 149x45 the
 #: table retains all 24 fixture rows and shows eighteen internally scrollable
 #: data rows. The width floor remains 143; its gutter is now counted honestly.
+#: Token-source consistency revision (2026-11-12), after the keyless 149x45 render:
+#: the summary has automatic vertical overflow, so seven Top Traded rows and two
+#: Newly Launched rows show no idle scrollbar. Moving its bottom margin to the
+#: table places All Tokens at y=22 (DataTable y=24); the table ends at y=43,
+#: leaving one blank row before the y=44 status bar, still with eighteen data rows.
+#: The 145/146/147x34 and 146x33/34/35 compositor sweep retains the same floor.
 SWARM_TOKENS_FULL_LAYOUT_COLUMNS = 146
 SWARM_TOKENS_FULL_LAYOUT_ROWS = 34
 
@@ -57,7 +64,7 @@ class SwarmTokensScreen(SurfDashboardScreen):
         (TokensTable, keys('tokens', 'as_of')),
         (NewlyLaunched, keys('newly_launched', 'as_of')),
         (BestPlays, keys('gainers', 'losers')),
-        (TopTraded, keys('tokens')),
+        (TopTraded, keys('tokens', 'as_of', 'is_mock')),
     )
     BINDINGS = [
         Binding('escape', 'back', show=False), Binding('m', 'back', show=False),
@@ -73,9 +80,9 @@ class SwarmTokensScreen(SurfDashboardScreen):
     SwarmTokensScreen TokensHero { height: 9; margin: 1 0; }
     SwarmTokensScreen #st-content { height: 1fr; min-height: 22; }
     SwarmTokensScreen #st-market { height: 1fr; }
-    SwarmTokensScreen TokensTable { height: 1fr; min-height: 10; border: none; }
+    SwarmTokensScreen TokensTable { height: 1fr; min-height: 10; border: none; margin-bottom: 1; }
     SwarmTokensScreen DataTable { height: 1fr; background: $background; scrollbar-size: 1 1; }
-    SwarmTokensScreen #st-summary { height: 11; margin-bottom: 1; }
+    SwarmTokensScreen #st-summary { height: 11; }
     SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays, SwarmTokensScreen TopTraded {
         width: 1fr; height: 1fr; border: none; }
     SwarmTokensScreen TopTraded, SwarmTokensScreen NewlyLaunched { margin-right: 1; }
@@ -83,6 +90,7 @@ class SwarmTokensScreen(SurfDashboardScreen):
         text-wrap: nowrap; text-overflow: ellipsis; }
     SwarmTokensScreen RichLog { height: 1fr; padding: 0 1; background: $background;
         scrollbar-size: 1 1; }
+    SwarmTokensScreen TopTraded RichLog, SwarmTokensScreen NewlyLaunched RichLog { overflow-y: auto; }
     SwarmTokensScreen #st-best-body { height: 1fr; padding: 0 1; }
     SwarmTokensScreen SwarmTokensFilterEditor { display: none; }
     '''
@@ -174,7 +182,8 @@ class SwarmTokensScreen(SurfDashboardScreen):
         if sources:
             source_text=f" · as of {hhmm(cat.get('as_of'))}"
             rows=self.snapshot.get('tokens') or []
-            quoted=sum(row.get('market_state')=='ok' and row.get('price_usd') is not None for row in rows)
+            quoted=sum(observed(row, 'market', self.snapshot['as_of'], self._is_mock)
+                       and row.get('price_usd') is not None for row in rows)
             source_text+=f" · quotes {quoted}/{len(rows)}"
         self.query_one(TokensTable).query_one('.panel-title',Static).update(Text(
             f'ALL TOKENS{self.loading_suffix} · {count}{suffix} · {chain}{selection} · sort: {self.sort}{source_text}', style='bold'))

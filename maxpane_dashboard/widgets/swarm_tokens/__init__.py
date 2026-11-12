@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from maxpane_dashboard.analytics.swarm_tokens_hero import observed
+
 from rich.text import Text
 from maxpane_dashboard.widgets.surf._swarm_table import _SelectableTable
 from textual.message import Message
@@ -239,10 +241,10 @@ class TopTraded(_CompactFeed):
                    + _cell("USD/24H", 16, _COLUMN_HEADER_STYLE, right=True) + Text("\n"))
     EMPTY_LINE = Text("No matching tokens", style="dim white")
 
-    def update_data(self, tokens=None):
+    def update_data(self, tokens=None, as_of=None, is_mock=False):
         ranked = []
         for row in tokens or []:
-            if not isinstance(row, dict) or row.get("market_state", "ok") != "ok":
+            if not isinstance(row, dict) or not observed(row, "market", as_of, is_mock):
                 continue
             volume = as_float(row.get("volume_24h"))
             if volume is not None and volume >= 0:

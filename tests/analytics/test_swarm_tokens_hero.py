@@ -62,20 +62,20 @@ def test_all_filters_and_sort_share_selected_denominators(filters, expected):
     assert result['tokens']['tracked'] == result['volume']['total'] == len(expected)
 
 
-def test_stale_quotes_excluded_and_all_stale_keeps_actual_clock_without_zero():
+def test_stale_quotes_retained_and_all_stale_keeps_actual_clock():
     stale = row('old', volume_24h=10000, paired_amount=10000, market_state='stale',
                 liquidity_state='stale', market_read_at=NOW-300, liquidity_read_at=NOW-600)
     result = hero([row('a', volume_24h=0, change_24h=0, paired_amount=0), stale])
-    assert result['volume'] == dict(state='partial', read_ts=NOW-30, amount=0, known=1, total=2)
-    assert result['momentum']['flat'] == 1 and result['momentum']['rising'] == 0
-    assert result['liquidity']['imd'] == 0 and result['liquidity']['eth'] is None
-    assert result['liquidity']['partial'] is True
-    assert result['top_volume']['rows'] == [dict(symbol='A', volume_usd=0)]
+    assert result['volume'] == dict(state='stale', read_ts=NOW-300, amount=10000, known=2, total=2)
+    assert result['momentum']['flat'] == 1 and result['momentum']['rising'] == 1
+    assert result['liquidity']['imd'] == 10000 and result['liquidity']['eth'] == 0
+    assert result['liquidity']['partial'] is False
+    assert result['top_volume']['rows'] == [dict(symbol='OLD', volume_usd=10000), dict(symbol='A', volume_usd=0)]
     result = hero([stale])
-    assert result['volume'] == dict(state='stale', read_ts=NOW-300, amount=None, known=0, total=1)
-    assert result['momentum']['rising'] is None and result['top_volume']['rows'] is None
-    assert result['liquidity']['read_ts'] == NOW-600 and result['liquidity']['imd'] is None
-    assert result['pools'] == dict(state='stale', read_ts=NOW-600, two_sided=None, one_sided=None, unknown=1, other=None)
+    assert result['volume'] == dict(state='stale', read_ts=NOW-300, amount=10000, known=1, total=1)
+    assert result['momentum']['rising'] == 1 and result['top_volume']['rows'] == [dict(symbol='OLD', volume_usd=10000)]
+    assert result['liquidity']['read_ts'] == NOW-600 and result['liquidity']['imd'] == 10000
+    assert result['pools'] == dict(state='stale', read_ts=NOW-600, two_sided=1, one_sided=0, unknown=0, other=0)
 
 
 def test_empty_success_unknown_catalogue_and_mock_are_distinct():
@@ -100,7 +100,7 @@ def test_empty_success_unknown_catalogue_and_mock_are_distinct():
 def test_uncertain_catalogue_keeps_fresh_measurement_clocks_and_partial_state(state):
     result = hero([row()], state=state, stamp=NOW-1000)
     assert result['tokens']['state'] == state and result['tokens']['read_ts'] == NOW-1000
-    assert all(result[key]['state'] == 'partial' for key in HERO_FIELDS if key != 'tokens')
+    assert all(result[key]['state'] == state for key in HERO_FIELDS if key != 'tokens')
     assert result['volume']['read_ts'] == NOW-30 and result['liquidity']['read_ts'] == NOW-60
     assert result['liquidity']['partial'] is True
 
@@ -145,3 +145,20 @@ def test_launch_age_boundaries_and_unread_fields_are_not_known_zero():
     assert result['volume']['known'] == 0 and result['volume']['amount'] is None
     assert result['pools'] == dict(state='unavailable', read_ts=None, two_sided=None,
                                     one_sided=None, unknown=2, other=None)
+
+
+def test_retained_observations_contribute_to_every_card_with_their_original_clocks():
+    old = row('old', market_state='stale', market_read_at=NOW-3600,
+              liquidity_state='stale', liquidity_read_at=NOW-7200,
+              volume_24h=2000, change_24h=-5, paired_amount=12)
+    current = row('new', volume_24h=100, change_24h=2, paired_amount=3)
+    projected = project_snapshot(snapshot([old, current]))
+    cards = projected['tokens_hero']
+    assert cards['volume'] == dict(state='stale', read_ts=NOW-3600, amount=2100, known=2, total=2)
+    assert cards['top_volume']['rows'][0] == dict(symbol='OLD', volume_usd=2000)
+    assert cards['momentum']['rising'] == cards['momentum']['falling'] == 1
+    assert cards['liquidity']['imd'] == 15 and cards['liquidity']['read_ts'] == NOW-7200
+    assert cards['pools']['two_sided'] == 2
+    assert projected['metrics']['volume_24h'] == cards['volume']['amount']
+    assert projected['metrics']['liquidity_imd'] == 15
+    assert [r['id'] for r in projected['losers']] == ['old']

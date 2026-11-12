@@ -5910,8 +5910,13 @@ class SurfManager:
             policy_read_ok = isinstance(policies, list)
             if policy_read_ok:
                 slot.update(policies=policies, policies_ts=now, policies_schema=1)
-        await self._enrich_swarm_launch_evidence(slot, points, now,
+        rpc, requests = await self._enrich_swarm_launch_evidence(slot, points, now,
             refreshed_policy=refreshed_policy, policy_read_ok=policy_read_ok, strict_identity=True)
+        settled = [point for point in points if point.get('detail_version') ==
+                   [point['row']['status'], point['row'].get('updatedAt')]]
+        if settled:
+            await self._refresh_launch_liquidity(settled, rpc, slot.get('policies') or [], now,
+                receipt_attempts={chain: set(request['hashes']) for chain, request in requests.items()})
         # Awaited reads may outlive a newer catalogue; merge only still-current identities.
         latest_slot = self._launch_slot(SLOT_SWARM_LAUNCHES, {})
         current = self._swarm_launch_catalogue(latest_slot)

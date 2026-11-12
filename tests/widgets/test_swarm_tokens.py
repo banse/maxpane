@@ -226,7 +226,7 @@ async def test_newly_launched_caps_rendered_rows_without_mutating_the_selection(
         assert len(rows) == 8
 
 
-async def test_top_traded_ranks_seven_fresh_volumes_including_old_launches():
+async def test_top_traded_ranks_seven_retained_volumes_including_old_launches():
     from maxpane_dashboard.widgets import swarm_tokens
     from textual.widgets import RichLog
     rows = [token(id="b", symbol="TIEB", volume_24h=200),
@@ -239,16 +239,16 @@ async def test_top_traded_ranks_seven_fresh_volumes_including_old_launches():
     original_ids = [row["id"] for row in rows]
     panel = swarm_tokens.TopTraded()
     async with Probe(panel).run_test(size=(149, 45)) as pilot:
-        panel.update_data(tokens=rows)
+        panel.update_data(tokens=rows, as_of=NOW, is_mock=True)
         await pilot.pause()
         output = painted(pilot.app)
         assert "TOP TRADED / 24H" in output and "USD/24H" in output
-        assert output.index("OLD") < output.index("TIEA") < output.index("TIEB")
+        assert output.index("STALE") < output.index("OLD") < output.index("TIEA") < output.index("TIEB")
         panel.query_one(RichLog).scroll_end(animate=False)
         await pilot.pause()
         output = painted(pilot.app)
-        assert "RANK6" in output
-        assert all(word not in output for word in ("RANK7", "STALE", "MISSING", "BAD"))
+        assert "RANK5" in output
+        assert all(word not in output for word in ("RANK6", "RANK7", "MISSING", "BAD"))
         assert [row["id"] for row in rows] == original_ids
 
 
@@ -256,7 +256,7 @@ async def test_top_traded_keeps_zero_literal_symbols_and_unknown_distinct():
     from maxpane_dashboard.widgets import swarm_tokens
     panel = swarm_tokens.TopTraded()
     async with Probe(panel).run_test(size=(149, 45)) as pilot:
-        panel.update_data(tokens=[token(symbol="[/x]", volume_24h=0)])
+        panel.update_data(tokens=[token(symbol="[/x]", volume_24h=0)], as_of=NOW, is_mock=True)
         await pilot.pause()
         assert "[/x]" in painted(pilot.app) and "$0" in painted(pilot.app)
         panel.update_data(tokens=None)

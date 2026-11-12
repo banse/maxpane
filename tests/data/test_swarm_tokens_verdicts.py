@@ -217,7 +217,9 @@ async def test_real_tokens_gain_fixture_verdict_while_parent_remains_inactive(tm
     async def unrelated(*args, **kwargs):
         pytest.fail('token provenance started an unrelated parent collector')
     monkeypatch.setattr(parent, '_pool_swarm_launches', unrelated)
-    monkeypatch.setattr(parent.client, 'fetch_launch_pool_state', unrelated)
+    async def unavailable_liquidity(*args, **kwargs):
+        raise RuntimeError('controlled liquidity outage')
+    monkeypatch.setattr(parent.client, 'fetch_launch_pool_state', unavailable_liquidity)
     token_manager = adapter(parent, data, [NOW])
     try:
         await token_manager.fetch_and_compute()
@@ -254,5 +256,34 @@ async def test_new_verified_pool_retains_only_matching_market_quote_with_origina
         assert verified['price_usd'] == (2.5 if same_pool else None)
         assert verified['volume_24h'] == (42 if same_pool else None)
         assert verified['market_read_at'] == (990 if same_pool else None)
+    finally:
+        await manager.close()
+
+
+async def test_known_swarm_liquidity_refresh_is_bounded_fair_and_poll_only():
+    source, now = Evidence(), [1000.]
+    data = catalogue(4)
+    await source.refresh_swarm_token_evidence(data)
+    source.calls.clear()
+    manager = adapter(source, data, now)
+    try:
+        await manager.fetch_and_compute()
+        await manager.wait_pending()
+        assert len(source.calls) == 1 and len(source.calls[0]) == 3
+        assert all(row['verdict'] == 'swarm' for row in manager.get_snapshot()['tokens'])
+        for _ in range(4):
+            manager.get_snapshot()
+        assert len(source.calls) == 1
+        await manager.fetch_and_compute()
+        await manager.wait_pending()
+        assert len(source.calls) == 2 and len(source.calls[1]) == 1
+        await manager.fetch_and_compute()
+        await manager.wait_pending()
+        assert len(source.calls) == 2
+        manager.set_active_view(None)
+        now[0] += 600
+        await manager.fetch_and_compute()
+        await manager.wait_pending()
+        assert len(source.calls) == 2
     finally:
         await manager.close()

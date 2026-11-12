@@ -205,7 +205,7 @@ async def test_chain_address_identity_unknown_timestamp_and_exact_shared_join():
         await manager.close()
 
 
-async def test_liquidity_clock_is_independent_and_stale_positions_are_unknown():
+async def test_liquidity_clock_is_independent_and_stale_positions_are_retained():
     shared = launch_rows(rows())
     for row in shared:
         token = next((a for a in row['artifacts'] if a['role'] == 'token'), None)
@@ -221,7 +221,8 @@ async def test_liquidity_clock_is_independent_and_stale_positions_are_unknown():
         assert all(r['lp_state'] == 'two-sided' for r in snapshot['tokens'])
         now[0] += manager.LIQUIDITY_TTL + 1
         old = await manager.fetch_and_compute()
-        assert all(r['lp_state'] == 'unknown' and r['liquidity_state'] == 'stale' for r in old['tokens'])
+        assert all(r['lp_state'] == 'two-sided' and r['paired_amount'] == 7
+                   and r['liquidity_state'] == 'stale' for r in old['tokens'])
         assert all(r['liquidity_read_at'] == 1000 for r in old['tokens'])
     finally:
         await manager.close()
@@ -582,7 +583,8 @@ async def test_hub_latest_launches_reuse_cached_liquidity_identity_and_freshness
         assert manager.catalogue_summary(source.data)['latest_launches'][0]['lp_state'] == 'two-sided'
         now[0] += 1
         stale = manager.catalogue_summary(source.data)['latest_launches']
-        assert all(r['lp_state'] == 'unknown' and r['liquidity_state'] == 'stale' for r in stale)
+        assert [r['lp_state'] for r in stale] == ['two-sided', 'two-sided', 'one-token']
+        assert all(r['liquidity_state'] == 'stale' for r in stale)
         for row in shared[:3]:
             row['liquidity']['read_ts'] = now[0]
         shared[0]['updated_ts'] += 1  # evidence belongs to an older launch revision

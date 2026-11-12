@@ -17,28 +17,36 @@ def _source(row, label, now, mock):
     return state, stamp
 
 
+def observed(row, label, now, is_mock=False):
+    """A retained observation keeps its successful source clock, even when stale."""
+    state, stamp = _source(row, label, now, is_mock)
+    return state in ('ok', 'stale') and stamp is not None
+
+
 def _select(rows, label, valid, now, mock):
-    fresh, stale = [], []
+    observations, stale = [], []
     for row in rows:
         state, stamp = _source(row, label, now, mock)
-        if stamp is None:
-            continue
-        if state == 'stale':
-            stale.append(stamp)
-        elif state == 'ok' and valid(row):
-            fresh.append((row, stamp))
-    return fresh, stale
+        if observed(row, label, now, mock) and valid(row):
+            observations.append((row, stamp))
+            if state == 'stale':
+                stale.append(stamp)
+    return observations, stale
 
 
-def _metadata(fresh, stale, total, catalogue):
-    if fresh:
-        state = 'ok' if len(fresh) == total and catalogue['state'] == 'ok' else 'partial'
-        return dict(state=state, read_ts=min(stamp for _, stamp in fresh))
+def _metadata(observations, stale, total, catalogue):
+    if observations:
+        state = ('stale' if stale or catalogue['state'] == 'stale' else
+                 'ok' if len(observations) == total and catalogue['state'] == 'ok' else 'partial')
+        return dict(state=state, read_ts=min(stamp for _, stamp in observations))
     if total == 0 and catalogue['state'] == 'ok':
         return dict(catalogue)
-    if stale:
-        return dict(state='stale', read_ts=min(stale))
     return dict(state='unavailable', read_ts=None)
+
+
+def has_price_change(row):
+    price = number(row.get('price_usd'))
+    return price is not None and price > 0 and _signed(row.get('change_24h')) is not None
 
 
 def project(tokens, *, catalogue, now, is_mock=False):
@@ -100,11 +108,7 @@ def project(tokens, *, catalogue, now, is_mock=False):
         one_sided=one if pools or empty else None, unknown=total-len(pools),
         other=len(pools)-two-one if pools or empty else None)
 
-    def priced(row):
-        price = number(row.get('price_usd'))
-        return price is not None and price > 0 and _signed(row.get('change_24h')) is not None
-
-    momentum, stale = _select(tokens, 'market', priced, now, is_mock)
+    momentum, stale = _select(tokens, 'market', has_price_change, now, is_mock)
     meta = _metadata(momentum, stale, total, cat)
     changes = [row['change_24h'] for row, _ in momentum]
     result['momentum'].update(meta, rising=sum(value > 0 for value in changes) if changes or empty else None,

@@ -28,14 +28,15 @@ def test_live_unavailable_is_not_empty_and_source_clocks_survive_filters():
     assert raw['sources']['catalogue']['state'] == 'unavailable'
 
 
-def test_stale_market_quotes_remain_visible_but_do_not_rank_as_live_plays():
+def test_stale_market_quotes_remain_in_rankings_with_original_source_state():
     raw = demo_snapshot()
     raw['tokens'] = [dict(raw['tokens'][0],market_state='stale')]
     projected = project_snapshot(raw)
     assert len(projected['tokens']) == 1
-    assert projected['gainers'] == projected['losers'] == []
-    assert projected['metrics']['volume_24h'] is None
-    assert projected['metrics']['volume_known'] == 0
+    assert projected['gainers'][0]['market_state'] == 'stale'
+    assert projected['losers'] == []
+    assert projected['metrics']['volume_24h'] == raw['tokens'][0]['volume_24h']
+    assert projected['metrics']['volume_known'] == 1
 
 
 def test_paired_liquidity_totals_keep_assets_filters_zero_and_unknown_separate():
@@ -49,7 +50,7 @@ def test_paired_liquidity_totals_keep_assets_filters_zero_and_unknown_separate()
                          ('eth','USDC',900,'ok'), ('eth','IMD',999,'stale'),
                          ('eth',None,None,'unknown')])]
     metrics = project_snapshot(raw)['metrics']
-    assert metrics['liquidity_imd'] == 800 and metrics['liquidity_eth'] == 2.5
+    assert metrics['liquidity_imd'] == 1799 and metrics['liquidity_eth'] == 2.5
     assert metrics['liquidity_partial'] is True
     filtered = project_snapshot(raw, chain='rh')['metrics']
     assert filtered['liquidity_imd'] == 12 and filtered['liquidity_eth'] == 0

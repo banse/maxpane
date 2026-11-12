@@ -20,7 +20,7 @@ def painted(app):
 def test_screen_css_agrees_with_application_stylesheet():
     from pathlib import Path
     css=(Path(__file__).resolve().parents[2]/'maxpane_dashboard/themes/minimal.tcss').read_text()
-    block=css.split('/* SWARM TOKENS mock screen */',1)[-1].split('/* PORTFOLIO mock screen */',1)[0]
+    block=css.split('/* SWARM TOKENS mock screen */',1)[-1].split('/* SWORN Explorer */',1)[0]
     assert ' '.join(block.split())==' '.join(SwarmTokensScreen.DEFAULT_CSS.split())
 
 
@@ -93,7 +93,7 @@ async def test_native_layout_starts_with_heroes_and_standard_panels_have_no_fram
         table = app.screen.query_one(TokensTable)
         assert activity.region.y == newly.region.y == plays.region.y == hero.region.bottom+1
         assert activity.region.right < newly.region.x and newly.region.right < plays.region.x
-        assert table.region.y == activity.region.bottom+1
+        assert table.region.y == activity.region.bottom
         lines=painted(app).splitlines()
         heading=next(i for i,line in enumerate(lines) if 'NEWLY LAUNCHED' in line)
         assert lines[heading].index('TOP TRADED') < lines[heading].index('NEWLY LAUNCHED') < lines[heading].index('BEST PLAYS')
@@ -250,3 +250,24 @@ async def test_hub_live_route_returns_with_terminal_draft_and_card_focus():
         assert command.value=='status'
         assert rack.focused_card=='swarm-tokens'
         assert managers['_surf_manager'].hub_active
+
+
+async def test_summary_has_no_idle_scrollbars_and_table_leaves_one_footer_gap():
+    from textual.widgets import RichLog
+    from maxpane_dashboard.widgets.status_bar import StatusBar
+    app = SwarmTokensDemo()
+    async with app.run_test(size=(149, 45)) as pilot:
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        screen = app.screen
+        for panel in (TopTraded, NewlyLaunched):
+            log = screen.query_one(panel).query_one(RichLog)
+            assert log.max_scroll_y == 0
+            assert not log.show_vertical_scrollbar
+        table = screen.query_one(TokensTable)
+        summary = screen.query_one('#st-summary')
+        footer = screen.query_one(StatusBar)
+        assert table.region.y == summary.region.bottom  # remove the former extra row
+        assert table.region.bottom == footer.region.y - 1
+        assert screen.query_one(DataTable).region.bottom == table.region.bottom
+        assert not screen._compositor.render_strips()[footer.region.y - 1].text.strip()

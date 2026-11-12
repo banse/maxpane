@@ -292,15 +292,16 @@ class SwarmTokensManager:
                          launch_pool=(source.get('pool_ids') or {}).get(row['launch_id']) if evidence else None)
             liquidity = evidence.get('liquidity') or {}
             stamp = _number(liquidity.get('read_ts'))
-            if stamp is not None:
+            if stamp is not None and 0 < stamp <= now:
                 token.update(liquidity_read_at=stamp, liquidity_state='stale')
-                if 0 <= now-stamp <= self.LIQUIDITY_TTL and liquidity.get('state') in ('info', 'warn'):
-                    paired, amount = (_number(liquidity.get(key)) for key in ('paired_amount', 'token_amount'))
+                if liquidity.get('state') in ('info', 'warn'):
+                    paired, amount = (value if (value := _number(liquidity.get(key))) is not None and value >= 0 else None
+                                      for key in ('paired_amount', 'token_amount'))
                     token.update(paired_amount=paired, token_amount=amount,
                                  withdrawn_pct=_number(liquidity.get('withdrawn_pct')),
                                  paired_symbol=liquidity.get('paired_symbol'),
                                  fee_pct=liquidity['pool_fee']/10000 if _number(liquidity.get('pool_fee')) is not None else None,
-                                 liquidity_state='ok')
+                                 liquidity_state='ok' if now-stamp <= self.LIQUIDITY_TTL else 'stale')
                     if liquidity.get('lock') == 'withdrawn' and paired is not None and amount is not None:
                         token['lp_state'] = 'withdrawn'
                     elif paired is not None and amount is not None:
@@ -702,7 +703,8 @@ class SwarmTokensManager:
         due = []
         for token in tokens or []:
             row = raw.get(token['launch_uuid'])
-            if (row is None or token['verdict'] not in ('unknown', 'partial')
+            needs_liquidity = token['verdict'] == 'swarm' and token['liquidity_state'] != 'ok'
+            if (row is None or not (token['verdict'] in ('unknown', 'partial') or needs_liquidity)
                     or _token_artifacts(row)[1]):
                 continue
             version = (row.get('status'), row.get('updatedAt'),

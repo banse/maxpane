@@ -169,3 +169,16 @@ async def test_hostile_symbols_large_counts_and_unknown_leaders_stay_honest():
         assert "0x" not in output and "token" in output
         assert "$4.2e-09" in output
         assert any("BMC" in row and "0" in row for row in output.splitlines())
+
+
+async def test_stale_liquidity_and_reload_retain_a_known_amount():
+    data = payload()
+    data['liquidity'].update(state='stale', imd=12, eth=0, known=48, partial=False)
+    async with Harness(data).run_test(size=(149, 45)) as pilot:
+        app = pilot.app
+        await pilot.pause()
+        assert '12 IMD' in painted(app, 'liquidity') and '0 ETH' in painted(app, 'liquidity')
+        data['liquidity'].update(state='unavailable', imd=None, eth=None)
+        app.query_one(TokensHero).update_data(tokens_hero=data)
+        await pilot.pause()
+        assert '12 IMD' in painted(app, 'liquidity') and '0 ETH' in painted(app, 'liquidity')
