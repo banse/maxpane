@@ -44,6 +44,11 @@ from maxpane_dashboard.widgets.swarm_tokens.filter import SwarmTokensFilterEdito
 #: table places All Tokens at y=22 (DataTable y=24); the table ends at y=43,
 #: leaving one blank row before the y=44 status bar, still with eighteen data rows.
 #: The 145/146/147x34 and 146x33/34/35 compositor sweep retains the same floor.
+#: Follow-up spacing (2026-11-12): restore one row below the summary while
+#: retaining the table bottom margin. At 149x45 All Tokens starts at y=23,
+#: its height is 20 (DataTable y=25, seventeen data rows), and its bottom stays
+#: at y=43, preserving the blank row before the status bar. At 146x34 its
+#: nine-row minimum preserves that gap too. All rows still scroll.
 SWARM_TOKENS_FULL_LAYOUT_COLUMNS = 146
 SWARM_TOKENS_FULL_LAYOUT_ROWS = 34
 
@@ -80,9 +85,9 @@ class SwarmTokensScreen(SurfDashboardScreen):
     SwarmTokensScreen TokensHero { height: 9; margin: 1 0; }
     SwarmTokensScreen #st-content { height: 1fr; min-height: 22; }
     SwarmTokensScreen #st-market { height: 1fr; }
-    SwarmTokensScreen TokensTable { height: 1fr; min-height: 10; border: none; margin-bottom: 1; }
+    SwarmTokensScreen TokensTable { height: 1fr; min-height: 9; border: none; margin-bottom: 1; }
     SwarmTokensScreen DataTable { height: 1fr; background: $background; scrollbar-size: 1 1; }
-    SwarmTokensScreen #st-summary { height: 11; }
+    SwarmTokensScreen #st-summary { height: 11; margin-bottom: 1; }
     SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays, SwarmTokensScreen TopTraded {
         width: 1fr; height: 1fr; border: none; }
     SwarmTokensScreen TopTraded, SwarmTokensScreen NewlyLaunched { margin-right: 1; }

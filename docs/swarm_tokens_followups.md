@@ -135,3 +135,8 @@ Final review approved with no blocking findings or new follow-ups. Verification:
 217 targeted tests passed (the three reproduced baseline failures above remain),
 131 fast guards, 12 documentation pins and eight independent review checks passed.
 The live render and six functional mutation checks are recorded in the plan.
+
+Owner spacing correction: ALL TOKENS moves down one row again, with its height
+reduced by one and its bottom blank row retained. The table minimum shrinks too,
+so both 149x45 and 146x34 preserve the gap. Twenty composing screen tests passed;
+focused review approved with no findings and a killed minimum-height mutation.

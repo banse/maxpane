@@ -48,3 +48,14 @@ recorded `none`: this fix adds no new protocol knowledge.
 Final review: Approved, no blocking findings. Eight focused checks passed;
 the catalogue-identity mutation was independently killed and restored. No new
 review follow-ups or production fix wave were needed.
+
+Owner spacing follow-up: restore the one-row gap above ALL TOKENS and retain its
+bottom margin. Its flexible height shrinks from 21 to 20 at 149x45. Implement
+only the mirrored summary margin, update the compositor assertions, render the
+recent keyless live snapshot, verify boundaries, and obtain one focused review.
+The minimum table height also shrinks from ten to nine so the footer gap remains
+at the existing 146x34 minimum viewport, not only at the owner’s 149x45 size.
+Spacing follow-up verified: all 20 composing screen tests passed, including both
+footer-gap sizes and the six boundary cases. Fast guards passed 131 cases and
+12 documentation pins passed. Review approved with no findings; restoring the
+old table minimum killed the small-viewport regression and was restored exactly.

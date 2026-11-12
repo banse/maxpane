@@ -3174,9 +3174,9 @@ SwarmTokensScreen #st-body { width: 1fr; min-width: 143; height: 1fr; min-height
 SwarmTokensScreen TokensHero { height: 9; margin: 1 0; }
 SwarmTokensScreen #st-content { height: 1fr; min-height: 22; }
 SwarmTokensScreen #st-market { height: 1fr; }
-SwarmTokensScreen TokensTable { height: 1fr; min-height: 10; border: none; margin-bottom: 1; }
+SwarmTokensScreen TokensTable { height: 1fr; min-height: 9; border: none; margin-bottom: 1; }
 SwarmTokensScreen DataTable { height: 1fr; background: $background; scrollbar-size: 1 1; }
-SwarmTokensScreen #st-summary { height: 11; }
+SwarmTokensScreen #st-summary { height: 11; margin-bottom: 1; }
 SwarmTokensScreen NewlyLaunched, SwarmTokensScreen BestPlays, SwarmTokensScreen TopTraded {
     width: 1fr; height: 1fr; border: none; }
 SwarmTokensScreen TopTraded, SwarmTokensScreen NewlyLaunched { margin-right: 1; }

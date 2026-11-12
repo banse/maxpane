@@ -93,7 +93,7 @@ async def test_native_layout_starts_with_heroes_and_standard_panels_have_no_fram
         table = app.screen.query_one(TokensTable)
         assert activity.region.y == newly.region.y == plays.region.y == hero.region.bottom+1
         assert activity.region.right < newly.region.x and newly.region.right < plays.region.x
-        assert table.region.y == activity.region.bottom
+        assert table.region.y == activity.region.bottom + 1
         lines=painted(app).splitlines()
         heading=next(i for i,line in enumerate(lines) if 'NEWLY LAUNCHED' in line)
         assert lines[heading].index('TOP TRADED') < lines[heading].index('NEWLY LAUNCHED') < lines[heading].index('BEST PLAYS')
@@ -252,11 +252,12 @@ async def test_hub_live_route_returns_with_terminal_draft_and_card_focus():
         assert managers['_surf_manager'].hub_active
 
 
-async def test_summary_has_no_idle_scrollbars_and_table_leaves_one_footer_gap():
+@pytest.mark.parametrize("size,height", [((149, 45), 20), ((146, 34), 9)])
+async def test_summary_has_no_idle_scrollbars_and_table_leaves_one_footer_gap(size, height):
     from textual.widgets import RichLog
     from maxpane_dashboard.widgets.status_bar import StatusBar
     app = SwarmTokensDemo()
-    async with app.run_test(size=(149, 45)) as pilot:
+    async with app.run_test(size=size) as pilot:
         await app.workers.wait_for_complete()
         await pilot.pause()
         screen = app.screen
@@ -267,7 +268,8 @@ async def test_summary_has_no_idle_scrollbars_and_table_leaves_one_footer_gap():
         table = screen.query_one(TokensTable)
         summary = screen.query_one('#st-summary')
         footer = screen.query_one(StatusBar)
-        assert table.region.y == summary.region.bottom  # remove the former extra row
+        assert table.region.y == summary.region.bottom + 1
+        assert table.region.height == height
         assert table.region.bottom == footer.region.y - 1
         assert screen.query_one(DataTable).region.bottom == table.region.bottom
         assert not screen._compositor.render_strips()[footer.region.y - 1].text.strip()
